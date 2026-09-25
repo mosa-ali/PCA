@@ -20,6 +20,8 @@ import { LoadingState, ErrorState } from '../../components/common/States';
 import { RequestStateBadge } from '../../components/billing/RequestStateBadge';
 import { formatMoney, isQuoteExpired, isSameOriginRedirect, suggestedDeviceTargets } from '../../domain/billing';
 import { storePaymentAttemptId } from '../../domain/checkoutCorrelation';
+import { useStepUp } from '../../state/StepUpContext';
+import { billingActionErrorMessage } from '../../components/billing/billingActionError';
 
 // A same-origin verdict is not on its own enough to hand a value to the
 // router. `startsWith('/')` also accepts the protocol-relative `//host`
@@ -33,6 +35,7 @@ export default function DeviceIncreaseRequest() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const navigate = useNavigate();
+  const { requestCommercialStepUp } = useStepUp();
   const [searchParams] = useSearchParams();
   const requestId = searchParams.get('requestId');
   const [customTarget, setCustomTarget] = useState('');
@@ -60,10 +63,12 @@ export default function DeviceIncreaseRequest() {
     }
     setBusy(true);
     try {
-      const created = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', targetLimit);
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_REQUEST_CREATE');
+      if (!stepUpToken) return;
+      const created = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', targetLimit, stepUpToken);
       navigate(`/subscription/increase-devices?requestId=${created.requestId}`, { replace: true });
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setFormError(billingActionErrorMessage(e, t));
     } finally {
       setBusy(false);
     }
@@ -73,10 +78,12 @@ export default function DeviceIncreaseRequest() {
     setActionError(null);
     setBusy(true);
     try {
-      await clients.billing.cancelRequest(id);
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_REQUEST_CANCEL');
+      if (!stepUpToken) return;
+      await clients.billing.cancelRequest(id, stepUpToken);
       reload();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setActionError(billingActionErrorMessage(e, t));
     } finally {
       setBusy(false);
     }
@@ -86,8 +93,13 @@ export default function DeviceIncreaseRequest() {
     setActionError(null);
     setBusy(true);
     try {
+      const stepUpToken = await requestCommercialStepUp('BILLING_CHECKOUT_CREATE');
+      if (!stepUpToken) {
+        setBusy(false);
+        return;
+      }
       const returnUrl = `${window.location.origin}/subscription/checkout-return?requestId=${id}`;
-      const session = await clients.billing.beginCheckout(id, returnUrl);
+      const session = await clients.billing.beginCheckout(id, returnUrl, stepUpToken);
       // Correlate requestId -> paymentAttemptId BEFORE any navigation --
       // sessionStorage survives a real cross-origin redirect-and-back (see
       // domain/checkoutCorrelation.ts), an in-app router navigation does not
@@ -106,7 +118,7 @@ export default function DeviceIncreaseRequest() {
         window.location.assign(session.redirectUrl);
       }
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setActionError(billingActionErrorMessage(e, t));
       setBusy(false);
     }
   };

@@ -40,11 +40,6 @@ import {
   RejectingEnvelopeSignatureVerifier,
   rejectingResolveEnvelopeContext,
 } from './runtime-sync/index.js';
-// Type-only: the genesis verifier is deliberately held as the INTERFACE so the
-// composition-truth test below (`instanceof RejectingDeviceSignatureVerifier`)
-// stays meaningful when an accepting verifier replaces the stub.
-import type { DeviceSignatureVerifier } from './deviceauth/DeviceSignatureVerifier.js';
-import { resolveGenesisSignatureVerifier } from './parentaccount/genesisVerifierComposition.js';
 import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotencyLedger.js';
@@ -158,37 +153,25 @@ import { PaymentMethodRepository, PaymentMethodService } from './billing/payment
 // own doc comment.
 import { DisputeRepository, DisputeService } from './billing/dispute.js';
 import { PriceBookQuotePort } from './entitlements/quote/PriceBookQuotePort.js';
-// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, OWNER_APPROVED_OPTION_A): the real,
-// genesis-anchored Owner-attestation chain resolver, replacing the
-// fail-closed UnavailableFamilyCommercialAuthorityResolver placeholder.
-// Signature verification still runs through the SAME
-// RejectingDeviceSignatureVerifier used everywhere else in this file
-// (deviceAuthService/syncCoordinator above) -- CRYPTO_SUITE remains
-// PENDING_HUMAN_SECURITY_REVIEW, so this wiring is real and structurally
-// correct but every signature check still fails closed today, exactly
-// like every other crypto-gated surface in this file. This is a deliberate
-// continuation of that existing posture, not a new gap.
-import { AttestationChainFamilyCommercialAuthorityResolver } from './billing/authority/FamilyCommercialAuthorityResolver.js';
-import { FamilyOwnerAttestationChainEngine } from './familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { DeviceRepositoryFamilyAuthorityKeyResolver } from './familycommercial/authority/FamilyAuthorityKeyResolver.js';
-import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
+// PCA-DEC-030: the owner-attestation chain STORE is still read by the
+// protection-alert recipient resolver below. The chain ENGINE, its
+// device-signature request-proof challenges and the attestation-chain
+// commercial resolver are no longer composed: sensitive commercial mutations
+// are gated by FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP instead.
 import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/authority/MySqlAttestationChainStore.js';
-import { FamilyAuthorityRequestChallengeService } from './familycommercial/authority/FamilyAuthorityRequestChallengeService.js';
-import { MySqlFamilyAuthorityRequestChallengeRepository } from './familycommercial/authority/MySqlFamilyAuthorityRequestChallengeRepository.js';
 // PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent identity +
 // FAMILY_SERVICE_SESSION_V1 session issuance wiring. Reuses the SAME
 // AuthService instance buildServer's Bearer-header requireServiceSession
 // already validates against -- see ParentAccountService.ts's own
 // SESSION BACKING STORE doc comment for why this is one token format, not
-// two. Email verification no longer performs family genesis; the separate
-// client-key ceremony remains source-only and is not wired into this service.
+// two. PCA-DEC-030: Parent Genesis is removed; the family is provisioned
+// server-side at first login and the account is protected by TOTP MFA.
 import { ParentAccountService } from './parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
-import { ParentGenesisService } from './parentaccount/ParentGenesisService.js';
-import { GenesisChallengeService } from './parentaccount/GenesisChallengeService.js';
-import { MySqlGenesisChallengeRepository } from './parentaccount/MySqlGenesisChallengeRepository.js';
-import { MySqlGenesisStepUpRepository } from './parentaccount/MySqlGenesisStepUpRepository.js';
-import { MySqlGenesisTransactionRepository } from './parentaccount/MySqlGenesisTransactionRepository.js';
+import { ParentMfaService } from './parentaccount/mfa/ParentMfaService.js';
+import { MySqlParentMfaRepository } from './parentaccount/mfa/MySqlParentMfaRepository.js';
+import { ParentCommercialStepUpAuthority } from './parentaccount/mfa/ParentCommercialStepUpAuthority.js';
+import { loadParentMfaKeyring } from './parentaccount/mfa/parentTotp.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
@@ -437,31 +420,9 @@ async function start(): Promise<void> {
   const providerRegistry = createDefaultProviderRegistry();
   const refundOperationRepository = new RefundOperationRepository();
   const refundOrchestrationService = new RefundOrchestrationService(refundOperationRepository, refundService, paymentRepository, providerRegistry);
-  // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025/Option A): the real, server-verifiable
-  // resolver -- see this block's own import comment above for why it is
-  // still functionally fail-closed today (RejectingDeviceSignatureVerifier,
-  // pending CRYPTO_SUITE human security review), exactly like device-session
-  // issuance and envelope acceptance elsewhere in this file.
-  // Shared instance -- also reused below by protectionAlertParentDeviceResolver
-  // (PCA-ADD-ENR-020), never a second independently-constructed copy.
+  // Shared instance -- read by protectionAlertParentDeviceResolver
+  // (PCA-ADD-ENR-020). See the import comment above for PCA-DEC-030.
   const familyAuthorityAttestationChainStore = new MySqlFamilyAuthorityAttestationChainStore();
-  // E-3/A-2: issuance (familyCommercialRoutes) and consumption (the engine's
-  // proof branch) MUST share ONE challenge service. The engine returns
-  // INVALID_PROOF for every proof when no request-challenge verifier is
-  // composed (FamilyOwnerAttestationChainEngine:307), so without this argument
-  // every owner-gated commercial mutation would fail forever the moment a
-  // real device-signature verifier is activated. Constructed BEFORE the
-  // engine and passed as its sixth argument.
-  const familyAuthorityRequestChallengeService = new FamilyAuthorityRequestChallengeService(new MySqlFamilyAuthorityRequestChallengeRepository());
-  const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
-    new MySqlFamilyAuthorityGenesisStore(),
-    familyAuthorityAttestationChainStore,
-    new RejectingDeviceSignatureVerifier(),
-    () => new Date(),
-    new DeviceRepositoryFamilyAuthorityKeyResolver(deviceRepository),
-    familyAuthorityRequestChallengeService,
-  );
-  const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
 
   // PCA-COMMERCIAL-NOTIFY-1 wiring, constructed early so it can be threaded
   // into ChangeRequestService/WebhookService below (Wave 3A correction R1:
@@ -583,36 +544,25 @@ async function start(): Promise<void> {
     CONSOLE_ACTIVATION_DIAGNOSTICS,
   );
   const familyMembershipRepository = new MySqlFamilyMembershipRepository();
-  // PCA-DEC-020-R1: the first-family ceremony is a single explicit source
-  // boundary. The verifier is selected by resolveGenesisSignatureVerifier
-  // (parentaccount/genesisVerifierComposition.ts): DEFAULT FAIL-CLOSED
-  // (RejectingDeviceSignatureVerifier) unless the operator explicitly sets
-  // PCA_GENESIS_DEVICE_SIGNATURE_VERIFIER=P256. Production activation remains
-  // an explicit owner act under the PCA-DEC-020 review gate; this code does not
-  // record or imply that review.
-  //
-  // ONE verifier instance feeds both consumers (challenge-proof verification
-  // and anchor/attestation verification) AND the availability flag below, so
-  // the flag cannot drift from the composition it describes. While rejecting,
-  // /genesis/step-up, /genesis/step-up/complete, /genesis/challenge and
-  // /genesis/complete all answer 503 genesis_unavailable BEFORE any work.
-  const genesisVerifierComposition = resolveGenesisSignatureVerifier(process.env);
-  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = genesisVerifierComposition.verifier;
-  const parentGenesisService = new ParentGenesisService(
-    new GenesisChallengeService(new MySqlGenesisChallengeRepository(), parentGenesisSignatureVerifier),
-    new MySqlGenesisTransactionRepository(),
-    parentGenesisSignatureVerifier,
-  );
-  const genesisCryptographyAvailable = genesisVerifierComposition.available;
-  // eslint-disable-next-line no-console -- one bounded boot line naming the composed genesis verifier mode; no secret material.
-  console.log(JSON.stringify({ event: 'PARENT_GENESIS_VERIFIER', mode: genesisVerifierComposition.mode, available: genesisCryptographyAvailable }));
+  // PCA-DEC-030: PARENT_AUTHORITY_MODEL = ACCOUNT + VERIFIED EMAIL + PASSWORD +
+  // TOTP MFA. The Parent MFA key realm (PCA_PARENT_MFA_ENC_KEY) is validated
+  // HERE, at boot, so a deployment missing it fails loudly instead of letting
+  // parents reach a login they could never complete.
+  loadParentMfaKeyring(process.env);
+  const parentAccountRepository = new MySqlParentAccountRepository();
+  const parentMfaService = new ParentMfaService({ repository: new MySqlParentMfaRepository(), keyring: () => loadParentMfaKeyring(process.env) });
   const parentAccountService = new ParentAccountService({
-    repository: new MySqlParentAccountRepository(),
+    repository: parentAccountRepository,
     authService,
     emailSender: emailInfrastructure.emailSender,
+    mfaService: parentMfaService,
     familyMembershipRepository,
-    parentGenesisService,
-    genesisStepUpRepository: new MySqlGenesisStepUpRepository(),
+  });
+  // COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP.
+  const commercialOwnerAuthority = new ParentCommercialStepUpAuthority({
+    accounts: parentAccountRepository,
+    memberships: familyMembershipRepository,
+    mfa: parentMfaService,
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
@@ -976,7 +926,7 @@ async function start(): Promise<void> {
     billingRefundOrchestrationService: refundOrchestrationService,
     billingPaymentRepository: paymentRepository,
     billingAuditService: platformAdminAuditService,
-    billingFamilyCommercialAuthorityResolver: familyCommercialAuthorityResolver,
+    commercialOwnerAuthority,
     commercialNotificationService,
     commercialNotificationSupportService,
     // PCA-PA-3B: Platform Administration operational/commercial API.
@@ -995,13 +945,8 @@ async function start(): Promise<void> {
     disputeService,
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
-    familyAuthorityRequestChallengeService,
-    authorityDeviceDirectory: deviceRepository,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
     parentAccountService,
-    // Derived from the verifier INSTANCE above, never a second constant that
-    // can drift -- see parentGenesisSignatureVerifier's own comment.
-    genesisCryptographyAvailable,
     parentPreferenceRepository,
     safeZoneRepository,
     safeZonePolicyAuthorizer,

@@ -15,8 +15,8 @@ import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccoun
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
+import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
 import { AuthzService } from '../../dist/authz/AuthzService.js';
 import { MySqlAuthzRepository } from '../../dist/authz/MySqlAuthzRepository.js';
 import { PlatformAdminAuthService } from '../../dist/platformadmin/auth/PlatformAdminAuthService.js';
@@ -25,6 +25,7 @@ import { closePool, getPool } from '../../dist/db/pool.js';
 import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
 import { CommercialNotificationService, CommercialNotificationSupportService } from '../../dist/commercialnotifications/CommercialNotificationService.js';
 import { MySqlCommercialNotificationPublisher, DEFAULT_MESSAGE_KEYS } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -54,10 +55,13 @@ class RecordingEmailSender {
 }
 
 const parentEmailSender = new RecordingEmailSender();
-const parentAccountService = new ParentAccountService({
-  repository: new MySqlParentAccountRepository(),
+const parentAccountRepository = new MySqlParentAccountRepository();
+const familyMembershipRepository = new MySqlFamilyMembershipRepository();
+const { service: parentAccountService } = createParentAccountTestKit({
+  repository: parentAccountRepository,
   authService,
   emailSender: parentEmailSender,
+  familyMembershipRepository,
 });
 
 function server() {
@@ -185,11 +189,11 @@ test('MySQL HTTP: the real parent session cookie reaches /api/parent/session and
   await parentAccountService.register(email, password, password);
   const verificationCode = parentEmailSender.codeFor(email);
   assert.equal(typeof verificationCode, 'string');
-  const verified = await parentAccountService.verifyEmail(email, verificationCode);
-  const serviceAccountId = await authService.validateSession(verified.rawSessionToken);
-  const familyId = randomUUID();
-  await getPool().query(`UPDATE parent_accounts SET family_id = ? WHERE account_id = ?`, [familyId, verified.accountId]);
-  await grantScope(serviceAccountId, familyId);
+  await parentAccountService.verifyEmail(email, verificationCode);
+  await parentAccountService.login(email, password);
+  const signedIn = await parentAccountService.completeLoginStepUp(email, parentEmailSender.codeFor(email));
+  assert.equal(signedIn.status, 'AUTHENTICATED');
+  const familyId = signedIn.familyId;
   const published = await publisher.publish({
     accountRef: familyId,
     eventType: 'PAYMENT_FAILED',
@@ -199,7 +203,7 @@ test('MySQL HTTP: the real parent session cookie reaches /api/parent/session and
     params: null,
   });
   const csrfToken = randomBytes(32).toString('base64url');
-  const cookie = `pca_family_session=${encodeURIComponent(verified.rawSessionToken)}; pca_family_csrf=${encodeURIComponent(csrfToken)}`;
+  const cookie = `pca_family_session=${encodeURIComponent(signedIn.rawSessionToken)}; pca_family_csrf=${encodeURIComponent(csrfToken)}`;
   const app = server();
   try {
     const session = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie } });

@@ -1,4 +1,4 @@
-import type { EmailSenderPort } from './EmailSenderPort.js';
+import type { EmailSenderPort, ParentSecurityNotice } from './EmailSenderPort.js';
 
 export class SandboxEmailSenderProductionGateError extends Error {
   constructor() {
@@ -11,7 +11,7 @@ export interface SentTestEmail {
   email: string;
   code: string;
   sentAt: Date;
-  kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP' | 'GENESIS_STEP_UP';
+  kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP' | 'MFA_RECOVERY' | ParentSecurityNotice;
 }
 
 /**
@@ -47,10 +47,22 @@ export class TestSandboxEmailSender implements EmailSenderPort {
     console.log(`[TEST_SANDBOX email] login step-up code sent (email redacted, code redacted, length=${code.length})`);
   }
 
-  async sendGenesisStepUpCode(email: string, code: string): Promise<void> {
-    this.sent.push({ email, code, sentAt: new Date(), kind: 'GENESIS_STEP_UP' });
+  async sendMfaRecoveryCode(email: string, code: string): Promise<void> {
+    this.sent.push({ email, code, sentAt: new Date(), kind: 'MFA_RECOVERY' });
     // eslint-disable-next-line no-console -- TEST_SANDBOX-only, never runs in production
-    console.log(`[TEST_SANDBOX email] genesis step-up code sent (email redacted, code redacted, length=${code.length})`);
+    console.log(`[TEST_SANDBOX email] authenticator recovery code sent (email redacted, code redacted, length=${code.length})`);
+  }
+
+  async sendSecurityNotice(email: string, notice: ParentSecurityNotice, occurredAt: Date, _eventId: string): Promise<void> {
+    this.sent.push({ email, code: occurredAt.toISOString(), sentAt: new Date(), kind: notice });
+    // eslint-disable-next-line no-console -- TEST_SANDBOX-only, never runs in production
+    console.log(`[TEST_SANDBOX email] security notice ${notice} sent (email redacted)`);
+  }
+
+  /** TEST/E2E-only: every recorded kind for an address, oldest first. */
+  kindsFor(email: string): SentTestEmail['kind'][] {
+    const normalized = email.trim().toLowerCase();
+    return this.sent.filter((entry) => entry.email.trim().toLowerCase() === normalized).map((entry) => entry.kind);
   }
 
   async sendPlatformAdminActivationLink(email: string, activationUrl: string, _token: string): Promise<void> {

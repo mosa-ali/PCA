@@ -90,11 +90,32 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   // with 1143 (2026-09-24). No row reads of this table exist beyond those WHERE
   // columns, which is why INSERT/UPDATE alone looked sufficient at declaration time.
   parent_daily_login_grants: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  // RETIRED by owner decision PCA-DEC-030 (2026-09-24): Parent Genesis is
+  // removed and nothing writes these two tables any more. They still exist in
+  // every migrated database (0049 is additive; a later, separately-authorized
+  // migration drops them), so they remain declared here -- the both-directions
+  // schema/grant drift test requires it. Narrow these (or drop them with the
+  // tables) in that cleanup change, not silently here.
   parent_genesis_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   parent_genesis_step_up_authorizations: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   family_authority_request_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   action_idempotency_ledger: Object.freeze(['SELECT', 'INSERT', 'DELETE']),
   commercial_quote_attribution_retry: Object.freeze(['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
+
+  // --- migration 0049 (PCA-DEC-030 Parent TOTP MFA), derived from
+  // backend/src/parentaccount/mfa/MySqlParentMfaRepository.ts statements.
+  // Each of the four state/ticket/code/grant tables is read (SELECT ... FROM,
+  // and the WHERE columns of its UPDATEs -- READ-COLUMN RULE), inserted, and
+  // updated in place; none is ever DELETEd by the runtime. ---
+  parent_mfa_state: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  parent_mfa_enrollment_tickets: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  parent_mfa_recovery_codes: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  parent_mfa_step_up_grants: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  // Append-only security ledger: the runtime only ever executes a plain
+  // `INSERT INTO ... VALUES (...)` (no SELECT, no UPDATE ... WHERE, no
+  // ON DUPLICATE KEY), so INSERT alone satisfies the READ-COLUMN RULE and the
+  // runtime principal can neither read back nor rewrite the ledger.
+  parent_account_security_events: Object.freeze(['INSERT']),
 
   // --- ordinary runtime DML tables (explicit declaration each) ---
   account_entitlements: DML,

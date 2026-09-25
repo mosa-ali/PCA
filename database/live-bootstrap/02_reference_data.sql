@@ -58,7 +58,8 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0045_pca_dec_020_r2_genesis_step_up.sql', CURRENT_TIMESTAMP(3)),
   ('0046_parent_daily_login_grants.sql', CURRENT_TIMESTAMP(3)),
   ('0047_action_idempotency_ledger.sql', CURRENT_TIMESTAMP(3)),
-  ('0048_commercial_quote_attribution_retry.sql', CURRENT_TIMESTAMP(3));
+  ('0048_commercial_quote_attribution_retry.sql', CURRENT_TIMESTAMP(3)),
+  ('0049_parent_totp_mfa_and_family_provisioning.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

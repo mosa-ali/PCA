@@ -63,6 +63,7 @@ describe('AppLayout session gate', () => {
       loading: false,
       isFixtureBacked: true,
       setDemoRole: vi.fn(),
+      refreshSession: vi.fn(),
     });
 
     renderWithProviders(<TestShell />, { route: '/dashboard' });
@@ -77,6 +78,7 @@ describe('AppLayout session gate', () => {
       loading: true,
       isFixtureBacked: true,
       setDemoRole: vi.fn(),
+      refreshSession: vi.fn(),
     });
 
     const { container } = renderWithProviders(<TestShell />, { route: '/dashboard' });

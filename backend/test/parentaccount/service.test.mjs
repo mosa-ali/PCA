@@ -1,13 +1,16 @@
 // PCA-AUTH-SESSION-1 -- ParentAccountService unit tests: registration,
-// email verification, the separate first-device ceremony boundary, login,
-// session read, logout,
+// email verification (activation only, PCA-DEC-030), first login (grace start
+// + server-side family provisioning), login, session read, logout,
 // revoke-all, and the negative-test matrix WRITER57_ASSIGNMENT.md requires.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
-import { ParentAccountService, ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
+import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
+import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
+import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 const BASE_TIME = new Date('2026-08-15T00:00:00.000Z').getTime();
 
@@ -24,11 +27,20 @@ class RecordingEmailSender {
   async sendLoginStepUpCode(email, code) {
     this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
   }
+  async sendMfaRecoveryCode(email, code) {
+    this.sent.push({ email, code, kind: 'MFA_RECOVERY' });
+  }
+  async sendSecurityNotice(email, notice, occurredAt) {
+    this.sent.push({ email, code: null, kind: notice, occurredAt });
+  }
   lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].kind === kind && this.sent[i].email === email) return this.sent[i].code;
     }
     return null;
+  }
+  countFor(email, kind) {
+    return this.sent.filter((entry) => entry.email === email && entry.kind === kind).length;
   }
 }
 
@@ -46,14 +58,14 @@ function buildHarness() {
   });
   const emailSender = new RecordingEmailSender();
 
-  const service = new ParentAccountService({
+  const { service, mfaService } = createParentAccountTestKit({
     repository: parentAccountRepository,
     authService,
     emailSender,
     now,
   });
 
-  return { service, authService, parentAccountRepository, emailSender, now, advance };
+  return { service, mfaService, authService, parentAccountRepository, emailSender, now, advance };
 }
 
 const EMAIL = 'parent@example.com';
@@ -72,6 +84,18 @@ async function loginWithDailyGrant(harness, email = EMAIL, password = PASSWORD) 
   const code = harness.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
   assert.match(code, /^\d{6}$/);
   return harness.service.completeLoginStepUp(email, code);
+}
+
+/** PCA-DEC-030: a session only ever comes from a real sign-in (register -> verify -> login -> emailed step-up). */
+async function registerVerifyAndLogin(harness, email = EMAIL, password = PASSWORD) {
+  await registerAndVerify(harness, email, password);
+  const outcome = await loginWithDailyGrant(harness, email, password);
+  assert.equal(outcome.status, 'AUTHENTICATED');
+  return outcome;
+}
+
+function accountFor(harness, email = EMAIL) {
+  return harness.parentAccountRepository.findByEmailHash(hashParentEmail(email));
 }
 
 test('register returns the identical PENDING_VERIFICATION response for a brand-new email', async () => {
@@ -111,13 +135,19 @@ test('register rejects a malformed email and an implausibly short password', asy
   await assert.rejects(() => harness.service.register(EMAIL, 'short', 'short'));
 });
 
-test('verify-email with the correct code establishes a session and marks the account VERIFIED', async () => {
+test('verify-email with the correct code marks the account VERIFIED and issues NO session (PCA-DEC-030: activation only)', async () => {
   const harness = buildHarness();
   const outcome = await registerAndVerify(harness);
-  assert.equal(typeof outcome.accountId, 'string');
-  assert.equal(typeof outcome.rawSessionToken, 'string');
-  const session = await harness.service.readSession(outcome.rawSessionToken);
-  assert.equal(session.accountId, outcome.accountId);
+  assert.deepEqual(outcome, { status: 'VERIFIED' }, 'verify-email must never return a session token, account id or family');
+  const account = await accountFor(harness);
+  assert.equal(account.status, 'VERIFIED');
+  assert.equal(account.serviceAccountId, null, 'no service session identity may exist before the first real sign-in');
+  assert.equal(harness.emailSender.countFor(EMAIL, 'ACCOUNT_ACTIVATED'), 1, 'the mailbox owner is told the account was activated');
+
+  // The session only exists after a real sign-in, and it is for this account.
+  const login = await loginWithDailyGrant(harness);
+  const session = await harness.service.readSession(login.rawSessionToken);
+  assert.equal(session.accountId, account.accountId);
   assert.equal(session.emailVerified, true);
 });
 
@@ -204,7 +234,7 @@ test('SECURITY: a hostile re-registration of a still-unverified email cannot ins
 
   // The real mailbox owner verifies with the code THEY asked for.
   const verified = await harness.service.verifyEmail(EMAIL, ownerCode);
-  assert.equal(typeof verified.rawSessionToken, 'string');
+  assert.deepEqual(verified, { status: 'VERIFIED' });
 
   // The account carries the owner's credential -- never the third party's.
   await assert.rejects(() => harness.service.login(EMAIL, attackerPassword), (err) => {
@@ -276,15 +306,61 @@ test('SECURITY: verify-email for an unverified/nonexistent account never leaks w
   });
 });
 
-test('email verification does not create a family or cryptographic device', async () => {
+test('email verification does not create a family; the FIRST login provisions it server-side, starts the one grace window, and later logins re-use both', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  assert.equal(outcome.familyId, null);
-  assert.equal(outcome.role, null);
-  const session = await harness.service.readSession(outcome.rawSessionToken);
-  assert.equal(session.emailVerified, true, 'identity verification must not be blocked by the separate device ceremony');
-  assert.equal(session.familyId, null);
-  assert.equal(session.role, null, 'email verification must never become a Parent Administrator grant');
+  await registerAndVerify(harness);
+  const verifiedAccount = await accountFor(harness);
+  assert.equal(verifiedAccount.familyId, null, 'email verification must never create a family');
+  assert.equal((await harness.mfaService.posture(verifiedAccount.accountId)).status, 'NOT_STARTED', 'verification must not start the MFA grace window');
+  assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 0);
+
+  const first = await loginWithDailyGrant(harness);
+  assert.equal(first.status, 'AUTHENTICATED');
+  assert.equal(typeof first.familyId, 'string', 'the first login provisions the family server-side');
+  assert.equal(first.role, 'ADMINISTRATOR', 'the provisioning account is the family ADMINISTRATOR');
+  assert.equal(first.mfa.status, 'GRACE');
+  assert.equal(first.mfa.graceExpiresAt.getTime(), BASE_TIME + PARENT_MFA_GRACE_MS, 'grace is exactly 3 days from the first login');
+  assert.equal(typeof first.rawDailyLoginGrantToken, 'string');
+  assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1, 'the first login sends exactly one FIRST_LOGIN notice');
+
+  const session = await harness.service.readSession(first.rawSessionToken);
+  assert.equal(session.familyId, first.familyId);
+  assert.equal(session.role, 'ADMINISTRATOR');
+
+  // A later login (one hour on) neither restarts grace, re-sends the notice, nor creates a second family.
+  harness.advance(60 * 60 * 1000);
+  const second = await loginWithDailyGrant(harness);
+  assert.equal(second.familyId, first.familyId, 'exactly one family per account');
+  assert.equal(second.mfa.graceExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'grace starts ONCE and never restarts');
+  assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
+});
+
+test('SECURITY: a session issued during grace never outlives the grace deadline', async () => {
+  const harness = buildHarness();
+  const first = await registerVerifyAndLogin(harness);
+  // 2 days 20 hours in: 4 hours of grace left, less than the 12 h session TTL.
+  harness.advance(PARENT_MFA_GRACE_MS - 4 * 60 * 60 * 1000);
+  const late = await loginWithDailyGrant(harness);
+  assert.equal(late.status, 'AUTHENTICATED');
+  assert.equal(late.sessionExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'session TTL is capped at the grace deadline');
+  harness.advance(4 * 60 * 60 * 1000 + 1);
+  await assert.rejects(() => harness.service.readSession(late.rawSessionToken), (err) => err.code === 'UNAUTHORIZED');
+});
+
+test('SECURITY: after grace without an authenticator, sign-in yields only an enrollment ticket and the daily grant no longer bypasses the emailed code', async () => {
+  const harness = buildHarness();
+  await registerVerifyAndLogin(harness);
+  // A browser grant minted one hour before the deadline is still inside its own 24 h TTL once grace ends.
+  harness.advance(PARENT_MFA_GRACE_MS - 60 * 60 * 1000);
+  const lastInGrace = await loginWithDailyGrant(harness);
+  harness.advance(2 * 60 * 60 * 1000);
+  await assert.rejects(() => harness.service.readSession(lastInGrace.rawSessionToken), (err) => err.code === 'UNAUTHORIZED');
+  const pending = await harness.service.login(EMAIL, PASSWORD, lastInGrace.rawDailyLoginGrantToken);
+  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' }, 'a daily grant never authenticates once grace is over');
+  const completed = await harness.service.completeLoginStepUp(EMAIL, harness.emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP'));
+  assert.equal(completed.status, 'MFA_SETUP_REQUIRED');
+  assert.equal(typeof completed.rawEnrollmentTicket, 'string');
+  assert.ok(!('rawSessionToken' in completed), 'no session after grace without enrollment');
 });
 
 test('login only succeeds against a VERIFIED account, with a single generic error for every failure mode', async () => {
@@ -314,47 +390,65 @@ test('login succeeds against a VERIFIED account with the correct password and fa
   });
 });
 
-test('SECURITY: the pre-genesis session has no Parent RBAC role and never exposes a cryptographic Owner UI role', async () => {
+test('SECURITY: the session read exposes only server-derived fields -- no cryptographic Owner/Genesis flag -- and the role is the server-resolved membership', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
+  const outcome = await registerVerifyAndLogin(harness);
   const session = await harness.service.readSession(outcome.rawSessionToken);
-  assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'role']);
-  assert.equal(session.familyId, null);
-  assert.equal(session.role, null);
+  assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'mfa', 'role']);
+  assert.equal(session.familyId, outcome.familyId);
+  assert.equal(session.role, 'ADMINISTRATOR');
+  assert.deepEqual(Object.keys(session.mfa).sort(), ['graceExpiresAt', 'status']);
+  assert.equal(session.mfa.status, 'GRACE');
+});
+
+test('SECURITY: a session for an account that never completed a PCA-DEC-030 login (no grace record) is refused', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  const account = await accountFor(harness);
+  // A legacy/stray session bound to the account WITHOUT going through login().
+  const issued = await harness.authService.issueSession({ accountReferenceHash: Buffer.alloc(32, 7) });
+  await harness.parentAccountRepository.setServiceAccountIdIfAbsent(account.accountId, issued.session.accountId);
+  await assert.rejects(() => harness.service.readSession(issued.rawToken), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+  assert.equal((await accountFor(harness)).familyId, null, 'a refused session must never provision a family');
 });
 
 test('SECURITY: expired session is denied identically to no session (fail closed)', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
+  const outcome = await registerVerifyAndLogin(harness);
   harness.advance(13 * 60 * 60 * 1000); // past AuthService's 12h default TTL
   await assert.rejects(() => harness.service.readSession(outcome.rawSessionToken));
 });
 
 test('SECURITY: revoked session (logout) is denied identically to no session', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
+  const outcome = await registerVerifyAndLogin(harness);
   await harness.service.logout(outcome.rawSessionToken);
   await assert.rejects(() => harness.service.readSession(outcome.rawSessionToken));
 });
 
 test('logout is idempotent for an already-revoked/unknown/malformed token', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
+  const outcome = await registerVerifyAndLogin(harness);
   await harness.service.logout(outcome.rawSessionToken);
   await assert.doesNotReject(() => harness.service.logout(outcome.rawSessionToken));
   await assert.doesNotReject(() => harness.service.logout('not-a-real-token'));
 });
 
-test('SECURITY: session fixation -- verify-email always mints a FRESH token distinct from any prior caller-supplied value, and each login mints its own new token', async () => {
+test('SECURITY: session fixation -- verify-email mints no token at all, and each login mints its own new token', async () => {
   const harness = buildHarness();
-  const first = await registerAndVerify(harness);
+  const verified = await registerAndVerify(harness);
+  assert.ok(!('rawSessionToken' in verified));
+  const first = await loginWithDailyGrant(harness);
   const second = await loginWithDailyGrant(harness);
   assert.notEqual(first.rawSessionToken, second.rawSessionToken);
 });
 
 test('revoke-all-sessions revokes every session for the account, requires an already-valid session, and denies reuse of the very token used to call it', async () => {
   const harness = buildHarness();
-  const first = await registerAndVerify(harness);
+  const first = await registerVerifyAndLogin(harness);
   const second = await loginWithDailyGrant(harness);
 
   await harness.service.revokeAllSessions(first.rawSessionToken);
@@ -373,10 +467,14 @@ test('SECURITY: revoke-all-sessions itself requires a currently-valid session (a
 
 test('PCA-ADD-PA-017 enforcement: an account with no familyId yet is never blocked by a family-suspend check', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  assert.equal(outcome.familyId, null);
-  const relogin = await loginWithDailyGrant(harness);
-  assert.equal(typeof relogin.rawSessionToken, 'string');
+  await registerAndVerify(harness);
+  assert.equal((await accountFor(harness)).familyId, null);
+  const firstLogin = await loginWithDailyGrant(harness);
+  assert.equal(typeof firstLogin.rawSessionToken, 'string');
+
+  // Once provisioned, a Platform Admin suspension of that family blocks sign-in with the same generic error.
+  harness.parentAccountRepository._setFamilyStatusForTest(firstLogin.familyId, 'SUSPENDED');
+  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD), (err) => err.code === 'UNAUTHORIZED');
 });
 
 test('CONCURRENCY: two concurrent registrations for the same email never both create distinct accounts (uniqueness race)', async () => {
@@ -503,8 +601,8 @@ test('SECURITY: resetPassword for an unverified/nonexistent account never leaks 
 
 test('SECURITY: a successful password reset revokes every existing session for the account', async () => {
   const harness = buildHarness();
-  const verified = await registerAndVerify(harness);
-  assert.ok(verified.rawSessionToken, 'verify-email must have issued a session');
+  const verified = await registerVerifyAndLogin(harness);
+  assert.ok(verified.rawSessionToken, 'the sign-in must have issued a session');
   await harness.authService.validateSession(verified.rawSessionToken); // still valid before reset
 
   await harness.service.requestPasswordReset(EMAIL);

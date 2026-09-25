@@ -16,20 +16,19 @@
 // explicit `getBearerToken` accessor and fails fast with a distinct
 // SERVICE_SESSION_UNAVAILABLE error before ever calling fetch. The HTTP
 // plumbing itself is genuine and will work end-to-end the moment a real
-// token accessor (and a real familyId/actorDeviceId accessor) are wired in
-// -- see ../client.ts's construction of this class for the current
-// placeholder wiring.
+// token accessor (and a real familyId accessor) are wired in -- see
+// ../client.ts's construction of this class for the current wiring.
 //
-// FAMILY-OWNER AUTHORITY: every mutation route (create request, cancel
-// request, checkout-CREATE, cancel/resume auto-renew) is gated server-side
-// by FamilyCommercialAuthorityResolver, stubbed in production to
-// UnavailableFamilyCommercialAuthorityResolver -- ALWAYS AUTHORITY_UNAVAILABLE
-// today. This client treats ANY 403 on these routes identically ("cannot
-// proceed") regardless of whether the body carries a `code` -- per the
-// contract's asymmetric error-code shape, presence/absence of `code` must
-// never be used to infer which denial reason occurred (ROLE_DENIED vs.
-// AUTHORITY_UNAVAILABLE vs. STALE_OR_REVOKED vs. INVALID_PROOF all collapse
-// to the same client-visible outcome here).
+// COMMERCIAL OWNER AUTHORITY (PCA-DEC-037): every mutation route (create
+// request, cancel request, checkout-CREATE, cancel/resume auto-renew) is
+// gated server-side by ADMINISTRATOR + a FRESH AUTHENTICATOR STEP-UP. The
+// caller passes `stepUpToken` -- a single-use grant minted by
+// POST /api/parent/mfa/step-up for exactly that operation -- and this client
+// sends it once, in the request body. The former actorDeviceId /
+// device-signature authority proof no longer exists anywhere on this surface.
+// A 403 is always FORBIDDEN; the wire `code` STEP_UP_REQUIRED (missing,
+// expired or already-used grant) is surfaced as `serverCode` so the UI can
+// ask for a new code instead of implying a role problem.
 import type { BillingClient } from '../interfaces';
 import type {
   CheckoutSession,
@@ -48,7 +47,6 @@ import { toMoneyJson } from '../../domain/billing';
 export type BillingApiErrorCode =
   | 'SERVICE_SESSION_UNAVAILABLE'
   | 'FAMILY_CONTEXT_UNAVAILABLE'
-  | 'DEVICE_IDENTITY_UNAVAILABLE'
   | 'INVALID_REQUEST'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
@@ -118,17 +116,6 @@ function readBrowserCookie(name: string): string | null {
 function isMutationMethod(method: string): boolean {
   return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
 }
-
-/**
- * Default actorDeviceId source: this codebase's only existing device-identity
- * concept is TrustedBrowserProvider's `browserEndpointId` (assigned at
- * `requestPairing()`, PAIRING_PENDING+) -- reused here rather than inventing
- * a second, billing-specific device-id concept. Billing routes do not
- * themselves require E2EE trust; this accessor is deliberately swappable
- * (see ../client.ts) once/if a narrower billing-only device-identity source
- * exists.
- */
-export type ActorDeviceIdAccessor = () => Promise<string | null>;
 
 interface WireMoney {
   amountMinor: string;
@@ -322,7 +309,6 @@ export class RealBillingClient implements BillingClient {
     private readonly apiBaseUrl: string,
     private readonly getBearerToken: () => Promise<string | null> = noServiceBearerTokenAvailable,
     private readonly getFamilyId: () => Promise<string | null> = noFamilyContextAvailable,
-    private readonly getActorDeviceId: ActorDeviceIdAccessor = async () => null,
     private readonly cookieSession = false,
   ) {}
 
@@ -330,7 +316,7 @@ export class RealBillingClient implements BillingClient {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
   }
 
-  /** Checked FIRST in every public method, before familyId/actorDeviceId resolution -- "is this client even authenticated" is a more fundamental gap than "which family", so it must be the first honest error a caller sees. */
+  /** Checked FIRST in every public method, before familyId resolution -- "is this client even authenticated" is a more fundamental gap than "which family", so it must be the first honest error a caller sees. */
   private async ensureBearerToken(operation: string): Promise<void> {
     if (this.cookieSession) return;
     const token = await this.getBearerToken();
@@ -354,15 +340,11 @@ export class RealBillingClient implements BillingClient {
     return familyId;
   }
 
-  private async actorDeviceId(operation: string): Promise<string> {
-    const deviceId = await this.getActorDeviceId();
-    if (!deviceId) {
-      throw new BillingApiError(
-        'DEVICE_IDENTITY_UNAVAILABLE',
-        `${operation}: no actor device identity is available for this mutation. This endpoint requires actorDeviceId for the Family-Owner authority gate.`,
-      );
+  /** A mutation without a step-up grant can never succeed server-side -- fail fast, before any network call, rather than send a request that is certain to be refused. */
+  private requireStepUpToken(operation: string, stepUpToken: string): void {
+    if (typeof stepUpToken !== 'string' || stepUpToken.length === 0) {
+      throw new BillingApiError('FORBIDDEN', `${operation}: a fresh authenticator confirmation is required for this action.`, null, 'STEP_UP_REQUIRED');
     }
-    return deviceId;
   }
 
   private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
@@ -496,13 +478,13 @@ export class RealBillingClient implements BillingClient {
     return this.cookieSession || this.getBearerToken !== noServiceBearerTokenAvailable;
   }
 
-  async requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest> {
+  async requestLimitIncrease(limitType: LimitType, targetLimit: number, stepUpToken: string): Promise<EntitlementChangeRequest> {
     const operation = 'requestLimitIncrease';
     const familyId = await this.familyId(operation);
-    const actorDeviceId = await this.actorDeviceId(operation);
+    this.requireStepUpToken(operation, stepUpToken);
     const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/commercial/requests`, {
       method: 'POST',
-      body: JSON.stringify({ limitType, targetLimit, actorDeviceId }),
+      body: JSON.stringify({ limitType, targetLimit, stepUpToken }),
     });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<WireChangeRequest>(response);
@@ -510,14 +492,14 @@ export class RealBillingClient implements BillingClient {
     return toChangeRequest(body);
   }
 
-  async cancelRequest(requestId: string): Promise<EntitlementChangeRequest> {
+  async cancelRequest(requestId: string, stepUpToken: string): Promise<EntitlementChangeRequest> {
     const operation = 'cancelRequest';
     const familyId = await this.familyId(operation);
-    const actorDeviceId = await this.actorDeviceId(operation);
+    this.requireStepUpToken(operation, stepUpToken);
     const response = await this.request(
       operation,
       `/v1/families/${encodeURIComponent(familyId)}/commercial/requests/${encodeURIComponent(requestId)}/cancel`,
-      { method: 'POST', body: JSON.stringify({ actorDeviceId }) },
+      { method: 'POST', body: JSON.stringify({ stepUpToken }) },
     );
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<WireChangeRequest>(response);
@@ -525,13 +507,13 @@ export class RealBillingClient implements BillingClient {
     return toChangeRequest(body);
   }
 
-  async beginCheckout(requestId: string, returnUrl: string): Promise<CheckoutSession> {
+  async beginCheckout(requestId: string, returnUrl: string, stepUpToken: string): Promise<CheckoutSession> {
     const operation = 'beginCheckout';
     const familyId = await this.familyId(operation);
-    const actorDeviceId = await this.actorDeviceId(operation);
+    this.requireStepUpToken(operation, stepUpToken);
     const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/billing/checkout`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, returnUrl, actorDeviceId }),
+      body: JSON.stringify({ requestId, returnUrl, stepUpToken }),
     });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<CheckoutSession>(response);
@@ -590,24 +572,24 @@ export class RealBillingClient implements BillingClient {
    * billing_subscription_auto_renew.sql). Owner-gated server-side exactly
    * like `cancelRequest`/`requestLimitIncrease` (family-commercial
    * authorization.ts's OWNER-gated-mutations discipline) -- hence the same
-   * `actorDeviceId` requirement. Never itself cancels the subscription or
+   * `stepUpToken` requirement. Never itself cancels the subscription or
    * touches a payment provider; flag/state only.
    */
-  async cancelAutoRenew(): Promise<{ auditEventId: string }> {
-    return this.postAutoRenew('cancelAutoRenew', 'cancel');
+  async cancelAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }> {
+    return this.postAutoRenew('cancelAutoRenew', 'cancel', stepUpToken);
   }
 
-  /** Symmetric counterpart -- `POST .../commercial/subscription/auto-renew/resume`. Same Owner gate/actorDeviceId requirement as `cancelAutoRenew`. */
-  async resumeAutoRenew(): Promise<{ auditEventId: string }> {
-    return this.postAutoRenew('resumeAutoRenew', 'resume');
+  /** Symmetric counterpart -- `POST .../commercial/subscription/auto-renew/resume`. Same Owner gate/stepUpToken requirement as `cancelAutoRenew`. */
+  async resumeAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }> {
+    return this.postAutoRenew('resumeAutoRenew', 'resume', stepUpToken);
   }
 
-  private async postAutoRenew(operation: string, action: 'cancel' | 'resume'): Promise<{ auditEventId: string }> {
+  private async postAutoRenew(operation: string, action: 'cancel' | 'resume', stepUpToken: string): Promise<{ auditEventId: string }> {
     const familyId = await this.familyId(operation);
-    const actorDeviceId = await this.actorDeviceId(operation);
+    this.requireStepUpToken(operation, stepUpToken);
     const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/commercial/subscription/auto-renew/${action}`, {
       method: 'POST',
-      body: JSON.stringify({ actorDeviceId }),
+      body: JSON.stringify({ stepUpToken }),
     });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<{ auditEventId: string }>(response);

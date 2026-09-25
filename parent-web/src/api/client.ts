@@ -167,9 +167,8 @@ export interface PcaApiClients {
    * (backend/src/http/routes/familyCommercialRoutes.ts +
    * billingCheckoutRoutes.ts) outside demo mode, over the browser's
    * existing `pca_family_session` HttpOnly cookie with a double-submit CSRF
-   * header on mutations. Its remaining honestly-surfaced gap is
-   * actorDeviceId (DEVICE_IDENTITY_UNAVAILABLE until requestPairing() has
-   * run), not the session transport.
+   * header on mutations. Every commercial mutation additionally carries a
+   * single-use authenticator step-up token (PCA-DEC-037).
    */
   billing: BillingClient;
   /** PCA-MYKIDS-BILL-3: real, HTTP-backed against the family-facing commercial-notification routes outside demo mode. Same cookie-session transport as `billing` above. */
@@ -313,18 +312,10 @@ function buildRealClients(): PcaApiClients {
     childProfiles: new RealChildProfileClient(config.apiBaseUrl, noChildProfileBearerTokenAvailable, true),
     // Browser billing uses the existing HttpOnly family-session cookie and
     // resolves family scope through /api/parent/session. Mutations carry the
-    // non-HttpOnly CSRF token; actorDeviceId reuses
-    // TrustedBrowserProvider's browserEndpointId (this
-    // codebase's only existing device-identity concept; billing routes do
-    // not themselves require E2EE trust, so this is a pragmatic reuse, not
-    // a claim that billing depends on the crypto-review gate) -- resolves
-    // to null until requestPairing() has run at least once, at which point
-    // RealBillingClient honestly rejects mutating calls with
-    // DEVICE_IDENTITY_UNAVAILABLE rather than sending an empty/fabricated id.
-    billing: new RealBillingClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), async () => {
-      const snapshot = await trustedBrowser.getSnapshot();
-      return snapshot.browserEndpointId;
-    }, true),
+    // non-HttpOnly CSRF token and, per PCA-DEC-037, a single-use
+    // authenticator step-up token minted immediately before each commercial
+    // mutation (see state/StepUpContext.tsx). No device identity is involved.
+    billing: new RealBillingClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),

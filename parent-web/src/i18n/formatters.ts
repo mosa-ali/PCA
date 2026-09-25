@@ -129,3 +129,17 @@ export function formatMinutes(value: number | null | undefined, lng: string): st
     return formatNumber(value, language);
   }
 }
+
+/**
+ * A whole number of days or hours with its unit word in the caller's language
+ * ("2 days" / "يومان"). Same degradation rule as formatMinutes.
+ */
+export function formatDurationUnit(value: number | null | undefined, unit: 'day' | 'hour', lng: string): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return NO_VALUE;
+  const language = resolveLanguage(lng);
+  try {
+    return new Intl.NumberFormat(language, { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+  } catch {
+    return formatNumber(value, language);
+  }
+}

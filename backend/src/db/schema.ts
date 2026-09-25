@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 87 tables, including schema_migrations itself),
+// central MySQL schema (all 92 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0048; 46 files, 0009/0010 never existed) from an empty database
+// through 0050; 48 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -13,6 +13,18 @@
 // P1-04 change that made parent-action replay protection durable -- and
 // commercial_quote_attribution_retry (0048), which gave an unattributable
 // expired quote a durable retry state instead of an unconditional re-scan.
+// Migration 0049 (owner decision PCA-DEC-037, 2026-09-24) added the five
+// Parent TOTP-MFA tables (parent_mfa_state, parent_mfa_enrollment_tickets,
+// parent_mfa_recovery_codes, parent_mfa_step_up_grants,
+// parent_account_security_events) and families.provisioned_for_account_id
+// (UNIQUE families_provisioned_for_account_key). The same decision RETIRED
+// Parent Genesis: parent_genesis_challenges (0044) and
+// parent_genesis_step_up_authorizations (0045) still exist and are still
+// declared below (they are real objects in every migrated database), but
+// nothing writes them any more; they await a separately-authorized cleanup
+// migration.
+// Migration 0050 adds the immutable server-side 24-hour Parent MFA recovery
+// hold deadline and the pending/completed recovery security event types.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -1748,7 +1760,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0001_mysql_baseline.sql",
-    alteredByMigrations: ["0017_platform_admin_settings_family_status.sql"],
+    alteredByMigrations: ["0017_platform_admin_settings_family_status.sql", "0049_parent_totp_mfa_and_family_provisioning.sql"],
     ownerModule: "backend/src/http",
     columns: [
       { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -1759,10 +1771,12 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "suspended_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "suspended_by_admin_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "suspension_reason", columnType: "varchar(500)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Admin-authored free-text business-process justification (always paired with a *_by_admin_id column) — never child/family personal content, but genuinely free-text; see PCA_CANONICAL_SCHEMA_REPORT.md caveat." },
+      { name: "provisioned_for_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Parent account an initial family was provisioned for (0049); UNIQUE, so one account can never receive two initial families." },
     ],
     primaryKey: ["family_id"],
     uniqueIndexes: [
       { name: "families_family_reference_hash_key", columns: ["family_reference_hash"], unique: true },
+      { name: "families_provisioned_for_account_key", columns: ["provisioned_for_account_id"], unique: true },
     ],
     indexes: [
       { name: "families_status_idx", columns: ["status"], unique: false },
@@ -1776,7 +1790,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "families_suspension_pair_check", clause: "(((`status` = _utf8mb4'SUSPENDED') and (`suspended_at` is not null) and (`suspended_by_admin_id` is not null) and (`suspension_reason` is not null)) or ((`status` = _utf8mb4'ACTIVE') and (`suspended_at` is null) and (`suspended_by_admin_id` is null) and (`suspension_reason` is null)))" },
     ],
     applicationEnforcedRelations: [
-
+      { column: "provisioned_for_account_id", impliedReferencedTable: "parent_accounts", impliedReferencedColumn: "account_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Provisioning marker added by PCA-DEC-037: only a UNIQUE key (one initial family per account) is declared, no FK; the Parent account-provisioning service writes it inside the same transaction that locks the verified parent_accounts row.", source: "backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql; backend/src/parentaccount/MySqlParentAccountRepository.ts" },
     ],
   },
   {
@@ -2241,6 +2255,36 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "parent_account_security_events",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
+    alteredByMigrations: ["0050_parent_mfa_recovery_hold.sql"],
+    ownerModule: "backend/src/parentaccount/mfa",
+    columns: [
+      { name: "event_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "event_type", columnType: "varchar(40)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "detail", columnType: "varchar(48)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Optional bounded non-sensitive detail (a closed commercial operation name); never email, IP, or secret material." },
+      { name: "occurred_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["event_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "parent_account_security_events_account_idx", columns: ["account_id", "occurred_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_account_security_events_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_account_security_events_type_check", clause: "(`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED'))" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
     name: "parent_accounts",
     engine: 'InnoDB',
     charset: "utf8mb4",
@@ -2482,6 +2526,156 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "parent_daily_login_grants_expiry_check", clause: "(`expires_at` > `created_at`)" },
       { name: "parent_daily_login_grants_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
       { name: "parent_daily_login_grants_purpose_check", clause: "(`purpose` = _ascii'PARENT_DAILY_LOGIN')" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
+    name: "parent_mfa_enrollment_tickets",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount/mfa",
+    columns: [
+      { name: "ticket_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "token_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Domain-separated SHA-256 hash of an opaque bearer token; raw bearer material is never stored." },
+      { name: "purpose", columnType: "varchar(24)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary purpose binding." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+    ],
+    primaryKey: ["ticket_id"],
+    uniqueIndexes: [
+      { name: "parent_mfa_enrollment_tickets_token_hash_key", columns: ["token_hash"], unique: true },
+    ],
+    indexes: [
+      { name: "parent_mfa_enrollment_tickets_account_idx", columns: ["account_id", "expires_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_mfa_enrollment_tickets_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_mfa_enrollment_tickets_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "parent_mfa_enrollment_tickets_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "parent_mfa_enrollment_tickets_purpose_check", clause: "(`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY'))" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
+    name: "parent_mfa_recovery_codes",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount/mfa",
+    columns: [
+      { name: "code_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "code_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Domain-separated SHA-256 hash of the emailed one-time MFA-recovery code; never the raw code." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+      { name: "attempt_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded code-guess counter." },
+    ],
+    primaryKey: ["code_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "parent_mfa_recovery_codes_account_idx", columns: ["account_id", "created_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_mfa_recovery_codes_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_mfa_recovery_codes_expiry_check", clause: "(`expires_at` > `created_at`)" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
+    name: "parent_mfa_state",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
+    alteredByMigrations: ["0050_parent_mfa_recovery_hold.sql"],
+    ownerModule: "backend/src/parentaccount/mfa",
+    columns: [
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "totp_secret_ciphertext", columnType: "varbinary(255)", dataType: "varbinary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "AES-256-GCM sealed TOTP secret (PCA_PARENT_MFA_ENC_KEY keyring, tag appended); the raw secret is never stored." },
+      { name: "totp_secret_nonce", columnType: "varbinary(16)", dataType: "varbinary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "AEAD nonce for the ciphertext column." },
+      { name: "pending_secret_ciphertext", columnType: "varbinary(255)", dataType: "varbinary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "AES-256-GCM sealed pending (unconfirmed) TOTP secret, sealed separately so a new enrollment cannot weaken an ACTIVE factor; the raw secret is never stored." },
+      { name: "pending_secret_nonce", columnType: "varbinary(16)", dataType: "varbinary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "AEAD nonce for the ciphertext column." },
+      { name: "pending_created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "last_accepted_totp_counter", columnType: "bigint", dataType: "bigint", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Authentication/verification/integrity hash material, never a raw secret or raw identifying value." },
+      { name: "grace_started_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "grace_expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "enrolled_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "failed_attempt_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded TOTP-failure counter." },
+      { name: "failure_window_started_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "locked_until", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "reset_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "recovery_hold_started_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Server-side Parent MFA recovery hold start timestamp." },
+      { name: "recovery_hold_expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Server-side Parent MFA recovery deadline; not browser controlled." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["account_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+
+    ],
+    foreignKeys: [
+      { name: "parent_mfa_state_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_mfa_state_active_check", clause: "((`status` <> _utf8mb4'ACTIVE') or ((`totp_secret_ciphertext` is not null) and (`totp_secret_nonce` is not null) and (`enrolled_at` is not null)))" },
+      { name: "parent_mfa_state_grace_check", clause: "(`grace_expires_at` >= `grace_started_at`)" },
+      { name: "parent_mfa_state_status_check", clause: "(`status` in (_utf8mb4'NOT_ENROLLED',_utf8mb4'ACTIVE'))" },
+      { name: "parent_mfa_state_recovery_hold_check", clause: "((`recovery_hold_started_at` is null and `recovery_hold_expires_at` is null) or (`recovery_hold_started_at` is not null and `recovery_hold_expires_at` is not null and `recovery_hold_expires_at` > `recovery_hold_started_at`))" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
+    name: "parent_mfa_step_up_grants",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount/mfa",
+    columns: [
+      { name: "grant_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Family the single-use commercial step-up grant is bound to (real FK to families)." },
+      { name: "operation", columnType: "varchar(48)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary commercial operation binding." },
+      { name: "token_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Domain-separated SHA-256 hash of an opaque bearer token; raw bearer material is never stored." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+    ],
+    primaryKey: ["grant_id"],
+    uniqueIndexes: [
+      { name: "parent_mfa_step_up_grants_token_hash_key", columns: ["token_hash"], unique: true },
+    ],
+    indexes: [
+      { name: "parent_mfa_step_up_grants_account_idx", columns: ["account_id", "expires_at"], unique: false },
+      { name: "parent_mfa_step_up_grants_family_fk", columns: ["family_id"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_mfa_step_up_grants_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "parent_mfa_step_up_grants_family_fk", columns: ["family_id"], referencedTable: "families", referencedColumns: ["family_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_mfa_step_up_grants_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "parent_mfa_step_up_grants_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "parent_mfa_step_up_grants_operation_check", clause: "(`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME'))" },
     ],
     applicationEnforcedRelations: [],
   },

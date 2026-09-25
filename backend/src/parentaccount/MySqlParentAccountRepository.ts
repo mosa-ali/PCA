@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import type { PoolConnection } from 'mysql2/promise';
 import type { FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
@@ -445,6 +445,70 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
         [familyId, familyReferenceHash, now],
       ),
     );
+  }
+
+  /**
+   * PCA-DEC-037 server-side family provisioning (replaces Parent Genesis).
+   *
+   * One transaction, serialized per account by `SELECT ... FOR UPDATE` on the
+   * parent_accounts row, so concurrent first logins for the same account
+   * queue behind each other and the loser simply observes the winner's
+   * family_id. Independently of that lock, families.provisioned_for_account_id
+   * is UNIQUE (migration 0049): a second initial family for the same account is
+   * rejected by the database even if the lock were ever bypassed.
+   *
+   * The ADMINISTRATOR membership and ACTIVE family scope are (re)asserted
+   * ONLY for the family this account was provisioned for. A family the account
+   * joined by invitation is left exactly as the invitation binder wrote it,
+   * and an existing REVOKED membership/scope is never silently revived.
+   */
+  async ensureProvisionedFamily(accountId: ParentAccountId, serviceAccountId: string, now: Date): Promise<{ familyId: string; created: boolean }> {
+    return runInTransaction(async (conn) => {
+      const { rows } = await execute<Pick<AccountRow, 'status' | 'family_id' | 'service_account_id' | 'disabled_at'>>(
+        conn,
+        `SELECT status, family_id, service_account_id, disabled_at FROM parent_accounts WHERE account_id = ? FOR UPDATE`,
+        [accountId],
+      );
+      const account = rows[0];
+      if (!account || account.status !== 'VERIFIED' || account.disabled_at !== null || account.service_account_id !== serviceAccountId) {
+        throw new Error('Family provisioning refused: account is not a verified, enabled account bound to this service account.');
+      }
+      let familyId = account.family_id;
+      let created = false;
+      if (familyId === null) {
+        familyId = randomUUID();
+        const familyReferenceHash = createHash('sha256').update(familyId, 'utf8').digest();
+        await execute(
+          conn,
+          `INSERT INTO families (family_id, family_reference_hash, created_at, provisioned_for_account_id) VALUES (?, ?, ?, ?)`,
+          [familyId, familyReferenceHash, now, accountId],
+        );
+        const bound = await execute(conn, `UPDATE parent_accounts SET family_id = ? WHERE account_id = ? AND family_id IS NULL`, [familyId, accountId]);
+        if (bound.rowCount !== 1) throw new Error('Family provisioning lost its account binding.');
+        created = true;
+      }
+      const { rows: ownerRows } = await execute<{ provisioned_for_account_id: string | null }>(
+        conn,
+        `SELECT provisioned_for_account_id FROM families WHERE family_id = ?`,
+        [familyId],
+      );
+      if (ownerRows[0]?.provisioned_for_account_id === accountId) {
+        await execute(
+          conn,
+          `INSERT INTO service_account_family_scopes (account_id, family_id, status, created_at) VALUES (?, ?, 'ACTIVE', ?)
+           ON DUPLICATE KEY UPDATE account_id = account_id`,
+          [serviceAccountId, familyId, now],
+        );
+        await execute(
+          conn,
+          `INSERT INTO family_parent_memberships (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', ?, ?)
+           ON DUPLICATE KEY UPDATE membership_id = membership_id`,
+          [randomUUID(), familyId, accountId, serviceAccountId, now, now],
+        );
+      }
+      return { familyId, created };
+    });
   }
 
   // `findActiveRole` is deliberately the ONLY membership method kept here: it is

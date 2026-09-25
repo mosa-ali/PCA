@@ -7,6 +7,11 @@ smallest correct deployment-support package, not preservation of every file.
 DNS, domain or certificate touched, no managed identity enabled, no credential
 rotated, no migration run.
 
+The statement above describes the original review only. A read-only production
+reconciliation on 2026-09-25 found live Platform and Backend API services; see the
+dated current-state note in section 10. The original matrix remains below as a
+historical snapshot and must not be used as current Azure inventory.
+
 ```
 DOCKER_SUPPORT_FILES_REVIEWED             = 7
 ACCEPT_AS_IS                              = 0
@@ -382,7 +387,58 @@ the deployment truth, and rollback always names the previous immutable image.
 
 ---
 
-## 10. Cross-surface deployment matrix
+## 10. Cross-surface deployment matrix (historical review snapshot)
+
+### Current production reconciliation (2026-09-25)
+
+Read-only Azure inventory found the Platform Admin Web App Service `pcaPlatform`
+in resource group `pca-group` (`Azure subscription 1`, `uaenorth`). Its custom
+domain is `platform.pcasafe.com`, HTTPS-only is enabled, and the App Service is
+Running. The main site container is configured as
+`pcasafe.azurecr.io/pca-platform-admin:latest`. ACR resolved that tag to
+`sha256:6bb97836f78661fae9ff5979b05e45c997d5a504c82f96619959d013d30ac3f1`; the
+live site's asset names matched the image's index. Immutable tag `5909d749`
+resolved to the same digest. App Service site containers do not expose revision
+IDs; this digest is the verified Platform rollback image.
+
+`api.pcasafe.com` resolves to
+`pca-bngqeqahgdfvf8ak.uaenorth-01.azurewebsites.net`. The live API health route
+returned HTTP 200 JSON and the Platform same-origin `whoami` route returned the
+expected unauthenticated HTTP 401 JSON, confirming API routing. The API App
+Service was not present in the only enabled Azure subscription (`Azure
+subscription 1`), so its resource name, image, digest, and rollback target could
+not be verified. Backend release/deployment must wait until that Azure resource
+is visible to the deployment identity.
+
+No registry tags, Azure resources, or production deployments were changed during
+this reconciliation.
+
+### Production deployment update (2026-09-25)
+
+The Platform UX release at source SHA
+`a9689211f289013711a181611646a78ef1107cb8` was published under immutable
+source-SHA tags and deployed to both existing App Services. Platform
+`pcaPlatform` now references
+`pcasafe.azurecr.io/pca-platform-admin:a9689211f289013711a181611646a78ef1107cb8`
+at `sha256:fabe257d788a0c240988e7fc3b57d16afba9665cfbae980e289397523f32eee0`;
+its prior rollback image remains `pca-platform-admin:5909d749` at
+`sha256:6bb97836f78661fae9ff5979b05e45c997d5a504c82f96619959d013d30ac3f1`.
+
+The backend App Service `pca` in `AppWenPlan` now references
+`pcasafe.azurecr.io/pca-backend:a9689211f289013711a181611646a78ef1107cb8`
+at `sha256:f437a2c4b35f799f2edbb670c65791b9240c3a7e3da61ddfd1afe5bcdda3fd93`;
+its prior rollback image `pca-backend:f62e409d` remains at
+`sha256:f7897f9a29cb88f53acc4efad2cb06c4e7f21e1d4f8420a6d06a40817a748517`.
+Both App Services are configured to use their exact source-SHA tags.
+
+Production checks after deployment returned HTTP 200 JSON from the API health
+route; HTTP 401 JSON from both new account endpoints and Platform same-origin
+`whoami` when unauthenticated; and HTTP 200 for the Platform login page and its
+hashed JS/CSS assets. The live login page exposes Dark, Slate and Light; its boot
+script reads `pca-platform-appearance` from local storage, and the live bundle
+contains Parent Email search and session-expiry copy. Authenticated admin
+acceptance of the account menu and parent-email lookup remains owner-side.
+No Key Vault secret version or database schema was changed.
 
 | Surface | Source package | Dockerfile | Runtime | Port | Healthcheck | Azure target | Custom domain | Deployment status | Authority realm |
 |---|---|---|---|---|---|---|---|---|---|

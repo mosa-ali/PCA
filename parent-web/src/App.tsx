@@ -47,7 +47,8 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import Login from './pages/auth/Login';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
-import Genesis from './pages/auth/Genesis';
+import MfaSetup from './pages/auth/MfaSetup';
+import MfaRecover from './pages/auth/MfaRecover';
 import { RouteGuard } from './rbac/RouteGuard';
 import { AuthLayout } from './components/auth/AuthLayout';
 
@@ -63,12 +64,14 @@ export default function App() {
         <Route path="login" element={<Login />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
-        {/* GENESIS ONBOARDING (PCA-DEC-020-R1): a verified account that owns
-            no family yet. Deliberately INSIDE AuthLayout but OUTSIDE
-            AppLayout -- AppLayout is the family console chrome and is also
-            what redirects this state here, so nesting it would
-            redirect-loop. */}
-        <Route path="genesis" element={<Genesis />} />
+        {/* PCA-DEC-037 authenticator-app setup and lost-authenticator
+            recovery. OUTSIDE AppLayout on purpose: mandatory setup runs on an
+            enrollment ticket with NO session (AppLayout would bounce it to
+            /login), and AppLayout itself redirects a SETUP_REQUIRED session
+            here, so nesting it would redirect-loop. A signed-in parent in the
+            grace period reaches the same page from the console reminder. */}
+        <Route path="mfa/setup" element={<MfaSetup />} />
+        <Route path="mfa/recover" element={<MfaRecover />} />
       </Route>
 
       <Route element={<AppLayout />}>

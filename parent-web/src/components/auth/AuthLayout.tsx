@@ -11,7 +11,7 @@ import { AuthPageLanguage } from './AuthPageLanguage';
  * chrome. None of the auth screens render that header, so before this layout
  * the switcher was reachable everywhere EXCEPT the screens a parent meets
  * first: registration, email verification, login, login step-up, password
- * reset and the genesis ceremony all had to be negotiated in whatever
+ * reset and authenticator setup all had to be negotiated in whatever
  * language the browser detected, with no way out until AFTER signing in.
  *
  * It is a LAYOUT ROUTE (`<Route element={<AuthLayout />}>`), not six copies of
@@ -24,12 +24,11 @@ import { AuthPageLanguage } from './AuthPageLanguage';
  * global.css styles `.auth-page > form` with a direct-child selector, so an
  * intermediate wrapper would silently drop every auth form's card styling.
  *
- * A reload here would be destructive rather than cosmetic: the genesis
- * ceremony holds a non-extractable P-256 device key in MEMORY ONLY
- * (security/trustedEndpointKeyStore.ts deliberately never persists it), so
- * reloading on the genesis step would discard the key and restart the
- * ceremony. `AuthPageLanguage` switches via `i18n.changeLanguage`, which is a
- * re-render and not a remount, so entered values and the ceremony stage
+ * A reload here would be destructive rather than cosmetic: authenticator
+ * setup holds its one-time enrollment secret in component MEMORY ONLY (it is
+ * never persisted), so reloading mid-setup would discard it and restart the
+ * setup. `AuthPageLanguage` switches via `i18n.changeLanguage`, which is a
+ * re-render and not a remount, so entered values and the current step
  * survive -- asserted in tests/component/AuthLayout.test.tsx.
  */
 export function AuthLayout() {

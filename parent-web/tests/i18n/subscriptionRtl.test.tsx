@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import { renderWithProviders } from '../utils/renderWithProviders';
+import { confirmCommercialStepUp } from '../utils/commercialStepUp';
 import Subscription from '../../src/pages/Subscription';
 import DeviceIncreaseRequest from '../../src/pages/billing/DeviceIncreaseRequest';
 import { __resetDevBillingStateForTests } from '../../src/api/dev/devBillingClient';
@@ -43,6 +44,7 @@ describe('Subscription/billing pages in Arabic RTL', () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices' });
     const twoDevicesButton = await screen.findByRole('button', { name: '2 أجهزة' });
     twoDevicesButton.click();
+    await confirmCommercialStepUp();
 
     expect(await screen.findByText('السعر')).toBeInTheDocument();
     // Intl.NumberFormat('ar', {style:'currency', currency:'USD'}) renders

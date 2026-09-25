@@ -11,61 +11,39 @@
 // the one piece of
 // state a browser cannot obtain for itself (below).
 //
-// THE FOUR DELIBERATE PROPERTIES
+// THE DELIBERATE PROPERTIES (PCA-DEC-037, 2026-09-24 -- Parent Genesis removed)
 //
-// 1. A COMPLETED FAMILY GENESIS, driven through the REAL ceremony. This
-//    property is the OPPOSITE of what this header used to claim ("NO GENESIS
-//    DEPENDENCY ... genesis status is REPORTED, not required"), and the change
-//    is a correction, not a regression. That claim was written when
-//    verifyEmail completed genesis as a side effect. PCA-DEC-020-R1 removed
-//    that (email verification now establishes identity only), so an account
-//    that stops at verification has NO family; login resolves `role: null`
-//    (ParentAccountService.resolveFamilyRole fails closed on a null familyId)
-//    and RealServiceAuthClient.toAuthenticatedSession refuses the session with
-//    UNAUTHORIZED_FAMILY_SCOPE. The result was that the certified parent E2E
-//    could authenticate and still never leave /login -- it could not pass at
-//    all. Completing the real ceremony here (see ./lib/completeFamilyGenesis
-//    .mjs) is what makes the certified assertions reachable, and it exercises
-//    the genuine genesis path rather than bypassing it.
+// 1. THE REAL PARENT JOURNEY. Each parent is registered, verified and signed in
+//    through the same ParentAccountService methods the HTTP routes drive. The
+//    first sign-in provisions the family server-side (ADMINISTRATOR
+//    membership, ACTIVE scope) and starts the one 3-day MFA grace window.
 //
-// 2. TEST-PROVIDER EMAIL ONLY, NEVER REAL DELIVERY. The verification and
-//    genesis step-up codes are read back in-process through
-//    TestSandboxEmailSender.lastCodeFor, which refuses to construct at all
-//    outside test/development. No mail leaves the process. This is the same
-//    sanctioned mechanism bootstrap-e2e-parent-account.mjs and seed-local.mjs
-//    already use.
+// 2. TEST-PROVIDER EMAIL ONLY, NEVER REAL DELIVERY. Verification and login
+//    codes are read back in-process through TestSandboxEmailSender.lastCodeFor,
+//    which refuses to construct outside test/development.
 //
-// 3. A PRE-ISSUED BROWSER GRANT -- the non-obvious one. Every explicit parent
-//    login now requires a valid daily-login grant or an emailed step-up code
-//    (see ParentAccountService.login: a successful password check is never
-//    enough on its own). A Playwright browser process cannot receive that
-//    email, and this repository deliberately exposes NO verification-code-read
-//    route for one to reach, so a password-only UI sign-in can never reach
-//    /dashboard against current source. The grant is therefore issued here and
-//    handed to the browser as a cookie, exactly as if the user had already
-//    completed a step-up in that browser. Only the domain-separated SHA-256
-//    hash is persisted, matching production; the raw token exists solely in
-//    this script's output manifest.
+// 3. A BROWSER GRANT FOR THE GRACE-PERIOD PARENTS. Completing the emailed login
+//    code yields the production daily grant; it is handed to the browser as a
+//    cookie so a Playwright process (which cannot read mail) signs in exactly as
+//    a returning browser would during grace. Only its hash is persisted.
 //
-// 4. THE FAMILY THE PLATFORM-ADMIN SUITE ACTS ON IS THE GENESIS FAMILY. This
-//    script used to INSERT a stand-alone families row by hand purely so the
-//    admin suite had something to suspend and reactivate. Genesis now supplies
-//    a real one, so the hand-made row is gone and both suites act on the same
-//    family.
+// 4. ONE PARENT WITH AN AUTHENTICATOR. `mfaParent` has completed TOTP
+//    enrollment through the real endpoints; the manifest carries its base32
+//    secret so the real-browser MFA spec can act as the authenticator app. No
+//    grant can bypass its TOTP, by design.
 //
-// NOTHING HERE WEAKENS A PRODUCTION CONTROL: the genesis ceremony is driven
-// through the same ParentAccountService methods the production HTTP routes
-// drive (only the verifier is substituted, as ./lib/completeFamilyGenesis.mjs
-// documents), the grant is issued through the same repository method
-// production uses, expires in 24h like production, and everything is deleted
-// with the disposable database.
+// 5. THE FAMILY THE PLATFORM-ADMIN SUITE ACTS ON is the primary parent's
+//    provisioned family.
+//
+// NOTHING HERE WEAKENS A PRODUCTION CONTROL: every step is the production code
+// path, grants expire in 24h, and everything is deleted with the disposable
+// database. PCA_PARENT_MFA_ENC_KEY must match the backend under test.
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { getPool, closePool } from '../dist/db/pool.js';
 import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
-import { P256DeviceSignatureVerifier } from '../dist/deviceauth/P256DeviceSignatureVerifier.js';
-import { completeFamilyGenesis, createDisposableGenesisParentAccountService, issueDailyLoginGrant } from './lib/completeFamilyGenesis.mjs';
+import { createDisposableParentAccountService, enrollParentAuthenticator, provisionSignedInParent } from './lib/provisionParentAccount.mjs';
 import { PlatformAdminAccountService } from '../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
@@ -76,9 +54,8 @@ const TEST_EMAIL_DOMAIN = 'pca-e2e.test';
 const TEST_PASSWORD = 'Correct Horse Battery Staple 2026!';
 const PARENT_KEY = 'e2e-parent';
 const SECOND_PARENT_KEY = 'e2e-cross-family';
-// A VERIFIED parent that deliberately has NO family: the real-browser genesis
-// spec (parent-web/e2e-real/genesis.spec.ts) performs the ceremony itself.
-const GENESIS_PARENT_KEY = 'e2e-genesis';
+// A parent that has already enrolled an authenticator app (TOTP on every login).
+const MFA_PARENT_KEY = 'e2e-mfa';
 const ADMIN_KEY = 'e2e-owner';
 
 function refuse(reason) {
@@ -102,65 +79,30 @@ const now = new Date();
 const parentAccountRepository = new MySqlParentAccountRepository();
 
 // --- The verified parent accounts -----------------------------------------
-// ONE sender instance, injected AND queried. TestSandboxEmailSender records mail
-// in a per-INSTANCE array, so constructing a second one to read the code back
-// searches an empty array and always returns null -- which would make this
-// script throw before any browser test ran. bootstrap-e2e-parent-account.mjs and
-// seed-local.mjs both share a single instance for exactly this reason.
+// ONE sender instance, injected AND queried: TestSandboxEmailSender records mail
+// per INSTANCE, so a second instance would always read back null.
 const emailSender = createTestSandboxEmailSender();
-// The REAL genesis ceremony, with a real P-256 verifier in place of
-// production's fail-closed RejectingDeviceSignatureVerifier -- see
-// ./lib/completeFamilyGenesis.mjs for why this substitution is the sanctioned
-// one and why the substitution is made visible here rather than buried.
-const parentAccountService = createDisposableGenesisParentAccountService({
-  emailSender,
-  verifier: new P256DeviceSignatureVerifier(),
-});
+const parentAccountService = createDisposableParentAccountService({ emailSender });
 
 async function provisionParent(key) {
   const email = `${key}@${TEST_EMAIL_DOMAIN}`;
-  await parentAccountService.register(email, TEST_PASSWORD, TEST_PASSWORD);
-  const verificationCode = emailSender.lastCodeFor(email);
-  if (!verificationCode) refuse(`no verification code was recorded for ${key}.`);
-  const verified = await parentAccountService.verifyEmail(email, verificationCode);
-  if (!verified.accountId) refuse(`email verification did not yield an accountId for ${key}.`);
-
-  // PCA-DEC-020-R1 made email verification identity-only. The browser suites
-  // therefore complete the same family genesis ceremony a real parent would
-  // complete next; otherwise the login response has no family role and the
-  // Parent Web client correctly remains unauthenticated.
-  const genesis = await completeFamilyGenesis({
-    parentAccountService,
-    emailSender,
-    sessionToken: verified.rawSessionToken,
-    email,
-    password: TEST_PASSWORD,
-  });
-  if (!genesis.familyId) refuse(`family genesis did not yield a familyId for ${key}.`);
-  // The genesis membership must be ACTIVE, or login would still resolve
-  // `role: null` and the client would still refuse the session.
-  const role = await parentAccountRepository.findActiveRole(verified.accountId, genesis.familyId);
-  if (role === null) refuse(`the genesis administrator role was not resolvable for ${key}.`);
-  const dailyLoginGrant = await issueDailyLoginGrant({ repository: parentAccountRepository, accountId: verified.accountId, now });
-  return { email, accountId: verified.accountId, familyId: genesis.familyId, role, dailyLoginGrant };
+  const signedIn = await provisionSignedInParent({ service: parentAccountService, emailSender, email, password: TEST_PASSWORD });
+  const role = await parentAccountRepository.findActiveRole(signedIn.accountId, signedIn.familyId);
+  if (role !== 'ADMINISTRATOR') refuse(`the provisioned ADMINISTRATOR role was not resolvable for ${key}.`);
+  return { email, accountId: signedIn.accountId, familyId: signedIn.familyId, role, graceExpiresAt: signedIn.graceExpiresAt, dailyLoginGrant: signedIn.dailyLoginGrant, sessionToken: signedIn.sessionToken };
 }
 
-const parent = await provisionParent(PARENT_KEY);
-const secondParent = await provisionParent(SECOND_PARENT_KEY);
-
-/** Verified, authenticated, pre-family (GENESIS_REQUIRED). Genesis is left to the browser. */
-async function provisionPreFamilyParent(key) {
-  const email = `${key}@${TEST_EMAIL_DOMAIN}`;
-  await parentAccountService.register(email, TEST_PASSWORD, TEST_PASSWORD);
-  const verificationCode = emailSender.lastCodeFor(email);
-  if (!verificationCode) refuse(`no verification code was recorded for ${key}.`);
-  const verified = await parentAccountService.verifyEmail(email, verificationCode);
-  if (!verified.accountId) refuse(`email verification did not yield an accountId for ${key}.`);
-  if (verified.familyId !== null) refuse(`${key} must start without a family.`);
-  const dailyLoginGrant = await issueDailyLoginGrant({ repository: parentAccountRepository, accountId: verified.accountId, now });
-  return { email, accountId: verified.accountId, familyId: null, dailyLoginGrant };
-}
-const genesisParent = await provisionPreFamilyParent(GENESIS_PARENT_KEY);
+const { sessionToken: _parentSession, ...parent } = await provisionParent(PARENT_KEY);
+const { sessionToken: _secondSession, ...secondParent } = await provisionParent(SECOND_PARENT_KEY);
+const mfaProvisioned = await provisionParent(MFA_PARENT_KEY);
+const mfaTotpSecretBase32 = await enrollParentAuthenticator({
+  service: parentAccountService,
+  sessionToken: mfaProvisioned.sessionToken,
+  email: mfaProvisioned.email,
+  password: TEST_PASSWORD,
+});
+// Enrollment revokes every browser grant; the manifest must not carry a dead one.
+const { sessionToken: _mfaSession, dailyLoginGrant: _revokedGrant, ...mfaParent } = mfaProvisioned;
 
 // --- The family the platform-admin suite acts on -------------------------
 // The admin suite's suspend/reactivate round-trip needs a REAL families row to
@@ -170,15 +112,9 @@ const genesisParent = await provisionPreFamilyParent(GENESIS_PARENT_KEY);
 // the step, and the zero-skip anti-vacuous-pass guard then fails the whole job
 // -- so the admin suite could never certify. That is why this exists.
 //
-// GENESIS'S OWN ROW, NOT A SEPARATE BARE ONE. This script used to INSERT a
-// stand-alone families row by hand (createFamilyIfAbsent(randomUUID())), because
-// no genesis-completed family was available to it. Now that the parent account
-// completes genesis, that ceremony's family IS a real families row written by
-// production's own atomic transaction -- a second, hand-made family would be
-// redundant and would force the admin suite to choose between two. This now
-// points at the genesis family, which is also the family the parent E2E signs
-// in to, so the suspend/reactivate round-trip acts on a family that genuinely
-// has a parent member.
+// The primary parent's server-provisioned family is a real families row with a
+// real ADMINISTRATOR member, so the suspend/reactivate round-trip acts on a
+// family that genuinely has a parent.
 const testFamilyId = parent.familyId;
 
 // --- The ACTIVE operator account with a known TOTP secret -----------------
@@ -223,10 +159,9 @@ await writeFile(
       generatedAtUtc: now.toISOString(),
       parent: { ...parent, password: TEST_PASSWORD },
       secondParent: { ...secondParent, password: TEST_PASSWORD },
-      genesisParent: { ...genesisParent, password: TEST_PASSWORD },
+      mfaParent: { ...mfaParent, password: TEST_PASSWORD, totpSecretBase32: mfaTotpSecretBase32 },
       operator: { email: adminEmail, password: TEST_PASSWORD, role: 'APP_OWNER', totpSecretBase32: base32Encode(totpSecret) },
       family: { familyId: testFamilyId },
-      genesisCompleted: true,
     },
     null,
     2,
@@ -235,7 +170,7 @@ await writeFile(
 );
 
 console.log('Provisioned the disposable E2E accounts.');
-console.log('Genesis completion state: completed for both parent fixtures; the genesis fixture is pre-family by design.');
+console.log('Parent fixtures: two inside the MFA grace window, one with an enrolled authenticator.');
 console.log('Wrote the E2E fixture manifest.');
 
 await closePool();

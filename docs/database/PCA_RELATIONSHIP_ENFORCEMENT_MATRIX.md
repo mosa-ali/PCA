@@ -230,6 +230,56 @@ see `PCA_CANONICAL_SCHEMA_REPORT.md` §18 for the complete record.
 `enrollment_bootstrap_attempts.invitation_id` is now correctly classified
 under §1 (`DB_FOREIGN_KEY_REQUIRED`), not here.
 
+## 9. Migration 0049 — Parent TOTP MFA and family provisioning (PCA-DEC-037, 2026-09-24)
+
+Migration `0049_parent_totp_mfa_and_family_provisioning.sql` is additive only.
+Classified against a disposable MySQL 8.4.11 database with all 48 migrations
+applied from zero:
+
+**DB_FOREIGN_KEY_REQUIRED — six new foreign keys** (all `NO ACTION`/`NO ACTION`):
+
+| Table.Column | → Referenced |
+|---|---|
+| `parent_mfa_state.account_id` | `parent_accounts.account_id` |
+| `parent_mfa_enrollment_tickets.account_id` | `parent_accounts.account_id` |
+| `parent_mfa_recovery_codes.account_id` | `parent_accounts.account_id` |
+| `parent_mfa_step_up_grants.account_id` | `parent_accounts.account_id` |
+| `parent_mfa_step_up_grants.family_id` | `families.family_id` |
+| `parent_account_security_events.account_id` | `parent_accounts.account_id` |
+
+`parent_mfa_step_up_grants.family_id` is `CHAR(36) ascii_bin`, type-identical
+to `families.family_id`, so a real FK is possible here. It is a deliberate
+exception to the §2 soft-`family_id` convention, like
+`family_parent_memberships_family_fk` before it: a commercial step-up grant is
+bound to one real family and must not outlive it.
+
+**APPLICATION_ENFORCED_INTENTIONAL — one new relation**:
+`families.provisioned_for_account_id` → `parent_accounts.account_id`. 0049
+declares only a UNIQUE key (`families_provisioned_for_account_key`), with no FK.
+The key guarantees at most one initial family per Parent account. The account's
+existence is established by the provisioning service, which writes the column
+in the same transaction that locks the verified `parent_accounts` row
+(`backend/src/parentaccount/MySqlParentAccountRepository.ts`).
+
+**RETIRED, not dropped**: PCA-DEC-030 removed Parent Genesis.
+`parent_genesis_challenges` (0044) and `parent_genesis_step_up_authorizations`
+(0045) still exist with all their foreign keys and application-enforced
+relations. Nothing writes or reads them any more. Their relationships stay as
+classified until a separately authorized cleanup migration drops the tables.
+
+**Current totals**: after 0049, `backend/src/db/schema.ts` declares 102 foreign
+keys and 65 application-enforced relations. The per-section counts above and
+in the Summary below are the historical snapshot this document was first
+written against. Treat `schema.ts` as the authority for current totals.
+
+## 10. Migration 0050 — Parent MFA recovery hold
+
+Migration `0050_parent_mfa_recovery_hold.sql` adds nullable server-side hold
+start and expiry timestamps to `parent_mfa_state` and expands the security-event
+check constraint for `MFA_RECOVERY_PENDING` and `MFA_RECOVERY_COMPLETED`. It
+adds no table or relationship; the 24-hour duration is enforced by the recovery
+service and the timestamps remain authoritative across browser/device changes.
+
 ## Summary
 
 - **DB_FOREIGN_KEY_REQUIRED**: 83 (all present, all `NO ACTION`/`NO ACTION`

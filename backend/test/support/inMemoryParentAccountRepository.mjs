@@ -1,6 +1,7 @@
 // Deterministic in-memory ParentAccountRepository for tests only. Never
 // used as a production substitute for MySqlParentAccountRepository. Lives
 // entirely under backend/test/ -- not part of the TypeScript build.
+import { randomUUID } from 'node:crypto';
 export function createInMemoryParentAccountRepository({ revokeAllSessionsForAccount, grantFamilyScope, familyStatusById } = {}) {
   const grantedScopes = new Set(); // `${serviceAccountId}:${familyId}`
   const createdFamilies = new Set(); // familyId
@@ -18,6 +19,7 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
   const stepUpCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
   const dailyLoginGrantsById = new Map();
   const membershipsByAccountFamily = new Map();
+  const provisionedFamilyByAccount = new Map(); // accountId -> familyId
 
   function hexOf(buf) {
     return buf.toString('hex');
@@ -246,6 +248,34 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
 
     async createFamilyIfAbsent(familyId) {
       createdFamilies.add(familyId);
+    },
+
+    // Mirrors MySqlParentAccountRepository.ensureProvisionedFamily: one
+    // initial family per account (provisionedFamilyByAccount plays the part
+    // of the UNIQUE families.provisioned_for_account_id), ADMINISTRATOR
+    // membership and ACTIVE scope re-asserted only for that family, and a
+    // REVOKED membership never revived. JS is single-threaded, so the
+    // row-lock serialization is implicit here; the MySQL test proves it.
+    async ensureProvisionedFamily(accountId, serviceAccountId, now) {
+      const account = accountsById.get(accountId);
+      if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null || account.serviceAccountId !== serviceAccountId) {
+        throw new Error('Family provisioning refused: account is not a verified, enabled account bound to this service account.');
+      }
+      let created = false;
+      if (account.familyId === null) {
+        const familyId = randomUUID();
+        createdFamilies.add(familyId);
+        provisionedFamilyByAccount.set(accountId, familyId);
+        account.familyId = familyId;
+        created = true;
+      }
+      if (provisionedFamilyByAccount.get(accountId) === account.familyId) {
+        grantedScopes.add(`${serviceAccountId}:${account.familyId}`);
+        if (grantFamilyScope) await grantFamilyScope(serviceAccountId, account.familyId, now);
+        const key = `${accountId}:${account.familyId}`;
+        if (!membershipsByAccountFamily.has(key)) membershipsByAccountFamily.set(key, { role: 'ADMINISTRATOR', status: 'ACTIVE', serviceAccountId });
+      }
+      return { familyId: account.familyId, created };
     },
 
     // The membership WRITER the production port declares is

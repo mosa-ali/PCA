@@ -1,8 +1,9 @@
 // PCA-MYKIDS-BILL-2 -- HTTP-level tests for familyCommercialRoutes.ts:
-// family scoping, authority-unavailable handling, Owner authorized via an
-// injected trusted resolver, Administrator/Viewer denied, cross-family
-// denial (IDOR), platform-admin-shaped tokens rejected, and payment-method
-// safe serialization.
+// family scoping, the PCA-DEC-030 COMMERCIAL_OWNER_AUTHORITY gate
+// (ADMINISTRATOR + fresh TOTP step-up, injected here as a route-level test
+// double), STEP_UP_REQUIRED / ROLE_DENIED never authorized, cross-family
+// denial (IDOR), platform-admin-shaped tokens rejected, the removed
+// Genesis authority-challenge route, and payment-method safe serialization.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
@@ -17,7 +18,6 @@ import { createInMemoryEntitlementRepository } from '../support/inMemoryEntitlem
 import { createInMemoryChangeRequestRepository } from '../support/inMemoryChangeRequestRepository.mjs';
 import { createStubChangeRequestService } from '../support/stubChangeRequestService.mjs';
 import { verifyTestOnlyIdentity } from '../support/testOnlyIdentityProvider.mjs';
-import { digestAuthorityRequestBody } from '../../dist/familycommercial/authority/requestProofProtocol.js';
 
 function fakeRunQuery(fn) {
   return fn(undefined);
@@ -25,17 +25,40 @@ function fakeRunQuery(fn) {
 
 const FIXED_NOW = new Date('2026-06-01T00:00:00Z');
 
-/** Configurable FamilyCommercialAuthorityResolver test double -- lets a test declare exactly which (familyId, actorDeviceId) pairs are OWNER_AUTHORIZED/ROLE_DENIED/AUTHORITY_UNAVAILABLE, independent of the real (tests-only) TrustSet-backed implementation exercised in test/billing/familyCommercialAuthorityResolver.test.mjs. */
-function buildResolver(map) {
+/** A step-up token shaped like the real one (43 base64url chars); only the fake authority below decides whether it is valid. */
+const OWNER_STEP_UP_TOKEN = 'S'.repeat(43);
+
+/**
+ * Configurable commercialOwnerAuthority test double. The real
+ * ParentCommercialStepUpAuthority (membership + ACTIVE authenticator +
+ * single-use per-operation grant) is covered by its own unit tests; this
+ * double lets a route test declare exactly which (account, family,
+ * operation, token) is OWNER_AUTHORIZED, which (account, family) is
+ * ROLE_DENIED, and makes everything else STEP_UP_REQUIRED -- so an unknown
+ * caller is never authorized by default.
+ */
+function buildAuthority() {
+  const allowed = new Set(); // `${account}:${family}:${operation}:${token}`
+  const roleDenied = new Set(); // `${account}:${family}`
+  const calls = [];
   return {
-    resolveOwnerAuthority(familyId, actorDeviceId) {
-      const key = `${familyId}:${actorDeviceId}`;
-      return map.get(key) ?? { status: 'AUTHORITY_UNAVAILABLE' };
+    calls,
+    allow(accountId, familyId, operation, token = OWNER_STEP_UP_TOKEN) {
+      allowed.add(`${accountId}:${familyId}:${operation}:${token}`);
+    },
+    denyRole(accountId, familyId) {
+      roleDenied.add(`${accountId}:${familyId}`);
+    },
+    async authorize(serviceAccountId, familyId, operation, stepUpToken) {
+      calls.push({ serviceAccountId, familyId, operation, stepUpToken });
+      if (roleDenied.has(`${serviceAccountId}:${familyId}`)) return 'ROLE_DENIED';
+      return allowed.has(`${serviceAccountId}:${familyId}:${operation}:${stepUpToken}`) ? 'OWNER_AUTHORIZED' : 'STEP_UP_REQUIRED';
     },
   };
 }
 
-function buildHarness({ resolver, familyAuthorityRequestChallengeService, authorityDeviceDirectory } = {}) {
+function buildHarness({ authority } = {}) {
+  const commercialOwnerAuthority = authority ?? buildAuthority();
   const authService = new AuthService(createInMemoryAuthRepository());
   const authzRepository = createInMemoryAuthzRepository();
   const entitlementRepository = createInMemoryEntitlementRepository();
@@ -71,40 +94,16 @@ function buildHarness({ resolver, familyAuthorityRequestChallengeService, author
     familyCommercialService,
     authService,
     authzRepository,
-    familyCommercialAuthorityResolver: resolver ?? buildResolver(new Map()),
+    commercialOwnerAuthority,
     rateLimiter,
     authAttemptLimiter: rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' }),
-    familyAuthorityRequestChallengeService,
-    authorityDeviceDirectory,
   });
-  return { app, authService, authzRepository, changeRequestRepository, subscriptionsByFamily };
+  return { app, authService, authzRepository, changeRequestRepository, subscriptionsByFamily, authority: commercialOwnerAuthority };
 }
 
-// The route now requires the same session-bound request-proof shape that the
-// production client obtains from /authority/challenge. These HTTP tests use a
-// shaped fixture because their resolver is intentionally a route-level test
-// double; cryptographic verification and single-use replay are covered by the
-// dedicated authority-engine tests.
-function mutationPayload(familyId, operation, payload) {
-  const requestDigest = digestAuthorityRequestBody(JSON.stringify(payload));
-  return {
-    ...payload,
-    authorityProof: {
-      protocolVersion: 1,
-      operation,
-      familyId,
-      serviceAccountId: 'test-service-account',
-      deviceId: payload.actorDeviceId,
-      keyId: 'test-key',
-      publicKey: 'test-public-key',
-      challengeId: 'test-challenge',
-      nonce: 'test-nonce',
-      requestDigest,
-      signature: 'test-signature',
-      issuedAt: '2026-06-01T00:00:00.000Z',
-      expiresAt: '2026-06-01T00:05:00.000Z',
-    },
-  };
+/** A mutation body carrying the step-up token minted by POST /api/parent/mfa/step-up. */
+function mutationPayload(payload, stepUpToken = OWNER_STEP_UP_TOKEN) {
+  return { ...payload, stepUpToken };
 }
 
 async function issueToken(authService, subject) {
@@ -159,82 +158,139 @@ test('active family scope: entitlement read succeeds', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Owner-authority gate on mutations
+// Owner-authority gate on mutations (PCA-DEC-030: ADMINISTRATOR + fresh TOTP step-up)
 // ---------------------------------------------------------------------------
 
-test('AUTHORITY_UNAVAILABLE is NEVER treated as authorized -- device-limit request creation is denied with a distinguishable code', async () => {
-  const resolver = buildResolver(new Map()); // empty map => every lookup is AUTHORITY_UNAVAILABLE
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+test('STEP_UP_REQUIRED is NEVER treated as authorized -- device-limit request creation is denied with a distinguishable code', async () => {
+  const { app, authService, authzRepository, changeRequestRepository, authority } = buildHarness(); // nothing allowed => STEP_UP_REQUIRED
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
-  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
-  const response = await app.inject({
-    method: 'POST',
-    url: '/v1/families/family-A/commercial/requests',
-    headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
-  });
-  assert.equal(response.statusCode, 403);
-  assert.equal(response.json().code, 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE');
-});
-
-test('Administrator role: ROLE_DENIED, generic 403 (never distinguishable from a random deny, never treated as Owner)', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-admin', { status: 'ROLE_DENIED' }]]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
-  const { rawToken, accountId } = await issueToken(authService, 'admin-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
   authzRepository._addLicense(accountId, 'ACTIVE', null);
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-admin' }),
+    payload: mutationPayload({ limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5 }),
   });
   assert.equal(response.statusCode, 403);
-  assert.equal(response.json().code, undefined);
+  assert.deepEqual(response.json(), { error: 'forbidden', code: 'STEP_UP_REQUIRED' });
+  assert.equal(authority.calls.length, 1);
+  assert.deepEqual(authority.calls[0], { serviceAccountId: accountId, familyId: 'family-A', operation: 'FAMILY_COMMERCIAL_REQUEST_CREATE', stepUpToken: OWNER_STEP_UP_TOKEN });
+  assert.equal((await changeRequestRepository.listForFamily('family-A')).length, 0, 'a denied request must never be created');
 });
 
-test('Viewer role: ROLE_DENIED, generic 403', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-viewer', { status: 'ROLE_DENIED' }]]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+test('SECURITY: no step-up token, or the retired Genesis device-proof fields, never authorize a mutation', async () => {
+  const { app, authService, authzRepository, authority } = buildHarness();
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE');
+
+  const withoutToken = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/requests',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3 },
+  });
+  assert.equal(withoutToken.statusCode, 403);
+  assert.deepEqual(withoutToken.json(), { error: 'forbidden', code: 'STEP_UP_REQUIRED' });
+
+  const legacyProof = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/requests',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner', authorityProof: { protocolVersion: 1, signature: 'test-signature' } },
+  });
+  assert.equal(legacyProof.statusCode, 403);
+  assert.deepEqual(legacyProof.json(), { error: 'forbidden', code: 'STEP_UP_REQUIRED' });
+
+  const wrongToken = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/requests',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: mutationPayload({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3 }, 'T'.repeat(43)),
+  });
+  assert.equal(wrongToken.statusCode, 403);
+});
+
+test('SECURITY: a step-up minted for one operation does not authorize another (the route asks for the exact operation)', async () => {
+  const { app, authService, authzRepository, authority, subscriptionsByFamily } = buildHarness();
+  seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: mutationPayload({}),
+  });
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden', code: 'STEP_UP_REQUIRED' });
+  assert.equal(authority.calls.at(-1).operation, 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL');
+  assert.equal(subscriptionsByFamily.get('family-A').autoRenew, true);
+});
+
+test('Non-administrator (VIEWER) role: ROLE_DENIED, generic 403 (never distinguishable from a random deny, never treated as Owner)', async () => {
+  const { app, authService, authzRepository, authority } = buildHarness();
   const { rawToken, accountId } = await issueToken(authService, 'viewer-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
   authzRepository._addLicense(accountId, 'ACTIVE', null);
+  authority.denyRole(accountId, 'family-A');
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-viewer' }),
+    payload: mutationPayload({ limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5 }),
   });
   assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  assert.equal(response.json().code, undefined);
 });
 
-test('Owner authorized via injected trusted resolver: device-limit request is created (license present)', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+test('Non-administrator role on a non-billable request: ROLE_DENIED, generic 403', async () => {
+  const { app, authService, authzRepository, authority } = buildHarness();
+  const { rawToken, accountId } = await issueToken(authService, 'viewer-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authzRepository._addLicense(accountId, 'ACTIVE', null);
+  authority.denyRole(accountId, 'family-A');
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/requests',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: mutationPayload({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3 }),
+  });
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+});
+
+test('Owner authorized (ADMINISTRATOR + valid step-up): device-limit request is created (license present)', async () => {
+  const { app, authService, authzRepository, authority } = buildHarness();
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
   authzRepository._addLicense(accountId, 'ACTIVE', null);
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE');
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({ limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5 }),
   });
   assert.equal(response.statusCode, 201);
   assert.equal(response.json().targetLimit, 5);
 });
 
 test('Owner authorized but NO active license: device-limit (billable) request denied 403; parent-member (non-billable) request still succeeds', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+  const { app, authService, authzRepository, authority } = buildHarness();
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE');
   // Deliberately NO _addLicense call.
   const deviceResponse = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({ limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5 }),
   });
   assert.equal(deviceResponse.statusCode, 403);
 
@@ -242,35 +298,33 @@ test('Owner authorized but NO active license: device-limit (billable) request de
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3 }),
   });
   assert.equal(parentResponse.statusCode, 201);
 });
 
 test('cross-family IDOR on cancel: family B cannot cancel family A\'s request', async () => {
-  const resolver = buildResolver(new Map([
-    ['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }],
-    ['family-B:dev-owner-b', { status: 'OWNER_AUTHORIZED' }],
-  ]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+  const { app, authService, authzRepository, authority } = buildHarness();
   const { rawToken: tokenA, accountId: accountA } = await issueToken(authService, 'owner-a');
   authzRepository._grantScope(accountA, 'family-A', 'ACTIVE');
+  authority.allow(accountA, 'family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE');
   const created = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${tokenA}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3 }),
   });
   assert.equal(created.statusCode, 201);
   const { requestId } = created.json();
 
   const { rawToken: tokenB, accountId: accountB } = await issueToken(authService, 'owner-b');
   authzRepository._grantScope(accountB, 'family-B', 'ACTIVE');
+  authority.allow(accountB, 'family-B', 'FAMILY_COMMERCIAL_REQUEST_CANCEL');
   const cancelResponse = await app.inject({
     method: 'POST',
     url: `/v1/families/family-B/commercial/requests/${requestId}/cancel`,
     headers: { authorization: `Bearer ${tokenB}` },
-    payload: mutationPayload('family-B', 'FAMILY_COMMERCIAL_REQUEST_CANCEL', { actorDeviceId: 'dev-owner-b' }),
+    payload: mutationPayload({}),
   });
   // family-B has no scope-row visibility of family-A's request at all --
   // the ownership check inside FamilyCommercialService.cancelRequest maps
@@ -300,17 +354,17 @@ function seedActiveSubscription(subscriptionsByFamily, familyId, subscriptionId,
 }
 
 test('auto-renew cancel: Owner authorized turns auto_renew off and returns an auditEventId; a subsequent subscription read reflects it', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  const { app, authService, authzRepository, subscriptionsByFamily, authority } = buildHarness();
   seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL');
 
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({}),
   });
   assert.equal(response.statusCode, 200);
   assert.equal(typeof response.json().auditEventId, 'string');
@@ -325,17 +379,17 @@ test('auto-renew cancel: Owner authorized turns auto_renew off and returns an au
 });
 
 test('auto-renew resume: Owner authorized turns auto_renew back on -- cancel and resume are symmetric, not a one-way terminal transition', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  const { app, authService, authzRepository, subscriptionsByFamily, authority } = buildHarness();
   seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', false);
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME');
 
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/resume',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME', { actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({}),
   });
   assert.equal(response.statusCode, 200);
   assert.equal(typeof response.json().auditEventId, 'string');
@@ -349,27 +403,28 @@ test('auto-renew resume: Owner authorized turns auto_renew back on -- cancel and
 });
 
 test('auto-renew cancel: idempotent -- calling it twice in a row both succeed (200) and the final state is still autoRenew=false', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  const { app, authService, authzRepository, subscriptionsByFamily, authority } = buildHarness();
   seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  // Each call carries its own fresh single-use step-up token.
+  const tokens = ['U'.repeat(43), 'V'.repeat(43)];
+  for (const token of tokens) authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', token);
 
   for (let i = 0; i < 2; i++) {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
       headers: { authorization: `Bearer ${rawToken}` },
-      payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
+      payload: mutationPayload({}, tokens[i]),
     });
     assert.equal(response.statusCode, 200, `call ${i + 1} must succeed, never error on a repeat`);
   }
   assert.equal(subscriptionsByFamily.get('family-A').autoRenew, false);
 });
 
-test('auto-renew cancel: AUTHORITY_UNAVAILABLE is never treated as authorized (distinguishable 403, no mutation applied)', async () => {
-  const resolver = buildResolver(new Map()); // empty map => every lookup is AUTHORITY_UNAVAILABLE
-  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+test('auto-renew cancel: STEP_UP_REQUIRED is never treated as authorized (distinguishable 403, no mutation applied)', async () => {
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness(); // nothing allowed => STEP_UP_REQUIRED
   seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
@@ -378,42 +433,43 @@ test('auto-renew cancel: AUTHORITY_UNAVAILABLE is never treated as authorized (d
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({}),
   });
   assert.equal(response.statusCode, 403);
-  assert.equal(response.json().code, 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE');
+  assert.deepEqual(response.json(), { error: 'forbidden', code: 'STEP_UP_REQUIRED' });
   assert.equal(subscriptionsByFamily.get('family-A').autoRenew, true, 'a denied request must never mutate the subscription');
 });
 
 test('auto-renew cancel: a FREE_STARTER family with no active subscription row gets 404, never a fabricated success', async () => {
-  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository } = buildHarness({ resolver });
+  const { app, authService, authzRepository, authority } = buildHarness();
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  authority.allow(accountId, 'family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL');
 
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({}),
   });
   assert.equal(response.statusCode, 404);
 });
 
 test('cross-family IDOR on auto-renew: a caller scoped to family A cannot toggle family B\'s subscription by supplying familyId=family-B', async () => {
-  const resolver = buildResolver(new Map([['family-B:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
-  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  const { app, authService, authzRepository, subscriptionsByFamily, authority } = buildHarness();
   seedActiveSubscription(subscriptionsByFamily, 'family-B', 'sub-b', true);
   const { rawToken, accountId } = await issueToken(authService, 'owner-1');
   authzRepository._grantScope(accountId, 'family-A', 'ACTIVE'); // scoped to A only, never B
+  authority.allow(accountId, 'family-B', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL');
 
   const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-B/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: mutationPayload('family-B', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
+    payload: mutationPayload({}),
   });
   assert.equal(response.statusCode, 403, 'no ACTIVE family-scope row for family-B -- rejected before the Owner gate or the service is ever reached');
+  assert.equal(authority.calls.length, 0, 'the family-scope check runs before the owner gate, so no step-up grant is ever consumed');
   assert.equal(subscriptionsByFamily.get('family-B').autoRenew, true, 'family B\'s subscription must be untouched');
 });
 
@@ -436,91 +492,19 @@ test('payment-method read never serializes anything beyond the allowlisted safe 
 });
 
 // ---------------------------------------------------------------------------
-// Owner-authority challenge issuance is bound to the device's registering
-// account (C-1 server half). Two parents of one family who share a browser
-// share its storage; the second must never obtain a challenge for the first
-// parent's device.
+// PCA-DEC-030 removed the Genesis owner-attestation challenge route. It must
+// not silently come back: the path is simply not mounted.
 // ---------------------------------------------------------------------------
 
-const P256_POINT = 'BArQn4mGDfD8WbmEr3y436L0C_MxjRuPMWujop0xjrNt-dHBPBuGdWziFXdjHW1d322DsGA0CNg8uqRRdViMd5E';
-
-function recordingChallengeService() {
-  const issued = [];
-  return {
-    issued,
-    async issue(input) {
-      issued.push(input);
-      return { ...input, protocolVersion: 1, challengeId: `ch-${issued.length}`, nonce: 'n', issuedAt: FIXED_NOW, expiresAt: new Date(FIXED_NOW.getTime() + 60000), consumedAt: null };
-    },
-  };
-}
-
-/** Two verified parents, both ACTIVE-scoped to family-A; `devices` is filled after account ids exist. */
-async function twoParentsOneFamily({ withDirectory = true } = {}) {
-  const devices = [];
-  const challengeService = recordingChallengeService();
-  const harness = buildHarness({
-    familyAuthorityRequestChallengeService: challengeService,
-    authorityDeviceDirectory: withDirectory
-      ? { async findDeviceForFamily(familyId, deviceId) { return devices.find((d) => d.familyId === familyId && d.deviceId === deviceId) ?? null; } }
-      : undefined,
-  });
-  const a = await issueToken(harness.authService, 'parent-a');
-  const b = await issueToken(harness.authService, 'parent-b');
-  harness.authzRepository._grantScope(a.accountId, 'family-A', 'ACTIVE');
-  harness.authzRepository._grantScope(b.accountId, 'family-A', 'ACTIVE');
-  return { ...harness, devices, challengeService, a, b };
-}
-
-function challengeRequest(app, rawToken, deviceId) {
-  return app.inject({
+test('the retired Genesis authority-challenge route POST /v1/families/:familyId/authority/challenge is gone (404)', async () => {
+  const { app, authService, authzRepository } = buildHarness();
+  const { rawToken, accountId } = await issueToken(authService, 'parent-a');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  const response = await app.inject({
     method: 'POST',
     url: '/v1/families/family-A/authority/challenge',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { operation: 'BILLING_CHECKOUT_CREATE', deviceId, keyId: 'key-1', publicKey: P256_POINT, requestDigest: digestAuthorityRequestBody('{}') },
+    payload: { operation: 'BILLING_CHECKOUT_CREATE', deviceId: 'dev-a', keyId: 'key-1', publicKey: 'p', requestDigest: 'd' },
   });
-}
-
-test('authority challenge: issued for a device the SESSION ACCOUNT registered', async () => {
-  const { app, devices, challengeService, a } = await twoParentsOneFamily();
-  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
-  const response = await challengeRequest(app, a.rawToken, 'dev-a');
-  assert.equal(response.statusCode, 201);
-  assert.equal(challengeService.issued.length, 1);
-  assert.equal(challengeService.issued[0].serviceAccountId, a.accountId);
-});
-
-test('authority challenge: a SECOND PARENT of the same family cannot obtain a challenge for the first parent device', async () => {
-  const { app, devices, challengeService, a, b } = await twoParentsOneFamily();
-  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
-  const response = await challengeRequest(app, b.rawToken, 'dev-a');
-  assert.equal(response.statusCode, 403);
-  assert.deepEqual(response.json(), { error: 'forbidden' });
-  assert.equal(challengeService.issued.length, 0, 'no challenge row may be created for a refused request');
-});
-
-test('authority challenge: a REVOKED device is refused even for its own registering account', async () => {
-  const { app, devices, challengeService, a } = await twoParentsOneFamily();
-  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'REVOKED', registeredByAccountId: a.accountId });
-  const response = await challengeRequest(app, a.rawToken, 'dev-a');
-  assert.equal(response.statusCode, 403);
-  assert.equal(challengeService.issued.length, 0);
-});
-
-test('authority challenge: an unknown or other-family device is refused with the same body', async () => {
-  const { app, devices, challengeService, a } = await twoParentsOneFamily();
-  devices.push({ familyId: 'family-B', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
-  for (const deviceId of ['dev-a', 'dev-missing']) {
-    const response = await challengeRequest(app, a.rawToken, deviceId);
-    assert.equal(response.statusCode, 403);
-    assert.deepEqual(response.json(), { error: 'forbidden' });
-  }
-  assert.equal(challengeService.issued.length, 0);
-});
-
-test('authority challenge: fails CLOSED (503) when the device directory is not composed', async () => {
-  const { app, challengeService, a } = await twoParentsOneFamily({ withDirectory: false });
-  const response = await challengeRequest(app, a.rawToken, 'dev-a');
-  assert.equal(response.statusCode, 503);
-  assert.equal(challengeService.issued.length, 0);
+  assert.equal(response.statusCode, 404);
 });

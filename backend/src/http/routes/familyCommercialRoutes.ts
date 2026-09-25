@@ -15,7 +15,7 @@
  * billingCheckoutRoutes.ts's `POST /v1/families/:familyId/billing/checkout`
  * and `GET /v1/families/:familyId/billing/checkout/:paymentAttemptId`
  * already enforce family scope + (for CREATE) Family-Owner authority via
- * the identical `FamilyCommercialAuthorityResolver` this file also uses --
+ * the identical ADMINISTRATOR + fresh-TOTP owner gate this file also uses --
  * a thin wrapper here would add nothing but a second URL for the same
  * logic. See this lane's final report's CHECKOUT_REUSED field.
  *
@@ -34,10 +34,13 @@
  *      `ServiceOperation` union (authz/types.ts) / `OPERATION_MATRIX`
  *      (authz/policy.ts) -- both outside this lane's ownership boundary.
  *   3. FOR MUTATIONS ONLY (create/cancel a request; cancel/resume
- *      auto-renew): the SAME FamilyCommercialAuthorityResolver OWNER gate
- *      billingCheckoutRoutes.ts established (FIX 4) -- resolved BEFORE any
- *      service call. ROLE_DENIED and AUTHORITY_UNAVAILABLE both 403
- *      (distinguishably), and NEITHER is ever treated as "is Owner." Reads
+ *      auto-renew): PCA-DEC-030 COMMERCIAL_OWNER_AUTHORITY = FAMILY
+ *      ADMINISTRATOR + FRESH TOTP STEP-UP (ParentCommercialStepUpAuthority),
+ *      the same gate billingCheckoutRoutes.ts uses -- resolved BEFORE any
+ *      service call. ROLE_DENIED and STEP_UP_REQUIRED both 403
+ *      (distinguishably), and NEITHER is ever treated as "is Owner." The
+ *      former Genesis/device-signature owner-attestation proof is no longer
+ *      accepted or required anywhere on this surface. Reads
  *      (entitlement/requests list+detail/subscription/invoices/payment
  *      methods) do NOT require the OWNER gate -- viewing one's own
  *      family's already-existing commercial state is not itself a new
@@ -58,8 +61,9 @@ import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzRepository } from '../../authz/AuthzRepository.js';
 import { createRateLimiter } from '../rateLimit.js';
-import { checkOwnerAuthority, createRequireFamilyCommercialAuthorization, isValidActorDeviceId } from '../../familycommercial/authorization.js';
-import type { FamilyCommercialAuthorityResolver } from '../../billing/authority/FamilyCommercialAuthorityResolver.js';
+import { createRequireFamilyCommercialAuthorization } from '../../familycommercial/authorization.js';
+import type { ParentCommercialStepUpAuthority } from '../../parentaccount/mfa/ParentCommercialStepUpAuthority.js';
+import type { CommercialStepUpOperation } from '../../parentaccount/mfa/ParentMfaRepository.js';
 import { FamilyCommercialError, FamilyCommercialService } from '../../familycommercial/FamilyCommercialService.js';
 import type { LimitType } from '../../entitlements/types.js';
 import {
@@ -76,10 +80,6 @@ import {
 // Writer60's own backward-compatible design for the underlying services.
 import type { ComplimentaryEntitlementService } from '../../entitlements/complimentary/ComplimentaryEntitlementService.js';
 import { buildEffectiveEntitlementDto } from '../../entitlements/complimentary/MyKidsComplimentaryReadModel.js';
-import { digestAuthorityRequestBody } from '../../familycommercial/authority/requestProofProtocol.js';
-import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import type { FamilyAuthorityRequestChallengeService } from '../../familycommercial/authority/FamilyAuthorityRequestChallengeService.js';
-import type { DeviceRepository } from '../../device/DeviceRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -93,15 +93,12 @@ export interface FamilyCommercialRoutesDeps {
   familyCommercialService: FamilyCommercialService;
   authService: AuthService;
   authzRepository: AuthzRepository;
-  familyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
+  /** PCA-DEC-030 ADMINISTRATOR + fresh-TOTP owner gate for every mutation here. */
+  commercialOwnerAuthority: Pick<ParentCommercialStepUpAuthority, 'authorize'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
   /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): optional -- absent means the entitlement response omits the additive complimentaryEntitlement field entirely, never a partial/broken shape. */
   complimentaryEntitlementService?: ComplimentaryEntitlementService;
-  /** Source-complete request-proof challenge issuer. Omission fails the challenge route closed. */
-  familyAuthorityRequestChallengeService?: FamilyAuthorityRequestChallengeService;
-  /** Device directory used to bind owner-authority challenge issuance to the device's registering account. Absent -> issuance fails closed (503). */
-  authorityDeviceDirectory?: Pick<DeviceRepository, 'findDeviceForFamily'>;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -110,26 +107,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isLimitType(value: unknown): value is LimitType {
   return value === 'MANAGED_DEVICE_LIMIT' || value === 'PARENT_MEMBER_LIMIT';
-}
-
-function authorityProofForRequest(body: Record<string, unknown>, familyId: string, operation: string): FamilyAuthorityRequestProof | null {
-  const raw = body.authorityProof;
-  const actorDeviceId = body.actorDeviceId;
-  if (!isPlainObject(raw) || typeof actorDeviceId !== 'string' || raw.deviceId !== actorDeviceId) return null;
-  if (
-    raw.protocolVersion !== 1 || raw.operation !== operation || raw.familyId !== familyId ||
-    typeof raw.serviceAccountId !== 'string' || typeof raw.deviceId !== 'string' || typeof raw.keyId !== 'string' ||
-    typeof raw.publicKey !== 'string' || typeof raw.challengeId !== 'string' || typeof raw.nonce !== 'string' ||
-    typeof raw.requestDigest !== 'string' || typeof raw.signature !== 'string' ||
-    typeof raw.issuedAt !== 'string' || typeof raw.expiresAt !== 'string'
-  ) return null;
-  const unsignedBody = { ...body };
-  delete unsignedBody.authorityProof;
-  if (raw.requestDigest !== digestAuthorityRequestBody(JSON.stringify(unsignedBody))) return null;
-  const issuedAt = new Date(raw.issuedAt);
-  const expiresAt = new Date(raw.expiresAt);
-  if (Number.isNaN(issuedAt.getTime()) || Number.isNaN(expiresAt.getTime())) return null;
-  return { ...raw, issuedAt, expiresAt } as FamilyAuthorityRequestProof;
 }
 
 function familyCommercialErrorToHttpStatus(code: FamilyCommercialError['code']): number {
@@ -156,84 +133,27 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
   const requireViewBillingRecords = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'VIEW_BILLING_RECORDS');
   const requireMutateSubscription = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'MUTATE_SUBSCRIPTION');
 
-  /** Shared inline Owner-authority gate for every mutation route -- see this file's header. */
+  /**
+   * Shared inline Owner-authority gate for every mutation route -- see this
+   * file's header. The client sends `stepUpToken`, minted by
+   * POST /api/parent/mfa/step-up for exactly this operation and family.
+   */
   async function resolveOwnerOrReject(
     request: FastifyRequest,
     reply: FastifyReply,
     familyId: string,
     body: Record<string, unknown>,
-    operation: string,
+    operation: CommercialStepUpOperation,
   ): Promise<boolean> {
-    const actorDeviceId = body.actorDeviceId;
-    const proof = authorityProofForRequest(body, familyId, operation);
-    if (!isValidActorDeviceId(actorDeviceId) || !proof) {
-      reply.code(400).send({ error: 'invalid_request' });
-      return false;
+    const outcome = await deps.commercialOwnerAuthority.authorize(request.accountId as string, familyId, operation, body.stepUpToken);
+    if (outcome === 'OWNER_AUTHORIZED') return true;
+    if (outcome === 'STEP_UP_REQUIRED') {
+      reply.code(403).send({ error: 'forbidden', code: 'STEP_UP_REQUIRED' });
+    } else {
+      reply.code(403).send({ error: 'forbidden' });
     }
-    const outcome = await checkOwnerAuthority(
-      deps.familyCommercialAuthorityResolver,
-      familyId,
-      actorDeviceId,
-      proof,
-      request.accountId as string,
-      operation,
-      proof.requestDigest,
-    );
-    if (!outcome.authorized) {
-      if (outcome.denialStatus === 'AUTHORITY_UNAVAILABLE') {
-        reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
-      } else {
-        reply.code(403).send({ error: 'forbidden' });
-      }
-      return false;
-    }
-    return true;
+    return false;
   }
-
-  app.post(
-    '/v1/families/:familyId/authority/challenge',
-    {
-      bodyLimit: MAX_BODY_BYTES,
-      preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'family-authority-challenge' }), requireViewEntitlement],
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.familyAuthorityRequestChallengeService) return reply.code(503).send({ error: 'not_configured' });
-      const { familyId } = request.params as { familyId: string };
-      if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
-      const body = request.body;
-      if (
-        typeof body.operation !== 'string' ||
-        typeof body.deviceId !== 'string' ||
-        typeof body.keyId !== 'string' ||
-        typeof body.publicKey !== 'string' ||
-        typeof body.requestDigest !== 'string'
-      ) return reply.code(400).send({ error: 'invalid_request' });
-      // ACCOUNT BINDING (C-1, server half): an owner-authority challenge is
-      // issued only for a device that is ACTIVE in THIS family and was
-      // registered by THIS session's account. Two parents of one family who
-      // share a browser profile share its storage; without this check the
-      // second parent could obtain a challenge for the first parent's device
-      // and sign it with the first parent's key. The engine's proof branch
-      // requires the consumed challenge to match the session account, so
-      // binding issuance binds the whole proof. Fails closed when the device
-      // directory is not composed.
-      if (!deps.authorityDeviceDirectory) return reply.code(503).send({ error: 'not_configured' });
-      const claimedDevice = await deps.authorityDeviceDirectory.findDeviceForFamily(familyId, body.deviceId);
-      if (!claimedDevice || claimedDevice.status !== 'ACTIVE' || claimedDevice.registeredByAccountId !== request.accountId) {
-        return reply.code(403).send({ error: 'forbidden' });
-      }
-      const challenge = await deps.familyAuthorityRequestChallengeService.issue({
-        serviceAccountId: request.accountId as string,
-        familyId,
-        deviceId: body.deviceId,
-        keyId: body.keyId,
-        publicKey: body.publicKey,
-        operation: body.operation,
-        requestDigest: body.requestDigest,
-      });
-      return reply.code(201).send({ ...challenge, issuedAt: challenge.issuedAt.toISOString(), expiresAt: challenge.expiresAt.toISOString() });
-    },
-  );
 
   // -- A. Entitlement read ---------------------------------------------------
   app.get(

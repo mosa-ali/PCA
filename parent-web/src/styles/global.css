@@ -2051,6 +2051,55 @@ table.data-table td {
   margin-block-start: var(--space-2);
 }
 
+/* ---------- Authenticator app (PCA-DEC-037) ---------- */
+
+/* The enrollment QR code is drawn locally as inline SVG (TotpQrCode). A QR
+   code is an opaque square: it never mirrors under dir="rtl", and it keeps a
+   white quiet zone in dark themes so phone cameras can read it. */
+.mfa-qr {
+  display: flex;
+  justify-content: center;
+  margin-block: var(--space-3);
+  direction: ltr;
+}
+
+.mfa-qr svg {
+  max-width: 100%;
+  height: auto;
+  background: var(--pca-white);
+  border-radius: var(--radius-sm);
+}
+
+.mfa-manual-key {
+  margin-block: var(--space-3);
+}
+
+.mfa-manual-key summary {
+  cursor: pointer;
+  min-block-size: var(--touch-target);
+  display: flex;
+  align-items: center;
+}
+
+/* The setup key is Latin base32: isolated and left-to-right in both locales,
+   grouped in fours by the page, and never auto-translated. */
+.mfa-secret {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+  unicode-bidi: isolate;
+}
+
+/* The grace reminder is a non-modal banner inside the console: it never
+   blocks interaction with the page beneath it. */
+.mfa-grace-prompt {
+  flex-wrap: wrap;
+}
+
+.mfa-grace-prompt .banner-headline {
+  font-size: var(--text-base);
+}
+
 /* ---------- Loading / empty / action-needed / error states ----------
 
    THREE THINGS, THREE TREATMENTS. This separation is the point of the whole

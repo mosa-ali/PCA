@@ -14,10 +14,10 @@ import { test, expect } from '@playwright/test';
  * assertion.
  *
  * PREREQUISITE (disposable fixture manifest, and why the login helper sets a
- * cookie). The fixture provisions real family genesis for both parent
- * identities: since PCA-DEC-020-R1, email verification establishes identity
- * only, so a verified account without genesis has no family role and the
- * Parent Web client correctly refuses the session. It also issues one daily
+ * cookie). The fixture provisions a real family membership for both parent
+ * identities (since PCA-DEC-037 the server provisions it at first sign-in;
+ * the fixture does it up front so the journey starts from a normal account).
+ * It also issues one daily
  * login grant per account, representing the state a returning browser would
  * hold after completing step-up. Nothing in the production login path is
  * weakened to make this pass.

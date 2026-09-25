@@ -4466,6 +4466,14 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "provisioned_for_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
         }
       ],
       "indexes": [
@@ -4473,6 +4481,12 @@
           "name": "families_family_reference_hash_key",
           "unique": true,
           "column": "family_reference_hash",
+          "seq": 1
+        },
+        {
+          "name": "families_provisioned_for_account_key",
+          "unique": true,
+          "column": "provisioned_for_account_id",
           "seq": 1
         },
         {
@@ -5706,6 +5720,78 @@
       ],
       "foreignKeys": []
     },
+    "parent_account_security_events": {
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "event_type",
+          "type": "varchar(40)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "detail",
+          "type": "varchar(48)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "occurred_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_account_security_events_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_account_security_events_account_idx",
+          "unique": false,
+          "column": "occurred_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "event_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_account_security_events_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
     "parent_accounts": {
       "columns": [
         {
@@ -6484,6 +6570,474 @@
           "column": "account_id",
           "referencedTable": "parent_accounts",
           "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_mfa_enrollment_tickets": {
+      "columns": [
+        {
+          "name": "ticket_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "token_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "purpose",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_mfa_enrollment_tickets_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_mfa_enrollment_tickets_account_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 2
+        },
+        {
+          "name": "parent_mfa_enrollment_tickets_token_hash_key",
+          "unique": true,
+          "column": "token_hash",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "ticket_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_mfa_enrollment_tickets_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_mfa_recovery_codes": {
+      "columns": [
+        {
+          "name": "code_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "code_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_mfa_recovery_codes_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_mfa_recovery_codes_account_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "code_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_mfa_recovery_codes_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_mfa_state": {
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "totp_secret_ciphertext",
+          "type": "varbinary(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "totp_secret_nonce",
+          "type": "varbinary(16)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "pending_secret_ciphertext",
+          "type": "varbinary(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "pending_secret_nonce",
+          "type": "varbinary(16)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "pending_created_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "last_accepted_totp_counter",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "grace_started_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "grace_expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "enrolled_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "failed_attempt_count",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "failure_window_started_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "locked_until",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "reset_count",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "recovery_hold_started_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "recovery_hold_expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "account_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_mfa_state_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_mfa_step_up_grants": {
+      "columns": [
+        {
+          "name": "grant_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "operation",
+          "type": "varchar(48)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "token_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_mfa_step_up_grants_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_mfa_step_up_grants_account_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 2
+        },
+        {
+          "name": "parent_mfa_step_up_grants_family_fk",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_mfa_step_up_grants_token_hash_key",
+          "unique": true,
+          "column": "token_hash",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "grant_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_mfa_step_up_grants_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "parent_mfa_step_up_grants_family_fk",
+          "column": "family_id",
+          "referencedTable": "families",
+          "referencedColumn": "family_id"
         }
       ]
     },

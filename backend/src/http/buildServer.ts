@@ -55,9 +55,9 @@ import type { RefundOrchestrationService } from '../billing/refundOrchestration/
 import type { PaymentRepository } from '../billing/payment.js';
 import type { PaymentProviderRegistry } from '../billing/provider/providerRegistry.js';
 import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformAdminAuditService.js';
-// PCA-BILL-2A-R1 correction FIX 4: family owner authority gate for
-// checkout-CREATE -- see billingCheckoutRoutes.ts/FamilyCommercialAuthorityResolver.ts.
-import type { FamilyCommercialAuthorityResolver } from '../billing/authority/FamilyCommercialAuthorityResolver.js';
+// PCA-DEC-030: family owner authority gate (ADMINISTRATOR + fresh TOTP step-up) for
+// checkout-CREATE and every family-commercial mutation.
+import type { ParentCommercialStepUpAuthority } from '../parentaccount/mfa/ParentCommercialStepUpAuthority.js';
 // PCA-COMMERCIAL-NOTIFY-1: durable commercial-notification event/read model
 // -- a structurally independent surface layered on top of the family
 // service-session/AuthzService plane and Platform Administration (for its
@@ -86,7 +86,7 @@ import type { SubscriptionService } from '../billing/subscription.js';
 import type { DisputeService } from '../billing/dispute.js';
 // PCA-MYKIDS-BILL-2: family-facing commercial read/request-workflow API --
 // composes PCA-PA-2/PCA-BILL-1 exactly like billingCheckoutRoutes.ts
-// already does; reuses the SAME FamilyCommercialAuthorityResolver.
+// already does; reuses the SAME commercial owner authority.
 import { registerFamilyCommercialRoutes } from './routes/familyCommercialRoutes.js';
 import type { FamilyCommercialService } from '../familycommercial/FamilyCommercialService.js';
 import type { ComplimentaryEntitlementService } from '../entitlements/complimentary/ComplimentaryEntitlementService.js';
@@ -206,8 +206,8 @@ export interface ServerDependencies {
   billingRefundOrchestrationService: RefundOrchestrationService;
   billingPaymentRepository: PaymentRepository;
   billingAuditService: PlatformAdminAuditService;
-  /** FIX 4 (see FamilyCommercialAuthorityResolver.ts): production wiring (main.ts) is UnavailableFamilyCommercialAuthorityResolver -- fail-closed until a genuine server-side trust-set source exists. */
-  billingFamilyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
+  /** PCA-DEC-030: COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP, for checkout and every family-commercial mutation. */
+  commercialOwnerAuthority: Pick<ParentCommercialStepUpAuthority, 'authorize'>;
   /** PCA-COMMERCIAL-NOTIFY-1: durable commercial notifications -- see registerCommercialNotificationRoutes below. */
   commercialNotificationService: CommercialNotificationService;
   commercialNotificationSupportService: CommercialNotificationSupportService;
@@ -227,20 +227,8 @@ export interface ServerDependencies {
   disputeService: DisputeService;
   /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
   familyCommercialService: FamilyCommercialService;
-  familyAuthorityRequestChallengeService?: import('../familycommercial/authority/FamilyAuthorityRequestChallengeService.js').FamilyAuthorityRequestChallengeService;
-  /** Binds owner-authority challenge issuance to the device's registering account (familyCommercialRoutes). */
-  authorityDeviceDirectory?: Pick<import('../device/DeviceRepository.js').DeviceRepository, 'findDeviceForFamily'>;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
   parentAccountService: ParentAccountService;
-  /**
-   * PCA-DEC-020-R1: whether the composed genesis verifier can actually verify
-   * a ceremony. Derived in main.ts from the verifier INSTANCE itself (never a
-   * second constant that can drift) and passed to registerParentAccountRoutes
-   * so the genesis routes fail closed with 503 genesis_unavailable BEFORE any
-   * ceremony work. `undefined` means AVAILABLE: a composer that has not
-   * declared the capability must not be silently told genesis is impossible.
-   */
-  genesisCryptographyAvailable?: boolean;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
@@ -557,7 +545,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authzService: deps.authzService,
     rateLimiter,
     authAttemptLimiter,
-    familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
+    commercialOwnerAuthority: deps.commercialOwnerAuthority,
   });
   registerBillingWebhookRoutes(app, {
     webhookService: deps.billingWebhookService,
@@ -600,19 +588,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     familyCommercialService: deps.familyCommercialService,
     authService: deps.authService,
     authzRepository: deps.authzRepository,
-    familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
+    commercialOwnerAuthority: deps.commercialOwnerAuthority,
     rateLimiter,
     authAttemptLimiter,
     complimentaryEntitlementService: deps.complimentaryEntitlementService,
-    familyAuthorityRequestChallengeService: deps.familyAuthorityRequestChallengeService,
-    authorityDeviceDirectory: deps.authorityDeviceDirectory,
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,
-    // Passed through so the genesis routes fail closed with 503
-    // genesis_unavailable in a composition whose verifier cannot verify --
-    // see ServerDependencies.genesisCryptographyAvailable.
-    genesisCryptographyAvailable: deps.genesisCryptographyAvailable,
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,

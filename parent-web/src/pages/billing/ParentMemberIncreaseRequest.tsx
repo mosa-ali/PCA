@@ -14,11 +14,14 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import { RequestStateBadge } from '../../components/billing/RequestStateBadge';
+import { useStepUp } from '../../state/StepUpContext';
+import { billingActionErrorMessage } from '../../components/billing/billingActionError';
 
 export default function ParentMemberIncreaseRequest() {
   const { t } = useTranslation();
   const clients = getApiClients();
   const navigate = useNavigate();
+  const { requestCommercialStepUp } = useStepUp();
   const [searchParams] = useSearchParams();
   const requestId = searchParams.get('requestId');
   const [customTarget, setCustomTarget] = useState('');
@@ -46,10 +49,12 @@ export default function ParentMemberIncreaseRequest() {
     }
     setBusy(true);
     try {
-      const created = await clients.billing.requestLimitIncrease('PARENT_MEMBER_LIMIT', targetLimit);
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_REQUEST_CREATE');
+      if (!stepUpToken) return;
+      const created = await clients.billing.requestLimitIncrease('PARENT_MEMBER_LIMIT', targetLimit, stepUpToken);
       navigate(`/subscription/increase-parent-members?requestId=${created.requestId}`, { replace: true });
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setFormError(billingActionErrorMessage(e, t));
     } finally {
       setBusy(false);
     }
@@ -58,10 +63,12 @@ export default function ParentMemberIncreaseRequest() {
   const cancel = async (id: string) => {
     setBusy(true);
     try {
-      await clients.billing.cancelRequest(id);
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_REQUEST_CANCEL');
+      if (!stepUpToken) return;
+      await clients.billing.cancelRequest(id, stepUpToken);
       reload();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setFormError(billingActionErrorMessage(e, t));
     } finally {
       setBusy(false);
     }

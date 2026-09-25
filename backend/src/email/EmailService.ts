@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { EmailSenderPort } from '../parentaccount/EmailSenderPort.js';
+import type { EmailSenderPort, ParentSecurityNotice } from '../parentaccount/EmailSenderPort.js';
 import type { EmailOutboxRepository } from './EmailOutboxRepository.js';
 import type { EmailProviderAdapter } from './EmailProviderAdapter.js';
 import { attemptDeliveryAndRecordOutcome, type EmailOutboxProcessorDeps, type OutboxMessagePayload } from './EmailOutboxProcessor.js';
@@ -85,8 +85,13 @@ export class EmailService implements EmailSenderPort {
     await this.enqueueAndAttempt('LOGIN_STEP_UP', email, code);
   }
 
-  async sendGenesisStepUpCode(email: string, code: string): Promise<void> {
-    await this.enqueueAndAttempt('GENESIS_STEP_UP', email, code);
+  async sendMfaRecoveryCode(email: string, code: string): Promise<void> {
+    await this.enqueueAndAttempt('MFA_RECOVERY', email, code);
+  }
+
+  /** The rendered "code" slot carries only the UTC instant; the idempotency value is the event id, so a retry of the same event enqueues once. */
+  async sendSecurityNotice(email: string, notice: ParentSecurityNotice, occurredAt: Date, eventId: string): Promise<void> {
+    await this.enqueueAndAttempt(notice, email, occurredAt.toISOString(), eventId);
   }
 
   async sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void> {

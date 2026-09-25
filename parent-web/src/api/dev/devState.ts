@@ -21,20 +21,25 @@ function initialDevRole(): FamilyRole {
   return 'OWNER';
 }
 
-function initialGenesisPending(): boolean {
-  // Test-only convenience, same rationale as `demoRole`: a
-  // `?demoGenesis=required` query param lets Playwright preset the pre-family
-  // state across a full page navigation, so the genesis routing guard and
-  // ceremony can be exercised in e2e instead of only on their success path.
+type DevMfaState = 'ACTIVE' | 'GRACE' | 'SETUP_REQUIRED';
+
+function initialDevMfa(): DevMfaState {
+  // Test-only convenience, same rationale as `demoRole`: `?demoMfa=GRACE`
+  // (or SETUP_REQUIRED) lets Playwright preset the authenticator status
+  // across a full page navigation. Defaults to ACTIVE so the grace reminder
+  // never appears in unrelated fixture journeys.
   if (typeof window !== 'undefined') {
-    return new URLSearchParams(window.location.search).get('demoGenesis') === 'required';
+    const requested = new URLSearchParams(window.location.search).get('demoMfa');
+    if (requested === 'GRACE' || requested === 'SETUP_REQUIRED') return requested;
   }
-  return false;
+  return 'ACTIVE';
 }
 
 let currentRole: FamilyRole = initialDevRole();
 let serviceAuthenticated = true;
-let genesisPending = initialGenesisPending();
+let devMfa: DevMfaState = initialDevMfa();
+// Fixed once per page load, so the displayed time left counts down rather than resetting on every read.
+const devGraceExpiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000).toISOString();
 
 const listeners = new Set<() => void>();
 
@@ -65,35 +70,13 @@ export function setServiceAuthenticated(value: boolean): void {
   notify();
 }
 
-/** True while the dev fixture is modelling an authenticated account that has not yet created a family. */
-export function getGenesisPending(): boolean {
-  return genesisPending;
-}
-
-export function setGenesisPending(value: boolean): void {
-  genesisPending = value;
+export function setDevMfa(value: DevMfaState): void {
+  devMfa = value;
   notify();
 }
 
 export function buildDevSession(): AuthenticatedSession {
-  // An account that has authenticated but owns no family yet. The session must
-  // say so EXPLICITLY rather than presenting null family fields behind a
-  // FAMILY_READY-shaped object, which is what made the pre-family case
-  // indistinguishable from a broken family scope.
-  if (serviceAuthenticated && genesisPending) {
-    return {
-      state: 'GENESIS_REQUIRED',
-      accountId: 'dev-account-1',
-      displayName: 'Dev Parent',
-      familyId: null,
-      memberId: null,
-      role: null,
-      serviceAuthenticated: true,
-      genesisAvailable: true,
-    };
-  }
   return {
-    state: 'FAMILY_READY',
     accountId: 'dev-account-1',
     displayName: 'Dev Parent',
     familyId: 'dev-family-1',
@@ -107,5 +90,6 @@ export function buildDevSession(): AuthenticatedSession {
             : 'member-amir',
     role: currentRole,
     serviceAuthenticated,
+    mfa: devMfa === 'ACTIVE' ? { status: 'ACTIVE' } : { status: devMfa, graceExpiresAt: devGraceExpiresAt },
   };
 }

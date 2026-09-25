@@ -37,6 +37,9 @@ const LATIN_ALLOWLIST: Readonly<Record<string, RegExp>> = {
   'permissionsPolicy.permissions.foregroundService.purpose': /VPN/,
   'permissionsPolicy.permissions.foregroundServiceSpecialUse.purpose': /VPN/,
   'downloadApp.iosPlanned': /iOS/,
+  // Product names of the authenticator apps a parent will look for in their
+  // app store (PCA-DEC-037), plus the open standard's name. Not translatable.
+  'mfa.setup.appsNote': /Microsoft Authenticator.*Google Authenticator.*TOTP/,
 };
 
 function userFacingArabicEntries(): Array<[string, string]> {

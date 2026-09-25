@@ -48,111 +48,32 @@ import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, Retention
 import type { ActivityTimelineEntry } from '../domain/activityTimeline';
 
 /**
- * PARENT AUTHENTICATION HAS TWO LEGITIMATE AUTHENTICATED STATES (PCA-DEC-027 /
- * PCA-ADD-IDENT-004). This used to be a single flat interface with
- * `familyId: string` and `role: FamilyRole`, which made the pre-family state
- * UNREPRESENTABLE -- so the only way to return it was to fabricate a family or
- * throw, and the client threw. See the note on `GENESIS_REQUIRED` below.
- */
-export type AuthenticatedSession = GenesisRequiredSession | FamilyReadySession;
-
-/**
- * A verified, authenticated parent who has NO family yet.
+ * An authenticated parent session (PCA-DEC-037).
  *
- * This is a SUCCESS state, not an error and not a threat: the backend
- * deliberately allows a VERIFIED identity to exist before family genesis,
- * because genesis needs an authenticated account to bind the family to. The
- * account-level session is real; only family authority is absent.
+ * The family is provisioned server-side at the account's first sign-in, so an
+ * established session always carries a real `familyId` and a real normal role.
+ * There is no pre-family state any more: a session body that arrives without
+ * one is a server contract violation and is rejected by the client (fail
+ * closed), never bridged with a fabricated family or role.
  *
- * `role` is `null` and MUST stay `null` -- it is never bridged with a fake role
- * or an empty string. Resolving this to `ADMINISTRATOR` would grant family
- * authority before the cryptographic genesis ceremony and would bypass the
- * family authorization boundary outright. This state is allowed to reach only
- * onboarding/genesis/account-level operations; every family-scoped surface
- * (children, policy, billing, member administration, ADMINISTRATOR-only
- * actions) must stay unreachable until genesis completes.
+ * `mfa` is the server's statement of the account's authenticator-app status.
+ * The UI only DISPLAYS it (grace reminder, mandatory setup redirect); the
+ * server enforces it. `graceExpiresAt` is always taken from the server and is
+ * never extended, recomputed or persisted client-side.
  */
-export interface GenesisRequiredSession {
-  state: 'GENESIS_REQUIRED';
-  accountId: string;
-  displayName: string;
-  familyId: null;
-  /** No membership row exists yet, so there is no member id -- deliberately not the account id, which would imply a membership that does not exist. */
-  memberId: null;
-  role: null;
-  /** Stays `boolean` (as the flat type always had it): only the dev fixture varies it, and the security-relevant discriminator is `state`/`familyId`/`role`, not this UI-level flag. */
-  serviceAuthenticated: boolean;
-  /**
-   * F-A-min: whether THIS deployment can actually complete a genesis ceremony
-   * (the additive `genesisAvailable` field on GET /api/parent/session). When
-   * false, onboarding renders the unavailable state immediately instead of
-   * asking for a password and a one-time code that cannot lead anywhere.
-   * Optional with `undefined` meaning AVAILABLE, mirroring the server, where a
-   * composer that has not declared the capability must not be told genesis is
-   * impossible.
-   */
-  genesisAvailable?: boolean;
-}
+export type ParentMfaStatus =
+  | { status: 'ACTIVE' }
+  | { status: 'GRACE'; graceExpiresAt: string }
+  | { status: 'SETUP_REQUIRED'; graceExpiresAt: string };
 
-/** An established family session: a real membership with a real normal role. */
-export interface FamilyReadySession {
-  state: 'FAMILY_READY';
+export interface AuthenticatedSession {
   accountId: string;
   displayName: string;
   familyId: string;
   memberId: string;
   role: FamilyRole;
   serviceAuthenticated: boolean;
-}
-
-/** Narrows to the established-family case, so callers cannot read family fields off a pre-family session by accident. */
-export function isFamilyReady(session: AuthenticatedSession): session is FamilyReadySession {
-  return session.state === 'FAMILY_READY';
-}
-
-/**
- * PCA-FAMILY-AUTH-1-R1 client-key genesis ceremony (PCA-DEC-020-R1).
- *
- * Verification establishes ACCOUNT IDENTITY ONLY; a family is created by this
- * separate, explicit, cryptographically-bound ceremony. The browser becomes the
- * family's FIRST TRUSTED PARENT by signing with a non-extractable P-256 endpoint
- * key it generates locally -- see security/genesisProof.ts, the verified browser
- * counterpart of the backend's canonicalizers.
- */
-export type GenesisPlatform = 'ANDROID' | 'IOS' | 'BROWSER';
-
-/**
- * The server's own statement of what is being signed. Every signed field is
- * copied FROM this object rather than re-derived client-side: a client that
- * recomputed any of it would be signing something the server never issued.
- */
-export interface GenesisChallenge {
-  protocolVersion: number;
-  /** Fixed by the protocol AND by a database check constraint: parent_genesis_challenges.operation = 'GENESIS'. */
-  operation: 'GENESIS';
-  accountId: string;
-  serviceAccountId: string;
-  familyId: string;
-  deviceId: string;
-  keyId: string;
-  publicKey: string;
-  platform: GenesisPlatform;
-  challengeId: string;
-  nonce: string;
-  createdAt: string;
-  expiresAt: string;
-}
-
-/** The three signatures plus the temporal/epoch window the backend verifies. */
-export interface GenesisCompletionInput {
-  challengeId: string;
-  proofSignature: string;
-  anchorSignature: string;
-  attestationSignature: string;
-  trustSetEpoch: number;
-  keyEpoch: number;
-  issuedAt: string;
-  expiresAt: string;
+  mfa: ParentMfaStatus;
 }
 
 /** Result of a self-service registration/verification call -- PCA-AUTH-SESSION-1 (FAMILY_SERVICE_SESSION_V1). Never leaks whether an email already existed. */
@@ -176,34 +97,75 @@ export interface ResetPasswordResult {
 }
 
 /**
- * A normal login either establishes a session immediately when the browser
- * presents a valid server-issued daily grant, or requires one more round trip
- * through `completeLoginStepUp` after the mailbox OTP. The expected
- * STEP_UP_REQUIRED branch is modeled as a discriminated result rather than a
- * thrown error, like RegistrationResult and RequestPasswordResetResult.
+ * The password step of sign-in has three expected outcomes besides an
+ * immediate session, all modelled as results rather than thrown errors:
+ *  - STEP_UP_REQUIRED: an emailed one-time code was sent (accounts without an
+ *    authenticator app); finish with `completeLoginStepUp`.
+ *  - MFA_REQUIRED: the account has an authenticator app; call `signIn` again
+ *    with the SAME email and password plus the current 6-digit `totpCode`.
  */
-export type SignInResult = { status: 'AUTHENTICATED'; session: AuthenticatedSession } | { status: 'STEP_UP_REQUIRED' };
+export type SignInResult =
+  | { status: 'AUTHENTICATED'; session: AuthenticatedSession }
+  | { status: 'STEP_UP_REQUIRED' }
+  | { status: 'MFA_REQUIRED' }
+  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: string };
+
+/**
+ * The emailed login code either establishes the session, or -- when the
+ * account's authenticator grace period is over -- establishes NO session and
+ * instead sets a short-lived HttpOnly enrollment ticket: the caller must go
+ * straight to mandatory authenticator setup.
+ */
+export type LoginStepUpResult = { status: 'AUTHENTICATED'; session: AuthenticatedSession } | { status: 'MFA_SETUP_REQUIRED' };
+
+/** Email verification activates the account. It deliberately establishes NO session: the parent signs in next. */
+export interface VerifyEmailResult {
+  status: 'VERIFIED';
+}
+
+/**
+ * The one-time authenticator enrollment material. It is shown once, held in
+ * component memory only, and must never be written to any storage, URL or log.
+ */
+export interface MfaEnrollmentStart {
+  otpauthUri: string;
+  secret: string;
+}
+
+/** `sessionEstablished` is true only on the enrollment-ticket path, where confirming the authenticator also signs this browser in. */
+export interface MfaEnrollmentConfirmResult {
+  sessionEstablished: boolean;
+}
+
+export type MfaRecoveryCompletionResult =
+  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: string }
+  | { status: 'MFA_SETUP_REQUIRED' };
+
+/** The sensitive commercial operations a fresh authenticator step-up can be minted for (backend: isCommercialStepUpOperation). */
+export type CommercialStepUpOperation =
+  | 'BILLING_CHECKOUT_CREATE'
+  | 'FAMILY_COMMERCIAL_REQUEST_CREATE'
+  | 'FAMILY_COMMERCIAL_REQUEST_CANCEL'
+  | 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL'
+  | 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME';
+
+/** A single-use grant for exactly one commercial operation. Held in memory only and sent once, in that operation's request body. */
+export interface CommercialStepUpGrant {
+  stepUpToken: string;
+  operation: CommercialStepUpOperation;
+  expiresAt: string;
+}
 
 /** Service-level (account) authentication -- separate from family authority. */
 export interface ServiceAuthClient {
   getSession(): Promise<AuthenticatedSession | null>;
-  signIn(email: string, password: string): Promise<SignInResult>;
-  /** Consumes the one-time emailed login step-up code issued when signIn() returned STEP_UP_REQUIRED. Establishes the session on success. */
-  completeLoginStepUp(email: string, code: string): Promise<AuthenticatedSession>;
+  /** `totpCode` is sent only on the second call after an MFA_REQUIRED result. */
+  signIn(email: string, password: string, totpCode?: string): Promise<SignInResult>;
+  /** Consumes the one-time emailed login step-up code issued when signIn() returned STEP_UP_REQUIRED. */
+  completeLoginStepUp(email: string, code: string): Promise<LoginStepUpResult>;
   signOut(): Promise<void>;
-  /** Re-authentication for a step-up-protected action; binds to an action id. */
+  /** Re-authentication for a step-up-protected (non-commercial) family action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;
-  /**
-   * Starts the family-genesis step-up: password re-auth bound to the CURRENT
-   * session, which emails a fresh one-time code. Resolves 202 on success.
-   */
-  startGenesisStepUp(email: string, password: string): Promise<void>;
-  /** Consumes the one-time genesis step-up code. Resolves 200 on success. */
-  completeGenesisStepUp(code: string): Promise<void>;
-  /** Requests a genesis challenge for the freshly generated device public key. Resolves 201 (NOT 200). */
-  requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge>;
-  /** Submits the signed proof/anchor/attestation. The backend atomically creates the family, membership and authority chain. */
-  completeGenesis(input: GenesisCompletionInput): Promise<void>;
   /**
    * PCA-AUTH-SESSION-1 (PCA-DEC-026): self-service registration. Server
    * validates password===passwordConfirmation itself. Always resolves to
@@ -212,14 +174,8 @@ export interface ServiceAuthClient {
    * branch on.
    */
   register(email: string, password: string, passwordConfirmation: string, profile?: ParentSignupProfile): Promise<RegistrationResult>;
-  /**
-   * Consumes the one-time emailed verification code. On success this
-   * establishes the session (same effect as signIn) and returns it --
-   * first verification for a brand-new family also triggers genesis, so
-   * `familyId` may be null if genesis is not currently available (see
-   * ../real/realServiceAuthClient.ts's header).
-   */
-  verifyEmail(email: string, code: string): Promise<AuthenticatedSession>;
+  /** Consumes the one-time emailed verification code. Activates the account; establishes no session. */
+  verifyEmail(email: string, code: string): Promise<VerifyEmailResult>;
   /**
    * PCA product-completion programme (P1 /login finding): account-level
    * password reset, distinct from the family-E2EE Recovery flow. Always
@@ -230,10 +186,30 @@ export interface ServiceAuthClient {
   requestPasswordReset(email: string): Promise<RequestPasswordResetResult>;
   /**
    * Consumes a password-reset code and replaces the account's credential.
-   * Deliberately does NOT establish a session (unlike verifyEmail) -- the
-   * caller must sign in fresh with the new password.
+   * Deliberately does NOT establish a session -- the caller must sign in
+   * fresh with the new password.
    */
   resetPassword(email: string, code: string, newPassword: string, newPasswordConfirmation: string): Promise<ResetPasswordResult>;
+  /**
+   * PCA-DEC-037 authenticator enrollment, step 1: password re-authentication,
+   * then the server returns the one-time otpauth URI and base32 secret.
+   * Authorised by EITHER the HttpOnly enrollment ticket (mandatory setup /
+   * recovery; no session exists) OR the live session plus CSRF (voluntary
+   * setup during grace).
+   */
+  startMfaEnrollment(email: string, password: string): Promise<MfaEnrollmentStart>;
+  /** Step 2: proves the app is set up with its current 6-digit code. */
+  confirmMfaEnrollment(email: string, code: string): Promise<MfaEnrollmentConfirmResult>;
+  /** Lost-authenticator recovery, step 1. Always resolves identically (never an account/password oracle). */
+  requestMfaRecovery(email: string, password: string): Promise<void>;
+  /**
+   * Step 2: the first verified code starts a database-backed 24-hour hold;
+   * a fresh code after the hold clears the old factor and sets an enrollment
+   * ticket. Pending responses carry the server deadline.
+   */
+  completeMfaRecovery(email: string, password: string, code: string): Promise<MfaRecoveryCompletionResult>;
+  /** Mints a single-use grant for one sensitive commercial operation from a fresh authenticator code. ADMINISTRATOR with an active authenticator only. */
+  issueCommercialStepUp(operation: CommercialStepUpOperation, code: string): Promise<CommercialStepUpGrant>;
 }
 
 /**
@@ -528,9 +504,15 @@ export interface BillingClient {
   isPaymentProviderAvailable(): boolean;
 
   /** Creates a PENDING request for the given limit type/target and resolves it (standard quote, custom-quote-pending, or -- for PARENT_MEMBER_LIMIT, PCA-ADD-PA-054 -- no quote at all). */
-  requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest>;
+  /**
+   * Every commercial mutation below carries `stepUpToken`: a single-use grant
+   * minted by `ServiceAuthClient.issueCommercialStepUp` for exactly that
+   * operation from a fresh authenticator code (PCA-DEC-037,
+   * COMMERCIAL_OWNER_AUTHORITY = ADMINISTRATOR + fresh TOTP step-up).
+   */
+  requestLimitIncrease(limitType: LimitType, targetLimit: number, stepUpToken: string): Promise<EntitlementChangeRequest>;
   /** Parent-initiated withdrawal -- valid only from PENDING/QUOTED (PCA-ADD-PA-030). */
-  cancelRequest(requestId: string): Promise<EntitlementChangeRequest>;
+  cancelRequest(requestId: string, stepUpToken: string): Promise<EntitlementChangeRequest>;
   /**
    * QUOTED -> PAYMENT_PENDING handoff to the payment provider
    * (`POST .../billing/checkout`). `returnUrl` is where the provider should
@@ -540,7 +522,7 @@ export interface BillingClient {
    * itself performs that navigation, never returns an APPROVED state, and
    * never itself confirms payment.
    */
-  beginCheckout(requestId: string, returnUrl: string): Promise<CheckoutSession>;
+  beginCheckout(requestId: string, returnUrl: string, stepUpToken: string): Promise<CheckoutSession>;
   /** Re-reads a single request's current authoritative state -- used to poll a PAYMENT_PENDING request after a checkout redirect, never trusting the redirect itself. */
   getRequest(requestId: string): Promise<EntitlementChangeRequest | null>;
   /** Polling-only checkout-attempt status (`GET .../billing/checkout/:paymentAttemptId`) -- supplementary to `getRequest`, never authoritative confirmation on its own (PCA-ADD-BILL-035). */
@@ -549,9 +531,9 @@ export interface BillingClient {
   /** Provider-hosted/tokenized payment-method entry point (PCA-ADD-BILL-024) -- MyKids itself never collects raw card fields. */
   beginAddPaymentMethod(): Promise<PaymentMethodSummary>;
   /** Turns off auto-renew for the family's own active subscription (`POST .../commercial/subscription/auto-renew/cancel`). Never itself cancels the subscription or charges/refunds anything -- flag/state only. */
-  cancelAutoRenew(): Promise<{ auditEventId: string }>;
+  cancelAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }>;
   /** Symmetric counterpart to `cancelAutoRenew` -- turns auto-renew back on (`POST .../commercial/subscription/auto-renew/resume`). */
-  resumeAutoRenew(): Promise<{ auditEventId: string }>;
+  resumeAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }>;
 }
 
 /**

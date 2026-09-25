@@ -24,7 +24,6 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
-import { GenesisChallengeError } from '../../parentaccount/GenesisChallengeService.js';
 import { createKeyedRateLimiter } from '../../parentaccount/rateLimiter.js';
 import { clientAddressKey } from '../clientAddress.js';
 import { hashParentEmail } from '../../parentaccount/emailHash.js';
@@ -35,6 +34,7 @@ import {
   serializeCookie,
   serializeExpiredCookie,
   dailyLoginGrantCookieName,
+  mfaEnrollmentTicketCookieName,
   sessionCookieName,
 } from '../../parentaccount/cookies.js';
 import { isProductionSensitiveRuntime } from '../../runtime/environment.js';
@@ -50,8 +50,9 @@ import {
   RESET_PASSWORD_EMAIL_RATE_LIMIT,
   RESET_PASSWORD_IP_RATE_LIMIT,
   VERIFY_EMAIL_RATE_LIMIT,
-  GENESIS_STEP_UP_EMAIL_RATE_LIMIT,
-  GENESIS_STEP_UP_IP_RATE_LIMIT,
+  PARENT_MFA_EMAIL_RATE_LIMIT,
+  PARENT_MFA_IP_RATE_LIMIT,
+  PARENT_MFA_ENROLLMENT_TICKET_TTL_MS,
   VERIFY_IP_RATE_LIMIT,
   DAILY_LOGIN_GRANT_TTL_MS,
 } from '../../parentaccount/policy.js';
@@ -61,8 +62,9 @@ import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage
 import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import type { ParentSignupProfile } from '../../parentaccount/types.js';
-import { isGenesisPlatform } from '../../parentaccount/genesisProtocol.js';
+import type { ParentMfaSummary, ParentSignupProfile } from '../../parentaccount/types.js';
+import type { EnrollmentCredential } from '../../parentaccount/ParentAccountService.js';
+import { isCommercialStepUpOperation } from '../../parentaccount/mfa/ParentMfaRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
@@ -86,26 +88,6 @@ const ACTOR_DEVICE_HEADER = 'x-pca-actor-device-id';
 
 export interface ParentAccountRoutesDeps {
   parentAccountService: ParentAccountService;
-  /**
-   * Whether this deployment can actually COMPLETE a genesis ceremony.
-   *
-   * The production composition wires a rejecting device-signature verifier until
-   * the external human cryptographic review passes (see main.ts), so every
-   * completion is refused at signature verification. That refusal is the
-   * CORRECT fail-closed behaviour -- but the route reported it as 401, so the
-   * client told the parent their SESSION had expired. It had not: nothing was
-   * wrong with the session, and signing in again cannot fix it. A dedicated 503
-   * (`genesis_unavailable`) says the true thing, and lets the client fail BEFORE
-   * generating a device key it has no way to use.
-   *
-   * Optional for the same additive-dependency reason as `deviceSessionService`,
-   * and declared so that the Safe Zone routes' precedent is followed: an
-   * unavailable capability fails closed with a SEMANTIC 503 rather than a crash
-   * or a misleading 4xx. `undefined` is treated as AVAILABLE, because a composer
-   * that has not declared the capability must not be silently told genesis is
-   * impossible.
-   */
-  genesisCryptographyAvailable?: boolean;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
@@ -151,7 +133,7 @@ function generateCsrfToken(): string {
 const SESSION_COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
 const DAILY_LOGIN_GRANT_COOKIE_MAX_AGE_SECONDS = Math.floor(DAILY_LOGIN_GRANT_TTL_MS / 1000);
 
-function setSessionCookies(reply: FastifyReply, rawSessionToken: string, rawDailyLoginGrantToken?: string): string {
+function setSessionCookies(reply: FastifyReply, rawSessionToken: string, rawDailyLoginGrantToken?: string, extraCookies: readonly string[] = []): string {
   const secure = isProductionSensitiveRuntime();
   const csrfToken = generateCsrfToken();
   const cookies = [
@@ -161,6 +143,7 @@ function setSessionCookies(reply: FastifyReply, rawSessionToken: string, rawDail
   if (rawDailyLoginGrantToken) {
     cookies.push(serializeCookie(dailyLoginGrantCookieName(), rawDailyLoginGrantToken, { httpOnly: true, secure, maxAgeSeconds: DAILY_LOGIN_GRANT_COOKIE_MAX_AGE_SECONDS }));
   }
+  cookies.push(...extraCookies);
   reply.header('Set-Cookie', cookies);
   return csrfToken;
 }
@@ -171,7 +154,29 @@ function clearSessionCookies(reply: FastifyReply): void {
     serializeExpiredCookie(sessionCookieName(), { httpOnly: true, secure }),
     serializeExpiredCookie(csrfCookieName(), { httpOnly: false, secure }),
     serializeExpiredCookie(dailyLoginGrantCookieName(), { httpOnly: true, secure }),
+    serializeExpiredCookie(mfaEnrollmentTicketCookieName(), { httpOnly: true, secure }),
   ]);
+}
+
+/** Sets ONLY the enrollment ticket cookie, and clears any session cookies: a ticket is issued exactly when no session may exist. */
+function setEnrollmentTicketCookie(reply: FastifyReply, rawTicket: string): void {
+  const secure = isProductionSensitiveRuntime();
+  reply.header('Set-Cookie', [
+    serializeExpiredCookie(sessionCookieName(), { httpOnly: true, secure }),
+    serializeExpiredCookie(csrfCookieName(), { httpOnly: false, secure }),
+    serializeExpiredCookie(dailyLoginGrantCookieName(), { httpOnly: true, secure }),
+    serializeCookie(mfaEnrollmentTicketCookieName(), rawTicket, { httpOnly: true, secure, maxAgeSeconds: Math.floor(PARENT_MFA_ENROLLMENT_TICKET_TTL_MS / 1000) }),
+  ]);
+}
+
+function mfaToJson(mfa: ParentMfaSummary): Record<string, string> {
+  if (mfa.status === 'ACTIVE') return { status: 'ACTIVE' };
+  if (mfa.status === 'RECOVERY_PENDING') return { status: mfa.status, recoveryAvailableAt: mfa.recoveryAvailableAt.toISOString() };
+  return { status: mfa.status, graceExpiresAt: mfa.graceExpiresAt.toISOString() };
+}
+
+function sessionBody(result: { accountId: string; familyId: string | null; role: string | null; mfa: ParentMfaSummary }): Record<string, unknown> {
+  return { accountId: result.accountId, familyId: result.familyId, role: result.role, mfa: mfaToJson(result.mfa), sessionEstablished: true };
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
@@ -184,6 +189,11 @@ function readDailyLoginGrantCookie(request: FastifyRequest): string | null {
   return cookies.get(dailyLoginGrantCookieName()) ?? null;
 }
 
+function readEnrollmentTicketCookie(request: FastifyRequest): string | null {
+  const cookies = parseCookies(request.headers.cookie);
+  return cookies.get(mfaEnrollmentTicketCookieName()) ?? null;
+}
+
 /** Double-submit CSRF check: the `pca_family_csrf` cookie value must exactly match the `X-PCA-CSRF-Token` header. Cookie presence alone (without the header, or with a mismatched header) never passes -- an attacker's cross-origin form/fetch can trigger the cookie to be sent automatically but cannot read it to also set the matching header, and SameSite=Strict additionally blocks the cookie from even being attached on a cross-site navigation/request. */
 function csrfOk(request: FastifyRequest): boolean {
   const cookies = parseCookies(request.headers.cookie);
@@ -192,23 +202,6 @@ function csrfOk(request: FastifyRequest): boolean {
   if (typeof cookieToken !== 'string' || cookieToken.length === 0) return false;
   if (typeof headerToken !== 'string' || headerToken.length === 0) return false;
   return cookieToken === headerToken;
-}
-
-/**
- * F-A-min: ONE fail-closed gate for the whole genesis surface. A deployment
- * whose composed verifier cannot verify a ceremony must say so BEFORE the
- * parent is asked for a password, before any one-time code is burned, and
- * before any ceremony state is written -- rather than accepting work it is
- * structurally unable to complete. `undefined` means AVAILABLE: a composer
- * that has not declared the capability must not be silently told genesis is
- * impossible.
- */
-function refuseIfGenesisUnavailable(deps: ParentAccountRoutesDeps, reply: FastifyReply): boolean {
-  if (deps.genesisCryptographyAvailable === false) {
-    reply.code(503).send({ error: 'genesis_unavailable' });
-    return true;
-  }
-  return false;
 }
 
 export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAccountRoutesDeps): void {
@@ -278,8 +271,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.verifyEmail(email, code);
-      setSessionCookies(reply, result.rawSessionToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
+      // PCA-DEC-030: verification activates the account; the parent then signs in.
+      await reply.code(200).send({ status: result.status, sessionEstablished: false });
     } catch (error) {
       if (error instanceof ParentAccountError) {
         const status = error.code === 'INVALID_INPUT' ? 400 : 401;
@@ -348,8 +341,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    const { email, password } = request.body as Record<string, unknown>;
-    if (typeof email !== 'string' || typeof password !== 'string') {
+    const { email, password, totpCode } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof password !== 'string' || (totpCode !== undefined && typeof totpCode !== 'string')) {
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
@@ -358,15 +351,27 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return;
     }
     try {
-      const result = await parentAccountService.login(email, password, readDailyLoginGrantCookie(request) ?? undefined);
+      const result = await parentAccountService.login(email, password, readDailyLoginGrantCookie(request) ?? undefined, totpCode as string | undefined);
       if (result.status === 'STEP_UP_REQUIRED') {
         await reply.code(200).send({ sessionEstablished: false, stepUpRequired: true });
         return;
       }
+      if (result.status === 'MFA_REQUIRED') {
+        await reply.code(200).send({ sessionEstablished: false, mfaRequired: true });
+        return;
+      }
+      if (result.status === 'MFA_RECOVERY_PENDING') {
+        reply.header('Cache-Control', 'no-store');
+        clearSessionCookies(reply);
+        await reply.code(200).send({ sessionEstablished: false, recoveryPending: true, recoveryAvailableAt: result.recoveryAvailableAt.toISOString() });
+        return;
+      }
       setSessionCookies(reply, result.rawSessionToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
+      await reply.code(200).send(sessionBody(result));
     } catch (error) {
       if (error instanceof ParentAccountError) {
+        if (error.code === 'MFA_INVALID') return reply.code(401).send({ error: 'invalid_mfa_code' });
+        if (error.code === 'MFA_LOCKED') return reply.code(429).send({ error: 'mfa_locked' });
         await reply.code(401).send({ error: 'invalid_credentials' });
         return;
       }
@@ -390,58 +395,19 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.completeLoginStepUp(email, code);
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        setEnrollmentTicketCookie(reply, result.rawEnrollmentTicket);
+        await reply.code(200).send({ sessionEstablished: false, mfaSetupRequired: true });
+        return;
+      }
       setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
+      await reply.code(200).send(sessionBody(result));
     } catch (error) {
       if (error instanceof ParentAccountError) {
         const status = error.code === 'INVALID_INPUT' ? 400 : 401;
         await reply.code(status).send({ error: error.code === 'INVALID_INPUT' ? 'invalid_request' : 'invalid_code' });
         return;
       }
-      throw error;
-    }
-  });
-
-  app.post('/api/parent/genesis/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const token = readSessionCookie(request);
-    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
-    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    // Same fail-closed gate as /challenge and /complete, checked BEFORE the
-    // rate limiter and before any service call: a deployment that cannot
-    // complete a ceremony must not ask the parent for their password and a
-    // one-time code, burn the code, and only then report the impossibility.
-    if (refuseIfGenesisUnavailable(deps, reply)) return;
-    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
-    const { email, password } = request.body as Record<string, unknown>;
-    if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
-    if (!rateLimited('genesis-step-up', GENESIS_STEP_UP_IP_RATE_LIMIT, GENESIS_STEP_UP_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
-      return reply.code(429).send({ error: 'rate_limited' });
-    }
-    try {
-      await parentAccountService.requestGenesisStepUp(token, email, password);
-      return reply.code(202).send({ stepUpRequired: true });
-    } catch (error) {
-      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
-      throw error;
-    }
-  });
-
-  app.post('/api/parent/genesis/step-up/complete', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const token = readSessionCookie(request);
-    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
-    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    // Same fail-closed gate as the other genesis routes, checked BEFORE the
-    // rate limiter and before any service call -- see /genesis/step-up above.
-    if (refuseIfGenesisUnavailable(deps, reply)) return;
-    if (!isPlainObject(request.body) || typeof (request.body as Record<string, unknown>).code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
-    if (!rateLimiter.consume('genesis-step-up-complete:ip', clientAddressKey(request), GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
-      return reply.code(429).send({ error: 'rate_limited' });
-    }
-    try {
-      await parentAccountService.completeGenesisStepUp(token, (request.body as Record<string, unknown>).code as string);
-      return reply.code(200).send({ stepUpCompleted: true });
-    } catch (error) {
-      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
       throw error;
     }
   });
@@ -454,118 +420,144 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.readSession(token);
-      // F-A-min: ADDITIVE onboarding-availability signal. A production parent
-      // whose deployment cannot complete a genesis ceremony learns it HERE, on
-      // load, and the onboarding page renders the unavailable state
-      // immediately -- instead of being asked for a password and a one-time
-      // code that cannot lead anywhere. Additive field: every existing
-      // consumer ignores it, and `undefined` (a composer that has not declared
-      // the capability) has always meant AVAILABLE.
-      await reply.code(200).send({ ...result, genesisAvailable: deps.genesisCryptographyAvailable !== false });
+      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, emailVerified: result.emailVerified, role: result.role, mfa: mfaToJson(result.mfa) });
     } catch {
       await reply.code(401).send({ error: 'unauthorized' });
     }
   });
 
-  app.post('/api/parent/genesis/challenge', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+  /**
+   * PCA-DEC-030 authenticator-app MFA. The enrollment endpoints accept EITHER
+   * the short-lived enrollment ticket (grace over, or recovery -- no session
+   * exists) OR a live session with CSRF (voluntary setup during grace). The
+   * ticket wins when present, because it is only ever issued when a session
+   * must not be used.
+   */
+  function enrollmentCredential(request: FastifyRequest, reply: FastifyReply): EnrollmentCredential | null {
+    const ticket = readEnrollmentTicketCookie(request);
+    if (ticket !== null) return { kind: 'TICKET', rawTicket: ticket };
     const token = readSessionCookie(request);
-    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
-    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    if (refuseIfGenesisUnavailable(deps, reply)) return;
-    if (!deps.parentAccountService || !isPlainObject(request.body)) return reply.code(503).send({ error: 'not_configured' });
-    const body = request.body as Record<string, unknown>;
-    if (typeof body.publicKey !== 'string' || !isGenesisPlatform(body.platform)) return reply.code(400).send({ error: 'invalid_request' });
+    if (token === null) {
+      reply.code(401).send({ error: 'unauthorized' });
+      return null;
+    }
+    if (!csrfOk(request)) {
+      reply.code(403).send({ error: 'csrf_mismatch' });
+      return null;
+    }
+    return { kind: 'SESSION', rawSessionToken: token };
+  }
+
+  function sendMfaError(reply: FastifyReply, error: unknown): boolean {
+    if (!(error instanceof ParentAccountError)) return false;
+    if (error.code === 'INVALID_INPUT') reply.code(400).send({ error: 'invalid_request' });
+    else if (error.code === 'MFA_INVALID') reply.code(401).send({ error: 'invalid_mfa_code' });
+    else if (error.code === 'MFA_LOCKED') reply.code(429).send({ error: 'mfa_locked' });
+    else if (error.code === 'FORBIDDEN') reply.code(403).send({ error: 'forbidden' });
+    else reply.code(401).send({ error: 'unauthorized' });
+    return true;
+  }
+
+  function mfaRateLimited(bucket: string, request: FastifyRequest, email: string): boolean {
+    return !rateLimited(bucket, PARENT_MFA_IP_RATE_LIMIT, PARENT_MFA_EMAIL_RATE_LIMIT, clientAddressKey(request), email);
+  }
+
+  app.post('/api/parent/mfa/enrollment/start', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const credential = enrollmentCredential(request, reply);
+    if (!credential) return;
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, password } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (mfaRateLimited('mfa-enrollment', request, email)) return reply.code(429).send({ error: 'rate_limited' });
     try {
-      const challenge = await deps.parentAccountService.beginGenesisChallenge(token, { publicKey: body.publicKey, platform: body.platform });
-      return reply.code(201).send({
-        protocolVersion: challenge.protocolVersion,
-        operation: challenge.operation,
-        accountId: challenge.accountId,
-        serviceAccountId: challenge.serviceAccountId,
-        familyId: challenge.familyId,
-        deviceId: challenge.candidateDeviceId,
-        keyId: challenge.candidateKeyId,
-        publicKey: challenge.candidatePublicKey,
-        platform: challenge.candidatePlatform,
-        challengeId: challenge.challengeId,
-        nonce: challenge.nonce,
-        createdAt: challenge.createdAt.toISOString(),
-        expiresAt: challenge.expiresAt.toISOString(),
-      });
+      const result = await parentAccountService.beginMfaEnrollment(credential, email, password);
+      // The secret travels once, in this response, and must never be cached.
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(200).send({ otpauthUri: result.otpauthUri, secret: result.secretBase32 });
     } catch (error) {
-      // Explicit on the CODE rather than the class: today beginGenesisChallenge
-      // only throws UNAUTHORIZED, but a class-level mapping would silently
-      // answer a future INVALID_INPUT as a session problem.
-      if (error instanceof ParentAccountError) {
-        if (error.code === 'UNAUTHORIZED') return reply.code(401).send({ error: 'unauthorized' });
-        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+      if (sendMfaError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/mfa/enrollment/confirm', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const credential = enrollmentCredential(request, reply);
+    if (!credential) return;
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, code } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (mfaRateLimited('mfa-enrollment-confirm', request, email)) return reply.code(429).send({ error: 'rate_limited' });
+    try {
+      const result = await parentAccountService.confirmMfaEnrollment(credential, email, code);
+      if (result.status === 'ENROLLED_SESSION_ESTABLISHED') {
+        // The ticket is spent: clear it in the same response that sets the session.
+        setSessionCookies(reply, result.rawSessionToken, undefined, [
+          serializeExpiredCookie(mfaEnrollmentTicketCookieName(), { httpOnly: true, secure: isProductionSensitiveRuntime() }),
+        ]);
+        return reply.code(200).send({ ...sessionBody(result), enrolled: true });
       }
-      // A genesis-proof error from the challenge boundary is a 400 about the
-      // REQUEST (e.g. INVALID_PUBLIC_KEY for a key that is not a valid P-256
-      // point); the route's shape check only sees a string. Never a 500.
-      if (error instanceof GenesisChallengeError) {
-        return reply.code(400).send({ error: 'invalid_request' });
+      return reply.code(200).send({ enrolled: true, sessionEstablished: false });
+    } catch (error) {
+      if (sendMfaError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/mfa/recovery/request', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, password } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (mfaRateLimited('mfa-recovery-request', request, email)) return reply.code(429).send({ error: 'rate_limited' });
+    try {
+      await parentAccountService.requestMfaRecovery(email, password);
+      // Identical whatever happened: never an account/password/MFA oracle.
+      return reply.code(202).send({ status: 'RECOVERY_CODE_SENT_IF_ELIGIBLE' });
+    } catch (error) {
+      if (error instanceof ParentAccountError && error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/mfa/recovery/complete', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, password, code } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof password !== 'string' || typeof code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (mfaRateLimited('mfa-recovery-complete', request, email)) return reply.code(429).send({ error: 'rate_limited' });
+    try {
+      const result = await parentAccountService.completeMfaRecovery(email, password, code);
+      reply.header('Cache-Control', 'no-store');
+      if (result.status === 'MFA_RECOVERY_PENDING') {
+        clearSessionCookies(reply);
+        return reply.code(200).send({ status: result.status, recoveryAvailableAt: result.recoveryAvailableAt.toISOString(), sessionEstablished: false });
+      }
+      setEnrollmentTicketCookie(reply, result.rawEnrollmentTicket);
+      return reply.code(200).send({ status: result.status, mfaSetupRequired: true, sessionEstablished: false });
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+        return reply.code(401).send({ error: 'invalid_code' });
       }
       throw error;
     }
   });
 
-  app.post('/api/parent/genesis/complete', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+  /** COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP: mints one single-use grant for one sensitive commercial operation. */
+  app.post('/api/parent/mfa/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    // Checked BEFORE the body is parsed or any work is done: a deployment that
-    // cannot complete a ceremony should say so immediately rather than accepting
-    // a proof it is structurally unable to verify.
-    if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
-    const body = request.body as Record<string, unknown>;
-    const issuedAt = typeof body.issuedAt === 'string' ? new Date(body.issuedAt) : null;
-    const expiresAt = typeof body.expiresAt === 'string' ? new Date(body.expiresAt) : null;
-    if (
-      typeof body.challengeId !== 'string' ||
-      typeof body.proofSignature !== 'string' ||
-      typeof body.anchorSignature !== 'string' ||
-      typeof body.attestationSignature !== 'string' ||
-      typeof body.trustSetEpoch !== 'number' ||
-      typeof body.keyEpoch !== 'number' ||
-      issuedAt === null ||
-      expiresAt === null
-    ) return reply.code(400).send({ error: 'invalid_request' });
+    const { operation, code } = request.body as Record<string, unknown>;
+    if (!isCommercialStepUpOperation(operation) || typeof code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (!rateLimiter.consume('mfa-step-up:ip', clientAddressKey(request), PARENT_MFA_IP_RATE_LIMIT.windowMs, PARENT_MFA_IP_RATE_LIMIT.max)) {
+      return reply.code(429).send({ error: 'rate_limited' });
+    }
     try {
-      const result = await deps.parentAccountService.completeGenesis(token, {
-        challengeId: body.challengeId,
-        proofSignature: body.proofSignature,
-        anchorSignature: body.anchorSignature,
-        attestationSignature: body.attestationSignature,
-        trustSetEpoch: body.trustSetEpoch,
-        keyEpoch: body.keyEpoch,
-        issuedAt,
-        expiresAt,
-      });
-      return reply.code(200).send({ ...result, genesisCompleted: true });
+      const grant = await parentAccountService.issueCommercialStepUp(token, operation, code);
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(201).send({ stepUpToken: grant.stepUpToken, operation, expiresAt: grant.expiresAt.toISOString() });
     } catch (error) {
-      // 401 is reserved for a genuinely missing or invalid SESSION or step-up
-      // authorization, which ParentAccountService.completeGenesis reports as
-      // ParentAccountError('UNAUTHORIZED'). That is exactly what the client's
-      // SESSION_EXPIRED handling is for; collapsing it into the proof status
-      // below would hide a real re-authentication need.
-      if (error instanceof ParentAccountError) {
-        if (error.code === 'UNAUTHORIZED') return reply.code(401).send({ error: 'unauthorized' });
-        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
-      }
-      // A REJECTED PROOF (GenesisChallengeError: NOT_FOUND / EXPIRED /
-      // ALREADY_CONSUMED / INVALID_SIGNATURE, thrown by GenesisChallengeService
-      // and ParentGenesisService) is a 400 about the proof, with ONE body for
-      // all four codes: the challenge is session-bound, but the endpoint must
-      // not hand the caller a NOT_FOUND/CONSUMED oracle for free.
-      // Answering it with 401 was the defect: it made the client report an
-      // expired session -- false, and it sent the parent to sign in again for a
-      // problem that signing in cannot fix.
-      if (error instanceof GenesisChallengeError) return reply.code(400).send({ error: 'invalid_genesis_proof' });
-      // Anything else is a server-side fault. Rethrow and let the shared error
-      // boundary answer, rather than inventing a client-facing classification
-      // here that would misattribute an infrastructure failure.
+      if (sendMfaError(reply, error)) return;
       throw error;
     }
   });

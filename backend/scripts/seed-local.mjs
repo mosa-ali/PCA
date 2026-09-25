@@ -5,23 +5,17 @@
 //
 // Uses the SAME real service/repository classes backend/src/main.ts wires
 // in production (ParentAccountService + MySqlParentAccountRepository +
-// AuthService + ParentGenesisService/GenesisChallengeService +
-// PlatformAdminAccountService), so every seeded account is created through the
-// actual business logic (real password hashing, real email-verification-code
-// flow, real server-side family genesis) rather than hand-crafted SQL rows. The
+// AuthService + ParentMfaService + PlatformAdminAccountService), so every
+// seeded account is created through the actual business logic (real password
+// hashing, real email-verification-code flow, real server-side family
+// provisioning at first login) rather than hand-crafted SQL rows. The
 // one substitution is the email sender: TestSandboxEmailSender (NODE_ENV=test
 // or development only) so this script can read back the verification code
 // it "sent", exactly like backend/test/parentaccount/e2e.*.test.mjs does.
 //
-// GENESIS IS DRIVEN EXPLICITLY (repair). This script used to read a familyId
-// straight out of `verifyEmail`'s result. PCA-DEC-020-R1 (commit 109f280d)
-// changed email verification to establish account IDENTITY ONLY -- verifyEmail
-// now always returns `familyId: null`, and genesis became its own client-key
-// ceremony. That change silently broke this whole script: `registerAndVerify
-// Family` threw 'did not receive a genesis familyId' on its first account, so
-// no seed account and no dependent Playwright spec could ever be produced. The
-// ceremony is now run for real, once per seeded parent, through
-// ./lib/completeFamilyGenesis.mjs.
+// PCA-DEC-030: Parent Genesis is removed. Each seeded parent is registered,
+// verified and signed in through ./lib/provisionParentAccount.mjs; the first
+// sign-in provisions the family the rest of this seed dereferences.
 //
 // Coordinator B QA-harness-isolation pass: every auth-sensitive Playwright
 // test gets its OWN dedicated account (parent or platform-admin), never a
@@ -34,6 +28,8 @@
 // specs can look accounts up by purpose-key instead of hardcoding emails
 // or piping dozens of individual env vars.
 process.env.PLATFORM_ADMIN_MFA_ENC_KEY ??= 'ab'.repeat(32);
+// Disposable-database only; must match the backend the seeded browsers talk to.
+process.env.PCA_PARENT_MFA_ENC_KEY ??= 'e7'.repeat(32);
 
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -41,16 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { getPool, closePool } from '../dist/db/pool.js';
 import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
-// PCA-DEC-020-R1: production wires RejectingDeviceSignatureVerifier into the
-// genesis ceremony (unconditional fail-closed, pending human security review of
-// the real CRYPTO_SUITE), so a real production registration never completes
-// family genesis today. This script instead uses the SAME sanctioned test-only
-// substitution backend/test/security/genesisTransaction.test.mjs already
-// established for this exact ceremony: a genuinely real P-256 verifier (not a
-// fake "always allow"), just not the one selected for production pending that
-// review. See ./lib/completeFamilyGenesis.mjs.
-import { P256DeviceSignatureVerifier } from '../dist/deviceauth/P256DeviceSignatureVerifier.js';
-import { completeFamilyGenesis, createDisposableGenesisParentAccountService, issueDailyLoginGrant } from './lib/completeFamilyGenesis.mjs';
+import { createDisposableParentAccountService, provisionSignedInParent } from './lib/provisionParentAccount.mjs';
 import { PlatformAdminAccountService } from '../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
@@ -104,42 +91,17 @@ function reportSeeded(label, detail) {
 
 const emailSender = createTestSandboxEmailSender();
 const parentAccountRepository = new MySqlParentAccountRepository();
-const parentAccountService = createDisposableGenesisParentAccountService({
-  emailSender,
-  verifier: new P256DeviceSignatureVerifier(),
-});
+const parentAccountService = createDisposableParentAccountService({ emailSender });
 
+// PCA-DEC-030: register -> verify -> first login through the real service.
+// The first login provisions the family (ADMINISTRATOR) and starts the MFA
+// grace window; completing the emailed login code yields this "browser's"
+// daily grant, written only to the QA seed manifest (never stdout).
 async function registerAndVerifyFamily(key) {
   const email = `${key}@${SEED_EMAIL_DOMAIN}`;
-  await parentAccountService.register(email, SEED_PASSWORD, SEED_PASSWORD);
-  const code = emailSender.lastCodeFor(email);
-  if (!code) throw new Error(`Seed failed: no verification code recorded for ${email}`);
-  const outcome = await parentAccountService.verifyEmail(email, code);
-  // verifyEmail no longer completes genesis (PCA-DEC-020-R1) -- run the real
-  // ceremony for this account's own session. Its familyId is what every
-  // downstream section of this seed (invitations, billing, child profiles)
-  // dereferences, so a seed without it is not a seed at all.
-  const genesis = await completeFamilyGenesis({
-    parentAccountService,
-    emailSender,
-    sessionToken: outcome.rawSessionToken,
-    email,
-    password: SEED_PASSWORD,
-  });
-  // A PRE-ISSUED DAILY-LOGIN GRANT, for the same reason provision-e2e-accounts
-  // .mjs issues one: every EXPLICIT parent login now requires either this grant
-  // or an emailed step-up code (ParentAccountService.login), and a Playwright
-  // process cannot receive that email. Without it every seeded account can
-  // authenticate with the right password and still be told STEP_UP_REQUIRED,
-  // so no browser spec that logs in through /login could ever pass. The token is
-  // written only to the QA seed manifest (never stdout), and expires in 24h like
-  // production.
-  const dailyLoginGrant = await issueDailyLoginGrant({
-    repository: parentAccountRepository,
-    accountId: outcome.accountId,
-  });
-  manifest.parentAccounts[key] = { email, accountId: outcome.accountId, familyId: genesis.familyId, dailyLoginGrant };
-  return { ...outcome, familyId: genesis.familyId };
+  const signedIn = await provisionSignedInParent({ service: parentAccountService, emailSender, email, password: SEED_PASSWORD });
+  manifest.parentAccounts[key] = { email, accountId: signedIn.accountId, familyId: signedIn.familyId, dailyLoginGrant: signedIn.dailyLoginGrant };
+  return { accountId: signedIn.accountId, familyId: signedIn.familyId, rawSessionToken: signedIn.sessionToken };
 }
 
 const familyA = await registerAndVerifyFamily('owner-a');

@@ -87,7 +87,8 @@
     "profile": "Your account",
     "openProfileMenu": "Open account menu",
     "languageEnglish": "English",
-    "languageArabic": "العربية"
+    "languageArabic": "العربية",
+    "signOut": "Sign out"
   },
   "breadcrumb": {
     "notPermitted": "Not permitted",
@@ -250,7 +251,7 @@
       "OWNER_OR_ADMIN_ONLY_INVITE_DEVICE": "Only the Owner or an Administrator may invite a new child device.",
       "INVITATION_REVOCATION_NOT_DELEGATED": "The Owner has not delegated device revocation or pairing to Administrators.",
       "OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION": "Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.",
-      "OWNER_ONLY_BILLING": "Billing and subscription self-service is available to the account owner by default and cannot be delegated to Administrators.",
+      "ADMIN_ONLY_BILLING": "Billing and subscription self-service is available only to an Administrator.",
       "UNRECOGNISED_ACTION": "This action is not recognised."
     },
     "nextStep": {
@@ -291,7 +292,66 @@
   "stepUp": {
     "title": "Re-authenticate to continue",
     "body": "This is a sensitive protection action and requires you to sign in again.",
-    "confirm": "Re-authenticate"
+    "confirm": "Re-authenticate",
+    "commercial": {
+      "title": "Confirm with your authenticator app",
+      "body": "For your security, enter the current 6-digit code from your authenticator app to continue.",
+      "confirm": "Confirm",
+      "setupRequiredTitle": "Set up an authenticator app first",
+      "setupRequiredBody": "Payments and subscription changes need a code from an authenticator app. Set one up, then try again.",
+      "setupLink": "Set up an authenticator app",
+      "notPermitted": "Only an Administrator can make payment and subscription changes.",
+      "expired": "Your confirmation expired or was already used. Please try again and enter a new code."
+    }
+  },
+  "mfa": {
+    "codeLabel": "6-digit authenticator code",
+    "codeFormat": "Enter the 6-digit code shown in your authenticator app.",
+    "invalidCode": "That code is incorrect. Check your authenticator app and enter the current code.",
+    "locked": "Too many incorrect codes. For your security, please wait 15 minutes and try again.",
+    "sessionExpired": "This setup session has expired. Please sign in again.",
+    "setup": {
+      "title": "Set up your authenticator app",
+      "requiredNotice": "For your security, an authenticator app is now required to sign in to your account.",
+      "intro": "Add PCA to an authenticator app on your phone. When you sign in, you'll enter the 6-digit code the app shows.",
+      "appsNote": "This works with Microsoft Authenticator, Google Authenticator or any other authenticator (TOTP) app. You do not need a Microsoft or Google account.",
+      "reauthBody": "First, confirm your email address and password.",
+      "continue": "Continue",
+      "credentialsOrExpired": "Email or password is incorrect, or this setup session has expired. If it has expired, sign in again.",
+      "scanTitle": "Scan this QR code with your authenticator app",
+      "qrLabel": "QR code for adding PCA to your authenticator app",
+      "cantScan": "Can't scan the code?",
+      "manualBody": "In your authenticator app, choose to enter a setup key, then type this key:",
+      "manualKeyLabel": "Setup key",
+      "confirmTitle": "Enter the code from the app",
+      "confirmBody": "Enter the 6-digit code your authenticator app now shows for PCA.",
+      "confirmSubmit": "Confirm and finish",
+      "notNow": "Not now"
+    },
+    "grace": {
+      "title": "Protect your account with an authenticator app",
+      "body": "Add a second sign-in step with an authenticator app on your phone. It becomes required when the time below runs out.",
+      "timeLeft": "Time left to set it up: {{days}} and {{hours}}.",
+      "timeLeftHours": "Time left to set it up: {{hours}}.",
+      "lessThanAnHour": "Time left to set it up: less than an hour.",
+      "deadline": "Required from {{date}}.",
+      "setUpNow": "Set up now",
+      "remindLater": "Remind me later"
+    },
+    "recover": {
+      "title": "Lost your authenticator?",
+      "body": "If you can no longer use your authenticator app, you can replace it. Confirm your email and password and we'll email you a recovery code.",
+      "consequences": "After the emailed code is confirmed, all Parent sessions are signed out and a 24-hour security hold begins. Your current authenticator cannot be replaced until the hold ends. Then you must verify again and set up a new authenticator.",
+      "requestSubmit": "Email me a recovery code",
+      "sentBody": "If the details you entered match an account with an authenticator app, we've emailed a recovery code. Enter it below.",
+      "codeLabel": "Recovery code",
+      "completeSubmit": "Confirm recovery code",
+      "invalidCode": "That recovery code is incorrect or has expired.",
+      "pending": "Your recovery request is on a security hold until {{date}}. All Parent sessions have been signed out. You must request and verify a new email code after this time to replace your authenticator.",
+      "pendingLogin": "Authenticator recovery is pending until {{date}}. Sign in is unavailable during this security hold.",
+      "pendingNextStep": "After the hold ends, return here, enter your email and password, request a new code, and verify it to set up a new authenticator. Requesting another code does not change the hold deadline.",
+      "continueAfterHold": "Continue to recovery"
+    }
   },
   "trustedBrowser": {
     "title": "Trusted browser status",
@@ -1264,17 +1324,6 @@
     "invalidCredentials": "Email or password is incorrect.",
     "invalidCode": "That verification code is incorrect or has expired.",
     "rateLimited": "Too many attempts. Please wait a moment and try again.",
-    "genesisTitle": "Set up your account",
-    "genesisBody": "Your email is verified. Set up your account to get started. This browser becomes your first trusted parent device.",
-    "genesisStepUpBody": "Confirm your password to begin. We'll send a one-time code to your email.",
-    "genesisStepUpSubmit": "Continue",
-    "genesisCodeBody": "Enter the 6-digit code we sent to {{email}}.",
-    "genesisCodeSubmit": "Verify and finish setup",
-    "genesisCreating": "Setting up your account and registering this device...",
-    "genesisStillPending": "Your account was set up, but this browser has not picked up the new session yet. Reload this page to continue.",
-    "genesisSignOut": "Sign out",
-    "genesisUnavailable": "Account setup is not available right now. Please try again shortly.",
-    "genesisRejected": "Setup could not be completed. Please start again.",
     "forgotPasswordLink": "Forgot password?",
     "forgotPasswordTitle": "Reset your password",
     "forgotPasswordBody": "Enter your account email and we'll send you a one-time code to reset your password, if an account exists for that address.",
@@ -1291,7 +1340,11 @@
     "resetPasswordSuccessTitle": "Password reset",
     "resetPasswordSuccess": "Your password has been reset. Sign in with your new password.",
     "invalidResetCode": "That reset code is incorrect or has expired.",
-    "backToLogin": "Back to sign in"
+    "backToLogin": "Back to sign in",
+    "loginMfaTitle": "Enter your authenticator code",
+    "loginMfaBody": "Open your authenticator app and enter the current 6-digit code for PCA.",
+    "lostAuthenticatorLink": "Lost your authenticator?",
+    "accountActivatedSignIn": "Your account is active — sign in to continue."
   },
   "states": {
     "browserSetupNeededTitle": "Finish setting up this browser",

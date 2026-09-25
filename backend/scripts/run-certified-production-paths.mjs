@@ -62,6 +62,8 @@ const CERTIFIED_FILES = [
   // certification to mean anything.
   'test/db/platformAdminAlerts.mysql.test.mjs',
   'test/db/commercialMaintenance.mysql.test.mjs',
+  // Added with the MySqlParentMfaRepository row (PCA-DEC-037 Parent MFA).
+  'test/db/parentMfa.mysql.test.mjs',
 ];
 
 if (CERTIFIED_FILES.length === 0) {

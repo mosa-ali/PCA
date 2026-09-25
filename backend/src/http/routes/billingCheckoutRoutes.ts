@@ -1,27 +1,13 @@
 /**
  * PCA-BILL-2A -- family-facing checkout HTTP surface.
  *
- * PCA-BILL-2A-R1 CORRECTION (FIX 4: family owner authority): the original
- * version of this route relied SOLELY on `createRequireFamilyAuthorization`,
- * this codebase's only reachable family-plane HTTP authorization primitive
- * -- it answers exactly "does this service account hold an ACTIVE
- * family-scope row for this family", with no Family-Owner-vs-
- * Administrator-vs-Viewer distinction. The checkout-CREATE route (not the
- * read-only status route -- a family member merely viewing their own
- * already-created checkout's status is not itself a new commercial
- * commitment, so this lane judges VIEW_OWN_BILLING_STATUS does not need
- * the same OWNER gate) now additionally requires a caller-supplied
- * `actorDeviceId` and resolves OWNER authority through an injected
- * `FamilyCommercialAuthorityResolver`
- * (billing/authority/FamilyCommercialAuthorityResolver.ts) before
- * proceeding.
- *
- * PRODUCTION POSTURE (see main.ts wiring): the resolver is now the
- * attestation-chain adapter with active-key registry checks, but production
- * still injects `RejectingDeviceSignatureVerifier`, and this legacy route
- * still supplies only actorDeviceId. The R1 engine rejects both conditions
- * fail-closed, so checkout-CREATE remains 403 until the reviewed verifier and
- * session-bound request-proof route integration are separately approved.
+ * OWNER AUTHORITY (PCA-DEC-030, replacing PCA-BILL-2A-R1 FIX 4's
+ * Genesis/device-signature attestation gate): checkout-CREATE requires
+ * COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP.
+ * The caller sends `stepUpToken`, minted by POST /api/parent/mfa/step-up for
+ * BILLING_CHECKOUT_CREATE in this family; it is single-use and short-lived.
+ * The read-only status route keeps its VIEW_OWN_BILLING_STATUS scope check
+ * only -- viewing an already-created checkout is not a new commitment.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
@@ -30,16 +16,13 @@ import { createRateLimiter } from '../rateLimit.js';
 import { CheckoutError, type CheckoutService } from '../../billing/checkout/CheckoutService.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
-import type { FamilyCommercialAuthorityResolver } from '../../billing/authority/FamilyCommercialAuthorityResolver.js';
-import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { digestAuthorityRequestBody } from '../../familycommercial/authority/requestProofProtocol.js';
+import type { ParentCommercialStepUpAuthority } from '../../parentaccount/mfa/ParentCommercialStepUpAuthority.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
 const MAX_PROVIDER_NAME_LENGTH = 32;
 const MAX_RETURN_URL_LENGTH = 2048;
 const MAX_PAYMENT_ATTEMPT_ID_LENGTH = 64;
-const MAX_ACTOR_DEVICE_ID_LENGTH = 128;
 
 export interface BillingCheckoutRoutesDeps {
   checkoutService: CheckoutService;
@@ -47,32 +30,12 @@ export interface BillingCheckoutRoutesDeps {
   authzService: AuthzService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
-  /** FIX 4: injected so production (see main.ts) can wire the fail-closed default while tests can wire a real resolver against a fake trust set. */
-  familyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
+  /** PCA-DEC-030 ADMINISTRATOR + fresh-TOTP owner gate. */
+  commercialOwnerAuthority: Pick<ParentCommercialStepUpAuthority, 'authorize'>;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function authorityProofForRequest(body: Record<string, unknown>, familyId: string, operation: string): FamilyAuthorityRequestProof | null {
-  const raw = body.authorityProof;
-  const actorDeviceId = body.actorDeviceId;
-  if (!isPlainObject(raw) || typeof actorDeviceId !== 'string' || raw.deviceId !== actorDeviceId) return null;
-  if (
-    raw.protocolVersion !== 1 || raw.operation !== operation || raw.familyId !== familyId ||
-    typeof raw.serviceAccountId !== 'string' || typeof raw.deviceId !== 'string' || typeof raw.keyId !== 'string' ||
-    typeof raw.publicKey !== 'string' || typeof raw.challengeId !== 'string' || typeof raw.nonce !== 'string' ||
-    typeof raw.requestDigest !== 'string' || typeof raw.signature !== 'string' ||
-    typeof raw.issuedAt !== 'string' || typeof raw.expiresAt !== 'string'
-  ) return null;
-  const unsignedBody = { ...body };
-  delete unsignedBody.authorityProof;
-  if (raw.requestDigest !== digestAuthorityRequestBody(JSON.stringify(unsignedBody))) return null;
-  const issuedAt = new Date(raw.issuedAt);
-  const expiresAt = new Date(raw.expiresAt);
-  if (Number.isNaN(issuedAt.getTime()) || Number.isNaN(expiresAt.getTime())) return null;
-  return { ...raw, issuedAt, expiresAt } as FamilyAuthorityRequestProof;
 }
 
 function checkoutErrorToHttpStatus(code: CheckoutError['code']): number {
@@ -110,7 +73,7 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { requestId, provider, returnUrl, actorDeviceId } = body;
+      const { requestId, provider, returnUrl, stepUpToken } = body;
       if (typeof requestId !== 'string' || requestId.length === 0 || requestId.length > MAX_REQUEST_ID_LENGTH) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
@@ -120,42 +83,16 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       if (returnUrl !== undefined && (typeof returnUrl !== 'string' || returnUrl.length === 0 || returnUrl.length > MAX_RETURN_URL_LENGTH)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (typeof actorDeviceId !== 'string' || actorDeviceId.length === 0 || actorDeviceId.length > MAX_ACTOR_DEVICE_ID_LENGTH) {
-        return reply.code(400).send({ error: 'invalid_request' });
-      }
-      const authorityProof = authorityProofForRequest(body, familyId, 'BILLING_CHECKOUT_CREATE');
-      if (!authorityProof) return reply.code(400).send({ error: 'invalid_request' });
-
-      // FIX 4: Family-Owner-only gate. Resolved BEFORE any checkout
-      // orchestration runs -- an Administrator/Viewer-scoped (or
-      // authority-unresolvable) caller never reaches CheckoutService at
-      // all.
-      //
-      // The production candidate performs a real DB read + live signature
-      // re-verification per call. Until this route carries a session-bound,
-      // single-use request proof, the resolver receives only an identifier
-      // and returns INVALID_PROOF; no checkout orchestration is reached.
-      const authority = await deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(
-        familyId,
-        actorDeviceId,
-        authorityProof,
-        request.accountId as string,
-        'BILLING_CHECKOUT_CREATE',
-        authorityProof.requestDigest,
-      );
-      if (authority.status === 'ROLE_DENIED') {
-        // Same "one generic reason" discipline as AuthzError/
-        // ParentActionAuthorizationService's CROSS_FAMILY_TARGET -- never
-        // leak which role the caller actually holds.
+      // Owner gate, resolved BEFORE any checkout orchestration: a Viewer,
+      // Child, wrong-family or step-up-less caller never reaches
+      // CheckoutService at all.
+      const authority = await deps.commercialOwnerAuthority.authorize(request.accountId as string, familyId, 'BILLING_CHECKOUT_CREATE', stepUpToken);
+      if (authority === 'ROLE_DENIED') {
+        // One generic reason: never leak which role the caller holds.
         return reply.code(403).send({ error: 'forbidden' });
       }
-      if (authority.status === 'AUTHORITY_UNAVAILABLE' || authority.status === 'STALE_OR_REVOKED' || authority.status === 'INVALID_PROOF') {
-        // Distinguishable on purpose (an operational/availability signal,
-        // not an identity-enumeration risk) -- see this file's header.
-        // All three collapse to the SAME wire code deliberately: none of
-        // them is a determined-and-wrong role, and the caller must never
-        // learn which one occurred.
-        return reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
+      if (authority === 'STEP_UP_REQUIRED') {
+        return reply.code(403).send({ error: 'forbidden', code: 'STEP_UP_REQUIRED' });
       }
 
       try {

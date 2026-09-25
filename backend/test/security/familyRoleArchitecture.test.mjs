@@ -20,18 +20,44 @@ test('family roles are stored in a family-scoped membership table, not parent_ac
 
 test('session role is server-issued and frontend no longer assumes VIEWER or OWNER from familyId', async () => {
   const client = await read('../parent-web/src/api/real/realServiceAuthClient.ts');
-  assert.match(client, /role: 'ADMINISTRATOR' \| 'VIEWER' \| 'CHILD'/);
+  // The wire role is the closed server-issued family-role set (inline or via a named wire type).
+  assert.match(client, /(role:|type WireRole =) 'ADMINISTRATOR' \| 'VIEWER' \| 'CHILD'/);
   assert.doesNotMatch(client, /toAuthenticatedSession\(body,\s*'VIEWER'\)/);
   assert.doesNotMatch(client, /body\.familyId \? 'OWNER' : 'VIEWER'/);
 });
 
-test('creator membership is unreachable until the separate secure genesis transaction succeeds', async () => {
+test('PCA-DEC-037: creator ADMINISTRATOR membership is written only by the one-transaction server-side family provisioning, never by email verification', async () => {
   const service = await read('src/parentaccount/ParentAccountService.ts');
-  const genesis = await read('src/parentaccount/ParentGenesisService.ts');
+  const repository = await read('src/parentaccount/MySqlParentAccountRepository.ts');
   assert.doesNotMatch(service, /createGenesisAdministrator/);
-  assert.match(service, /const familyId: OpaqueFamilyId \| null = null/);
-  assert.match(genesis, /transactionRepository\.completeAtomically/);
-  assert.match(genesis, /familyId: challenge\.familyId/);
+
+  // Email verification binds no family.
+  const verifyEmail = service.slice(service.indexOf('async verifyEmail('), service.indexOf('async login('));
+  assert.match(verifyEmail, /familyId: null,/);
+  assert.doesNotMatch(verifyEmail, /ensureProvisionedFamily|issueSession/);
+
+  // Provisioning is one runInTransaction that row-locks the account first.
+  const start = repository.indexOf('async ensureProvisionedFamily(');
+  assert.ok(start >= 0, 'MySqlParentAccountRepository must implement ensureProvisionedFamily');
+  const provisioning = repository.slice(start, repository.indexOf('\n  }\n', start));
+  assert.equal((provisioning.match(/runInTransaction\(/g) ?? []).length, 1, 'exactly one transaction');
+  assert.match(provisioning, /return runInTransaction\(async \(conn\) =>/);
+  assert.match(provisioning, /SELECT status, family_id, service_account_id, disabled_at FROM parent_accounts WHERE account_id = \? FOR UPDATE/);
+  assert.ok(
+    provisioning.indexOf('FOR UPDATE') < provisioning.indexOf('INSERT INTO families'),
+    'the account row is locked before any family is created',
+  );
+  // Refuses anything but a verified, enabled account bound to this service account.
+  assert.match(provisioning, /account\.status !== 'VERIFIED' \|\| account\.disabled_at !== null \|\| account\.service_account_id !== serviceAccountId/);
+  // The family records WHICH account it was provisioned for (the uniqueness anchor).
+  assert.match(provisioning, /INSERT INTO families \(family_id, family_reference_hash, created_at, provisioned_for_account_id\) VALUES \(\?, \?, \?, \?\)/);
+  assert.match(provisioning, /UPDATE parent_accounts SET family_id = \? WHERE account_id = \? AND family_id IS NULL/);
+  // ADMINISTRATOR membership + ACTIVE scope only for the family provisioned for THIS account.
+  assert.match(provisioning, /if \(ownerRows\[0\]\?\.provisioned_for_account_id === accountId\)/);
+  assert.match(provisioning, /INSERT INTO family_parent_memberships[\s\S]*?'ADMINISTRATOR', 'ACTIVE'/);
+  assert.match(provisioning, /INSERT INTO service_account_family_scopes[\s\S]*?'ACTIVE'/);
+  // A REVOKED membership is never revived by a later login.
+  assert.doesNotMatch(provisioning, /ON DUPLICATE KEY UPDATE[^`]*status\s*=/);
 });
 
 test('signup profile fields are bounded metadata and cannot influence family role resolution', async () => {

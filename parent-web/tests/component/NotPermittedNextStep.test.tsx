@@ -38,9 +38,9 @@ function renderNotPermitted(
 }
 
 describe('/not-permitted shows actionable "what to do next" guidance (B016)', () => {
-  it('an Owner-only denial (billing) tells a non-Owner to ask the Owner directly', () => {
+  it('an Administrator-only denial (billing, PCA-DEC-037) tells a Viewer to ask an Administrator', () => {
     renderNotPermitted({ action: 'MANAGE_PAYMENT_METHOD', from: '/subscription' });
-    expect(screen.getByText(en.rbac.nextStep.ownerOnly)).toBeInTheDocument();
+    expect(screen.getByText(en.rbac.nextStep.ownerOrAdmin)).toBeInTheDocument();
   });
 
   it('an Administrator denied an internal trust-root action is told to ask the Owner', () => {

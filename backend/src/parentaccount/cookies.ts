@@ -62,6 +62,15 @@ export function dailyLoginGrantCookieName(env: NodeJS.ProcessEnv = process.env):
   return isProductionSensitiveRuntime(env) ? `__Host-${DAILY_LOGIN_GRANT_COOKIE_BASE_NAME}` : DAILY_LOGIN_GRANT_COOKIE_BASE_NAME;
 }
 
+/**
+ * PCA-DEC-037: host-only, HttpOnly, 15-minute enrollment ticket. It
+ * authorizes ONLY the authenticator-enrollment endpoints for the one account
+ * that earned it (grace over, or recovery); it is never a session.
+ */
+export function mfaEnrollmentTicketCookieName(env: NodeJS.ProcessEnv = process.env): string {
+  return isProductionSensitiveRuntime(env) ? '__Host-pca_parent_mfa_enrollment' : 'pca_parent_mfa_enrollment';
+}
+
 const MAX_COOKIE_HEADER_LENGTH = 8192;
 
 /** Parses a raw `Cookie` request header into a name->value map. Malformed/oversized input yields an empty map (fail closed: no cookie is ever "found" from garbage input) rather than throwing. */

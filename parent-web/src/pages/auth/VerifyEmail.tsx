@@ -1,20 +1,20 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
 
 /**
  * PCA-AUTH-SESSION-1 -- consumes the one-time emailed verification code.
- * On success this establishes the FAMILY_SERVICE_SESSION_V1 session
- * (HttpOnly cookie, set by the server response) and, for a brand-new
- * family, triggers genesis. A full page navigation (not client-side
- * router push) is used after success so AuthProvider's mount-time
- * getSession() call picks up the freshly issued cookie.
+ * Since PCA-DEC-037 a successful verification ACTIVATES the account but
+ * establishes NO session: the parent is sent to /login with their email
+ * prefilled and a confirmation that the account is active, and signs in
+ * there (where the family is provisioned server-side on first sign-in).
  */
 export default function VerifyEmail() {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const clients = getApiClients();
 
   const prefillEmail = (location.state as { email?: string } | null)?.email ?? '';
@@ -34,7 +34,7 @@ export default function VerifyEmail() {
     setSubmitting(true);
     try {
       await clients.serviceAuth.verifyEmail(email, code);
-      window.location.assign('/dashboard');
+      navigate('/login', { replace: true, state: { email, accountActivated: true } });
     } catch (err) {
       if (err instanceof ServiceAuthError) {
         if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));

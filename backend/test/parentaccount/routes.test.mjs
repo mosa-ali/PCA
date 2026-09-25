@@ -1,17 +1,18 @@
 // PCA-AUTH-SESSION-1 -- HTTP-level tests for parentAccountRoutes.ts: cookie
 // transport shape (HttpOnly/SameSite=Strict/Secure-in-prod), double-submit
 // CSRF enforcement on state-changing routes, and the full
-// register->verify->session->logout->revoke-all lifecycle over real fastify
+// register->verify->login->step-up->session->logout->revoke-all lifecycle
+// (PCA-DEC-030: verify-email activates only; the session comes from sign-in) over real fastify
 // `inject()` calls (no live network socket).
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 class RecordingEmailSender {
   constructor() {
@@ -25,6 +26,12 @@ class RecordingEmailSender {
   }
   async sendLoginStepUpCode(email, code) {
     this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
+  }
+  async sendMfaRecoveryCode(email, code) {
+    this.sent.push({ email, code, kind: 'MFA_RECOVERY' });
+  }
+  async sendSecurityNotice(email, notice) {
+    this.sent.push({ email, code: null, kind: notice });
   }
   lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
@@ -41,7 +48,7 @@ function buildApp() {
     revokeAllSessionsForAccount: (accountId, revokedAt) => authRepository._revokeAllSessionsForAccountTest(accountId, revokedAt),
   });
   const emailSender = new RecordingEmailSender();
-  const parentAccountService = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
+  const { service: parentAccountService } = createParentAccountTestKit({ repository: parentAccountRepository, authService, emailSender });
 
   const app = Fastify();
   registerParentAccountRoutes(app, { parentAccountService });
@@ -86,16 +93,33 @@ test('POST /api/parent/register rejects a body over the size limit', async () =>
   assert.equal(response.statusCode, 413);
 });
 
-test('SECURITY: register+verify-email sets an HttpOnly, SameSite=Strict session cookie and a non-HttpOnly CSRF cookie -- never Secure outside production', async () => {
+test('SECURITY: verify-email activates only -- 200 {status:VERIFIED, sessionEstablished:false} and NO cookie of any kind', async () => {
   const { app, emailSender } = buildApp();
   await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD } });
   const code = emailSender.lastCodeFor(EMAIL);
 
   const response = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code } });
   assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { status: 'VERIFIED', sessionEstablished: false });
+  assert.equal(setCookieHeaders(response).length, 0, 'verify-email must never set a session, CSRF or grant cookie');
+  assert.ok(emailSender.sent.some((entry) => entry.email === EMAIL && entry.kind === 'ACCOUNT_ACTIVATED'), 'an ACCOUNT_ACTIVATED notice is sent');
+});
+
+test('SECURITY: the step-up sign-in sets an HttpOnly, SameSite=Strict session cookie and a non-HttpOnly CSRF cookie -- never Secure outside production', async () => {
+  const { app, emailSender } = buildApp();
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD } });
+  await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL) } });
+  await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+
+  const response = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP') } });
+  assert.equal(response.statusCode, 200);
   const body = response.json();
   assert.equal(body.sessionEstablished, true);
   assert.equal(typeof body.accountId, 'string');
+  assert.equal(typeof body.familyId, 'string', 'the first sign-in provisions the family server-side');
+  assert.equal(body.role, 'ADMINISTRATOR');
+  assert.equal(body.mfa.status, 'GRACE');
+  assert.equal(typeof body.mfa.graceExpiresAt, 'string');
 
   const cookies = setCookieHeaders(response);
   const sessionCookieHeader = cookies.find((c) => c.startsWith('pca_family_session='));
@@ -135,7 +159,12 @@ test('DEPLOYMENT: backend/Dockerfile sets NODE_ENV=production, and only after th
 async function registerVerifyAndCookies(app, emailSender, email = EMAIL) {
   await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email, password: PASSWORD, passwordConfirmation: PASSWORD } });
   const code = emailSender.lastCodeFor(email);
-  const response = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
+  const verified = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
+  assert.equal(setCookieHeaders(verified).length, 0);
+  // PCA-DEC-030: the session only comes from a real sign-in.
+  const login = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password: PASSWORD } });
+  assert.deepEqual(login.json(), { sessionEstablished: false, stepUpRequired: true });
+  const response = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email, code: emailSender.lastCodeFor(email, 'LOGIN_STEP_UP') } });
   const cookies = setCookieHeaders(response);
   const sessionToken = extractCookieValue(cookies, 'pca_family_session');
   const csrfToken = extractCookieValue(cookies, 'pca_family_csrf');
@@ -148,7 +177,11 @@ test('GET /api/parent/session returns the session when the cookie is present, 40
 
   const ok = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: `pca_family_session=${sessionToken}` } });
   assert.equal(ok.statusCode, 200);
-  assert.equal(ok.json().emailVerified, true);
+  const session = ok.json();
+  assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'mfa', 'role'], 'no genesisAvailable or other client-trusted flag');
+  assert.equal(session.emailVerified, true);
+  assert.equal(session.role, 'ADMINISTRATOR');
+  assert.equal(session.mfa.status, 'GRACE');
 
   const none = await app.inject({ method: 'GET', url: '/api/parent/session' });
   assert.equal(none.statusCode, 401);

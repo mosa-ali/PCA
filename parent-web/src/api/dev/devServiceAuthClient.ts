@@ -1,8 +1,43 @@
-import type { ServiceAuthClient, AuthenticatedSession, GenesisChallenge, GenesisCompletionInput, GenesisPlatform, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, SignInResult } from '../interfaces';
-import { buildDevSession, setGenesisPending, setServiceAuthenticated } from './devState';
+import type {
+  AuthenticatedSession,
+  CommercialStepUpGrant,
+  CommercialStepUpOperation,
+  LoginStepUpResult,
+  MfaEnrollmentConfirmResult,
+  MfaRecoveryCompletionResult,
+  MfaEnrollmentStart,
+  RegistrationResult,
+  RequestPasswordResetResult,
+  ResetPasswordResult,
+  ServiceAuthClient,
+  SignInResult,
+  VerifyEmailResult,
+} from '../interfaces';
+import { ServiceAuthError } from '../real/realServiceAuthClient';
+import { buildDevSession, setDevMfa, setServiceAuthenticated } from './devState';
 
 const DELAY_MS = 120;
 const delay = (ms = DELAY_MS) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The fixture's "wrong code". Every other 6-digit code is accepted, so demo
+ * and fixture e2e journeys can exercise both the success and the error path
+ * of each authenticator prompt without a real authenticator app.
+ */
+export const DEV_REJECTED_MFA_CODE = '000000';
+
+/**
+ * A well-known PUBLIC example base32 value (RFC 4648 test vector style), not a
+ * secret of any real account. It exists only so the fixture-mode setup page
+ * has something to render.
+ */
+const DEV_EXAMPLE_TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+
+function assertCodeAccepted(code: string): void {
+  if (!/^\d{6}$/.test(code) || code === DEV_REJECTED_MFA_CODE) {
+    throw new ServiceAuthError('INVALID_MFA_CODE', 'That authenticator code is incorrect.');
+  }
+}
 
 /** DEVELOPMENT_ONLY fixture implementation of ServiceAuthClient. */
 export class DevServiceAuthClient implements ServiceAuthClient {
@@ -11,67 +46,24 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     return buildDevSession();
   }
 
-  async signIn(_email: string, _password: string): Promise<SignInResult> {
+  async signIn(_email: string, _password: string, _totpCode?: string): Promise<SignInResult> {
     await delay();
     setServiceAuthenticated(true);
-    // Dev fixture never simulates the risk-based step-up gate -- every dev
-    // sign-in authenticates immediately, matching this fixture's existing
-    // "always succeed" posture for every other flow.
+    // Dev fixture never simulates the emailed or authenticator second step --
+    // every dev sign-in authenticates immediately, matching this fixture's
+    // existing "always succeed" posture for every other flow.
     return { status: 'AUTHENTICATED', session: buildDevSession() };
   }
 
-  async completeLoginStepUp(_email: string, _code: string): Promise<AuthenticatedSession> {
+  async completeLoginStepUp(_email: string, _code: string): Promise<LoginStepUpResult> {
     await delay();
     setServiceAuthenticated(true);
-    return buildDevSession();
+    return { status: 'AUTHENTICATED', session: buildDevSession() };
   }
 
   async signOut(): Promise<void> {
     await delay();
     setServiceAuthenticated(false);
-  }
-
-  /**
-   * DEVELOPMENT_ONLY genesis fixture.
-   *
-   * Deliberately does NOT shortcut the ceremony: the caller still generates a
-   * real non-extractable key and signs with the REAL canonicalization helpers,
-   * so dev/demo exercises the browser signing path rather than a mock of it.
-   * Only the server's verification is faked.
-   */
-  async startGenesisStepUp(_email: string, _password: string): Promise<void> {
-    await delay();
-  }
-
-  async completeGenesisStepUp(_code: string): Promise<void> {
-    await delay();
-  }
-
-  async requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge> {
-    await delay();
-    const now = new Date();
-    return {
-      protocolVersion: 1,
-      operation: 'GENESIS',
-      accountId: 'dev-account-1',
-      serviceAccountId: 'dev-service-account-1',
-      familyId: 'dev-family-1',
-      deviceId: 'dev-device-1',
-      keyId: 'dev-key-1',
-      // Echoed back exactly as offered: the signer signs the server's statement,
-      // never a locally recomputed copy.
-      publicKey,
-      platform,
-      challengeId: `dev-challenge-${now.getTime()}`,
-      nonce: `dev-nonce-${now.getTime()}`,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
-    };
-  }
-
-  async completeGenesis(_input: GenesisCompletionInput): Promise<void> {
-    await delay();
-    setGenesisPending(false);
   }
 
   async stepUp(_actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }> {
@@ -88,10 +80,9 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     return { status: 'PENDING_VERIFICATION' };
   }
 
-  async verifyEmail(_email: string, _code: string): Promise<AuthenticatedSession> {
+  async verifyEmail(_email: string, _code: string): Promise<VerifyEmailResult> {
     await delay();
-    setServiceAuthenticated(true);
-    return buildDevSession();
+    return { status: 'VERIFIED' };
   }
 
   async requestPasswordReset(_email: string): Promise<RequestPasswordResetResult> {
@@ -102,5 +93,43 @@ export class DevServiceAuthClient implements ServiceAuthClient {
   async resetPassword(_email: string, _code: string, _newPassword: string, _newPasswordConfirmation: string): Promise<ResetPasswordResult> {
     await delay();
     return { status: 'PASSWORD_RESET' };
+  }
+
+  async startMfaEnrollment(email: string, _password: string): Promise<MfaEnrollmentStart> {
+    await delay();
+    const label = encodeURIComponent(`PCA:${email || 'dev'}`);
+    return {
+      otpauthUri: `otpauth://totp/${label}?secret=${DEV_EXAMPLE_TOTP_SECRET}&issuer=PCA&algorithm=SHA1&digits=6&period=30`,
+      secret: DEV_EXAMPLE_TOTP_SECRET,
+    };
+  }
+
+  async confirmMfaEnrollment(_email: string, code: string): Promise<MfaEnrollmentConfirmResult> {
+    await delay();
+    assertCodeAccepted(code);
+    setDevMfa('ACTIVE');
+    return { sessionEstablished: false };
+  }
+
+  async requestMfaRecovery(_email: string, _password: string): Promise<void> {
+    await delay();
+  }
+
+  async completeMfaRecovery(_email: string, _password: string, code: string): Promise<MfaRecoveryCompletionResult> {
+    await delay();
+    if (!/^\d{6}$/.test(code) || code === DEV_REJECTED_MFA_CODE) {
+      throw new ServiceAuthError('INVALID_CREDENTIALS', 'That recovery code is incorrect or has expired.');
+    }
+    throw new ServiceAuthError('UNKNOWN', 'MFA recovery is available only with the real Parent service.');
+  }
+
+  async issueCommercialStepUp(operation: CommercialStepUpOperation, code: string): Promise<CommercialStepUpGrant> {
+    await delay();
+    assertCodeAccepted(code);
+    return {
+      stepUpToken: `dev-step-up-${operation}-${Date.now()}`,
+      operation,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    };
   }
 }

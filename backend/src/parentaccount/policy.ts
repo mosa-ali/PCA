@@ -42,11 +42,23 @@ export const LOGIN_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 
 export const DAILY_LOGIN_GRANT_TTL_MS = 24 * 60 * 60 * 1000;
 export const DAILY_LOGIN_GRANT_PURPOSE = 'PARENT_DAILY_LOGIN' as const;
 
-/** Dedicated genesis authorization: deliberately separate from normal login step-up. */
-export const GENESIS_STEP_UP_CODE_TTL_MS = 10 * 60 * 1000;
-export const MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE = 8;
-export const GENESIS_STEP_UP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
-export const GENESIS_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
+/**
+ * PCA-DEC-037 Parent TOTP MFA. The grace window starts exactly once, at the
+ * first successful Parent login, and is computed and enforced server-side
+ * only; no client clock, timezone, storage or device can move it.
+ */
+export const PARENT_MFA_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+/** Failed authenticator codes (login, step-up, enrollment confirmation) share one per-account budget. */
+export const PARENT_MFA_FAILURE_POLICY = { threshold: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 } as const;
+/** An enrollment ticket authorizes only the enrollment endpoints, for the account that earned it, briefly. */
+export const PARENT_MFA_ENROLLMENT_TICKET_TTL_MS = 15 * 60 * 1000;
+export const PARENT_MFA_RECOVERY_CODE_TTL_MS = 15 * 60 * 1000;
+export const MAX_PARENT_MFA_RECOVERY_ATTEMPTS_PER_CODE = 8;
+export const PARENT_MFA_RECOVERY_HOLD_MS = 24 * 60 * 60 * 1000;
+/** Fresh TOTP step-up for a sensitive commercial mutation: single use, single operation, single family. */
+export const PARENT_COMMERCIAL_STEP_UP_TTL_MS = 5 * 60 * 1000;
+export const PARENT_MFA_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
+export const PARENT_MFA_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
 
 export interface FreeAccessDefaults {
   mode: FreeAccessMode;

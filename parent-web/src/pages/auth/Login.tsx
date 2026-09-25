@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
+import { formatDateTime } from '../../i18n/formatters';
 
 /**
  * Same-origin absolute path: exactly ONE leading slash. The negative
@@ -61,33 +62,77 @@ export function safeReturnPath(from: unknown): string {
   return from;
 }
 
+type LoginStage = 'PASSWORD' | 'EMAIL_CODE' | 'AUTHENTICATOR_CODE';
+
+interface LoginLocationState {
+  from?: unknown;
+  /** Prefilled by VerifyEmail after a successful activation (no session is established there). */
+  email?: unknown;
+  accountActivated?: unknown;
+}
+
 /**
- * PCA-AUTH-SESSION-1 -- sign-in against an already-VERIFIED account
- * (email + password). A full page navigation is used after success so
- * AuthProvider's mount-time getSession() call picks up the freshly issued
- * pca_family_session cookie.
+ * PCA-AUTH-SESSION-1 + PCA-DEC-037 -- sign-in against an already-VERIFIED
+ * account, in up to three stages:
+ *   1. email + password;
+ *   2a. an emailed one-time code (accounts without an authenticator app), or
+ *   2b. the 6-digit code from the account's authenticator app -- sent as a
+ *       SECOND /login call with the same email and password.
+ * The password therefore lives in React state memory for the length of the
+ * attempt; it is never written to any storage, URL or log, and it is cleared
+ * as soon as the attempt ends.
+ *
+ * If the emailed code reports that the authenticator grace period is over,
+ * the server sets an enrollment ticket instead of a session and this page
+ * sends the parent straight to mandatory authenticator setup.
+ *
+ * A full page navigation is used after success so AuthProvider's mount-time
+ * getSession() call picks up the freshly issued pca_family_session cookie.
  */
 export default function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const location = useLocation();
+  const navigate = useNavigate();
+  const locationState = (location.state as LoginLocationState | null) ?? null;
+  const accountActivated = locationState?.accountActivated === true;
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(typeof locationState?.email === 'string' ? locationState.email : '');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Set only once signIn() reports STEP_UP_REQUIRED -- switches the form
-  // below from password entry to the emailed one-time code, without a
-  // route change (the flow is one continuous login attempt, not a
-  // separately-bookmarkable page -- entering this state with no prior
-  // signIn() call would have no code to check against).
-  const [stepUpRequired, setStepUpRequired] = useState(false);
+  const [recoveryPendingAt, setRecoveryPendingAt] = useState<string | null>(null);
+  // Switches the form between stages without a route change: the flow is one
+  // continuous login attempt, not a separately-bookmarkable page -- entering a
+  // code stage with no prior password step would have nothing to check against.
+  const [stage, setStage] = useState<LoginStage>('PASSWORD');
   const [code, setCode] = useState('');
   const [codeInvalid, setCodeInvalid] = useState(false);
 
   function proceedToReturnPath() {
+    setPassword('');
     // NEVER pass `from` through unvalidated -- see safeReturnPath above.
-    window.location.assign(safeReturnPath((location.state as { from?: unknown } | null)?.from));
+    window.location.assign(safeReturnPath(locationState?.from));
+  }
+
+  function goToMandatorySetup() {
+    setPassword('');
+    setCode('');
+    navigate('/mfa/setup', { replace: true, state: { email } });
+  }
+
+  function showSignInError(err: unknown) {
+    if (err instanceof ServiceAuthError) {
+      if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
+      else if (err.code === 'MFA_LOCKED') setError(t('mfa.locked'));
+      else if (err.code === 'INVALID_MFA_CODE') {
+        setError(t('mfa.invalidCode'));
+        setCodeInvalid(true);
+      } else if (err.code === 'INVALID_CREDENTIALS') setError(t('auth.invalidCredentials'));
+      else setError(t('auth.genericError'));
+    } else {
+      setError(t('auth.genericError'));
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -96,23 +141,57 @@ export default function Login() {
     setSubmitting(true);
     try {
       const result = await clients.serviceAuth.signIn(email, password);
-      if (result.status === 'STEP_UP_REQUIRED') {
-        setStepUpRequired(true);
+      if (result.status === 'MFA_RECOVERY_PENDING') {
+        setRecoveryPendingAt(result.recoveryAvailableAt);
+        setPassword('');
         setSubmitting(false);
         return;
       }
-      // A full page navigation (not client-side router push) is used after
-      // success so AuthProvider's mount-time getSession() call picks up the
-      // freshly issued session cookie.
+      if (result.status === 'STEP_UP_REQUIRED' || result.status === 'MFA_REQUIRED') {
+        setCode('');
+        setCodeInvalid(false);
+        setStage(result.status === 'STEP_UP_REQUIRED' ? 'EMAIL_CODE' : 'AUTHENTICATOR_CODE');
+        setSubmitting(false);
+        return;
+      }
       proceedToReturnPath();
     } catch (err) {
-      if (err instanceof ServiceAuthError) {
-        if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
-        else if (err.code === 'INVALID_CREDENTIALS') setError(t('auth.invalidCredentials'));
-        else setError(t('auth.genericError'));
-      } else {
-        setError(t('auth.genericError'));
+      showSignInError(err);
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAuthenticatorSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setCodeInvalid(false);
+    if (!/^\d{6}$/.test(code)) {
+      setError(t('mfa.codeFormat'));
+      setCodeInvalid(true);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await clients.serviceAuth.signIn(email, password, code);
+      if (result.status === 'MFA_RECOVERY_PENDING') {
+        setRecoveryPendingAt(result.recoveryAvailableAt);
+        setPassword('');
+        setCode('');
+        setSubmitting(false);
+        return;
       }
+      if (result.status === 'AUTHENTICATED') {
+        proceedToReturnPath();
+        return;
+      }
+      // The password step is not expected to change its answer between the
+      // two calls; if it does, follow the server rather than guess.
+      setCode('');
+      setStage(result.status === 'STEP_UP_REQUIRED' ? 'EMAIL_CODE' : 'AUTHENTICATOR_CODE');
+      setSubmitting(false);
+    } catch (err) {
+      setCode('');
+      showSignInError(err);
       setSubmitting(false);
     }
   }
@@ -123,7 +202,11 @@ export default function Login() {
     setCodeInvalid(false);
     setSubmitting(true);
     try {
-      await clients.serviceAuth.completeLoginStepUp(email, code);
+      const result = await clients.serviceAuth.completeLoginStepUp(email, code);
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        goToMandatorySetup();
+        return;
+      }
       proceedToReturnPath();
     } catch (err) {
       if (err instanceof ServiceAuthError) {
@@ -145,32 +228,101 @@ export default function Login() {
     setSubmitting(true);
     try {
       const result = await clients.serviceAuth.signIn(email, password);
+      if (result.status === 'MFA_RECOVERY_PENDING') {
+        setRecoveryPendingAt(result.recoveryAvailableAt);
+        setPassword('');
+        setSubmitting(false);
+        return;
+      }
       if (result.status === 'STEP_UP_REQUIRED') {
         setCode('');
         setSubmitting(false);
         return;
       }
+      if (result.status === 'MFA_REQUIRED') {
+        setCode('');
+        setStage('AUTHENTICATOR_CODE');
+        setSubmitting(false);
+        return;
+      }
       proceedToReturnPath();
     } catch (err) {
-      if (err instanceof ServiceAuthError) {
-        if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
-        else if (err.code === 'INVALID_CREDENTIALS') setError(t('auth.invalidCredentials'));
-        else setError(t('auth.genericError'));
-      } else {
-        setError(t('auth.genericError'));
-      }
+      showSignInError(err);
       setSubmitting(false);
     }
   }
 
   function handleBackToLogin() {
-    setStepUpRequired(false);
+    setStage('PASSWORD');
+    setPassword('');
     setCode('');
     setCodeInvalid(false);
     setError(null);
   }
 
-  if (stepUpRequired) {
+  const lostAuthenticatorLink = (
+    <p>
+      <Link to="/mfa/recover" state={{ email }}>
+        {t('auth.lostAuthenticatorLink')}
+      </Link>
+    </p>
+  );
+
+  if (recoveryPendingAt) {
+    return (
+      <section aria-labelledby="login-recovery-pending-title" className="auth-page">
+        <h1 id="login-recovery-pending-title">{t('mfa.recover.title')}</h1>
+        <p role="status">{t('mfa.recover.pendingLogin', { date: formatDateTime(recoveryPendingAt, i18n.language) })}</p>
+        <p><Link to="/mfa/recover" state={{ email }}>{t('mfa.recover.title')}</Link></p>
+      </section>
+    );
+  }
+
+  if (stage === 'AUTHENTICATOR_CODE') {
+    return (
+      <section aria-labelledby="login-mfa-title" className="auth-page">
+        <h1 id="login-mfa-title">{t('auth.loginMfaTitle')}</h1>
+        <p>{t('auth.loginMfaBody')}</p>
+        <form onSubmit={handleAuthenticatorSubmit} noValidate>
+          <div className="field">
+            <label htmlFor="login-mfa-code">{t('mfa.codeLabel')}</label>
+            <input
+              id="login-mfa-code"
+              name="totp"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              autoComplete="one-time-code"
+              required
+              aria-describedby={error ? 'login-mfa-error' : undefined}
+              aria-invalid={codeInvalid || undefined}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+          </div>
+
+          {error && (
+            <p id="login-mfa-error" role="alert" className="field-error">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
+            {t('auth.loginStepUpSubmit')}
+          </button>
+        </form>
+        {lostAuthenticatorLink}
+        <p>
+          <button type="button" className="btn" onClick={handleBackToLogin} disabled={submitting}>
+            {t('auth.loginStepUpBack')}
+          </button>
+        </p>
+      </section>
+    );
+  }
+
+  if (stage === 'EMAIL_CODE') {
     return (
       <section aria-labelledby="login-step-up-title" className="auth-page">
         <h1 id="login-step-up-title">{t('auth.loginStepUpTitle')}</h1>
@@ -221,6 +373,11 @@ export default function Login() {
   return (
     <section aria-labelledby="login-title" className="auth-page">
       <h1 id="login-title">{t('auth.loginTitle')}</h1>
+      {accountActivated && (
+        <p role="status">
+          {t('auth.accountActivatedSignIn')}
+        </p>
+      )}
       <p>{t('auth.loginBody')}</p>
       <form onSubmit={handleSubmit} noValidate>
         <div className="field">
@@ -264,6 +421,7 @@ export default function Login() {
       <p>
         <Link to="/forgot-password">{t('auth.forgotPasswordLink')}</Link>
       </p>
+      {lostAuthenticatorLink}
       <p>
         {t('auth.needAccount')} <Link to="/register">{t('auth.registerLink')}</Link>
       </p>

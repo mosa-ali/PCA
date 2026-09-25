@@ -7,24 +7,33 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 class RecordingEmailSender {
   constructor() {
     this.sent = [];
   }
   async sendVerificationCode(email, code) {
-    this.sent.push({ email, code });
+    this.sent.push({ email, code, kind: 'VERIFICATION' });
   }
   async sendLoginStepUpCode(email, code) {
-    this.sent.push({ email, code });
+    this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
   }
-  lastCodeFor(email) {
+  async sendPasswordResetCode(email, code) {
+    this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
+  }
+  async sendMfaRecoveryCode(email, code) {
+    this.sent.push({ email, code, kind: 'MFA_RECOVERY' });
+  }
+  async sendSecurityNotice(email, notice) {
+    this.sent.push({ email, code: null, kind: notice });
+  }
+  lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
-      if (this.sent[i].email === email) return this.sent[i].code;
+      if (this.sent[i].email === email && this.sent[i].kind === kind) return this.sent[i].code;
     }
     return null;
   }
@@ -48,7 +57,7 @@ function buildApp({ withFreeAccessRepository = true } = {}) {
     revokeAllSessionsForAccount: (accountId, revokedAt) => authRepository._revokeAllSessionsForAccountTest(accountId, revokedAt),
   });
   const emailSender = new RecordingEmailSender();
-  const parentAccountService = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
+  const { service: parentAccountService } = createParentAccountTestKit({ repository: parentAccountRepository, authService, emailSender });
 
   const app = Fastify();
   registerParentAccountRoutes(app, {
@@ -58,12 +67,16 @@ function buildApp({ withFreeAccessRepository = true } = {}) {
   return { app, emailSender };
 }
 
+/** PCA-DEC-030: verify-email activates only; the session cookie comes from the first real sign-in. */
 async function registerAndVerify(app, emailSender, email) {
   const password = 'a genuinely long password';
   await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email, password, passwordConfirmation: password } });
   const code = emailSender.lastCodeFor(email);
   const verifyResponse = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
-  const setCookie = verifyResponse.headers['set-cookie'];
+  assert.equal(verifyResponse.headers['set-cookie'], undefined, 'verify-email must not set a session cookie');
+  await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password } });
+  const stepUpResponse = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email, code: emailSender.lastCodeFor(email, 'LOGIN_STEP_UP') } });
+  const setCookie = stepUpResponse.headers['set-cookie'];
   const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
   const sessionCookie = cookies.find((c) => c.startsWith('pca_family_session='));
   return sessionCookie.split(';')[0];

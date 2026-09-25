@@ -1,21 +1,17 @@
-// Owner authentication-architecture decision (2026-09-15): real-MySQL
-// coverage for the normal-user (Tier B) login-risk step-up code and the
-// browser-bound daily login grant --
-// backend/src/parentaccount/ParentAccountService.js's login()/
-// completeLoginStepUp(), migration 0042's parent_login_step_up_codes
-// table. Proves this is architecturally SEPARATE from Platform Admin
-// TOTP (Tier A, already proven elsewhere this session): no encryption key,
-// no authenticator app, a plain hash-only-at-rest email code, same
-// security bar as the pre-existing verification/password-reset codes it
-// is deliberately modeled on.
+// Real-MySQL coverage for Parent email login step-up during the pre-enrollment
+// grace period. After TOTP enrollment, login requires TOTP and neither this
+// email-code path nor a daily grant can authenticate an ACTIVE factor.
+// Platform Admin MFA remains a separate realm.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
-import { ParentAccountService, ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
+import { MySqlParentMfaRepository } from '../../dist/parentaccount/mfa/MySqlParentMfaRepository.js';
+import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -45,7 +41,12 @@ function buildService() {
   const repository = new MySqlParentAccountRepository();
   const authService = new AuthService(new MySqlAuthRepository());
   const emailSender = new RecordingEmailSender();
-  const service = new ParentAccountService({ repository, authService, emailSender });
+  const { service } = createParentAccountTestKit({
+    repository,
+    authService,
+    emailSender,
+    mfaRepository: new MySqlParentMfaRepository(),
+  });
   return { service, repository, emailSender };
 }
 

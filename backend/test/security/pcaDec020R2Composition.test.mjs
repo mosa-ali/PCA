@@ -1,62 +1,69 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-test('R2 production composition keeps the legacy bootstrap path out of production and keeps crypto fail-closed', async () => {
+async function exists(relative) {
+  try {
+    await access(path.join(backendRoot, relative));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('R2 production composition keeps the legacy bootstrap path out of production, composes no Parent Genesis ceremony (PCA-DEC-037), and keeps device crypto fail-closed', async () => {
   const main = await readFile(path.join(backendRoot, 'src/main.ts'), 'utf8');
   assert.equal(main.includes('bootstrapFamilyAuthority('), false);
-  assert.match(main, /new ParentGenesisService\(/);
-  assert.match(main, /new MySqlGenesisTransactionRepository\(\)/);
+  // PCA-DEC-037 removed Parent Genesis: none of its services or stores may be composed.
+  assert.doesNotMatch(main, /ParentGenesisService|GenesisChallengeService|MySqlGenesis(Transaction|StepUp|Challenge)Repository|resolveGenesisSignatureVerifier/);
+  // Device-signature verification elsewhere stays explicitly fail-closed.
   assert.match(main, /new RejectingDeviceSignatureVerifier\(\)/);
-  assert.match(main, /new MySqlGenesisStepUpRepository\(\)/);
+  for (const deleted of [
+    'src/parentaccount/ParentGenesisService.ts',
+    'src/parentaccount/GenesisChallengeService.ts',
+    'src/parentaccount/genesisProtocol.ts',
+    'src/parentaccount/genesisVerifierComposition.ts',
+    'src/parentaccount/sessionBinding.ts',
+    'src/parentaccount/genesisDeviceSigner.ts',
+  ]) {
+    assert.equal(await exists(deleted), false, `${deleted} must stay deleted`);
+  }
 });
 
-test('F-A/F2: main.ts derives genesisCryptographyAvailable from the ONE verifier instance the ceremony composes', async () => {
+test('PCA-DEC-037: main.ts validates the Parent MFA key realm at boot and composes ParentAccountService over the real ParentMfaService', async () => {
   const main = await readFile(path.join(backendRoot, 'src/main.ts'), 'utf8');
-  // The verifier is named (typed as the INTERFACE, so replacing the stub with a
-  // real verifier needs no second constant) and is the SAME instance for both
-  // consumers: the challenge service (proof verification) and
-  // ParentGenesisService (anchor/attestation verification).
-  assert.match(main, /const genesisVerifierComposition = resolveGenesisSignatureVerifier\(process\.env\);/);
-  assert.match(main, /const parentGenesisSignatureVerifier: DeviceSignatureVerifier = genesisVerifierComposition\.verifier;/);
-  assert.match(main, /new GenesisChallengeService\(new MySqlGenesisChallengeRepository\(\), parentGenesisSignatureVerifier\)/);
-  // The availability flag is DERIVED from the composed instance (inside the
-  // resolver, via instanceof RejectingDeviceSignatureVerifier) -- never a
-  // second constant that can drift from the composition it describes.
-  assert.match(main, /const genesisCryptographyAvailable = genesisVerifierComposition\.available;/);
-  const resolver = await readFile(path.join(backendRoot, 'src/parentaccount/genesisVerifierComposition.ts'), 'utf8');
-  assert.match(resolver, /available: !\(verifier instanceof RejectingDeviceSignatureVerifier\)/);
-  // ... and threaded into the server composition.
-  assert.match(main, /^    genesisCryptographyAvailable,$/m);
+  const bootCheckIndex = main.indexOf('  loadParentMfaKeyring(process.env);');
+  const mfaServiceIndex = main.indexOf('const parentMfaService = new ParentMfaService({ repository: new MySqlParentMfaRepository(), keyring: () => loadParentMfaKeyring(process.env) });');
+  const accountServiceIndex = main.indexOf('const parentAccountService = new ParentAccountService({');
+  assert.ok(bootCheckIndex >= 0, 'the MFA keyring is loaded eagerly at boot so a missing key fails loudly');
+  assert.ok(mfaServiceIndex > bootCheckIndex, 'the MFA service is composed after the boot-time key check');
+  assert.ok(accountServiceIndex > mfaServiceIndex, 'ParentAccountService receives the already-composed MFA service');
+  const accountServiceBlock = main.slice(accountServiceIndex, main.indexOf('});', accountServiceIndex));
+  assert.match(accountServiceBlock, /mfaService: parentMfaService,/);
+  assert.match(accountServiceBlock, /familyMembershipRepository,/);
+});
 
+test('PCA-DEC-037: no genesisCryptographyAvailable flag survives in the composition or ServerDependencies', async () => {
+  const main = await readFile(path.join(backendRoot, 'src/main.ts'), 'utf8');
   const buildServer = await readFile(path.join(backendRoot, 'src/http/buildServer.ts'), 'utf8');
-  assert.match(buildServer, /genesisCryptographyAvailable\?: boolean;/);
-  assert.match(buildServer, /genesisCryptographyAvailable: deps\.genesisCryptographyAvailable,/);
+  assert.doesNotMatch(main, /genesisCryptographyAvailable|parentGenesisSignatureVerifier/);
+  assert.doesNotMatch(buildServer, /genesisCryptographyAvailable/);
 });
 
-test('E-3/A-2: main.ts passes the ONE request-challenge service into the authority engine as its sixth argument', async () => {
+test('PCA-DEC-037: main.ts no longer constructs the attestation-chain ENGINE, its commercial resolver, or the request-challenge service -- the chain STORE survives only for protection alerts', async () => {
   const main = await readFile(path.join(backendRoot, 'src/main.ts'), 'utf8');
-  // Issuance (routes) and consumption (the engine's proof branch) must share
-  // one service: the engine refuses EVERY proof when none is composed
-  // (FamilyOwnerAttestationChainEngine:307), so the production composition
-  // must pass it explicitly.
-  const engineMatch = main.match(/new FamilyOwnerAttestationChainEngine\(([\s\S]*?)\);/);
-  assert.ok(engineMatch, 'main.ts must construct the authority chain engine');
-  assert.match(engineMatch[1], /familyAuthorityRequestChallengeService,/);
-  const challengeServiceIndex = main.indexOf('const familyAuthorityRequestChallengeService = new FamilyAuthorityRequestChallengeService(');
-  const engineIndex = main.indexOf('const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(');
-  assert.ok(challengeServiceIndex >= 0, 'the shared challenge service must be constructed in main.ts');
-  assert.ok(engineIndex >= 0, 'the engine must be constructed in main.ts');
-  assert.ok(
-    challengeServiceIndex < engineIndex,
-    'the challenge service must be declared BEFORE the engine that receives it (one instance for issuance and consumption)',
-  );
-  // The same instance must also reach the routes (issuance).
-  assert.match(main, /^    familyAuthorityRequestChallengeService,$/m);
+  assert.doesNotMatch(main, /new FamilyOwnerAttestationChainEngine\(/);
+  assert.doesNotMatch(main, /new AttestationChainFamilyCommercialAuthorityResolver\(/);
+  assert.doesNotMatch(main, /new FamilyAuthorityRequestChallengeService\(/);
+  assert.doesNotMatch(main, /^\s*familyAuthorityRequestChallengeService,\s*$/m, 'no request-challenge service may reach the routes');
+  // ONE store instance, read by the protection-alert Owner-device resolver.
+  assert.equal((main.match(/new MySqlFamilyAuthorityAttestationChainStore\(\)/g) ?? []).length, 1);
+  assert.match(main, /const familyAuthorityAttestationChainStore = new MySqlFamilyAuthorityAttestationChainStore\(\);/);
+  assert.match(main, /new MySqlOwnerParentDeviceResolver\(familyAuthorityAttestationChainStore\)/);
 });
 
 test('R2 native production adapters remain explicitly fail-closed pending cross-client certification', async () => {

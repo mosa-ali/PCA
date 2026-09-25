@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DevBillingClient, __resetDevBillingStateForTests, simulateAdminApproveParentMemberRequest, simulateAdminDeny, simulateAdminIssueCustomQuote, simulateServerPaymentConfirmation } from '../../src/api/dev/devBillingClient';
 
+// Every commercial mutation carries a single-use authenticator step-up token
+// (PCA-DEC-037). The fixture cannot verify one, but it refuses a missing one.
+const STEP_UP = 'dev-step-up-token';
+
 describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', () => {
   let client: DevBillingClient;
 
@@ -24,22 +28,22 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('cancelAutoRenew/resumeAutoRenew toggle the fixture subscription state and each return an auditEventId', async () => {
-    const cancelResult = await client.cancelAutoRenew();
+    const cancelResult = await client.cancelAutoRenew(STEP_UP);
     expect(typeof cancelResult.auditEventId).toBe('string');
     expect((await client.getSubscription()).autoRenew).toBe(false);
 
-    const resumeResult = await client.resumeAutoRenew();
+    const resumeResult = await client.resumeAutoRenew(STEP_UP);
     expect(typeof resumeResult.auditEventId).toBe('string');
     expect((await client.getSubscription()).autoRenew).toBe(true);
   });
 
   it('rejects a target at or below the current limit', async () => {
-    await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 1)).rejects.toThrow(/greater than the current limit/);
-    await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 0)).rejects.toThrow();
+    await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 1, STEP_UP)).rejects.toThrow(/greater than the current limit/);
+    await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 0, STEP_UP)).rejects.toThrow();
   });
 
   it('resolves a standard priced quote automatically for a seeded target quantity (PENDING -> QUOTED, no admin step)', async () => {
-    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
+    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
     expect(request.state).toBe('QUOTED');
     expect(request.awaitingAdminQuote).toBe(false);
     expect(request.quote?.quoteKind).toBe('STANDARD');
@@ -48,38 +52,38 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('marks a request PENDING_ADMIN_QUOTE (awaitingAdminQuote) when no standard price exists for the requested quantity', async () => {
-    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4);
+    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4, STEP_UP);
     expect(request.state).toBe('PENDING');
     expect(request.awaitingAdminQuote).toBe(true);
     expect(request.quote).toBeNull();
   });
 
   it('a PARENT_MEMBER_LIMIT request never resolves a quote and never becomes billable (PCA-ADD-PA-054)', async () => {
-    const request = await client.requestLimitIncrease('PARENT_MEMBER_LIMIT', 2);
+    const request = await client.requestLimitIncrease('PARENT_MEMBER_LIMIT', 2, STEP_UP);
     expect(request.state).toBe('PENDING');
     expect(request.awaitingAdminQuote).toBe(false);
     expect(request.quote).toBeNull();
   });
 
   it('an open request appears in the entitlement snapshot pendingRequestSummary-equivalent openRequests list', async () => {
-    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
+    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
     const entitlement = await client.getEntitlement();
     expect(entitlement.openRequests.map((r) => r.requestId)).toContain(request.requestId);
   });
 
   it('cancelRequest succeeds from PENDING or QUOTED but not from PAYMENT_PENDING', async () => {
-    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    const cancelled = await client.cancelRequest(quoted.requestId);
+    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
+    const cancelled = await client.cancelRequest(quoted.requestId, STEP_UP);
     expect(cancelled.state).toBe('CANCELLED');
 
-    const another = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3);
-    await client.beginCheckout(another.requestId, 'https://example.test/return');
-    await expect(client.cancelRequest(another.requestId)).rejects.toThrow(/PENDING or QUOTED/);
+    const another = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3, STEP_UP);
+    await client.beginCheckout(another.requestId, 'https://example.test/return', STEP_UP);
+    await expect(client.cancelRequest(another.requestId, STEP_UP)).rejects.toThrow(/PENDING or QUOTED/);
   });
 
   it('beginCheckout moves QUOTED -> PAYMENT_PENDING and never itself raises the device limit or marks APPROVED', async () => {
-    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
+    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return', STEP_UP);
     expect(session.status).toBe('PENDING');
     expect(session.paymentAttemptId).toBeTruthy();
 
@@ -95,13 +99,13 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('beginCheckout refuses a request that is not QUOTED', async () => {
-    const pending = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4); // awaiting admin quote, not QUOTED
-    await expect(client.beginCheckout(pending.requestId, 'https://example.test/return')).rejects.toThrow(/QUOTED/);
+    const pending = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4, STEP_UP); // awaiting admin quote, not QUOTED
+    await expect(client.beginCheckout(pending.requestId, 'https://example.test/return', STEP_UP)).rejects.toThrow(/QUOTED/);
   });
 
   it('server-side payment confirmation raises the device limit, approves the request, and creates a paid invoice', async () => {
-    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3);
-    await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3, STEP_UP);
+    await client.beginCheckout(quoted.requestId, 'https://example.test/return', STEP_UP);
 
     const confirmed = await simulateServerPaymentConfirmation(quoted.requestId);
     expect(confirmed.state).toBe('APPROVED');
@@ -116,8 +120,8 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('a duplicate confirmation for an already-approved request is an idempotent no-op (does not double-apply)', async () => {
-    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
+    await client.beginCheckout(quoted.requestId, 'https://example.test/return', STEP_UP);
     await simulateServerPaymentConfirmation(quoted.requestId);
     await simulateServerPaymentConfirmation(quoted.requestId); // duplicate "webhook redelivery" / UI refresh
 
@@ -128,20 +132,20 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('an admin-issued custom quote moves an awaiting-quote request to QUOTED and unblocks checkout', async () => {
-    const awaiting = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4);
+    const awaiting = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4, STEP_UP);
     const quoted = await simulateAdminIssueCustomQuote(awaiting.requestId);
     expect(quoted.state).toBe('QUOTED');
     expect(quoted.awaitingAdminQuote).toBe(false);
     expect(quoted.quote?.quoteKind).toBe('CUSTOM');
 
-    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return', STEP_UP);
     expect(session.status).toBe('PENDING');
     const request = await client.getRequest(quoted.requestId);
     expect(request?.state).toBe('PAYMENT_PENDING');
   });
 
   it('a parent-member request can be approved directly at no charge, without ever entering QUOTED', async () => {
-    const request = await client.requestLimitIncrease('PARENT_MEMBER_LIMIT', 2);
+    const request = await client.requestLimitIncrease('PARENT_MEMBER_LIMIT', 2, STEP_UP);
     const approved = await simulateAdminApproveParentMemberRequest(request.requestId);
     expect(approved.state).toBe('APPROVED');
 
@@ -150,10 +154,19 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
   });
 
   it('a denied request records a reason and is not left ambiguous', async () => {
-    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4);
+    const request = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4, STEP_UP);
     const denied = await simulateAdminDeny(request.requestId, 'Requires manual pricing review beyond policy limit.');
     expect(denied.state).toBe('DENIED');
     expect(denied.denialReason).toBe('Requires manual pricing review beyond policy limit.');
+  });
+
+  it('refuses every commercial mutation that carries no step-up token', async () => {
+    await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, '')).rejects.toThrow(/authenticator/);
+    await expect(client.cancelAutoRenew('')).rejects.toThrow(/authenticator/);
+    await expect(client.resumeAutoRenew('')).rejects.toThrow(/authenticator/);
+    const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP);
+    await expect(client.beginCheckout(quoted.requestId, 'https://example.test/return', '')).rejects.toThrow(/authenticator/);
+    await expect(client.cancelRequest(quoted.requestId, '')).rejects.toThrow(/authenticator/);
   });
 
   it('isPaymentProviderAvailable is true in dev fixtures', () => {

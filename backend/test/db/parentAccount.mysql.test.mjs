@@ -4,46 +4,48 @@
 // compare-and-swap (duplicate-verification race), the FREE_ACCESS-snapshot
 // CHECK constraint, and cross-domain compatibility with the SHARED
 // service_sessions table (revoke-all).
+//
+// PCA-DEC-037 contract: verify-email only ACTIVATES the account (no session,
+// no family). The first real sign-in (password + emailed login code)
+// provisions the family server-side, starts the one MFA grace window, and is
+// the only way to obtain a Parent session. A session for an account that never
+// completed such a sign-in (no parent_mfa_state row) is refused.
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
+import { MySqlParentMfaRepository } from '../../dist/parentaccount/mfa/MySqlParentMfaRepository.js';
+import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
+import { TestSandboxEmailSender } from '../../dist/parentaccount/TestSandboxEmailSender.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 import { closePool, execute, getPool, runInTransaction } from '../../dist/db/pool.js';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
-
-class RecordingEmailSender {
-  constructor() {
-    this.sent = [];
-  }
-  async sendVerificationCode(email, code) {
-    this.sent.push({ email, code });
-  }
-  async sendLoginStepUpCode(email, code) {
-    this.sent.push({ email, code });
-  }
-  lastCodeFor(email) {
-    for (let i = this.sent.length - 1; i >= 0; i -= 1) {
-      if (this.sent[i].email === email) return this.sent[i].code;
-    }
-    return null;
-  }
-}
 
 function buildService() {
   const parentAccountRepository = new MySqlParentAccountRepository();
   const authService = new AuthService(new MySqlAuthRepository());
-  const emailSender = new RecordingEmailSender();
-  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
-  return { service, parentAccountRepository, emailSender };
+  const emailSender = new TestSandboxEmailSender();
+  const { service } = createParentAccountTestKit({
+    repository: parentAccountRepository,
+    authService,
+    emailSender,
+    familyMembershipRepository: new MySqlFamilyMembershipRepository(),
+    mfaRepository: new MySqlParentMfaRepository(),
+  });
+  return { service, parentAccountRepository, authService, emailSender };
 }
 
 function uniqueEmail() {
   return `writer57-${randomUUID()}@example.com`;
+}
+
+async function countRows(sql, params) {
+  const [rows] = await getPool().query(sql, params);
+  return Number(rows[0].n);
 }
 
 async function loginWithOtp(service, emailSender, email, password) {
@@ -51,6 +53,14 @@ async function loginWithOtp(service, emailSender, email, password) {
   assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' });
   const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
   return service.completeLoginStepUp(email, stepUpCode);
+}
+
+/** register -> verify-email. Returns the durable account record (verify-email itself returns only {status:'VERIFIED'}). */
+async function registerAndVerifyRealAccount(service, emailSender, email, password) {
+  await service.register(email, password, password);
+  const outcome = await service.verifyEmail(email, emailSender.lastCodeFor(email));
+  assert.deepEqual(outcome, { status: 'VERIFIED' });
+  return new MySqlParentAccountRepository().findByEmailHash(hashParentEmail(email));
 }
 
 test('MySQL: registration persists a PENDING_VERIFICATION row, findable by email hash', async () => {
@@ -70,19 +80,45 @@ test('MySQL CONCURRENCY: two concurrent registrations for the same email are DB-
   await Promise.all([service.register(email, password, password), service.register(email, password, password)]);
   const account = await parentAccountRepository.findByEmailHash(hashParentEmail(email));
   assert.ok(account, 'exactly one durable account row must exist');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_accounts WHERE email_hash = ?', [hashParentEmail(email)]), 1);
 });
 
-test('MySQL: verify-email transitions to VERIFIED, snapshots FREE_ACCESS atomically (CHECK constraint), and issues a session usable via the shared AuthService', async () => {
-  const { service, emailSender } = buildService();
+test('MySQL: verify-email transitions to VERIFIED and snapshots FREE_ACCESS atomically (CHECK constraint) but issues NO session; the first sign-in issues a session usable via the shared AuthService', async () => {
+  const { service, emailSender, parentAccountRepository } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
   await service.register(email, password, password);
-  const code = emailSender.lastCodeFor(email);
-  const outcome = await service.verifyEmail(email, code);
-  assert.equal(typeof outcome.rawSessionToken, 'string');
+  const outcome = await service.verifyEmail(email, emailSender.lastCodeFor(email));
+  assert.deepEqual(outcome, { status: 'VERIFIED' }, 'verify-email returns no token, no account id, no family');
 
-  const session = await service.readSession(outcome.rawSessionToken);
-  assert.equal(session.accountId, outcome.accountId);
+  const account = await parentAccountRepository.findByEmailHash(hashParentEmail(email));
+  assert.equal(account.status, 'VERIFIED');
+  assert.equal(account.familyId, null, 'verify-email creates no family');
+  assert.equal(account.serviceAccountId, null, 'verify-email issues no service session identity');
+  assert.ok(account.freeAccess, 'the FREE_ACCESS snapshot is written with the VERIFIED transition');
+  assert.ok(emailSender.kindsFor(email).includes('ACCOUNT_ACTIVATED'), 'the mailbox is told the account was activated');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_mfa_state WHERE account_id = ?', [account.accountId]), 0, 'grace does not start at verify-email');
+
+  const signedIn = await loginWithOtp(service, emailSender, email, password);
+  assert.equal(signedIn.status, 'AUTHENTICATED');
+  assert.equal(signedIn.accountId, account.accountId);
+  const session = await service.readSession(signedIn.rawSessionToken);
+  assert.equal(session.accountId, account.accountId);
+  assert.equal(session.familyId, signedIn.familyId);
+  assert.equal(session.role, 'ADMINISTRATOR');
+  assert.equal(session.mfa.status, 'GRACE');
+});
+
+test('MySQL SECURITY: a session for an account that never completed a PCA-DEC-037 sign-in (no MFA grace record) is refused by readSession', async () => {
+  const { service, emailSender, authService, parentAccountRepository } = buildService();
+  const email = uniqueEmail();
+  const account = await registerAndVerifyRealAccount(service, emailSender, email, 'a genuinely long password');
+  // A legacy-shaped session: a real service_sessions row bound to this account,
+  // but minted outside the sign-in flow, so no grace record exists.
+  const issued = await authService.issueSession({ accountReferenceHash: createHash('sha256').update(account.accountId, 'utf8').digest() });
+  await parentAccountRepository.setServiceAccountIdIfAbsent(account.accountId, issued.session.accountId);
+  await assert.rejects(() => service.readSession(issued.rawToken), (err) => err.code === 'UNAUTHORIZED');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [account.accountId]), 0, 'a refused session provisions nothing');
 });
 
 test('MySQL CONCURRENCY: two concurrent verify-email calls with the same code -- exactly one wins (compare-and-swap on consumed_at)', async () => {
@@ -101,10 +137,12 @@ test('MySQL: revoke-all-sessions revokes every session for the account through t
   const { service, emailSender } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
-  await service.register(email, password, password);
-  const code = emailSender.lastCodeFor(email);
-  const first = await service.verifyEmail(email, code);
+  await registerAndVerifyRealAccount(service, emailSender, email, password);
+  const first = await loginWithOtp(service, emailSender, email, password);
   const second = await loginWithOtp(service, emailSender, email, password);
+  assert.notEqual(first.rawSessionToken, second.rawSessionToken);
+  await service.readSession(first.rawSessionToken);
+  await service.readSession(second.rawSessionToken);
 
   await service.revokeAllSessions(first.rawSessionToken);
 
@@ -113,36 +151,54 @@ test('MySQL: revoke-all-sessions revokes every session for the account through t
 });
 
 test('MySQL: a login-issued session Bearer-authenticates against the EXISTING, unmodified requireServiceSession primitive (same token format/table)', async () => {
-  const { service, emailSender } = buildService();
+  const { service, emailSender, parentAccountRepository } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
-  await service.register(email, password, password);
-  const code = emailSender.lastCodeFor(email);
-  const verifyOutcome = await service.verifyEmail(email, code);
+  await registerAndVerifyRealAccount(service, emailSender, email, password);
+  const signedIn = await loginWithOtp(service, emailSender, email, password);
 
   const authService = new AuthService(new MySqlAuthRepository());
-  const serviceAccountId = await authService.validateSession(verifyOutcome.rawSessionToken);
+  const serviceAccountId = await authService.validateSession(signedIn.rawSessionToken);
   assert.equal(typeof serviceAccountId, 'string');
+  assert.equal((await parentAccountRepository.findById(signedIn.accountId)).serviceAccountId, serviceAccountId);
 });
 
-test('MySQL: verify-email does not create family authority or a service scope before the separate DSK genesis ceremony', async () => {
-  const parentAccountRepository = new MySqlParentAccountRepository();
-  const authService = new AuthService(new MySqlAuthRepository());
-  const emailSender = new RecordingEmailSender();
-  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
-
+test('MySQL: verify-email creates no family; the first sign-in provisions exactly ONE family + ADMINISTRATOR membership + ACTIVE service scope, and creates NO family_authority_* or devices rows', async () => {
+  const { service, emailSender, parentAccountRepository } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
-  await service.register(email, password, password);
-  const code = emailSender.lastCodeFor(email);
-  const outcome = await service.verifyEmail(email, code);
-  assert.equal(outcome.familyId, null);
+  const verified = await registerAndVerifyRealAccount(service, emailSender, email, password);
+  assert.equal(verified.familyId, null);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [verified.accountId]), 0);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM family_parent_memberships WHERE account_id = ?', [verified.accountId]), 0);
 
-  const account = await parentAccountRepository.findById(outcome.accountId);
-  const { rows } = await runInTransaction((conn) =>
-    execute(conn, `SELECT COUNT(*) AS count FROM service_account_family_scopes WHERE account_id = ?`, [account.serviceAccountId]),
-  );
-  assert.equal(Number(rows[0].count), 0);
+  const signedIn = await loginWithOtp(service, emailSender, email, password);
+  assert.equal(signedIn.status, 'AUTHENTICATED');
+  assert.equal(typeof signedIn.familyId, 'string');
+  assert.equal(signedIn.role, 'ADMINISTRATOR');
+  assert.equal(signedIn.mfa.status, 'GRACE');
+  assert.ok(signedIn.mfa.graceExpiresAt instanceof Date);
+  assert.equal(typeof signedIn.rawDailyLoginGrantToken, 'string');
+
+  const account = await parentAccountRepository.findById(signedIn.accountId);
+  const familyId = signedIn.familyId;
+  assert.equal(account.familyId, familyId);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [account.accountId]), 1);
+  const [memberships] = await getPool().query('SELECT family_id, role, status FROM family_parent_memberships WHERE account_id = ?', [account.accountId]);
+  assert.deepEqual(memberships.map((row) => ({ ...row })), [{ family_id: familyId, role: 'ADMINISTRATOR', status: 'ACTIVE' }]);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM service_account_family_scopes WHERE account_id = ? AND family_id = ? AND status = ?', [account.serviceAccountId, familyId, 'ACTIVE']), 1);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_mfa_state WHERE account_id = ?', [account.accountId]), 1, 'grace started once');
+
+  for (const table of ['family_authority_genesis_anchors', 'family_authority_attestations', 'family_authority_chain_heads', 'devices']) {
+    assert.equal(await countRows(`SELECT COUNT(*) AS n FROM ${table} WHERE family_id = ?`, [familyId]), 0, `first sign-in must write nothing to ${table}`);
+  }
+
+  // A second sign-in is idempotent: same family, still exactly one of everything.
+  const again = await loginWithOtp(service, emailSender, email, password);
+  assert.equal(again.familyId, familyId);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [account.accountId]), 1);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM family_parent_memberships WHERE account_id = ?', [account.accountId]), 1);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM service_account_family_scopes WHERE account_id = ?', [account.serviceAccountId]), 1);
 });
 
 // PCA-ADD-PA-017 enforcement (Writer73): end-to-end proof, against real
@@ -162,7 +218,6 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const { hashAdminEmail } = await import('../../dist/platformadmin/auth/emailHash.js');
   const { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } = await import('../../dist/platformadmin/auth/totp.js');
   const { LoggingAlertAdapter } = await import('../../dist/platformadmin/auth/alertPort.js');
-  const { getPool } = await import('../../dist/db/pool.js');
 
   let adminClockOffsetMs = 0;
   const adminClock = () => new Date(Date.now() + adminClockOffsetMs);
@@ -186,32 +241,17 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const adminIdentity = await adminAuthService.validateSession(adminRawToken);
   const admin = { adminId: adminAccount.adminId, roles: ['PLATFORM_ADMIN'], sessionId: adminIdentity.sessionId };
 
-  // Real parent identity plus an explicitly prepared disposable family. The
-  // account-to-family binding is test setup for the suspend gate; production
-  // genesis remains the separate client-held DSK ceremony.
-  const emailSender = new RecordingEmailSender();
-  const parentAccountRepository = new MySqlParentAccountRepository();
-  const parentServiceWithGenesis = new ParentAccountService({
-    repository: parentAccountRepository,
-    authService: new AuthService(new MySqlAuthRepository()),
-    emailSender,
-  });
+  // Real parent identity; its family is the one the real first sign-in
+  // provisioned server-side (PCA-DEC-037), not a test fixture.
+  const { service: parentService, emailSender } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
-  await parentServiceWithGenesis.register(email, password, password);
-  const code = emailSender.lastCodeFor(email);
-  const verifyOutcome = await parentServiceWithGenesis.verifyEmail(email, code);
-  assert.equal(verifyOutcome.familyId, null);
-  const familyId = randomUUID();
-  await parentAccountRepository.createFamilyIfAbsent(familyId, new Date());
-  await bindAccountToFamilyForTest(verifyOutcome.accountId, familyId);
-  const boundAccount = await parentAccountRepository.findById(verifyOutcome.accountId);
-  await parentAccountRepository.grantFamilyScopeIfAbsent(boundAccount.serviceAccountId, familyId, new Date());
-  const [familyRows] = await getPool().query(`SELECT family_id FROM families WHERE family_id = ?`, [familyId]);
-  assert.equal(familyRows.length, 1, 'disposable suspend fixture must create its family row');
+  await registerAndVerifyRealAccount(parentService, emailSender, email, password);
 
-  // Sanity: login works before any suspend action.
-  const preSuspendLogin = await loginWithOtp(parentServiceWithGenesis, emailSender, email, password);
+  // Sanity: login works before any suspend action, and it is what provisions the family.
+  const preSuspendLogin = await loginWithOtp(parentService, emailSender, email, password);
+  const familyId = preSuspendLogin.familyId;
+  assert.equal(typeof familyId, 'string');
 
   // Real suspend: real RBAC check, real step-up consumption, real audit row.
   adminClockOffsetMs += 31_000; // fresh TOTP counter -- see TOTP-REPLAY-1 in PlatformAdminAuthService.
@@ -220,11 +260,13 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const suspended = await familyStatusService.suspend(admin, familyId, 'Writer73 DB-level enforcement proof', suspendStepUp.stepUpId);
   assert.equal(suspended.status, 'SUSPENDED');
 
-  // The negative case this item exists to prove: login now genuinely fails.
-  await assert.rejects(() => parentServiceWithGenesis.login(email, password), (err) => {
+  // The negative case this item exists to prove: login now genuinely fails --
+  // with or without this browser's own daily grant.
+  await assert.rejects(() => parentService.login(email, password), (err) => {
     assert.equal(err.code, 'UNAUTHORIZED');
     return true;
   });
+  await assert.rejects(() => parentService.login(email, password, preSuspendLogin.rawDailyLoginGrantToken), (err) => err.code === 'UNAUTHORIZED');
 
   // Reactivate: real step-up again, then login is restored.
   adminClockOffsetMs += 31_000;
@@ -233,38 +275,30 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const reactivated = await familyStatusService.reactivate(admin, familyId, reactivateStepUp.stepUpId);
   assert.equal(reactivated.status, 'ACTIVE');
 
-  const relogin = await loginWithOtp(parentServiceWithGenesis, emailSender, email, password);
+  const relogin = await loginWithOtp(parentService, emailSender, email, password);
   assert.equal(typeof relogin.rawSessionToken, 'string');
+  assert.equal(relogin.familyId, familyId, 'reactivation restores the same family, never a newly provisioned one');
 });
 
 // PCA-ADD-IDENT-011: a second/subsequent registration under a DISTINCT
-// email address never auto-joins an existing family. Both identities remain
-// unbound until their own client-held genesis ceremony.
-test('MySQL: two DISTINCT emails verify independently and remain unbound', async () => {
-  const emailSenderA = new RecordingEmailSender();
-  const serviceA = new ParentAccountService({
-    repository: new MySqlParentAccountRepository(),
-    authService: new AuthService(new MySqlAuthRepository()),
-    emailSender: emailSenderA,
-  });
-  const emailSenderB = new RecordingEmailSender();
-  const serviceB = new ParentAccountService({
-    repository: new MySqlParentAccountRepository(),
-    authService: new AuthService(new MySqlAuthRepository()),
-    emailSender: emailSenderB,
-  });
-
+// email address never auto-joins an existing family. Both identities stay
+// unbound through verify-email, and each first sign-in provisions its OWN family.
+test('MySQL: two DISTINCT emails verify independently, remain unbound after verify-email, and each first sign-in provisions a DIFFERENT family', async () => {
+  const { service, emailSender } = buildService();
   const emailA = uniqueEmail();
   const emailB = uniqueEmail();
-  await serviceA.register(emailA, 'a genuinely long password', 'a genuinely long password');
-  await serviceB.register(emailB, 'a different genuinely long password', 'a different genuinely long password');
+  const accountA = await registerAndVerifyRealAccount(service, emailSender, emailA, 'a genuinely long password');
+  const accountB = await registerAndVerifyRealAccount(service, emailSender, emailB, 'a different genuinely long password');
 
-  const outcomeA = await serviceA.verifyEmail(emailA, emailSenderA.lastCodeFor(emailA));
-  const outcomeB = await serviceB.verifyEmail(emailB, emailSenderB.lastCodeFor(emailB));
+  assert.equal(accountA.familyId, null);
+  assert.equal(accountB.familyId, null);
+  assert.notEqual(accountA.accountId, accountB.accountId);
 
-  assert.equal(outcomeA.familyId, null);
-  assert.equal(outcomeB.familyId, null);
-  assert.notEqual(outcomeA.accountId, outcomeB.accountId);
+  const sessionA = await loginWithOtp(service, emailSender, emailA, 'a genuinely long password');
+  const sessionB = await loginWithOtp(service, emailSender, emailB, 'a different genuinely long password');
+  assert.notEqual(sessionA.familyId, sessionB.familyId);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM family_parent_memberships WHERE account_id = ? AND family_id = ?', [accountA.accountId, sessionB.familyId]), 0);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM family_parent_memberships WHERE account_id = ? AND family_id = ?', [accountB.accountId, sessionA.familyId]), 0);
 });
 
 // PENDING_VERIFICATION credential-takeover fix (migration 0030): real-MySQL
@@ -288,7 +322,7 @@ test('MySQL SECURITY: a hostile re-registration of a still-unverified email cann
   }
 
   const verified = await service.verifyEmail(email, ownerCode);
-  assert.equal(typeof verified.rawSessionToken, 'string');
+  assert.deepEqual(verified, { status: 'VERIFIED' });
 
   await assert.rejects(() => service.login(email, attackerPassword), (err) => {
     assert.equal(err.code, 'UNAUTHORIZED');
@@ -341,11 +375,6 @@ function pendingInvitationRow(familyId, invitedEmailHash, at) {
   };
 }
 
-async function registerAndVerifyRealAccount(service, emailSender, email, password) {
-  await service.register(email, password, password);
-  return service.verifyEmail(email, emailSender.lastCodeFor(email));
-}
-
 // PCA-DEC-033 / MySqlFamilyMembershipRepository.findActiveRole.
 //
 // This deliberately links the repository's two PRODUCTION-REACHABLE methods
@@ -369,17 +398,34 @@ test('MySQL REAL WRITER->CONSUMER: accepted family membership is returned by Par
   const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
   const { service, emailSender } = buildService();
   const password = 'a genuinely long password';
-  const owner = await registerAndVerifyRealAccount(service, emailSender, uniqueEmail(), password);
-  const memberEmail = uniqueEmail();
-  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
-  const familyId = randomUUID();
+
+  // The owner's family is the one its own first sign-in provisioned.
+  const ownerEmail = uniqueEmail();
+  const owner = await registerAndVerifyRealAccount(service, emailSender, ownerEmail, password);
+  const ownerSession = await loginWithOtp(service, emailSender, ownerEmail, password);
+  const familyId = ownerSession.familyId;
+  assert.equal(ownerSession.role, 'ADMINISTRATOR');
   const now = new Date();
 
-  await bindAccountToFamilyForTest(owner.accountId, familyId);
-  await bindAccountToFamilyForTest(member.accountId, familyId);
-  const beforeInvitation = await service.readSession(member.rawSessionToken);
-  assert.equal(beforeInvitation.familyId, familyId);
-  assert.equal(beforeInvitation.role, null, 'a family-bound account with no ACTIVE membership must fail closed before invitation acceptance');
+  // Fail-closed precondition: an account bound to the family with NO ACTIVE
+  // membership signs in and gets role null -- and its first sign-in neither
+  // re-points family_id at a fresh family nor grants itself ADMINISTRATOR,
+  // because the family was not provisioned for it.
+  const strayEmail = uniqueEmail();
+  const stray = await registerAndVerifyRealAccount(service, emailSender, strayEmail, password);
+  await bindAccountToFamilyForTest(stray.accountId, familyId);
+  const straySession = await loginWithOtp(service, emailSender, strayEmail, password);
+  assert.equal(straySession.familyId, familyId);
+  assert.equal(straySession.role, null, 'a family-bound account with no ACTIVE membership must fail closed');
+  assert.equal((await service.readSession(straySession.rawSessionToken)).role, null);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM family_parent_memberships WHERE account_id = ?', [stray.accountId]), 0);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [stray.accountId]), 0);
+
+  // The invited member accepts BEFORE its first sign-in (family_id still NULL),
+  // exactly as production's invitation binder requires.
+  const memberEmail = uniqueEmail();
+  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
+  assert.equal(member.familyId, null);
   const entitlementRepository = new MySqlEntitlementRepository();
   await entitlementRepository.getOrCreateForFamily(
     familyId,
@@ -404,8 +450,18 @@ test('MySQL REAL WRITER->CONSUMER: accepted family membership is returned by Par
     actorDeviceId: 'dev-owner',
   });
   await invitationService.acceptInvitation(invitation.invitationId, member.accountId);
+  assert.equal(await readAccountFamilyId(member.accountId), familyId);
 
-  const activeSession = await service.readSession(member.rawSessionToken);
+  // First sign-in AFTER acceptance: ensureProvisionedFamily must keep the
+  // invitation-bound family and must not provision or promote anything.
+  const memberSession = await loginWithOtp(service, emailSender, memberEmail, password);
+  assert.equal(memberSession.familyId, familyId, 'first sign-in never overrides an invitation-bound family_id');
+  assert.equal(memberSession.role, 'VIEWER');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [member.accountId]), 0, 'no family is provisioned for an invitation-bound account');
+  const [memberRows] = await getPool().query('SELECT family_id, role, status FROM family_parent_memberships WHERE account_id = ?', [member.accountId]);
+  assert.deepEqual(memberRows.map((row) => ({ ...row })), [{ family_id: familyId, role: 'VIEWER', status: 'ACTIVE' }], 'the invited role is never upgraded to ADMINISTRATOR by sign-in');
+
+  const activeSession = await service.readSession(memberSession.rawSessionToken);
   assert.equal(activeSession.familyId, familyId);
   assert.equal(activeSession.role, 'VIEWER', 'the real browser-session consumer must see the role written by the real invitation path');
 
@@ -417,9 +473,12 @@ test('MySQL REAL WRITER->CONSUMER: accepted family membership is returned by Par
   );
   assert.equal(revoked.affectedRows, 1, 'hostile precondition: exactly the accepted membership is revoked');
 
-  const revokedSession = await service.readSession(member.rawSessionToken);
+  const revokedSession = await service.readSession(memberSession.rawSessionToken);
   assert.equal(revokedSession.familyId, familyId, 'revoking normal role authority does not rewrite account identity');
   assert.equal(revokedSession.role, null, 'a REVOKED durable row must fail closed through the real ParentAccountService consumer');
+  const relogin = await loginWithOtp(service, emailSender, memberEmail, password);
+  assert.equal(relogin.role, null, 'a later sign-in never revives a REVOKED invited membership');
+  assert.equal(relogin.familyId, familyId);
 });
 
 test('MySQL SECURITY: a family-member invitation can only be accepted by the account whose OWN registered email it was addressed to -- a stranger with a valid session gets NOT_FOUND and the invitation stays PENDING', async () => {
@@ -590,7 +649,7 @@ test('MySQL: removeMember clears the target account\'s family_id and releases ex
   const now = new Date();
 
   // owner: bound to the family with NO accepted invitation -- the same
-  // structural signature a genuine genesis-anchored Owner account has.
+  // structural signature an account whose family was provisioned for it has.
   await bindAccountToFamilyForTest(owner.accountId, familyId);
   // member: bound to the family WITH an accepted invitation -- what a real
   // acceptance + MySqlFamilyMemberAccountBinder durably produces together.

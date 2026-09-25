@@ -2,16 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { AuthenticatedSession } from '../../api/interfaces';
+import { getApiClients } from '../../api/client';
+import { clearMfaGraceReminderDismissal } from '../auth/mfaGraceDismissal';
 
 /**
- * The header's account control: who is signed in, in what role, and the way
- * to Settings.
+ * The header's account control: who is signed in, in what role, the way to
+ * Settings, and Sign out.
  *
- * NO SIGN-OUT CONTROL IS RENDERED. `ServiceAuthClient.signOut()` exists on the
- * API surface (api/interfaces.ts) but has never had a UI affordance, and there
- * is no `shell.signOut` string in either locale. Shipping an English-only
- * button would break the locale contract for an Arabic parent, and inventing
- * the copy is not this writer's call. Raised as a request rather than guessed.
+ * SIGN OUT calls `ServiceAuthClient.signOut()` (server-side session revocation)
+ * and then performs a full navigation to /login, so no in-memory console state
+ * survives. The sign-out request is best-effort: a failed request must never
+ * trap the parent inside the console, so the navigation happens regardless.
  *
  * A disclosure, not `role="menu"`: the panel's content is a short block of
  * identity text plus one link, which is not a menu of commands, and forcing it
@@ -47,6 +48,7 @@ function PersonIcon() {
 export function ProfileMenu({ session }: ProfileMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -71,6 +73,17 @@ export function ProfileMenu({ session }: ProfileMenuProps) {
   }, [open]);
 
   const displayName = session.displayName;
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await getApiClients().serviceAuth.signOut();
+    } catch {
+      // Best-effort -- see this component's header.
+    }
+    clearMfaGraceReminderDismissal();
+    window.location.assign('/login');
+  }
 
   return (
     <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex' }}>
@@ -131,15 +144,18 @@ export function ProfileMenu({ session }: ProfileMenuProps) {
           <p>
             <bdi className="iso">{displayName}</bdi>
           </p>
-          {session.state === 'FAMILY_READY' && (
-            <p>{t('shell.role', { role: t(`roles.${session.role.toLowerCase()}`) })}</p>
-          )}
+          <p>{t('shell.role', { role: t(`roles.${session.role.toLowerCase()}`) })}</p>
           <Link to="/guide" onClick={() => setOpen(false)}>
             {t('guide.title')}
           </Link>
           <Link to="/settings" onClick={() => setOpen(false)}>
             {t('nav.settings')}
           </Link>
+          <p>
+            <button type="button" className="btn" onClick={handleSignOut} disabled={signingOut} aria-busy={signingOut} data-testid="sign-out">
+              {t('shell.signOut')}
+            </button>
+          </p>
         </div>
       )}
     </div>

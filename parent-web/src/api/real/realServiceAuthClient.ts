@@ -21,23 +21,47 @@
 //
 // PATHS ARE `/api/parent/*`, NOT `/api/auth/*` -- the previous version of
 // this file guessed at an `/api/auth/*` shape that was never implemented
-// server-side. `/api/auth/step-up` in particular has no
-// FAMILY_SERVICE_SESSION_V1 equivalent this round (no step-up route is
-// part of this contract) -- stepUp() below honestly rejects rather than
-// call a URL that doesn't exist.
+// server-side. The generic family-action stepUp() below has no route and
+// honestly never grants; the COMMERCIAL step-up is the authenticator-code
+// route `/api/parent/mfa/step-up` (issueCommercialStepUp).
 //
-import type { AuthenticatedSession, GenesisChallenge, GenesisCompletionInput, GenesisPlatform, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient, SignInResult } from '../interfaces';
-import type { ParentSignupProfile } from '../interfaces';
+// PCA-DEC-037 AUTHENTICATOR MFA: sign-in is email + password, then either an
+// emailed code (accounts without an authenticator app) or the app's 6-digit
+// code. Enrollment material (otpauth URI + secret) and commercial step-up
+// tokens are returned to the caller ONLY -- this client never stores or logs
+// them. Diagnostics carry status words only.
+//
+import type {
+  AuthenticatedSession,
+  CommercialStepUpGrant,
+  CommercialStepUpOperation,
+  LoginStepUpResult,
+  MfaRecoveryCompletionResult,
+  MfaEnrollmentConfirmResult,
+  MfaEnrollmentStart,
+  ParentMfaStatus,
+  ParentSignupProfile,
+  RegistrationResult,
+  RequestPasswordResetResult,
+  ResetPasswordResult,
+  ServiceAuthClient,
+  SignInResult,
+  VerifyEmailResult,
+} from '../interfaces';
 import { reportDiagnostic } from '../../security/diagnosticConsole';
 
 export type ServiceAuthErrorCode =
   | 'INVALID_CREDENTIALS'
+  /** The authenticator-app code was wrong (sign-in, enrollment confirm or commercial step-up). */
+  | 'INVALID_MFA_CODE'
+  /** Too many wrong authenticator codes: the server has locked authenticator checks for a while (15 minutes). */
+  | 'MFA_LOCKED'
+  /** The account may not perform this (e.g. a commercial step-up by a non-administrator, or without an authenticator). */
+  | 'FORBIDDEN'
   | 'ACCOUNT_DISABLED'
   | 'UNAUTHORIZED_FAMILY_SCOPE'
   | 'SESSION_EXPIRED'
   | 'INVALID_REQUEST'
-  /** A genesis ceremony proof the server could not verify (rejected/expired/consumed challenge, invalid signature). Distinct from SESSION_EXPIRED on purpose: the session is fine; signing in again cannot fix a rejected proof. */
-  | 'GENESIS_REJECTED'
   | 'RATE_LIMITED'
   | 'NOT_IMPLEMENTED'
   | 'NETWORK_ERROR'
@@ -53,27 +77,36 @@ export class ServiceAuthError extends Error {
   }
 }
 
+type WireRole = 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
+
+interface WireMfa {
+  status?: unknown;
+  graceExpiresAt?: unknown;
+}
+
 interface SessionResponseBody {
   accountId: string;
   familyId: string | null;
-  emailVerified: true;
-  role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
-  /** F-A-min (additive): whether this deployment can complete a genesis ceremony. Absent means AVAILABLE, mirroring the server's `undefined` semantics. */
-  genesisAvailable?: boolean;
+  emailVerified?: true;
+  role: WireRole;
+  mfa?: WireMfa;
 }
 
-interface EstablishedSessionResponseBody {
-  accountId: string;
-  familyId: string | null;
-  sessionEstablished: true;
-  role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
-  /** F-A-min (additive): see SessionResponseBody.genesisAvailable. A verified account with no family may arrive through either response shape. */
-  genesisAvailable?: boolean;
+interface SignInResponseBody {
+  accountId?: string;
+  familyId?: string | null;
+  role?: WireRole;
+  mfa?: WireMfa;
+  sessionEstablished?: boolean;
+  stepUpRequired?: boolean;
+  mfaRequired?: boolean;
+  recoveryPending?: boolean;
+  recoveryAvailableAt?: string;
+  mfaSetupRequired?: boolean;
 }
 
-interface StepUpRequiredResponseBody {
-  sessionEstablished: false;
-  stepUpRequired: true;
+interface ErrorBody {
+  error?: string;
 }
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
@@ -84,9 +117,14 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   }
 }
 
+async function errorCodeOf(response: Response): Promise<string | null> {
+  const body = await parseJsonSafe<ErrorBody>(response);
+  return typeof body?.error === 'string' ? body.error : null;
+}
+
 function networkError(cause: unknown): ServiceAuthError {
   const message = cause instanceof Error ? cause.message : 'Network request failed';
-  return new ServiceAuthError('NETWORK_ERROR', `Could not reach the PCA parent-account service: ${message}`);
+  return new ServiceAuthError('NETWORK_ERROR', `Could not reach the PCA account service: ${message}`);
 }
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -104,64 +142,42 @@ function readCsrfCookie(): string | null {
   }
 }
 
-function toAuthenticatedSession(body: SessionResponseBody | EstablishedSessionResponseBody): AuthenticatedSession {
-  const accountId = body.accountId;
-  const familyId = body.familyId;
-  const role = body.role;
+function toMfaStatus(wire: WireMfa | undefined): ParentMfaStatus {
+  if (wire && wire.status === 'ACTIVE') return { status: 'ACTIVE' };
+  if (wire && (wire.status === 'GRACE' || wire.status === 'SETUP_REQUIRED') && typeof wire.graceExpiresAt === 'string' && !Number.isNaN(Date.parse(wire.graceExpiresAt))) {
+    return { status: wire.status, graceExpiresAt: wire.graceExpiresAt };
+  }
+  // The server always sends this object (PCA-DEC-037). A missing or malformed
+  // one is a contract violation, and guessing either way would be wrong:
+  // "ACTIVE" would hide a mandatory setup, anything else would invent a
+  // deadline the server never issued.
+  throw new ServiceAuthError('UNKNOWN', 'The session response did not include a valid authenticator status.');
+}
 
-  // The wire body has always been nullable (see SessionResponseBody /
-  // EstablishedSessionResponseBody above) and matches the backend, whose
-  // contract explicitly documents "`familyId` may be null if genesis is not
-  // currently available". The previous version of this function contradicted
-  // that by throwing for every role other than the three normal ones -- which
-  // turned a SUCCESSFUL login step-up (HTTP 200, session cookie set, daily
-  // grant issued) into `UNAUTHORIZED_FAMILY_SCOPE`, surfaced to the parent as
-  // the generic "Unable to complete the action" message. The parent's login
-  // was never failing.
-
-  // GENUINELY INCONSISTENT: exactly one of familyId/role resolved. This is not
-  // the pre-family state -- it is a server contract violation, and it is the
-  // case `UNAUTHORIZED_FAMILY_SCOPE` is actually for. Keep it, so the code
-  // retains a real inconsistent-authorization signal rather than swallowing
-  // everything.
-  if ((familyId === null) !== (role === null)) {
+/**
+ * Maps a session body onto the single established-session shape. Since
+ * PCA-DEC-037 the family is provisioned server-side at first sign-in, so a
+ * body without a family or role is a server contract violation and is
+ * rejected (fail closed) -- never bridged with a fabricated family or role.
+ */
+function toAuthenticatedSession(body: { accountId?: string; familyId?: string | null; role?: WireRole; mfa?: WireMfa }): AuthenticatedSession {
+  const { accountId, familyId, role } = body;
+  if (typeof accountId !== 'string' || accountId.length === 0) {
+    throw new ServiceAuthError('UNKNOWN', 'The session response was incomplete.');
+  }
+  if (typeof familyId !== 'string' || familyId.length === 0 || (role !== 'ADMINISTRATOR' && role !== 'VIEWER' && role !== 'CHILD')) {
     throw new ServiceAuthError('UNAUTHORIZED_FAMILY_SCOPE', 'The family membership could not be resolved.');
   }
-
-  // PRE-FAMILY ONBOARDING -- a legitimate authenticated state, NOT an error.
-  // Modelled explicitly rather than bridged with an empty string or a fabricated
-  // role (both of which the previous code did: `familyId: body.familyId ?? ''`).
-  if (familyId === null || role === null) {
-    reportDiagnostic('PARENT_SESSION_STATE', 'GENESIS_REQUIRED');
-    return {
-      state: 'GENESIS_REQUIRED',
-      accountId,
-      displayName: accountId,
-      familyId: null,
-      memberId: null,
-      role: null,
-      serviceAuthenticated: true,
-      // Additive signal; absent === available (`!== false`, never truthiness:
-      // a server that predates the field must not read as "unavailable").
-      genesisAvailable: body.genesisAvailable !== false,
-    };
-  }
-
-  // Defensive: the wire type already restricts this, but a server that ever sent
-  // a fourth role must not be silently trusted as family-ready.
-  if (role !== 'ADMINISTRATOR' && role !== 'VIEWER' && role !== 'CHILD') {
-    throw new ServiceAuthError('UNAUTHORIZED_FAMILY_SCOPE', 'The family membership could not be resolved.');
-  }
-
-  reportDiagnostic('PARENT_SESSION_STATE', 'FAMILY_READY');
+  const mfa = toMfaStatus(body.mfa);
+  reportDiagnostic('PARENT_SESSION_STATE', 'ESTABLISHED');
   return {
-    state: 'FAMILY_READY',
     accountId,
     displayName: accountId,
     familyId,
     memberId: accountId,
     role,
     serviceAuthenticated: true,
+    mfa,
   };
 }
 
@@ -171,6 +187,25 @@ export class RealServiceAuthClient implements ServiceAuthClient {
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
+  }
+
+  /** JSON POST with credentials. `withCsrf` echoes the double-submit CSRF cookie for session-authenticated routes. */
+  private async post(path: string, body: unknown, withCsrf = false): Promise<Response> {
+    const csrfToken = withCsrf ? readCsrfCookie() : null;
+    try {
+      return await fetch(this.url(path), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
   }
 
   async getSession(): Promise<AuthenticatedSession | null> {
@@ -195,17 +230,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
   }
 
   async register(email: string, password: string, passwordConfirmation: string, profile?: ParentSignupProfile): Promise<RegistrationResult> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/register'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email, password, passwordConfirmation, ...profile }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
+    const response = await this.post('/api/parent/register', { email, password, passwordConfirmation, ...profile });
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many registration attempts. Please try again later.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Registration request was invalid.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected registration status ${response.status}`);
@@ -214,39 +239,18 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     return body;
   }
 
-  async verifyEmail(email: string, code: string): Promise<AuthenticatedSession> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/verify-email'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email, code }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
+  /** Activates the account. Establishes NO session (PCA-DEC-037): the parent signs in next. */
+  async verifyEmail(email: string, code: string): Promise<VerifyEmailResult> {
+    const response = await this.post('/api/parent/verify-email', { email, code });
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That verification code is incorrect or has expired.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Verification request was invalid.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected verify-email status ${response.status}`);
-    const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
-    if (!body) throw new ServiceAuthError('UNKNOWN', 'Verification succeeded but the response was empty.');
-    return toAuthenticatedSession(body);
+    return { status: 'VERIFIED' };
   }
 
   async requestPasswordReset(email: string): Promise<RequestPasswordResetResult> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/request-password-reset'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
+    const response = await this.post('/api/parent/request-password-reset', { email });
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Password reset request was invalid.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected request-password-reset status ${response.status}`);
@@ -256,17 +260,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
   }
 
   async resetPassword(email: string, code: string, newPassword: string, newPasswordConfirmation: string): Promise<ResetPasswordResult> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/reset-password'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email, code, newPassword, newPasswordConfirmation }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
+    const response = await this.post('/api/parent/reset-password', { email, code, newPassword, newPasswordConfirmation });
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That reset code is incorrect or has expired.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Password reset request was invalid.');
@@ -276,159 +270,156 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     return body;
   }
 
-  async signIn(email: string, password: string): Promise<SignInResult> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/login'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        // `password` is sent only in this single request body, over the
-        // fetch call's TLS connection, and is never assigned anywhere else.
-        body: JSON.stringify({ email, password }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
+  async signIn(email: string, password: string, totpCode?: string): Promise<SignInResult> {
+    // `password` (and `totpCode`) are sent only in this single request body,
+    // over the fetch call's TLS connection, and are never assigned anywhere else.
+    const response = await this.post('/api/parent/login', totpCode === undefined ? { email, password } : { email, password, totpCode });
 
     if (response.status === 429) {
+      if ((await errorCodeOf(response)) === 'mfa_locked') {
+        throw new ServiceAuthError('MFA_LOCKED', 'Too many incorrect authenticator codes. Please wait before trying again.');
+      }
       throw new ServiceAuthError('RATE_LIMITED', 'Too many sign-in attempts. Please try again later.');
     }
     if (response.status === 401) {
+      if ((await errorCodeOf(response)) === 'invalid_mfa_code') {
+        throw new ServiceAuthError('INVALID_MFA_CODE', 'That authenticator code is incorrect.');
+      }
       throw new ServiceAuthError('INVALID_CREDENTIALS', 'Email or password is incorrect.');
     }
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Sign-in request was invalid.');
     if (!response.ok) {
       throw new ServiceAuthError('UNKNOWN', `Unexpected sign-in status ${response.status}`);
     }
 
-    const body = await parseJsonSafe<EstablishedSessionResponseBody | StepUpRequiredResponseBody>(response);
+    const body = await parseJsonSafe<SignInResponseBody>(response);
     if (!body) {
       throw new ServiceAuthError('UNKNOWN', 'Sign-in succeeded but the session response was empty.');
     }
-    if (body.sessionEstablished === false) {
+    if (body.sessionEstablished === true) {
+      return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body) };
+    }
+    if (body.mfaRequired === true) {
+      reportDiagnostic('PARENT_LOGIN_STAGE', 'MFA_REQUIRED');
+      return { status: 'MFA_REQUIRED' };
+    }
+    if (body.recoveryPending === true && typeof body.recoveryAvailableAt === 'string') {
+      reportDiagnostic('PARENT_LOGIN_STAGE', 'MFA_RECOVERY_PENDING');
+      return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: body.recoveryAvailableAt };
+    }
+    if (body.stepUpRequired === true) {
+      reportDiagnostic('PARENT_LOGIN_STAGE', 'STEP_UP_REQUIRED');
       return { status: 'STEP_UP_REQUIRED' };
     }
-    return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body) };
+    throw new ServiceAuthError('UNKNOWN', 'Sign-in returned an unrecognised response.');
   }
 
   /** Consumes the one-time emailed login step-up code (see signIn's STEP_UP_REQUIRED result). */
-  async completeLoginStepUp(email: string, code: string): Promise<AuthenticatedSession> {
-    let response: Response;
-    try {
-      response = await fetch(this.url('/api/parent/login/step-up'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email, code }),
-      });
-    } catch (err) {
-      throw networkError(err);
-    }
-
+  async completeLoginStepUp(email: string, code: string): Promise<LoginStepUpResult> {
+    const response = await this.post('/api/parent/login/step-up', { email, code });
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That code is incorrect or has expired.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Step-up request was invalid.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected login step-up status ${response.status}`);
-    const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
+    const body = await parseJsonSafe<SignInResponseBody>(response);
     if (!body) throw new ServiceAuthError('UNKNOWN', 'Step-up succeeded but the session response was empty.');
-    // PARENT_LOGIN_STEP_UP_STAGE is emitted as SESSION_ISSUED only. Its sibling
-    // stage DAILY_GRANT_PERSISTED is deliberately NOT emitted here: the daily
-    // login grant cookie (`dailyLoginGrantCookieName()`) is set HttpOnly, so
-    // this client cannot observe whether it was persisted, and asserting it
-    // would be an unverifiable claim rather than a diagnostic. The grant is
-    // written server-side in the same request, and ParentAccountService rolls
-    // the new session back if that write fails -- so HTTP 200 here does mean
-    // both happened, but only the SERVER can honestly report the second stage.
+    if (body.sessionEstablished !== true && body.mfaSetupRequired === true) {
+      // Grace period over: the server set an HttpOnly enrollment ticket and
+      // deliberately issued NO session. The caller goes straight to setup.
+      reportDiagnostic('PARENT_LOGIN_STEP_UP_STAGE', 'MFA_SETUP_REQUIRED');
+      return { status: 'MFA_SETUP_REQUIRED' };
+    }
+    if (body.sessionEstablished !== true) throw new ServiceAuthError('UNKNOWN', 'Step-up returned an unrecognised response.');
+    // The daily login grant cookie is HttpOnly, so only the SESSION_ISSUED
+    // stage is observable (and therefore reportable) from here.
     reportDiagnostic('PARENT_LOGIN_STEP_UP_STAGE', 'SESSION_ISSUED');
-    return toAuthenticatedSession(body);
+    return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body) };
   }
 
   /**
-   * FAMILY GENESIS (PCA-DEC-020-R1). Four steps, each bound to the SAME session
-   * the first one ran under: the backend records the session that requested the
-   * step-up and requires the ceremony to complete under it.
-   *
-   * Every request carries the double-submit CSRF header and `credentials:
-   * 'include'`, like every other state-changing call in this client. Stage
-   * diagnostics are emitted through the sanctioned `reportDiagnostic` sink and
-   * carry STATUS ONLY -- never a password, code, token, cookie, or signature.
+   * The enrollment routes accept either the HttpOnly enrollment ticket (sent
+   * automatically as a cookie) or the session cookie plus CSRF header. The
+   * CSRF header is echoed whenever its cookie exists; on the ticket path no
+   * CSRF cookie exists (the server clears the session cookies when it issues
+   * a ticket), so nothing is sent.
    */
-  async startGenesisStepUp(email: string, password: string): Promise<void> {
-    const response = await this.genesisPost('/api/parent/genesis/step-up', { email, password });
-    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'Password confirmation failed.');
-    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
+  async startMfaEnrollment(email: string, password: string): Promise<MfaEnrollmentStart> {
+    const response = await this.post('/api/parent/mfa/enrollment/start', { email, password }, true);
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
-    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
-    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
-    // 202 Accepted -- NOT 200. A client that only accepts 200 silently
-    // reports failure for a request the server accepted.
-    if (response.status !== 202) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis step-up status ${response.status}`);
-    reportDiagnostic('PARENT_GENESIS_STAGE', 'STEP_UP_REQUIRED');
-  }
-
-  async completeGenesisStepUp(code: string): Promise<void> {
-    const response = await this.genesisPost('/api/parent/genesis/step-up/complete', { code });
-    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That code is incorrect or has expired.');
-    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
-    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
-    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
-    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
-    if (response.status !== 200) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis step-up completion status ${response.status}`);
-    reportDiagnostic('PARENT_GENESIS_STAGE', 'STEP_UP_VERIFIED');
-  }
-
-  async requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge> {
-    const response = await this.genesisPost('/api/parent/genesis/challenge', { publicKey, platform });
-    if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
-    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
-    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
-    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'The device key could not be registered.');
-    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
-    // 201 Created -- the challenge is a newly created server resource.
-    if (response.status !== 201) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis challenge status ${response.status}`);
-    const body = await parseJsonSafe<GenesisChallenge>(response);
-    if (!body) throw new ServiceAuthError('UNKNOWN', 'Genesis challenge was empty.');
-    reportDiagnostic('PARENT_GENESIS_STAGE', 'CHALLENGE_CREATED');
-    return body;
-  }
-
-  async completeGenesis(input: GenesisCompletionInput): Promise<void> {
-    const response = await this.genesisPost('/api/parent/genesis/complete', input);
-    // 401 stays SESSION_EXPIRED and is reserved for a genuinely missing or
-    // invalid session -- the backend answers 401 only for that.
-    if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
-    // The server cannot run a genesis ceremony in this deployment (no activated
-    // cryptography). The session is fine; the capability is absent.
-    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
-    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
-    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
-    // 400 from /genesis/complete is a REJECTED GENESIS PROOF (the backend maps
-    // GenesisChallengeError to 400 invalid_genesis_proof and INVALID_INPUT to
-    // 400 invalid_request). It is NOT an expired session, and reporting it as
-    // one told a parent with a perfectly valid session to sign in again for a
-    // problem that signing in cannot fix.
-    if (response.status === 400) throw new ServiceAuthError('GENESIS_REJECTED', 'The family setup proof was rejected.');
-    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis completion status ${response.status}`);
-    reportDiagnostic('PARENT_GENESIS_STAGE', 'COMPLETED');
-  }
-
-  /** Shared POST for the four genesis calls: same-origin credentials, JSON body, double-submit CSRF header. */
-  private async genesisPost(path: string, body: unknown): Promise<Response> {
-    const csrfToken = readCsrfCookie();
-    try {
-      return await fetch(this.url(path), {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...(csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      throw networkError(err);
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'Email or password is incorrect, or the setup session has expired.');
+    if (response.status === 403) throw new ServiceAuthError('FORBIDDEN', 'Authenticator setup is not permitted right now.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Authenticator setup request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected enrollment start status ${response.status}`);
+    const body = await parseJsonSafe<{ otpauthUri?: unknown; secret?: unknown }>(response);
+    if (!body || typeof body.otpauthUri !== 'string' || typeof body.secret !== 'string' || !body.otpauthUri.startsWith('otpauth://')) {
+      throw new ServiceAuthError('UNKNOWN', 'Authenticator setup response was incomplete.');
     }
+    reportDiagnostic('PARENT_MFA_ENROLLMENT_STAGE', 'STARTED');
+    return { otpauthUri: body.otpauthUri, secret: body.secret };
+  }
+
+  async confirmMfaEnrollment(email: string, code: string): Promise<MfaEnrollmentConfirmResult> {
+    const response = await this.post('/api/parent/mfa/enrollment/confirm', { email, code }, true);
+    if (response.status === 429) {
+      if ((await errorCodeOf(response)) === 'mfa_locked') throw new ServiceAuthError('MFA_LOCKED', 'Too many incorrect authenticator codes. Please wait before trying again.');
+      throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    }
+    if (response.status === 401) {
+      if ((await errorCodeOf(response)) === 'invalid_mfa_code') throw new ServiceAuthError('INVALID_MFA_CODE', 'That authenticator code is incorrect.');
+      throw new ServiceAuthError('SESSION_EXPIRED', 'The setup session has expired. Please sign in again.');
+    }
+    if (response.status === 403) throw new ServiceAuthError('FORBIDDEN', 'Authenticator setup is not permitted right now.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Authenticator confirmation request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected enrollment confirm status ${response.status}`);
+    const body = await parseJsonSafe<{ enrolled?: unknown; sessionEstablished?: unknown }>(response);
+    if (!body || body.enrolled !== true) throw new ServiceAuthError('UNKNOWN', 'Authenticator confirmation response was incomplete.');
+    reportDiagnostic('PARENT_MFA_ENROLLMENT_STAGE', 'CONFIRMED');
+    return { sessionEstablished: body.sessionEstablished === true };
+  }
+
+  async requestMfaRecovery(email: string, password: string): Promise<void> {
+    const response = await this.post('/api/parent/mfa/recovery/request', { email, password });
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Recovery request was invalid.');
+    // 202, identical whatever happened: never an account/password oracle.
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected recovery request status ${response.status}`);
+  }
+
+  async completeMfaRecovery(email: string, password: string, code: string): Promise<MfaRecoveryCompletionResult> {
+    const response = await this.post('/api/parent/mfa/recovery/complete', { email, password, code });
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That recovery code is incorrect or has expired.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Recovery request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected recovery completion status ${response.status}`);
+    const body = await parseJsonSafe<{ status?: unknown; recoveryAvailableAt?: unknown; mfaSetupRequired?: unknown }>(response);
+    if (body?.status === 'MFA_RECOVERY_PENDING' && typeof body.recoveryAvailableAt === 'string') {
+      reportDiagnostic('PARENT_MFA_RECOVERY_STAGE', 'RECOVERY_PENDING');
+      return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: body.recoveryAvailableAt };
+    }
+    if (body?.status !== 'MFA_SETUP_REQUIRED' || body.mfaSetupRequired !== true) throw new ServiceAuthError('UNKNOWN', 'Recovery response was incomplete.');
+    reportDiagnostic('PARENT_MFA_RECOVERY_STAGE', 'SETUP_REQUIRED');
+    return { status: 'MFA_SETUP_REQUIRED' };
+  }
+
+  async issueCommercialStepUp(operation: CommercialStepUpOperation, code: string): Promise<CommercialStepUpGrant> {
+    const response = await this.post('/api/parent/mfa/step-up', { operation, code }, true);
+    if (response.status === 429) {
+      if ((await errorCodeOf(response)) === 'mfa_locked') throw new ServiceAuthError('MFA_LOCKED', 'Too many incorrect authenticator codes. Please wait before trying again.');
+      throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    }
+    if (response.status === 401) {
+      if ((await errorCodeOf(response)) === 'invalid_mfa_code') throw new ServiceAuthError('INVALID_MFA_CODE', 'That authenticator code is incorrect.');
+      throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
+    }
+    if (response.status === 403) throw new ServiceAuthError('FORBIDDEN', 'This action is not permitted for your account.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Confirmation request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected step-up status ${response.status}`);
+    const body = await parseJsonSafe<{ stepUpToken?: unknown; operation?: unknown; expiresAt?: unknown }>(response);
+    if (!body || typeof body.stepUpToken !== 'string' || body.stepUpToken.length === 0 || body.operation !== operation || typeof body.expiresAt !== 'string') {
+      throw new ServiceAuthError('UNKNOWN', 'Step-up response was incomplete.');
+    }
+    reportDiagnostic('PARENT_COMMERCIAL_STEP_UP_STAGE', 'GRANTED');
+    return { stepUpToken: body.stepUpToken, operation, expiresAt: body.expiresAt };
   }
 
   async signOut(): Promise<void> {
@@ -448,12 +439,11 @@ export class RealServiceAuthClient implements ServiceAuthClient {
   }
 
   /**
-   * FAMILY_SERVICE_SESSION_V1 defines no step-up route this round -- rather
+   * No generic (non-commercial) family-action step-up route exists -- rather
    * than call a URL that was never built, or throw (StepUpContext.tsx's
-   * confirm handler does not catch a rejection, so throwing here would
-   * break that UI flow), this honestly reports "never granted": every
-   * step-up-gated action stays blocked until a real step-up capability
-   * exists, which is the fail-closed, safe default.
+   * confirm handler does not catch a rejection), this honestly reports
+   * "never granted": every such step-up-gated family action stays blocked,
+   * the fail-closed default. Commercial actions use issueCommercialStepUp.
    */
   async stepUp(_actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }> {
     return { granted: false, expiresAtUtc: new Date().toISOString() };

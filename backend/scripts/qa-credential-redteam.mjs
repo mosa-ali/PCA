@@ -18,10 +18,7 @@ import { MySqlAuthRepository } from '../dist/auth/MySqlAuthRepository.js';
 import { ParentAccountService } from '../dist/parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
-import { FamilyOwnerAttestationChainEngine } from '../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { MySqlFamilyAuthorityGenesisStore } from '../dist/familycommercial/authority/MySqlGenesisAnchorStore.js';
-import { MySqlFamilyAuthorityAttestationChainStore } from '../dist/familycommercial/authority/MySqlAttestationChainStore.js';
-import { createEd25519DeviceSignatureVerifier } from '../dist/parentaccount/genesisDeviceSigner.js';
+import { createDisposableParentAccountService } from './lib/provisionParentAccount.mjs';
 
 const connectionString = process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL is required.');
@@ -36,17 +33,8 @@ const ROTATED = 'Rotated-Closure-Pass!9';
 getPool();
 const authService = new AuthService(new MySqlAuthRepository());
 const emailSender = createTestSandboxEmailSender();
-const parentAccountService = new ParentAccountService({
-  repository: new MySqlParentAccountRepository(),
-  authService,
-  emailSender,
-  familyGenesisEngine: new FamilyOwnerAttestationChainEngine(
-    new MySqlFamilyAuthorityGenesisStore(),
-    new MySqlFamilyAuthorityAttestationChainStore(),
-    createEd25519DeviceSignatureVerifier(),
-    () => new Date(),
-  ),
-});
+process.env.PCA_PARENT_MFA_ENC_KEY ??= 'e7'.repeat(32);
+const parentAccountService = createDisposableParentAccountService({ emailSender });
 
 const findings = [];
 const checks = [];

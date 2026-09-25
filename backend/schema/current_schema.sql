@@ -848,8 +848,10 @@ CREATE TABLE `families` (
   `suspended_at` datetime(3) DEFAULT NULL,
   `suspended_by_admin_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `suspension_reason` varchar(500) COLLATE utf8mb4_bin DEFAULT NULL,
+  `provisioned_for_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   PRIMARY KEY (`family_id`),
   UNIQUE KEY `families_family_reference_hash_key` (`family_reference_hash`),
+  UNIQUE KEY `families_provisioned_for_account_key` (`provisioned_for_account_id`),
   KEY `families_suspended_by_fk` (`suspended_by_admin_id`),
   KEY `families_status_idx` (`status`),
   CONSTRAINT `families_suspended_by_fk` FOREIGN KEY (`suspended_by_admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`),
@@ -1074,6 +1076,19 @@ CREATE TABLE `parent_account_preferences` (
   CONSTRAINT `parent_account_preferences_push_check` CHECK ((`push_requests_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- parent_account_security_events
+CREATE TABLE `parent_account_security_events` (
+  `event_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `event_type` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `detail` varchar(48) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `occurred_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`event_id`),
+  KEY `parent_account_security_events_account_idx` (`account_id`,`occurred_at`),
+  CONSTRAINT `parent_account_security_events_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_account_security_events_type_check` CHECK ((`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- parent_accounts
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1207,6 +1222,89 @@ CREATE TABLE `parent_login_step_up_codes` (
   PRIMARY KEY (`code_id`),
   KEY `parent_login_step_up_codes_account_idx` (`account_id`,`created_at`),
   CONSTRAINT `parent_login_step_up_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_enrollment_tickets
+CREATE TABLE `parent_mfa_enrollment_tickets` (
+  `ticket_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`ticket_id`),
+  UNIQUE KEY `parent_mfa_enrollment_tickets_token_hash_key` (`token_hash`),
+  KEY `parent_mfa_enrollment_tickets_account_idx` (`account_id`,`expires_at`),
+  CONSTRAINT `parent_mfa_enrollment_tickets_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_mfa_enrollment_tickets_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_mfa_enrollment_tickets_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_recovery_codes
+CREATE TABLE `parent_mfa_recovery_codes` (
+  `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  `attempt_count` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`code_id`),
+  KEY `parent_mfa_recovery_codes_account_idx` (`account_id`,`created_at`),
+  CONSTRAINT `parent_mfa_recovery_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_mfa_recovery_codes_expiry_check` CHECK ((`expires_at` > `created_at`))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_state
+CREATE TABLE `parent_mfa_state` (
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `totp_secret_ciphertext` varbinary(255) DEFAULT NULL,
+  `totp_secret_nonce` varbinary(16) DEFAULT NULL,
+  `pending_secret_ciphertext` varbinary(255) DEFAULT NULL,
+  `pending_secret_nonce` varbinary(16) DEFAULT NULL,
+  `pending_created_at` datetime(3) DEFAULT NULL,
+  `last_accepted_totp_counter` bigint DEFAULT NULL,
+  `grace_started_at` datetime(3) NOT NULL,
+  `grace_expires_at` datetime(3) NOT NULL,
+  `enrolled_at` datetime(3) DEFAULT NULL,
+  `failed_attempt_count` int unsigned NOT NULL DEFAULT '0',
+  `failure_window_started_at` datetime(3) DEFAULT NULL,
+  `locked_until` datetime(3) DEFAULT NULL,
+  `reset_count` int unsigned NOT NULL DEFAULT '0',
+  `recovery_hold_started_at` datetime(3) DEFAULT NULL,
+  `recovery_hold_expires_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`account_id`),
+  CONSTRAINT `parent_mfa_state_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_mfa_state_active_check` CHECK (((`status` <> _ascii'ACTIVE') or ((`totp_secret_ciphertext` is not null) and (`totp_secret_nonce` is not null) and (`enrolled_at` is not null)))),
+  CONSTRAINT `parent_mfa_state_grace_check` CHECK ((`grace_expires_at` >= `grace_started_at`)),
+  CONSTRAINT `parent_mfa_state_recovery_hold_check` CHECK ((((`recovery_hold_started_at` is null) and (`recovery_hold_expires_at` is null)) or ((`recovery_hold_started_at` is not null) and (`recovery_hold_expires_at` is not null) and (`recovery_hold_expires_at` > `recovery_hold_started_at`)))),
+  CONSTRAINT `parent_mfa_state_status_check` CHECK ((`status` in (_ascii'NOT_ENROLLED',_ascii'ACTIVE')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_step_up_grants
+CREATE TABLE `parent_mfa_step_up_grants` (
+  `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`grant_id`),
+  UNIQUE KEY `parent_mfa_step_up_grants_token_hash_key` (`token_hash`),
+  KEY `parent_mfa_step_up_grants_account_idx` (`account_id`,`expires_at`),
+  KEY `parent_mfa_step_up_grants_family_fk` (`family_id`),
+  CONSTRAINT `parent_mfa_step_up_grants_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_mfa_step_up_grants_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
+  CONSTRAINT `parent_mfa_step_up_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_mfa_step_up_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes

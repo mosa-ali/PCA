@@ -17,23 +17,9 @@
 // production gate) and PCA_DATABASE_URL pointing at the disposable local
 // database (verify-mysql.mjs's own hostname allowlist reasoning applies
 // here too).
-import { getPool, closePool } from '../dist/db/pool.js';
-import { AuthService } from '../dist/auth/AuthService.js';
-import { MySqlAuthRepository } from '../dist/auth/MySqlAuthRepository.js';
-import { ParentAccountService } from '../dist/parentaccount/ParentAccountService.js';
-import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
+import { closePool } from '../dist/db/pool.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
-import { FamilyOwnerAttestationChainEngine } from '../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { MySqlFamilyAuthorityGenesisStore } from '../dist/familycommercial/authority/MySqlGenesisAnchorStore.js';
-import { MySqlFamilyAuthorityAttestationChainStore } from '../dist/familycommercial/authority/MySqlAttestationChainStore.js';
-// PCA-DEC-020: production wires RejectingDeviceSignatureVerifier (unconditional
-// fail-closed, pending human security review of the real CRYPTO_SUITE) --
-// this script instead uses the SAME sanctioned test-only substitution
-// backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs and
-// seed-local.mjs already established: a genuinely real Ed25519 verifier, not
-// a fake "always allow", just not the one selected for production pending
-// that review.
-import { createEd25519DeviceSignatureVerifier } from '../dist/parentaccount/genesisDeviceSigner.js';
+import { createDisposableParentAccountService, provisionSignedInParent } from './lib/provisionParentAccount.mjs';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -46,39 +32,17 @@ const url = new URL(connectionString);
 if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
   throw new Error('Refusing to bootstrap: PCA_DATABASE_URL must point to the disposable local/Compose database.');
 }
+requireEnv('PCA_PARENT_MFA_ENC_KEY');
 
 const email = requireEnv('E2E_REAL_PARENT_EMAIL');
 const password = requireEnv('E2E_REAL_PARENT_PASSWORD');
 
-const authService = new AuthService(new MySqlAuthRepository());
+// PCA-DEC-037: register -> verify -> first login (family provisioned, MFA grace started).
 const emailSender = createTestSandboxEmailSender();
-const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
-  new MySqlFamilyAuthorityGenesisStore(),
-  new MySqlFamilyAuthorityAttestationChainStore(),
-  createEd25519DeviceSignatureVerifier(),
-  () => new Date(),
-);
-const parentAccountService = new ParentAccountService({
-  repository: new MySqlParentAccountRepository(),
-  authService,
-  emailSender,
-  familyGenesisEngine: familyAuthorityChainEngine,
-});
+const service = createDisposableParentAccountService({ emailSender });
+const signedIn = await provisionSignedInParent({ service, emailSender, email, password });
 
-await parentAccountService.register(email, password, password);
-const code = emailSender.lastCodeFor(email);
-if (!code) throw new Error(`Bootstrap failed: no verification code recorded for ${email}`);
-const outcome = await parentAccountService.verifyEmail(email, code);
-
-// Reports outcome, not identifiers. The caller already knows which account this is
-// (it supplied E2E_REAL_PARENT_EMAIL); the accountId and familyId it does not need are
-// exactly the family-scoped identifiers that must not be written to a terminal or to
-// the log of whatever harness shells out to this script. Whether family genesis
-// completed IS the operationally useful signal -- production wires
-// RejectingDeviceSignatureVerifier, so a real deployment reports "did not complete"
-// here -- and it is reported as a boolean, carrying no identifier.
-const genesisCompleted = outcome.familyId != null;
-console.log('Parent account created and verified for the configured E2E_REAL_PARENT_EMAIL.');
-console.log(`family genesis: ${genesisCompleted ? 'completed' : 'did not complete'}`);
+console.log('Parent account created, verified and signed in for the configured E2E_REAL_PARENT_EMAIL.');
+console.log(`family provisioned: ${signedIn.familyId ? 'yes' : 'no'}; role: ${signedIn.role}`);
 
 await closePool();

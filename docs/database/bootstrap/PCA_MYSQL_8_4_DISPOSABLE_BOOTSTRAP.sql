@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    87 tables
---   735 columns
---    87 primary keys
---    96 foreign keys
---    35 unique non-primary-key indexes
---   133 non-unique indexes
---   266 CHECK constraints
+--    92 tables
+--   782 columns
+--    92 primary keys
+--   102 foreign keys
+--    38 unique non-primary-key indexes
+--   138 non-unique indexes
+--   278 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    46 schema_migrations journal rows
+--    48 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -881,7 +881,7 @@ CREATE TABLE `eye_protection_settings` (
   CONSTRAINT `eye_protection_settings_reminders_enabled_check` CHECK ((`reminders_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- families (defined by backend/migrations/0001_mysql_baseline.sql, altered by 0017_platform_admin_settings_family_status.sql)
+-- families (defined by backend/migrations/0001_mysql_baseline.sql, altered by 0017_platform_admin_settings_family_status.sql, 0049_parent_totp_mfa_and_family_provisioning.sql)
 CREATE TABLE `families` (
   `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_reference_hash` varbinary(255) NOT NULL,
@@ -891,8 +891,10 @@ CREATE TABLE `families` (
   `suspended_at` datetime(3) NULL,
   `suspended_by_admin_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   `suspension_reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `provisioned_for_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   PRIMARY KEY (`family_id`),
   UNIQUE KEY `families_family_reference_hash_key` (`family_reference_hash`),
+  UNIQUE KEY `families_provisioned_for_account_key` (`provisioned_for_account_id`),
   KEY `families_status_idx` (`status`),
   KEY `families_suspended_by_fk` (`suspended_by_admin_id`),
   CONSTRAINT `families_suspended_by_fk` FOREIGN KEY (`suspended_by_admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
@@ -1118,6 +1120,19 @@ CREATE TABLE `parent_account_preferences` (
   CONSTRAINT `parent_account_preferences_push_check` CHECK ((`push_requests_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- parent_account_security_events (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql, altered by 0050_parent_mfa_recovery_hold.sql)
+CREATE TABLE `parent_account_security_events` (
+  `event_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `event_type` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `detail` varchar(48) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `occurred_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`event_id`),
+  KEY `parent_account_security_events_account_idx` (`account_id`, `occurred_at`),
+  CONSTRAINT `parent_account_security_events_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_account_security_events_type_check` CHECK ((`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql, 0043_parent_family_memberships_and_profile.sql)
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1250,6 +1265,89 @@ CREATE TABLE `parent_daily_login_grants` (
   CONSTRAINT `parent_daily_login_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_daily_login_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
   CONSTRAINT `parent_daily_login_grants_purpose_check` CHECK ((`purpose` = _ascii'PARENT_DAILY_LOGIN'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_enrollment_tickets (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)
+CREATE TABLE `parent_mfa_enrollment_tickets` (
+  `ticket_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  PRIMARY KEY (`ticket_id`),
+  UNIQUE KEY `parent_mfa_enrollment_tickets_token_hash_key` (`token_hash`),
+  KEY `parent_mfa_enrollment_tickets_account_idx` (`account_id`, `expires_at`),
+  CONSTRAINT `parent_mfa_enrollment_tickets_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_mfa_enrollment_tickets_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_mfa_enrollment_tickets_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_recovery_codes (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)
+CREATE TABLE `parent_mfa_recovery_codes` (
+  `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  `attempt_count` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`code_id`),
+  KEY `parent_mfa_recovery_codes_account_idx` (`account_id`, `created_at`),
+  CONSTRAINT `parent_mfa_recovery_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_mfa_recovery_codes_expiry_check` CHECK ((`expires_at` > `created_at`))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_state (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql, altered by 0050_parent_mfa_recovery_hold.sql)
+CREATE TABLE `parent_mfa_state` (
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `totp_secret_ciphertext` varbinary(255) NULL,
+  `totp_secret_nonce` varbinary(16) NULL,
+  `pending_secret_ciphertext` varbinary(255) NULL,
+  `pending_secret_nonce` varbinary(16) NULL,
+  `pending_created_at` datetime(3) NULL,
+  `last_accepted_totp_counter` bigint NULL,
+  `grace_started_at` datetime(3) NOT NULL,
+  `grace_expires_at` datetime(3) NOT NULL,
+  `enrolled_at` datetime(3) NULL,
+  `failed_attempt_count` int unsigned NOT NULL DEFAULT 0,
+  `failure_window_started_at` datetime(3) NULL,
+  `locked_until` datetime(3) NULL,
+  `reset_count` int unsigned NOT NULL DEFAULT 0,
+  `recovery_hold_started_at` datetime(3) NULL,
+  `recovery_hold_expires_at` datetime(3) NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`account_id`),
+  CONSTRAINT `parent_mfa_state_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_mfa_state_active_check` CHECK (((`status` <> _utf8mb4'ACTIVE') or ((`totp_secret_ciphertext` is not null) and (`totp_secret_nonce` is not null) and (`enrolled_at` is not null)))),
+  CONSTRAINT `parent_mfa_state_grace_check` CHECK ((`grace_expires_at` >= `grace_started_at`)),
+  CONSTRAINT `parent_mfa_state_status_check` CHECK ((`status` in (_utf8mb4'NOT_ENROLLED',_utf8mb4'ACTIVE'))),
+  CONSTRAINT `parent_mfa_state_recovery_hold_check` CHECK (((`recovery_hold_started_at` is null and `recovery_hold_expires_at` is null) or (`recovery_hold_started_at` is not null and `recovery_hold_expires_at` is not null and `recovery_hold_expires_at` > `recovery_hold_started_at`)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_mfa_step_up_grants (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)
+CREATE TABLE `parent_mfa_step_up_grants` (
+  `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  PRIMARY KEY (`grant_id`),
+  UNIQUE KEY `parent_mfa_step_up_grants_token_hash_key` (`token_hash`),
+  KEY `parent_mfa_step_up_grants_account_idx` (`account_id`, `expires_at`),
+  KEY `parent_mfa_step_up_grants_family_fk` (`family_id`),
+  CONSTRAINT `parent_mfa_step_up_grants_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_mfa_step_up_grants_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_mfa_step_up_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_mfa_step_up_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes (defined by backend/migrations/0029_parent_password_reset_codes.sql)
@@ -1827,4 +1925,6 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0045_pca_dec_020_r2_genesis_step_up.sql'),
   ('0046_parent_daily_login_grants.sql'),
   ('0047_action_idempotency_ledger.sql'),
-  ('0048_commercial_quote_attribution_retry.sql');
+  ('0048_commercial_quote_attribution_retry.sql'),
+  ('0049_parent_totp_mfa_and_family_provisioning.sql'),
+  ('0050_parent_mfa_recovery_hold.sql');

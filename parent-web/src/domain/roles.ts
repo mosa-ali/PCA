@@ -82,7 +82,7 @@ export type DenialReasonCode =
   | 'OWNER_OR_ADMIN_ONLY_INVITE_DEVICE'
   | 'INVITATION_REVOCATION_NOT_DELEGATED'
   | 'OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION'
-  | 'OWNER_ONLY_BILLING'
+  | 'ADMIN_ONLY_BILLING'
   | 'UNRECOGNISED_ACTION';
 
 const DENIAL_REASON_KEY_PREFIX = 'rbac.denialReason.';
@@ -129,7 +129,7 @@ const NEXT_STEP_BUCKET: Record<DenialReasonCode, 'ownerOnly' | 'notDelegated' | 
   OWNER_OR_ADMIN_ONLY_INVITE_DEVICE: 'ownerOrAdmin',
   INVITATION_REVOCATION_NOT_DELEGATED: 'notDelegated',
   OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION: 'ownerOrAdmin',
-  OWNER_ONLY_BILLING: 'ownerOnly',
+  ADMIN_ONLY_BILLING: 'ownerOrAdmin',
   UNRECOGNISED_ACTION: 'other',
 };
 
@@ -243,9 +243,13 @@ export function evaluatePermission(
     case 'REQUEST_DEVICE_INCREASE':
     case 'REQUEST_PARENT_MEMBER_INCREASE':
     case 'MANAGE_PAYMENT_METHOD':
-      return role === 'OWNER'
+      // PCA-DEC-037: the server's COMMERCIAL_OWNER_AUTHORITY is a family
+      // ADMINISTRATOR plus a fresh authenticator step-up (the step-up is
+      // collected per action by StepUpContext). OWNER is the fixture-only
+      // internal trust owner and keeps access.
+      return role === 'OWNER' || role === 'ADMINISTRATOR'
         ? allow()
-        : deny('OWNER_ONLY_BILLING', 'Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.');
+        : deny('ADMIN_ONLY_BILLING', 'Billing and subscription self-service is available only to an Administrator.');
     default:
       return deny('UNRECOGNISED_ACTION', 'Unrecognised action.');
   }

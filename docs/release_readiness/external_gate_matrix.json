@@ -13,7 +13,7 @@
     {
       "id": "CRYPTO_SECURITY_REVIEW",
       "status": "BLOCKED",
-      "description": "Human security review of the production crypto suite (DeviceSignatureVerifier, EnvelopeSignatureVerifier) has not occurred. See docs/security/production-crypto-review/. Backend currently wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier which fail closed by design.",
+      "description": "Human security review of the production crypto suite (DeviceSignatureVerifier, EnvelopeSignatureVerifier) has not occurred. See docs/security/production-crypto-review/. Backend currently wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier which fail closed by design. PCA-DEC-037 (2026-09-24): Parent Genesis is removed; this gate covers device/envelope signature verification (child-device runtime identity, pairing, signed policy delivery) and no longer gates the Parent login, family provisioning, TOTP MFA or commercial-owner journey, which uses no device signature verifier.",
       "owner": "External security reviewer (not yet assigned)",
       "evidence": null,
       "releaseScope": [
@@ -94,7 +94,7 @@
     {
       "id": "PRODUCTION_CRYPTO_SECURITY_REVIEW",
       "status": "BLOCKED",
-      "description": "Production crypto verifier activation requires the independent security review recorded by the release gate.",
+      "description": "Production crypto verifier activation requires the independent security review recorded by the release gate. PCA-DEC-037 (2026-09-24): Parent Genesis is removed; this gate covers device/envelope signature verification (child-device runtime identity, pairing, signed policy delivery) and no longer gates the Parent login, family provisioning, TOTP MFA or commercial-owner journey, which uses no device signature verifier.",
       "owner": "Security and release owner (not yet assigned)",
       "evidence": null,
       "releaseScope": [
@@ -107,7 +107,7 @@
     {
       "id": "CRYPTO_ACTIVATION",
       "status": "BLOCKED",
-      "description": "Signed runtime acceptance and delivery remain fail-closed until the reviewed production crypto suite is activated.",
+      "description": "Signed runtime acceptance and delivery remain fail-closed until the reviewed production crypto suite is activated. PCA-DEC-037 (2026-09-24): Parent Genesis is removed; this gate covers device/envelope signature verification (child-device runtime identity, pairing, signed policy delivery) and no longer gates the Parent login, family provisioning, TOTP MFA or commercial-owner journey, which uses no device signature verifier.",
       "owner": "Security and release owner (not yet assigned)",
       "evidence": null,
       "releaseScope": [
@@ -243,7 +243,7 @@
     {
       "id": "PRODUCTION_CRYPTO_SUITE",
       "status": "BLOCKED",
-      "description": "Aggregate external dependency for requirements (retention, tamper-monitoring, envelope sync, identity) whose remaining gap is the production cryptographic suite (DeviceSignatureVerifier / EnvelopeSignatureVerifier) not yet being reviewed and activated. Backend wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier, which fail closed by design until the review completes. Tracked as a distinct register token from CRYPTO_SECURITY_REVIEW / PRODUCTION_CRYPTO_SECURITY_REVIEW / CRYPTO_ACTIVATION because the local source half of each row it covers is independently confirmed complete. Does NOT block AUTH_B: verifyEmail marks the account VERIFIED and issues a session even when family genesis fails, so identity/login work without it. CURRENT RELEASE RECORD (pca-dev deployment candidate, 2026-09-24): GENESIS_PRODUCTION_COMPOSITION = FAIL_CLOSED_BY_DESIGN (503 genesis_unavailable, route-tested through the real composition); BROWSER_KEY_CUSTODY = SHIPPED_UNWIRED (no production importer; C-1/C-2/C-3 open and tracked in the owner-authority activation programme); OWNER_AUTHORITY_LONGEVITY = ACTIVATION_PROGRAMME_ENTRY_CONDITION; PRODUCTION_OWNER_AUTHORITY_READY = NO; KEY_ROTATION_PROCEDURE_CERTIFIED = NO (do not configure PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_n or run the drain audit --apply in production until the MySQL CAS proof and the execution-path test exist -- see the platform rotation runbook in docs/deployment/PCA_AZURE_PREPRODUCTION_ACCEPTANCE_PLAN.md).",
+      "description": "Aggregate external dependency for retention, tamper-monitoring, envelope sync, and child-device identity requirements whose remaining gap is production review and activation of DeviceSignatureVerifier / EnvelopeSignatureVerifier. Backend wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier, which fail closed by design until review completes. Tracked separately from CRYPTO_SECURITY_REVIEW / PRODUCTION_CRYPTO_SECURITY_REVIEW / CRYPTO_ACTIVATION because the local source half of each row it covers is independently complete. This gate no longer blocks Parent login, family provisioning, MFA, or Parent commercial-owner authority under PCA-DEC-037; it remains in release scope for its device/envelope signature capabilities. CURRENT RELEASE RECORD (pca-dev deployment candidate, 2026-09-24): Parent Genesis is removed from source and Parent login; production migration and retired-table state require read-only reconciliation. KEY_ROTATION_PROCEDURE_CERTIFIED = NO (do not configure PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_n or run the drain audit --apply in production until the MySQL CAS proof and the execution-path test exist -- see the platform rotation runbook in docs/deployment/PCA_AZURE_PREPRODUCTION_ACCEPTANCE_PLAN.md).",
       "owner": "External security reviewer (not yet assigned)",
       "evidence": null,
       "releaseScope": [

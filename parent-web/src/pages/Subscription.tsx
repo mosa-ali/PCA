@@ -15,11 +15,12 @@ import { PermissionGate } from '../rbac/PermissionGate';
 import { useStepUp } from '../state/StepUpContext';
 import { FREE_STARTER_TIER } from '../domain/billing';
 import { RequestStateBadge } from '../components/billing/RequestStateBadge';
+import { billingActionErrorMessage } from '../components/billing/billingActionError';
 
 export default function Subscription() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
-  const { requestStepUp } = useStepUp();
+  const { requestCommercialStepUp } = useStepUp();
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, loading, error, reload } = useAsync(
@@ -40,24 +41,24 @@ export default function Subscription() {
   const cancelAutoRenew = async () => {
     setActionError(null);
     try {
-      const granted = await requestStepUp('MANAGE_PAYMENT_METHOD');
-      if (!granted) return;
-      await clients.billing.cancelAutoRenew();
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL');
+      if (!stepUpToken) return;
+      await clients.billing.cancelAutoRenew(stepUpToken);
       reload();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setActionError(billingActionErrorMessage(e, t));
     }
   };
 
   const resumeAutoRenew = async () => {
     setActionError(null);
     try {
-      const granted = await requestStepUp('MANAGE_PAYMENT_METHOD');
-      if (!granted) return;
-      await clients.billing.resumeAutoRenew();
+      const stepUpToken = await requestCommercialStepUp('FAMILY_COMMERCIAL_AUTO_RENEW_RESUME');
+      if (!stepUpToken) return;
+      await clients.billing.resumeAutoRenew(stepUpToken);
       reload();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
+      setActionError(billingActionErrorMessage(e, t));
     }
   };
 

@@ -11,7 +11,7 @@ import { LanguageSwitch } from '../shell/LanguageSwitch';
  * component the switcher was reachable everywhere EXCEPT the screens a new
  * parent sees first. A parent who cannot read English had no way to change
  * language until after they had already signed in: they had to negotiate
- * registration, email verification, password reset and the genesis ceremony
+ * registration, email verification, password reset and authenticator setup
  * in a language they may not read, and only then discover the control.
  *
  * This is the shared control for those screens, deliberately ONE component
@@ -24,14 +24,13 @@ import { LanguageSwitch } from '../shell/LanguageSwitch';
  * `caches: ['localStorage']`, see src/i18n/index.ts).
  *
  * FOUR PROPERTIES THIS MUST KEEP, because it sits inside forms that hold a
- * half-finished ceremony:
+ * half-finished sign-in or setup:
  *  - It never unmounts the page. `i18n.changeLanguage` triggers a re-render,
  *    not a remount, and nothing here passes `key={i18n.language}` -- so
  *    whatever the parent has already typed (email, password, one-time code)
- *    and whatever stage the ceremony is on survive the switch.
+ *    and whatever step the flow is on survive the switch.
  *  - It never navigates, and never reloads. A reload here would discard the
- *    in-memory genesis device signing key (see
- *    security/trustedEndpointKeyStore.ts) and restart the ceremony.
+ *    in-memory authenticator enrollment secret and restart the setup.
  *  - It never touches the session. It issues no request, so it can neither
  *    invalidate the session cookie nor consume a step-up challenge.
  *  - It is not a form control. It renders no `input`, so it cannot be

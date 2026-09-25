@@ -60,40 +60,60 @@ export interface RegisterOutcome {
   status: 'PENDING_VERIFICATION';
 }
 
+/**
+ * PCA-DEC-037: verification activates the account and nothing else. It does
+ * not issue a session -- the owner journey is verify -> sign in, and the first
+ * sign-in is the event that starts the MFA grace window and provisions the
+ * family.
+ */
 export interface VerifyEmailOutcome {
+  status: 'VERIFIED';
+}
+
+/** Server-derived MFA posture exposed to the Parent client. Dates are ISO strings at the HTTP boundary. */
+export type ParentMfaSummary =
+  | { status: 'ACTIVE' }
+  | { status: 'GRACE'; graceExpiresAt: Date }
+  | { status: 'SETUP_REQUIRED'; graceExpiresAt: Date }
+  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: Date };
+
+interface EstablishedSession {
   accountId: ParentAccountId;
   familyId: OpaqueFamilyId | null;
   rawSessionToken: string;
   sessionExpiresAt: Date;
   role: FamilyMembershipRole | null;
+  mfa: ParentMfaSummary;
 }
 
 /**
- * Owner authentication-architecture decision (2026-09-15): a first-ever
- * login is not complete until the browser has a valid daily-login grant;
- * without one it durably enqueues the existing step-up code and returns
- * STEP_UP_REQUIRED. The first-login marker remains historical metadata and
- * is not a global daily bypass.
+ * PCA-DEC-037 login outcomes. An account with an ACTIVE authenticator gets
+ * MFA_REQUIRED until the request carries a valid 6-digit code; no email code
+ * and no remembered-browser grant can substitute for it. An account without
+ * one uses the emailed step-up (or, inside its grace window only, this
+ * browser's daily grant).
  */
 export type LoginOutcome =
-  | { status: 'AUTHENTICATED'; accountId: ParentAccountId; familyId: OpaqueFamilyId | null; rawSessionToken: string; sessionExpiresAt: Date; role: FamilyMembershipRole | null }
-  | { status: 'STEP_UP_REQUIRED' };
+  | ({ status: 'AUTHENTICATED' } & EstablishedSession)
+  | { status: 'STEP_UP_REQUIRED' }
+  | { status: 'MFA_REQUIRED' }
+  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: Date };
 
-export interface CompleteLoginStepUpOutcome {
-  accountId: ParentAccountId;
-  familyId: OpaqueFamilyId | null;
-  rawSessionToken: string;
-  sessionExpiresAt: Date;
-  role: FamilyMembershipRole | null;
-  /** Raw token is returned only to the HTTP layer so it can be set as an HttpOnly cookie. */
-  rawDailyLoginGrantToken: string;
-}
+export type CompleteLoginStepUpOutcome =
+  | ({ status: 'AUTHENTICATED'; rawDailyLoginGrantToken: string } & EstablishedSession)
+  /** Grace is over: no session. The raw ticket authorizes only the enrollment endpoints. */
+  | { status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string };
+
+export type CompleteEnrollmentOutcome =
+  | ({ status: 'ENROLLED_SESSION_ESTABLISHED' } & EstablishedSession)
+  | { status: 'ENROLLED' };
 
 export interface SessionReadOutcome {
   accountId: ParentAccountId;
   familyId: OpaqueFamilyId | null;
   emailVerified: true;
   role: FamilyMembershipRole | null;
+  mfa: ParentMfaSummary;
 }
 
 /** Deliberately identical whether or not the email matches a VERIFIED account -- see ParentAccountService.requestPasswordReset, same enumeration-oracle avoidance as RegisterOutcome. */

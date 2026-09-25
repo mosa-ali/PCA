@@ -215,6 +215,18 @@ export async function simulateAdminDeny(requestId: string, reason: string): Prom
 }
 
 /**
+ * Mirrors the server's PCA-DEC-037 gate shape: every commercial mutation must
+ * carry a step-up token minted from a fresh authenticator code. The fixture
+ * cannot verify it, but it refuses a missing one so a page that forgot to ask
+ * for the code fails in demo mode too, not only against the real backend.
+ */
+function requireStepUpToken(stepUpToken: string): void {
+  if (typeof stepUpToken !== 'string' || stepUpToken.length === 0) {
+    throw new Error('A fresh authenticator confirmation is required for this action.');
+  }
+}
+
+/**
  * DEV-only: simulates the payment provider's authoritative server-to-server
  * confirmation (PCA-ADD-BILL-035) for a PAYMENT_PENDING device-limit
  * request. This is the ONLY path that raises managedDeviceLimit for a
@@ -289,7 +301,8 @@ export class DevBillingClient implements BillingClient {
     return true;
   }
 
-  async requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest> {
+  async requestLimitIncrease(limitType: LimitType, targetLimit: number, stepUpToken: string): Promise<EntitlementChangeRequest> {
+    requireStepUpToken(stepUpToken);
     if (!Number.isInteger(targetLimit) || targetLimit < 1) {
       throw new Error('Target quantity must be a positive whole number.');
     }
@@ -342,7 +355,8 @@ export class DevBillingClient implements BillingClient {
     return awaitingQuote;
   }
 
-  async cancelRequest(requestId: string): Promise<EntitlementChangeRequest> {
+  async cancelRequest(requestId: string, stepUpToken: string): Promise<EntitlementChangeRequest> {
+    requireStepUpToken(stepUpToken);
     await delay();
     const request = findRequestOrThrow(requestId);
     if (request.state !== 'PENDING' && request.state !== 'QUOTED') {
@@ -351,7 +365,8 @@ export class DevBillingClient implements BillingClient {
     return replaceRequest({ ...request, state: 'CANCELLED', updatedAtUtc: nowIso() });
   }
 
-  async beginCheckout(requestId: string, _returnUrl: string): Promise<CheckoutSession> {
+  async beginCheckout(requestId: string, _returnUrl: string, stepUpToken: string): Promise<CheckoutSession> {
+    requireStepUpToken(stepUpToken);
     await delay();
     const request = findRequestOrThrow(requestId);
     if (request.state !== 'QUOTED' || !request.quote) {
@@ -423,14 +438,16 @@ export class DevBillingClient implements BillingClient {
     return method;
   }
 
-  async cancelAutoRenew(): Promise<{ auditEventId: string }> {
+  async cancelAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }> {
+    requireStepUpToken(stepUpToken);
     await delay();
     subscription = { ...subscription, autoRenew: false };
     notify();
     return { auditEventId: `dev-audit-${Date.now()}` };
   }
 
-  async resumeAutoRenew(): Promise<{ auditEventId: string }> {
+  async resumeAutoRenew(stepUpToken: string): Promise<{ auditEventId: string }> {
+    requireStepUpToken(stepUpToken);
     await delay();
     subscription = { ...subscription, autoRenew: true };
     notify();

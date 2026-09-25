@@ -144,7 +144,7 @@ export interface ParentAccountRepository {
   /** Atomic compare-and-swap: marks the code consumed iff it was not already consumed. Returns true iff THIS call won the race. */
   consumeVerificationCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
 
-  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the consumed code's bound credential and FREE_ACCESS snapshot. Family binding is deliberately null here and belongs to the separate atomic DSK genesis repository. */
+  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the consumed code's bound credential and FREE_ACCESS snapshot. Family binding is deliberately null here; the family is provisioned at first login by ensureProvisionedFamily. */
   markVerified(transition: VerifiedTransition): Promise<void>;
 
   insertPasswordResetCode(record: NewPasswordResetCode): Promise<void>;
@@ -178,9 +178,18 @@ export interface ParentAccountRepository {
   /** Revokes every browser grant for the account. */
   revokeAllDailyLoginGrants(accountId: ParentAccountId, revokedAt: Date): Promise<number>;
 
-  /** Legacy narrow scope helper retained for invitation/admin-owned flows. The Parent registration/GENESIS_R1 path must not call it independently; genesis uses one atomic repository boundary instead. */
+  /**
+   * PCA-DEC-037: idempotent, transactional, per-account-serialized family
+   * provisioning. Creates the account's one initial family on first call and
+   * (re)asserts its ADMINISTRATOR membership and ACTIVE scope for that family
+   * only. Throws if the account is not VERIFIED, is disabled, or is not bound
+   * to `serviceAccountId`.
+   */
+  ensureProvisionedFamily(accountId: ParentAccountId, serviceAccountId: string, now: Date): Promise<{ familyId: OpaqueFamilyId; created: boolean }>;
+
+  /** Legacy narrow scope helper retained for invitation/admin-owned flows. Parent family provisioning uses ensureProvisionedFamily's single transaction instead. */
   grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: OpaqueFamilyId, now: Date): Promise<void>;
 
-  /** Legacy idempotent family-row helper retained for separately authorized admin/test setup. Parent GENESIS_R1 uses its own all-or-none repository and never calls this helper as a partial commit. */
+  /** Legacy idempotent family-row helper retained for separately authorized admin/test setup. Parent family provisioning uses ensureProvisionedFamily's single transaction and never calls this helper. */
   createFamilyIfAbsent(familyId: OpaqueFamilyId, now: Date): Promise<void>;
 }

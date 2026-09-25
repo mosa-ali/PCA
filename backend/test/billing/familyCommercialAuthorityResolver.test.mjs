@@ -9,7 +9,8 @@
 //     and never silently ALLOWED)
 //   - the safe production default (UnavailableFamilyCommercialAuthorityResolver)
 //     always returns AUTHORITY_UNAVAILABLE, unconditionally
-//   - main.ts's real production wiring actually injects that safe default
+//   - main.ts's production wiring (PCA-DEC-030) composes the ADMINISTRATOR +
+//     fresh-TOTP ParentCommercialStepUpAuthority instead of any resolver
 //     (a static source-level check that keeps this fail-closed posture
 //     honest against a future silent regression -- mirrors this
 //     codebase's other schema-privacy/source-shape static assertions).
@@ -106,32 +107,43 @@ test('device present but REVOKED (not ACTIVE), even claiming OWNER: AUTHORITY_UN
 });
 
 // ---------------------------------------------------------------------------
-// Production wiring stays honest: main.ts really does inject the
-// fail-closed default, and buildServer.ts really does thread it through to
-// the checkout route. A static source check so a future edit that swaps in
-// a permissive/real resolver in main.ts without deliberate review is
-// caught here, not discovered live.
+// Production wiring stays honest (PCA-DEC-030). The resolver adapters above
+// remain as library code, but production no longer gates checkout on a
+// device-signature owner attestation: main.ts composes
+// COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP
+// (ParentCommercialStepUpAuthority) and buildServer.ts threads that ONE
+// instance into the checkout route. A static source check so a future edit
+// that silently swaps in a permissive/other gate is caught here, not live.
 // ---------------------------------------------------------------------------
 
-// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, Option A) Coordinator composition:
-// production now wires the REAL, genesis-anchored chain resolver rather
-// than the fail-closed placeholder -- see FamilyOwnerAttestationChainEngine's
-// own header on why this remains functionally inert (RejectingDeviceSignatureVerifier,
-// CRYPTO_SUITE pending human security review) without being a placeholder.
-test('PRODUCTION WIRING: main.ts constructs the real AttestationChainFamilyCommercialAuthorityResolver and passes it as billingFamilyCommercialAuthorityResolver', async () => {
+test('PRODUCTION WIRING: main.ts constructs ParentCommercialStepUpAuthority over the real account/membership/MFA stores and passes it as commercialOwnerAuthority -- the attestation-chain resolver is no longer composed', async () => {
   const mainTs = await readFile(new URL('../../src/main.ts', import.meta.url), 'utf8');
-  assert.match(mainTs, /import\s*\{\s*AttestationChainFamilyCommercialAuthorityResolver\s*\}\s*from\s*'\.\/billing\/authority\/FamilyCommercialAuthorityResolver\.js'/);
-  assert.match(mainTs, /new AttestationChainFamilyCommercialAuthorityResolver\(familyAuthorityChainEngine\)/);
-  assert.match(mainTs, /billingFamilyCommercialAuthorityResolver:\s*familyCommercialAuthorityResolver/);
+  assert.match(mainTs, /import\s*\{\s*ParentCommercialStepUpAuthority\s*\}\s*from\s*'\.\/parentaccount\/mfa\/ParentCommercialStepUpAuthority\.js'/);
+  assert.match(
+    mainTs,
+    /const commercialOwnerAuthority = new ParentCommercialStepUpAuthority\(\{\s*accounts:\s*parentAccountRepository,\s*memberships:\s*familyMembershipRepository,\s*mfa:\s*parentMfaService,\s*\}\)/,
+  );
+  assert.match(mainTs, /^\s*commercialOwnerAuthority,\s*$/m, 'the same instance is handed to buildServer');
+  assert.doesNotMatch(mainTs, /new AttestationChainFamilyCommercialAuthorityResolver\(/);
+  assert.doesNotMatch(mainTs, /billingFamilyCommercialAuthorityResolver/);
+  assert.doesNotMatch(mainTs, /UnavailableFamilyCommercialAuthorityResolver|TrustSetFamilyCommercialAuthorityResolver/, 'no resolver adapter may be silently re-wired as the checkout gate');
 });
 
-test('PRODUCTION WIRING: buildServer.ts threads billingFamilyCommercialAuthorityResolver into registerBillingCheckoutRoutes as familyCommercialAuthorityResolver', async () => {
+test('PRODUCTION WIRING: buildServer.ts threads commercialOwnerAuthority into registerBillingCheckoutRoutes and registerFamilyCommercialRoutes -- no device-attestation resolver dependency remains', async () => {
   const buildServerTs = await readFile(new URL('../../src/http/buildServer.ts', import.meta.url), 'utf8');
-  assert.match(buildServerTs, /familyCommercialAuthorityResolver:\s*deps\.billingFamilyCommercialAuthorityResolver/);
+  assert.match(buildServerTs, /registerBillingCheckoutRoutes\(app, \{[^}]*commercialOwnerAuthority:\s*deps\.commercialOwnerAuthority,[^}]*\}\)/s);
+  assert.match(buildServerTs, /registerFamilyCommercialRoutes\(app, \{[^}]*commercialOwnerAuthority:\s*deps\.commercialOwnerAuthority,[^}]*\}\)/s);
+  assert.match(buildServerTs, /commercialOwnerAuthority:\s*Pick<ParentCommercialStepUpAuthority, 'authorize'>;/, 'a required (non-optional) dependency');
+  assert.doesNotMatch(buildServerTs, /billingFamilyCommercialAuthorityResolver|familyCommercialAuthorityResolver|familyAuthorityRequestChallengeService|authorityDeviceDirectory|genesisCryptographyAvailable/);
 });
 
-test('PRODUCTION WIRING: billingCheckoutRoutes.ts awaits resolveOwnerAuthority and fails closed on STALE_OR_REVOKED/INVALID_PROOF exactly like AUTHORITY_UNAVAILABLE', async () => {
+test('PRODUCTION WIRING: billingCheckoutRoutes.ts authorizes BILLING_CHECKOUT_CREATE with the body stepUpToken BEFORE checkout, and denies both ROLE_DENIED and STEP_UP_REQUIRED with 403', async () => {
   const routesTs = await readFile(new URL('../../src/http/routes/billingCheckoutRoutes.ts', import.meta.url), 'utf8');
-  assert.match(routesTs, /await deps\.familyCommercialAuthorityResolver\.resolveOwnerAuthority\(/);
-  assert.match(routesTs, /authority\.status === 'AUTHORITY_UNAVAILABLE' \|\| authority\.status === 'STALE_OR_REVOKED' \|\| authority\.status === 'INVALID_PROOF'/);
+  assert.match(routesTs, /await deps\.commercialOwnerAuthority\.authorize\(request\.accountId as string, familyId, 'BILLING_CHECKOUT_CREATE', stepUpToken\)/);
+  assert.match(routesTs, /authority === 'ROLE_DENIED'\) \{[^}]*reply\.code\(403\)\.send\(\{ error: 'forbidden' \}\)/s);
+  assert.match(routesTs, /authority === 'STEP_UP_REQUIRED'\) \{[^}]*reply\.code\(403\)\.send\(\{ error: 'forbidden', code: 'STEP_UP_REQUIRED' \}\)/s);
+  const gateIndex = routesTs.indexOf('commercialOwnerAuthority.authorize(');
+  const checkoutIndex = routesTs.indexOf('checkoutService.createCheckoutSession(');
+  assert.ok(gateIndex > 0 && checkoutIndex > gateIndex, 'the owner gate runs before any checkout orchestration');
+  assert.doesNotMatch(routesTs, /resolveOwnerAuthority|actorDeviceId|authorityProof/);
 });

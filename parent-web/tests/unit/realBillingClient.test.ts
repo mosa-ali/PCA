@@ -18,19 +18,21 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
     vi.unstubAllGlobals();
   });
 
-  function client(opts?: { token?: string | null; familyId?: string | null; deviceId?: string | null }) {
+  // A single-use authenticator step-up grant (PCA-DEC-037), minted by
+  // POST /api/parent/mfa/step-up immediately before each commercial mutation.
+  const STEP_UP = 'grant-1';
+
+  function client(opts?: { token?: string | null; familyId?: string | null }) {
     const token: string | null = opts && 'token' in opts ? (opts.token as string | null) : 'tok';
     const familyId: string | null = opts && 'familyId' in opts ? (opts.familyId as string | null) : 'fam-1';
-    const deviceId: string | null = opts && 'deviceId' in opts ? (opts.deviceId as string | null) : 'device-1';
     return new RealBillingClient(
       apiBaseUrl,
       async () => token,
       async () => familyId,
-      async () => deviceId,
     );
   }
 
-  describe('honest gap surfacing (no bearer token / no family context / no device id)', () => {
+  describe('honest gap surfacing (no bearer token / no family context / no step-up grant)', () => {
     it('fails fast with SERVICE_SESSION_UNAVAILABLE when no bearer token is available, without ever calling fetch', async () => {
       const c = client({ token: null });
       await expect(c.getEntitlement()).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
@@ -43,9 +45,13 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('fails fast with DEVICE_IDENTITY_UNAVAILABLE for a mutation when no actorDeviceId is available', async () => {
-      const c = client({ deviceId: null });
-      await expect(c.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3)).rejects.toMatchObject({ code: 'DEVICE_IDENTITY_UNAVAILABLE' });
+    it('fails fast (FORBIDDEN / STEP_UP_REQUIRED) for a mutation with no step-up grant, without ever calling fetch', async () => {
+      const c = client();
+      await expect(c.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3, '')).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: 'STEP_UP_REQUIRED' });
+      await expect(c.cancelRequest('req-1', '')).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+      await expect(c.beginCheckout('req-1', 'https://mykids.example/return', '')).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+      await expect(c.cancelAutoRenew('')).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
+      await expect(c.resumeAutoRenew('')).rejects.toMatchObject({ serverCode: 'STEP_UP_REQUIRED' });
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -66,7 +72,7 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       managedDeviceActive: 0, managedDeviceReserved: 0, availableDeviceSlots: 1,
       overLimitParentMember: false, overLimitManagedDevice: false, openRequests: [],
     }));
-    const c = new RealBillingClient(apiBaseUrl, async () => null, async () => 'fam-1', async () => null, true);
+    const c = new RealBillingClient(apiBaseUrl, async () => null, async () => 'fam-1', true);
     await c.getEntitlement();
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe('include');
@@ -135,7 +141,7 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       expect(request).toBeNull();
     });
 
-    it('requestLimitIncrease POSTs actorDeviceId in the body (Owner-authority gate requirement)', async () => {
+    it('requestLimitIncrease POSTs the step-up token in the body and NO actorDeviceId (PCA-DEC-037 owner gate)', async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(201, {
           requestId: 'req-2',
@@ -151,35 +157,55 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
           updatedAtUtc: '2026-01-01T00:00:00.000Z',
         }),
       );
-      await client().requestLimitIncrease('PARENT_MEMBER_LIMIT', 2);
+      await client().requestLimitIncrease('PARENT_MEMBER_LIMIT', 2, STEP_UP);
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/requests`);
       expect(init.method).toBe('POST');
-      expect(JSON.parse(init.body as string)).toEqual({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 2, actorDeviceId: 'device-1' });
+      expect(JSON.parse(init.body as string)).toEqual({ limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 2, stepUpToken: STEP_UP });
+      expect(init.body as string).not.toMatch(/actorDeviceId|authorityProof/);
     });
 
     it('a 403 with FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE code and a bare 403 both map to the SAME FORBIDDEN error code -- never used to infer role', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' }));
-      const withCode = await client().requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2).catch((e) => e);
+      const withCode = await client().requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP).catch((e) => e);
       expect(withCode.code).toBe('FORBIDDEN');
 
       fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden' }));
-      const withoutCode = await client().requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2).catch((e) => e);
+      const withoutCode = await client().requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, STEP_UP).catch((e) => e);
       expect(withoutCode.code).toBe('FORBIDDEN');
       // Production posture today: AUTHORITY_UNAVAILABLE always -- this
       // client must not behave differently for the two shapes above.
       expect(withCode.message).toBe(withoutCode.message);
     });
 
-    it('beginCheckout POSTs requestId/returnUrl/actorDeviceId and returns the raw CheckoutSession (never itself confirms payment)', async () => {
+    it('a 403 STEP_UP_REQUIRED (missing/expired/used grant) stays FORBIDDEN but carries the server code so the UI can ask for a new code', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'STEP_UP_REQUIRED' }));
+      await expect(client().cancelRequest('req-1', STEP_UP)).rejects.toMatchObject({ code: 'FORBIDDEN', httpStatus: 403, serverCode: 'STEP_UP_REQUIRED' });
+    });
+
+    it('cancelRequest POSTs only the step-up token', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          requestId: 'req-1', limitType: 'MANAGED_DEVICE_LIMIT', currentLimitAtRequest: 1, targetLimit: 2, state: 'CANCELLED',
+          awaitingAdminQuote: false, quote: null, noChargeOverride: false, denialReason: null,
+          createdAtUtc: '2026-01-01T00:00:00.000Z', updatedAtUtc: '2026-01-01T00:00:00.000Z',
+        }),
+      );
+      await client().cancelRequest('req-1', STEP_UP);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/requests/req-1/cancel`);
+      expect(JSON.parse(init.body as string)).toEqual({ stepUpToken: STEP_UP });
+    });
+
+    it('beginCheckout POSTs requestId/returnUrl/stepUpToken and returns the raw CheckoutSession (never itself confirms payment)', async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(201, { paymentAttemptId: 'pay-1', provider: 'TEST_SANDBOX', redirectUrl: 'https://provider.example/checkout/1', status: 'PENDING' }),
       );
-      const session = await client().beginCheckout('req-1', 'https://mykids.example/return');
+      const session = await client().beginCheckout('req-1', 'https://mykids.example/return', STEP_UP);
       expect(session).toEqual({ paymentAttemptId: 'pay-1', provider: 'TEST_SANDBOX', redirectUrl: 'https://provider.example/checkout/1', status: 'PENDING' });
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/billing/checkout`);
-      expect(JSON.parse(init.body as string)).toEqual({ requestId: 'req-1', returnUrl: 'https://mykids.example/return', actorDeviceId: 'device-1' });
+      expect(JSON.parse(init.body as string)).toEqual({ requestId: 'req-1', returnUrl: 'https://mykids.example/return', stepUpToken: STEP_UP });
     });
 
     it('getCheckoutStatus calls GET .../billing/checkout/:paymentAttemptId and reassembles money without Number(amountMinor)', async () => {
@@ -236,34 +262,29 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('cancelAutoRenew POSTs .../commercial/subscription/auto-renew/cancel with actorDeviceId (Owner-authority gate requirement) and returns the server auditEventId', async () => {
+    it('cancelAutoRenew POSTs .../commercial/subscription/auto-renew/cancel with the step-up token and returns the server auditEventId', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { auditEventId: 'audit-1' }));
-      const result = await client().cancelAutoRenew();
+      const result = await client().cancelAutoRenew(STEP_UP);
       expect(result).toEqual({ auditEventId: 'audit-1' });
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/subscription/auto-renew/cancel`);
       expect(init.method).toBe('POST');
-      expect(JSON.parse(init.body as string)).toEqual({ actorDeviceId: 'device-1' });
+      expect(JSON.parse(init.body as string)).toEqual({ stepUpToken: STEP_UP });
     });
 
-    it('resumeAutoRenew POSTs .../commercial/subscription/auto-renew/resume with actorDeviceId and returns the server auditEventId', async () => {
+    it('resumeAutoRenew POSTs .../commercial/subscription/auto-renew/resume with the step-up token and returns the server auditEventId', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { auditEventId: 'audit-2' }));
-      const result = await client().resumeAutoRenew();
+      const result = await client().resumeAutoRenew(STEP_UP);
       expect(result).toEqual({ auditEventId: 'audit-2' });
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/subscription/auto-renew/resume`);
       expect(init.method).toBe('POST');
-      expect(JSON.parse(init.body as string)).toEqual({ actorDeviceId: 'device-1' });
-    });
-
-    it('cancelAutoRenew fails fast with DEVICE_IDENTITY_UNAVAILABLE when no actorDeviceId is available, without ever calling fetch', async () => {
-      await expect(client({ deviceId: null }).cancelAutoRenew()).rejects.toMatchObject({ code: 'DEVICE_IDENTITY_UNAVAILABLE' });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(JSON.parse(init.body as string)).toEqual({ stepUpToken: STEP_UP });
     });
 
     it('cancelAutoRenew maps a 404 (no active subscription for this family) to NOT_FOUND', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: 'not_found' }));
-      await expect(client().cancelAutoRenew()).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(client().cancelAutoRenew(STEP_UP)).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
   });
 });

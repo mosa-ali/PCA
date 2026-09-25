@@ -6,10 +6,12 @@
  * (`code.length`, never the code) at the real-provider layer.
  */
 
+import type { EmailTemplateKind } from './emailTemplates.js';
+
 export type EmailAuditOutcome = 'SENT' | 'RETRY_SCHEDULED' | 'DEAD_LETTER';
 
 export interface EmailAuditEvent {
-  readonly kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP' | 'GENESIS_STEP_UP';
+  readonly kind: EmailTemplateKind;
   readonly providerName: string;
   readonly outcome: EmailAuditOutcome;
   readonly attemptCount: number;

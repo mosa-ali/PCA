@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { generateDailyLoginGrant, hashDailyLoginGrant } from '../../dist/parentaccount/dailyLoginGrant.js';
 import { DAILY_LOGIN_GRANT_TTL_MS, LOGIN_STEP_UP_CODE_TTL_MS } from '../../dist/parentaccount/policy.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
+import { createParentAccountTestKit, totpFor } from '../support/parentMfaTestKit.mjs';
 
 const BASE_TIME = new Date('2026-08-15T00:00:00.000Z').getTime();
 const EMAIL = 'daily-login@example.com';
@@ -32,6 +32,14 @@ class RecordingEmailSender {
     this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
   }
 
+  async sendMfaRecoveryCode(email, code) {
+    this.sent.push({ email, code, kind: 'MFA_RECOVERY' });
+  }
+
+  async sendSecurityNotice(email, notice) {
+    this.sent.push({ email, code: null, kind: notice });
+  }
+
   lastCodeFor(email, kind) {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].email === email && this.sent[i].kind === kind) return this.sent[i].code;
@@ -52,7 +60,7 @@ function buildHarness() {
   });
   const emailSender = new RecordingEmailSender();
   const authService = new AuthService(authRepository, now);
-  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender, now });
+  const { service } = createParentAccountTestKit({ repository: parentAccountRepository, authService, emailSender, now });
   return { service, authRepository, parentAccountRepository, emailSender, now, advance };
 }
 
@@ -115,8 +123,9 @@ test('a new browser, a tampered grant, and a cross-account grant cannot bypass O
 
 test('expired and explicitly revoked grants require a fresh OTP', async () => {
   const harness = buildHarness();
-  const verified = await registerAndVerify(harness);
+  await registerAndVerify(harness);
   const completed = await loginWithOtp(harness);
+  const verified = { accountId: completed.accountId };
 
   harness.advance(DAILY_LOGIN_GRANT_TTL_MS + 1);
   assert.deepEqual(await harness.service.login(EMAIL, PASSWORD, completed.rawDailyLoginGrantToken), { status: 'STEP_UP_REQUIRED' });
@@ -151,17 +160,17 @@ test('logout, revoke-all, and password reset revoke browser grants', async () =>
 
 test('disabled and family-suspended accounts cannot use a previously valid grant', async () => {
   const disabledHarness = buildHarness();
-  const disabledVerified = await registerAndVerify(disabledHarness);
+  await registerAndVerify(disabledHarness);
   const disabledLogin = await loginWithOtp(disabledHarness);
-  disabledHarness.parentAccountRepository._disableAccountForTest(disabledVerified.accountId, disabledHarness.now());
+  disabledHarness.parentAccountRepository._disableAccountForTest(disabledLogin.accountId, disabledHarness.now());
   await assert.rejects(() => disabledHarness.service.login(EMAIL, PASSWORD, disabledLogin.rawDailyLoginGrantToken), ParentAccountError);
 
   const suspendedHarness = buildHarness();
-  const suspendedVerified = await registerAndVerify(suspendedHarness);
+  await registerAndVerify(suspendedHarness);
   const suspendedLogin = await loginWithOtp(suspendedHarness);
-  const familyId = 'family-for-daily-login-suspension';
-  suspendedHarness.parentAccountRepository._setFamilyForTest(suspendedVerified.accountId, familyId);
-  suspendedHarness.parentAccountRepository._setFamilyStatusForTest(familyId, 'SUSPENDED');
+  // The family the first login provisioned server-side is the one a Platform Admin suspends.
+  assert.equal(typeof suspendedLogin.familyId, 'string');
+  suspendedHarness.parentAccountRepository._setFamilyStatusForTest(suspendedLogin.familyId, 'SUSPENDED');
   await assert.rejects(() => suspendedHarness.service.login(EMAIL, PASSWORD, suspendedLogin.rawDailyLoginGrantToken), ParentAccountError);
 });
 
@@ -189,13 +198,27 @@ test('OTP is single-use, expires, and cannot be won twice concurrently', async (
   await assert.rejects(() => expiryHarness.service.completeLoginStepUp(EMAIL, expiringCode), ParentAccountError);
 });
 
-test('daily grant is not a genesis authorization or a substitute for a fresh genesis session proof', async () => {
+test('daily grant is not a session and never substitutes for an authenticator code; an email code issued before enrollment never authenticates after it', async () => {
   const harness = buildHarness();
   await registerAndVerify(harness);
   const completed = await loginWithOtp(harness);
   await assert.rejects(() => harness.service.readSession(completed.rawDailyLoginGrantToken), ParentAccountError);
+
+  // An email login code is requested while the account is still in grace...
+  assert.deepEqual(await harness.service.login(EMAIL, PASSWORD), { status: 'STEP_UP_REQUIRED' });
+  const staleEmailCode = harness.emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
+
+  // ...then the authenticator is enrolled from the live session.
+  const credential = { kind: 'SESSION', rawSessionToken: completed.rawSessionToken };
+  const { secretBase32 } = await harness.service.beginMfaEnrollment(credential, EMAIL, PASSWORD);
+  const enrolled = await harness.service.confirmMfaEnrollment(credential, EMAIL, totpFor(secretBase32, harness.now().getTime()));
+  assert.deepEqual(enrolled, { status: 'ENROLLED' });
+
+  // The remembered browser now gets MFA_REQUIRED -- never a session.
+  assert.deepEqual(await harness.service.login(EMAIL, PASSWORD, completed.rawDailyLoginGrantToken), { status: 'MFA_REQUIRED' });
+  // And the email code issued before enrollment cannot authenticate the enrolled account.
   await assert.rejects(
-    () => harness.service.beginGenesisChallenge(completed.rawDailyLoginGrantToken, { clientPublicKeyJwk: {}, deviceLabel: 'test' }),
-    ParentAccountError,
+    () => harness.service.completeLoginStepUp(EMAIL, staleEmailCode),
+    (err) => err instanceof ParentAccountError && err.code === 'UNAUTHORIZED',
   );
 });

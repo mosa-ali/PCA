@@ -94,12 +94,11 @@ export class FamilyOwnerAttestationChainEngine {
   ) {}
 
   /**
-   * Legacy/test-only bootstrap helper. Production composition MUST NOT route
-   * a parent request here: the production path is ParentGenesisService plus
-   * MySqlGenesisTransactionRepository, with its dedicated exact-session
-   * step-up gate. Keeping this method for deterministic chain-engine tests
-   * prevents the alternate non-atomic path from becoming an accidental
-   * production activation surface.
+   * Legacy bootstrap helper retained for deterministic chain-engine tests and
+   * existing family-authority data consumers. Under PCA-DEC-037, Parent
+   * registration, login, family provisioning and commercial mutations do not
+   * route through this method or require a Genesis ceremony. Keeping the
+   * helper does not activate a Parent authentication surface.
    */
   async bootstrapFamilyAuthority(input: BootstrapFamilyAuthorityInput): Promise<BootstrapFamilyAuthorityResult> {
     const { anchor, genesisAttestation } = input;

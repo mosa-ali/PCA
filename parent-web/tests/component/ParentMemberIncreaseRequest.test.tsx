@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import ParentMemberIncreaseRequest from '../../src/pages/billing/ParentMemberIncreaseRequest';
 import { renderWithProviders } from '../utils/renderWithProviders';
+import { confirmCommercialStepUp } from '../utils/commercialStepUp';
 import { __resetDevBillingStateForTests, simulateAdminApproveParentMemberRequest } from '../../src/api/dev/devBillingClient';
 
 function TestApp() {
@@ -27,6 +28,7 @@ describe('Parent-member increase request flow (PCA-ADD-PA-054: never billable)',
     const input = await screen.findByLabelText('New total parent-member limit');
     await userEvent.type(input, '2');
     await userEvent.click(screen.getByRole('button', { name: 'Submit request' }));
+    await confirmCommercialStepUp();
 
     expect(await screen.findByText('Pending')).toBeInTheDocument();
     expect(screen.queryByText('Price')).not.toBeInTheDocument();
@@ -39,6 +41,7 @@ describe('Parent-member increase request flow (PCA-ADD-PA-054: never billable)',
     const input = await screen.findByLabelText('New total parent-member limit');
     await userEvent.type(input, '2');
     await userEvent.click(screen.getByRole('button', { name: 'Submit request' }));
+    await confirmCommercialStepUp();
 
     const request = await screen.findByText('Pending');
     void request;

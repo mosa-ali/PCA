@@ -12,16 +12,16 @@ import i18n, { applyDocumentDirection } from '../../src/i18n';
 // AUTHENTICATED family-console Header (see components/shell/Header.tsx). None
 // of the auth screens render that header, so the control was unreachable on
 // exactly the screens a new parent meets first: registration, verification,
-// login, login step-up, password reset and the genesis ceremony all had to be
+// login, login step-up, password reset and authenticator setup all had to be
 // negotiated in whatever language the browser detected, with no way out until
 // after signing in.
 //
 // These tests pin the two properties that make the fix safe rather than merely
 // present: the control is reachable BEFORE a session exists, and switching
 // language does not remount the page underneath it. The second one is not
-// cosmetic -- the genesis ceremony holds a non-extractable P-256 device key in
-// memory only (security/trustedEndpointKeyStore.ts never persists it), so a
-// remount or reload on that step discards the key and restarts the ceremony.
+// cosmetic -- authenticator setup holds its one-time enrollment secret in
+// memory only (it is never persisted), so a remount or reload on that step
+// discards it and restarts the setup.
 //
 // getApiClients() is mocked wholesale, the same technique
 // tests/component/LoginStepUp.test.tsx uses for its own otherwise-unreachable
@@ -120,7 +120,7 @@ describe('Authentication surface language control', () => {
 
     expect(document.documentElement.dir).toBe('rtl');
     expect(i18n.language).toBe('ar');
-    // No navigation: the genesis step and any half-typed form must survive a
+    // No navigation: a half-finished setup and any half-typed form must survive a
     // language change, so this control may never move the parent.
     expect(assignMock).not.toHaveBeenCalled();
 

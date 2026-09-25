@@ -40,12 +40,40 @@ const MIGRATION_0043_0048_EXPECTATIONS = Object.freeze({
   commercial_quote_attribution_retry: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
 });
 
+/** Explicitly declared, source-derived verbs for the migration 0049 (PCA-DEC-030 Parent TOTP MFA) tables. */
+const MIGRATION_0049_EXPECTATIONS = Object.freeze({
+  parent_mfa_state: ['SELECT', 'INSERT', 'UPDATE'],
+  parent_mfa_enrollment_tickets: ['SELECT', 'INSERT', 'UPDATE'],
+  parent_mfa_recovery_codes: ['SELECT', 'INSERT', 'UPDATE'],
+  parent_mfa_step_up_grants: ['SELECT', 'INSERT', 'UPDATE'],
+  // Append-only: the runtime only INSERTs; it must never read back, UPDATE, or DELETE the ledger.
+  parent_account_security_events: ['INSERT'],
+});
+
 const FORBIDDEN_VERBS = ['ALL PRIVILEGES', 'CREATE', 'ALTER', 'DROP', 'INDEX', 'REFERENCES', 'TRIGGER', 'SUPER', 'GRANT OPTION'];
 
 test('the seven 0043-0048 tables declare exactly their source-derived verbs', () => {
   for (const [table, verbs] of Object.entries(MIGRATION_0043_0048_EXPECTATIONS)) {
     assert.deepEqual(sorted(privilegesForTable(table)), sorted(verbs), `${table} verbs drifted`);
   }
+});
+
+test('the five 0049 Parent TOTP-MFA tables declare exactly their source-derived verbs', () => {
+  for (const [table, verbs] of Object.entries(MIGRATION_0049_EXPECTATIONS)) {
+    assert.deepEqual(sorted(privilegesForTable(table)), sorted(verbs), `${table} verbs drifted`);
+  }
+});
+
+test('parent_account_security_events is append-only at the privilege layer', () => {
+  const verbs = privilegesForTable('parent_account_security_events');
+  for (const forbidden of ['SELECT', 'UPDATE', 'DELETE']) {
+    assert.ok(!verbs.includes(forbidden), `the security ledger must not grant ${forbidden} to the runtime principal`);
+  }
+});
+
+test('families keeps INSERT and SELECT for 0049 provisioning (INSERT ... provisioned_for_account_id; SELECT provisioned_for_account_id)', () => {
+  const verbs = privilegesForTable('families');
+  assert.ok(verbs.includes('INSERT') && verbs.includes('SELECT'), 'families must grant INSERT and SELECT');
 });
 
 test('family_parent_memberships requires UPDATE (INSERT ... ON DUPLICATE KEY UPDATE)', () => {

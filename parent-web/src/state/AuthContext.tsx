@@ -11,6 +11,8 @@ interface AuthContextValue {
   isFixtureBacked: boolean;
   /** Dev-only convenience to demo RBAC by switching the active role. */
   setDemoRole: (role: FamilyRole) => void;
+  /** Re-reads the session from the server (e.g. after authenticator setup changed its MFA status). */
+  refreshSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -69,8 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ session, loading, isFixtureBacked: clients.isFixtureBacked, setDemoRole }),
-    [session, loading, clients.isFixtureBacked, setDemoRole],
+    () => ({ session, loading, isFixtureBacked: clients.isFixtureBacked, setDemoRole, refreshSession: refresh }),
+    [session, loading, clients.isFixtureBacked, setDemoRole, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -80,6 +82,11 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
+}
+
+/** Like useAuth, but returns undefined outside an AuthProvider instead of throwing (for app-wide chrome that some tests mount alone). */
+export function useOptionalAuth(): AuthContextValue | undefined {
+  return useContext(AuthContext);
 }
 
 export function useCurrentRole(): FamilyRole {

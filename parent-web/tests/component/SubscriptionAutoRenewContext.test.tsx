@@ -12,6 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import Subscription from '../../src/pages/Subscription';
 import { renderWithProviders } from '../utils/renderWithProviders';
+import { confirmCommercialStepUp } from '../utils/commercialStepUp';
 import {
   __resetDevBillingStateForTests,
   __setDevSubscriptionForTests,
@@ -28,7 +29,7 @@ function TestApp() {
 }
 
 async function confirmStepUp() {
-  await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
+  await confirmCommercialStepUp();
 }
 
 // Same environment characteristic as tests/component/Members.test.tsx's

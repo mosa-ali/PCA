@@ -60,3 +60,29 @@ Doc 28 MUST map each row in Section 2 to test ID, platform coverage, result and 
 ## 6. Dependencies
 
 Docs 05, 08, 09, 11, 21, 22 and 23 define the architecture being tested; docs 25, 27, 28 and 29 own policy, support observability, test execution, and incident/release processes. Any newly identified threat changes the relevant owning document and this matrix; it is not silently patched only in code.
+
+## 7. Parent account authentication after Genesis removal (PCA-DEC-037, 2026-09-24)
+
+`PARENT_AUTHORITY_MODEL = ACCOUNT + VERIFIED EMAIL + PASSWORD + TOTP MFA` and
+`COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP` replace the
+device-bound Parent Genesis model. The replacement is **not security-equivalent**; the
+decision record (`docs/implementation/decisions/PCA_DEC_037_PARENT_TOTP_MFA_REPLACES_GENESIS.md`)
+lists what is weaker.
+
+| Abuse case | Control | Residual risk |
+|---|---|---|
+| Password stuffing / guessing | scrypt password hash (node:crypto), per-IP + per-email rate limits, generic errors, second factor always required | Low |
+| Stolen password, no mailbox, no authenticator | Enrolled: TOTP required on every login. In grace: emailed code required (remembered browser only for the browser that already passed it) | Low |
+| Stolen password + mailbox, during the 3-day grace | Attacker can sign in and enroll *their* authenticator (enrollment needs session/ticket + password re-entry) | **Accepted** — grace window by owner decision; MFA_ENROLLED notice goes to the mailbox the attacker controls |
+| Stolen password + mailbox, after enrollment | Owner selected a 24-hour server-side hold after password + emailed recovery-code verification. Starting recovery revokes all Parent sessions and other recovery codes; the old factor remains installed while login and sensitive actions are denied. A fresh password + recovery code is required after the deadline before the old factor is revoked and replacement enrollment begins. | **MITIGATED, RESIDUAL RISK OPEN** — the hold gives the legitimate user time to detect and report an unrequested reset, but mailbox compromise remains a recovery path. No safe cancellation mechanism exists in the current architecture; a support contact/cancellation process remains follow-up. |
+| TOTP brute force | 5 failures / 15 min lock (row-locked counter, shared across login, step-up, enrollment) + route rate limits | Low (≈5 guesses per 15 min against 10^6) |
+| TOTP replay (shoulder-surf, log leak) | Forward-only accepted-counter claim; the login code can never authorize a commercial step-up | Low |
+| Real-time phishing proxy (password + TOTP relayed) | None specific (TOTP is phishable) | **Accepted** — mitigated only by the SameSite=Strict cookie scope and notices |
+| Session hijack → attacker binds own authenticator | Enrollment re-authenticates with email + password; an ACTIVE factor is replaced only via recovery | Low |
+| Session hijack → money movement | Every sensitive commercial mutation needs a fresh TOTP step-up grant (single use, one operation, one family, 5 min) | Low |
+| Viewer/child/other-family admin performs billing action | Authority checks family match + ACTIVE ADMINISTRATOR before consuming any grant | Low |
+| Clearing browser data / changing clock to reset grace | Grace is server-side, started once, never extended | None |
+| Concurrent first logins create duplicate families | Row lock + UNIQUE `families.provisioned_for_account_id` | None (proven on MySQL) |
+| TOTP secret disclosure at rest | AES-256-GCM, separate `PCA_PARENT_MFA_ENC_KEY` realm; secret never logged or stored in browser storage; otpauth URI returned once with `no-store` | Key-custody dependent (Key Vault) |
+| Email notice abuse / enumeration | Register, recovery-request and password-reset answers are identical whatever the account state | Low |
+| Microsoft/Azure login prompt mistaken for PCA | Parent Web makes no Microsoft identity request (verified 2026-09-24); EasyAuth disabled | None for Parents |

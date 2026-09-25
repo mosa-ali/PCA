@@ -27,8 +27,8 @@ describe('Invoices and receipts', () => {
 
   it('lists a paid device-increase invoice with its exact total, and its detail view shows the line item', async () => {
     const clients = getApiClients();
-    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, 'test-step-up-token');
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return', 'test-step-up-token');
     await simulateServerPaymentConfirmation(quoted.requestId);
 
     renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });
@@ -47,8 +47,8 @@ describe('Invoices and receipts', () => {
 
   it('shows an explicit "showing X of Y" pagination status even when every row already fits on one page (B094)', async () => {
     const clients = getApiClients();
-    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, 'test-step-up-token');
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return', 'test-step-up-token');
     await simulateServerPaymentConfirmation(quoted.requestId);
 
     renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });
@@ -59,8 +59,8 @@ describe('Invoices and receipts', () => {
 
   it('filters invoices by date range client-side, and shows an honest empty state when the range excludes everything', async () => {
     const clients = getApiClients();
-    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, 'test-step-up-token');
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return', 'test-step-up-token');
     await simulateServerPaymentConfirmation(quoted.requestId);
 
     renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });
@@ -77,8 +77,8 @@ describe('Invoices and receipts', () => {
 
   it('the invoice detail page offers a print action', async () => {
     const clients = getApiClients();
-    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
+    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2, 'test-step-up-token');
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return', 'test-step-up-token');
     await simulateServerPaymentConfirmation(quoted.requestId);
 
     renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });

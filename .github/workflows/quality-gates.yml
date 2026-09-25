@@ -647,11 +647,11 @@ jobs:
       # Both suites proxy same-origin through the Vite dev server, so the backend
       # needs no CORS layer for this run (it has none by design).
       VITE_E2E_REAL_PROXY_TARGET: http://127.0.0.1:4001
-      # The disposable backend in THIS job is composed with the real P-256
-      # genesis verifier so genesis.spec.ts can run the full ceremony in a real
-      # browser. Production stays fail-closed (unset = REJECTING) until the
-      # owner explicitly activates it; see parentaccount/genesisVerifierComposition.ts.
-      PCA_GENESIS_DEVICE_SIGNATURE_VERIFIER: P256
+      # PCA-DEC-037 Parent TOTP MFA key realm. The provisioner seals the MFA
+      # fixture's authenticator secret with it and the RUNNING BACKEND must use
+      # the identical value to verify codes (main.ts refuses to boot without it).
+      # Disposable, test-only, and never a real secret.
+      PCA_PARENT_MFA_ENC_KEY: e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -686,7 +686,7 @@ jobs:
       - name: Provision the E2E accounts (two verified parents + ACTIVE operator + browser grants)
         # Deliberately NOT seed-local.mjs. That is a broad developer fixture whose
         # family, invitation and billing sections dereference a familyId, which only
-        # exists once family genesis has completed -- so the E2E job's success
+        # exists once a parent has signed in (PCA-DEC-037) -- so the E2E job's success
         # depended on a subsystem it was not certifying, and failed for reasons
         # unrelated to what it proves. The provisioning script creates exactly what
         # the two suites need and nothing else. See its own header for the full
@@ -698,7 +698,8 @@ jobs:
         #
         # CI-01. Accounts are selected by the fixture manifest's own shape. Both
         # parent browser suites require real family-scoped sessions, so the
-        # provisioner completes the disposable genesis ceremony for each parent.
+        # provisioner signs each parent in once (family provisioned server-side)
+        # and enrolls an authenticator for the MFA fixture.
         #
         # CI-04. This step contains NO console-logging call at all, deliberately.
         # The repository's sensitive-logging detector matches a logging call and
@@ -730,8 +731,8 @@ jobs:
             if (!second || !second.dailyLoginGrant) {
               process.exit(1);
             }
-            const genesis = manifest.genesisParent;
-            if (!genesis || !genesis.dailyLoginGrant || genesis.familyId !== null) {
+            const mfa = manifest.mfaParent;
+            if (!mfa || !mfa.totpSecretBase32 || !mfa.familyId || mfa.dailyLoginGrant) {
               process.exit(1);
             }
             fs.appendFileSync(process.env.GITHUB_ENV, [
@@ -741,9 +742,9 @@ jobs:
               'E2E_REAL_SECOND_PARENT_EMAIL=' + second.email,
               'E2E_REAL_SECOND_PARENT_PASSWORD=' + second.password,
               'E2E_REAL_SECOND_PARENT_DAILY_GRANT=' + second.dailyLoginGrant,
-              'E2E_REAL_GENESIS_PARENT_EMAIL=' + genesis.email,
-              'E2E_REAL_GENESIS_PARENT_PASSWORD=' + genesis.password,
-              'E2E_REAL_GENESIS_PARENT_DAILY_GRANT=' + genesis.dailyLoginGrant,
+              'E2E_REAL_MFA_PARENT_EMAIL=' + mfa.email,
+              'E2E_REAL_MFA_PARENT_PASSWORD=' + mfa.password,
+              'E2E_REAL_MFA_PARENT_TOTP_SECRET=' + mfa.totpSecretBase32,
               'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
@@ -799,7 +800,7 @@ jobs:
         working-directory: parent-web
         run: |
           actual=$(ls e2e-real/*.spec.ts | xargs -n1 basename | sort | tr '\n' ' ')
-          expected="acceptance-flow.spec.ts genesis.spec.ts notStartedProgramme.spec.ts realBackend.spec.ts "
+          expected="acceptance-flow.spec.ts notStartedProgramme.spec.ts parentMfa.spec.ts realBackend.spec.ts "
           if [ "$actual" != "$expected" ]; then
             echo "The e2e-real/ spec set changed since this job's scope was set."
             echo "  found:    $actual"
@@ -807,17 +808,17 @@ jobs:
             echo "Certify the new spec here, or exclude it with a documented follow-up."
             exit 1
           fi
-          echo "Certified spec set unchanged; realBackend.spec.ts and acceptance-flow.spec.ts are the certified suites."
+          echo "Certified spec set unchanged; parentMfa.spec.ts, realBackend.spec.ts, and acceptance-flow.spec.ts are the certified suites."
       - name: Run parent-web real-backend E2E -- owner acceptance flow (certified)
-        # TWO CERTIFIED SPECS, TWO RUNS, EACH BEHIND A FRESH BACKEND.
+        # THREE CERTIFIED SPECS, THREE RUNS, EACH BEHIND A FRESH BACKEND.
         #
         # buildServer applies ONE SHARED, per-IP anti-flood budget to every
         # authenticated route -- http/buildServer.ts's authAttemptLimiter,
         # 60 requests / 60s / IP / 'auth-attempt' bucket -- deliberately, so one
         # IP cannot force unlimited session-validation DB round-trips. A single
         # owner acceptance flow makes ~43 of those requests at Playwright's pace.
-        # When realBackend.spec.ts and acceptance-flow.spec.ts ran in ONE
-        # invocation, the second and third specs began inside an
+        # When realBackend.spec.ts, acceptance-flow.spec.ts, and parentMfa.spec.ts
+        # run in ONE invocation, the later specs begin inside an
         # already-consumed window and every request came back 429: the session
         # bootstrap failed, the browser never left /login, and the symptom was
         # indistinguishable from a broken login. Measured directly from the
@@ -840,7 +841,7 @@ jobs:
         env:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: /
-          # The json reporter's own output path, overridden per run so the two
+          # The json reporter's own output path, overridden per run so the three
           # certified specs cannot overwrite each other's report (the config
           # writes test-results/real-e2e-results.json for both apps).
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-acceptance-flow.json
@@ -874,7 +875,8 @@ jobs:
       - name: Run parent-web real-backend E2E -- parent session acceptance (certified)
         # SCOPE, and why this is not the whole e2e-real directory.
         #
-        # Certified and included: realBackend.spec.ts AND acceptance-flow.spec.ts.
+        # Certified and included: realBackend.spec.ts, acceptance-flow.spec.ts,
+        # and parentMfa.spec.ts (each runs separately behind a fresh backend).
         # acceptance-flow.spec.ts declares no skip site for missing fixture
         # environment (it is driven entirely by the provisioned accounts and
         # grants this job exports), so it is deterministic and excluding it would
@@ -904,7 +906,7 @@ jobs:
         if: always()
         working-directory: parent-web
         run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-realBackend.json --label "parent-web real-backend E2E" --manifest-out ../backend/parent-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
-      - name: Restart the backend so the genesis spec starts with a fresh abuse budget
+      - name: Restart the backend so the Parent MFA spec starts with a fresh abuse budget
         working-directory: backend
         run: |
           pkill -f 'node dist/main.js' || true
@@ -923,22 +925,17 @@ jobs:
           echo "Backend did not come back within 30s. Log follows:"
           cat backend.log
           exit 1
-      - name: Cross-client proof -- browser genesis signatures verify under the compiled backend verifier
-        working-directory: parent-web
-        env:
-          PCA_CROSS_CLIENT_VERIFY: '1'
-        run: npx vitest run tests/security/genesisCeremony.crossclient.test.ts
-      - name: Run parent-web real-backend E2E -- real-browser family genesis (certified)
+      - name: Run parent-web real-backend E2E -- Parent account, TOTP MFA and no-Microsoft-dependency journey (certified)
         working-directory: parent-web
         env:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: /
-          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-genesis.json
-        run: npx playwright test --config=playwright.real.config.ts --project=chromium genesis.spec.ts
-      - name: Assert the genesis run was not vacuously skipped, and record evidence
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-parentMfa.json
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium parentMfa.spec.ts
+      - name: Assert the Parent MFA run was not vacuously skipped, and record evidence
         if: always()
         working-directory: parent-web
-        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-genesis.json --label "parent-web real-browser genesis E2E" --manifest-out ../backend/parent-web-genesis-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-parentMfa.json --label "parent-web real-browser Parent MFA E2E" --manifest-out ../backend/parent-web-mfa-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
       - name: Restart the backend before the platform-admin suite
         # Same reason: the platform-admin suite is a third independent consumer of
         # the same per-IP 'auth-attempt' budget.

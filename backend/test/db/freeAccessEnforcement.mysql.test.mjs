@@ -17,8 +17,9 @@ import Fastify from 'fastify';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
-import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
+import { MySqlParentMfaRepository } from '../../dist/parentaccount/mfa/MySqlParentMfaRepository.js';
+import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 import { MySqlFreeAccessAccountRepository } from '../../dist/parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
 import { FreeAccessAdminService, FreeAccessAdminError } from '../../dist/parentaccount/freeaccess/FreeAccessAdminService.js';
@@ -31,6 +32,7 @@ import { MySqlPlatformAdminAuthRepository } from '../../dist/platformadmin/auth/
 import { hashAdminEmail } from '../../dist/platformadmin/auth/emailHash.js';
 import { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../../dist/platformadmin/auth/totp.js';
 import { LoggingAlertAdapter } from '../../dist/platformadmin/auth/alertPort.js';
+import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -65,13 +67,24 @@ async function createVerifiedParentAccount() {
   const parentAccountRepository = new MySqlParentAccountRepository();
   const authService = new AuthService(new MySqlAuthRepository());
   const emailSender = new RecordingEmailSender();
-  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
+  const { service } = createParentAccountTestKit({
+    repository: parentAccountRepository,
+    authService,
+    emailSender,
+    familyMembershipRepository: new MySqlFamilyMembershipRepository(),
+    mfaRepository: new MySqlParentMfaRepository(),
+  });
   const email = `w61-${randomUUID()}@example.test`;
   const password = 'a genuinely long password';
   await service.register(email, password, password);
   const code = emailSender.lastCodeFor(email);
-  const outcome = await service.verifyEmail(email, code);
-  return { accountId: outcome.accountId, email, rawSessionToken: outcome.rawSessionToken, service };
+  await service.verifyEmail(email, code);
+  const account = await parentAccountRepository.findByEmailHash(hashParentEmail(email));
+  assert.ok(account, 'email verification leaves a durable account for the later first sign-in');
+  await service.login(email, password);
+  const login = await service.completeLoginStepUp(email, emailSender.lastCodeFor(email));
+  assert.equal(login.status, 'AUTHENTICATED');
+  return { accountId: account.accountId, email, rawSessionToken: login.rawSessionToken, service };
 }
 
 async function createPlatformAdmin({ role = 'PLATFORM_ADMIN' } = {}) {
@@ -203,7 +216,13 @@ function server() {
   const parentAuthService = new AuthService(new MySqlAuthRepository());
   const parentAccountRepository = new MySqlParentAccountRepository();
   const emailSender = new RecordingEmailSender();
-  const parentAccountService = new ParentAccountService({ repository: parentAccountRepository, authService: parentAuthService, emailSender });
+  const { service: parentAccountService } = createParentAccountTestKit({
+    repository: parentAccountRepository,
+    authService: parentAuthService,
+    emailSender,
+    familyMembershipRepository: new MySqlFamilyMembershipRepository(),
+    mfaRepository: new MySqlParentMfaRepository(),
+  });
   registerParentAccountRoutes(app, { parentAccountService, freeAccessAccountRepository });
   registerFreeAccessAdminRoutes(app, { platformAdminAuthService, freeAccessAdminService, rateLimiter });
   return { app, parentAccountService, emailSender };

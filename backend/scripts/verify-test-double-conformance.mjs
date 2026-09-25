@@ -111,6 +111,20 @@ const PAIRINGS = [
     doubleFile: 'test/support/inMemoryEntitlementRepository.mjs',
     factoryExport: 'createInMemoryEntitlementRepository',
   },
+  {
+    label: 'ParentMfaRepository <-> inMemoryParentMfaRepository.mjs',
+    interfaceFile: 'src/parentaccount/mfa/ParentMfaRepository.ts',
+    interfaceName: 'ParentMfaRepository',
+    doubleFile: 'test/support/inMemoryParentMfaRepository.mjs',
+    factoryExport: 'createInMemoryParentMfaRepository',
+  },
+  {
+    label: 'ParentAccountRepository <-> inMemoryParentAccountRepository.mjs',
+    interfaceFile: 'src/parentaccount/ParentAccountRepository.ts',
+    interfaceName: 'ParentAccountRepository',
+    doubleFile: 'test/support/inMemoryParentAccountRepository.mjs',
+    factoryExport: 'createInMemoryParentAccountRepository',
+  },
 ];
 
 async function loadDoubleInstance(pairing) {

@@ -5,6 +5,7 @@ import { Route, Routes } from 'react-router-dom';
 import DeviceIncreaseRequest from '../../src/pages/billing/DeviceIncreaseRequest';
 import CheckoutReturn from '../../src/pages/billing/CheckoutReturn';
 import { renderWithProviders } from '../utils/renderWithProviders';
+import { confirmCommercialStepUp } from '../utils/commercialStepUp';
 import { __resetDevBillingStateForTests } from '../../src/api/dev/devBillingClient';
 
 function TestApp() {
@@ -31,6 +32,7 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
   it('a standard quantity resolves an exact price before any payment happens', async () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices', role: 'OWNER' });
     await userEvent.click(await screen.findByRole('button', { name: '2 devices' }));
+    await confirmCommercialStepUp();
 
     expect(await screen.findByText('Price')).toBeInTheDocument();
     expect(screen.getByText('$4.99')).toBeInTheDocument();
@@ -42,6 +44,7 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
     const input = await screen.findByLabelText('Or enter a custom total');
     await userEvent.type(input, '4');
     await userEvent.click(screen.getByRole('button', { name: 'Request this quantity' }));
+    await confirmCommercialStepUp();
 
     expect(await screen.findByText('Pending quote review')).toBeInTheDocument();
     expect(
@@ -63,7 +66,9 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
   it('beginning checkout hands off to the checkout-return page, which shows Payment pending and never immediately Approved', async () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices', role: 'OWNER' });
     await userEvent.click(await screen.findByRole('button', { name: '2 devices' }));
+    await confirmCommercialStepUp();
     await userEvent.click(await screen.findByRole('button', { name: 'Proceed to payment' }));
+    await confirmCommercialStepUp();
 
     await waitFor(() => expect(screen.getByText('Payment pending')).toBeInTheDocument());
     expect(
@@ -75,7 +80,9 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
   it('once the server (simulated) confirms payment, the checkout-return page reflects Approved without any client-side action claiming success itself', async () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices', role: 'OWNER' });
     await userEvent.click(await screen.findByRole('button', { name: '2 devices' }));
+    await confirmCommercialStepUp();
     await userEvent.click(await screen.findByRole('button', { name: 'Proceed to payment' }));
+    await confirmCommercialStepUp();
     // Same CPU-contention caveat as the Approved wait below applies here:
     // under a fully-parallel test-file run, the dev fixture's ~900ms
     // "server webhook" schedule can race the initial mount/poll of this
@@ -98,7 +105,9 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
   it('an open request can be cancelled from PENDING/QUOTED', async () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices', role: 'OWNER' });
     await userEvent.click(await screen.findByRole('button', { name: '2 devices' }));
+    await confirmCommercialStepUp();
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel this request' }));
+    await confirmCommercialStepUp();
 
     expect(await screen.findByText('This request was cancelled.')).toBeInTheDocument();
   });
