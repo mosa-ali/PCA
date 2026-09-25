@@ -77,10 +77,10 @@ describe('consolidated workspace Arabic and accessibility', () => {
 
     expect(document.documentElement).toHaveAttribute('dir', 'rtl');
     expect(screen.getByRole('heading', { name: i18n.t('commercialPricing.title') })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: i18n.t('commercialPricing.tabsLabel') })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: i18n.t('nav.freeAccessPolicy') })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('tablist', { name: i18n.t('commercialPricing.tabsLabel') })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: i18n.t('nav.freeAccessPolicy') })).toHaveAttribute('aria-selected', 'true');
     for (const key of ['nav.freeAccessPolicy', 'nav.billingPlans', 'nav.billingPricing', 'nav.billingQuotes']) {
-      expect(screen.getByRole('button', { name: i18n.t(key) })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: i18n.t(key) })).toBeInTheDocument();
     }
     expect(await axe(container)).toHaveNoViolations();
   });
@@ -124,9 +124,9 @@ describe('consolidated workspace Arabic and accessibility', () => {
       applyDocumentDirection(language);
       const { unmount } = renderInteractiveWorkspace('commercial');
       for (const [label, value] of commercialTabs) {
-        await user.click(screen.getByRole('button', { name: i18n.t(label) }));
+        await user.click(screen.getByRole('tab', { name: i18n.t(label) }));
         expect(screen.getByLabelText('workspace location')).toHaveTextContent(`?tab=${value}`);
-        expect(screen.getByRole('button', { name: i18n.t(label) })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('tab', { name: i18n.t(label) })).toHaveAttribute('aria-selected', 'true');
       }
       unmount();
     }

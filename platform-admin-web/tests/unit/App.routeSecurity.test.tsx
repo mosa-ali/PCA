@@ -89,7 +89,7 @@ describe('route security (mission Section 24)', () => {
       await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
       // Legacy plan URLs now open the Plans tab inside Commercial & Pricing.
       expect(await screen.findByRole('heading', { name: /commercial & pricing/i, level: 1 })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /^plans$/i })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('tab', { name: /^plans$/i })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('SUPPORT_ADMIN is redirected away from finance/billing access', async () => {
