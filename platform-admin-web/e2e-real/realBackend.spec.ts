@@ -85,7 +85,12 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
   };
   const navigateToWorkspace = async (workspaceName: RegExp, tabName: RegExp) => {
     await navigateTo(workspaceName);
-    await page.getByRole('tab', { name: tabName }).click();
+    const tab = page.getByRole('tab', { name: tabName });
+    await tab.click();
+    // The workspace can still be rendering its previous tab after the click
+    // resolves. Wait for React to commit the selected tab before interacting
+    // with controls that may exist in both the old and new panels.
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
   };
 
   /**
