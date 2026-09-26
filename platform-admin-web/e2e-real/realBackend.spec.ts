@@ -305,7 +305,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await allPlansTab.click();
     await expect(allPlansTab).toHaveAttribute('aria-selected', 'true');
     await page.locator('#browse-plan-code').fill(planCode);
-    await page.getByRole('button', { name: /^search$/i }).click();
+    await page.getByRole('button', { name: /^apply filters$/i }).click();
     await expect(page.getByRole('cell', { name: planCode })).toBeVisible();
 
     // Exact-money round trip: "19.99" must publish and redisplay as exactly
