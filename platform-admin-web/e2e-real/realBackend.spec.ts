@@ -299,7 +299,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     // click on Confirm is what actually fires PlanService.createPlanVersion.
     await page.getByRole('button', { name: /create plan/i }).click();
     await page.getByRole('button', { name: /^confirm$/i }).click();
-    await expect(page.getByText(/created/i)).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /created/i }).first()).toBeVisible();
 
     const allPlansTab = page.getByRole('tab', { name: /^all plans$/i });
     await allPlansTab.click();
@@ -315,7 +315,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByLabel(/target device limit/i).fill('5');
     await page.getByLabel(/amount/i).fill('19.99');
     await page.getByRole('button', { name: /^publish$/i }).click();
-    await expect(page.getByText(/published/i)).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /published/i }).first()).toBeVisible();
     await expect(page.getByText(/19\.99/)).toBeVisible();
     await expect(page.getByText(/19\.98999|19\.990000/)).toHaveCount(0);
   });
