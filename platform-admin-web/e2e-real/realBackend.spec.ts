@@ -284,6 +284,9 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
   await test.step('billing plan create + list round-trips through the real PlanService, and price-book publish round-trips exact money through real MySQL (no float drift)', async () => {
     const planCode = `e2e-real-plan-${Date.now()}`;
     await navigateToWorkspace(/^commercial & pricing$/i, /^plans$/i);
+    const createPlanTab = page.getByRole('tab', { name: /^create plan$/i });
+    await createPlanTab.click();
+    await expect(createPlanTab).toHaveAttribute('aria-selected', 'true');
     // The search form and the create-plan form both label a field "Plan
     // code" (same i18n key, by design -- BillingPlans.tsx) -- disambiguate
     // by id rather than relying on DOM order via .first()/.last().
@@ -298,6 +301,9 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByRole('button', { name: /^confirm$/i }).click();
     await expect(page.getByText(/created/i)).toBeVisible();
 
+    const allPlansTab = page.getByRole('tab', { name: /^all plans$/i });
+    await allPlansTab.click();
+    await expect(allPlansTab).toHaveAttribute('aria-selected', 'true');
     await page.locator('#plan-code-search').fill(planCode);
     await page.getByRole('button', { name: /^search$/i }).click();
     await expect(page.getByRole('cell', { name: planCode })).toBeVisible();
