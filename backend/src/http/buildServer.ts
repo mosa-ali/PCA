@@ -578,6 +578,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     entitlementRepository: deps.entitlementRepository,
     priceBookService: deps.priceBookService,
     planService: deps.planService,
+    billingAuditService: deps.billingAuditService,
     releaseService: deps.releaseService,
     paymentMethodService: deps.paymentMethodService,
     subscriptionService: deps.subscriptionService,
