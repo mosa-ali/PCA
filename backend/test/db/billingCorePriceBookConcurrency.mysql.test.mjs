@@ -79,6 +79,13 @@ test('MySQL: sequential publication for the same key correctly supersedes the pr
   assert.equal(history[0].status, 'RETIRED');
   assert.equal(history[1].status, 'ACTIVE');
   assert.equal(history[0].effectiveTo !== null, true);
+
+  const activePage = await service.listPricesPage({ limit: 20, offset: 0 }, { ...input, activeOnly: true }, roles);
+  assert.equal(activePage.total, 1);
+  assert.equal(activePage.items[0].priceBookId, v2.priceBookId);
+  const historyPage = await service.listPricesPage({ limit: 20, offset: 0 }, { ...input, activeOnly: false }, roles);
+  assert.equal(historyPage.total, 2);
+  assert.deepEqual(historyPage.items.map((item) => item.priceBookVersion), [2, 1]);
 });
 
 test.after(async () => {

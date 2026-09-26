@@ -9,13 +9,16 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequirePlatformAdminSession } from '../../../platformadmin/auth/fastifyPlatformAdminAuthPlugin.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import { BillingAuthorizationError } from '../../../billing/rbac.js';
+import { buildBillingAuditEvent } from '../../../billing/audit.js';
 import type { PlanService, PlanRow, PlanStatus, BillingCadence } from '../../../billing/plan.js';
+import type { PlatformAdminAuditService } from '../../../platformadmin/audit/PlatformAdminAuditService.js';
 import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminPlanRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   planService: PlanService;
+  billingAuditService: PlatformAdminAuditService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
@@ -90,6 +93,18 @@ export function registerPlatformAdminPlanRoutes(app: FastifyInstance, deps: Plat
           },
           roles,
         );
+        await deps.billingAuditService.record(buildBillingAuditEvent({
+          eventType: 'PLAN_CHANGED',
+          actor: { adminId: request.platformAdminId as string, role: roles[0] ?? null },
+          targetRef: `plan:${created.planId}`,
+          occurredAt: created.createdAt,
+          metadata: {
+            planCode: created.planCode,
+            planVersion: created.planVersion,
+            status: created.status,
+            billingCadence: created.billingCadence,
+          },
+        }));
         return reply.code(201).send(planToDto(created));
       } catch (error) {
         if (error instanceof BillingAuthorizationError) return reply.code(403).send({ error: 'forbidden' });

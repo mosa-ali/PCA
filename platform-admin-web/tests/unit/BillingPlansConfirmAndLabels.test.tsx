@@ -88,30 +88,18 @@ describe('BillingPlans status/cadence labels (B129)', () => {
     expect(within(table).getByText('Retired').closest('span')).toHaveClass('badge-danger');
   });
 
-  it('renders translated status and billing-cadence labels in the exact-plan-code-search table, never the raw enum', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
-        if (/\/platform-admin\/billing\/plans\/[^/?]+/.test(url)) return Promise.resolve(jsonResponse(200, { items: [RETIRED_ONE_TIME_PLAN] }));
-        if (url.includes('/platform-admin/billing/plans')) return Promise.resolve(jsonResponse(200, { items: [], total: 0, limit: 20, offset: 0 }));
-        return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
-      }),
-    );
+  it('keeps create-plan-version isolated in its own sub-tab', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
+      if (url.includes('/platform-admin/billing/plans')) return Promise.resolve(jsonResponse(200, { items: [], total: 0, limit: 20, offset: 0 }));
+      return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
+    }));
     renderPage();
-    await screen.findByText(i18n.t('common.empty'));
-
-    await userEvent.type(screen.getByLabelText('Plan code', { selector: '#plan-code-search' }), 'LEGACY_ONE_TIME');
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
-
-    // Browse-all is empty (renders the "empty" paragraph, no table), so the
-    // search-result table is the only <table> on the page here.
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('Retired')).toBeInTheDocument();
-    expect(within(table).getByText('One-time')).toBeInTheDocument();
-    expect(within(table).queryByText('RETIRED')).not.toBeInTheDocument();
-    expect(within(table).queryByText('ONE_TIME')).not.toBeInTheDocument();
+    await screen.findByText(i18n.t('billing.noPlansExist'));
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('billing.createPlanTab') }));
+    expect(screen.getByLabelText('Plan code')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });
 
@@ -150,7 +138,8 @@ describe('BillingPlans create-plan-version confirmation gate (B128)', () => {
       }),
     );
     renderPage();
-    await screen.findByText(i18n.t('common.empty'));
+    await screen.findByText(i18n.t('billing.noPlansExist'));
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('billing.createPlanTab') }));
 
     await userEvent.type(screen.getByLabelText('Plan code', { selector: '#new-plan-code' }), 'NEW_PLAN_CODE');
     await userEvent.type(screen.getByLabelText(i18n.t('settings.parentMemberLimit')), '3');
@@ -161,7 +150,7 @@ describe('BillingPlans create-plan-version confirmation gate (B128)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: i18n.t('common.confirm') }));
     expect(postCalls).toHaveLength(1);
-    expect(await screen.findByText(/created/i)).toBeInTheDocument();
+    expect(await screen.findByText(i18n.t('billing.planCreated', { planCode: 'NEW_PLAN_CODE' }))).toBeInTheDocument();
   });
 
   it('never fires the create-plan POST when Cancel is clicked after arming', async () => {
@@ -180,7 +169,8 @@ describe('BillingPlans create-plan-version confirmation gate (B128)', () => {
       }),
     );
     renderPage();
-    await screen.findByText(i18n.t('common.empty'));
+    await screen.findByText(i18n.t('billing.noPlansExist'));
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('billing.createPlanTab') }));
 
     await userEvent.type(screen.getByLabelText('Plan code', { selector: '#new-plan-code' }), 'NEW_PLAN_CODE');
     await userEvent.type(screen.getByLabelText(i18n.t('settings.parentMemberLimit')), '3');

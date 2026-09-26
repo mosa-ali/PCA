@@ -31,6 +31,7 @@ import { isCommercialMarket } from './market.js';
 import { requireBillingOperation } from './rbac.js';
 import type { PlatformAdminRole } from '../platformadmin/auth/types.js';
 import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformAdminAuditService.js';
+import type { PageRequest, PageResult } from '../platformadmin/api/pagination.js';
 import { buildBillingAuditEvent } from './audit.js';
 import type { BillingAuditActor } from './audit.js';
 
@@ -164,6 +165,33 @@ export class PriceBookRepository {
     );
     return rows.map(toDomain);
   }
+
+  async listPricesPage(
+    conn: PoolConnection,
+    page: PageRequest,
+    filter: { commercialMarket?: CommercialMarket; currencyCode?: CurrencyCode; targetDeviceLimit?: number; activeOnly?: boolean },
+    asOf: Date,
+  ): Promise<PageResult<PriceBookRow>> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filter.commercialMarket) { conditions.push('commercial_market = ?'); params.push(filter.commercialMarket); }
+    if (filter.currencyCode) { conditions.push('currency_code = ?'); params.push(filter.currencyCode); }
+    if (filter.targetDeviceLimit !== undefined) { conditions.push('target_device_limit = ?'); params.push(filter.targetDeviceLimit); }
+    if (filter.activeOnly) {
+      conditions.push("status = 'ACTIVE' AND effective_from <= ? AND (effective_to IS NULL OR effective_to > ?)");
+      params.push(asOf, asOf);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const { rows: countRows } = await execute<{ total: number }>(conn, `SELECT COUNT(*) AS total FROM billing_price_books ${where}`, params);
+    const { rows } = await execute<PriceBookSqlRow>(
+      conn,
+      `SELECT * FROM billing_price_books ${where}
+       ORDER BY created_at DESC, commercial_market ASC, currency_code ASC, target_device_limit ASC, price_book_version DESC, price_book_id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, page.limit, page.offset],
+    );
+    return { items: rows.map(toDomain), total: Number(countRows[0]?.total ?? 0), limit: page.limit, offset: page.offset };
+  }
 }
 
 export class PriceBookPublicationConflictError extends Error {
@@ -230,6 +258,16 @@ export class PriceBookService {
   ): Promise<PriceBookRow[]> {
     requireBillingOperation(roles, 'VIEW_PRICE_BOOK');
     return runInTransaction((conn) => this.repository.listHistory(conn, commercialMarket, currencyCode, targetDeviceLimit));
+  }
+
+  async listPricesPage(
+    page: PageRequest,
+    filter: { commercialMarket?: CommercialMarket; currencyCode?: CurrencyCode; targetDeviceLimit?: number; activeOnly?: boolean },
+    roles: readonly PlatformAdminRole[],
+    now: Date = new Date(),
+  ): Promise<PageResult<PriceBookRow>> {
+    requireBillingOperation(roles, 'VIEW_PRICE_BOOK');
+    return runInTransaction((conn) => this.repository.listPricesPage(conn, page, filter, now));
   }
 
   async getActiveAt(

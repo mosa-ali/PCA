@@ -13,8 +13,11 @@ import { BillingAuthorizationError } from '../../../billing/rbac.js';
 import type { PriceBookService, PriceBookRow } from '../../../billing/priceBook.js';
 import { PriceBookPublicationConflictError } from '../../../billing/priceBook.js';
 import { isCommercialMarket } from '../../../billing/market.js';
+import type { CommercialMarket } from '../../../billing/market.js';
 import { isSupportedCurrency } from '../../../billing/currency.js';
+import type { CurrencyCode } from '../../../billing/currency.js';
 import { dateToJson, moneyOrNullToJson } from '../../../platformadmin/api/dto.js';
+import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminPriceBookRoutesDeps {
@@ -56,19 +59,26 @@ export function registerPlatformAdminPriceBookRoutes(app: FastifyInstance, deps:
     { preHandler: [readLimiter, requirePlatformAdminSession] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const query = (request.query ?? {}) as Record<string, unknown>;
-      const { commercialMarket, currencyCode, targetDeviceLimit, asOf } = query;
-      if (typeof commercialMarket !== 'string' || !isCommercialMarket(commercialMarket)) return reply.code(400).send({ error: 'invalid_request' });
-      if (typeof currencyCode !== 'string' || !isSupportedCurrency(currencyCode)) return reply.code(400).send({ error: 'invalid_request' });
-      const target = typeof targetDeviceLimit === 'string' ? Number.parseInt(targetDeviceLimit, 10) : Number.NaN;
-      if (!Number.isInteger(target) || target < 1) return reply.code(400).send({ error: 'invalid_request' });
+      const { commercialMarket, currencyCode, targetDeviceLimit, asOf, activeOnly } = query;
+      if (commercialMarket !== undefined && (typeof commercialMarket !== 'string' || !isCommercialMarket(commercialMarket))) return reply.code(400).send({ error: 'invalid_request' });
+      if (currencyCode !== undefined && (typeof currencyCode !== 'string' || !isSupportedCurrency(currencyCode))) return reply.code(400).send({ error: 'invalid_request' });
+      const target = targetDeviceLimit === undefined ? undefined : typeof targetDeviceLimit === 'string' ? Number.parseInt(targetDeviceLimit, 10) : Number.NaN;
+      if (target !== undefined && (!Number.isInteger(target) || target < 1)) return reply.code(400).send({ error: 'invalid_request' });
       const roles = request.platformAdminRoles ?? [];
       try {
         if (typeof asOf === 'string' && asOf === 'active') {
+          if (typeof commercialMarket !== 'string' || typeof currencyCode !== 'string' || target === undefined) return reply.code(400).send({ error: 'invalid_request' });
           const row = await deps.priceBookService.getActiveAt(commercialMarket, currencyCode, target, new Date(), roles);
           return reply.code(200).send({ item: row ? priceBookToDto(row) : null });
         }
-        const rows = await deps.priceBookService.getHistory(commercialMarket, currencyCode, target, roles);
-        return reply.code(200).send({ items: rows.map(priceBookToDto) });
+        if (activeOnly !== undefined && activeOnly !== 'true' && activeOnly !== 'false') return reply.code(400).send({ error: 'invalid_request' });
+        const result = await deps.priceBookService.listPricesPage(parsePageRequest(query), {
+          commercialMarket: commercialMarket as CommercialMarket | undefined,
+          currencyCode: currencyCode as CurrencyCode | undefined,
+          targetDeviceLimit: target,
+          activeOnly: activeOnly === 'true',
+        }, roles);
+        return reply.code(200).send({ ...result, items: result.items.map(priceBookToDto) });
       } catch (error) {
         if (error instanceof BillingAuthorizationError) return reply.code(403).send({ error: 'forbidden' });
         throw error;

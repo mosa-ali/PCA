@@ -110,6 +110,7 @@ export interface PendingCustomQuoteRow {
 
 export interface PendingCustomQuoteFilter {
   readonly familyId?: string;
+  readonly parentEmailHash?: Buffer;
   readonly sinceCreatedAt?: Date;
   readonly untilCreatedAt?: Date;
 }
@@ -408,12 +409,24 @@ export class BillingReadModel {
       conditions.push('family_id = ?');
       params.push(filter.familyId);
     }
+    if (filter.parentEmailHash) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM parent_accounts pa
+        WHERE pa.email_hash = ? AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
+          AND (pa.family_id = entitlement_change_requests.family_id
+            OR EXISTS (SELECT 1 FROM families f WHERE f.family_id = entitlement_change_requests.family_id AND f.provisioned_for_account_id = pa.account_id)
+            OR EXISTS (SELECT 1 FROM family_parent_memberships m
+              WHERE m.account_id = pa.account_id AND m.family_id = entitlement_change_requests.family_id
+                AND m.status = 'ACTIVE' AND m.role = 'ADMINISTRATOR'))
+      )`);
+      params.push(filter.parentEmailHash);
+    }
     if (filter.sinceCreatedAt) {
       conditions.push('created_at >= ?');
       params.push(filter.sinceCreatedAt);
     }
     if (filter.untilCreatedAt) {
-      conditions.push('created_at <= ?');
+      conditions.push('created_at < DATE_ADD(?, INTERVAL 1 DAY)');
       params.push(filter.untilCreatedAt);
     }
     const whereClause = `WHERE ${conditions.join(' AND ')}`;

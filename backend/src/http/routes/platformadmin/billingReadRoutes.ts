@@ -24,6 +24,7 @@ import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rba
 import { BillingReadModel } from '../../../platformadmin/readmodels/BillingReadModel.js';
 import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
 import { dateToJson, moneyOrNullToJson } from '../../../platformadmin/api/dto.js';
+import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminBillingReadRoutesDeps {
@@ -36,6 +37,13 @@ function parseDate(value: unknown): Date | undefined {
   if (typeof value !== 'string') return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function parseCalendarDate(value: unknown): Date | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? null : parsed;
 }
 
 export function registerPlatformAdminBillingReadRoutes(app: FastifyInstance, deps: PlatformAdminBillingReadRoutesDeps): void {
@@ -227,10 +235,17 @@ export function registerPlatformAdminBillingReadRoutes(app: FastifyInstance, dep
     if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
     const query = (request.query ?? {}) as Record<string, unknown>;
     const page = parsePageRequest(query);
+    const parentEmail = typeof query.parentEmail === 'string' ? query.parentEmail.trim() : '';
+    if (query.parentEmail !== undefined && typeof query.parentEmail !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (parentEmail && !isPlausibleEmail(parentEmail)) return reply.code(400).send({ error: 'invalid_request' });
+    const sinceDate = parseCalendarDate(query.since);
+    const untilDate = parseCalendarDate(query.until);
+    if (sinceDate === null || untilDate === null || (sinceDate && untilDate && sinceDate > untilDate)) return reply.code(400).send({ error: 'invalid_request' });
     const result = await readModel.listPendingCustomQuoteRequests(page, {
       familyId: typeof query.familyId === 'string' && query.familyId.length > 0 ? query.familyId : undefined,
-      sinceCreatedAt: parseDate(query.since),
-      untilCreatedAt: parseDate(query.until),
+      parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined,
+      sinceCreatedAt: sinceDate ?? undefined,
+      untilCreatedAt: untilDate ?? undefined,
     });
     return reply.code(200).send({
       items: result.items.map((r) => ({

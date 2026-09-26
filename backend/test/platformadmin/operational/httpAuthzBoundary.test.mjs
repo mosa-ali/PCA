@@ -22,6 +22,8 @@ import { randomUUID } from 'node:crypto';
 import { registerPlatformAdminDashboardRoutes } from '../../../dist/http/routes/platformadmin/dashboardRoutes.js';
 import { registerPlatformAdminBillingReadRoutes } from '../../../dist/http/routes/platformadmin/billingReadRoutes.js';
 import { registerPlatformAdminAuditRoutes } from '../../../dist/http/routes/platformadmin/auditRoutes.js';
+import { registerPlatformAdminPriceBookRoutes } from '../../../dist/http/routes/platformadmin/priceBookRoutes.js';
+import { PriceBookService } from '../../../dist/billing/priceBook.js';
 import { createRateLimiter } from '../../../dist/http/rateLimit.js';
 
 function buildFakeAuthService(sessionsByToken) {
@@ -78,6 +80,57 @@ test('GET /platform-admin/billing/plans (bare, browse-all) with no Authorization
   const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans' });
   assert.equal(response.statusCode, 401);
   await app.close();
+});
+
+test('Commercial endpoints fail closed for missing or insufficient roles before repository access', async () => {
+  const rateLimiter = createRateLimiter();
+  const createApp = (rolesByToken) => {
+    const app = Fastify({ logger: false });
+    registerPlatformAdminBillingReadRoutes(app, { platformAdminAuthService: buildFakeAuthService(rolesByToken), rateLimiter });
+    registerPlatformAdminPriceBookRoutes(app, {
+      platformAdminAuthService: buildFakeAuthService(rolesByToken),
+      priceBookService: new PriceBookService({}, { async record() {} }),
+      rateLimiter,
+    });
+    return app;
+  };
+
+  const noAuthApp = createApp(new Map());
+  const unauthenticated = await noAuthApp.inject({ method: 'GET', url: '/platform-admin/billing/price-book' });
+  assert.equal(unauthenticated.statusCode, 401);
+  await noAuthApp.close();
+
+  const supportSessions = new Map();
+  const supportToken = registerSession(supportSessions, ['SUPPORT_ADMIN']);
+  const supportApp = createApp(supportSessions);
+  const priceBookRead = await supportApp.inject({
+    method: 'GET', url: '/platform-admin/billing/price-book',
+    headers: { authorization: `Bearer ${supportToken}` },
+  });
+  assert.equal(priceBookRead.statusCode, 403);
+  await supportApp.close();
+
+  const emptyRoleSessions = new Map();
+  const emptyRoleToken = registerSession(emptyRoleSessions, []);
+  const emptyRoleApp = createApp(emptyRoleSessions);
+  const quoteQueueWithoutEntitlementRole = await emptyRoleApp.inject({
+    method: 'GET', url: '/platform-admin/quotes/pending',
+    headers: { authorization: `Bearer ${emptyRoleToken}` },
+  });
+  assert.equal(quoteQueueWithoutEntitlementRole.statusCode, 403);
+  await emptyRoleApp.close();
+
+  const platformSessions = new Map();
+  const platformToken = registerSession(platformSessions, ['PLATFORM_ADMIN']);
+  const platformApp = createApp(platformSessions);
+  const priceBookMutation = await platformApp.inject({
+    method: 'POST',
+    url: '/platform-admin/billing/price-book',
+    headers: { authorization: `Bearer ${platformToken}` },
+    payload: { commercialMarket: 'GLOBAL_OTHER', currencyCode: 'USD', targetDeviceLimit: 4, amountMinor: '1000' },
+  });
+  assert.equal(priceBookMutation.statusCode, 403);
+  await platformApp.close();
 });
 
 test('GET /platform-admin/billing/plans (bare, browse-all): SUPPORT_ADMIN session is 403 (no billing-record read access)', async () => {
@@ -145,9 +198,43 @@ test('GET /platform-admin/billing/plans/:planCode (existing exact-code route) is
   // same no-DB-needed reasoning as this file's other 403 tests.
   const planService = new PlanService({});
   registerPlatformAdminBillingReadRoutes(app, { platformAdminAuthService: authService, rateLimiter });
-  registerPlatformAdminPlanRoutes(app, { platformAdminAuthService: authService, planService, rateLimiter });
+  registerPlatformAdminPlanRoutes(app, { platformAdminAuthService: authService, planService, billingAuditService: { async record() {} }, rateLimiter });
   const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans/SOME_CODE', headers: { authorization: `Bearer ${token}` } });
   assert.equal(response.statusCode, 403);
+  await app.close();
+});
+
+test('POST /platform-admin/billing/plans records an audit event for the created plan version', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['APP_OWNER']);
+  const session = sessions.get(token);
+  const app = Fastify({ logger: false });
+  const authService = buildFakeAuthService(sessions);
+  const rateLimiter = createRateLimiter();
+  const { registerPlatformAdminPlanRoutes } = await import('../../../dist/http/routes/platformadmin/planRoutes.js');
+  const created = {
+    planId: 'plan-test-1', planCode: 'CERTIFICATION_PLAN', planVersion: 2, status: 'ACTIVE', billingCadence: 'MONTHLY',
+    defaultParentMemberLimit: 4, defaultManagedDeviceLimit: 8, priceBookId: null, createdAt: new Date('2026-09-26T00:00:00.000Z'),
+  };
+  const events = [];
+  registerPlatformAdminPlanRoutes(app, {
+    platformAdminAuthService: authService,
+    planService: { async createNewVersion() { return created; } },
+    billingAuditService: { async record(event) { events.push(event); } },
+    rateLimiter,
+  });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/platform-admin/billing/plans',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { planCode: created.planCode, status: created.status, billingCadence: created.billingCadence, defaultParentMemberLimit: 4, defaultManagedDeviceLimit: 8 },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].eventType, 'PLAN_CHANGED');
+  assert.equal(events[0].actorAdminId, session.adminId);
+  assert.equal(events[0].targetRef, 'plan:plan-test-1');
+  assert.deepEqual(events[0].metadata, { planCode: 'CERTIFICATION_PLAN', planVersion: 2, status: 'ACTIVE', billingCadence: 'MONTHLY' });
   await app.close();
 });
 

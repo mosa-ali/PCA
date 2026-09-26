@@ -9,7 +9,6 @@ import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
-import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -67,10 +66,10 @@ export default function BillingQuotes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [familyId, setFamilyId] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
-  const [appliedFilters, setAppliedFilters] = useState({ familyId: '', since: '', until: '' });
+  const [appliedFilters, setAppliedFilters] = useState({ parentEmail: '', since: '', until: '' });
 
   const load = () => {
     setLoading(true);
@@ -79,7 +78,7 @@ export default function BillingQuotes() {
       .get<PagedResult<PendingQuoteRequest>>('/platform-admin/quotes/pending', {
         limit: PAGE_SIZE,
         offset,
-        familyId: appliedFilters.familyId || undefined,
+        parentEmail: appliedFilters.parentEmail || undefined,
         since: appliedFilters.since || undefined,
         until: appliedFilters.until || undefined,
       })
@@ -99,7 +98,15 @@ export default function BillingQuotes() {
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
-    setAppliedFilters({ familyId, since, until });
+    setAppliedFilters({ parentEmail: parentEmail.trim(), since, until });
+  };
+
+  const clearFilters = () => {
+    setParentEmail('');
+    setSince('');
+    setUntil('');
+    setOffset(0);
+    setAppliedFilters({ parentEmail: '', since: '', until: '' });
   };
 
   const onIssued = (requestId: string) => {
@@ -112,7 +119,10 @@ export default function BillingQuotes() {
       <h2>{t('nav.billingQuotes')}</h2>
 
       <form className="filters" onSubmit={onFilterSubmit}>
-        <ParentEmailFamilyLookup id="quotes" familyId={familyId} onFamilyIdChange={setFamilyId} />
+        <div>
+          <label htmlFor="quotes-parent-email">{t('billing.parentEmailFilter')}</label>
+          <input id="quotes-parent-email" type="text" inputMode="email" value={parentEmail} onChange={(event) => setParentEmail(event.target.value)} autoComplete="off" />
+        </div>
         <div>
           <label htmlFor="quotes-since">{t('billing.sinceCreatedAt')}</label>
           <input id="quotes-since" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
@@ -121,14 +131,15 @@ export default function BillingQuotes() {
           <label htmlFor="quotes-until">{t('billing.untilCreatedAt')}</label>
           <input id="quotes-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
         </div>
-        <button type="submit" className="btn">
+        <button type="submit" className="btn btn-primary">
           {t('common.applyFilters')}
         </button>
+        <button type="button" className="btn" onClick={clearFilters}>{t('common.clear')}</button>
       </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}
-      {!loading && !error && items.length === 0 && <p className="status-unavailable">{t('billing.noPendingQuotes')}</p>}
+      {!loading && !error && items.length === 0 && <p className="status-unavailable">{appliedFilters.parentEmail || appliedFilters.since || appliedFilters.until ? t('billing.noQuoteFilterMatches') : t('billing.noPendingQuotes')}</p>}
 
       {!loading && !error && items.length > 0 && (
         <div className="table-wrap">
@@ -140,6 +151,9 @@ export default function BillingQuotes() {
                 <th scope="col">{t('entitlements.limitType')}</th>
                 <th scope="col">{t('billing.currentLimit')}</th>
                 <th scope="col">{t('entitlements.targetLimit')}</th>
+                <th scope="col">{t('billing.status')}</th>
+                <th scope="col">{t('billing.sinceCreatedAt')}</th>
+                <th scope="col">{t('billing.updatedAt')}</th>
                 <th scope="col">{t('common.actions')}</th>
               </tr>
             </thead>
@@ -151,6 +165,9 @@ export default function BillingQuotes() {
                   <td>{t(`entitlements.limitTypes.${request.limitType}`)}</td>
                   <td>{request.currentLimitAtRequest}</td>
                   <td>{request.targetLimit}</td>
+                  <td><span className="badge badge-warning">{t('billing.pendingQuoteState')}</span></td>
+                  <td>{request.createdAt ? new Date(request.createdAt).toLocaleDateString() : '—'}</td>
+                  <td>{request.updatedAt ? new Date(request.updatedAt).toLocaleDateString() : '—'}</td>
                   <td>
                     <PermissionGate operation="ADMINISTER_BILLING" fallback={<span className="status-unavailable">{t('billing.noQuotePermission')}</span>}>
                       <IssueQuoteForm requestId={request.requestId} onIssued={onIssued} />

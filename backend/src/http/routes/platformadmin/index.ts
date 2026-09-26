@@ -48,6 +48,8 @@ export interface PlatformAdminOperationalRoutesDeps {
   entitlementRepository: EntitlementRepository;
   priceBookService: PriceBookService;
   planService: PlanService;
+  /** Audit trail for successful plan creation/version changes. */
+  billingAuditService: import('../../../platformadmin/audit/PlatformAdminAuditService.js').PlatformAdminAuditService;
   /** Release management (app/model/rule package metadata) -- see releaseRoutes.ts's own doc comment. */
   releaseService: ReleaseService;
   /** Billing admin write surface (add payment method, create/cancel subscription, open/resolve dispute) -- see billingAdminRoutes.ts's own doc comment. */
@@ -84,6 +86,7 @@ export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, dep
   registerPlatformAdminPlanRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     planService: deps.planService,
+    billingAuditService: deps.billingAuditService,
     rateLimiter: deps.rateLimiter,
   });
   registerPlatformAdminBillingReadRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
