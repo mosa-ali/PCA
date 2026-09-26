@@ -312,8 +312,8 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     // 19.99 -- not 19.989999999999998 (the classic parseFloat*100 failure
     // mode this app's money.ts is built to prevent).
     await navigateToWorkspace(/^commercial & pricing$/i, /^price book$/i);
-    await page.getByLabel(/target device limit/i).fill('5');
-    await page.getByLabel(/amount/i).fill('19.99');
+    await page.locator('#pb-publish-limit').fill('5');
+    await page.locator('#pb-new-amount').fill('19.99');
     await page.getByRole('button', { name: /^publish$/i }).click();
     await expect(page.getByRole('status').filter({ hasText: /published/i }).first()).toBeVisible();
     await expect(page.getByText(/19\.99/)).toBeVisible();
