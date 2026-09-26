@@ -304,7 +304,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     const allPlansTab = page.getByRole('tab', { name: /^all plans$/i });
     await allPlansTab.click();
     await expect(allPlansTab).toHaveAttribute('aria-selected', 'true');
-    await page.locator('#plan-code-search').fill(planCode);
+    await page.locator('#browse-plan-code').fill(planCode);
     await page.getByRole('button', { name: /^search$/i }).click();
     await expect(page.getByRole('cell', { name: planCode })).toBeVisible();
 
