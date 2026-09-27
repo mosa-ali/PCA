@@ -1,7 +1,7 @@
 import type { ServiceOperation } from './types.js';
 
 export interface OperationRequirements {
-  /** Requires an ACTIVE service_account_family_scopes row for the target family. */
+  /** Requires an ACTIVE service scope and matching ACTIVE Parent membership for the target family. */
   requiresFamilyScope: boolean;
   /** Requires the account to hold an ACTIVE, unexpired license. */
   requiresLicense: boolean;

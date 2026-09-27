@@ -120,6 +120,12 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
     }
   }
 
+  async function requireAdministrator(accountId: string, familyId: string, reply: FastifyReply): Promise<boolean> {
+    if (await deps.parentAccountService.activeFamilyRole(accountId as never, familyId) === 'ADMINISTRATOR') return true;
+    await reply.code(403).send({ error: 'forbidden' });
+    return false;
+  }
+
   async function authorizeEditChildPolicy(
     reply: FastifyReply,
     familyId: string,
@@ -157,6 +163,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
@@ -180,6 +187,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
@@ -223,6 +231,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;

@@ -11,6 +11,8 @@ import { createInMemoryParentMfaRepository } from './inMemoryParentMfaRepository
 
 export const PARENT_MFA_TEST_KEY = 'e7'.repeat(32);
 if (!process.env.PCA_PARENT_MFA_ENC_KEY) process.env.PCA_PARENT_MFA_ENC_KEY = PARENT_MFA_TEST_KEY;
+export const PARENT_IDENTITY_TEST_KEY = 'a4'.repeat(32);
+if (!process.env.PCA_PARENT_IDENTITY_ENC_KEY) process.env.PCA_PARENT_IDENTITY_ENC_KEY = PARENT_IDENTITY_TEST_KEY;
 
 export function createParentMfaService({ now, repository = createInMemoryParentMfaRepository() } = {}) {
   const mfaService = new ParentMfaService({ repository, keyring: () => loadParentMfaKeyring(process.env), now });

@@ -38,6 +38,19 @@ test('resolves normally even when the immediate send attempt fails (retryable) -
   assert.equal(provider.calls.length, 1);
 });
 
+test('successful-login security notice is durably enqueued and delivery failure does not reject sign-in notification work', async () => {
+  const repo = new InMemoryEmailOutboxRepository();
+  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('transient', true, 'EMAIL_PROVIDER_NETWORK') }]);
+  const service = new EmailService({ repository: repo, providerAdapter: provider, env: ENV, now: () => new Date('2026-09-26T12:34:56.000Z') });
+  await assert.doesNotReject(() => service.sendSecurityNotice('parent@example.com', 'LOGIN_SUCCESSFUL', new Date('2026-09-26T12:34:56.000Z'), 'parent-login:event-1'));
+  assert.equal(provider.calls.length, 1);
+  const rows = repo.getAllRowsForTest();
+  assert.equal(rows.length, 1);
+  assert.ok(rows[0].encryptedPayload, 'the outbox stores an encrypted payload');
+  assert.match(provider.calls[0].subject, /successful sign-in/i);
+  assert.match(provider.calls[0].text, /2026-09-26 12:34 UTC/);
+});
+
 test('a duplicate call with the SAME kind/email/code is idempotent -- enqueues once, never double-sends', async () => {
   const repo = new InMemoryEmailOutboxRepository();
   const provider = new ScriptedProviderAdapter([{ result: { providerMessageId: 'msg-1' } }, { result: { providerMessageId: 'msg-2' } }]);

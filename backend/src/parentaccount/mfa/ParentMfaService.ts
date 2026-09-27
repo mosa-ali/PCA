@@ -8,7 +8,7 @@ import {
 import type { ParentAccountId } from '../types.js';
 import { buildParentOtpauthUri, generateSealedParentTotpSecret, verifySealedParentTotp, type ParentMfaKeyring } from './parentTotp.js';
 import type {
-  CommercialStepUpOperation,
+  ParentStepUpOperation,
   ParentMfaRecoveryCode,
   ParentMfaRepository,
   ParentMfaStateRecord,
@@ -29,15 +29,15 @@ export class ParentMfaError extends Error {
 }
 
 /**
- * Server-derived MFA posture. NOT_STARTED: the account has never completed a
- * login (no grace row). GRACE: not enrolled, grace still running.
- * SETUP_REQUIRED: not enrolled and grace over -- no session may be issued.
+ * Server-derived MFA posture. An inactive authenticator is optional; only an
+ * active authenticator adds a required login factor. Recovery hold remains a
+ * separate enforced state.
  */
 export type ParentMfaPosture =
   | { status: 'NOT_STARTED' }
-  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: Date }
   | { status: 'GRACE'; graceExpiresAt: Date }
   | { status: 'SETUP_REQUIRED'; graceExpiresAt: Date }
+  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: Date }
   | { status: 'ACTIVE'; enrolledAt: Date };
 
 export interface ParentMfaServiceDeps {
@@ -82,11 +82,10 @@ export class ParentMfaService {
     return ParentMfaService.postureOf(await this.repository.findState(accountId), this.now());
   }
 
-  /** Starts the one and only grace window. Returns whether THIS call started it (i.e. this is the account's first login). */
+  /** Starts the one-time 72-hour enrollment window. The repository preserves the first start across browsers and retries. */
   async startGraceIfAbsent(accountId: ParentAccountId): Promise<{ started: boolean; posture: ParentMfaPosture }> {
     const now = this.now();
     const started = await this.repository.startGraceIfAbsent(accountId, now, new Date(now.getTime() + PARENT_MFA_GRACE_MS));
-    if (started) await this.event(accountId, 'MFA_GRACE_STARTED', null);
     return { started, posture: await this.posture(accountId) };
   }
 
@@ -184,7 +183,7 @@ export class ParentMfaService {
   }
 
   /** Fresh TOTP (a counter newer than any accepted before, including at login) buys one single-use grant for one operation in one family. */
-  async issueCommercialStepUp(accountId: ParentAccountId, familyId: string, operation: CommercialStepUpOperation, code: string): Promise<{ stepUpToken: string; expiresAt: Date }> {
+  async issueCommercialStepUp(accountId: ParentAccountId, familyId: string, operation: ParentStepUpOperation, code: string): Promise<{ stepUpToken: string; expiresAt: Date }> {
     await this.verifyActiveCode(accountId, code, 'STEP_UP_FAILED');
     const raw = randomBytes(32).toString('base64url');
     const now = this.now();
@@ -194,7 +193,7 @@ export class ParentMfaService {
     return { stepUpToken: raw, expiresAt };
   }
 
-  async consumeCommercialStepUp(accountId: ParentAccountId, familyId: string, operation: CommercialStepUpOperation, raw: unknown): Promise<boolean> {
+  async consumeCommercialStepUp(accountId: ParentAccountId, familyId: string, operation: ParentStepUpOperation, raw: unknown): Promise<boolean> {
     if (!isPlausibleOpaqueToken(raw)) return false;
     const consumed = await this.repository.consumeStepUpGrant({ tokenHash: hashOpaque(STEP_UP_DOMAIN, raw), accountId, familyId, operation, now: this.now() });
     if (consumed) await this.event(accountId, 'STEP_UP_CONSUMED', operation);

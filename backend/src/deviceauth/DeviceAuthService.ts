@@ -75,6 +75,11 @@ export class DeviceAuthService {
     this.now = now;
   }
 
+  /** Reads the live lifecycle generation before issuing or accepting a device session. */
+  async activeSessionFamilyEpoch(identity: VerifiedDeviceIdentity): Promise<number | null> {
+    return this.deviceRepository.getActiveDeviceSessionEpoch(identity.familyId, identity.deviceId);
+  }
+
   /**
    * NOT itself an authentication check -- issuance is unauthenticated by
    * design (proof of possession happens at verifyChallenge). The caller of

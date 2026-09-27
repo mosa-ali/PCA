@@ -92,6 +92,10 @@ export class DeviceSessionService {
       if (error instanceof DeviceAuthError) throw new RuntimeSyncAuthError('UNAUTHORIZED');
       throw error;
     }
+    const familySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(identity);
+    if (familySessionEpoch === null) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
 
     const { rawToken, tokenHash } = generateSessionToken();
     const issuedAt = this.now();
@@ -100,6 +104,7 @@ export class DeviceSessionService {
       tokenHash,
       deviceId: identity.deviceId,
       familyId: identity.familyId,
+      familySessionEpoch,
       issuedAt,
       expiresAt: new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS),
       revokedAt: null,
@@ -113,7 +118,12 @@ export class DeviceSessionService {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const result = await this.sessionRepository.validate(hashSessionToken(rawToken), this.now());
     if (result.outcome !== 'VALID') throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    return { deviceId: result.session.deviceId, familyId: result.session.familyId };
+    const identity = { deviceId: result.session.deviceId, familyId: result.session.familyId };
+    const activeFamilySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(identity);
+    if (activeFamilySessionEpoch === null || activeFamilySessionEpoch !== result.session.familySessionEpoch) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
+    return identity;
   }
 
   /**

@@ -8,6 +8,7 @@ import {
 interface RemovalDecisionRow {
   request_id: string;
   family_id: string;
+  requested_by_parent_account_id: string | null;
   child_id: string;
   device_id: string;
   operation: RemovalDecisionRecord['operation'];
@@ -20,15 +21,16 @@ interface RemovalDecisionRow {
   decided_at: Date | string | null;
   decision_method: RemovalDecisionRecord['decisionMethod'];
   temporary_disable_until: Date | string | null;
+  decided_by_parent_account_id: string | null;
   decided_by_device_id: string | null;
   decision_action_id: string | null;
   idempotency_key: string | null;
   decision_fingerprint: string | null;
 }
 
-const SELECT_COLUMNS = `request_id, family_id, child_id, device_id, operation, protection_level,
+const SELECT_COLUMNS = `request_id, family_id, requested_by_parent_account_id, child_id, device_id, operation, protection_level,
   requested_at, expires_at, reason_category, protective_authority_applies, state,
-  decided_at, decision_method, temporary_disable_until,
+  decided_at, decision_method, temporary_disable_until, decided_by_parent_account_id,
   decided_by_device_id, decision_action_id, idempotency_key, decision_fingerprint`;
 
 function toDate(value: Date | string): Date {
@@ -42,6 +44,7 @@ function toRecord(row: RemovalDecisionRow): RemovalDecisionRecord {
   return {
     requestId: row.request_id,
     familyId: row.family_id,
+    requestedByParentAccountId: row.requested_by_parent_account_id,
     childId: row.child_id,
     deviceId: row.device_id,
     operation: row.operation,
@@ -57,6 +60,7 @@ function toRecord(row: RemovalDecisionRow): RemovalDecisionRecord {
     decidedAt: row.decided_at === null ? null : toDate(row.decided_at),
     decisionMethod: row.decision_method,
     temporaryDisableUntil: row.temporary_disable_until === null ? null : toDate(row.temporary_disable_until),
+    decidedByParentAccountId: row.decided_by_parent_account_id,
     decidedByDeviceId: row.decided_by_device_id,
     decisionActionId: row.decision_action_id,
     idempotencyKey: row.idempotency_key,
@@ -108,14 +112,16 @@ export class MySqlRemovalDecisionRepository implements RemovalDecisionRepository
         execute(
           conn,
           `INSERT INTO enrollment_protection_approval_requests
-             (request_id, family_id, child_id, device_id, operation, protection_level,
+             (request_id, family_id, requested_by_parent_account_id, child_id, device_id, operation, protection_level,
               requested_at, expires_at, reason_category, protective_authority_applies,
               state, decided_at, decision_method, temporary_disable_until,
+              decided_by_parent_account_id,
               decided_by_device_id, decision_action_id, idempotency_key, decision_fingerprint)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             record.requestId,
             record.familyId,
+            record.requestedByParentAccountId,
             record.childId,
             record.deviceId,
             record.operation,
@@ -128,6 +134,7 @@ export class MySqlRemovalDecisionRepository implements RemovalDecisionRepository
             record.decidedAt,
             record.decisionMethod,
             record.temporaryDisableUntil,
+            record.decidedByParentAccountId,
             record.decidedByDeviceId,
             record.decisionActionId,
             record.idempotencyKey,
@@ -147,6 +154,7 @@ export class MySqlRemovalDecisionRepository implements RemovalDecisionRepository
         conn,
         `UPDATE enrollment_protection_approval_requests
          SET state = ?, decided_at = ?, decision_method = ?, temporary_disable_until = ?,
+             decided_by_parent_account_id = ?,
              decided_by_device_id = ?, decision_action_id = ?, idempotency_key = ?, decision_fingerprint = ?
          WHERE request_id = ?
            AND state = 'PARENT_APPROVAL_REQUIRED'
@@ -156,6 +164,7 @@ export class MySqlRemovalDecisionRepository implements RemovalDecisionRepository
           next.decidedAt,
           next.decisionMethod,
           next.temporaryDisableUntil,
+          next.decidedByParentAccountId,
           next.decidedByDeviceId,
           next.decisionActionId,
           next.idempotencyKey,

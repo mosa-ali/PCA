@@ -61,10 +61,11 @@ import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess
 import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage } from '../../parentaccount/ParentPreferenceRepository.js';
 import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
+import type { DeviceRepository } from '../../device/DeviceRepository.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentMfaSummary, ParentSignupProfile } from '../../parentaccount/types.js';
 import type { EnrollmentCredential } from '../../parentaccount/ParentAccountService.js';
-import { isCommercialStepUpOperation } from '../../parentaccount/mfa/ParentMfaRepository.js';
+import { isCommercialStepUpOperation, isIssuableSensitiveParentStepUpOperation } from '../../parentaccount/mfa/ParentMfaRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
@@ -91,6 +92,7 @@ export interface ParentAccountRoutesDeps {
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
+  deviceRepository?: DeviceRepository;
   /**
    * SECURITY (actor-identity binding): backs `authorizeSafeZoneRequest`'s
    * derivation of `actorDeviceId` from a verified, session-bound identity
@@ -219,8 +221,13 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    const { email, password, passwordConfirmation, accountType, estimatedChildCount } = request.body as Record<string, unknown>;
+    const { email, password, passwordConfirmation, firstName, lastName, phoneNumber, accountType, estimatedChildCount } = request.body as Record<string, unknown>;
     if (typeof email !== 'string' || typeof password !== 'string' || typeof passwordConfirmation !== 'string') {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    if (typeof firstName !== 'string' || typeof lastName !== 'string' ||
+        (phoneNumber !== undefined && phoneNumber !== null && typeof phoneNumber !== 'string')) {
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
@@ -229,21 +236,20 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return;
     }
     try {
-      let profile: ParentSignupProfile | undefined;
-      if (accountType !== undefined || estimatedChildCount !== undefined) {
-        const validAccountType = accountType === 'PARENT_GUARDIAN' || accountType === 'OTHER';
-        const validCount =
-          estimatedChildCount === undefined || estimatedChildCount === null ||
-          (typeof estimatedChildCount === 'number' && Number.isInteger(estimatedChildCount) && estimatedChildCount >= 0 && estimatedChildCount <= 50);
-        if (!validAccountType || !validCount) {
-          await reply.code(400).send({ error: 'invalid_request' });
-          return;
-        }
-        profile = {
-          accountType,
-          estimatedChildCount: estimatedChildCount === undefined ? null : estimatedChildCount,
-        };
+      const validAccountType = accountType === undefined || accountType === 'PARENT_GUARDIAN' || accountType === 'OTHER';
+      const validCount = estimatedChildCount === undefined || estimatedChildCount === null ||
+        (typeof estimatedChildCount === 'number' && Number.isInteger(estimatedChildCount) && estimatedChildCount >= 0 && estimatedChildCount <= 50);
+      if (!validAccountType || !validCount) {
+        await reply.code(400).send({ error: 'invalid_request' });
+        return;
       }
+      const profile: ParentSignupProfile = {
+        firstName,
+        lastName,
+        phoneNumber: phoneNumber as string | null | undefined,
+        accountType: accountType as ParentSignupProfile['accountType'],
+        estimatedChildCount: estimatedChildCount as number | null | undefined,
+      };
       const result = await parentAccountService.register(email, password, passwordConfirmation, profile ?? undefined);
       await reply.code(202).send(result);
     } catch (error) {
@@ -352,12 +358,17 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.login(email, password, readDailyLoginGrantCookie(request) ?? undefined, totpCode as string | undefined);
+      if (result.status === 'MFA_REQUIRED') {
+        await reply.code(200).send({ sessionEstablished: false, mfaRequired: true });
+        return;
+      }
       if (result.status === 'STEP_UP_REQUIRED') {
         await reply.code(200).send({ sessionEstablished: false, stepUpRequired: true });
         return;
       }
-      if (result.status === 'MFA_REQUIRED') {
-        await reply.code(200).send({ sessionEstablished: false, mfaRequired: true });
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        setEnrollmentTicketCookie(reply, result.rawEnrollmentTicket);
+        await reply.code(200).send({ sessionEstablished: false, mfaSetupRequired: true });
         return;
       }
       if (result.status === 'MFA_RECOVERY_PENDING') {
@@ -366,7 +377,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         await reply.code(200).send({ sessionEstablished: false, recoveryPending: true, recoveryAvailableAt: result.recoveryAvailableAt.toISOString() });
         return;
       }
-      setSessionCookies(reply, result.rawSessionToken);
+      setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken);
       await reply.code(200).send(sessionBody(result));
     } catch (error) {
       if (error instanceof ParentAccountError) {
@@ -380,34 +391,25 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
   });
 
   app.post('/api/parent/login/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!isPlainObject(request.body)) {
-      await reply.code(400).send({ error: 'invalid_request' });
-      return;
-    }
-    const { email, code } = request.body as Record<string, unknown>;
-    if (typeof email !== 'string' || typeof code !== 'string') {
-      await reply.code(400).send({ error: 'invalid_request' });
-      return;
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, code, totpCode } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof code !== 'string' || (totpCode !== undefined && typeof totpCode !== 'string')) {
+      return reply.code(400).send({ error: 'invalid_request' });
     }
     if (!rateLimited('login-step-up', LOGIN_STEP_UP_IP_RATE_LIMIT, LOGIN_STEP_UP_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
-      await reply.code(429).send({ error: 'rate_limited' });
-      return;
+      return reply.code(429).send({ error: 'rate_limited' });
     }
     try {
-      const result = await parentAccountService.completeLoginStepUp(email, code);
+      const result = await parentAccountService.completeLoginStepUp(email, code, totpCode as string | undefined);
+      if (result.status === 'MFA_REQUIRED') return reply.code(200).send({ sessionEstablished: false, mfaRequired: true });
       if (result.status === 'MFA_SETUP_REQUIRED') {
         setEnrollmentTicketCookie(reply, result.rawEnrollmentTicket);
-        await reply.code(200).send({ sessionEstablished: false, mfaSetupRequired: true });
-        return;
+        return reply.code(200).send({ sessionEstablished: false, mfaSetupRequired: true });
       }
       setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken);
-      await reply.code(200).send(sessionBody(result));
+      return reply.code(200).send(sessionBody(result));
     } catch (error) {
-      if (error instanceof ParentAccountError) {
-        const status = error.code === 'INVALID_INPUT' ? 400 : 401;
-        await reply.code(status).send({ error: error.code === 'INVALID_INPUT' ? 'invalid_request' : 'invalid_code' });
-        return;
-      }
+      if (error instanceof ParentAccountError) return reply.code(error.code === 'MFA_LOCKED' ? 429 : 401).send({ error: error.code === 'MFA_LOCKED' ? 'mfa_locked' : 'invalid_code' });
       throw error;
     }
   });
@@ -423,6 +425,71 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, emailVerified: result.emailVerified, role: result.role, mfa: mfaToJson(result.mfa) });
     } catch {
       await reply.code(401).send({ error: 'unauthorized' });
+    }
+  });
+
+  app.get('/api/parent/identity', async (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Cache-Control', 'no-store');
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    try {
+      const session = await parentAccountService.readSession(token);
+      const identity = await parentAccountService.readIdentityProfile(session.accountId);
+      if (!identity) return reply.code(404).send({ error: 'identity_not_found' });
+      return reply.code(200).send(identity);
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
+  });
+
+  app.patch('/api/parent/identity', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Cache-Control', 'no-store');
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const body = request.body as Record<string, unknown>;
+    if (Object.keys(body).length !== 2 || Object.keys(body).some((key) => key !== 'firstName' && key !== 'lastName') ||
+        typeof body.firstName !== 'string' || typeof body.lastName !== 'string') {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    try {
+      const session = await parentAccountService.readSession(token);
+      const identity = await parentAccountService.updateIdentityNames(session.accountId, body.firstName, body.lastName);
+      if (!identity) return reply.code(404).send({ error: 'identity_not_found' });
+      return reply.code(200).send(identity);
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+      throw error;
+    }
+  });
+
+  // The CSRF cookie is host-only on the API host and cannot be read by the
+  // Parent Web host. Return its current value only to a caller with a valid
+  // session; the mutation still must echo it and pass csrfOk's cookie/header
+  // equality check. Never cache the credential-bearing response.
+  app.get('/api/parent/csrf', async (request: FastifyRequest, reply: FastifyReply) => {
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    try {
+      await parentAccountService.readSession(token);
+      const existingCsrf = parseCookies(request.headers.cookie).get(csrfCookieName());
+      const csrf = existingCsrf || generateCsrfToken();
+      if (!existingCsrf) {
+        reply.header('Set-Cookie', serializeCookie(csrfCookieName(), csrf, {
+          httpOnly: false,
+          secure: isProductionSensitiveRuntime(),
+          maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS,
+        }));
+      }
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(200).send({ csrfToken: csrf });
+    } catch {
+      return reply.code(401).send({ error: 'unauthorized' });
     }
   });
 
@@ -491,10 +558,15 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       const result = await parentAccountService.confirmMfaEnrollment(credential, email, code);
       if (result.status === 'ENROLLED_SESSION_ESTABLISHED') {
         // The ticket is spent: clear it in the same response that sets the session.
-        setSessionCookies(reply, result.rawSessionToken, undefined, [
+        setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken, [
           serializeExpiredCookie(mfaEnrollmentTicketCookieName(), { httpOnly: true, secure: isProductionSensitiveRuntime() }),
         ]);
         return reply.code(200).send({ ...sessionBody(result), enrolled: true });
+      }
+      if (result.rawDailyLoginGrantToken) {
+        reply.header('Set-Cookie', serializeCookie(dailyLoginGrantCookieName(), result.rawDailyLoginGrantToken, {
+          httpOnly: true, secure: isProductionSensitiveRuntime(), maxAgeSeconds: DAILY_LOGIN_GRANT_COOKIE_MAX_AGE_SECONDS,
+        }));
       }
       return reply.code(200).send({ enrolled: true, sessionEstablished: false });
     } catch (error) {
@@ -541,19 +613,21 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
   });
 
-  /** COMMERCIAL_OWNER_AUTHORITY = FAMILY ADMINISTRATOR + FRESH TOTP STEP-UP: mints one single-use grant for one sensitive commercial operation. */
+  /** Mints an account/family/operation-bound single-use grant after fresh TOTP. */
   app.post('/api/parent/mfa/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const { operation, code } = request.body as Record<string, unknown>;
-    if (!isCommercialStepUpOperation(operation) || typeof code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if ((!isCommercialStepUpOperation(operation) && !isIssuableSensitiveParentStepUpOperation(operation)) || typeof code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
     if (!rateLimiter.consume('mfa-step-up:ip', clientAddressKey(request), PARENT_MFA_IP_RATE_LIMIT.windowMs, PARENT_MFA_IP_RATE_LIMIT.max)) {
       return reply.code(429).send({ error: 'rate_limited' });
     }
     try {
-      const grant = await parentAccountService.issueCommercialStepUp(token, operation, code);
+      const grant = isCommercialStepUpOperation(operation)
+        ? await parentAccountService.issueCommercialStepUp(token, operation, code)
+        : await parentAccountService.issueSensitiveStepUp(token, operation, code);
       reply.header('Cache-Control', 'no-store');
       return reply.code(201).send({ stepUpToken: grant.stepUpToken, operation, expiresAt: grant.expiresAt.toISOString() });
     } catch (error) {
@@ -718,27 +792,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       && typeof value.keyEpoch === 'number' && Number.isInteger(value.keyEpoch) && value.keyEpoch > 0;
   }
 
-  /**
-   * SECURITY (actor-identity binding): `actorDeviceId` is derived
-   * EXCLUSIVELY from a verified `DeviceSessionService` session token
-   * presented as `Authorization: Bearer <token>` -- never from the raw
-   * `x-pca-actor-device-id` header alone. That header was previously
-   * regex-validated only (`/^[A-Za-z0-9_-]{1,128}$/`), with no
-   * cryptographic or session binding to the actual caller: any
-   * authenticated parent-web session could claim ANY deviceId string,
-   * including another family member's or the Owner's, and have it
-   * forwarded verbatim to `safeZonePolicyAuthorizer.authorize`. This is
-   * safe ONLY as long as production wires `UnavailableTrustSetRoleResolver`
-   * (which denies unconditionally); a real `FamilyTrustSetRoleResolver`
-   * would turn the spoofed header into a genuine privilege-escalation/
-   * impersonation path. See DeviceSessionService.requireActorDeviceInFamily
-   * for the verification (proof-of-possession session token, scoped to the
-   * caller's own already-authenticated family).
-   *
-   * The legacy header, if present, is cross-checked against the verified
-   * identity and the request is REJECTED on any mismatch -- it is never
-   * trusted over the session-derived value.
-   */
+  /** Safe Zone operations use active Parent membership; writes additionally
+   * verify recipient device ownership in the authenticated family. */
   async function authorizeSafeZoneRequest(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -746,47 +801,25 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     operation: 'VIEW_DASHBOARD' | 'EDIT_CHILD_POLICY',
     targetScope: { kind: 'FAMILY' | 'DEVICE'; id: string } = { kind: 'FAMILY', id: session.familyId },
   ): Promise<boolean> {
-    if (!deps.safeZonePolicyAuthorizer || !deps.deviceSessionService) {
-      await reply.code(503).send({ error: 'family_authority_unavailable' });
+    if (typeof deps.parentAccountService.activeFamilyRole !== 'function') {
+      await reply.code(503).send({ error: 'not_configured' });
       return false;
     }
-    const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-      await reply.code(401).send({ error: 'actor_device_session_required' });
-      return false;
-    }
-    let actorIdentity: { deviceId: string; familyId: string };
-    try {
-      actorIdentity = await deps.deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), session.familyId);
-    } catch (error) {
-      if (error instanceof RuntimeSyncAuthError) {
-        await reply.code(401).send({ error: 'actor_device_session_invalid' });
-        return false;
-      }
-      throw error;
-    }
-    const legacyHeader = request.headers[ACTOR_DEVICE_HEADER];
-    if (typeof legacyHeader === 'string' && legacyHeader.length > 0 && legacyHeader !== actorIdentity.deviceId) {
-      await reply.code(403).send({ error: 'actor_device_mismatch' });
-      return false;
-    }
-    const actorDeviceId = actorIdentity.deviceId;
-    const issuedAt = new Date();
-    const decision = await deps.safeZonePolicyAuthorizer.authorize({
-      familyId: session.familyId,
-      actorDeviceId,
-      operation,
-      targetScope,
-      issuedAt,
-      expiresAt: new Date(issuedAt.getTime() + 15 * 60 * 1000),
-      stepUp: null,
-      idempotencyKey: randomBytes(16).toString('hex'),
-      actionId: randomBytes(16).toString('hex'),
-    });
-    const allowed = decision.verdict !== 'DENY' && (operation === 'VIEW_DASHBOARD' || decision.verdict === 'ALLOW');
-    if (!allowed) {
+    const role = await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId);
+    const allowedRole = operation === 'VIEW_DASHBOARD' ? role === 'ADMINISTRATOR' || role === 'VIEWER' : role === 'ADMINISTRATOR';
+    if (!allowedRole) {
       await reply.code(403).send({ error: 'forbidden' });
       return false;
+    }
+    if (targetScope.kind === 'DEVICE') {
+      if (!deps.deviceRepository) {
+        await reply.code(503).send({ error: 'not_configured' });
+        return false;
+      }
+      if (!(await deps.deviceRepository.findDeviceForFamily(session.familyId, targetScope.id))) {
+        await reply.code(404).send({ error: 'not_found' });
+        return false;
+      }
     }
     return true;
   }

@@ -7,8 +7,13 @@ export type FreeAccessMode = 'TIME_LIMITED' | 'PERPETUAL';
 export type ParentAccountType = 'PARENT_GUARDIAN' | 'OTHER';
 
 export interface ParentSignupProfile {
-  accountType: ParentAccountType;
-  estimatedChildCount: number | null;
+  accountType?: ParentAccountType;
+  estimatedChildCount?: number | null;
+  /** Required by the public registration route; optional for internal legacy callers. */
+  firstName?: string;
+  lastName?: string;
+  /** Optional raw user input; the Parent service canonicalizes it before persistence. */
+  phoneNumber?: string | null;
 }
 
 /**
@@ -87,15 +92,14 @@ interface EstablishedSession {
 }
 
 /**
- * PCA-DEC-037 login outcomes. An account with an ACTIVE authenticator gets
- * MFA_REQUIRED until the request carries a valid 6-digit code; no email code
- * and no remembered-browser grant can substitute for it. An account without
- * one uses the emailed step-up (or, inside its grace window only, this
- * browser's daily grant).
+ * An account with an ACTIVE authenticator gets MFA_REQUIRED until the request
+ * carries a valid 6-digit code. An account without one authenticates with its
+ * verified email and password.
  */
 export type LoginOutcome =
-  | ({ status: 'AUTHENTICATED' } & EstablishedSession)
+  | ({ status: 'AUTHENTICATED'; rawDailyLoginGrantToken?: string } & EstablishedSession)
   | { status: 'STEP_UP_REQUIRED' }
+  | { status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string }
   | { status: 'MFA_REQUIRED' }
   | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: Date };
 
@@ -105,8 +109,8 @@ export type CompleteLoginStepUpOutcome =
   | { status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string };
 
 export type CompleteEnrollmentOutcome =
-  | ({ status: 'ENROLLED_SESSION_ESTABLISHED' } & EstablishedSession)
-  | { status: 'ENROLLED' };
+  | ({ status: 'ENROLLED_SESSION_ESTABLISHED'; rawDailyLoginGrantToken?: string } & EstablishedSession)
+  | { status: 'ENROLLED'; rawDailyLoginGrantToken?: string };
 
 export interface SessionReadOutcome {
   accountId: ParentAccountId;

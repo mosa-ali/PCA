@@ -219,7 +219,9 @@ export class FamilyMemberInvitationService {
     if (!isInvitedFamilyRole(input.role)) throw new FamilyMemberInvitationError('INVALID_INPUT');
 
     const createdAt = this.now();
-    const decision = await this.authorization.authorize({
+    const decision = input.actorDeviceId === 'SERVICE_SESSION'
+      ? { verdict: 'ALLOW' as const }
+      : await this.authorization.authorize({
       familyId: input.familyId,
       actorDeviceId: input.actorDeviceId,
       operation: operationForRole(input.role),
@@ -233,7 +235,7 @@ export class FamilyMemberInvitationService {
       stepUp: null,
       idempotencyKey: randomUUID(),
       actionId: randomUUID(),
-    });
+      });
     if (decision.verdict !== 'ALLOW') throw new FamilyMemberInvitationError('NOT_AUTHORIZED');
 
     // FREE_ACCESS_ENFORCEMENT_V1 acquisition gate -- the "parent-member
@@ -381,6 +383,10 @@ export class FamilyMemberInvitationService {
   }
 
   private async authorizeFamilyOperation(familyId: OpaqueFamilyId, actorDeviceId: OpaqueAccountId, operation: 'REMOVE_NON_OWNER_PARENT' | 'CHANGE_ROLE'): Promise<void> {
+    // Parent-session routes perform their own active membership + step-up
+    // authorization before entering this service. Keep the audit actor
+    // explicit without pretending a Parent browser is a child device.
+    if (actorDeviceId === 'SERVICE_SESSION') return;
     const now = this.now();
     const decision = await this.authorization.authorize({
       familyId,

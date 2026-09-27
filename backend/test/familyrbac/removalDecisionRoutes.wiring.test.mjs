@@ -5,7 +5,6 @@ import { registerRemovalDecisionRoutes } from '../../dist/http/routes/removalDec
 import { RemovalDecisionAuthority, InMemoryRemovalDecisionRepository } from '../../dist/familyrbac/RemovalDecisionAuthority.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from '../../dist/familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
 import { UnavailableAuthorizedRecoveryAuthority } from '../../dist/familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
-import { UnavailableProtectiveAuthorityResolver } from '../../dist/familyrbac/UnavailableProtectiveAuthorityResolver.js';
 import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
 import { AdministrationPinService, InMemoryAdministrationPinRepository } from '../../dist/enrollment/AdministrationPinService.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
@@ -27,14 +26,31 @@ import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/fa
 // production), so this exercises the actual wiring shape, not a
 // reimplementation of it.
 
-function buildApp() {
+function buildApp({ parentRole = 'ADMINISTRATOR', roleLookupError = false, removalTargetResolver } = {}) {
   const familyId = 'family-a';
   const sessions = new Map([['session-a', { accountId: 'account-a', familyId }]]);
+  const stepUpGrants = new Map();
+  const stepUpCalls = [];
   const parentAccountService = {
     async readSession(token) {
       const session = sessions.get(token);
       if (!session) throw new Error('unauthorized');
       return session;
+    },
+    async activeFamilyRole() {
+      if (roleLookupError) throw new Error('role lookup unavailable');
+      return parentRole;
+    },
+    async consumeSensitiveStepUpForSession(rawSessionToken, requestedFamilyId, operation, token) {
+      stepUpCalls.push({ rawSessionToken, familyId: requestedFamilyId, operation, token });
+      if (typeof token !== 'string') return false;
+      const grant = stepUpGrants.get(token);
+      if (
+        !grant || grant.consumed || grant.rawSessionToken !== rawSessionToken ||
+        grant.familyId !== requestedFamilyId || grant.operation !== operation
+      ) return false;
+      grant.consumed = true;
+      return true;
     },
   };
 
@@ -57,25 +73,53 @@ function buildApp() {
   registerRemovalDecisionRoutes(app, {
     parentAccountService,
     removalDecisionAuthority,
-    protectiveAuthorityResolver: new UnavailableProtectiveAuthorityResolver(),
+    removalTargetResolver: removalTargetResolver ?? {
+      async resolveForRemoval() { return { outcome: 'UNBOUND' }; },
+    },
     administrationPinService: pinService,
   });
   app.__removalDecisionAuthority = removalDecisionAuthority;
   app.__pinService = pinService;
   app.__familyId = familyId;
+  app.__stepUpGrants = stepUpGrants;
+  app.__stepUpCalls = stepUpCalls;
   return app;
 }
 
 const authHeaders = { cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
 
-async function seedPendingRequest(app, requestId) {
+function grantStepUp(app, token, operation) {
+  app.__stepUpGrants.set(token, {
+    rawSessionToken: 'session-a',
+    familyId: app.__familyId,
+    operation,
+    consumed: false,
+  });
+}
+
+function removalRequestPayload(requestId, operation = 'REMOVE_REVOKE_DEVICE', stepUpToken) {
+  return {
+    requestId,
+    childId: 'child-a',
+    deviceId: 'device-a',
+    operation,
+    protectionLevel: 'PROTECTED',
+    requestedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    reasonCategory: 'ROUTINE_POLICY_CHANGE',
+    ...(stepUpToken === undefined ? {} : { stepUpToken }),
+  };
+}
+
+async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEVICE') {
   const now = new Date();
   return app.__removalDecisionAuthority.createRequest({
     requestId,
     familyId: app.__familyId,
+    requestedByParentAccountId: null,
     childId: 'child-a',
     deviceId: 'device-a',
-    operation: 'REMOVE_REVOKE_DEVICE',
+    operation,
     protectionLevel: 'PROTECTED',
     requestedAt: now,
     expiresAt: new Date(now.getTime() + 5 * 60 * 1000),
@@ -112,29 +156,196 @@ test('create-request fails closed 409 while the coordinator protective-authority
   assert.deepEqual(response.json(), { error: 'protective_authority_not_applicable' });
 });
 
+test('a Viewer cannot create a removal request and the protective-authority resolver is not called', async () => {
+  let resolverCalls = 0;
+  const app = buildApp({
+    parentRole: 'VIEWER',
+    removalTargetResolver: {
+      async resolveForRemoval() {
+        resolverCalls += 1;
+        return { outcome: 'RESOLVED', familyId: app.__familyId, deviceId: 'device-a', childProfileId: 'child-a', protectionLevel: 'PROTECTED', reportedAt: new Date() };
+      },
+    },
+  });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/removal-decisions',
+    headers: authHeaders,
+    payload: {
+      requestId: 'req-viewer-create',
+      childId: 'child-a',
+      deviceId: 'device-a',
+      operation: 'REMOVE_REVOKE_DEVICE',
+      protectionLevel: 'PROTECTED',
+      requestedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      reasonCategory: 'ROUTINE_POLICY_CHANGE',
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  assert.equal(resolverCalls, 0);
+  assert.deepEqual(await app.__removalDecisionAuthority.listRequests(app.__familyId), []);
+});
+
+test('removal request creation requires a one-use grant scoped to its requested operation and persists resolved target data', async () => {
+  const app = buildApp({ removalTargetResolver: {
+    async resolveForRemoval(familyId, deviceId) {
+      assert.equal(familyId, 'family-a');
+      assert.equal(deviceId, 'device-a');
+      return { outcome: 'RESOLVED', familyId, deviceId, childProfileId: 'child-from-authority', protectionLevel: 'DEGRADED', reportedAt: new Date() };
+    },
+  } });
+  const url = '/api/parent/families/family-a/removal-decisions';
+
+  const missing = await app.inject({ method: 'POST', url, headers: authHeaders, payload: removalRequestPayload('req-stepup-missing') });
+  assert.equal(missing.statusCode, 403);
+  assert.deepEqual(missing.json(), { error: 'forbidden' });
+  assert.deepEqual(await app.__removalDecisionAuthority.listRequests(app.__familyId), []);
+
+  grantStepUp(app, 'wrong-operation-grant', 'family.security.settings.change');
+  const wrongOperation = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: removalRequestPayload('req-stepup-wrong', 'REMOVE_REVOKE_DEVICE', 'wrong-operation-grant'),
+  });
+  assert.equal(wrongOperation.statusCode, 403);
+  assert.deepEqual(await app.__removalDecisionAuthority.listRequests(app.__familyId), []);
+
+  grantStepUp(app, 'device-revoke-grant', 'family.device.enrollment.revoke');
+  const deviceRevoke = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: {
+      ...removalRequestPayload('req-stepup-valid-revoke', 'REMOVE_REVOKE_DEVICE', 'device-revoke-grant'),
+      requestedByParentAccountId: 'attacker-controlled-account-id',
+    },
+  });
+  assert.equal(deviceRevoke.statusCode, 201);
+  assert.equal(deviceRevoke.json().removalDecision.operation, 'REMOVE_REVOKE_DEVICE');
+  assert.equal(deviceRevoke.json().removalDecision.childId, 'child-from-authority');
+  assert.equal(deviceRevoke.json().removalDecision.protectionLevel, 'DEGRADED');
+  assert.equal(deviceRevoke.json().removalDecision.requestedByParentAccountId, undefined);
+  assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, 'req-stepup-valid-revoke')).requestedByParentAccountId, 'account-a');
+
+  const replay = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: removalRequestPayload('req-stepup-replay', 'REMOVE_REVOKE_DEVICE', 'device-revoke-grant'),
+  });
+  assert.equal(replay.statusCode, 403);
+  assert.equal((await app.__removalDecisionAuthority.listRequests(app.__familyId)).length, 1);
+
+  grantStepUp(app, 'disable-policy-grant', 'family.security.settings.change');
+  const disablePolicy = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: removalRequestPayload('req-stepup-valid-disable', 'DISABLE_PROTECTION_POLICY', 'disable-policy-grant'),
+  });
+  assert.equal(disablePolicy.statusCode, 201);
+  assert.equal(disablePolicy.json().removalDecision.operation, 'DISABLE_PROTECTION_POLICY');
+  assert.deepEqual(app.__stepUpCalls.map(({ rawSessionToken, familyId, operation }) => ({ rawSessionToken, familyId, operation })), [
+    { rawSessionToken: 'session-a', familyId: app.__familyId, operation: 'family.device.enrollment.revoke' },
+    { rawSessionToken: 'session-a', familyId: app.__familyId, operation: 'family.device.enrollment.revoke' },
+    { rawSessionToken: 'session-a', familyId: app.__familyId, operation: 'family.device.enrollment.revoke' },
+    { rawSessionToken: 'session-a', familyId: app.__familyId, operation: 'family.security.settings.change' },
+  ]);
+});
+
 test('local Administration PIN decisions work end-to-end (the one genuinely production-ready mode)', async () => {
   const app = buildApp();
   await app.__pinService.configurePin(app.__familyId, '135790');
   await seedPendingRequest(app, 'req-pin-1');
+  grantStepUp(app, 'step-up-wrong-pin', 'family.device.enrollment.revoke');
 
   const wrongPin = await app.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/removal-decisions/req-pin-1/decide/local-pin',
     headers: authHeaders,
-    payload: { decision: 'ALLOW_REMOVAL', pin: '000000' },
+    payload: { decision: 'ALLOW_REMOVAL', pin: '000000', stepUpToken: 'step-up-wrong-pin' },
   });
   assert.equal(wrongPin.statusCode, 403);
   assert.deepEqual(wrongPin.json(), { error: 'pin_invalid' });
 
+  grantStepUp(app, 'step-up-correct-pin', 'family.device.enrollment.revoke');
   const correctPin = await app.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/removal-decisions/req-pin-1/decide/local-pin',
     headers: authHeaders,
-    payload: { decision: 'ALLOW_REMOVAL', pin: '135790' },
+    payload: {
+      decision: 'ALLOW_REMOVAL',
+      pin: '135790',
+      stepUpToken: 'step-up-correct-pin',
+      decidedByParentAccountId: 'attacker-controlled-account-id',
+    },
   });
   assert.equal(correctPin.statusCode, 200);
   assert.equal(correctPin.json().removalDecision.state, 'ALLOW_REMOVAL');
   assert.equal(correctPin.json().removalDecision.decisionMethod, 'LOCAL_ADMINISTRATION_PIN');
+  assert.equal(correctPin.json().removalDecision.decidedByParentAccountId, undefined);
+  assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, 'req-pin-1')).decidedByParentAccountId, 'account-a');
+  assert.deepEqual(app.__stepUpCalls.map((call) => call.operation), [
+    'family.device.enrollment.revoke',
+    'family.device.enrollment.revoke',
+  ]);
+});
+
+test('local-PIN decisions require a grant for the persisted request operation', async () => {
+  const app = buildApp();
+  await app.__pinService.configurePin(app.__familyId, '135790');
+  await seedPendingRequest(app, 'req-stepup-disable', 'DISABLE_PROTECTION_POLICY');
+  const url = '/api/parent/families/family-a/removal-decisions/req-stepup-disable/decide/local-pin';
+
+  const missing = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: { decision: 'ALLOW_REMOVAL', pin: '135790' },
+  });
+  assert.equal(missing.statusCode, 403);
+  assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, 'req-stepup-disable')).state, 'PARENT_APPROVAL_REQUIRED');
+
+  grantStepUp(app, 'device-revoke-grant', 'family.device.enrollment.revoke');
+  const wrongOperation = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: {
+      decision: 'ALLOW_REMOVAL',
+      pin: '135790',
+      operation: 'REMOVE_REVOKE_DEVICE',
+      stepUpToken: 'device-revoke-grant',
+    },
+  });
+  assert.equal(wrongOperation.statusCode, 403);
+  assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, 'req-stepup-disable')).state, 'PARENT_APPROVAL_REQUIRED');
+
+  grantStepUp(app, 'security-settings-grant', 'family.security.settings.change');
+  const valid = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: {
+      decision: 'ALLOW_REMOVAL',
+      pin: '135790',
+      operation: 'REMOVE_REVOKE_DEVICE',
+      stepUpToken: 'security-settings-grant',
+    },
+  });
+  assert.equal(valid.statusCode, 200);
+  assert.equal(valid.json().removalDecision.state, 'ALLOW_REMOVAL');
+  assert.deepEqual(app.__stepUpCalls.map((call) => call.operation), [
+    'family.security.settings.change',
+    'family.security.settings.change',
+  ]);
+});
+
+test('a Viewer cannot decide a pending request even with the correct family PIN', async () => {
+  const app = buildApp({ parentRole: 'VIEWER' });
+  await app.__pinService.configurePin(app.__familyId, '135790');
+  await seedPendingRequest(app, 'req-viewer-decision');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/removal-decisions/req-viewer-decision/decide/local-pin',
+    headers: authHeaders,
+    payload: { decision: 'ALLOW_REMOVAL', pin: '135790' },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, 'req-viewer-decision')).state, 'PARENT_APPROVAL_REQUIRED');
 });
 
 test('signed remote-parent decisions fail closed NOT_AUTHORIZED (no real signing-key source yet)', async () => {
@@ -208,14 +419,26 @@ test('administration-pin configure route rejects a malformed PIN', async () => {
 
 test('administration-pin configure route persists a valid PIN and status reflects it', async () => {
   const app = buildApp();
+  grantStepUp(app, 'step-up-configure-pin', 'family.security.settings.change');
   const configure = await app.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/administration-pin',
     headers: authHeaders,
-    payload: { pin: '246810' },
+    payload: { pin: '246810', stepUpToken: 'step-up-configure-pin' },
   });
   assert.equal(configure.statusCode, 200);
   assert.equal(configure.json().pinStatus.configured, true);
+  assert.deepEqual(app.__stepUpCalls.map((call) => call.operation), ['family.security.settings.change']);
+
+  const replay = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+    payload: { pin: '864200', stepUpToken: 'step-up-configure-pin' },
+  });
+  assert.equal(replay.statusCode, 403);
+  assert.deepEqual(replay.json(), { error: 'forbidden' });
+  assert.equal((await app.__pinService.verifyPin(app.__familyId, '246810')).ok, true);
 
   const status = await app.inject({
     method: 'GET',
@@ -224,6 +447,67 @@ test('administration-pin configure route persists a valid PIN and status reflect
   });
   assert.equal(status.statusCode, 200);
   assert.equal(status.json().pinStatus.configured, true);
+});
+
+test('Administration PIN configuration rejects missing and wrong-operation grants without changing the PIN', async () => {
+  const app = buildApp();
+  const url = '/api/parent/families/family-a/administration-pin';
+
+  const missing = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: { pin: '246810' },
+  });
+  assert.equal(missing.statusCode, 403);
+  assert.deepEqual(missing.json(), { error: 'forbidden' });
+
+  grantStepUp(app, 'wrong-operation-grant', 'family.device.enrollment.revoke');
+  const wrongOperation = await app.inject({
+    method: 'POST', url, headers: authHeaders,
+    payload: { pin: '246810', stepUpToken: 'wrong-operation-grant' },
+  });
+  assert.equal(wrongOperation.statusCode, 403);
+  assert.deepEqual(wrongOperation.json(), { error: 'forbidden' });
+
+  const status = await app.inject({ method: 'GET', url, headers: authHeaders });
+  assert.equal(status.json().pinStatus.configured, false);
+});
+
+test('a Viewer cannot configure the family Administration PIN', async () => {
+  const app = buildApp({ parentRole: 'VIEWER' });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+    payload: { pin: '246810' },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  const status = await app.inject({
+    method: 'GET',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+  });
+  assert.equal(status.json().pinStatus.configured, false);
+});
+
+test('a failed active-role lookup denies Administration PIN configuration', async () => {
+  const app = buildApp({ roleLookupError: true });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+    payload: { pin: '246810' },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  const status = await app.inject({
+    method: 'GET',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+  });
+  assert.equal(status.json().pinStatus.configured, false);
 });
 
 test('administration-pin configure route requires CSRF like other mutations', async () => {

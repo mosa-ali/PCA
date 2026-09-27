@@ -1,5 +1,6 @@
 // PCA-DEC-030 -- HTTP contract for the Parent MFA journey over real fastify
-// inject(): verify-email sets no cookie, login answers mfaRequired, the
+// inject(): verify-email sets no cookie; unknown-browser login asks for
+// step-up; the
 // enrollment ticket is an HttpOnly SameSite=Strict cookie that never
 // coexists with a session, enrollment responses are no-store, CSRF guards
 // the session path, error codes map as the client expects, and Genesis
@@ -58,25 +59,26 @@ function browser(app) {
 
 async function registerAndVerify(app, emailSender, email) {
   const b = browser(app);
-  assert.equal((await b.request('POST', '/api/parent/register', { email, password: PASSWORD, passwordConfirmation: PASSWORD })).statusCode, 202);
+  const registration = await b.request('POST', '/api/parent/register', { email, password: PASSWORD, passwordConfirmation: PASSWORD, firstName: 'MFA', lastName: 'Parent' });
+  assert.equal(registration.statusCode, 202, JSON.stringify(registration.json()));
   const verified = await b.request('POST', '/api/parent/verify-email', { email, code: emailSender.lastCodeFor(email) });
   assert.equal(verified.statusCode, 200);
   assert.deepEqual(verified.json(), { status: 'VERIFIED', sessionEstablished: false });
   assert.equal(b.setCookies().length, 0, 'verification never sets a session cookie');
 }
 
-async function signInWithEmailCode(app, emailSender, email, b = browser(app)) {
+async function firstSignIn(app, email, b = browser(app)) {
   const login = await b.request('POST', '/api/parent/login', { email, password: PASSWORD });
-  assert.deepEqual(login.json(), { sessionEstablished: false, stepUpRequired: true });
-  const done = await b.request('POST', '/api/parent/login/step-up', { email, code: emailSender.lastCodeFor(email, 'LOGIN_STEP_UP') });
-  return { b, done };
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.json().sessionEstablished, true);
+  return { b, done: login };
 }
 
-test('first sign-in establishes a session with a provisioned family, ADMINISTRATOR role and GRACE; no genesisAvailable anywhere', async () => {
+test('first sign-in establishes a session with optional authenticator status and a provisioned ADMINISTRATOR family', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-first@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b, done } = await signInWithEmailCode(app, emailSender, email);
+  const { b, done } = await firstSignIn(app, email);
   assert.equal(done.statusCode, 200);
   const body = done.json();
   assert.equal(body.sessionEstablished, true);
@@ -85,18 +87,40 @@ test('first sign-in establishes a session with a provisioned family, ADMINISTRAT
   assert.deepEqual(body.mfa, { status: 'GRACE', graceExpiresAt: new Date(clock.ms() + PARENT_MFA_GRACE_MS).toISOString() });
   const session = await b.request('GET', '/api/parent/session');
   assert.equal(session.statusCode, 200);
-  assert.equal(session.json().mfa.status, 'GRACE');
+  assert.deepEqual(session.json().mfa, body.mfa);
+  const csrf = await b.request('GET', '/api/parent/csrf');
+  assert.equal(csrf.statusCode, 200);
+  assert.equal(csrf.headers['cache-control'], 'no-store');
+  assert.equal(csrf.json().csrfToken, b.jar.get('pca_family_csrf'));
   assert.ok(!('genesisAvailable' in session.json()));
   for (const path of ['/api/parent/genesis/step-up', '/api/parent/genesis/step-up/complete', '/api/parent/genesis/challenge', '/api/parent/genesis/complete']) {
     assert.equal((await b.request('POST', path, {}, { csrf: true })).statusCode, 404, `${path} no longer exists`);
   }
 });
 
-test('voluntary enrollment during grace: CSRF required, no-store responses, then login answers mfaRequired and needs the code', async () => {
+test('CSRF bootstrap only returns a token to a live Parent session and never caches it', async () => {
+  const { app, emailSender } = buildApp();
+  const anonymous = await browser(app).request('GET', '/api/parent/csrf');
+  assert.equal(anonymous.statusCode, 401);
+  assert.equal(anonymous.headers['cache-control'], undefined);
+
+  const email = 'http-csrf-reissue@example.com';
+  await registerAndVerify(app, emailSender, email);
+  const { b } = await firstSignIn(app, email);
+  b.jar.delete('pca_family_csrf');
+  const reissued = await b.request('GET', '/api/parent/csrf');
+  assert.equal(reissued.statusCode, 200);
+  assert.equal(reissued.headers['cache-control'], 'no-store');
+  assert.match(reissued.json().csrfToken, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(b.jar.get('pca_family_csrf'), reissued.json().csrfToken);
+  assert.match(reissued.headers['set-cookie'], /pca_family_csrf=/);
+});
+
+test('optional enrollment: session CSRF is required, no-store responses, and enrolled logins require the authenticator code', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-enroll@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b } = await signInWithEmailCode(app, emailSender, email);
+  const { b } = await firstSignIn(app, email);
 
   assert.equal((await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD })).statusCode, 403, 'session path needs CSRF');
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
@@ -110,47 +134,45 @@ test('voluntary enrollment during grace: CSRF required, no-store responses, then
   await b.request('POST', '/api/parent/logout', {}, { csrf: true });
   clock.advance(STEP);
   const fresh = browser(app);
-  assert.deepEqual((await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD })).json(), { sessionEstablished: false, mfaRequired: true });
-  const wrong = await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: '000000' === totpFor(secret, clock.ms()) ? '111111' : '000000' });
+  assert.deepEqual((await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD })).json(), { sessionEstablished: false, stepUpRequired: true });
+  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(stepUpCode);
+  const emailOnly = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode });
+  assert.equal(emailOnly.statusCode, 200);
+  assert.deepEqual(emailOnly.json(), { sessionEstablished: false, mfaRequired: true });
+  assert.equal(fresh.jar.has('pca_parent_session'), false, 'email OTP alone does not establish an enrolled account session');
+  const wrong = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode, totpCode: '000000' === totpFor(secret, clock.ms()) ? '111111' : '000000' });
   assert.equal(wrong.statusCode, 401);
-  assert.deepEqual(wrong.json(), { error: 'invalid_mfa_code' });
-  const ok = await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: totpFor(secret, clock.ms()) });
+  assert.deepEqual(wrong.json(), { error: 'invalid_code' });
+  const ok = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode, totpCode: totpFor(secret, clock.ms()) });
   assert.equal(ok.statusCode, 200);
   assert.deepEqual(ok.json().mfa, { status: 'ACTIVE' });
   assert.equal((await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: 12 })).statusCode, 400, 'a non-string code is malformed');
 });
 
-test('grace expired: the email code yields ONLY an HttpOnly SameSite=Strict enrollment ticket; enrolling through it establishes the session and clears the ticket', async () => {
+test('legacy three-day deadline requires setup after unknown-browser email OTP', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-expired@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b: first } = await signInWithEmailCode(app, emailSender, email);
+  const { b: first } = await firstSignIn(app, email);
   clock.advance(PARENT_MFA_GRACE_MS + 1);
-  assert.equal((await first.request('GET', '/api/parent/session')).statusCode, 401, 'a grace-era session is dead after the deadline');
-
-  const { b, done } = await signInWithEmailCode(app, emailSender, email);
-  assert.deepEqual(done.json(), { sessionEstablished: false, mfaSetupRequired: true });
-  const ticketCookie = b.setCookies().find((header) => header.startsWith('pca_parent_mfa_enrollment='));
-  assert.match(ticketCookie, /HttpOnly/);
-  assert.match(ticketCookie, /SameSite=Strict/);
-  assert.ok(!b.jar.has('pca_family_session'), 'no session cookie alongside a ticket');
-  assert.equal((await b.request('GET', '/api/parent/session')).statusCode, 401);
-
-  const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD });
-  assert.equal(start.statusCode, 200, 'the ticket path needs no CSRF token (there is no session to ride)');
-  const confirm = await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(start.json().secret, clock.ms()) });
-  assert.equal(confirm.statusCode, 200);
-  assert.equal(confirm.json().sessionEstablished, true);
-  assert.equal(confirm.json().enrolled, true);
-  assert.ok(!b.jar.has('pca_parent_mfa_enrollment'), 'the spent ticket is cleared');
-  assert.equal((await b.request('GET', '/api/parent/session')).json().mfa.status, 'ACTIVE');
+  assert.equal((await first.request('GET', '/api/parent/session')).statusCode, 401, 'the ordinary 12-hour session lifetime still applies');
+  const login = await first.request('POST', '/api/parent/login', { email, password: PASSWORD });
+  assert.equal(login.statusCode, 200);
+  assert.deepEqual(login.json(), { sessionEstablished: false, stepUpRequired: true });
+  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(stepUpCode);
+  const completed = await first.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode });
+  assert.equal(completed.statusCode, 200);
+  assert.deepEqual(completed.json(), { sessionEstablished: false, mfaSetupRequired: true });
+  assert.ok(first.jar.has('pca_parent_mfa_enrollment'));
 });
 
 test('recovery over HTTP: code starts 24-hour hold, revokes sessions, and fresh post-hold code yields ticket', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-recover@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b } = await signInWithEmailCode(app, emailSender, email);
+  const { b } = await firstSignIn(app, email);
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
   await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(start.json().secret, clock.ms()) }, { csrf: true });
 
@@ -177,13 +199,16 @@ test('recovery over HTTP: code starts 24-hour hold, revokes sessions, and fresh 
   assert.ok(r.jar.has('pca_parent_mfa_enrollment'));
 });
 
-test('commercial step-up route: session + CSRF, closed operation vocabulary, FORBIDDEN before enrollment, 201 no-store after', async () => {
+test('Parent step-up route: session + CSRF, closed operation vocabulary, FORBIDDEN before enrollment, 201 no-store for commercial and sensitive operations', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-stepup@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b } = await signInWithEmailCode(app, emailSender, email);
+  const { b } = await firstSignIn(app, email);
   assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' })).statusCode, 403, 'CSRF');
   assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'DELETE_EVERYTHING', code: '123456' }, { csrf: true })).statusCode, 400);
+  for (const operation of ['family.ownership.transfer', 'family.recovery.material.reveal']) {
+    assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation, code: '123456' }, { csrf: true })).statusCode, 400, `${operation} remains unavailable until its Owner-bound consumer exists`);
+  }
   assert.deepEqual((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' }, { csrf: true })).json(), { error: 'forbidden' });
 
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
@@ -197,19 +222,30 @@ test('commercial step-up route: session + CSRF, closed operation vocabulary, FOR
   assert.equal(granted.json().operation, 'BILLING_CHECKOUT_CREATE');
   const replay = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: totpFor(secret, clock.ms()) }, { csrf: true });
   assert.deepEqual(replay.json(), { error: 'invalid_mfa_code' }, 'the same TOTP step cannot mint a second grant');
+
+  clock.advance(30_000);
+  const sensitive = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'family.retention.update', code: totpFor(secret, clock.ms()) }, { csrf: true });
+  assert.equal(sensitive.statusCode, 201);
+  assert.equal(sensitive.headers['cache-control'], 'no-store');
+  assert.match(sensitive.json().stepUpToken, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(sensitive.json().operation, 'family.retention.update');
 });
 
 test('lockout is reported as 429 mfa_locked', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-lock@example.com';
   await registerAndVerify(app, emailSender, email);
-  const { b } = await signInWithEmailCode(app, emailSender, email);
+  const { b } = await firstSignIn(app, email);
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
   const secret = start.json().secret;
   await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(secret, clock.ms()) }, { csrf: true });
   clock.advance(STEP);
+  const unknown = browser(app);
+  assert.deepEqual((await unknown.request('POST', '/api/parent/login', { email, password: PASSWORD })).json(), { sessionEstablished: false, stepUpRequired: true });
+  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(stepUpCode);
   const bad = String((Number(totpFor(secret, clock.ms())) + 7) % 1000000).padStart(6, '0');
   const statuses = [];
-  for (let i = 0; i < 5; i += 1) statuses.push((await browser(app).request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: bad })).json().error);
-  assert.deepEqual(statuses, ['invalid_mfa_code', 'invalid_mfa_code', 'invalid_mfa_code', 'invalid_mfa_code', 'mfa_locked']);
+  for (let i = 0; i < 5; i += 1) statuses.push((await unknown.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode, totpCode: bad })).json().error);
+  assert.deepEqual(statuses, ['invalid_code', 'invalid_code', 'invalid_code', 'invalid_code', 'mfa_locked']);
 });

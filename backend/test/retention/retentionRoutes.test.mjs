@@ -64,6 +64,7 @@ function buildApp() {
 
   const app = buildServer({
     authService,
+    parentAccountService: { async consumeSensitiveStepUp(_accountId, _familyId, _operation, token) { return token === 'test-sensitive-step-up'; } },
     authzService: new AuthzService(authzRepository),
     authzRepository,
     invitationService: new InvitationService(createInMemoryInvitationRepository()),
@@ -82,6 +83,16 @@ function buildApp() {
     deleteNowLedger,
     familyAuditService,
   });
+  const inject = app.inject.bind(app);
+  app.inject = (options) => {
+    if (options && typeof options === 'object' && options.method === 'POST' && typeof options.url === 'string' &&
+        /\/v1\/families\/[^/]+\/(retention-policy|delete-now|export-requests)$/.test(options.url) &&
+        options.payload && typeof options.payload === 'object' && !Array.isArray(options.payload) &&
+        typeof options.payload.stepUpToken !== 'string') {
+      return inject({ ...options, payload: { ...options.payload, stepUpToken: 'test-sensitive-step-up' } });
+    }
+    return inject(options);
+  };
   return { app, authService, authzRepository, auditRepo };
 }
 
@@ -131,6 +142,24 @@ test('RBAC: an authenticated account WITH active family scope may reach retentio
     assert.equal(body.persisted, false);
     assert.equal(body.deliveryStatus, 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW');
     assert.deepEqual(body.policy, RETENTION_POLICY_BODY);
+  } finally {
+    await app.close();
+  }
+});
+
+test('sensitive retention mutation rejects a missing or invalid step-up grant', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const invalid = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/retention-policy`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { ...RETENTION_POLICY_BODY, stepUpToken: 'invalid-grant' },
+    });
+    assert.equal(invalid.statusCode, 403);
+    assert.deepEqual(invalid.json(), { error: 'forbidden' });
   } finally {
     await app.close();
   }

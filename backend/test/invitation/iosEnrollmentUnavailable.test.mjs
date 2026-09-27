@@ -42,6 +42,17 @@ function buildApp() {
       /* authorized */
     },
   };
+  const familyMembershipRepository = {
+    async findActiveRoleByServiceAccountId(accountId, familyId) {
+      return accountId === ACCOUNT && familyId === FAMILY ? 'ADMINISTRATOR' : null;
+    },
+  };
+  const parentAccountService = {
+    async consumeSensitiveStepUp(accountId, familyId, operation, token) {
+      return accountId === ACCOUNT && familyId === FAMILY &&
+        operation === 'family.device.enrollment.create' && token === 'valid-step-up-token';
+    },
+  };
 
   const rateLimiter = createRateLimiter();
   const app = Fastify();
@@ -49,6 +60,8 @@ function buildApp() {
     invitationService,
     authService,
     authzService,
+    familyMembershipRepository,
+    parentAccountService,
     rateLimiter,
     authAttemptLimiter: async () => {},
   });
@@ -62,6 +75,7 @@ function createBody(overrides = {}) {
     childProfileId: 'child-1',
     ageUxTier: 'YOUNG_CHILD',
     initialPolicyProfile: 'BALANCED',
+    stepUpToken: 'valid-step-up-token',
     ...overrides,
   };
 }

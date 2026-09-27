@@ -29,7 +29,7 @@ function buildAuthService(validAccountsByToken) {
   };
 }
 
-function buildApp({ withService = true } = {}) {
+function buildApp({ withService = true, roles = { [ACCOUNT_A]: 'ADMINISTRATOR', [ACCOUNT_B]: 'ADMINISTRATOR' } } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const authzRepository = createInMemoryAuthzRepository();
   authzRepository._grantScope(ACCOUNT_A, FAMILY, 'ACTIVE');
@@ -40,6 +40,18 @@ function buildApp({ withService = true } = {}) {
     ['token-b', ACCOUNT_B],
   ]);
   const authService = buildAuthService(tokens);
+  const parentAccountService = {
+    async consumeSensitiveStepUp(accountId, familyId, operation, token) {
+      return familyId === FAMILY &&
+        operation === 'family.security.settings.change' &&
+        token === `valid-step-up-${accountId === ACCOUNT_A ? 'a' : 'b'}`;
+    },
+  };
+  const familyMembershipRepository = {
+    async findActiveRoleByServiceAccountId(accountId, familyId) {
+      return familyId === FAMILY ? roles[accountId] ?? null : null;
+    },
+  };
   const now = () => new Date('2026-01-01T00:00:00.000Z');
   const browserEndpointService = withService ? new BrowserEndpointService(deviceRepository, now) : undefined;
   const pairingService = new PairingService(deviceRepository, now);
@@ -47,8 +59,8 @@ function buildApp({ withService = true } = {}) {
   const app = Fastify();
   const rateLimiter = createRateLimiter();
   const authAttemptLimiter = rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' });
-  registerBrowserEndpointRoutes(app, { browserEndpointService, authService, authzService, rateLimiter, authAttemptLimiter });
-  registerPairingRoutes(app, { pairingService, authService, authzService, rateLimiter, authAttemptLimiter });
+  registerBrowserEndpointRoutes(app, { browserEndpointService, authService, authzService, familyMembershipRepository, rateLimiter, authAttemptLimiter });
+  registerPairingRoutes(app, { pairingService, authService, authzService, parentAccountService, familyMembershipRepository, rateLimiter, authAttemptLimiter });
   return { app, deviceRepository };
 }
 
@@ -125,6 +137,7 @@ test('end-to-end via real HTTP: the registering account cannot confirm its own e
     const selfConfirm = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-a' },
+      payload: { stepUpToken: 'valid-step-up-a' },
     });
     assert.equal(selfConfirm.statusCode, 403);
     assert.equal(selfConfirm.json().error, 'self_approval_denied');
@@ -132,9 +145,72 @@ test('end-to-end via real HTTP: the registering account cannot confirm its own e
     const otherConfirm = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-b' },
+      payload: { stepUpToken: 'valid-step-up-b' },
     });
     assert.equal(otherConfirm.statusCode, 200);
     assert.equal(otherConfirm.json().status, 'PAIRED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('pairing confirmation requires a fresh sensitive-action TOTP grant before state changes', async () => {
+  const { app } = buildApp();
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+
+    const missingStepUp = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-b' },
+    });
+    assert.equal(missingStepUp.statusCode, 403);
+    assert.deepEqual(missingStepUp.json(), { error: 'step_up_required' });
+
+    const stillPending = await app.inject({
+      method: 'GET', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}`,
+      headers: { authorization: 'Bearer token-b' },
+    });
+    assert.equal(stillPending.json().status, 'PAIRING_PENDING');
+  } finally {
+    await app.close();
+  }
+});
+
+test('family membership roles: VIEWER can read pairing status but cannot register or confirm a browser endpoint', async () => {
+  const { app } = buildApp({ roles: { [ACCOUNT_A]: 'VIEWER', [ACCOUNT_B]: 'ADMINISTRATOR' } });
+  try {
+    const deniedRegistration = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: { dskPublicKey: key() },
+    });
+    assert.equal(deniedRegistration.statusCode, 403);
+
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: { dskPublicKey: key() },
+    });
+    assert.equal(registered.statusCode, 201);
+    const { deviceId } = registered.json();
+
+    const readable = await app.inject({
+      method: 'GET', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}`,
+      headers: { authorization: 'Bearer token-a' },
+    });
+    assert.equal(readable.statusCode, 200);
+
+    const deniedConfirmation = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-a' },
+    });
+    assert.equal(deniedConfirmation.statusCode, 403);
+    assert.equal(deniedConfirmation.json().error, 'forbidden');
   } finally {
     await app.close();
   }

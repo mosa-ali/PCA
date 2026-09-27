@@ -78,7 +78,7 @@ export type ParentDecisionOutcome = 'APPROVED' | 'DENIED' | 'COUNTERED';
 export interface ChildRequest {
   requestId: ChildRequestId;
   familyId: string;
-  childDeviceId: string;
+  childDeviceId: string | null;
   childMemberId: string | null;
   requestType: ChildRequestType;
   targetScope: TargetScope;
@@ -87,6 +87,10 @@ export interface ChildRequest {
   expiresAt: Date;
   decidedAt: Date | null;
   decidedByDeviceId: string | null;
+  /** Parent account that created a proactive grant; null for child-originated requests. */
+  createdByParentAccountId: string | null;
+  /** Parent account actor for a session-authorized decision; never a device identifier. */
+  decidedByAccountId: string | null;
   /** Ties this decision back to the ParentAction that authorized it (familyrbac's ActionId) -- never a bare boolean, so the decision itself is independently auditable/traceable. */
   decisionActionId: string | null;
   /** doc 22/contracts catalogue: correlates this request's CHILD_REQUEST envelope with its PARENT_DECISION reply. This module does not send envelopes itself (see ChildRequestTransport), only carries the field. */

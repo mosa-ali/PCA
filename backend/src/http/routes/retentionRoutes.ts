@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { AuthService } from '../../auth/AuthService.js';
+import type { ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import type { AuthzRepository } from '../../authz/AuthzRepository.js';
 import { validateRetentionPolicy } from '../../retention/engine.js';
 import { applyDeleteNow } from '../../retention/deleteNow.js';
@@ -61,6 +62,7 @@ const MAX_DELETE_NOW_RECORDS = 5000;
 
 export interface RetentionRoutesDeps {
   authService: AuthService;
+  parentAccountService?: Pick<ParentAccountService, 'consumeSensitiveStepUp'>;
   /**
    * Deliberately the raw AuthzRepository, NOT AuthzService -- see this
    * file's top-of-module doc comment for why CHANGE_RETENTION/DELETE_NOW/
@@ -80,28 +82,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Family-scope authentication ONLY -- deliberately NOT a role check.
- *
- * ARCHITECTURAL NOTE (read before extending): CHANGE_RETENTION, DELETE_NOW,
- * and EXPORT_FAMILY_DATA are Owner-only (+ step-up) operations per doc 18
- * Section 2 / familyrbac/policy.ts's OPERATION_MATRIX. A correct Owner-only
- * gate would need to resolve the caller's family role, and the ONLY role
- * authority this codebase defines is TrustSetRoleResolver, which reads a
- * FamilyTrustSetStore -- and FamilyTrustSetStore's own doc comment is
- * explicit: "device-local state, never a server-side source of truth."
- * Separately, authz/types.ts's ServiceOperation enum explicitly excludes a
- * RETENTION_CONTROL-shaped member, with its own doc comment stating
- * "Adding one would itself be the violation this module exists to
- * prevent." Both are genuine, in-code architectural constraints, not
- * oversights -- this route layer therefore intentionally stops at "is this
- * an authenticated account with ACTIVE family scope," the same boundary
- * CREATE_DEVICE_INVITATION/CONFIRM_DEVICE_PAIRING already use (see
- * parent-web/src/domain/roles.ts's own comment on that trust tier). Real
- * Owner-only + step-up enforcement for these three operations belongs to
- * the device-side signed-envelope check doc 18 Section 1 describes as the
- * true authority; this HTTP layer is a family-scoped request intake, not
- * that authority. Every attempt (allowed or denied) is still audited via
- * FamilyAuditService below.
+ * Authenticates the service session and requires an ACTIVE family scope,
+ * ACTIVE Parent membership, and ACTIVE family. The sensitive mutation
+ * handlers then consume a single-use TOTP grant; ParentAccountService
+ * revalidates that the account is an ACTIVE Administrator in this family.
+ * These routes validate and audit requests only: retention policy is not
+ * persisted or delivered, deletion remains pending device acknowledgement,
+ * and export remains pending crypto review.
  */
 function createRequireActiveFamilyScope(authzRepository: AuthzRepository) {
   return async function requireActiveFamilyScope(request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -170,8 +157,8 @@ function parseDeleteNowRecords(value: unknown): RetentionRecord[] | null {
 /**
  * Registers the family privacy-control intake routes: retention policy
  * validation, "Delete now" (idempotent by client-supplied actionId), and
- * export request intake. See this module's `createRequireActiveFamilyScope`
- * doc comment for the RBAC boundary these routes intentionally stop at.
+ * export request intake. They require active Parent membership and reserve
+ * sensitive writes for the ACTIVE Administrator with fresh TOTP step-up.
  *
  * NONE of these routes execute a real data purge/export against family
  * activity data -- that data is device-local/E2EE (docs/architecture/10,
@@ -207,6 +194,10 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
       const policy = parseRetentionPolicy(body);
       if (policy === null) return reply.code(400).send({ error: 'invalid_request' });
+      if (!deps.parentAccountService || typeof body.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.retention.update', body.stepUpToken))) {
+        await deps.auditService.record(auditRecord(familyId, 'CHANGE_RETENTION', 'DENIED', 'SENSITIVE_STEP_UP_REQUIRED'));
+        return reply.code(403).send({ error: 'forbidden' });
+      }
 
       const violations = validateRetentionPolicy(policy);
       if (violations.length > 0) {
@@ -237,6 +228,10 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
       const { actionId } = body;
       if (!isPlausibleDeleteNowActionId(actionId)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!deps.parentAccountService || typeof body.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.history.delete', body.stepUpToken))) {
+        await deps.auditService.record(auditRecord(familyId, 'DELETE_NOW', 'DENIED', 'SENSITIVE_STEP_UP_REQUIRED', actionId));
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       const records = parseDeleteNowRecords(body.records);
       if (records === null) return reply.code(400).send({ error: 'invalid_request' });
 
@@ -273,6 +268,9 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (body !== undefined && !isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!deps.parentAccountService || typeof body?.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.history.export', body.stepUpToken))) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
 
       const exportId = randomUUID();
       await deps.auditService.record({

@@ -6,6 +6,7 @@ import { MySqlEnrollmentCoordinatorRepository } from '../../dist/enrollment/MySq
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
 import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
+import { MySqlDeviceChildBindingRepository } from '../../dist/device/DeviceChildBindingRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
@@ -13,6 +14,7 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 const enrollmentRepository = new MySqlEnrollmentCoordinatorRepository();
 const invitationRepository = new MySqlInvitationRepository();
 const deviceRepository = new MySqlDeviceRepository();
+const deviceChildBindingRepository = new MySqlDeviceChildBindingRepository();
 
 function buildCoordinator(now = () => new Date()) {
   return new EnrollmentCoordinator(enrollmentRepository, now);
@@ -78,6 +80,50 @@ test('MySQL: successful enrollment creates a PAIRING_PENDING device with DSK+DEK
   const [attemptRows] = await getPool().query(`SELECT device_id, status FROM enrollment_bootstrap_attempts WHERE device_id = ?`, [result.deviceId]);
   assert.equal(attemptRows.length, 1, 'exactly one bootstrap-attempt row must be persisted atomically with the device it created');
   assert.equal(attemptRows[0].status, 'COMPLETED');
+});
+
+test('MySQL: device child binding resolves only the persisted family enrollment invitation edge', async () => {
+  const coordinator = buildCoordinator();
+  const childProfileId = `child-${randomUUID()}`;
+  const { rawToken, record } = await createInvitation({ childProfileId });
+  const result = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() });
+
+  // The binding resolver intentionally accepts only an ACTIVE device. Move
+  // this isolated SQL fixture into that state after verifying its normal
+  // enrollment path created the durable attempt and invitation relationship.
+  await getPool().query(`UPDATE devices SET status = 'ACTIVE' WHERE device_id = ?`, [result.deviceId]);
+
+  assert.deepEqual(await deviceChildBindingRepository.resolveBinding(record.familyId, result.deviceId), {
+    outcome: 'BOUND',
+    childProfileId,
+  });
+  assert.deepEqual(await deviceChildBindingRepository.resolveBinding(`other-${randomUUID()}`, result.deviceId), {
+    outcome: 'DEVICE_NOT_FOUND',
+  });
+});
+
+test('MySQL: missing child invitation binding and inactive enrollment device fail closed', async () => {
+  const coordinator = buildCoordinator();
+  const unboundInvitation = await createInvitation();
+  const unboundDevice = await coordinator.enrollDevice({
+    rawInvitationToken: unboundInvitation.rawToken,
+    ...deviceKeysInput(),
+  });
+  await getPool().query(`UPDATE devices SET status = 'ACTIVE' WHERE device_id = ?`, [unboundDevice.deviceId]);
+  assert.deepEqual(
+    await deviceChildBindingRepository.resolveBinding(unboundInvitation.record.familyId, unboundDevice.deviceId),
+    { outcome: 'UNBOUND' },
+  );
+
+  const pendingInvitation = await createInvitation({ childProfileId: `child-${randomUUID()}` });
+  const pendingDevice = await coordinator.enrollDevice({
+    rawInvitationToken: pendingInvitation.rawToken,
+    ...deviceKeysInput(),
+  });
+  assert.deepEqual(
+    await deviceChildBindingRepository.resolveBinding(pendingInvitation.record.familyId, pendingDevice.deviceId),
+    { outcome: 'DEVICE_INACTIVE' },
+  );
 });
 
 test('MySQL: identical signing and encryption keys rejected', async () => {

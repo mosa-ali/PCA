@@ -53,8 +53,7 @@ async function registerAndVerify(h, address) {
 }
 
 async function firstLogin(h, address) {
-  await h.service.login(address, PASSWORD);
-  return h.service.completeLoginStepUp(address, h.emailSender.lastCodeFor(address, 'LOGIN_STEP_UP'));
+  return h.service.login(address, PASSWORD);
 }
 
 async function enrolled(h, address) {
@@ -62,9 +61,9 @@ async function enrolled(h, address) {
   const session = await firstLogin(h, address);
   const credential = { kind: 'SESSION', rawSessionToken: session.rawSessionToken };
   const started = await h.service.beginMfaEnrollment(credential, address, PASSWORD);
-  await h.service.confirmMfaEnrollment(credential, address, totpFor(started.secretBase32, h.clock.ms()));
+  const enrolledState = await h.service.confirmMfaEnrollment(credential, address, totpFor(started.secretBase32, h.clock.ms()));
   h.clock.advance(STEP);
-  return { secret: started.secretBase32, session };
+  return { secret: started.secretBase32, session, trustedGrant: enrolledState.rawDailyLoginGrantToken };
 }
 
 test('provisioning race: 16 concurrent first-family calls create exactly ONE family, ONE ADMINISTRATOR membership, ONE scope', async () => {
@@ -122,21 +121,23 @@ test('grace starts exactly once under 12 concurrent attempts, and is never exten
   assert.equal((await mfaRepository.findState(account.accountId)).graceExpiresAt.getTime(), before.graceExpiresAt.getTime());
 });
 
-test('one TOTP code authenticates exactly once under 8 concurrent logins (replay-safe counter claim)', async () => {
+test('one TOTP plus one email OTP authenticates an unknown browser exactly once under 8 concurrent completions', async () => {
   const h = build();
   const address = email('replay');
   const { secret } = await enrolled(h, address);
   const code = totpFor(secret, h.clock.ms());
-  const outcomes = await Promise.allSettled(Array.from({ length: 8 }, () => h.service.login(address, PASSWORD, undefined, code)));
+  assert.equal((await h.service.login(address, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  const emailCode = h.emailSender.lastCodeFor(address, 'LOGIN_STEP_UP');
+  const outcomes = await Promise.allSettled(Array.from({ length: 8 }, () => h.service.completeLoginStepUp(address, emailCode, code)));
   assert.equal(outcomes.filter((o) => o.status === 'fulfilled' && o.value.status === 'AUTHENTICATED').length, 1);
-  assert.ok(outcomes.filter((o) => o.status === 'rejected').every((o) => ['MFA_INVALID', 'MFA_LOCKED'].includes(o.reason.code)));
+  assert.ok(outcomes.filter((o) => o.status === 'rejected').every((o) => ['UNAUTHORIZED', 'MFA_INVALID', 'MFA_LOCKED'].includes(o.reason.code)));
 });
 
 test('a commercial step-up grant is consumed exactly once under 8 concurrent mutations, and only by the ADMINISTRATOR of that family', async () => {
   const h = build();
   const address = email('stepup');
-  const { secret } = await enrolled(h, address);
-  const login = await h.service.login(address, PASSWORD, undefined, totpFor(secret, h.clock.ms()));
+  const { secret, trustedGrant } = await enrolled(h, address);
+  const login = await h.service.login(address, PASSWORD, trustedGrant);
   h.clock.advance(STEP);
   const grant = await h.service.issueCommercialStepUp(login.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms()));
   const account = await h.repository.findById(login.accountId);
@@ -145,7 +146,7 @@ test('a commercial step-up grant is consumed exactly once under 8 concurrent mut
   assert.equal(decisions.filter((d) => d === 'STEP_UP_REQUIRED').length, 7);
   const events = await query('SELECT event_type, detail FROM parent_account_security_events WHERE account_id = ? ORDER BY occurred_at', [login.accountId]);
   const types = events.map((row) => `${row.event_type}:${row.detail ?? ''}`);
-  for (const expected of ['FAMILY_PROVISIONED:', 'FIRST_LOGIN:', 'MFA_GRACE_STARTED:', 'MFA_ENROLLED:', 'STEP_UP_GRANTED:BILLING_CHECKOUT_CREATE', 'STEP_UP_CONSUMED:BILLING_CHECKOUT_CREATE']) {
+  for (const expected of ['FAMILY_PROVISIONED:', 'PARENT_LOGIN_SUCCESS:', 'MFA_ENROLLED:', 'STEP_UP_GRANTED:BILLING_CHECKOUT_CREATE', 'STEP_UP_CONSUMED:BILLING_CHECKOUT_CREATE']) {
     assert.ok(types.includes(expected), `audited: ${expected}`);
   }
 });

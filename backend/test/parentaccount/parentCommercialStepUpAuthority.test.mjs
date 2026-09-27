@@ -37,7 +37,7 @@ for (const [name, overrides, expected] of [
   ['VIEWER', { account: ACCOUNT, role: 'VIEWER' }, 'ROLE_DENIED'],
   ['CHILD', { account: ACCOUNT, role: 'CHILD' }, 'ROLE_DENIED'],
   ['revoked membership', { account: ACCOUNT, role: null }, 'ROLE_DENIED'],
-  ['no authenticator yet', { account: ACCOUNT, mfa: 'GRACE' }, 'STEP_UP_REQUIRED'],
+  ['no authenticator yet', { account: ACCOUNT, mfa: 'NOT_ENROLLED' }, 'STEP_UP_REQUIRED'],
 ]) {
   test(`${name} -> ${expected}, and no step-up grant is consumed`, async () => {
     const { authority, consumed } = build(overrides);

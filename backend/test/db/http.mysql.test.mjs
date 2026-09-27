@@ -4,6 +4,7 @@ import test from 'node:test';
 import { buildServer } from '../../dist/http/buildServer.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
+import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
 import { AuthzService } from '../../dist/authz/AuthzService.js';
 import { MySqlAuthzRepository } from '../../dist/authz/MySqlAuthzRepository.js';
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
@@ -37,6 +38,16 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 
 const authRepository = new MySqlAuthRepository();
 const authService = new AuthService(authRepository);
+const familyMembershipRepository = new MySqlFamilyMembershipRepository();
+const stepUpGrants = new Map();
+const parentAccountService = {
+  async consumeSensitiveStepUp(serviceAccountId, familyId, operation, token) {
+    const grant = stepUpGrants.get(token);
+    if (!grant || grant.consumed || grant.serviceAccountId !== serviceAccountId || grant.familyId !== familyId || grant.operation !== operation) return false;
+    grant.consumed = true;
+    return true;
+  },
+};
 const authzRepository = new MySqlAuthzRepository();
 const authzService = new AuthzService(authzRepository);
 const invitationRepository = new MySqlInvitationRepository();
@@ -83,6 +94,8 @@ const resolveEnvelopeContext = (_senderKeyId, _familyId, nowUtc) => ({
 function freshApp() {
   return buildServer({
     authService,
+    parentAccountService,
+    familyMembershipRepository,
     authzService,
     invitationService,
     enrollmentCoordinator,
@@ -100,7 +113,7 @@ function key() {
 }
 
 function family() {
-  return `family-${randomUUID()}`;
+  return randomUUID();
 }
 
 // PCA-ENROLLMENT-RUNTIME-2: client-generated attempt correlator (non-secret)
@@ -149,13 +162,38 @@ async function disableAccount(accountId) {
   await getPool().query(`UPDATE service_accounts SET disabled_at = NOW(3) WHERE account_id = ?`, [accountId]);
 }
 
-/** A fully authorized parent for a fresh family: session + ACTIVE scope + ACTIVE license. */
-async function authorizedParent() {
+/** A DB-backed service session linked to an ACTIVE Parent Administrator membership, with a one-use step-up test grant. */
+async function authorizedParent({ withLicense = true } = {}) {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
+  const parentAccountId = randomUUID();
+  const now = new Date();
+  await getPool().query('INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, ?)', [familyId, randomBytes(32), now]);
+  await getPool().query(
+    `INSERT INTO parent_accounts (account_id, email_hash, password_hash, status, family_id, service_account_id, free_access_mode, free_access_started_at, default_parent_member_limit, default_managed_device_limit, created_at, verified_at)
+     VALUES (?, ?, ?, 'VERIFIED', ?, ?, 'PERPETUAL', ?, 4, 5, ?, ?)`,
+    [parentAccountId, randomBytes(32), randomBytes(32).toString('hex'), familyId, accountId, now, now, now],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', ?, ?)`,
+    [randomUUID(), familyId, parentAccountId, accountId, now, now],
+  );
   await grantScope(accountId, familyId);
-  await addLicense(accountId);
-  return { rawToken, accountId, familyId };
+  if (withLicense) await addLicense(accountId);
+  const issueStepUp = async (operation = 'family.device.enrollment.revoke') => {
+    const token = randomUUID();
+    stepUpGrants.set(token, { serviceAccountId: accountId, familyId, operation, consumed: false });
+    return token;
+  };
+  return {
+    rawToken,
+    accountId,
+    familyId,
+    stepUpToken: await issueStepUp(),
+    createStepUpToken: await issueStepUp('family.device.enrollment.create'),
+    issueStepUp,
+  };
 }
 
 function authHeader(rawToken) {
@@ -224,7 +262,7 @@ test('MySQL HTTP: correct family succeeds creating an invitation (a license, tho
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: parent.createStepUpToken },
   });
   assert.equal(response.statusCode, 201);
 });
@@ -255,14 +293,12 @@ test('MySQL HTTP: parent invitation creation requires the controlled enrollment 
 // license row. CREATE_INVITATION's requiresLicense is now false -- a scope
 // alone, no license row anywhere for this account, succeeds.
 test('MySQL HTTP: CREATE_INVITATION succeeds with family scope and NO license row at all -- basic/free V1 enrollment', async () => {
-  const { rawToken, accountId } = await createAccountWithSession();
-  const familyId = family();
-  await grantScope(accountId, familyId); // scope but deliberately no license
+  const { rawToken, accountId, familyId, createStepUpToken } = await authorizedParent({ withLicense: false });
   const response = await freshApp().inject({
     method: 'POST',
     url: `/v1/families/${familyId}/invitations`,
     headers: authHeader(rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: createStepUpToken },
   });
   assert.equal(response.statusCode, 201);
 });
@@ -284,7 +320,7 @@ test('MySQL HTTP: create -> status -> list -> revoke -> repeated revoke idempote
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: parent.createStepUpToken },
   });
   assert.equal(created.statusCode, 201);
   const createdBody = created.json();
@@ -313,6 +349,7 @@ test('MySQL HTTP: create -> status -> list -> revoke -> repeated revoke idempote
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations/${createdBody.invitationId}/revoke`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: parent.stepUpToken },
   });
   assert.equal(revoked.statusCode, 200);
   assert.equal(revoked.json().status, 'REVOKED');
@@ -321,6 +358,7 @@ test('MySQL HTTP: create -> status -> list -> revoke -> repeated revoke idempote
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations/${createdBody.invitationId}/revoke`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp() },
   });
   assert.equal(revokedAgain.statusCode, 200, 'repeated revoke must be idempotent, not an error');
 });
@@ -333,7 +371,7 @@ test('MySQL HTTP: wrong-family invitation status/revoke is 404 (family-scoped lo
     method: 'POST',
     url: `/v1/families/${owner.familyId}/invitations`,
     headers: authHeader(owner.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: owner.createStepUpToken },
   });
   const invitationId = created.json().invitationId;
 
@@ -353,6 +391,7 @@ test('MySQL HTTP: wrong-family invitation status/revoke is 404 (family-scoped lo
     method: 'POST',
     url: `/v1/families/${attacker.familyId}/invitations/${invitationId}/revoke`,
     headers: authHeader(attacker.rawToken),
+    payload: { stepUpToken: await attacker.issueStepUp() },
   });
   assert.equal(wrongFamilyRevoke.statusCode, 404);
 
@@ -372,7 +411,7 @@ test('MySQL HTTP: a family with no scope at all on the target family is 403 befo
     method: 'POST',
     url: `/v1/families/${owner.familyId}/invitations`,
     headers: authHeader(owner.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: owner.createStepUpToken },
   });
   const invitationId = created.json().invitationId;
 
@@ -788,7 +827,7 @@ test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commi
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: parent.createStepUpToken },
   });
   assert.equal(invitationResponse.statusCode, 201);
   const rawInvitationToken = invitationResponse.json().rawInvitationToken;
@@ -846,6 +885,7 @@ test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commi
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}/confirm`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
@@ -888,6 +928,7 @@ test('MySQL HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
@@ -915,6 +956,7 @@ test('MySQL HTTP: wrong-family pairing view/confirm is 404 (family-scoped device
     method: 'POST',
     url: `/v1/families/${attacker.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(attacker.rawToken),
+    payload: { stepUpToken: await attacker.issueStepUp('family.security.settings.change') },
   });
   assert.equal(confirm.statusCode, 404);
 });
@@ -948,11 +990,13 @@ test('MySQL HTTP: repeated confirmation is idempotent', async () => {
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   const second = await app.inject({
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   assert.equal(first.statusCode, 200);
   assert.equal(second.statusCode, 200);
@@ -968,8 +1012,42 @@ test('MySQL HTTP: confirming a REVOKED device is 409, not silently accepted', as
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
+    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   assert.equal(confirm.statusCode, 409);
+});
+
+test('MySQL: device-session authority reflects current device and family lifecycle state', async () => {
+  const parent = await authorizedParent();
+  const app = freshApp();
+  const revokedDeviceId = await bootstrapDevice(app, parent.familyId);
+  const familySuspendedDeviceId = await bootstrapDevice(app, parent.familyId);
+  await getPool().query(`UPDATE devices SET status = 'ACTIVE' WHERE family_id = ? AND device_id IN (?, ?)`, [
+    parent.familyId,
+    revokedDeviceId,
+    familySuspendedDeviceId,
+  ]);
+
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, revokedDeviceId), true);
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, familySuspendedDeviceId), true);
+  assert.equal(await deviceRepository.isDeviceSessionActive(family(), revokedDeviceId), false);
+
+  await deviceRepository.revokeDeviceAndKeysAtomically(parent.familyId, revokedDeviceId, new Date());
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, revokedDeviceId), false);
+
+  const suspensionAdminId = randomUUID();
+  await getPool().query(
+    `INSERT INTO platform_admin_accounts (admin_id, email_hash, display_name, password_credential, status, created_at, disabled_at)
+     VALUES (?, ?, 'Device-session test admin', 'device-session-test-placeholder', 'ACTIVE', NOW(3), NULL)`,
+    [suspensionAdminId, randomBytes(32)],
+  );
+  await getPool().query(
+    `UPDATE families
+        SET status = 'SUSPENDED', suspended_at = NOW(3), suspended_by_admin_id = ?, suspension_reason = 'device session test', device_session_epoch = device_session_epoch + 1
+      WHERE family_id = ?`,
+    [suspensionAdminId, parent.familyId],
+  );
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, familySuspendedDeviceId), false);
 });
 
 // --- Limits -----------------------------------------------------------
@@ -1014,7 +1092,7 @@ test('MySQL HTTP: rate limiting kicks in on repeated invitation-creation request
         method: 'POST',
         url: `/v1/families/${parent.familyId}/invitations`,
         headers: authHeader(parent.rawToken),
-        payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+        payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: await parent.issueStepUp('family.device.enrollment.create') },
       }),
     );
   }
@@ -1059,7 +1137,7 @@ test('MySQL HTTP PRIVACY: server runs with logging disabled -- no bearer/raw-inv
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED', stepUpToken: parent.createStepUpToken },
   });
   assert.equal(response.statusCode, 201);
 });

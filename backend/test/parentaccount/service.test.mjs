@@ -79,14 +79,17 @@ async function registerAndVerify(harness, email = EMAIL, password = PASSWORD) {
 }
 
 async function loginWithDailyGrant(harness, email = EMAIL, password = PASSWORD) {
-  const pending = await harness.service.login(email, password);
-  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' });
-  const code = harness.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  assert.match(code, /^\d{6}$/);
-  return harness.service.completeLoginStepUp(email, code);
+  harness._browserTrustByEmail ??= new Map();
+  let result = await harness.service.login(email, password, harness._browserTrustByEmail.get(email));
+  if (result.status === 'STEP_UP_REQUIRED') {
+    const code = harness.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+    result = await harness.service.completeLoginStepUp(email, code);
+  }
+  if (result.status === 'AUTHENTICATED' && result.rawDailyLoginGrantToken) harness._browserTrustByEmail.set(email, result.rawDailyLoginGrantToken);
+  return result;
 }
 
-/** PCA-DEC-030: a session only ever comes from a real sign-in (register -> verify -> login -> emailed step-up). */
+/** A session follows verified email + password; ACTIVE TOTP is covered separately. */
 async function registerVerifyAndLogin(harness, email = EMAIL, password = PASSWORD) {
   await registerAndVerify(harness, email, password);
   const outcome = await loginWithDailyGrant(harness, email, password);
@@ -306,12 +309,12 @@ test('SECURITY: verify-email for an unverified/nonexistent account never leaks w
   });
 });
 
-test('email verification does not create a family; the FIRST login provisions it server-side, starts the one grace window, and later logins re-use both', async () => {
+test('email verification creates no family; password login provisions it and each success queues a login notice', async () => {
   const harness = buildHarness();
   await registerAndVerify(harness);
   const verifiedAccount = await accountFor(harness);
   assert.equal(verifiedAccount.familyId, null, 'email verification must never create a family');
-  assert.equal((await harness.mfaService.posture(verifiedAccount.accountId)).status, 'NOT_STARTED', 'verification must not start the MFA grace window');
+  assert.equal((await harness.mfaService.posture(verifiedAccount.accountId)).status, 'NOT_STARTED', 'verification does not enroll an authenticator or start the grace period');
   assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 0);
 
   const first = await loginWithDailyGrant(harness);
@@ -319,48 +322,41 @@ test('email verification does not create a family; the FIRST login provisions it
   assert.equal(typeof first.familyId, 'string', 'the first login provisions the family server-side');
   assert.equal(first.role, 'ADMINISTRATOR', 'the provisioning account is the family ADMINISTRATOR');
   assert.equal(first.mfa.status, 'GRACE');
-  assert.equal(first.mfa.graceExpiresAt.getTime(), BASE_TIME + PARENT_MFA_GRACE_MS, 'grace is exactly 3 days from the first login');
-  assert.equal(typeof first.rawDailyLoginGrantToken, 'string');
-  assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1, 'the first login sends exactly one FIRST_LOGIN notice');
+  assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
 
   const session = await harness.service.readSession(first.rawSessionToken);
   assert.equal(session.familyId, first.familyId);
   assert.equal(session.role, 'ADMINISTRATOR');
 
-  // A later login (one hour on) neither restarts grace, re-sends the notice, nor creates a second family.
-  harness.advance(60 * 60 * 1000);
+  // The first-login timer is fixed; an unknown browser completes email OTP,
+  // but the deadline is not extended.
+  harness.advance(PARENT_MFA_GRACE_MS + 60 * 60 * 1000);
   const second = await loginWithDailyGrant(harness);
-  assert.equal(second.familyId, first.familyId, 'exactly one family per account');
-  assert.equal(second.mfa.graceExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'grace starts ONCE and never restarts');
+  assert.equal(second.status, 'MFA_SETUP_REQUIRED');
+  assert.equal((await accountFor(harness)).familyId, first.familyId, 'exactly one family per account');
   assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
+  assert.equal(harness.emailSender.countFor(EMAIL, 'LOGIN_SUCCESSFUL'), 0);
 });
 
-test('SECURITY: a session issued during grace never outlives the grace deadline', async () => {
+test('SECURITY: sessions without an authenticator receive the ordinary 12-hour lifetime', async () => {
   const harness = buildHarness();
   const first = await registerVerifyAndLogin(harness);
-  // 2 days 20 hours in: 4 hours of grace left, less than the 12 h session TTL.
   harness.advance(PARENT_MFA_GRACE_MS - 4 * 60 * 60 * 1000);
   const late = await loginWithDailyGrant(harness);
   assert.equal(late.status, 'AUTHENTICATED');
-  assert.equal(late.sessionExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'session TTL is capped at the grace deadline');
-  harness.advance(4 * 60 * 60 * 1000 + 1);
-  await assert.rejects(() => harness.service.readSession(late.rawSessionToken), (err) => err.code === 'UNAUTHORIZED');
+  assert.equal(late.sessionExpiresAt.getTime() - harness.now().getTime(), 12 * 60 * 60 * 1000);
 });
 
-test('SECURITY: after grace without an authenticator, sign-in yields only an enrollment ticket and the daily grant no longer bypasses the emailed code', async () => {
+test('unknown-browser email OTP is single-use and establishes a trusted login session', async () => {
   const harness = buildHarness();
-  await registerVerifyAndLogin(harness);
-  // A browser grant minted one hour before the deadline is still inside its own 24 h TTL once grace ends.
-  harness.advance(PARENT_MFA_GRACE_MS - 60 * 60 * 1000);
-  const lastInGrace = await loginWithDailyGrant(harness);
-  harness.advance(2 * 60 * 60 * 1000);
-  await assert.rejects(() => harness.service.readSession(lastInGrace.rawSessionToken), (err) => err.code === 'UNAUTHORIZED');
-  const pending = await harness.service.login(EMAIL, PASSWORD, lastInGrace.rawDailyLoginGrantToken);
-  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' }, 'a daily grant never authenticates once grace is over');
-  const completed = await harness.service.completeLoginStepUp(EMAIL, harness.emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP'));
-  assert.equal(completed.status, 'MFA_SETUP_REQUIRED');
-  assert.equal(typeof completed.rawEnrollmentTicket, 'string');
-  assert.ok(!('rawSessionToken' in completed), 'no session after grace without enrollment');
+  const first = await registerVerifyAndLogin(harness);
+  const unknown = await harness.service.login(EMAIL, PASSWORD);
+  assert.deepEqual(unknown, { status: 'STEP_UP_REQUIRED' });
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
+  const stepped = await harness.service.completeLoginStepUp(EMAIL, code);
+  assert.equal(stepped.status, 'AUTHENTICATED');
+  assert.notEqual(stepped.rawSessionToken, first.rawSessionToken);
+  await assert.rejects(() => harness.service.completeLoginStepUp(EMAIL, code), (error) => error.code === 'UNAUTHORIZED');
 });
 
 test('login only succeeds against a VERIFIED account, with a single generic error for every failure mode', async () => {
@@ -397,22 +393,18 @@ test('SECURITY: the session read exposes only server-derived fields -- no crypto
   assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'mfa', 'role']);
   assert.equal(session.familyId, outcome.familyId);
   assert.equal(session.role, 'ADMINISTRATOR');
-  assert.deepEqual(Object.keys(session.mfa).sort(), ['graceExpiresAt', 'status']);
   assert.equal(session.mfa.status, 'GRACE');
 });
 
-test('SECURITY: a session for an account that never completed a PCA-DEC-030 login (no grace record) is refused', async () => {
+test('SECURITY: a legacy session without the required server-side MFA start state fails closed', async () => {
   const harness = buildHarness();
   await registerAndVerify(harness);
   const account = await accountFor(harness);
   // A legacy/stray session bound to the account WITHOUT going through login().
   const issued = await harness.authService.issueSession({ accountReferenceHash: Buffer.alloc(32, 7) });
   await harness.parentAccountRepository.setServiceAccountIdIfAbsent(account.accountId, issued.session.accountId);
-  await assert.rejects(() => harness.service.readSession(issued.rawToken), (err) => {
-    assert.equal(err.code, 'UNAUTHORIZED');
-    return true;
-  });
-  assert.equal((await accountFor(harness)).familyId, null, 'a refused session must never provision a family');
+  await assert.rejects(() => harness.service.readSession(issued.rawToken), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await accountFor(harness)).familyId, null, 'unprovisioned legacy sessions do not create a family');
 });
 
 test('SECURITY: expired session is denied identically to no session (fail closed)', async () => {

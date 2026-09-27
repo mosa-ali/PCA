@@ -141,6 +141,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       if (!deps.parentActionAuthorization) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
+      if (await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) !== 'ADMINISTRATOR') {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;

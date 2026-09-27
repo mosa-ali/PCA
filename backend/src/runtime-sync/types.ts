@@ -12,6 +12,8 @@ export interface DeviceSessionRecord {
   tokenHash: string;
   deviceId: string;
   familyId: string;
+  /** Durable family lifecycle generation observed when this session was issued. */
+  familySessionEpoch: number;
   issuedAt: Date;
   expiresAt: Date;
   revokedAt: Date | null;

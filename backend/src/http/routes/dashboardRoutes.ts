@@ -9,18 +9,9 @@
  * because a dashboard card list is a family-scoped summary, not a
  * device-keyed opaque envelope queue.
  *
- * A PARENT session always requests a FULL_FAMILY DashboardViewScope: this
- * route is the PARENT surface (not a CHILD's own transparency view, doc
- * 18's OWN_CHILD_ONLY scope, a distinct authentication surface this task
- * does not build), and familyrbac's real trust-set role resolver is not
- * wired anywhere in this codebase yet (main.ts's own
- * UnavailableTrustSetRoleResolver), so there is no source of a genuine
- * Owner/Administrator-vs-Viewer distinction to pick FULL_FAMILY vs.
- * READ_ONLY_FAMILY with. FULL_FAMILY is the correct default for a
- * plain-session READ (unlike a role-gated WRITE, over-scoping a read-only
- * card list is not a privilege escalation -- DashboardAggregatorService
- * itself still only ever returns UNAVAILABLE cards for a kind with no
- * registered provider, never fabricated content).
+ * An active same-family Administrator or Viewer may read the FULL_FAMILY
+ * dashboard summary. ParentAccountService resolves that role from active
+ * Parent membership; child-only roles do not reach this Parent route.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
@@ -56,10 +47,12 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardRou
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     let familyIdFromSession: string;
+    let role: string | null;
     try {
       const session = await parentAccountService.readSession(token);
       if (!session.familyId) return reply.code(403).send({ error: 'family_scope_required' });
       familyIdFromSession = session.familyId;
+      role = session.role;
     } catch (error) {
       if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
       throw error;
@@ -69,6 +62,7 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardRou
     if (!familyId || familyId !== familyIdFromSession) {
       return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
+    if (role !== 'ADMINISTRATOR' && role !== 'VIEWER') return reply.code(403).send({ error: 'forbidden' });
 
     const cards = await dashboardAggregatorService.getDashboard(familyId, { kind: 'FULL_FAMILY' });
     return reply.code(200).send({ cards: cards.map(toCardDto) });

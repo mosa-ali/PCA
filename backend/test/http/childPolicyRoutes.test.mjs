@@ -48,7 +48,7 @@ function trustedRoleResolver() {
   return new FamilyTrustSetRoleResolver(store);
 }
 
-function buildApp({ authorization, submitBatchImpl, configured = true } = {}) {
+function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR' } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
   const parentAccountService = {
     async readSession(token) {
@@ -56,6 +56,7 @@ function buildApp({ authorization, submitBatchImpl, configured = true } = {}) {
       if (!session) throw new Error('unauthorized');
       return session;
     },
+    async activeFamilyRole() { return parentRole; },
   };
   const deviceTokens = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
@@ -129,6 +130,23 @@ test('a VIEWER cannot edit child policy: DENY from the real OPERATION_MATRIX, no
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
       headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a Viewer Parent account is denied even when its browser device appears as OWNER in the legacy trust set', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app, submittedBatches } = buildApp({ authorization, parentRole: 'VIEWER' });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);

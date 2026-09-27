@@ -229,7 +229,14 @@ test('MySQL CONCURRENCY: many simultaneous logout/revoke-all calls against the s
     authService.revokeAllSessions(admin.adminId, { adminId: admin.adminId, roles: ['APP_OWNER'] }),
     authService.revokeAllSessions(admin.adminId, { adminId: admin.adminId, roles: ['APP_OWNER'] }),
   ]);
-  assert.equal(attempts.every((a) => a.status === 'fulfilled'), true, 'concurrent logout/revoke-all must never throw');
+  const rejectedAttempts = attempts.flatMap((attempt) => attempt.status === 'rejected'
+    ? [attempt.reason instanceof Error ? `${attempt.reason.name}: ${attempt.reason.message}` : String(attempt.reason)]
+    : []);
+  assert.equal(
+    rejectedAttempts.length,
+    0,
+    `concurrent logout/revoke-all must never throw: ${JSON.stringify(rejectedAttempts)}`,
+  );
 
   for (const token of tokens) {
     await assert.rejects(() => authService.validateSession(token), PlatformAdminAuthError);

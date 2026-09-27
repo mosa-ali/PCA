@@ -3,6 +3,8 @@ import type { AuthService } from '../auth/AuthService.js';
 import { DEFAULT_SESSION_TTL_MS } from '../auth/policy.js';
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
 import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
+import { encryptParentDisplayEmail, normalizeParentPhoneNumber, openParentDisplayEmail } from './identityContact.js';
+import { validateParentIdentityNames } from './identityProfile.js';
 import { DUMMY_PASSWORD_HASH, hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
 import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
 import {
@@ -39,7 +41,7 @@ import type {
 } from './types.js';
 import { generateDailyLoginGrant, hashDailyLoginGrant, isPlausibleDailyLoginGrant } from './dailyLoginGrant.js';
 import { ParentMfaError, ParentMfaService, type ParentMfaPosture } from './mfa/ParentMfaService.js';
-import type { CommercialStepUpOperation } from './mfa/ParentMfaRepository.js';
+import type { CommercialStepUpOperation, SensitiveParentStepUpOperation } from './mfa/ParentMfaRepository.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED' | 'MFA_INVALID' | 'MFA_LOCKED' | 'FORBIDDEN';
 
@@ -59,6 +61,15 @@ export class ParentAccountError extends Error {
     this.name = 'ParentAccountError';
     this.code = code;
   }
+}
+
+export interface ParentIdentityProfileView {
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phoneNumber: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
 }
 
 /**
@@ -138,10 +149,22 @@ export class ParentAccountService {
     }
     if (
       profile &&
-      ((profile.accountType !== 'PARENT_GUARDIAN' && profile.accountType !== 'OTHER') ||
-        profile.estimatedChildCount !== null &&
-          (!Number.isInteger(profile.estimatedChildCount) || profile.estimatedChildCount < 0 || profile.estimatedChildCount > 50))
+      ((profile.accountType !== undefined && profile.accountType !== 'PARENT_GUARDIAN' && profile.accountType !== 'OTHER') ||
+        (profile.estimatedChildCount !== undefined && profile.estimatedChildCount !== null &&
+          (!Number.isInteger(profile.estimatedChildCount) || profile.estimatedChildCount < 0 || profile.estimatedChildCount > 50)))
     ) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    let identity: { firstName: string; lastName: string } | undefined;
+    let phoneNumber: string | null = null;
+    if (profile?.firstName !== undefined || profile?.lastName !== undefined) {
+      const names = validateParentIdentityNames(profile?.firstName, profile?.lastName);
+      if (!names.valid) throw new ParentAccountError('INVALID_INPUT');
+      identity = names.value;
+      const phone = normalizeParentPhoneNumber(profile?.phoneNumber);
+      if (!phone.valid) throw new ParentAccountError('INVALID_INPUT');
+      phoneNumber = phone.value;
+    } else if (profile?.phoneNumber !== undefined) {
       throw new ParentAccountError('INVALID_INPUT');
     }
     const emailHash = hashParentEmail(email);
@@ -159,6 +182,11 @@ export class ParentAccountService {
           createdAt: now,
           accountType: profile?.accountType ?? null,
           estimatedChildCount: profile?.estimatedChildCount ?? null,
+          ...(identity ? {
+            identity,
+            protectedDisplayEmail: encryptParentDisplayEmail(accountId, email),
+            phoneNumber,
+          } : {}),
         });
       } catch (error) {
         // A concurrent registration for the same email won the race --
@@ -177,6 +205,43 @@ export class ParentAccountService {
     }
     // existing.status === 'VERIFIED': silent no-op, identical response.
     return { status: 'PENDING_VERIFICATION' };
+  }
+
+  async readIdentityProfile(accountId: ParentAccountId): Promise<ParentIdentityProfileView | null> {
+    const [account, names, contact] = await Promise.all([
+      this.repository.findById(accountId),
+      this.repository.findIdentityProfile(accountId),
+      this.repository.findIdentityContact(accountId),
+    ]);
+    if (!account || !names || !contact) return null;
+    const openedEmail = openParentDisplayEmail(accountId, contact.protectedDisplayEmail);
+    if (openedEmail?.needsReencryption && contact.protectedDisplayEmail) {
+      try {
+        await this.repository.repairProtectedDisplayEmail(
+          accountId,
+          contact.protectedDisplayEmail,
+          encryptParentDisplayEmail(accountId, openedEmail.email),
+        );
+      } catch {
+        // Re-encryption is best-effort after authenticated decryption. A
+        // repair race or storage fault never changes the profile read result.
+      }
+    }
+    return {
+      firstName: names.firstName,
+      lastName: names.lastName,
+      email: openedEmail?.email ?? null,
+      phoneNumber: contact.phoneNumber,
+      emailVerified: account.verifiedAt !== null,
+      phoneVerified: contact.phoneVerifiedAt !== null,
+    };
+  }
+
+  async updateIdentityNames(accountId: ParentAccountId, firstName: unknown, lastName: unknown): Promise<ParentIdentityProfileView | null> {
+    const names = validateParentIdentityNames(firstName, lastName);
+    if (!names.valid) throw new ParentAccountError('INVALID_INPUT');
+    if (!await this.repository.updateIdentityNames(accountId, names.value.firstName, names.value.lastName)) return null;
+    return this.readIdentityProfile(accountId);
   }
 
   private async issueAndSendVerificationCode(accountId: ParentAccountId, email: string, passwordHash: string): Promise<void> {
@@ -264,15 +329,10 @@ export class ParentAccountService {
   }
 
   /**
-   * PCA-ADD-IDENT-012 + PCA-DEC-037. Generic UNAUTHORIZED for every
-   * pre-password failure. After the password is proven:
-   *   - ACTIVE authenticator: a valid 6-digit TOTP is required on EVERY
-   *     explicit login. No email code and no remembered-browser grant can
-   *     replace it; MFA_REQUIRED is returned until one is supplied.
-   *   - Grace running (or first login): emailed step-up, or this browser's
-   *     own daily grant, exactly as before.
-   *   - Grace over: emailed step-up always (daily grants no longer count),
-   *     and its completion yields an enrollment ticket, never a session.
+   * Parent primary authentication is email + password. The first successful
+   * verified login provisions the family and automatically trusts that
+   * browser. Later recognized browsers use password alone; unknown browsers
+   * must prove mailbox control and, when enrolled, an active TOTP factor.
    */
   async login(email: string, password: string, dailyLoginGrantToken?: string, totpCode?: string): Promise<LoginOutcome> {
     if (!isPlausibleEmail(email) || typeof password !== 'string' || password.length === 0) {
@@ -290,120 +350,92 @@ export class ParentAccountService {
 
     const posture = await this.mfa.posture(account.accountId);
     if (posture.status === 'RECOVERY_PENDING') return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: posture.recoveryAvailableAt };
-    if (posture.status === 'ACTIVE') {
-      if (typeof totpCode !== 'string' || totpCode.length === 0) return { status: 'MFA_REQUIRED' };
-      await this.verifyTotpOrThrow(account.accountId, totpCode);
-      return { status: 'AUTHENTICATED', ...(await this.establishSession(account, email)) };
+
+    const trusted = isPlausibleDailyLoginGrant(dailyLoginGrantToken) &&
+      await this.repository.validateAndTouchDailyLoginGrant(account.accountId, hashDailyLoginGrant(dailyLoginGrantToken), this.now());
+    // A newly verified Parent's first successful sign-in establishes the
+    // family and this browser trust together. Existing accounts with a
+    // family but no valid browser grant use the step-up path below.
+    if (account.familyId === null && posture.status !== 'ACTIVE') {
+      const session = await this.establishSession(account, email);
+      const browserGrant = await this.issueBrowserGrant(account.accountId, session.rawSessionToken);
+      return { status: 'AUTHENTICATED', ...session, rawDailyLoginGrantToken: browserGrant.rawToken };
     }
 
-    if (posture.status !== 'SETUP_REQUIRED' && isPlausibleDailyLoginGrant(dailyLoginGrantToken)) {
-      const grantValid = await this.repository.validateAndTouchDailyLoginGrant(account.accountId, hashDailyLoginGrant(dailyLoginGrantToken), this.now());
-      if (grantValid) return { status: 'AUTHENTICATED', ...(await this.establishSession(account, email)) };
+    if (trusted) {
+      if (posture.status === 'SETUP_REQUIRED') {
+        return { status: 'MFA_SETUP_REQUIRED', rawEnrollmentTicket: await this.mfa.issueTicket(account.accountId, 'MFA_SETUP_REQUIRED') };
+      }
+      return { status: 'AUTHENTICATED', ...(await this.establishSession(account, email)) };
     }
 
     await this.issueAndSendLoginStepUpCode(account.accountId, email);
     return { status: 'STEP_UP_REQUIRED' };
   }
 
+  /** Consumes the unknown-browser email OTP and, if enrolled, its matching TOTP before trusting that browser. */
+  async completeLoginStepUp(email: string, code: string, totpCode?: string): Promise<CompleteLoginStepUpOutcome | { status: 'MFA_REQUIRED' }> {
+    if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) throw new ParentAccountError('INVALID_INPUT');
+    const account = await this.repository.findByEmailHash(hashParentEmail(email));
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    if (account.familyId !== null && await this.repository.findFamilyStatus(account.familyId) === 'SUSPENDED') {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    const activeCode = await this.repository.findLatestLoginStepUpCode(account.accountId);
+    if (!activeCode || activeCode.consumedAt !== null || activeCode.attemptCount >= MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE || activeCode.expiresAt.getTime() <= this.now().getTime()) {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    const posture = await this.mfa.posture(account.accountId);
+    if (posture.status === 'RECOVERY_PENDING') throw new ParentAccountError('UNAUTHORIZED');
+    await this.repository.incrementLoginStepUpAttempt(activeCode.codeId);
+    if (!verificationCodeHashesMatch(hashVerificationCode(code), activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+    if (posture.status === 'ACTIVE') {
+      if (typeof totpCode !== 'string' || !/^\d{6}$/.test(totpCode)) return { status: 'MFA_REQUIRED' };
+      await this.verifyTotpOrThrow(account.accountId, totpCode);
+    }
+    if (!await this.repository.consumeLoginStepUpCodeIfUnconsumed(activeCode.codeId, this.now())) throw new ParentAccountError('UNAUTHORIZED');
+    if (posture.status === 'SETUP_REQUIRED') {
+      return { status: 'MFA_SETUP_REQUIRED', rawEnrollmentTicket: await this.mfa.issueTicket(account.accountId, 'MFA_SETUP_REQUIRED') };
+    }
+    const established = await this.establishSession(account, email);
+    const browserGrant = await this.issueBrowserGrant(account.accountId, established.rawSessionToken);
+    return { status: 'AUTHENTICATED', ...established, rawDailyLoginGrantToken: browserGrant.rawToken };
+  }
+
+  private async issueBrowserGrant(accountId: ParentAccountId, rawSessionToken: string) {
+    const grant = generateDailyLoginGrant();
+    const now = this.now();
+    try {
+      await this.repository.insertDailyLoginGrant({
+        grantId: randomUUID(), accountId, tokenHash: grant.tokenHash,
+        purpose: DAILY_LOGIN_GRANT_PURPOSE, createdAt: now,
+        expiresAt: new Date(now.getTime() + DAILY_LOGIN_GRANT_TTL_MS),
+      });
+    } catch (error) {
+      await this.authService.revokeSession(rawSessionToken).catch(() => undefined);
+      throw error;
+    }
+    return grant;
+  }
+
   private async issueAndSendLoginStepUpCode(accountId: ParentAccountId, email: string): Promise<void> {
     const now = this.now();
     const { code, codeHash } = generateVerificationCode();
     await this.repository.insertLoginStepUpCode({
-      codeId: randomUUID(),
-      accountId,
-      codeHash,
-      createdAt: now,
+      codeId: randomUUID(), accountId, codeHash, createdAt: now,
       expiresAt: new Date(now.getTime() + LOGIN_STEP_UP_CODE_TTL_MS),
     });
-    try {
-      await this.emailSender.sendLoginStepUpCode(email, code);
-    } catch {
-      // deliberately swallowed -- see issueAndSendVerificationCode
-    }
+    try { await this.emailSender.sendLoginStepUpCode(email, code); } catch { /* delivery failure does not expose account state */ }
   }
 
   /**
-   * Consumes an emailed login code. For an account WITHOUT an active
-   * authenticator this is the second factor: inside grace it issues the
-   * session plus a fresh browser grant; after grace it issues only an
-   * enrollment ticket. For an account WITH an active authenticator an email
-   * code never authenticates -- even one issued before enrollment.
-   */
-  async completeLoginStepUp(email: string, code: string): Promise<CompleteLoginStepUpOutcome> {
-    if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) {
-      throw new ParentAccountError('INVALID_INPUT');
-    }
-    const account = await this.repository.findByEmailHash(hashParentEmail(email));
-    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-
-    const activeCode = await this.repository.findLatestLoginStepUpCode(account.accountId);
-    if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    if (activeCode.attemptCount >= MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE) throw new ParentAccountError('UNAUTHORIZED');
-    if (activeCode.expiresAt.getTime() <= this.now().getTime()) throw new ParentAccountError('UNAUTHORIZED');
-
-    await this.repository.incrementLoginStepUpAttempt(activeCode.codeId);
-    if (!verificationCodeHashesMatch(hashVerificationCode(code), activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
-
-    const won = await this.repository.consumeLoginStepUpCodeIfUnconsumed(activeCode.codeId, this.now());
-    if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent completion race for the same code
-
-    const posture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'RECOVERY_PENDING') throw new ParentAccountError('UNAUTHORIZED');
-    if (posture.status === 'ACTIVE') throw new ParentAccountError('UNAUTHORIZED');
-    if (posture.status === 'SETUP_REQUIRED') {
-      return { status: 'MFA_SETUP_REQUIRED', rawEnrollmentTicket: await this.mfa.issueTicket(account.accountId, 'MFA_SETUP_REQUIRED') };
-    }
-
-    await this.repository.markFirstLoginCompletedIfAbsent(account.accountId, this.now());
-    const established = await this.establishSession(account, email);
-    const dailyGrant = generateDailyLoginGrant();
-    try {
-      await this.repository.insertDailyLoginGrant({
-        grantId: randomUUID(),
-        accountId: account.accountId,
-        tokenHash: dailyGrant.tokenHash,
-        purpose: DAILY_LOGIN_GRANT_PURPOSE,
-        createdAt: this.now(),
-        expiresAt: new Date(this.now().getTime() + DAILY_LOGIN_GRANT_TTL_MS),
-      });
-    } catch (error) {
-      await this.authService.revokeSession(established.rawSessionToken).catch(() => undefined);
-      throw error;
-    }
-    return { status: 'AUTHENTICATED', ...established, rawDailyLoginGrantToken: dailyGrant.rawToken };
-  }
-
-  /**
-   * Issues a session for an account that has just passed every required
-   * factor, and performs the server-side first-login work:
-   *   1. starts the one MFA grace window if this is the first login (and sends
-   *      the first-login notice),
-   *   2. caps a not-yet-enrolled account's session at the grace deadline, so no
-   *      session outlives the grace period,
-   *   3. provisions (or re-asserts) the account's family and ADMINISTRATOR
-   *      membership in one transaction.
+   * Issues a session after required factors, provisions the family before
+   * starting the non-resettable MFA window, and records/queues one security
+   * notice for every successful explicit login.
    */
   private async establishSession(account: ParentAccountRecord, email: string) {
-    let posture: ParentMfaPosture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'NOT_STARTED') {
-      const { started, posture: next } = await this.mfa.startGraceIfAbsent(account.accountId);
-      posture = next;
-      if (started) {
-        await this.mfa.event(account.accountId, 'FIRST_LOGIN', null);
-        await this.notify(email, 'FIRST_LOGIN', `first-login:${account.accountId}`);
-      }
-    }
-    if (posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') throw new ParentAccountError('UNAUTHORIZED');
-
     const now = this.now();
-    const ttlMs = posture.status === 'GRACE' ? Math.min(DEFAULT_SESSION_TTL_MS, posture.graceExpiresAt.getTime() - now.getTime()) : DEFAULT_SESSION_TTL_MS;
-    if (ttlMs <= 0) throw new ParentAccountError('UNAUTHORIZED');
-    const issued = await this.issueSessionFor(account.accountId, ttlMs);
-    const postIssuePosture = await this.mfa.posture(account.accountId);
-    if (postIssuePosture.status === 'RECOVERY_PENDING' || postIssuePosture.status === 'SETUP_REQUIRED') {
-      await this.authService.revokeSession(issued.rawToken).catch(() => undefined);
-      throw new ParentAccountError('UNAUTHORIZED');
-    }
+    const issued = await this.issueSessionFor(account.accountId, DEFAULT_SESSION_TTL_MS);
     let familyId: OpaqueFamilyId;
     try {
       const provisioned = await this.repository.ensureProvisionedFamily(account.accountId, issued.session.accountId, now);
@@ -413,7 +445,19 @@ export class ParentAccountService {
       await this.authService.revokeSession(issued.rawToken).catch(() => undefined);
       throw error;
     }
+    const grace = await this.mfa.startGraceIfAbsent(account.accountId);
+    const posture: ParentMfaPosture = grace.posture;
+    if (posture.status === 'RECOVERY_PENDING' || posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') {
+      await this.authService.revokeSession(issued.rawToken).catch(() => undefined);
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    if (grace.started) {
+      try { await this.mfa.event(account.accountId, 'FIRST_LOGIN', null); } catch { /* security audit persistence is best-effort */ }
+      await this.notify(email, 'FIRST_LOGIN', `first-login:${account.accountId}`);
+    }
     const role = await this.resolveFamilyRole(account.accountId, familyId);
+    try { await this.mfa.event(account.accountId, 'PARENT_LOGIN_SUCCESS', null); } catch { /* audit persistence does not block an already-valid login */ }
+    if (!grace.started) await this.notify(email, 'LOGIN_SUCCESSFUL', `parent-login:${account.accountId}:${randomUUID()}`);
     return {
       accountId: account.accountId,
       familyId,
@@ -477,9 +521,14 @@ export class ParentAccountService {
     }
     await this.repository.revokeAllDailyLoginGrants(account.accountId, this.now());
     await this.notify(email, 'MFA_ENROLLED', `mfa-enrolled:${account.accountId}:${this.now().getTime()}`);
-    if (ticketId === null) return { status: 'ENROLLED' };
+    if (ticketId === null) {
+      const grant = await this.issueBrowserGrant(account.accountId, (credential as { kind: 'SESSION'; rawSessionToken: string }).rawSessionToken);
+      return { status: 'ENROLLED', rawDailyLoginGrantToken: grant.rawToken };
+    }
     if (!(await this.mfa.consumeTicket(ticketId))) throw new ParentAccountError('UNAUTHORIZED');
-    return { status: 'ENROLLED_SESSION_ESTABLISHED', ...(await this.establishSession(account, email)) };
+    const session = await this.establishSession(account, email);
+    const grant = await this.issueBrowserGrant(account.accountId, session.rawSessionToken);
+    return { status: 'ENROLLED_SESSION_ESTABLISHED', ...session, rawDailyLoginGrantToken: grant.rawToken };
   }
 
   /**
@@ -577,11 +626,63 @@ export class ParentAccountService {
     }
   }
 
+  /** Fresh TOTP grant for one sensitive family operation, scoped to the active Administrator's session family. */
+  async issueSensitiveStepUp(rawSessionToken: string, operation: SensitiveParentStepUpOperation, code: string): Promise<{ stepUpToken: string; expiresAt: Date }> {
+    const { account, posture } = await this.resolveUsableSession(rawSessionToken);
+    if (account.familyId === null) throw new ParentAccountError('FORBIDDEN');
+    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
+    if (role !== 'ADMINISTRATOR') throw new ParentAccountError('FORBIDDEN');
+    if (posture.status !== 'ACTIVE') throw new ParentAccountError('FORBIDDEN');
+    try {
+      const grant = await this.mfa.issueCommercialStepUp(account.accountId, account.familyId, operation, code);
+      if ((await this.mfa.posture(account.accountId)).status !== 'ACTIVE') {
+        await this.mfa.consumeCommercialStepUp(account.accountId, account.familyId, operation, grant.stepUpToken);
+        throw new ParentAccountError('UNAUTHORIZED');
+      }
+      return grant;
+    } catch (error) {
+      throw mapMfaError(error);
+    }
+  }
+
+  /** Revalidates current account, same-family Administrator membership and active MFA, then atomically consumes the exact single-use grant. */
+  async consumeSensitiveStepUp(serviceAccountId: string, familyId: string, operation: SensitiveParentStepUpOperation, rawToken: unknown): Promise<boolean> {
+    const account = await this.repository.findByServiceAccountId(serviceAccountId);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null || account.familyId !== familyId) return false;
+    if (await this.repository.findFamilyStatus(familyId) === 'SUSPENDED') return false;
+    if ((await this.resolveFamilyRole(account.accountId, familyId)) !== 'ADMINISTRATOR') return false;
+    if ((await this.mfa.posture(account.accountId)).status !== 'ACTIVE') return false;
+    return this.mfa.consumeCommercialStepUp(account.accountId, familyId, operation, rawToken);
+  }
+
+  async isActiveFamilyAdministrator(accountId: ParentAccountId, familyId: string): Promise<boolean> {
+    const account = await this.repository.findById(accountId);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null || account.familyId !== familyId) return false;
+    if (await this.repository.findFamilyStatus(familyId) === 'SUSPENDED') return false;
+    return (await this.resolveFamilyRole(accountId, familyId)) === 'ADMINISTRATOR';
+  }
+
+  async activeFamilyRole(accountId: ParentAccountId, familyId: string): Promise<string | null> {
+    const account = await this.repository.findById(accountId);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null || account.familyId !== familyId) return null;
+    if (await this.repository.findFamilyStatus(familyId) === 'SUSPENDED') return null;
+    return this.resolveFamilyRole(accountId, familyId);
+  }
+
+  async consumeSensitiveStepUpForSession(rawSessionToken: string, familyId: string, operation: SensitiveParentStepUpOperation, rawToken: unknown): Promise<boolean> {
+    const { account, posture } = await this.resolveUsableSession(rawSessionToken);
+    if (account.familyId !== familyId || (await this.resolveFamilyRole(account.accountId, familyId)) !== 'ADMINISTRATOR' || posture.status !== 'ACTIVE') return false;
+    return this.mfa.consumeCommercialStepUp(account.accountId, familyId, operation, rawToken);
+  }
+
   /** Reads a live session and its MFA posture, refusing any session that must not be usable (see readSession). */
   private async resolveUsableSession(rawSessionToken: string): Promise<{ account: ParentAccountRecord; serviceAccountId: string; posture: ParentMfaPosture }> {
     const { account, serviceAccountId } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (account.familyId !== null && await this.repository.findFamilyStatus(account.familyId) === 'SUSPENDED') {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
     const posture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'NOT_STARTED' || posture.status === 'SETUP_REQUIRED' || posture.status === 'RECOVERY_PENDING') throw new ParentAccountError('UNAUTHORIZED');
+    if (posture.status === 'RECOVERY_PENDING' || posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') throw new ParentAccountError('UNAUTHORIZED');
     return { account, serviceAccountId, posture };
   }
 
@@ -594,6 +695,9 @@ export class ParentAccountService {
     if (!ticket) throw new ParentAccountError('UNAUTHORIZED');
     const account = await this.repository.findById(ticket.accountId);
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    if (account.familyId !== null && await this.repository.findFamilyStatus(account.familyId) === 'SUSPENDED') {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
     return { account, ticketId: ticket.ticketId };
   }
 

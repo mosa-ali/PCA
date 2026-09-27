@@ -2,28 +2,19 @@
  * PCA-FR-130 ("Bonus Time"): the authenticated HTTP surface over
  * childrequests/ChildRequestService.ts + BonusGrantLedger.ts. Follows the
  * SAME session/CSRF conventions parentAccountRoutes.ts/removalDecisionRoutes.ts
- * already established (HttpOnly family session cookie + double-submit CSRF
- * cookie for state-changing parent requests) and the SAME actor-device-
- * binding pattern parentAccountRoutes.ts's Safe Zone routes use
- * (`authorizeSafeZoneRequest`'s doc comment): `actorDeviceId` for every
- * parent decision is derived EXCLUSIVELY from a verified
- * `DeviceSessionService` session token presented as `Authorization: Bearer
- * <token>`, never trusted from a client-supplied field. A child device
- * submitting its own request authenticates the SAME way (its own device
- * session bearer token) -- this route file never invents a second device
- * authentication transport.
+ * already established. Parent decisions and direct grants use the authenticated
+ * Parent account and family role; child devices submitting requests or
+ * acknowledging application remain bound to their verified device-session
+ * bearer token.
  *
  * NOT wired into main.ts/buildServer.ts risk note: it IS wired (see
  * buildServer.ts's registerChildRequestRoutes call) -- unlike
  * removalDecisionRoutes.ts's original state, this lane wires its own route
  * file immediately, reusing the SAME shared `ParentActionAuthorizationService`
  * instance (generic across every ParentOperation) main.ts already
- * constructs for Safe Zone/RemovalDecisionAuthority. Production currently
- * wires `UnavailableTrustSetRoleResolver` under that shared service (see
- * main.ts's own doc comment on `trustSetRoleResolver`), so every decide/
- * grant call here fails closed with NOT_AUTHORIZED_TO_DECIDE until a real
- * trust-set source is wired -- exactly the same honest, visible,
- * fail-closed posture as every other consumer of that shared instance.
+ * constructs for Safe Zone/RemovalDecisionAuthority. Parent session actions
+ * use the separate family-scoped account authorizer; device-authenticated
+ * child submission and applied-report routes retain their existing checks.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -32,6 +23,7 @@ import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } fro
 import { ChildRequestError, type ChildRequestService } from '../../childrequests/ChildRequestService.js';
 import type { ChildRequest, ChildRequestType, ParentDecisionOutcome } from '../../childrequests/types.js';
 import type { BonusGrantLedger } from '../../childrequests/BonusGrantLedger.js';
+import type { ChildProfileRegistryRepository } from '../../childprofiles/ChildProfileRegistryRepository.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { AppScope } from '../../schedule/types.js';
 import {
@@ -40,9 +32,8 @@ import {
 } from '../../childprofiles/ChildProfileMembershipResolver.js';
 
 const MAX_BODY_BYTES = 8 * 1024;
-
-/** See the `bonus-time/grant` route's own comment: a proactive parent-initiated grant has no real originating child device. */
-const NO_CHILD_DEVICE_SENTINEL = 'PARENT_INITIATED_NO_CHILD_DEVICE';
+const PARENT_READ_ROLES = new Set(['ADMINISTRATOR', 'VIEWER']);
+const PARENT_ADMIN_ROLES = new Set(['ADMINISTRATOR']);
 
 export interface ChildRequestRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -62,6 +53,8 @@ export interface ChildRequestRoutesDeps {
    * ParentActionAuthorizationService (see main.ts), never a second independently-constructed one.
    */
   childProfileMembership?: ChildProfileMembershipResolver;
+  /** Durable async membership proof for Parent-session targets and ledger reads/writes. */
+  childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   /** Same deterministic-clock convention as every other service in this codebase -- never read `Date.now()` inline, so revoke/active-grants stay as testable as decide() itself. */
   now?: () => Date;
 }
@@ -95,7 +88,7 @@ function parseAppScope(value: unknown): AppScope | null | undefined {
   return undefined;
 }
 
-function toRequestDto(request: ChildRequest): Record<string, unknown> {
+function toRequestDto(request: ChildRequest, includeParentActorFields = false): Record<string, unknown> {
   return {
     requestId: request.requestId,
     familyId: request.familyId,
@@ -108,6 +101,8 @@ function toRequestDto(request: ChildRequest): Record<string, unknown> {
     expiresAt: request.expiresAt.toISOString(),
     decidedAt: request.decidedAt?.toISOString() ?? null,
     decidedByDeviceId: request.decidedByDeviceId,
+    createdByParentAccountId: includeParentActorFields ? request.createdByParentAccountId : null,
+    decidedByAccountId: includeParentActorFields ? request.decidedByAccountId : null,
     decisionActionId: request.decisionActionId,
     correlationId: request.correlationId,
     reasonNote: request.reasonNote,
@@ -143,18 +138,19 @@ function errorStatus(code: ChildRequestError['code']): number {
 export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequestRoutesDeps): void {
   const { parentAccountService, childRequestService, bonusGrantLedger, deviceSessionService } = deps;
   const childProfileMembership = deps.childProfileMembership ?? new UnavailableChildProfileMembershipResolver();
+  const childProfileRegistryRepository = deps.childProfileRegistryRepository;
   const now = deps.now ?? (() => new Date());
 
-  /**
-   * See `childProfileMembership`'s own doc comment on ChildRequestRoutesDeps: the ledger-direct
-   * bonus-time routes (active-grants/revoke) must independently verify a client-supplied
-   * childProfileId actually belongs to the caller's OWN already-cookie-authenticated family before
-   * touching `bonusGrantLedger` -- every non-MEMBER_OF_FAMILY outcome (NOT_MEMBER, NOT_FOUND,
-   * UNAVAILABLE) collapses to the SAME public denial, matching
-   * ParentActionAuthorizationService.evaluate's own CROSS_FAMILY_TARGET oracle-avoidance posture.
-   */
-  function childProfileInFamily(familyId: string, childProfileId: string): boolean {
-    return childProfileMembership.resolveMembership(familyId, childProfileId).status === 'MEMBER_OF_FAMILY';
+  /** Every non-member/not-found/unavailable outcome maps to the same public denial. */
+  async function childProfileInFamily(familyId: string, childProfileId: string): Promise<boolean> {
+    try {
+      if (childProfileRegistryRepository) {
+        return (await childProfileRegistryRepository.resolveMembership(familyId, childProfileId)) === 'MEMBER';
+      }
+      return childProfileMembership.resolveMembership(familyId, childProfileId).status === 'MEMBER_OF_FAMILY';
+    } catch {
+      return false;
+    }
   }
 
   async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
@@ -184,30 +180,13 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     }
   }
 
-  /**
-   * SECURITY (actor-identity binding): see this file's own header comment
-   * and parentAccountRoutes.ts's `authorizeSafeZoneRequest` doc comment for
-   * the full rationale -- `actorDeviceId` is derived EXCLUSIVELY from a
-   * verified device-session bearer token scoped to the caller's own already
-   * cookie-authenticated family, never from any client-supplied device id
-   * field.
-   */
-  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<string | null> {
-    const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-      await reply.code(401).send({ error: 'actor_device_session_required' });
-      return null;
+  async function requireParentRole(session: { accountId: string; familyId: string }, reply: FastifyReply, allowed: ReadonlySet<string>): Promise<boolean> {
+    const role = await parentAccountService.activeFamilyRole(session.accountId as never, session.familyId);
+    if (!role || !allowed.has(role)) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
     }
-    try {
-      const identity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      return identity.deviceId;
-    } catch (error) {
-      if (error instanceof RuntimeSyncAuthError) {
-        await reply.code(401).send({ error: 'actor_device_session_invalid' });
-        return null;
-      }
-      throw error;
-    }
+    return true;
   }
 
   async function handleError(reply: FastifyReply, error: unknown): Promise<void> {
@@ -336,8 +315,9 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   app.get('/api/parent/families/:familyId/child-requests', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireParentRole(session, reply, PARENT_READ_ROLES))) return;
     const requests = await childRequestService.listForFamily(session.familyId);
-    return reply.code(200).send({ requests: requests.map(toRequestDto) });
+    return reply.code(200).send({ requests: requests.map((request) => toRequestDto(request, true)) });
   });
 
   // ---- Parent: approve / deny / counter-offer a pending request ----
@@ -347,10 +327,8 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireParentRole(session, reply, PARENT_ADMIN_ROLES))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const { requestId } = request.params as { requestId: string };
       const body = request.body;
       if (!isPlainObject(body) || typeof body.decision !== 'string' || !DECISIONS.has(body.decision)) {
@@ -362,10 +340,10 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       }
 
       try {
-        const decided = await childRequestService.decide(
+        const decided = await childRequestService.decideAsParent(
           requestId,
           session.familyId,
-          actorDeviceId,
+          session.accountId,
           body.decision as ParentDecisionOutcome,
           randomUUID(),
           randomUUID(),
@@ -375,7 +353,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
         if (grant !== null) {
           bonusGrantLedger.record((decided.targetScope as { kind: string; id: string }).id, grant, grant.grantedAtUtc);
         }
-        return reply.code(200).send({ request: toRequestDto(decided) });
+        return reply.code(200).send({ request: toRequestDto(decided, true) });
       } catch (error) {
         return handleError(reply, error);
       }
@@ -389,10 +367,8 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireParentRole(session, reply, PARENT_ADMIN_ROLES))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const body = request.body;
       if (!isPlainObject(body) || typeof body.childProfileId !== 'string' || typeof body.extraMinutes !== 'number') {
         return reply.code(400).send({ error: 'invalid_request' });
@@ -401,26 +377,21 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       if (appScope === undefined || appScope === null) return reply.code(400).send({ error: 'invalid_request' });
 
       try {
-        const decided = await childRequestService.grantDirectly(
+        const decided = await childRequestService.grantDirectlyAsParent(
           session.familyId,
-          // No originating child DEVICE exists for a proactive grant (only a
-          // childProfileId, which may have several devices) -- using the
-          // GRANTING PARENT's own actorDeviceId here would misrepresent the
-          // audit trail as if the parent's own device had submitted a child
-          // request to itself. An honestly-named sentinel instead.
-          NO_CHILD_DEVICE_SENTINEL,
+          null,
           null,
           { kind: 'CHILD_PROFILE', id: body.childProfileId },
           body.extraMinutes,
           appScope,
-          actorDeviceId,
+          session.accountId,
           randomUUID(),
           randomUUID(),
           typeof body.reasonNote === 'string' ? body.reasonNote : null,
         );
         const grant = childRequestService.toBonusGrant(decided);
         if (grant !== null) bonusGrantLedger.record(body.childProfileId, grant, grant.grantedAtUtc);
-        return reply.code(201).send({ request: toRequestDto(decided) });
+        return reply.code(201).send({ request: toRequestDto(decided, true) });
       } catch (error) {
         return handleError(reply, error);
       }
@@ -434,19 +405,17 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireParentRole(session, reply, PARENT_ADMIN_ROLES))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const { grantId } = request.params as { grantId: string };
       const body = request.body;
       if (!isPlainObject(body) || typeof body.childProfileId !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (!childProfileInFamily(session.familyId, body.childProfileId)) {
+      if (!(await childProfileInFamily(session.familyId, body.childProfileId))) {
         return reply.code(403).send({ error: 'family_scope_forbidden' });
       }
-      const revoked = bonusGrantLedger.revoke(body.childProfileId, grantId, now());
+      const revoked = bonusGrantLedger.revoke(body.childProfileId, grantId, now(), session.accountId);
       if (!revoked) return reply.code(404).send({ error: 'not_found' });
       return reply.code(200).send({ revoked: true });
     },
@@ -456,11 +425,12 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   app.get('/api/parent/families/:familyId/bonus-time/active-grants', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireParentRole(session, reply, PARENT_READ_ROLES))) return;
     const { childProfileId } = request.query as { childProfileId?: string };
     if (typeof childProfileId !== 'string' || childProfileId.length === 0) {
       return reply.code(400).send({ error: 'invalid_request' });
     }
-    if (!childProfileInFamily(session.familyId, childProfileId)) {
+    if (!(await childProfileInFamily(session.familyId, childProfileId))) {
       return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
     const active = bonusGrantLedger.listActive(childProfileId, now());

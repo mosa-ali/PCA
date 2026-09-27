@@ -70,13 +70,16 @@ function buildApp({ withFreeAccessRepository = true } = {}) {
 /** PCA-DEC-030: verify-email activates only; the session cookie comes from the first real sign-in. */
 async function registerAndVerify(app, emailSender, email) {
   const password = 'a genuinely long password';
-  await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email, password, passwordConfirmation: password } });
+  const registerResponse = await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email, password, passwordConfirmation: password, firstName: 'Free', lastName: 'Access' } });
+  assert.equal(registerResponse.statusCode, 202, JSON.stringify(registerResponse.json()));
   const code = emailSender.lastCodeFor(email);
+  assert.ok(code, 'registration must send a verification code');
   const verifyResponse = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
+  assert.equal(verifyResponse.statusCode, 200, JSON.stringify(verifyResponse.json()));
   assert.equal(verifyResponse.headers['set-cookie'], undefined, 'verify-email must not set a session cookie');
-  await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password } });
-  const stepUpResponse = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email, code: emailSender.lastCodeFor(email, 'LOGIN_STEP_UP') } });
-  const setCookie = stepUpResponse.headers['set-cookie'];
+  const loginResponse = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password } });
+  assert.equal(loginResponse.statusCode, 200, JSON.stringify(loginResponse.json()));
+  const setCookie = loginResponse.headers['set-cookie'];
   const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
   const sessionCookie = cookies.find((c) => c.startsWith('pca_family_session='));
   return sessionCookie.split(';')[0];

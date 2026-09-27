@@ -8,10 +8,12 @@ import type {
   ActiveLoginStepUpCode,
   ActivePasswordResetCode,
   ActiveVerificationCode,
+  ParentIdentityContactRecord,
   NewLoginStepUpCode,
   NewDailyLoginGrant,
   NewPasswordResetCode,
   NewPendingAccount,
+  ParentIdentityProfileRecord,
   NewVerificationCode,
   ParentAccountRepository,
   VerifiedTransition,
@@ -110,11 +112,106 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
       execute(
         conn,
         `INSERT INTO parent_accounts
-           (account_id, email_hash, password_hash, status, account_type, estimated_child_count, created_at)
-         VALUES (?, ?, ?, 'PENDING_VERIFICATION', ?, ?, ?)`,
-        [record.accountId, record.emailHash, record.passwordHash, record.accountType, record.estimatedChildCount, record.createdAt],
+           (account_id, email_hash, first_name, last_name, protected_display_email_ciphertext, protected_display_email_nonce, protected_display_email_auth_tag, phone_number, password_hash, status, account_type, estimated_child_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_VERIFICATION', ?, ?, ?)`,
+        [
+          record.accountId,
+          record.emailHash,
+          record.identity?.firstName ?? null,
+          record.identity?.lastName ?? null,
+          record.protectedDisplayEmail?.ciphertext ?? null,
+          record.protectedDisplayEmail?.nonce ?? null,
+          record.protectedDisplayEmail?.authTag ?? null,
+          record.phoneNumber ?? null,
+          record.passwordHash,
+          record.accountType,
+          record.estimatedChildCount,
+          record.createdAt,
+        ],
       ),
     );
+  }
+
+  async findIdentityProfile(accountId: ParentAccountId): Promise<ParentIdentityProfileRecord | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<{ first_name: string | null; last_name: string | null }>(
+        conn,
+        `SELECT first_name, last_name FROM parent_accounts WHERE account_id = ?`,
+        [accountId],
+      ),
+    );
+    const row = rows[0];
+    return row ? { firstName: row.first_name, lastName: row.last_name } : null;
+  }
+
+  async findIdentityContact(accountId: ParentAccountId): Promise<ParentIdentityContactRecord | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<{
+        protected_display_email_ciphertext: Buffer | null;
+        protected_display_email_nonce: Buffer | null;
+        protected_display_email_auth_tag: Buffer | null;
+        phone_number: string | null;
+        phone_verified_at: Date | null;
+      }>(
+        conn,
+        `SELECT protected_display_email_ciphertext, protected_display_email_nonce, protected_display_email_auth_tag, phone_number, phone_verified_at
+           FROM parent_accounts WHERE account_id = ?`,
+        [accountId],
+      ),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const allCipherPartsAbsent = row.protected_display_email_ciphertext === null && row.protected_display_email_nonce === null && row.protected_display_email_auth_tag === null;
+    const allCipherPartsPresent = row.protected_display_email_ciphertext !== null && row.protected_display_email_nonce !== null && row.protected_display_email_auth_tag !== null;
+    if (!allCipherPartsAbsent && !allCipherPartsPresent) throw new Error('Parent display email ciphertext columns are inconsistent.');
+    return {
+      protectedDisplayEmail: allCipherPartsAbsent ? null : {
+        ciphertext: row.protected_display_email_ciphertext as Buffer,
+        nonce: row.protected_display_email_nonce as Buffer,
+        authTag: row.protected_display_email_auth_tag as Buffer,
+      },
+      phoneNumber: row.phone_number,
+      phoneVerifiedAt: row.phone_verified_at,
+    };
+  }
+
+  async updateIdentityNames(accountId: ParentAccountId, firstName: string, lastName: string): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE parent_accounts SET first_name = ?, last_name = ? WHERE account_id = ?`,
+        [firstName, lastName, accountId],
+      ),
+    );
+    return rowCount === 1;
+  }
+
+  async repairProtectedDisplayEmail(
+    accountId: ParentAccountId,
+    expected: NonNullable<ParentIdentityContactRecord['protectedDisplayEmail']>,
+    replacement: NonNullable<ParentIdentityContactRecord['protectedDisplayEmail']>,
+  ): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE parent_accounts
+            SET protected_display_email_ciphertext = ?, protected_display_email_nonce = ?, protected_display_email_auth_tag = ?
+          WHERE account_id = ?
+            AND protected_display_email_ciphertext = ?
+            AND protected_display_email_nonce = ?
+            AND protected_display_email_auth_tag = ?`,
+        [
+          replacement.ciphertext,
+          replacement.nonce,
+          replacement.authTag,
+          accountId,
+          expected.ciphertext,
+          expected.nonce,
+          expected.authTag,
+        ],
+      ),
+    );
+    return rowCount === 1;
   }
 
   async findByEmailHash(emailHash: Buffer): Promise<ParentAccountRecord | null> {

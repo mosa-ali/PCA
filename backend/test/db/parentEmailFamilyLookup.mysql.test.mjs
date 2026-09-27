@@ -8,8 +8,9 @@ function requireLoopbackTestDatabase() {
   const configured = process.env.PCA_DATABASE_URL;
   assert.ok(configured, 'PCA_DATABASE_URL is required');
   const url = new URL(configured);
-  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(url.hostname), 'refusing to run against a non-loopback database');
-  assert.equal(url.pathname.replace(/^\//, ''), 'pca_test', 'refusing to run against a database other than pca_test');
+  const ownedRun = process.env.PCA_DISPOSABLE_TEST_DATABASE_OWNER === 'with-disposable-db';
+  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(url.hostname) || (ownedRun && url.hostname === 'mysql'), 'refusing to run against a non-loopback database');
+  assert.ok(url.pathname === '/pca_test' || (ownedRun && /^\/pca_test_codex_[a-f0-9]{32}$/.test(url.pathname)), 'refusing to run against a database not explicitly marked disposable');
   return configured;
 }
 

@@ -1,5 +1,7 @@
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
 import type { FreeAccessSnapshot, ParentAccountId, ParentAccountRecord, ParentAccountType } from './types.js';
+import type { ParentIdentityNameInput } from './identityProfile.js';
+import type { EncryptedParentDisplayEmail } from './identityContact.js';
 
 export interface NewPendingAccount {
   accountId: ParentAccountId;
@@ -8,6 +10,23 @@ export interface NewPendingAccount {
   createdAt: Date;
   accountType: ParentAccountType | null;
   estimatedChildCount: number | null;
+  /** Optional at the repository boundary for legacy/internal callers; self-service registration requires both names. */
+  identity?: ParentIdentityNameInput;
+  /** Encrypted at the service boundary; email_hash remains the login and uniqueness key. */
+  protectedDisplayEmail?: EncryptedParentDisplayEmail | null;
+  /** Canonical E.164 phone or null. */
+  phoneNumber?: string | null;
+}
+
+export interface ParentIdentityProfileRecord {
+  firstName: string | null;
+  lastName: string | null;
+}
+
+export interface ParentIdentityContactRecord {
+  protectedDisplayEmail: EncryptedParentDisplayEmail | null;
+  phoneNumber: string | null;
+  phoneVerifiedAt: Date | null;
 }
 
 export interface NewVerificationCode {
@@ -110,6 +129,11 @@ export interface ActivePasswordResetCode {
 export interface ParentAccountRepository {
   /** Throws a duplicate-entry error (see db/pool.ts's isDuplicateEntry) if emailHash already exists. */
   createPendingAccount(record: NewPendingAccount): Promise<void>;
+  findIdentityProfile(accountId: ParentAccountId): Promise<ParentIdentityProfileRecord | null>;
+  findIdentityContact(accountId: ParentAccountId): Promise<ParentIdentityContactRecord | null>;
+  updateIdentityNames(accountId: ParentAccountId, firstName: string, lastName: string): Promise<boolean>;
+  /** Best-effort CAS rewrap; changes only the ciphertext tuple and never identity content. */
+  repairProtectedDisplayEmail(accountId: ParentAccountId, expected: EncryptedParentDisplayEmail, replacement: EncryptedParentDisplayEmail): Promise<boolean>;
   findByEmailHash(emailHash: Buffer): Promise<ParentAccountRecord | null>;
   findById(accountId: ParentAccountId): Promise<ParentAccountRecord | null>;
   findByServiceAccountId(serviceAccountId: string): Promise<ParentAccountRecord | null>;

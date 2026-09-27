@@ -20,7 +20,23 @@ function buildApp({ mintId } = {}) {
   const authzRepository = createInMemoryAuthzRepository();
   authzRepository._grantScope('acct-owner', FAMILY, 'ACTIVE');
   authzRepository._grantScope('acct-owner-other', OTHER_FAMILY, 'ACTIVE');
+  authzRepository._grantScope('acct-viewer', FAMILY, 'ACTIVE');
+  authzRepository._grantScope('acct-child', FAMILY, 'ACTIVE');
+  authzRepository._grantScope('acct-suspended', FAMILY, 'ACTIVE');
   const authzService = new AuthzService(authzRepository);
+
+  const rolesByAccountAndFamily = new Map([
+    [`${FAMILY}:acct-owner`, 'ADMINISTRATOR'],
+    [`${OTHER_FAMILY}:acct-owner-other`, 'ADMINISTRATOR'],
+    [`${FAMILY}:acct-viewer`, 'VIEWER'],
+    [`${FAMILY}:acct-child`, 'CHILD'],
+    // acct-suspended has active service scope but no active Parent membership.
+  ]);
+  const familyMembershipRepository = {
+    async findActiveRoleByServiceAccountId(serviceAccountId, familyId) {
+      return rolesByAccountAndFamily.get(`${familyId}:${serviceAccountId}`) ?? null;
+    },
+  };
 
   // Minimal fake AuthService -- Bearer-token transport only, so the test
   // harness need not construct CSRF cookies. Two valid tokens: one scoped
@@ -31,6 +47,9 @@ function buildApp({ mintId } = {}) {
   const sessions = new Map([
     ['token-owner', 'acct-owner'],
     ['token-owner-other-family', 'acct-owner-other'],
+    ['token-viewer', 'acct-viewer'],
+    ['token-child', 'acct-child'],
+    ['token-suspended', 'acct-suspended'],
     ['token-platform-admin', 'acct-platform-admin-no-family-scope'],
   ]);
   const authService = {
@@ -45,7 +64,7 @@ function buildApp({ mintId } = {}) {
   const authAttemptLimiter = rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'auth-attempt-test' });
 
   const app = Fastify();
-  registerChildProfileRoutes(app, { childProfileService, authService, authzService, rateLimiter, authAttemptLimiter });
+  registerChildProfileRoutes(app, { childProfileService, authService, authzService, familyMembershipRepository, rateLimiter, authAttemptLimiter });
   return { app, repository };
 }
 
@@ -112,6 +131,29 @@ test('POST from an account with no scope on this family is denied, generically',
   assert.deepEqual(res.json(), { error: 'forbidden' });
 });
 
+for (const [token, roleState] of [
+  ['token-viewer', 'active Viewer'],
+  ['token-child', 'active Child'],
+  ['token-suspended', 'service-scoped account without active Parent membership'],
+]) {
+  test(`POST from an ${roleState} is denied and does not create a child profile`, async () => {
+    const { app, repository } = buildApp();
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/families/${FAMILY}/children`,
+        headers: authed(token),
+        payload: {},
+      });
+      assert.equal(res.statusCode, 403);
+      assert.deepEqual(res.json(), { error: 'forbidden' });
+      assert.equal((await repository.listForFamily(FAMILY)).length, 0);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
 test('a Platform Admin bearer token cannot authorize this route -- no family scope exists for it', async () => {
   const { app } = buildApp();
   const res = await app.inject({
@@ -149,6 +191,25 @@ test('LIST returns only the authorized family\'s own opaque entries, never anoth
     headers: authed('token-owner'),
   });
   assert.equal(crossFamily.statusCode, 403);
+});
+
+test('LIST permits an active Viewer but denies a Child and an inactive Parent membership', async () => {
+  const { app } = buildApp();
+  try {
+    await app.inject({ method: 'POST', url: `/v1/families/${FAMILY}/children`, headers: authed('token-owner'), payload: {} });
+
+    const viewer = await app.inject({ method: 'GET', url: `/v1/families/${FAMILY}/children`, headers: authed('token-viewer') });
+    assert.equal(viewer.statusCode, 200);
+    assert.equal(viewer.json().items.length, 1);
+
+    for (const token of ['token-child', 'token-suspended']) {
+      const denied = await app.inject({ method: 'GET', url: `/v1/families/${FAMILY}/children`, headers: authed(token) });
+      assert.equal(denied.statusCode, 403);
+      assert.deepEqual(denied.json(), { error: 'forbidden' });
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 test('an idempotency key replayed for the same family returns the SAME child, not a second one', async () => {

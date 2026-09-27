@@ -32,6 +32,7 @@ import type { DeviceRepository } from '../device/DeviceRepository.js';
 import type { RelayService } from '../relay/RelayService.js';
 import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
+import type { FamilyMembershipRepository } from '../familymembers/FamilyMembershipRepository.js';
 import type { DeleteNowLedger } from '../retention/DeleteNowLedger.js';
 import type { FamilyAuditService } from '../familyrbac/FamilyAuditStore.js';
 // PCA-PA-1: PCA Platform Administration -- a structurally independent
@@ -102,7 +103,8 @@ import type { ParentAccountService } from '../parentaccount/ParentAccountService
 // authority HTTP surface -- a seventh structurally independent surface,
 // registered exactly like every other domain's registerXRoutes call. See
 // removalDecisionRoutes.ts's own header for why it was not previously wired.
-import { registerRemovalDecisionRoutes, type ProtectiveAuthorityResolver } from './routes/removalDecisionRoutes.js';
+import { registerRemovalDecisionRoutes } from './routes/removalDecisionRoutes.js';
+import type { RemovalTargetResolver } from '../familyrbac/RemovalTargetResolver.js';
 import type { RemovalDecisionAuthority } from '../familyrbac/RemovalDecisionAuthority.js';
 import type { DeviceProtectionStatusRepository } from '../device/DeviceProtectionStatusRepository.js';
 import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
@@ -155,6 +157,7 @@ import type { FamilyAuditEventLedger } from '../familyrbac/FamilyAuditEventLedge
 import type { ProtectionAlertLedger } from '../alerts/ProtectionAlertLedger.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
+import type { ChildProfileRegistryRepository } from '../childprofiles/ChildProfileRegistryRepository.js';
 // parentpanel family dashboard: a ninth structurally independent surface,
 // registered exactly like every other domain's registerXRoutes call --
 // see dashboardRoutes.ts's own header for why this is a plain
@@ -179,6 +182,8 @@ export interface ServerDependencies {
   authzRepository: AuthzRepository;
   invitationService: InvitationService;
   childProfileService: ChildProfileService;
+  /** Active Parent role source for normal family actions; omitted compositions fail closed. */
+  familyMembershipRepository?: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   enrollmentCoordinator: EnrollmentCoordinator;
   pairingService: PairingService;
   deviceSessionService: DeviceSessionService;
@@ -243,10 +248,10 @@ export interface ServerDependencies {
   platformAdminSettlementService: PlatformAdminSettlementService;
   /** PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision authority -- see registerRemovalDecisionRoutes below. */
   removalDecisionAuthority: RemovalDecisionAuthority;
-  protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
+  removalTargetResolver?: Pick<RemovalTargetResolver, 'resolveForRemoval'>;
   /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration -- see registerRemovalDecisionRoutes below. */
   administrationPinService?: AdministrationPinService;
-  /** PCA-ADD-ENR-016/PCA-FR-145: see registerRuntimeSyncRoutes' own doc comment and RealProtectiveAuthorityResolver.ts. */
+  /** PCA-ADD-ENR-016/PCA-FR-145: verified device-session protection-status writes. */
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: see registerRuntimeSyncRoutes' own ProtectionStatusAlerting doc comment. */
   protectionStatusAlerting?: ProtectionStatusAlerting;
@@ -265,6 +270,8 @@ export interface ServerDependencies {
    * the SAME fail-closed UnavailableChildProfileMembershipResolver when this is omitted.
    */
   childProfileMembership?: ChildProfileMembershipResolver;
+  /** Durable async membership proof used by Parent-session child-request actions. */
+  childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   /**
    * PCA product-completion Writer P0-B: see registerChildPolicyRoutes' own
    * doc comment. Reuses the SAME ParentActionAuthorizationService instance
@@ -476,7 +483,9 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,
     authService: deps.authService,
+    parentAccountService: deps.parentAccountService,
     authzService: deps.authzService,
+    familyMembershipRepository: deps.familyMembershipRepository ?? { async findActiveRoleByServiceAccountId() { return null; } },
     rateLimiter,
     authAttemptLimiter,
   });
@@ -484,6 +493,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     childProfileService: deps.childProfileService,
     authService: deps.authService,
     authzService: deps.authzService,
+    familyMembershipRepository: deps.familyMembershipRepository ?? { async findActiveRoleByServiceAccountId() { return null; } },
     rateLimiter,
     authAttemptLimiter,
   });
@@ -495,6 +505,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     pairingService: deps.pairingService,
     authService: deps.authService,
     authzService: deps.authzService,
+    parentAccountService: deps.parentAccountService,
+    familyMembershipRepository: deps.familyMembershipRepository ?? { async findActiveRoleByServiceAccountId() { return null; } },
     rateLimiter,
     authAttemptLimiter,
   });
@@ -502,6 +514,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     browserEndpointService: deps.browserEndpointService,
     authService: deps.authService,
     authzService: deps.authzService,
+    familyMembershipRepository: deps.familyMembershipRepository ?? { async findActiveRoleByServiceAccountId() { return null; } },
     rateLimiter,
     authAttemptLimiter,
   });
@@ -529,6 +542,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerRetentionRoutes(app, {
     authService: deps.authService,
+    parentAccountService: deps.parentAccountService,
     authzRepository: deps.authzRepository,
     deleteNowLedger: deps.deleteNowLedger,
     auditService: deps.familyAuditService,
@@ -599,6 +613,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
+    deviceRepository: deps.deviceRepository,
     // PCA-234C026: without this, Safe Zone routes' actor-identity binding
     // (authorizeSafeZoneRequest) fails closed with 503
     // family_authority_unavailable rather than trusting the spoofable
@@ -611,7 +626,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerRemovalDecisionRoutes(app, {
     parentAccountService: deps.parentAccountService,
     removalDecisionAuthority: deps.removalDecisionAuthority,
-    protectiveAuthorityResolver: deps.protectiveAuthorityResolver,
+    removalTargetResolver: deps.removalTargetResolver,
     administrationPinService: deps.administrationPinService,
   });
   registerComplimentaryGrantRoutes(app, {
@@ -636,6 +651,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     bonusGrantLedger: deps.bonusGrantLedger,
     deviceSessionService: deps.deviceSessionService,
     childProfileMembership: deps.childProfileMembership,
+    childProfileRegistryRepository: deps.childProfileRegistryRepository,
   });
   registerChildPolicyRoutes(app, {
     parentAccountService: deps.parentAccountService,
@@ -645,8 +661,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerEyeProtectionRoutes(app, {
     parentAccountService: deps.parentAccountService,
-    deviceSessionService: deps.deviceSessionService,
     eyeProtectionSettingsService: deps.eyeProtectionSettingsService,
+    childProfileRegistryRepository: deps.childProfileRegistryRepository,
   });
   registerWebRuleRoutes(app, {
     parentAccountService: deps.parentAccountService,
@@ -657,16 +673,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerFamilyMemberRoutes(app, {
     parentAccountService: deps.parentAccountService,
     familyMemberInvitationService: deps.familyMemberInvitationService,
-    deviceSessionService: deps.deviceSessionService,
   });
   registerFamilyAuditEventRoutes(app, {
     parentAccountService: deps.parentAccountService,
-    deviceSessionService: deps.deviceSessionService,
     familyAuditEventLedger: deps.familyAuditEventLedger,
   });
   registerProtectionAlertRoutes(app, {
     parentAccountService: deps.parentAccountService,
-    deviceSessionService: deps.deviceSessionService,
     protectionAlertLedger: deps.protectionAlertLedger,
   });
   registerDashboardRoutes(app, {

@@ -19,6 +19,7 @@ import type {
   ParentDecisionOutcome,
   TargetScope,
 } from './types.js';
+import type { ParentOperation } from '../familyrbac/types.js';
 import type { AppScope, BonusGrant } from '../schedule/types.js';
 import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 
@@ -30,6 +31,29 @@ export type ChildRequestErrorCode =
   | 'NOT_AUTHORIZED_TO_DECIDE'
   | 'BONUS_MINUTES_OUT_OF_BOUND'
   | 'COUNTER_OFFER_NOT_SHORTER';
+
+export type ParentSessionChildRequestAuthorizationResult =
+  | { verdict: 'ALLOW' }
+  | { verdict: 'DENY' };
+
+/**
+ * Server-side authority for the ordinary Parent-session lane. Implementations
+ * must verify that `parentAccountId` has an active Administrator role in
+ * `familyId` and that `targetScope` resolves to that same family. In
+ * particular, CHILD_PROFILE membership must be resolved through the opaque
+ * family membership registry; unavailable or ambiguous results must deny.
+ */
+export interface ParentSessionChildRequestAuthorizer {
+  authorize(input: {
+    parentAccountId: string;
+    familyId: string;
+    requestType: ChildRequestType;
+    operation: ParentOperation;
+    targetScope: TargetScope;
+    action: 'DECIDE' | 'DIRECT_GRANT';
+    idempotencyKey: string;
+  }): Promise<ParentSessionChildRequestAuthorizationResult>;
+}
 
 export class ChildRequestError extends Error {
   readonly code: ChildRequestErrorCode;
@@ -45,7 +69,7 @@ const CHILD_REQUEST_ERROR_MESSAGES: Record<ChildRequestErrorCode, string> = {
   NOT_FOUND: 'Child request does not exist.',
   ILLEGAL_TRANSITION: 'This child request has already been decided or is not in a decidable state.',
   REQUEST_EXPIRED: 'This child request has expired.',
-  NOT_AUTHORIZED_TO_DECIDE: 'The deciding device is not authorized to approve/deny this request type.',
+  NOT_AUTHORIZED_TO_DECIDE: 'The deciding actor is not authorized to approve/deny this request type.',
   BONUS_MINUTES_OUT_OF_BOUND: 'Requested/granted extra minutes is outside the permitted bound.',
   COUNTER_OFFER_NOT_SHORTER: 'A counter-offer must grant strictly fewer minutes than the child requested.',
 };
@@ -64,11 +88,18 @@ export class ChildRequestService {
   private readonly repository: ChildRequestRepository;
   private readonly authorization: ParentActionAuthorizationService;
   private readonly now: () => Date;
+  private readonly parentSessionAuthorizer?: ParentSessionChildRequestAuthorizer;
 
-  constructor(repository: ChildRequestRepository, authorization: ParentActionAuthorizationService, now: () => Date = () => new Date()) {
+  constructor(
+    repository: ChildRequestRepository,
+    authorization: ParentActionAuthorizationService,
+    now: () => Date = () => new Date(),
+    parentSessionAuthorizer?: ParentSessionChildRequestAuthorizer,
+  ) {
     this.repository = repository;
     this.authorization = authorization;
     this.now = now;
+    this.parentSessionAuthorizer = parentSessionAuthorizer;
   }
 
   /**
@@ -90,7 +121,7 @@ export class ChildRequestService {
    */
   createDraft(
     familyId: string,
-    childDeviceId: string,
+    childDeviceId: string | null,
     childMemberId: string | null,
     requestType: ChildRequestType,
     targetScope: TargetScope,
@@ -129,6 +160,8 @@ export class ChildRequestService {
       expiresAt: new Date(now.getTime() + DEFAULT_REQUEST_LIFETIME_MS),
       decidedAt: null,
       decidedByDeviceId: null,
+      createdByParentAccountId: null,
+      decidedByAccountId: null,
       decisionActionId: null,
       correlationId: null,
       reasonNote: sanitizeReasonNote(reasonNote ?? null),
@@ -144,6 +177,12 @@ export class ChildRequestService {
   }
 
   async submit(draft: ChildRequest): Promise<ChildRequest> {
+    if (
+      (draft.childDeviceId !== null && draft.createdByParentAccountId !== null) ||
+      (draft.childDeviceId === null && !isPlausibleOpaqueId(draft.createdByParentAccountId))
+    ) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
     if (!isLegalChildRequestTransition(draft.state, 'PENDING')) throw new ChildRequestError('ILLEGAL_TRANSITION');
     const pending: ChildRequest = { ...draft, state: 'PENDING', correlationId: draft.correlationId ?? randomUUID() };
     await this.repository.put(pending);
@@ -253,6 +292,95 @@ export class ChildRequestService {
       state: outcome,
       decidedAt: now,
       decidedByDeviceId: decidingActorDeviceId,
+      decidedByAccountId: null,
+      decisionActionId,
+      grantedExtraMinutes,
+      grantExpiresAtUtc,
+    };
+    await this.repository.put(decided);
+    return decided;
+  }
+
+  /**
+   * Decide a pending request from a verified Parent-account session. This is
+   * intentionally separate from `decide()`: the session authority is checked
+   * by its own injected authorizer and never represented as a device in the
+   * Trust Set authorization service.
+   */
+  async decideAsParent(
+    requestId: ChildRequestId,
+    familyId: string,
+    parentAccountId: string,
+    outcome: ParentDecisionOutcome,
+    decisionActionId: string,
+    idempotencyKey: string,
+    counterOfferExtraMinutes?: number | null,
+  ): Promise<ChildRequest> {
+    if (
+      !isPlausibleOpaqueId(familyId) ||
+      !isPlausibleOpaqueId(parentAccountId) ||
+      !isPlausibleOpaqueId(decisionActionId)
+    ) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
+    const request = await this.repository.get(requestId);
+    if (request === null || request.familyId !== familyId) throw new ChildRequestError('NOT_FOUND');
+
+    const now = this.now();
+    if (request.state === 'PENDING' && now.getTime() > request.expiresAt.getTime()) {
+      const expired: ChildRequest = { ...request, state: 'EXPIRED' };
+      await this.repository.put(expired);
+      throw new ChildRequestError('REQUEST_EXPIRED');
+    }
+
+    let grantedExtraMinutes: number | null = null;
+    let grantExpiresAtUtc: Date | null = null;
+    if (outcome === 'COUNTERED') {
+      if (request.requestType !== 'BONUS_TIME' || request.requestedExtraMinutes === null) {
+        throw new ChildRequestError('INVALID_INPUT');
+      }
+      if (!isPlausibleExtraMinutes(counterOfferExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
+      if ((counterOfferExtraMinutes as number) >= request.requestedExtraMinutes) {
+        throw new ChildRequestError('COUNTER_OFFER_NOT_SHORTER');
+      }
+      grantedExtraMinutes = counterOfferExtraMinutes as number;
+      grantExpiresAtUtc = new Date(now.getTime() + grantedExtraMinutes * 60_000);
+    } else if (counterOfferExtraMinutes != null) {
+      throw new ChildRequestError('INVALID_INPUT');
+    } else if (outcome === 'APPROVED' && request.requestType === 'BONUS_TIME') {
+      if (!isPlausibleExtraMinutes(request.requestedExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
+      grantedExtraMinutes = request.requestedExtraMinutes;
+      grantExpiresAtUtc = new Date(now.getTime() + grantedExtraMinutes * 60_000);
+    }
+
+    const authorized = await this.authorizeParentSession({
+      parentAccountId,
+      familyId,
+      requestType: request.requestType,
+      operation: operationForRequestType(request.requestType),
+      targetScope: request.targetScope,
+      action: 'DECIDE',
+      idempotencyKey,
+    });
+    if (!authorized) throw new ChildRequestError('NOT_AUTHORIZED_TO_DECIDE');
+
+    if (
+      (request.state === 'APPROVED' || request.state === 'DENIED' || request.state === 'COUNTERED') &&
+      request.decidedByAccountId === parentAccountId &&
+      request.state === outcome &&
+      request.grantedExtraMinutes === grantedExtraMinutes
+    ) {
+      return request;
+    }
+
+    if (!isLegalChildRequestTransition(request.state, outcome)) throw new ChildRequestError('ILLEGAL_TRANSITION');
+
+    const decided: ChildRequest = {
+      ...request,
+      state: outcome,
+      decidedAt: now,
+      decidedByDeviceId: null,
+      decidedByAccountId: parentAccountId,
       decisionActionId,
       grantedExtraMinutes,
       grantExpiresAtUtc,
@@ -323,6 +451,71 @@ export class ChildRequestService {
     return this.decide(pending.requestId, familyId, grantingActorDeviceId, 'APPROVED', decisionActionId, idempotencyKey);
   }
 
+  /**
+   * Parent-session version of a proactive grant. It checks the active Parent
+   * authority and prospective target before persisting anything, then stores
+   * the grant as a Parent-created request with no child-device provenance.
+   */
+  async grantDirectlyAsParent(
+    familyId: string,
+    childDeviceId: string | null,
+    childMemberId: string | null,
+    targetScope: TargetScope,
+    extraMinutes: number,
+    appScope: AppScope,
+    parentAccountId: string,
+    decisionActionId: string,
+    idempotencyKey: string,
+    reasonNote?: string | null,
+  ): Promise<ChildRequest> {
+    if (
+      !isPlausibleOpaqueId(familyId) ||
+      !isPlausibleOpaqueId(parentAccountId) ||
+      !isPlausibleOpaqueId(decisionActionId)
+    ) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
+    if (childDeviceId !== null) throw new ChildRequestError('INVALID_INPUT');
+    const draft = this.createDraft(
+      familyId,
+      null,
+      childMemberId,
+      'BONUS_TIME',
+      targetScope,
+      reasonNote,
+      extraMinutes,
+      appScope,
+    );
+    draft.createdByParentAccountId = parentAccountId;
+    const authorized = await this.authorizeParentSession({
+      parentAccountId,
+      familyId,
+      requestType: 'BONUS_TIME',
+      operation: operationForRequestType('BONUS_TIME'),
+      targetScope: draft.targetScope,
+      action: 'DIRECT_GRANT',
+      idempotencyKey,
+    });
+    if (!authorized) throw new ChildRequestError('NOT_AUTHORIZED_TO_DECIDE');
+
+    const pending = await this.submit(draft);
+    if (!isLegalChildRequestTransition(pending.state, 'APPROVED')) throw new ChildRequestError('ILLEGAL_TRANSITION');
+
+    const now = this.now();
+    const decided: ChildRequest = {
+      ...pending,
+      state: 'APPROVED',
+      decidedAt: now,
+      decidedByDeviceId: null,
+      decidedByAccountId: parentAccountId,
+      decisionActionId,
+      grantedExtraMinutes: extraMinutes,
+      grantExpiresAtUtc: new Date(now.getTime() + extraMinutes * 60_000),
+    };
+    await this.repository.put(decided);
+    return decided;
+  }
+
   /** Thin passthrough -- the HTTP layer (parent-facing list view) has no business reaching into the repository port directly. */
   async listForFamily(familyId: string): Promise<ChildRequest[]> {
     return this.repository.listForFamily(familyId);
@@ -384,5 +577,24 @@ export class ChildRequestService {
     };
     await this.repository.put(acknowledged);
     return acknowledged;
+  }
+
+  private async authorizeParentSession(input: {
+    parentAccountId: string;
+    familyId: string;
+    requestType: ChildRequestType;
+    operation: ParentOperation;
+    targetScope: TargetScope;
+    action: 'DECIDE' | 'DIRECT_GRANT';
+    idempotencyKey: string;
+  }): Promise<boolean> {
+    if (!this.parentSessionAuthorizer) return false;
+    try {
+      const result = await this.parentSessionAuthorizer.authorize(input);
+      return result?.verdict === 'ALLOW';
+    } catch {
+      // A failed or unavailable role/membership source is never an implicit allow.
+      return false;
+    }
   }
 }

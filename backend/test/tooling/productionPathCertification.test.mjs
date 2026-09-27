@@ -75,6 +75,7 @@ import { evaluateCertificationRun } from '../../scripts/lib/certificationRunVerd
 const BACKEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const MAIN_PATH = fileURLToPath(new URL('../../src/main.ts', import.meta.url));
 const PACKAGE_PATH = fileURLToPath(new URL('../../package.json', import.meta.url));
+const DISPOSABLE_RUNNER_PATH = fileURLToPath(new URL('../../scripts/with-disposable-db.mjs', import.meta.url));
 const WORKFLOW_DIR = fileURLToPath(new URL('../../../.github/workflows', import.meta.url));
 
 /**
@@ -163,6 +164,7 @@ const REGISTER = new Map([
   ['MySqlParentPreferenceRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'hand-built fake in the route suite.' }],
   ['MySqlSafeZoneRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'hand-built fake in the route suite.' }],
   ['MySqlDeviceProtectionStatusRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes; the real service is not driven.' }],
+  ['MySqlDeviceChildBindingRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'MySQL cases query the repository directly; they do not drive RemovalTargetResolver through the production removal-decision route and verify the resolved target against MySQL.' }],
   ['MySqlProfileModeRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes in profileProtectionMode.mysql.test.mjs; the real service that owns the transition is not driven.' }],
   ['MySqlDeleteNowLedger', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'the delete PLAN is hand-built in 5 of 6 cases; the real planner is not driven into it.' }],
   ['MySqlFamilyMemberAccountBinder', {
@@ -371,7 +373,7 @@ const REGISTER = new Map([
 // the device-signature commercial owner gate were deleted). That is removal of
 // the store, not certification of it; the stale-row gate above is what forced
 // the rows out, and this baseline simply tracks the register.
-const BASELINE_GAP_COUNT = 19;
+const BASELINE_GAP_COUNT = 20;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
@@ -408,6 +410,11 @@ function ciExecutedTestFiles() {
     .map((name) => readFileSync(`${WORKFLOW_DIR}/${name}`, 'utf8'));
   const packageJson = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8'));
   const scripts = packageJson.scripts ?? {};
+  const disposableRunner = readFileSync(DISPOSABLE_RUNNER_PATH, 'utf8');
+  const disposableTargets = new Map(
+    [...disposableRunner.matchAll(/requestedTarget\s*===\s*'([^']+)'\s*\?\s*'([^']+)'/g)]
+      .map((match) => [match[1], match[2]]),
+  );
 
   const invoked = new Set();
   const queue = [];
@@ -421,6 +428,11 @@ function ciExecutedTestFiles() {
     const command = scripts[name];
     if (typeof command !== 'string') continue;
     for (const match of command.matchAll(/npm\s+run\s+([A-Za-z0-9:_-]+)/g)) queue.push(match[1]);
+    for (const match of command.matchAll(/scripts\/with-disposable-db\.mjs(?:\s+([A-Za-z-]+))?/g)) {
+      const requestedTarget = match[1] ?? 'all';
+      const dispatchedScript = disposableTargets.get(requestedTarget);
+      if (dispatchedScript) queue.push(dispatchedScript);
+    }
   }
 
   const files = new Set();

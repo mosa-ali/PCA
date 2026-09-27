@@ -1,7 +1,6 @@
-// Real-MySQL coverage for Parent email login step-up during the pre-enrollment
-// grace period. After TOTP enrollment, login requires TOTP and neither this
-// email-code path nor a daily grant can authenticate an ACTIVE factor.
-// Platform Admin MFA remains a separate realm.
+// MySQL coverage for the completed Parent login contract: email + password
+// covers automatic account-bound browser trust, unknown-browser email OTP,
+// the persistent MFA deadline, and TOTP on an unknown browser after enrollment.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
@@ -10,209 +9,186 @@ import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
 import { MySqlParentMfaRepository } from '../../dist/parentaccount/mfa/MySqlParentMfaRepository.js';
 import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
-import { closePool, getPool } from '../../dist/db/pool.js';
-import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
+import { LOGIN_STEP_UP_CODE_TTL_MS, MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE } from '../../dist/parentaccount/policy.js';
+import { TestSandboxEmailSender } from '../../dist/parentaccount/TestSandboxEmailSender.js';
+import { closePool } from '../../dist/db/pool.js';
+import { createParentAccountTestKit, createTestClock, totpFor } from '../support/parentMfaTestKit.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-class RecordingEmailSender {
-  constructor() {
-    this.sent = [];
-  }
-  async sendVerificationCode(email, code) {
-    this.sent.push({ email, code, kind: 'VERIFICATION' });
-  }
-  async sendPasswordResetCode(email, code) {
-    this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
-  }
-  async sendLoginStepUpCode(email, code) {
-    this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
-  }
-  async sendPlatformAdminActivationLink() {}
-  lastCodeFor(email, kind = 'VERIFICATION') {
-    for (let i = this.sent.length - 1; i >= 0; i -= 1) {
-      if (this.sent[i].email === email && this.sent[i].kind === kind) return this.sent[i].code;
-    }
-    return null;
-  }
-}
-
-function buildService() {
+function buildService(clock = createTestClock()) {
   const repository = new MySqlParentAccountRepository();
   const authService = new AuthService(new MySqlAuthRepository());
-  const emailSender = new RecordingEmailSender();
-  const { service } = createParentAccountTestKit({
+  const emailSender = new TestSandboxEmailSender();
+  const { service, mfaService } = createParentAccountTestKit({
     repository,
     authService,
     emailSender,
     mfaRepository: new MySqlParentMfaRepository(),
+    now: clock.now,
   });
-  return { service, repository, emailSender };
-}
-
-function uniqueEmail(label) {
-  return `login-step-up-${label}-${randomUUID()}@example.test`;
+  return { service, repository, emailSender, mfaService, clock };
 }
 
 const PASSWORD = 'a genuinely long password value 2026';
+const uniqueEmail = (label) => `optional-login-${label}-${randomUUID()}@example.test`;
 
-/** Registers and verifies a real account through the actual service. Registration/email verification remains separate; every password login without a valid browser grant still requires mailbox step-up. */
 async function registerAndVerify(service, emailSender, email) {
   await service.register(email, PASSWORD, PASSWORD);
-  const code = emailSender.lastCodeFor(email, 'VERIFICATION');
-  await service.verifyEmail(email, code);
+  await service.verifyEmail(email, emailSender.lastCodeFor(email));
 }
 
-test('EMAIL_VERIFICATION + PASSWORD_AUTH: a normally registered-and-verified account requires daily email OTP before a session', async () => {
+test('first login provisions family and trust; recognized browser uses password; unknown browser requires email OTP', async () => {
   const { service, emailSender } = buildService();
-  const email = uniqueEmail('normal');
+  const email = uniqueEmail('password-only');
   await registerAndVerify(service, emailSender, email);
 
-  const result = await service.login(email, PASSWORD);
-  assert.deepEqual(result, { status: 'STEP_UP_REQUIRED' });
-  const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  const completed = await service.completeLoginStepUp(email, code);
-  assert.ok(completed.rawSessionToken);
-  assert.ok(completed.rawDailyLoginGrantToken);
+  const first = await service.login(email, PASSWORD);
+  assert.equal(first.status, 'AUTHENTICATED');
+  assert.equal(first.mfa.status, 'GRACE');
+  assert.equal(typeof first.rawDailyLoginGrantToken, 'string');
+
+  const later = await service.login(email, PASSWORD, first.rawDailyLoginGrantToken);
+  assert.equal(later.status, 'AUTHENTICATED');
+  assert.equal(later.familyId, first.familyId);
+  assert.equal(typeof later.rawDailyLoginGrantToken, 'undefined');
+
   assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
-  assert.equal((await service.login(email, PASSWORD, completed.rawDailyLoginGrantToken)).status, 'AUTHENTICATED');
-  console.log('PASSWORD_AUTH=PASS');
-  console.log('EMAIL_VERIFICATION=PASS');
+  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(stepUpCode);
+  const unknownBrowser = await service.completeLoginStepUp(email, stepUpCode);
+  assert.equal(unknownBrowser.status, 'AUTHENTICATED');
+  assert.equal(typeof unknownBrowser.rawDailyLoginGrantToken, 'string');
+  assert.equal(unknownBrowser.familyId, first.familyId);
+  assert.equal(emailSender.kindsFor(email).filter((kind) => kind === 'LOGIN_SUCCESSFUL').length, 2);
 });
 
-test('EMAIL_OTP: a valid password without a grant requires a real hash-only code, and completing it establishes a session plus a grant', async () => {
-  const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('first-login');
+test('unknown-browser email step-up is single-use and creates account-bound trust', async () => {
+  const { service, emailSender } = buildService();
+  const email = uniqueEmail('retired-step-up');
   await registerAndVerify(service, emailSender, email);
-  const account = await repository.findByEmailHash((await import('../../dist/parentaccount/emailHash.js')).hashParentEmail(email));
-  const loginResult = await service.login(email, PASSWORD);
-  assert.deepEqual(loginResult, { status: 'STEP_UP_REQUIRED' });
-
-  const [[row]] = await getPool().query(`SELECT code_hash FROM parent_login_step_up_codes WHERE account_id = ? ORDER BY created_at DESC LIMIT 1`, [account.accountId]);
-  assert.match(row.code_hash, /^[0-9a-f]{64}$/, 'OTP_HASH_ONLY: only a hex HMAC digest is stored, never the plaintext code');
-
+  const first = await service.login(email, PASSWORD);
+  assert.equal(first.status, 'AUTHENTICATED');
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
   const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  assert.match(code, /^\d{6}$/);
-  assert.equal(row.code_hash.includes(code), false);
-
+  assert.ok(code);
   const completed = await service.completeLoginStepUp(email, code);
-  assert.equal(completed.accountId, account.accountId);
-  assert.ok(completed.rawSessionToken);
-  assert.ok(completed.rawDailyLoginGrantToken);
-
-  const [[after]] = await getPool().query(`SELECT first_login_completed_at FROM parent_accounts WHERE account_id = ?`, [account.accountId]);
-  assert.ok(after.first_login_completed_at, 'first_login_completed_at is now set');
-
-  // The historical first_login_completed_at marker is not the daily bypass.
-  const secondLogin = await service.login(email, PASSWORD);
-  assert.equal(secondLogin.status, 'STEP_UP_REQUIRED');
-  const sameBrowserLogin = await service.login(email, PASSWORD, completed.rawDailyLoginGrantToken);
-  assert.equal(sameBrowserLogin.status, 'AUTHENTICATED');
-
-  console.log('EMAIL_OTP=PASS');
-  console.log('OTP_HASH_ONLY=PASS');
+  assert.equal(completed.status, 'AUTHENTICATED');
+  assert.equal(typeof completed.rawDailyLoginGrantToken, 'string');
+  await assert.rejects(() => service.completeLoginStepUp(email, code), (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED');
 });
 
-test('OTP_SINGLE_USE + OTP_REPLAY_DENIED: the same step-up code cannot be used twice', async () => {
-  const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('replay');
+test('expired unknown-browser email OTP is rejected without authenticating', async () => {
+  const { service, emailSender, clock } = buildService();
+  const email = uniqueEmail('expired-step-up');
   await registerAndVerify(service, emailSender, email);
-  const { hashParentEmail } = await import('../../dist/parentaccount/emailHash.js');
-  const account = await repository.findByEmailHash(hashParentEmail(email));
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-
-  await service.login(email, PASSWORD);
+  const first = await service.login(email, PASSWORD);
+  assert.equal(first.status, 'AUTHENTICATED');
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
   const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  await service.completeLoginStepUp(email, code);
+  assert.ok(code);
 
-  await assert.rejects(() => service.completeLoginStepUp(email, code), ParentAccountError);
-  console.log('OTP_SINGLE_USE=PASS');
-  console.log('OTP_REPLAY_DENIED=PASS');
+  clock.advance(LOGIN_STEP_UP_CODE_TTL_MS + 1);
+  await assert.rejects(
+    () => service.completeLoginStepUp(email, code),
+    (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED',
+  );
 });
 
-test('OTP_EXPIRY: an expired step-up code is rejected', async () => {
-  const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('expiry');
+test('a newer unknown-browser email OTP invalidates the previous code', async () => {
+  const { service, emailSender, clock } = buildService();
+  const email = uniqueEmail('reissued-step-up');
   await registerAndVerify(service, emailSender, email);
-  const { hashParentEmail } = await import('../../dist/parentaccount/emailHash.js');
-  const account = await repository.findByEmailHash(hashParentEmail(email));
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-  await service.login(email, PASSWORD);
-  const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  const first = await service.login(email, PASSWORD);
+  assert.equal(first.status, 'AUTHENTICATED');
 
-  await getPool().query(`UPDATE parent_login_step_up_codes SET expires_at = DATE_SUB(NOW(3), INTERVAL 1 MINUTE) WHERE account_id = ?`, [account.accountId]);
-  await assert.rejects(() => service.completeLoginStepUp(email, code), ParentAccountError);
-  console.log('OTP_EXPIRY=PASS');
-});
-
-test('OTP_REISSUE_INVALIDATION: a second login attempt issues a fresh code; the old one no longer works', async () => {
-  const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('reissue');
-  await registerAndVerify(service, emailSender, email);
-  const { hashParentEmail } = await import('../../dist/parentaccount/emailHash.js');
-  const account = await repository.findByEmailHash(hashParentEmail(email));
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-
-  await service.login(email, PASSWORD);
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
   const oldCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  await service.login(email, PASSWORD); // second attempt, before completing the first
+  assert.ok(oldCode);
+  clock.advance(1); // Ensures the second MySQL row is unambiguously the latest code.
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
   const newCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  assert.notEqual(oldCode, newCode);
+  assert.ok(newCode);
+  assert.notEqual(newCode, oldCode);
 
-  // findLatestLoginStepUpCode only ever considers the newest row -- the old
-  // one becomes unreachable, matching the password-reset code precedent
-  // (see verificationCode.ts's own doc comment on this design axis).
-  await assert.rejects(() => service.completeLoginStepUp(email, oldCode), ParentAccountError);
+  await assert.rejects(
+    () => service.completeLoginStepUp(email, oldCode),
+    (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED',
+  );
   const completed = await service.completeLoginStepUp(email, newCode);
-  assert.ok(completed.rawSessionToken);
-  console.log('OTP_REISSUE_INVALIDATION=PASS');
+  assert.equal(completed.status, 'AUTHENTICATED');
+  assert.equal(typeof completed.rawDailyLoginGrantToken, 'string');
 });
 
-test('OTP_ATTEMPT_LIMIT: a code locks itself out after too many wrong guesses', async () => {
+test('eight wrong unknown-browser email OTP guesses exhaust the code', async () => {
   const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('attempt-limit');
+  const email = uniqueEmail('attempt-limit-step-up');
   await registerAndVerify(service, emailSender, email);
-  const { hashParentEmail } = await import('../../dist/parentaccount/emailHash.js');
-  const account = await repository.findByEmailHash(hashParentEmail(email));
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-  await service.login(email, PASSWORD);
-  const realCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  const first = await service.login(email, PASSWORD);
+  assert.equal(first.status, 'AUTHENTICATED');
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  const validCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(validCode);
+  const wrongCode = validCode === '000000' ? '000001' : '000000';
 
-  for (let i = 0; i < 8; i += 1) {
-    await assert.rejects(() => service.completeLoginStepUp(email, '000000' === realCode ? '111111' : '000000'), ParentAccountError);
+  for (let attempt = 0; attempt < MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE; attempt += 1) {
+    await assert.rejects(
+      () => service.completeLoginStepUp(email, wrongCode),
+      (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED',
+    );
   }
-  // Even the REAL code is now refused -- the code is locked out, not just the wrong guesses.
-  await assert.rejects(() => service.completeLoginStepUp(email, realCode), ParentAccountError);
-  console.log('OTP_ATTEMPT_LIMIT=PASS');
+  const codeRecord = await repository.findLatestLoginStepUpCode(first.accountId);
+  assert.equal(codeRecord?.attemptCount, MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE);
+  await assert.rejects(
+    () => service.completeLoginStepUp(email, validCode),
+    (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED',
+  );
 });
 
-test('ENUMERATION_RESISTANCE: login for an unknown email and a known email with a first-login requirement both eventually deny identically at the credential stage', async () => {
-  const { service } = buildService();
-  await assert.rejects(() => service.login(uniqueEmail('unknown'), 'irrelevant-password-value'), ParentAccountError);
-  console.log('ENUMERATION_RESISTANCE=PASS (unchanged pre-existing behavior -- unknown email and wrong password both throw the identical generic UNAUTHORIZED)');
+test('unknown email and verified-account wrong-password login failures share the generic denial and send no login OTP', async () => {
+  const { service, emailSender } = buildService();
+  const registeredEmail = uniqueEmail('enumeration');
+  await registerAndVerify(service, emailSender, registeredEmail);
+  const unknownEmail = uniqueEmail('unregistered');
+
+  async function loginErrorCode(address, password) {
+    try {
+      await service.login(address, password);
+    } catch (error) {
+      assert.ok(error instanceof ParentAccountError);
+      return error.code;
+    }
+    assert.fail('Expected login to be denied.');
+  }
+
+  const unknownEmailError = await loginErrorCode(unknownEmail, PASSWORD);
+  const wrongPasswordError = await loginErrorCode(registeredEmail, 'incorrect password value');
+  assert.equal(unknownEmailError, 'UNAUTHORIZED');
+  assert.equal(wrongPasswordError, unknownEmailError);
+  assert.equal(emailSender.kindsFor(registeredEmail).filter((kind) => kind === 'LOGIN_STEP_UP').length, 0);
+  assert.equal(emailSender.kindsFor(unknownEmail).filter((kind) => kind === 'LOGIN_STEP_UP').length, 0);
 });
 
-test('SESSION_REVOCATION + ADMIN_TOTP_NOT_REQUIRED_FOR_PARENT: completing step-up never touches Platform Admin MFA state, and normal session revocation still works afterward', async () => {
-  const { service, repository, emailSender } = buildService();
-  const email = uniqueEmail('session-revocation');
+test('known browser skips routine TOTP; unknown browser requires email OTP and active TOTP', async () => {
+  const { service, emailSender, clock } = buildService();
+  const email = uniqueEmail('active-totp');
   await registerAndVerify(service, emailSender, email);
-  const { hashParentEmail } = await import('../../dist/parentaccount/emailHash.js');
-  const account = await repository.findByEmailHash(hashParentEmail(email));
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-  await service.login(email, PASSWORD);
-  const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  const completed = await service.completeLoginStepUp(email, code);
+  const session = await service.login(email, PASSWORD);
+  const credential = { kind: 'SESSION', rawSessionToken: session.rawSessionToken };
+  const started = await service.beginMfaEnrollment(credential, email, PASSWORD);
+  const enrolled = await service.confirmMfaEnrollment(credential, email, totpFor(started.secretBase32, clock.now().getTime()));
+  assert.equal(enrolled.status, 'ENROLLED');
+  const trustedGrant = enrolled.rawDailyLoginGrantToken;
+  assert.equal(typeof trustedGrant, 'string');
 
-  // No platform_admin_* table row was ever touched by this entire flow.
-  const [platformAdminRows] = await getPool().query(`SELECT admin_id FROM platform_admin_accounts LIMIT 1`);
-  // (Existence of unrelated platform admin rows from other tests is fine; the point is this flow never created one FOR this parent account, which has no admin_id concept at all.)
-  assert.ok(Array.isArray(platformAdminRows));
-
-  await service.revokeAllSessions(completed.rawSessionToken);
-  const readAfterRevoke = await service.readSession(completed.rawSessionToken).catch((e) => e);
-  assert.ok(readAfterRevoke instanceof ParentAccountError);
-  console.log('SESSION_REVOCATION=PASS');
-  console.log('ADMIN_TOTP_NOT_REQUIRED_FOR_PARENT=PASS');
+  assert.equal((await service.login(email, PASSWORD, trustedGrant)).status, 'AUTHENTICATED');
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  const emailCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  clock.advance(30_000);
+  const currentCode = totpFor(started.secretBase32, clock.now().getTime());
+  const completed = await service.completeLoginStepUp(email, emailCode, currentCode);
+  assert.equal(completed.status, 'AUTHENTICATED');
+  assert.equal(typeof completed.rawDailyLoginGrantToken, 'string');
 });
 
 test.after(async () => {

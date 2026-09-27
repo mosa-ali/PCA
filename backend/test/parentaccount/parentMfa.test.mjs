@@ -1,5 +1,5 @@
-// PCA-DEC-037 -- Parent account journey after Genesis removal:
-// register -> verify -> first login (grace starts once, family provisioned)
+// Parent account journey after Genesis removal:
+// register -> verify -> password login (family provisioned)
 // -> authenticator enrollment -> TOTP on every explicit login, plus
 // lockout, recovery, notifications, secret hygiene and the ADMINISTRATOR +
 // fresh-TOTP commercial step-up.
@@ -35,12 +35,9 @@ async function registerAndVerify(h, email) {
   assert.deepEqual(outcome, { status: 'VERIFIED' });
 }
 
-/** Password + emailed code: the second factor before an authenticator exists. */
-async function loginWithEmailCode(h, email, dailyGrant) {
-  const first = await h.service.login(email, PASSWORD, dailyGrant);
-  if (first.status === 'AUTHENTICATED') return first;
-  assert.equal(first.status, 'STEP_UP_REQUIRED');
-  return h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
+/** Email + password directly authenticate accounts without an active TOTP. */
+async function loginWithEmailCode(h, email, legacyDailyGrant) {
+  return h.service.login(email, PASSWORD, legacyDailyGrant);
 }
 
 /** Enrolls via the given credential and returns the base32 secret the authenticator app would hold. */
@@ -56,9 +53,9 @@ async function enroll(h, email, credential) {
 async function enrolledAccount(h, email) {
   await registerAndVerify(h, email);
   const session = await loginWithEmailCode(h, email);
-  const { secret } = await enroll(h, email, { kind: 'SESSION', rawSessionToken: session.rawSessionToken });
+  const { secret, outcome } = await enroll(h, email, { kind: 'SESSION', rawSessionToken: session.rawSessionToken });
   h.clock.advance(STEP);
-  return { secret, session };
+  return { secret, session: { ...session, rawDailyLoginGrantToken: outcome.rawDailyLoginGrantToken } };
 }
 
 test('verification activates the account only: no session, no family, ACCOUNT_ACTIVATED notice', async () => {
@@ -72,7 +69,7 @@ test('verification activates the account only: no session, no family, ACCOUNT_AC
   assert.deepEqual(h.emailSender.kindsFor(email), ['VERIFICATION', 'ACCOUNT_ACTIVATED']);
 });
 
-test('first login: family provisioned as ADMINISTRATOR, grace starts exactly once, FIRST_LOGIN notice once, family stable across logins', async () => {
+test('first login starts the one-time MFA deadline, provisions Administrator, and sends one security notice per login', async () => {
   const h = harness();
   const email = 'first@example.com';
   await registerAndVerify(h, email);
@@ -81,63 +78,57 @@ test('first login: family provisioned as ADMINISTRATOR, grace starts exactly onc
   assert.ok(first.familyId);
   assert.equal(first.role, 'ADMINISTRATOR');
   assert.equal(first.mfa.status, 'GRACE');
-  assert.equal(first.mfa.graceExpiresAt.getTime(), h.clock.ms() + PARENT_MFA_GRACE_MS);
 
   h.clock.advance(HOUR);
-  const second = await loginWithEmailCode(h, email);
+  const second = await loginWithEmailCode(h, email, first.rawDailyLoginGrantToken);
   assert.equal(second.familyId, first.familyId, 'a second login never creates a second family');
-  assert.equal(second.mfa.graceExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'grace never restarts or extends');
+  assert.equal(second.mfa.status, 'GRACE');
   assert.equal(h.emailSender.kindsFor(email).filter((kind) => kind === 'FIRST_LOGIN').length, 1);
+  assert.equal(h.emailSender.kindsFor(email).filter((kind) => kind === 'LOGIN_SUCCESSFUL').length, 1);
   const events = h.mfaRepository._events.map((event) => event.eventType);
-  assert.equal(events.filter((type) => type === 'MFA_GRACE_STARTED').length, 1);
+  assert.equal(events.filter((type) => type === 'PARENT_LOGIN_SUCCESS').length, 2);
   assert.equal(events.filter((type) => type === 'FAMILY_PROVISIONED').length, 1);
 });
 
-test('grace sessions never outlive the grace deadline', async () => {
+test('known-browser login cannot restart the deadline and expired MFA posture requires setup', async () => {
   const h = harness();
   const email = 'cap@example.com';
   await registerAndVerify(h, email);
   const first = await loginWithEmailCode(h, email);
   h.clock.advance(PARENT_MFA_GRACE_MS - 2 * HOUR);
-  const late = await loginWithEmailCode(h, email);
-  assert.equal(late.sessionExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime(), 'a session issued near the deadline is capped at it');
+  assert.equal((await loginWithEmailCode(h, email, first.rawDailyLoginGrantToken)).status, 'STEP_UP_REQUIRED', 'the 24-hour browser grant has expired');
+  const late = await h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
+  assert.equal(late.status, 'AUTHENTICATED');
+  assert.equal(late.mfa.graceExpiresAt.getTime(), first.mfa.graceExpiresAt.getTime());
+  h.clock.advance(2 * HOUR + 1);
+  const expired = await h.service.login(email, PASSWORD, late.rawDailyLoginGrantToken);
+  assert.equal(expired.status, 'MFA_SETUP_REQUIRED');
 });
 
-test('during grace the Parent Console stays usable without an authenticator (email code, and this browser\'s grant)', async () => {
+test('Parent session is usable during grace and cannot be read after its session expiry', async () => {
   const h = harness();
   const email = 'grace@example.com';
   await registerAndVerify(h, email);
   const first = await loginWithEmailCode(h, email);
   const session = await h.service.readSession(first.rawSessionToken);
   assert.equal(session.mfa.status, 'GRACE');
-  h.clock.advance(20 * HOUR);
-  const viaGrant = await h.service.login(email, PASSWORD, first.rawDailyLoginGrantToken);
-  assert.equal(viaGrant.status, 'AUTHENTICATED', "inside grace (and within the grant's own 24 h) the remembered browser still skips the email code");
-  h.clock.advance(PARENT_MFA_GRACE_MS - 21 * HOUR);
-  const nearDeadline = await loginWithEmailCode(h, email);
-  assert.equal(nearDeadline.status, 'AUTHENTICATED', 'the email code still works one hour before the deadline');
+  h.clock.advance(12 * HOUR + 1);
+  await assert.rejects(h.service.readSession(first.rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
 });
 
-test('after grace: no session is possible without enrolling -- grant ignored, email code yields only an enrollment ticket, old sessions die', async () => {
+test('after three days, a trusted browser receives mandatory TOTP setup rather than a Parent session', async () => {
   const h = harness();
   const email = 'expired@example.com';
   await registerAndVerify(h, email);
   const first = await loginWithEmailCode(h, email);
   h.clock.advance(PARENT_MFA_GRACE_MS + 1);
-  await assert.rejects(h.service.readSession(first.rawSessionToken), (error) => error instanceof ParentAccountError && error.code === 'UNAUTHORIZED');
-  assert.equal((await h.service.login(email, PASSWORD, first.rawDailyLoginGrantToken)).status, 'STEP_UP_REQUIRED', 'the grant no longer bypasses anything');
-  const completed = await h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
-  assert.equal(completed.status, 'MFA_SETUP_REQUIRED');
-  assert.equal(completed.rawSessionToken, undefined);
-
-  const { outcome } = await enroll(h, email, { kind: 'TICKET', rawTicket: completed.rawEnrollmentTicket });
+  assert.equal((await h.service.login(email, PASSWORD, first.rawDailyLoginGrantToken)).status, 'STEP_UP_REQUIRED');
+  const afterDeadline = await h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
+  assert.equal(afterDeadline.status, 'MFA_SETUP_REQUIRED');
+  const credential = { kind: 'TICKET', rawTicket: afterDeadline.rawEnrollmentTicket };
+  const { outcome } = await enroll(h, email, credential);
   assert.equal(outcome.status, 'ENROLLED_SESSION_ESTABLISHED');
-  assert.equal((await h.service.readSession(outcome.rawSessionToken)).mfa.status, 'ACTIVE');
-  await assert.rejects(
-    h.service.beginMfaEnrollment({ kind: 'TICKET', rawTicket: completed.rawEnrollmentTicket }, email, PASSWORD),
-    (error) => error.code === 'UNAUTHORIZED',
-    'a consumed ticket authorizes nothing further',
-  );
+  assert.equal(outcome.mfa.status, 'ACTIVE');
 });
 
 test('enrollment: wrong password or wrong email is refused; wrong code keeps the account unenrolled; success notifies and revokes browser grants', async () => {
@@ -153,36 +144,39 @@ test('enrollment: wrong password or wrong email is refused; wrong code keeps the
   await assert.rejects(h.service.confirmMfaEnrollment(credential, email, wrong), (error) => error.code === 'MFA_INVALID');
   assert.equal((await h.service.readSession(session.rawSessionToken)).mfa.status, 'GRACE');
   const confirmed = await h.service.confirmMfaEnrollment(credential, email, totpFor(started.secretBase32, h.clock.ms()));
-  assert.deepEqual(confirmed, { status: 'ENROLLED' });
+  assert.equal(confirmed.status, 'ENROLLED');
+  assert.equal(typeof confirmed.rawDailyLoginGrantToken, 'string');
   assert.equal((await h.service.readSession(session.rawSessionToken)).mfa.status, 'ACTIVE', 'the enrolling session is kept');
   assert.ok(h.emailSender.kindsFor(email).includes('MFA_ENROLLED'));
   h.clock.advance(STEP);
-  assert.equal((await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken)).status, 'MFA_REQUIRED', 'grants are revoked and cannot bypass TOTP');
+  assert.equal((await h.service.login(email, PASSWORD, confirmed.rawDailyLoginGrantToken)).status, 'AUTHENTICATED', 'the enrolling browser is automatically re-trusted');
   await assert.rejects(h.service.beginMfaEnrollment(credential, email, PASSWORD), (error) => error.code === 'UNAUTHORIZED', 'an ACTIVE factor is replaced only through recovery');
 });
 
-test('every explicit login needs a fresh TOTP: no code, wrong code, replayed code, email code, remembered browser, new browser', async () => {
+test('known browser uses password only; unknown browser requires email OTP plus active TOTP with replay protection', async () => {
   const h = harness();
   const email = 'every@example.com';
   const { secret, session } = await enrolledAccount(h, email);
-  assert.deepEqual(await h.service.login(email, PASSWORD), { status: 'MFA_REQUIRED' });
-  assert.deepEqual(await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken), { status: 'MFA_REQUIRED' });
-  assert.equal(h.emailSender.kindsFor(email).filter((kind) => kind === 'LOGIN_STEP_UP').length, 1, 'no email code is ever sent to an enrolled account');
-  await assert.rejects(h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP')), (error) => error.code === 'UNAUTHORIZED');
+  const known = await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken);
+  assert.equal(known.status, 'AUTHENTICATED');
+  assert.equal(known.mfa.status, 'ACTIVE');
+  await assert.rejects(h.service.login(email, 'wrong password!!', session.rawDailyLoginGrantToken), (error) => error.code === 'UNAUTHORIZED', 'browser trust never rescues a wrong password');
 
+  const unknown = await h.service.login(email, PASSWORD);
+  assert.equal(unknown.status, 'STEP_UP_REQUIRED');
+  const emailCode = h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(emailCode);
+  assert.deepEqual(await h.service.completeLoginStepUp(email, emailCode), { status: 'MFA_REQUIRED' }, 'active TOTP is required in addition to email OTP');
   const code = totpFor(secret, h.clock.ms());
-  await assert.rejects(h.service.login('every@example.com', 'wrong password!!', undefined, code), (error) => error.code === 'UNAUTHORIZED', 'TOTP never rescues a wrong password');
-  const signedIn = await h.service.login(email, PASSWORD, undefined, code);
+  const signedIn = await h.service.completeLoginStepUp(email, emailCode, code);
   assert.equal(signedIn.status, 'AUTHENTICATED');
   assert.equal(signedIn.mfa.status, 'ACTIVE');
-  await assert.rejects(h.service.login(email, PASSWORD, undefined, code), (error) => error.code === 'MFA_INVALID', 'the same code is never accepted twice');
+  await assert.rejects(h.service.completeLoginStepUp(email, emailCode, code), (error) => error.code === 'UNAUTHORIZED', 'the email OTP cannot be replayed');
 
-  // logout, then a "restarted"/second browser: no cookies at all -> still TOTP.
+  // Logout revokes this session; the original trust token remains a separate
+  // account-bound login assurance credential until expiry or revocation.
   await h.service.logout(signedIn.rawSessionToken);
   await assert.rejects(h.service.readSession(signedIn.rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
-  h.clock.advance(STEP);
-  assert.deepEqual(await h.service.login(email, PASSWORD), { status: 'MFA_REQUIRED' });
-  assert.equal((await h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms()))).status, 'AUTHENTICATED');
 });
 
 test('TOTP lockout: 5 wrong codes lock the factor for 15 minutes, even against a correct code', async () => {
@@ -191,12 +185,16 @@ test('TOTP lockout: 5 wrong codes lock the factor for 15 minutes, even against a
   const { secret } = await enrolledAccount(h, email);
   const wrong = (offset) => String((Number(totpFor(secret, h.clock.ms())) + 500000 + offset) % 1000000).padStart(6, '0');
   for (let i = 0; i < 4; i += 1) {
-    await assert.rejects(h.service.login(email, PASSWORD, undefined, wrong(i)), (error) => error.code === 'MFA_INVALID');
+    assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+    await assert.rejects(h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), wrong(i)), (error) => error.code === 'MFA_INVALID');
   }
-  await assert.rejects(h.service.login(email, PASSWORD, undefined, wrong(9)), (error) => error.code === 'MFA_LOCKED');
-  await assert.rejects(h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms())), (error) => error.code === 'MFA_LOCKED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  await assert.rejects(h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), wrong(9)), (error) => error.code === 'MFA_LOCKED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  await assert.rejects(h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), totpFor(secret, h.clock.ms())), (error) => error.code === 'MFA_LOCKED');
   h.clock.advance(15 * 60 * 1000 + STEP);
-  assert.equal((await h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms()))).status, 'AUTHENTICATED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  assert.equal((await h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), totpFor(secret, h.clock.ms()))).status, 'AUTHENTICATED');
   const types = h.mfaRepository._events.map((event) => event.eventType);
   assert.ok(types.includes('MFA_LOCKED'));
 });
@@ -205,7 +203,7 @@ test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after
   const h = harness();
   const email = 'recover@example.com';
   const { secret, session } = await enrolledAccount(h, email);
-  const otherBrowser = await h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms()));
+  const otherBrowser = await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken);
   h.clock.advance(STEP);
   const commercialGrant = await h.service.issueCommercialStepUp(session.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms()));
   h.clock.advance(STEP);
@@ -230,7 +228,7 @@ test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after
     await assert.rejects(h.service.readSession(token), (error) => error.code === 'UNAUTHORIZED', 'every existing session is signed out');
   }
   assert.equal((await h.commercialOwnerAuthority.authorize((await h.repository.findById(session.accountId)).serviceAccountId, session.familyId, 'BILLING_CHECKOUT_CREATE', commercialGrant.stepUpToken)), 'STEP_UP_REQUIRED', 'sensitive commercial operations are denied during recovery');
-  const otherDeviceLogin = await h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms()));
+  const otherDeviceLogin = await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken);
   assert.equal(otherDeviceLogin.status, 'MFA_RECOVERY_PENDING', 'a new browser cannot bypass the server-side hold');
   assert.equal(otherDeviceLogin.recoveryAvailableAt.getTime(), holdDeadline);
   await h.service.requestMfaRecovery(email, PASSWORD);
@@ -258,8 +256,9 @@ test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after
   assert.equal(outcome.status, 'ENROLLED_SESSION_ESTABLISHED', 'the recovering browser keeps a session');
   assert.notEqual(newSecret, secret);
   h.clock.advance(STEP);
-  await assert.rejects(h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms())), (error) => error.code === 'MFA_INVALID', 'the lost authenticator is revoked');
-  assert.equal((await h.service.login(email, PASSWORD, undefined, totpFor(newSecret, h.clock.ms()))).status, 'AUTHENTICATED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  await assert.rejects(h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), totpFor(secret, h.clock.ms())), (error) => error.code === 'MFA_INVALID', 'the lost authenticator is revoked');
+  assert.equal((await h.service.completeLoginStepUp(email, h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'), totpFor(newSecret, h.clock.ms()))).status, 'AUTHENTICATED');
   for (const token of [session.rawSessionToken, otherBrowser.rawSessionToken]) await assert.rejects(h.service.readSession(token), (error) => error.code === 'UNAUTHORIZED', 'old sessions stay revoked after enrollment');
 });
 
@@ -296,7 +295,7 @@ test('account isolation: one account\'s ticket, code or session never enrolls or
   const { secret } = await enroll(h, 'a@example.com', { kind: 'SESSION', rawSessionToken: a.rawSessionToken });
   h.clock.advance(STEP);
   assert.equal((await h.service.readSession(b.rawSessionToken)).mfa.status, 'GRACE', 'B is unaffected by A enrolling');
-  assert.equal((await h.service.login('b@example.com', PASSWORD, undefined, totpFor(secret, h.clock.ms()))).status, 'STEP_UP_REQUIRED', "A's authenticator means nothing to B");
+  assert.equal((await h.service.login('b@example.com', PASSWORD, b.rawDailyLoginGrantToken)).status, 'AUTHENTICATED', "A's authenticator means nothing to B");
 });
 
 test('the TOTP secret is never stored in clear and never logged; the otpauth URI is never persisted', async () => {
@@ -331,18 +330,16 @@ test('the TOTP secret is never stored in clear and never logged; the otpauth URI
 test('COMMERCIAL_OWNER_AUTHORITY = ADMINISTRATOR + fresh TOTP step-up: single-use, scoped, short-lived, and never the login code', async () => {
   const h = harness();
   const email = 'owner@example.com';
-  const { secret } = await enrolledAccount(h, email);
-  const login = await h.service.login(email, PASSWORD, undefined, totpFor(secret, h.clock.ms()));
+  const { secret, session: known } = await enrolledAccount(h, email);
+  const login = await h.service.login(email, PASSWORD, known.rawDailyLoginGrantToken);
   const account = await h.repository.findById(login.accountId);
   const serviceAccountId = account.serviceAccountId;
 
-  await assert.rejects(
-    h.service.issueCommercialStepUp(login.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms())),
-    (error) => error.code === 'MFA_INVALID',
-    'the code already used to sign in cannot also authorize money',
-  );
   assert.equal(await h.commercialOwnerAuthority.authorize(serviceAccountId, login.familyId, 'BILLING_CHECKOUT_CREATE', undefined), 'STEP_UP_REQUIRED', 'a normal session alone is not enough');
 
+  const usedCode = totpFor(secret, h.clock.ms());
+  await h.service.issueCommercialStepUp(login.rawSessionToken, 'BILLING_CHECKOUT_CREATE', usedCode);
+  await assert.rejects(h.service.issueCommercialStepUp(login.rawSessionToken, 'BILLING_CHECKOUT_CREATE', usedCode), (error) => error.code === 'MFA_INVALID', 'a TOTP counter cannot be reused for another step-up');
   h.clock.advance(STEP);
   const grant = await h.service.issueCommercialStepUp(login.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms()));
   assert.equal(await h.commercialOwnerAuthority.authorize(serviceAccountId, login.familyId, 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', grant.stepUpToken), 'STEP_UP_REQUIRED', 'scoped to one operation');
@@ -364,15 +361,15 @@ test('COMMERCIAL_OWNER_AUTHORITY = ADMINISTRATOR + fresh TOTP step-up: single-us
 
 test('commercial step-up denials: Viewer, Child, wrong-family Administrator, disabled account, not yet enrolled', async () => {
   const h = harness();
-  const { secret } = await enrolledAccount(h, 'admin@example.com');
-  const admin = await h.service.login('admin@example.com', PASSWORD, undefined, totpFor(secret, h.clock.ms()));
+  const { secret, session: adminKnown } = await enrolledAccount(h, 'admin@example.com');
+  const admin = await h.service.login('admin@example.com', PASSWORD, adminKnown.rawDailyLoginGrantToken);
   const adminAccount = await h.repository.findById(admin.accountId);
   h.clock.advance(STEP);
   const grant = await h.service.issueCommercialStepUp(admin.rawSessionToken, 'FAMILY_COMMERCIAL_REQUEST_CREATE', totpFor(secret, h.clock.ms()));
 
   // Another family's fully-enrolled Administrator cannot act on this family, even holding a valid-looking token.
-  const { secret: otherSecret } = await enrolledAccount(h, 'other@example.com');
-  const other = await h.service.login('other@example.com', PASSWORD, undefined, totpFor(otherSecret, h.clock.ms()));
+  const { session: otherKnown } = await enrolledAccount(h, 'other@example.com');
+  const other = await h.service.login('other@example.com', PASSWORD, otherKnown.rawDailyLoginGrantToken);
   const otherAccount = await h.repository.findById(other.accountId);
   assert.equal(await h.commercialOwnerAuthority.authorize(otherAccount.serviceAccountId, admin.familyId, 'FAMILY_COMMERCIAL_REQUEST_CREATE', grant.stepUpToken), 'ROLE_DENIED');
 

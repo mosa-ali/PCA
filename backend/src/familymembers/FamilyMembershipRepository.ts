@@ -33,4 +33,10 @@ export interface FamilyMembershipRepository {
   ): Promise<void>;
   /** Returns only an active normal Parent Web role; missing membership is null. */
   findActiveRole(accountId: OpaqueAccountId, familyId: OpaqueFamilyId): Promise<FamilyMembershipRole | null>;
+  /**
+   * Resolves a Parent role from the service-session identity used by Fastify
+   * authenticated routes. Parent account IDs and service account IDs are
+   * distinct and must not be interchanged.
+   */
+  findActiveRoleByServiceAccountId(serviceAccountId: string, familyId: OpaqueFamilyId): Promise<FamilyMembershipRole | null>;
 }

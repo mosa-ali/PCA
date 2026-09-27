@@ -29,6 +29,14 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
     return { ...account, freeAccess: account.freeAccess ? { ...account.freeAccess } : null };
   }
 
+  function cloneProtectedEmail(value) {
+    return value === null || value === undefined ? null : {
+      ciphertext: Buffer.from(value.ciphertext),
+      nonce: Buffer.from(value.nonce),
+      authTag: Buffer.from(value.authTag),
+    };
+  }
+
   return {
     async createPendingAccount(record) {
       const key = hexOf(record.emailHash);
@@ -51,9 +59,45 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
         firstLoginCompletedAt: null,
         accountType: record.accountType ?? null,
         estimatedChildCount: record.estimatedChildCount ?? null,
+        firstName: record.identity?.firstName ?? null,
+        lastName: record.identity?.lastName ?? null,
+        protectedDisplayEmail: cloneProtectedEmail(record.protectedDisplayEmail),
+        phoneNumber: record.phoneNumber ?? null,
+        phoneVerifiedAt: null,
       };
       accountsById.set(account.accountId, account);
       accountsByEmailHashHex.set(key, account.accountId);
+    },
+
+    async findIdentityProfile(accountId) {
+      const account = accountsById.get(accountId);
+      return account ? { firstName: account.firstName, lastName: account.lastName } : null;
+    },
+
+    async findIdentityContact(accountId) {
+      const account = accountsById.get(accountId);
+      return account ? {
+        protectedDisplayEmail: cloneProtectedEmail(account.protectedDisplayEmail),
+        phoneNumber: account.phoneNumber,
+        phoneVerifiedAt: account.phoneVerifiedAt,
+      } : null;
+    },
+
+    async updateIdentityNames(accountId, firstName, lastName) {
+      const account = accountsById.get(accountId);
+      if (!account) return false;
+      account.firstName = firstName;
+      account.lastName = lastName;
+      return true;
+    },
+
+    async repairProtectedDisplayEmail(accountId, expected, replacement) {
+      const account = accountsById.get(accountId);
+      const current = account?.protectedDisplayEmail;
+      if (!current || !current.ciphertext.equals(expected.ciphertext) ||
+          !current.nonce.equals(expected.nonce) || !current.authTag.equals(expected.authTag)) return false;
+      account.protectedDisplayEmail = cloneProtectedEmail(replacement);
+      return true;
     },
 
     async findByEmailHash(emailHash) {

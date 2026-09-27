@@ -7,7 +7,19 @@ export class MySqlAuthzRepository implements AuthzRepository {
     const { rows } = await runInTransaction((conn) =>
       execute<{ status: ScopeStatus }>(
         conn,
-        `SELECT status FROM service_account_family_scopes WHERE account_id = ? AND family_id = ?`,
+        `SELECT s.status
+           FROM service_account_family_scopes AS s
+           JOIN family_parent_memberships AS m
+             ON m.service_account_id = s.account_id
+            AND m.family_id = s.family_id
+            AND m.status = 'ACTIVE'
+           JOIN families AS f
+             ON f.family_id = s.family_id
+            AND f.status = 'ACTIVE'
+            AND f.deleted_at IS NULL
+          WHERE s.account_id = ?
+            AND s.family_id = ?
+            AND s.status = 'ACTIVE'`,
         [accountId, familyId],
       ),
     );

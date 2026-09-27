@@ -36,6 +36,7 @@ function buildStubDeps({ withDeviceSessionService }) {
       if (!session) throw new Error('unauthorized');
       return session;
     },
+    async activeFamilyRole() { return 'ADMINISTRATOR'; },
   };
   const safeZoneRepository = {
     async list() {
@@ -102,6 +103,7 @@ function buildStubDeps({ withDeviceSessionService }) {
     inboundReconnectService: {},
     statusTracker: {},
     resolveEnvelopeContext: noop,
+    deviceRepository: { async findDeviceForFamily(_familyId, deviceId) { return { deviceId }; } },
     deleteNowLedger: {},
     familyAuditService: { record: asyncNoop },
     platformAdminAuthService: {},
@@ -153,13 +155,13 @@ test('buildServer registers removal-decision routes (reachable, not 404)', async
   }
 });
 
-test('buildServer threads deviceSessionService into Safe Zone routes: present -> real authorization, not 503', async () => {
+test('buildServer Safe Zone reads use active Parent session role without a device bearer', async () => {
   const app = buildServer(buildStubDeps({ withDeviceSessionService: true }));
   try {
     const response = await app.inject({
       method: 'GET',
       url: '/api/parent/families/family-a/safe-zones',
-      headers: { cookie: 'pca_family_session=session-a', authorization: 'Bearer devtoken-a' },
+      headers: { cookie: 'pca_family_session=session-a' },
     });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json(), { safeZones: [] });
@@ -168,7 +170,7 @@ test('buildServer threads deviceSessionService into Safe Zone routes: present ->
   }
 });
 
-test('buildServer without deviceSessionService: Safe Zone routes fail closed with 503 (baseline, unchanged)', async () => {
+test('buildServer without deviceSessionService: Safe Zone session reads remain available', async () => {
   const deps = buildStubDeps({ withDeviceSessionService: true });
   deps.deviceSessionService = undefined;
   const app = buildServer(deps);
@@ -178,8 +180,8 @@ test('buildServer without deviceSessionService: Safe Zone routes fail closed wit
       url: '/api/parent/families/family-a/safe-zones',
       headers: { cookie: 'pca_family_session=session-a', authorization: 'Bearer devtoken-a' },
     });
-    assert.equal(response.statusCode, 503);
-    assert.deepEqual(response.json(), { error: 'family_authority_unavailable' });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), { safeZones: [] });
   } finally {
     await app.close();
   }

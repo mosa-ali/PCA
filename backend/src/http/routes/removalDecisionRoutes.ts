@@ -11,9 +11,8 @@
  * inventing a second auth transport, but is kept in its own file per this
  * lane's file-ownership boundary.
  *
- * NOT wired into main.ts/buildServer.ts by this lane -- see this lane's
- * final report for the exact registration call and constructor
- * dependencies the Coordinator must add.
+ * Production composition is provided by main.ts/buildServer.ts; this route
+ * owns only authenticated transport and delegates authority to its services.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
@@ -33,6 +32,8 @@ import {
 } from '../../familyrbac/RemovalDecisionAuthority.js';
 import type { ReasonCategory, StepUpAssertion } from '../../familyrbac/types.js';
 import { AdministrationPinError, type AdministrationPinService } from '../../enrollment/AdministrationPinService.js';
+import type { SensitiveParentStepUpOperation } from '../../parentaccount/mfa/ParentMfaRepository.js';
+import type { RemovalTargetResolver } from '../../familyrbac/RemovalTargetResolver.js';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -44,14 +45,10 @@ const MAX_BODY_BYTES = 8 * 1024;
  * 08_ENROLLMENT_DEVICE_LIFECYCLE.md Section 8/PCA-FR-145) -- this route
  * file never resolves or asserts that state itself.
  */
-export interface ProtectiveAuthorityResolver {
-  resolve(familyId: string, deviceId: string): Promise<boolean>;
-}
-
 export interface RemovalDecisionRoutesDeps {
   parentAccountService: ParentAccountService;
   removalDecisionAuthority: RemovalDecisionAuthority;
-  protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
+  removalTargetResolver?: Pick<RemovalTargetResolver, 'resolveForRemoval'>;
   /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration. */
   administrationPinService?: AdministrationPinService;
 }
@@ -150,10 +147,19 @@ function parseDecisionBody(body: unknown): { decision: 'KEEP_ACTIVE' | 'TEMPORAR
   return { decision: body.decision as 'KEEP_ACTIVE' | 'ALLOW_REMOVAL', temporaryDisableUntil: null };
 }
 
+function stepUpOperationForRemoval(operation: RemovalDecisionOperation): SensitiveParentStepUpOperation {
+  switch (operation) {
+    case 'REMOVE_REVOKE_DEVICE':
+      return 'family.device.enrollment.revoke';
+    case 'DISABLE_PROTECTION_POLICY':
+      return 'family.security.settings.change';
+  }
+}
+
 export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: RemovalDecisionRoutesDeps): void {
   const { parentAccountService, removalDecisionAuthority } = deps;
 
-  async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
+  async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string; rawSessionToken: string } | null> {
     const token = readSessionCookie(request);
     if (token === null) {
       await reply.code(401).send({ error: 'unauthorized' });
@@ -170,7 +176,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
         await reply.code(403).send({ error: 'family_scope_forbidden' });
         return null;
       }
-      return { accountId: session.accountId, familyId: session.familyId };
+      return { accountId: session.accountId, familyId: session.familyId, rawSessionToken: token };
     } catch (error) {
       if (error instanceof ParentAccountError) {
         await reply.code(401).send({ error: 'unauthorized' });
@@ -178,6 +184,37 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       }
       throw error;
     }
+  }
+
+  async function requireActiveAdministrator(
+    session: { accountId: string; familyId: string },
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    try {
+      if (await parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) === 'ADMINISTRATOR') {
+        return true;
+      }
+    } catch {
+      // A failed role lookup must never authorize a removal or PIN mutation.
+    }
+    await reply.code(403).send({ error: 'forbidden' });
+    return false;
+  }
+
+  async function consumeParentStepUp(
+    session: { rawSessionToken: string; familyId: string },
+    reply: FastifyReply,
+    operation: SensitiveParentStepUpOperation,
+    token: unknown,
+  ): Promise<boolean> {
+    if (
+      typeof token !== 'string' ||
+      !(await parentAccountService.consumeSensitiveStepUpForSession(session.rawSessionToken, session.familyId, operation, token))
+    ) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
+    }
+    return true;
   }
 
   async function handleError(reply: FastifyReply, error: unknown): Promise<void> {
@@ -219,36 +256,42 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      if (!deps.protectiveAuthorityResolver) return reply.code(503).send({ error: 'not_configured' });
+      if (!(await requireActiveAdministrator(session, reply))) return;
+      if (!deps.removalTargetResolver) return reply.code(503).send({ error: 'not_configured' });
 
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { requestId, childId, deviceId, operation, protectionLevel } = body;
+      const { requestId, deviceId, operation } = body;
       const requestedAt = parseDate(body.requestedAt);
       const expiresAt = parseDate(body.expiresAt);
       const reasonCategory = parseReasonCategory(body.reasonCategory);
       if (
         typeof requestId !== 'string' ||
-        typeof childId !== 'string' ||
         typeof deviceId !== 'string' ||
         typeof operation !== 'string' || !OPERATIONS.has(operation) ||
-        typeof protectionLevel !== 'string' || !PROTECTION_LEVELS.has(protectionLevel) ||
         requestedAt === null || expiresAt === null || reasonCategory === undefined
       ) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
 
-      const protectiveAuthorityApplies = await deps.protectiveAuthorityResolver.resolve(session.familyId, deviceId);
-      if (!protectiveAuthorityApplies) return reply.code(409).send({ error: 'protective_authority_not_applicable' });
+      let target;
+      try {
+        target = await deps.removalTargetResolver.resolveForRemoval(session.familyId, deviceId);
+      } catch {
+        return reply.code(503).send({ error: 'not_configured' });
+      }
+      if (target.outcome !== 'RESOLVED') return reply.code(409).send({ error: 'protective_authority_not_applicable' });
+      if (!(await consumeParentStepUp(session, reply, stepUpOperationForRemoval(operation as RemovalDecisionOperation), body.stepUpToken))) return;
 
       try {
         const record = await removalDecisionAuthority.createRequest({
           requestId,
           familyId: session.familyId,
-          childId,
+          requestedByParentAccountId: session.accountId,
+          childId: target.childProfileId,
           deviceId,
           operation: operation as RemovalDecisionOperation,
-          protectionLevel: protectionLevel as RemovalProtectionLevel,
+          protectionLevel: target.protectionLevel as RemovalProtectionLevel,
           requestedAt,
           expiresAt,
           reasonCategory,
@@ -268,17 +311,21 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!(await requireActiveAdministrator(session, reply))) return;
       const { requestId } = request.params as { requestId: string };
       const body = request.body;
       const decisionInput = parseDecisionBody(body);
       if (decisionInput === null || !isPlainObject(body) || typeof body.pin !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      const storedRequest = await removalDecisionAuthority.getRequest(session.familyId, requestId);
+      if (storedRequest === null) return reply.code(404).send({ error: 'not_found' });
+      if (!(await consumeParentStepUp(session, reply, stepUpOperationForRemoval(storedRequest.operation), body.stepUpToken))) return;
       try {
         const record = await removalDecisionAuthority.decideWithLocalPin(requestId, session.familyId, {
           ...decisionInput,
           pin: body.pin,
-        });
+        }, session.accountId);
         return reply.code(200).send({ removalDecision: toRecordDto(record) });
       } catch (error) {
         return handleError(reply, error);
@@ -309,7 +356,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
         const record = await removalDecisionAuthority.decideWithAuthorizedRecovery(requestId, session.familyId, decisionInput, {
           proof: body.proof.proof,
           recoveryTransactionId: body.proof.recoveryTransactionId,
-        });
+        }, session.accountId);
         return reply.code(200).send({ removalDecision: toRecordDto(record) });
       } catch (error) {
         return handleError(reply, error);
@@ -407,11 +454,13 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!(await requireActiveAdministrator(session, reply))) return;
       if (!deps.administrationPinService) return reply.code(503).send({ error: 'not_configured' });
       const body = request.body;
       if (!isPlainObject(body) || typeof body.pin !== 'string' || !PIN_PATTERN.test(body.pin)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!(await consumeParentStepUp(session, reply, 'family.security.settings.change', body.stepUpToken))) return;
       try {
         const status = await deps.administrationPinService.configurePin(session.familyId, body.pin);
         return reply.code(200).send({ pinStatus: status });

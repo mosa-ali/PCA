@@ -9,6 +9,8 @@ export function createInMemoryDeviceRepository() {
   // key material), so a previously registered public key can never become
   // ACTIVE again under any device or key id, regardless of status.
   const devicesByPublicKey = new Map();
+  const familyStatuses = new Map();
+  const familySessionEpochs = new Map();
 
   function keyEverRegistered(publicKey) {
     return devicesByPublicKey.has(publicKey);
@@ -29,6 +31,10 @@ export function createInMemoryDeviceRepository() {
     async createDeviceWithKey(device, key) {
       if (keyEverRegistered(key.publicKey)) return { outcome: 'DUPLICATE_KEY' };
       devicesById.set(device.deviceId, { ...device });
+      if (!familyStatuses.has(device.familyId)) {
+        familyStatuses.set(device.familyId, 'ACTIVE');
+        familySessionEpochs.set(device.familyId, 1);
+      }
       keysById.set(key.keyId, { ...key });
       keysByDevice.set(device.deviceId, new Set([key.keyId]));
       devicesByPublicKey.set(key.publicKey, device.deviceId);
@@ -43,6 +49,34 @@ export function createInMemoryDeviceRepository() {
     async findDeviceUnscoped(deviceId) {
       const device = devicesById.get(deviceId);
       return device ? { ...device } : null;
+    },
+
+    async isDeviceSessionActive(familyId, deviceId) {
+      const device = findOwnedDevice(familyId, deviceId);
+      return Boolean(
+        device &&
+        device.status === 'ACTIVE' &&
+        !device.revokedAt &&
+        familyStatuses.get(familyId) === 'ACTIVE',
+      );
+    },
+
+    async getActiveDeviceSessionEpoch(familyId, deviceId) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (!device || device.status !== 'ACTIVE' || device.revokedAt || familyStatuses.get(familyId) !== 'ACTIVE') return null;
+      return familySessionEpochs.get(familyId) ?? 1;
+    },
+
+    setFamilyStatusForTest(familyId, status) {
+      if (familyStatuses.get(familyId) !== status) {
+        familySessionEpochs.set(familyId, (familySessionEpochs.get(familyId) ?? 1) + 1);
+      }
+      familyStatuses.set(familyId, status);
+    },
+
+    setDeviceStatusForTest(familyId, deviceId, status) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (device) device.status = status;
     },
 
     async revokeDeviceAndKeysAtomically(familyId, deviceId, revokedAt) {

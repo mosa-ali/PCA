@@ -229,6 +229,7 @@ test('device session revocation appends a DEVICE_LIFECYCLE_TRANSITION record onl
   const deviceService = new DeviceDirectoryService(deviceRepository, now);
   const dskPublicKey = key();
   const { device } = await deviceService.registerDevice({ familyId: 'fam-audit-9', platform: 'ANDROID', keyPurpose: 'DSK', publicKey: dskPublicKey });
+  deviceRepository.setDeviceStatusForTest('fam-audit-9', device.deviceId, 'ACTIVE');
 
   const deviceAuthService = new DeviceAuthService(createInMemoryDeviceChallengeRepository(), deviceRepository, createTestOnlyDeviceSignatureVerifier(), now);
   const sessionRepository = new InMemoryDeviceSessionRepository();

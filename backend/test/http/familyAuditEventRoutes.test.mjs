@@ -3,7 +3,6 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import { registerFamilyAuditEventRoutes } from '../../dist/http/routes/familyAuditEventRoutes.js';
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
-import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -26,29 +25,17 @@ function buildApp({ ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW
       if (!session) throw new Error('unauthorized');
       return session;
     },
-  };
-  const deviceTokens = new Map([
-    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
-    ['dev-token-other-owner', { deviceId: 'dev-other-owner', familyId: OTHER_FAMILY }],
-  ]);
-  const deviceSessionService = {
-    async requireActorDeviceInFamily(token, expectedFamilyId) {
-      const identity = deviceTokens.get(token);
-      if (!identity || identity.familyId !== expectedFamilyId) {
-        throw new RuntimeSyncAuthError('UNAUTHORIZED');
-      }
-      return identity;
-    },
+    async activeFamilyRole() { return 'ADMINISTRATOR'; },
   };
 
   const app = Fastify();
-  registerFamilyAuditEventRoutes(app, { parentAccountService, deviceSessionService, familyAuditEventLedger: ledger });
+  registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger: ledger });
   return { app, ledger };
 }
 
 const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
 
-test('a parent device receives only its OWN family/device-scoped opaque envelopes -- never plaintext, never another device’s queue', async () => {
+test('an active Parent session receives family-scoped opaque envelopes -- never plaintext', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   await ledger.record({
     envelopeId: 'env-owner-1',
@@ -73,12 +60,12 @@ test('a parent device receives only its OWN family/device-scoped opaque envelope
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/audit-events`,
-      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
     const body = response.json();
-    assert.equal(body.envelopes.length, 1);
-    assert.equal(body.envelopes[0].envelopeId, 'env-owner-1');
+    assert.equal(body.envelopes.length, 2);
+    assert.deepEqual(body.envelopes.map((entry) => entry.envelopeId), ['env-owner-1', 'env-someone-else-1']);
     assert.equal(body.envelopes[0].encryptedPayloadB64, 'b3BhcXVl');
     // The route's own response shape check: no FamilyAuditRecord field
     // (actionType/targetScope/actorMemberId/reasonCategory/etc.) is ever
@@ -90,12 +77,11 @@ test('a parent device receives only its OWN family/device-scoped opaque envelope
   }
 });
 
-test('no actor-device-session bearer token -> 401, never a silent empty list', async () => {
+test('Parent session reads do not require an actor-device-session bearer token', async () => {
   const { app } = buildApp();
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerHeaders });
-    assert.equal(response.statusCode, 401);
-    assert.equal(response.json().error, 'actor_device_session_required');
+    assert.equal(response.statusCode, 200);
   } finally {
     await app.close();
   }
@@ -107,7 +93,7 @@ test('a device from a different family cannot read this family’s queue', async
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/audit-events`,
-      headers: { cookie: 'pca_family_session=session-other-owner', authorization: 'Bearer dev-token-owner' },
+      headers: { cookie: 'pca_family_session=session-other-owner' },
     });
     // session-other-owner's own familyId (OTHER_FAMILY) never matches the :familyId path param (FAMILY).
     assert.equal(response.statusCode, 403);
@@ -147,7 +133,6 @@ test('when familyAuditEventLedger is not supplied, the route registers nothing (
   const app = Fastify();
   registerFamilyAuditEventRoutes(app, {
     parentAccountService: { async readSession() { throw new Error('should never be called'); } },
-    deviceSessionService: { async requireActorDeviceInFamily() { throw new Error('should never be called'); } },
   });
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/audit-events` });

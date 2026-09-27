@@ -38,9 +38,60 @@ export function isCommercialStepUpOperation(value: unknown): value is Commercial
   return typeof value === 'string' && (COMMERCIAL_STEP_UP_OPERATIONS as readonly string[]).includes(value);
 }
 
+export const SENSITIVE_PARENT_STEP_UP_OPERATIONS = [
+  'family.member.add',
+  'family.member.remove',
+  'family.member.role_change',
+  'family.member.invitation.revoke',
+  'family.device.enrollment.create',
+  'family.device.enrollment.revoke',
+  'family.retention.update',
+  'family.history.export',
+  'family.history.delete',
+  'family.ownership.transfer',
+  'family.recovery.material.reveal',
+  'family.security.settings.change',
+] as const;
+export type SensitiveParentStepUpOperation = (typeof SENSITIVE_PARENT_STEP_UP_OPERATIONS)[number];
+
+/**
+ * Operations currently backed by a real Parent action consumer. The database
+ * vocabulary intentionally retains the two reserved transfer/recovery values
+ * for forward-compatible schema history, but the public step-up route must not
+ * mint grants for workflows that do not exist. Ownership transfer additionally
+ * needs an explicit Owner-authority binding; Administrator MFA alone is not it.
+ */
+export const ISSUABLE_SENSITIVE_PARENT_STEP_UP_OPERATIONS = [
+  'family.member.add',
+  'family.member.remove',
+  'family.member.role_change',
+  'family.member.invitation.revoke',
+  'family.device.enrollment.create',
+  'family.device.enrollment.revoke',
+  'family.retention.update',
+  'family.history.export',
+  'family.history.delete',
+  'family.security.settings.change',
+] as const satisfies readonly SensitiveParentStepUpOperation[];
+
+export function isIssuableSensitiveParentStepUpOperation(value: unknown): value is (typeof ISSUABLE_SENSITIVE_PARENT_STEP_UP_OPERATIONS)[number] {
+  return typeof value === 'string' && (ISSUABLE_SENSITIVE_PARENT_STEP_UP_OPERATIONS as readonly string[]).includes(value);
+}
+
+export type ParentStepUpOperation = CommercialStepUpOperation | SensitiveParentStepUpOperation;
+
+export function isSensitiveParentStepUpOperation(value: unknown): value is SensitiveParentStepUpOperation {
+  return typeof value === 'string' && (SENSITIVE_PARENT_STEP_UP_OPERATIONS as readonly string[]).includes(value);
+}
+
+export function isParentStepUpOperation(value: unknown): value is ParentStepUpOperation {
+  return isCommercialStepUpOperation(value) || isSensitiveParentStepUpOperation(value);
+}
+
 export type ParentSecurityEventType =
   | 'FAMILY_PROVISIONED'
   | 'FIRST_LOGIN'
+  | 'PARENT_LOGIN_SUCCESS'
   | 'MFA_GRACE_STARTED'
   | 'MFA_ENROLLED'
   | 'MFA_LOGIN_FAILED'
@@ -102,9 +153,9 @@ export interface ParentMfaRepository {
   /** Consumes the verified code and atomically starts (without extending) or completes the database hold. */
   applyRecoveryCode(input: { codeId: string; accountId: ParentAccountId; serviceAccountId: string | null; now: Date; holdExpiresAt: Date }): Promise<{ status: 'PENDING'; recoveryAvailableAt: Date; started: boolean } | { status: 'READY' }>;
 
-  insertStepUpGrant(record: { grantId: string; accountId: ParentAccountId; familyId: string; operation: CommercialStepUpOperation; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void>;
+  insertStepUpGrant(record: { grantId: string; accountId: ParentAccountId; familyId: string; operation: ParentStepUpOperation; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void>;
   /** Single-use: succeeds once for the exact account, family and operation, before expiry. */
-  consumeStepUpGrant(input: { tokenHash: string; accountId: ParentAccountId; familyId: string; operation: CommercialStepUpOperation; now: Date }): Promise<boolean>;
+  consumeStepUpGrant(input: { tokenHash: string; accountId: ParentAccountId; familyId: string; operation: ParentStepUpOperation; now: Date }): Promise<boolean>;
 
   recordSecurityEvent(accountId: ParentAccountId, eventType: ParentSecurityEventType, detail: string | null, occurredAt: Date): Promise<void>;
 }

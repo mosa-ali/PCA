@@ -10,6 +10,7 @@ import { InvitationService } from '../../dist/invitation/InvitationService.js';
 import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
 import { ChildProfileService } from '../../dist/childprofiles/ChildProfileService.js';
 import { MySqlChildProfileRegistryRepository } from '../../dist/childprofiles/MySqlChildProfileRegistryRepository.js';
+import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
 import { EnrollmentCoordinator } from '../../dist/enrollment/EnrollmentCoordinator.js';
 import { MySqlEnrollmentCoordinatorRepository } from '../../dist/enrollment/MySqlEnrollmentCoordinatorRepository.js';
 import { PairingService } from '../../dist/pairing/PairingService.js';
@@ -55,6 +56,7 @@ const authzRepository = new MySqlAuthzRepository();
 const authzService = new AuthzService(authzRepository);
 const invitationRepository = new MySqlInvitationRepository();
 const childProfileRegistryRepository = new MySqlChildProfileRegistryRepository();
+const familyMembershipRepository = new MySqlFamilyMembershipRepository();
 const childProfileService = new ChildProfileService(childProfileRegistryRepository);
 // Same construction as main.ts: real audit service and slot reservation are
 // deliberately NOT wired here (null/default) -- this file's concern is
@@ -103,6 +105,12 @@ function freshApp() {
     authService,
     authzService,
     authzRepository,
+    familyMembershipRepository,
+    parentAccountService: {
+      async consumeSensitiveStepUp(_accountId, _familyId, operation, token) {
+        return operation === 'family.device.enrollment.create' && token === 'test-create-grant';
+      },
+    },
     invitationService,
     childProfileService,
     enrollmentCoordinator,
@@ -116,7 +124,7 @@ function freshApp() {
 }
 
 function family() {
-  return `family-${randomUUID()}`;
+  return randomUUID();
 }
 
 function authHeader(rawToken) {
@@ -133,6 +141,30 @@ async function grantScope(accountId, familyId, status = 'ACTIVE') {
     `INSERT INTO service_account_family_scopes (account_id, family_id, status, created_at) VALUES (?, ?, ?, NOW(3))`,
     [accountId, familyId, status],
   );
+}
+
+async function createParentFamilyMembership(serviceAccountId, familyId, role = 'ADMINISTRATOR') {
+  const parentAccountId = randomUUID();
+  const now = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, ?)`,
+    [familyId, randomBytes(32), now],
+  );
+  await getPool().query(
+    `INSERT INTO parent_accounts
+       (account_id, email_hash, password_hash, status, family_id, service_account_id,
+        free_access_mode, free_access_started_at, default_parent_member_limit,
+        default_managed_device_limit, created_at, verified_at)
+     VALUES (?, ?, ?, 'VERIFIED', ?, ?, 'PERPETUAL', ?, 4, 5, ?, ?)`,
+    [parentAccountId, randomBytes(32), randomBytes(32).toString('hex'), familyId, serviceAccountId, now, now, now],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships
+       (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+    [randomUUID(), familyId, parentAccountId, serviceAccountId, role, now, now],
+  );
+  return { parentAccountId, familyId, role };
 }
 
 async function addLicense(accountId, status = 'ACTIVE') {
@@ -155,8 +187,9 @@ async function authorizedParent() {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   await grantScope(accountId, familyId);
+  const parentMembership = await createParentFamilyMembership(accountId, familyId);
   await addLicense(accountId);
-  return { rawToken, accountId, familyId };
+  return { rawToken, accountId, familyId, parentMembership };
 }
 
 /** Same as authorizedParent(), deliberately WITHOUT a license row. */
@@ -164,7 +197,8 @@ async function authorizedParentNoLicense() {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   await grantScope(accountId, familyId);
-  return { rawToken, accountId, familyId };
+  const parentMembership = await createParentFamilyMembership(accountId, familyId);
+  return { rawToken, accountId, familyId, parentMembership };
 }
 
 function invitationPayload(childProfileId, overrides = {}) {
@@ -174,6 +208,7 @@ function invitationPayload(childProfileId, overrides = {}) {
     childProfileId,
     ageUxTier: 'YOUNG_CHILD',
     initialPolicyProfile: 'BALANCED',
+    stepUpToken: 'test-create-grant',
     ...overrides,
   };
 }

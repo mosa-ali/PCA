@@ -96,6 +96,7 @@ async function createPending(authority, overrides = {}) {
   return authority.createRequest({
     requestId: overrides.requestId ?? `request-${Math.random().toString(16).slice(2)}`,
     familyId: FAMILY,
+    requestedByParentAccountId: null,
     childId: CHILD,
     deviceId: DEVICE,
     operation: overrides.operation ?? 'REMOVE_REVOKE_DEVICE',

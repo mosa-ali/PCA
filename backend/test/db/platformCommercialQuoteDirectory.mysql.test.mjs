@@ -10,8 +10,11 @@ import { BillingReadModel } from '../../dist/platformadmin/readmodels/BillingRea
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required.');
 const configuredDb = new URL(process.env.PCA_DATABASE_URL);
-if (!['127.0.0.1', 'localhost'].includes(configuredDb.hostname) || configuredDb.pathname !== '/pca_test') {
-  throw new Error('This integration test is restricted to the local disposable pca_test database.');
+const ownedRun = process.env.PCA_DISPOSABLE_TEST_DATABASE_OWNER === 'with-disposable-db';
+const allowedDatabase = configuredDb.pathname === '/pca_test' ||
+  (ownedRun && /^\/pca_test_codex_[a-f0-9]{32}$/.test(configuredDb.pathname));
+if (!(['127.0.0.1', 'localhost'].includes(configuredDb.hostname) || (ownedRun && configuredDb.hostname === 'mysql')) || !allowedDatabase) {
+  throw new Error('This integration test is restricted to local pca_test or a verifier-owned disposable database.');
 }
 
 test('local custom-quote directory filters by normalized Parent email and inclusive calendar dates', async () => {

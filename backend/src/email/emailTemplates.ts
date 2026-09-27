@@ -17,6 +17,7 @@ export type EmailTemplateKind =
   | 'MFA_RECOVERY'
   | 'ACCOUNT_ACTIVATED'
   | 'FIRST_LOGIN'
+  | 'LOGIN_SUCCESSFUL'
   | 'MFA_ENROLLED'
   | 'MFA_RESET'
   | 'MFA_RECOVERY_PENDING';
@@ -84,7 +85,7 @@ export function renderMfaRecoveryCodeTemplate(code: string): RenderedTemplateCon
   };
 }
 
-export type SecurityNoticeKind = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING';
+export type SecurityNoticeKind = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'LOGIN_SUCCESSFUL' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING';
 
 /** Formats the event instant; anything that is not a plain ISO-8601 UTC instant renders as "recently" rather than being echoed. */
 function formatNoticeInstant(occurredAtIso: string): string {
@@ -118,6 +119,9 @@ export function renderSecurityNoticeTemplate(kind: SecurityNoticeKind, occurredA
   if (kind === 'FIRST_LOGIN') {
     return renderNotice('First sign-in to your PCA Parent account', ['A first login to your PCA Parent account was completed.'], occurredAtIso);
   }
+  if (kind === 'LOGIN_SUCCESSFUL') {
+    return renderNotice('Successful sign-in to your PCA Parent account', ['A successful sign-in to your PCA Parent account was completed. If this was not you, reset your password and contact PCA support.'], occurredAtIso);
+  }
   if (kind === 'MFA_ENROLLED') {
     return renderNotice('Authenticator app added to your PCA Parent account', [
       'An authenticator app now protects your PCA Parent account. Every sign-in will ask for a 6-digit code from that app.',
@@ -133,6 +137,6 @@ export function renderEmailTemplate(kind: EmailTemplateKind, code: string): Rend
   if (kind === 'PASSWORD_RESET') return renderPasswordResetCodeTemplate(code);
   if (kind === 'LOGIN_STEP_UP') return renderLoginStepUpCodeTemplate(code);
   if (kind === 'MFA_RECOVERY') return renderMfaRecoveryCodeTemplate(code);
-  if (kind === 'ACCOUNT_ACTIVATED' || kind === 'FIRST_LOGIN' || kind === 'MFA_ENROLLED' || kind === 'MFA_RESET' || kind === 'MFA_RECOVERY_PENDING') return renderSecurityNoticeTemplate(kind, code);
+  if (kind === 'ACCOUNT_ACTIVATED' || kind === 'FIRST_LOGIN' || kind === 'LOGIN_SUCCESSFUL' || kind === 'MFA_ENROLLED' || kind === 'MFA_RESET' || kind === 'MFA_RECOVERY_PENDING') return renderSecurityNoticeTemplate(kind, code);
   return renderPlatformAdminActivationTemplate(code);
 }

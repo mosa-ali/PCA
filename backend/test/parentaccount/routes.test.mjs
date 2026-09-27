@@ -52,7 +52,7 @@ function buildApp() {
 
   const app = Fastify();
   registerParentAccountRoutes(app, { parentAccountService });
-  return { app, emailSender };
+  return { app, emailSender, parentAccountService, parentAccountRepository };
 }
 
 function setCookieHeaders(response) {
@@ -71,12 +71,139 @@ function extractCookieValue(setCookieHeaders_, name) {
 const EMAIL = 'route-test@example.com';
 const PASSWORD = 'correct horse battery staple';
 
+function registrationPayload(email, password = PASSWORD, extra = {}) {
+  return {
+    email,
+    password,
+    passwordConfirmation: password,
+    firstName: 'Route',
+    lastName: 'Parent',
+    ...extra,
+  };
+}
+
+test('Parent identity registration persists protected email and canonical phone; own profile is private and names-only editable', async () => {
+  const { app, emailSender } = buildApp();
+  const email = 'identity-route@example.com';
+  const registered = await app.inject({
+    method: 'POST',
+    url: '/api/parent/register',
+    payload: registrationPayload(email, PASSWORD, {
+      firstName: '  نجوى ',
+      lastName: ' حسن  ',
+      phoneNumber: '+١٤١٥٥٥٥٢٦٧١',
+    }),
+  });
+  assert.equal(registered.statusCode, 202);
+
+  const code = emailSender.lastCodeFor(email);
+  assert.ok(code);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } })).statusCode, 200);
+  const login = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password: PASSWORD } });
+  assert.equal(login.statusCode, 200);
+  const cookies = setCookieHeaders(login);
+  const sessionToken = extractCookieValue(cookies, 'pca_family_session');
+  const csrfToken = extractCookieValue(cookies, 'pca_family_csrf');
+
+  assert.equal((await app.inject({ method: 'GET', url: '/api/parent/identity' })).statusCode, 401);
+  const read = await app.inject({
+    method: 'GET',
+    url: '/api/parent/identity',
+    headers: { cookie: `pca_family_session=${sessionToken}` },
+  });
+  assert.equal(read.statusCode, 200);
+  assert.equal(read.headers['cache-control'], 'no-store');
+  assert.deepEqual(read.json(), {
+    firstName: 'نجوى',
+    lastName: 'حسن',
+    email,
+    phoneNumber: '+14155552671',
+    emailVerified: true,
+    phoneVerified: false,
+  });
+  assert.deepEqual(Object.keys(read.json()).sort(), ['email', 'emailVerified', 'firstName', 'lastName', 'phoneNumber', 'phoneVerified']);
+
+  const denied = await app.inject({
+    method: 'PATCH',
+    url: '/api/parent/identity',
+    headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}` },
+    payload: { firstName: 'N', lastName: 'H' },
+  });
+  assert.equal(denied.statusCode, 403, 'the session cookie alone cannot authorize an identity edit');
+
+  const contactMutation = await app.inject({
+    method: 'PATCH',
+    url: '/api/parent/identity',
+    headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}`, 'x-pca-csrf-token': csrfToken },
+    payload: { firstName: 'N', lastName: 'H', email: 'attacker@example.com' },
+  });
+  assert.equal(contactMutation.statusCode, 400, 'the endpoint rejects contact fields and extra keys');
+
+  const saved = await app.inject({
+    method: 'PATCH',
+    url: '/api/parent/identity',
+    headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}`, 'x-pca-csrf-token': csrfToken },
+    payload: { firstName: '  نجلاء ', lastName: ' حسن ' },
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.headers['cache-control'], 'no-store');
+  assert.equal(saved.json().firstName, 'نجلاء');
+  assert.equal(saved.json().lastName, 'حسن');
+  assert.equal(saved.json().email, email);
+  assert.equal(saved.json().phoneNumber, '+14155552671');
+});
+
+test('registration requires valid identity names and rejects an ambiguous phone number', async () => {
+  const { app } = buildApp();
+  const missingNames = await app.inject({
+    method: 'POST',
+    url: '/api/parent/register',
+    payload: { email: 'missing-name@example.com', password: PASSWORD, passwordConfirmation: PASSWORD },
+  });
+  assert.equal(missingNames.statusCode, 400);
+
+  const invalidPhone = await app.inject({
+    method: 'POST',
+    url: '/api/parent/register',
+    payload: registrationPayload('invalid-phone@example.com', PASSWORD, { phoneNumber: '4155552671' }),
+  });
+  assert.equal(invalidPhone.statusCode, 400, 'the server must not guess the missing country code');
+});
+
+test('legacy account with null identity fields can verify, log in, and read an honest null profile', async () => {
+  const { app, emailSender, parentAccountService } = buildApp();
+  const email = 'legacy-identity@example.com';
+  await parentAccountService.register(email, PASSWORD, PASSWORD);
+  const code = emailSender.lastCodeFor(email);
+  assert.ok(code);
+  const verified = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
+  assert.equal(verified.statusCode, 200);
+
+  const login = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password: PASSWORD } });
+  assert.equal(login.statusCode, 200);
+  const sessionToken = extractCookieValue(setCookieHeaders(login), 'pca_family_session');
+  const profile = await app.inject({
+    method: 'GET',
+    url: '/api/parent/identity',
+    headers: { cookie: `pca_family_session=${sessionToken}` },
+  });
+  assert.equal(profile.statusCode, 200);
+  assert.deepEqual(profile.json(), {
+    firstName: null,
+    lastName: null,
+    email: null,
+    phoneNumber: null,
+    emailVerified: true,
+    phoneVerified: false,
+  });
+});
+
 test('POST /api/parent/register returns 202 PENDING_VERIFICATION and never sets a session cookie', async () => {
   const { app } = buildApp();
   const response = await app.inject({
     method: 'POST',
     url: '/api/parent/register',
-    payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD },
+    payload: registrationPayload(EMAIL),
   });
   assert.equal(response.statusCode, 202);
   assert.deepEqual(response.json(), { status: 'PENDING_VERIFICATION' });
@@ -88,14 +215,14 @@ test('POST /api/parent/register rejects a body over the size limit', async () =>
   const response = await app.inject({
     method: 'POST',
     url: '/api/parent/register',
-    payload: { email: EMAIL, password: 'x'.repeat(10_000), passwordConfirmation: 'x'.repeat(10_000) },
+    payload: { ...registrationPayload(EMAIL, 'x'.repeat(10_000)), passwordConfirmation: 'x'.repeat(10_000) },
   });
   assert.equal(response.statusCode, 413);
 });
 
 test('SECURITY: verify-email activates only -- 200 {status:VERIFIED, sessionEstablished:false} and NO cookie of any kind', async () => {
   const { app, emailSender } = buildApp();
-  await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD } });
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: registrationPayload(EMAIL) });
   const code = emailSender.lastCodeFor(EMAIL);
 
   const response = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code } });
@@ -105,13 +232,11 @@ test('SECURITY: verify-email activates only -- 200 {status:VERIFIED, sessionEsta
   assert.ok(emailSender.sent.some((entry) => entry.email === EMAIL && entry.kind === 'ACCOUNT_ACTIVATED'), 'an ACCOUNT_ACTIVATED notice is sent');
 });
 
-test('SECURITY: the step-up sign-in sets an HttpOnly, SameSite=Strict session cookie and a non-HttpOnly CSRF cookie -- never Secure outside production', async () => {
+test('SECURITY: password sign-in sets an HttpOnly session cookie and a non-HttpOnly CSRF cookie', async () => {
   const { app, emailSender } = buildApp();
-  await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD } });
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: registrationPayload(EMAIL) });
   await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL) } });
-  await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
-
-  const response = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP') } });
+  const response = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
   assert.equal(response.statusCode, 200);
   const body = response.json();
   assert.equal(body.sessionEstablished, true);
@@ -119,13 +244,15 @@ test('SECURITY: the step-up sign-in sets an HttpOnly, SameSite=Strict session co
   assert.equal(typeof body.familyId, 'string', 'the first sign-in provisions the family server-side');
   assert.equal(body.role, 'ADMINISTRATOR');
   assert.equal(body.mfa.status, 'GRACE');
-  assert.equal(typeof body.mfa.graceExpiresAt, 'string');
 
   const cookies = setCookieHeaders(response);
   const sessionCookieHeader = cookies.find((c) => c.startsWith('pca_family_session='));
   const csrfCookieHeader = cookies.find((c) => c.startsWith('pca_family_csrf='));
+  const browserTrustCookieHeader = cookies.find((c) => c.startsWith('pca_parent_daily_login_grant='));
   assert.ok(sessionCookieHeader, 'session cookie must be set');
   assert.ok(csrfCookieHeader, 'CSRF cookie must be set');
+  assert.ok(browserTrustCookieHeader, 'first successful login automatically sets account browser trust');
+  assert.match(browserTrustCookieHeader, /HttpOnly/i);
   assert.match(sessionCookieHeader, /HttpOnly/i);
   assert.match(sessionCookieHeader, /SameSite=Strict/i);
   assert.doesNotMatch(sessionCookieHeader, /Secure/i, 'must not be Secure outside production (NODE_ENV != production during tests)');
@@ -157,18 +284,18 @@ test('DEPLOYMENT: backend/Dockerfile sets NODE_ENV=production, and only after th
 });
 
 async function registerVerifyAndCookies(app, emailSender, email = EMAIL) {
-  await app.inject({ method: 'POST', url: '/api/parent/register', payload: { email, password: PASSWORD, passwordConfirmation: PASSWORD } });
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: registrationPayload(email) });
   const code = emailSender.lastCodeFor(email);
   const verified = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
   assert.equal(setCookieHeaders(verified).length, 0);
-  // PCA-DEC-030: the session only comes from a real sign-in.
   const login = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password: PASSWORD } });
-  assert.deepEqual(login.json(), { sessionEstablished: false, stepUpRequired: true });
-  const response = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email, code: emailSender.lastCodeFor(email, 'LOGIN_STEP_UP') } });
+  assert.equal(login.statusCode, 200);
+  const response = login;
   const cookies = setCookieHeaders(response);
   const sessionToken = extractCookieValue(cookies, 'pca_family_session');
   const csrfToken = extractCookieValue(cookies, 'pca_family_csrf');
-  return { body: response.json(), sessionToken, csrfToken };
+  const browserGrantToken = extractCookieValue(cookies, 'pca_parent_daily_login_grant');
+  return { body: response.json(), sessionToken, csrfToken, browserGrantToken };
 }
 
 test('GET /api/parent/session returns the session when the cookie is present, 401 otherwise', async () => {
@@ -226,9 +353,10 @@ test('a matching CSRF cookie+header succeeds on revoke-all, and the session is u
   assert.equal(after.statusCode, 401);
 });
 
-test('POST /api/parent/login fails generically for wrong password/unknown email, then requires and completes daily email OTP for a verified account', async () => {
+test('POST /api/parent/login keeps generic credential errors and automatically trusts the first successful browser', async () => {
   const { app, emailSender } = buildApp();
-  await registerVerifyAndCookies(app, emailSender);
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: registrationPayload(EMAIL) });
+  await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL) } });
 
   const unknown = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: 'nobody@example.com', password: PASSWORD } });
   assert.equal(unknown.statusCode, 401);
@@ -238,19 +366,34 @@ test('POST /api/parent/login fails generically for wrong password/unknown email,
   assert.equal(wrongPassword.statusCode, 401);
   assert.deepEqual(wrongPassword.json(), { error: 'invalid_credentials' });
 
-  const ok = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+  const first = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().sessionEstablished, true);
+  const browserGrant = extractCookieValue(setCookieHeaders(first), 'pca_parent_daily_login_grant');
+  const ok = await app.inject({ method: 'POST', url: '/api/parent/login', headers: { cookie: `pca_parent_daily_login_grant=${browserGrant}` }, payload: { email: EMAIL, password: PASSWORD } });
   assert.equal(ok.statusCode, 200);
-  assert.deepEqual(ok.json(), { sessionEstablished: false, stepUpRequired: true });
-  assert.equal(setCookieHeaders(ok).length, 0, 'password verification must not issue a session or daily grant');
+  assert.equal(ok.json().sessionEstablished, true);
+  assert.ok(setCookieHeaders(ok).some((cookie) => cookie.startsWith('pca_family_session=')));
+  assert.equal(emailSender.sent.filter((entry) => entry.kind === 'FIRST_LOGIN').length, 1);
+  assert.equal(emailSender.sent.filter((entry) => entry.kind === 'LOGIN_SUCCESSFUL').length, 1, 'each subsequent successful login sends a security notice');
+  assert.equal(emailSender.sent.filter((entry) => entry.kind === 'LOGIN_STEP_UP').length, 0);
+});
 
-  const loginStepUpCode = emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
-  const completed = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: loginStepUpCode } });
-  assert.equal(completed.statusCode, 200);
-  assert.equal(completed.json().sessionEstablished, true);
-  const dailyGrantCookie = setCookieHeaders(completed).find((cookie) => cookie.startsWith('pca_parent_daily_login_grant='));
-  assert.ok(dailyGrantCookie, 'successful OTP must establish the browser daily grant');
-  assert.match(dailyGrantCookie, /HttpOnly/i);
-  assert.match(dailyGrantCookie, /SameSite=Strict/i);
+test('unknown browser requires a one-time email OTP, then becomes trusted automatically', async () => {
+  const { app, emailSender } = buildApp();
+  await app.inject({ method: 'POST', url: '/api/parent/register', payload: registrationPayload(EMAIL) });
+  await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL) } });
+  const first = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+  assert.equal(first.statusCode, 200);
+
+  const unknown = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+  assert.deepEqual(unknown.json(), { sessionEstablished: false, stepUpRequired: true });
+  const otp = emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
+  assert.ok(otp);
+  const verified = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: otp } });
+  assert.equal(verified.statusCode, 200);
+  assert.equal(verified.json().sessionEstablished, true);
+  assert.ok(setCookieHeaders(verified).some((cookie) => cookie.startsWith('pca_parent_daily_login_grant=')));
 });
 
 test('registration/verification/login are rate-limited', async () => {
@@ -260,7 +403,7 @@ test('registration/verification/login are rate-limited', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/parent/register',
-      payload: { email: `flood-${i}@example.com`, password: PASSWORD, passwordConfirmation: PASSWORD },
+      payload: registrationPayload(`flood-${i}@example.com`),
     });
     if (response.statusCode === 429) {
       sawRateLimit = true;
@@ -310,10 +453,10 @@ test('POST /api/parent/reset-password: full request -> reset -> old password rej
   const newLogin = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: NEW_PASSWORD } });
   assert.equal(newLogin.statusCode, 200);
   assert.deepEqual(newLogin.json(), { sessionEstablished: false, stepUpRequired: true });
-  const loginStepUpCode = emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
-  const completed = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: loginStepUpCode } });
-  assert.equal(completed.statusCode, 200);
-  assert.equal(completed.json().sessionEstablished, true);
+  const stepUp = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP') } });
+  assert.equal(stepUp.statusCode, 200);
+  assert.equal(stepUp.json().sessionEstablished, true);
+  assert.ok(setCookieHeaders(stepUp).some((cookie) => cookie.startsWith('pca_parent_daily_login_grant=')));
 });
 
 test('POST /api/parent/reset-password rejects an invalid/expired code with 401 invalid_code', async () => {

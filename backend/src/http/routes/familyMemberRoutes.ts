@@ -1,19 +1,10 @@
 /**
  * PCA product-completion programme, Writer P0-C (family/members): the
  * authenticated HTTP surface over familymembers/FamilyMemberInvitationService.
- * Follows the SAME session/CSRF/actor-device conventions
- * childRequestRoutes.ts/removalDecisionRoutes.ts already established
- * (HttpOnly family session cookie + double-submit CSRF cookie for
- * state-changing requests; `actorDeviceId` derived EXCLUSIVELY from a
- * verified DeviceSessionService bearer token, never a client-supplied
- * field) -- this file invents no new session/authentication model.
- *
- * Production wires the SAME shared ParentActionAuthorizationService
- * instance main.ts already constructs for Safe Zone/RemovalDecisionAuthority/
- * childRequestRoutes.ts, currently backed by UnavailableTrustSetRoleResolver
- * -- every invite/revoke/change-role/remove call here fails closed with the
- * honest NOT_AUTHORIZED reason until a real trust-set source is wired,
- * exactly like every other consumer of that shared instance.
+ * Parent-session family membership is the authority for these operations.
+ * Mutations use the HttpOnly Parent session + CSRF token; sensitive roster
+ * changes additionally consume a fresh-TOTP, one-use grant. Child-device
+ * pairing and device-token security remain separate routes.
  *
  * The remove route (:accountId/remove) targets an already-ACCEPTED member
  * by their parent_accounts.account_id, not a family_member_invitations id
@@ -34,18 +25,20 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
-import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { FamilyMemberInvitationError, type FamilyMemberInvitationService } from '../../familymembers/FamilyMemberInvitationService.js';
 import type { FamilyMemberInvitationRecord, InvitedFamilyRole } from '../../familymembers/types.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const INVITED_ROLES: ReadonlySet<string> = new Set(['ADMINISTRATOR', 'VIEWER']);
+const PARENT_READ_ROLES: ReadonlySet<string> = new Set(['ADMINISTRATOR', 'VIEWER']);
+const PARENT_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMINISTRATOR']);
+const PARENT_SESSION_AUDIT_ACTOR = 'SERVICE_SESSION' as never;
 
 export interface FamilyMemberRoutesDeps {
   parentAccountService: ParentAccountService;
   /** Optional purely so existing buildServer() test callers that don't exercise family/members routes need no change -- when omitted, this file registers nothing (mirrors registerBrowserEndpointRoutes' own optional-feature convention). */
   familyMemberInvitationService?: FamilyMemberInvitationService;
-  deviceSessionService: DeviceSessionService;
+  deviceSessionService?: never;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -120,9 +113,9 @@ function errorStatus(code: FamilyMemberInvitationError['code']): number {
 
 export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMemberRoutesDeps): void {
   if (!deps.familyMemberInvitationService) return;
-  const { parentAccountService, familyMemberInvitationService, deviceSessionService } = deps;
+  const { parentAccountService, familyMemberInvitationService } = deps;
 
-  async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
+  async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string; rawSessionToken: string } | null> {
     const token = readSessionCookie(request);
     if (token === null) {
       await reply.code(401).send({ error: 'unauthorized' });
@@ -139,7 +132,7 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
         await reply.code(403).send({ error: 'family_scope_forbidden' });
         return null;
       }
-      return { accountId: session.accountId, familyId: session.familyId };
+      return { accountId: session.accountId, familyId: session.familyId, rawSessionToken: token };
     } catch (error) {
       if (error instanceof ParentAccountError) {
         await reply.code(401).send({ error: 'unauthorized' });
@@ -149,23 +142,21 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
     }
   }
 
-  /** See this file's own header comment on actor-identity binding. */
-  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<string | null> {
-    const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-      await reply.code(401).send({ error: 'actor_device_session_required' });
-      return null;
+  async function requireRole(session: { accountId: string; familyId: string }, reply: FastifyReply, allowed: ReadonlySet<string>): Promise<boolean> {
+    const role = await parentAccountService.activeFamilyRole(session.accountId as never, session.familyId);
+    if (!role || !allowed.has(role)) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
     }
-    try {
-      const identity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      return identity.deviceId;
-    } catch (error) {
-      if (error instanceof RuntimeSyncAuthError) {
-        await reply.code(401).send({ error: 'actor_device_session_invalid' });
-        return null;
-      }
-      throw error;
+    return true;
+  }
+
+  async function consumeStepUp(session: { rawSessionToken: string; familyId: string }, reply: FastifyReply, operation: 'family.member.add' | 'family.member.remove' | 'family.member.role_change' | 'family.member.invitation.revoke', token: unknown): Promise<boolean> {
+    if (typeof token !== 'string' || !(await parentAccountService.consumeSensitiveStepUpForSession(session.rawSessionToken, session.familyId, operation, token))) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
     }
+    return true;
   }
 
   async function handleError(reply: FastifyReply, error: unknown): Promise<void> {
@@ -180,6 +171,7 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
   app.get('/api/parent/families/:familyId/members/invitations', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireRole(session, reply, PARENT_READ_ROLES))) return;
     const invitations = await familyMemberInvitationService.listInvitationsForFamily(session.familyId);
     return reply.code(200).send({ invitations: invitations.map(toInvitationDto) });
   });
@@ -192,13 +184,12 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const body = request.body;
       if (!isPlainObject(body) || typeof body.invitedEmail !== 'string' || typeof body.role !== 'string' || !INVITED_ROLES.has(body.role)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (!(await consumeStepUp(session, reply, 'family.member.add', body.stepUpToken))) return;
 
       try {
         const created = await familyMemberInvitationService.createInvitation({
@@ -206,7 +197,7 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
           invitedEmail: body.invitedEmail,
           role: body.role as InvitedFamilyRole,
           invitedByAccountId: session.accountId,
-          actorDeviceId,
+          actorDeviceId: PARENT_SESSION_AUDIT_ACTOR,
         });
         return reply.code(201).send({ invitation: toInvitationDto(created) });
       } catch (error) {
@@ -223,12 +214,13 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const { invitationId } = request.params as { invitationId: string };
+      const body = request.body;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (!(await consumeStepUp(session, reply, 'family.member.invitation.revoke', body.stepUpToken))) return;
       try {
-        const revoked = await familyMemberInvitationService.revokeInvitationForFamily(session.familyId, invitationId, actorDeviceId);
+        const revoked = await familyMemberInvitationService.revokeInvitationForFamily(session.familyId, invitationId, PARENT_SESSION_AUDIT_ACTOR);
         return reply.code(200).send({ invitation: toInvitationDto(revoked) });
       } catch (error) {
         return handleError(reply, error);
@@ -244,17 +236,16 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const { invitationId } = request.params as { invitationId: string };
       const body = request.body;
       if (!isPlainObject(body) || typeof body.role !== 'string' || !INVITED_ROLES.has(body.role)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (!(await consumeStepUp(session, reply, 'family.member.role_change', body.stepUpToken))) return;
 
       try {
-        const updated = await familyMemberInvitationService.changeInvitationRole(session.familyId, invitationId, body.role as InvitedFamilyRole, actorDeviceId);
+        const updated = await familyMemberInvitationService.changeInvitationRole(session.familyId, invitationId, body.role as InvitedFamilyRole, PARENT_SESSION_AUDIT_ACTOR);
         return reply.code(200).send({ invitation: toInvitationDto(updated) });
       } catch (error) {
         return handleError(reply, error);
@@ -270,12 +261,13 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
-
       const { accountId } = request.params as { accountId: string };
+      const body = request.body;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (!(await consumeStepUp(session, reply, 'family.member.remove', body.stepUpToken))) return;
       try {
-        const result = await familyMemberInvitationService.removeMember(session.familyId, accountId, session.accountId, actorDeviceId);
+        const result = await familyMemberInvitationService.removeMember(session.familyId, accountId, session.accountId, PARENT_SESSION_AUDIT_ACTOR);
         return reply.code(200).send({ removed: true, auditEventId: result.auditEventId });
       } catch (error) {
         return handleError(reply, error);

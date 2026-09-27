@@ -78,6 +78,8 @@ export type RemovalDecisionMethod = 'REMOTE_PARENT' | 'LOCAL_ADMINISTRATION_PIN'
 export interface RemovalDecisionRequestInput {
   requestId: string;
   familyId: string;
+  /** Authenticated Parent account that opened the request; null for legacy/internal callers. */
+  requestedByParentAccountId: string | null;
   childId: string;
   deviceId: string;
   operation: RemovalDecisionOperation;
@@ -95,6 +97,8 @@ export interface RemovalDecisionRecord extends RemovalDecisionRequestInput {
   decidedAt: Date | null;
   decisionMethod: RemovalDecisionMethod | null;
   temporaryDisableUntil: Date | null;
+  /** Authenticated Parent account for session-originated decisions; null for device-only or legacy decisions. */
+  decidedByParentAccountId: string | null;
   /** Populated only by the signed remote-parent mode; null for PIN/recovery decisions. */
   decidedByDeviceId: string | null;
   decisionActionId: string | null;
@@ -407,6 +411,7 @@ export class RemovalDecisionAuthority {
       decidedAt: null,
       decisionMethod: null,
       temporaryDisableUntil: null,
+      decidedByParentAccountId: null,
       decidedByDeviceId: null,
       decisionActionId: null,
       idempotencyKey: null,
@@ -458,7 +463,12 @@ export class RemovalDecisionAuthority {
     return record === null || record.familyId !== familyId ? null : record;
   }
 
-  async decideWithLocalPin(requestId: string, familyId: string, decision: LocalPinDecisionInput): Promise<RemovalDecisionRecord> {
+  async decideWithLocalPin(
+    requestId: string,
+    familyId: string,
+    decision: LocalPinDecisionInput,
+    decidedByParentAccountId: string | null = null,
+  ): Promise<RemovalDecisionRecord> {
     const request = await this.requirePending(requestId, familyId);
     const result = await this.pinService.verifyPin(familyId, decision.pin);
     // The PIN is accepted only as a transient argument and is never copied
@@ -480,6 +490,7 @@ export class RemovalDecisionAuthority {
       { decision: decision.decision, temporaryDisableUntil: decision.temporaryDisableUntil },
       'LOCAL_ADMINISTRATION_PIN',
       'local-administration-pin',
+      decidedByParentAccountId,
     );
   }
 
@@ -488,6 +499,7 @@ export class RemovalDecisionAuthority {
     familyId: string,
     decision: RemovalDecisionInput,
     proof: AuthorizedRecoveryProof,
+    decidedByParentAccountId: string | null = null,
   ): Promise<RemovalDecisionRecord> {
     const request = await this.requirePending(requestId, familyId);
     const authorized = await this.recoveryAuthority.verifyAuthorizedRecovery({ request, decision, proof }).catch(() => false);
@@ -497,6 +509,7 @@ export class RemovalDecisionAuthority {
       decision,
       'AUTHORIZED_RECOVERY',
       `authorized-recovery:${isPlausibleOpaqueId(proof.recoveryTransactionId) ? proof.recoveryTransactionId : 'unknown'}`,
+      decidedByParentAccountId,
     );
   }
 
@@ -592,6 +605,7 @@ export class RemovalDecisionAuthority {
       state: signedDecision.decision,
       decidedAt: this.now(),
       decisionMethod: 'REMOTE_PARENT',
+      decidedByParentAccountId: null,
       decidedByDeviceId: signedDecision.actorDeviceId,
       decisionActionId: signedDecision.actionId,
       idempotencyKey: signedDecision.idempotencyKey,
@@ -648,6 +662,7 @@ export class RemovalDecisionAuthority {
     input: RemovalDecisionInput,
     method: RemovalDecisionMethod,
     auditActorId: string,
+    decidedByParentAccountId: string | null,
   ): Promise<RemovalDecisionRecord> {
     validateDecisionShape(request, input, this.now());
     const next: RemovalDecisionRecord = {
@@ -656,6 +671,7 @@ export class RemovalDecisionAuthority {
       decidedAt: this.now(),
       decisionMethod: method,
       temporaryDisableUntil: input.temporaryDisableUntil,
+      decidedByParentAccountId,
       decidedByDeviceId: null,
       decisionActionId: null,
       idempotencyKey: null,
@@ -960,6 +976,7 @@ function sameRequest(a: RemovalDecisionRecord, b: RemovalDecisionRecord): boolea
   return (
     a.requestId === b.requestId &&
     a.familyId === b.familyId &&
+    a.requestedByParentAccountId === b.requestedByParentAccountId &&
     a.childId === b.childId &&
     a.deviceId === b.deviceId &&
     a.operation === b.operation &&

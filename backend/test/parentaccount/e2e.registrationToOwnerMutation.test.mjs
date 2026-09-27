@@ -1,7 +1,6 @@
 // PCA-DEC-030 registration boundary: register -> verify-email ACTIVATES the
-// account only (no session, no family). The first real sign-in (password +
-// emailed step-up code) is what establishes the session, starts the one
-// 3-day MFA grace window, and provisions the family server-side with the
+// account only (no session, no family). The first real sign-in (password) is
+// what establishes the session and provisions the family server-side with the
 // signing-in account as its ADMINISTRATOR. Parent Genesis (the client-held
 // device-key ceremony) no longer exists.
 import assert from 'node:assert/strict';
@@ -9,7 +8,6 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
-import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryAuthzRepository } from '../support/inMemoryAuthzRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
@@ -52,7 +50,7 @@ class RecordingEmailSender {
   }
 }
 
-test('E2E: register -> verify-email activates only; the first sign-in establishes the session, starts grace and provisions the family as ADMINISTRATOR', async () => {
+test('E2E: register -> verify-email activates only; the first password sign-in establishes a session and provisions the family as ADMINISTRATOR', async () => {
   const authRepository = createInMemoryAuthRepository();
   const authService = new AuthService(authRepository, () => FIXED_NOW);
   const authzRepository = createInMemoryAuthzRepository();
@@ -78,7 +76,7 @@ test('E2E: register -> verify-email activates only; the first sign-in establishe
   const registerResponse = await app.inject({
     method: 'POST',
     url: '/api/parent/register',
-    payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD },
+    payload: { email: EMAIL, password: PASSWORD, passwordConfirmation: PASSWORD, firstName: 'Owner', lastName: 'Parent' },
   });
   assert.equal(registerResponse.statusCode, 202, registerResponse.body);
 
@@ -97,21 +95,14 @@ test('E2E: register -> verify-email activates only; the first sign-in establishe
 
   const loginResponse = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
   assert.equal(loginResponse.statusCode, 200);
-  assert.deepEqual(loginResponse.json(), { sessionEstablished: false, stepUpRequired: true });
-  assert.equal(loginResponse.cookies.length, 0);
-
-  const stepUpResponse = await app.inject({
-    method: 'POST',
-    url: '/api/parent/login/step-up',
-    payload: { email: EMAIL, code: emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP') },
-  });
-  assert.equal(stepUpResponse.statusCode, 200, stepUpResponse.body);
+  const stepUpResponse = loginResponse;
   const body = stepUpResponse.json();
   assert.equal(body.sessionEstablished, true);
   assert.equal(typeof body.familyId, 'string', 'the family is provisioned server-side at the first sign-in');
   assert.equal(body.role, 'ADMINISTRATOR');
-  assert.deepEqual(body.mfa, { status: 'GRACE', graceExpiresAt: new Date(FIXED_NOW.getTime() + PARENT_MFA_GRACE_MS).toISOString() });
-  assert.equal(emailSender.kindsFor(EMAIL).filter((kind) => kind === 'FIRST_LOGIN').length, 1, 'exactly one FIRST_LOGIN security notice is sent');
+  assert.equal(body.mfa.status, 'GRACE');
+  assert.equal(emailSender.kindsFor(EMAIL).filter((kind) => kind === 'FIRST_LOGIN').length, 1, 'first sign-in sends its dedicated security notice');
+  assert.equal(emailSender.kindsFor(EMAIL).filter((kind) => kind === 'LOGIN_SUCCESSFUL').length, 0, 'first sign-in is recorded separately from subsequent successful logins');
   assert.equal(scopeGrants.length, 1);
   assert.equal(scopeGrants[0].familyId, body.familyId, 'the provisioned family scope is granted to the signing-in service account');
 

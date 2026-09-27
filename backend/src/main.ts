@@ -60,7 +60,7 @@ import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.
 // deviceDirectoryService) for the full rationale on why the repository/
 // ledger are in-memory reference implementations.
 import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepository.js';
-import { ChildRequestService } from './childrequests/ChildRequestService.js';
+import { ChildRequestService, type ParentSessionChildRequestAuthorizer } from './childrequests/ChildRequestService.js';
 import { MySqlEyeProtectionSettingsRepository } from './eyeprotection/MySqlEyeProtectionSettingsRepository.js';
 import { EyeProtectionSettingsService } from './eyeprotection/EyeProtectionSettingsService.js';
 import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
@@ -71,7 +71,8 @@ import { BonusGrantLedger } from './childrequests/BonusGrantLedger.js';
 import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
-import { RealProtectiveAuthorityResolver } from './familyrbac/RealProtectiveAuthorityResolver.js';
+import { RemovalTargetResolver } from './familyrbac/RemovalTargetResolver.js';
+import { MySqlDeviceChildBindingRepository } from './device/DeviceChildBindingRepository.js';
 import { MySqlDeviceProtectionStatusRepository } from './device/DeviceProtectionStatusRepository.js';
 import { BrowserEndpointService } from './device/BrowserEndpointService.js';
 import { ProtectionAlertProducer } from './alerts/ProtectionAlertProducer.js';
@@ -172,6 +173,7 @@ import { ParentMfaService } from './parentaccount/mfa/ParentMfaService.js';
 import { MySqlParentMfaRepository } from './parentaccount/mfa/MySqlParentMfaRepository.js';
 import { ParentCommercialStepUpAuthority } from './parentaccount/mfa/ParentCommercialStepUpAuthority.js';
 import { loadParentMfaKeyring } from './parentaccount/mfa/parentTotp.js';
+import { loadParentIdentityEncryptionKeyring } from './parentaccount/identityContact.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
@@ -549,6 +551,10 @@ async function start(): Promise<void> {
   // HERE, at boot, so a deployment missing it fails loudly instead of letting
   // parents reach a login they could never complete.
   loadParentMfaKeyring(process.env);
+  // Durable display-email encryption uses its own Parent identity key realm;
+  // validate the active key at boot before any profile or Platform DTO route
+  // can attempt to persist/decrypt the protected field.
+  loadParentIdentityEncryptionKeyring(process.env);
   const parentAccountRepository = new MySqlParentAccountRepository();
   const parentMfaService = new ParentMfaService({ repository: new MySqlParentMfaRepository(), keyring: () => loadParentMfaKeyring(process.env) });
   const parentAccountService = new ParentAccountService({
@@ -586,6 +592,7 @@ async function start(): Promise<void> {
   // boundary" posture trustSetRoleResolver above already established, so a future real resolver
   // swapped in at ONE site is never silently missing at the other.
   const childProfileMembershipResolver = new UnavailableChildProfileMembershipResolver();
+  const childProfileRegistryRepository = new MySqlChildProfileRegistryRepository();
   // Real, durable, per-family persistence (PCA product-completion
   // programme, Writer P0-A) replacing the previous hardcoded closure
   // default shared across every family regardless of familyId -- see
@@ -666,19 +673,39 @@ async function start(): Promise<void> {
   // NOTE that ActionIdempotencyLedger is no longer in that list: it holds no
   // family content or personal data at all (an opaque verdict plus identifiers),
   // so it is durable as of migration 0047 -- see its own comment above.
+  const parentSessionChildRequestAuthorizer: ParentSessionChildRequestAuthorizer = {
+    async authorize({ parentAccountId, familyId, targetScope }) {
+      try {
+        if ((await parentAccountService.activeFamilyRole(parentAccountId as never, familyId)) !== 'ADMINISTRATOR') {
+          return { verdict: 'DENY' };
+        }
+        if (targetScope.kind === 'FAMILY') {
+          return { verdict: targetScope.id === familyId ? 'ALLOW' : 'DENY' };
+        }
+        if (targetScope.kind === 'CHILD_PROFILE') {
+          const membership = await childProfileRegistryRepository.resolveMembership(familyId, targetScope.id);
+          return { verdict: membership === 'MEMBER' ? 'ALLOW' : 'DENY' };
+        }
+        // Device and accepted-member target lookup is not yet available through
+        // a family-scoped production resolver. Keep those Parent actions closed.
+        return { verdict: 'DENY' };
+      } catch {
+        return { verdict: 'DENY' };
+      }
+    },
+  };
   const childRequestRepository = new InMemoryChildRequestRepository();
-  const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
+  const childRequestService = new ChildRequestService(
+    childRequestRepository,
+    safeZoneParentActionAuthorization,
+    () => new Date(),
+    parentSessionChildRequestAuthorizer,
+  );
   const bonusGrantLedger = new BonusGrantLedger();
-  // PCA eye-protection reminders: reuses the SAME safeZoneParentActionAuthorization
-  // instance (a ParentActionAuthorizationService is generic across every
-  // ParentOperation, including EDIT_CHILD_POLICY) every other consumer in
-  // this file shares -- never a second, independently-constructed copy.
-  // Unlike childRequestRepository above, this setting is a bounded
-  // operational preference (not "family/child policy content"), so it is a
-  // real, durable MySQL-backed repository -- see
-  // eyeprotection/EyeProtectionSettingsRepository.ts's own doc comment.
+  // Eye-protection reminders are a bounded operational preference with
+  // Parent-session Administrator authorization at the HTTP boundary.
   const eyeProtectionSettingsRepository = new MySqlEyeProtectionSettingsRepository();
-  const eyeProtectionSettingsService = new EyeProtectionSettingsService(eyeProtectionSettingsRepository, safeZoneParentActionAuthorization);
+  const eyeProtectionSettingsService = new EyeProtectionSettingsService(eyeProtectionSettingsRepository);
   // WEB_RULE parent authoring remains intentionally unconfigured in production.
   // InMemoryWebRuleRepository is a test-only fixture: wiring it here would make
   // readable parent-authored domains production-reachable without durable,
@@ -708,9 +735,8 @@ async function start(): Promise<void> {
     freeAccessAcquisitionPolicy,
   );
   // PCA-ADD-ENR-016/PCA-FR-145: single shared instance -- both
-  // registerRuntimeSyncRoutes' protection-status write endpoint and
-  // RealProtectiveAuthorityResolver's read below share this SAME
-  // repository instance, never a second independently-constructed copy.
+  // registerRuntimeSyncRoutes' protection-status write endpoint and the
+  // Parent removal-target resolver below share this SAME repository instance.
   const deviceProtectionStatusRepository = new MySqlDeviceProtectionStatusRepository();
   // PCA-ADD-ENR-020: durable ledger + producer + parent-device resolver,
   // shared by every alert call site below (RemovalDecisionAuthority,
@@ -864,7 +890,6 @@ async function start(): Promise<void> {
   // CHG-2026-09-04-01). ONE shared instance -- InvitationService's
   // childProfileMembership check and childProfileRoutes' ChildProfileService
   // must observe the SAME rows, never two independently-constructed copies.
-  const childProfileRegistryRepository = new MySqlChildProfileRegistryRepository();
   const childProfileService = new ChildProfileService(childProfileRegistryRepository);
 
   const app = buildServer({
@@ -875,6 +900,7 @@ async function start(): Promise<void> {
     authzRepository,
     invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService, protectionAlerting, childProfileRegistryRepository),
     childProfileService,
+    familyMembershipRepository,
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
@@ -972,11 +998,15 @@ async function start(): Promise<void> {
     // vs. honestly fail-closed pending a real implementation (signed
     // remote-parent, authorized recovery).
     removalDecisionAuthority,
-    // PCA-ADD-ENR-016/PCA-FR-145: real source, fail-closed only on the
-    // SAME PCA-DEC-020 crypto-review gate as every other signed-device
-    // channel in this file -- see RealProtectiveAuthorityResolver.ts's
-    // own doc comment for the full chain.
-    protectiveAuthorityResolver: new RealProtectiveAuthorityResolver(deviceProtectionStatusRepository),
+    // PCA-ADD-ENR-016/PCA-FR-145: derive child and protective status from
+    // durable family-scoped enrollment/membership/status sources. Device
+    // protection remains a device-session-authenticated self-report, not
+    // independent hardware attestation.
+    removalTargetResolver: new RemovalTargetResolver({
+      bindings: new MySqlDeviceChildBindingRepository(),
+      memberships: childProfileRegistryRepository,
+      protectionStatuses: deviceProtectionStatusRepository,
+    }),
     administrationPinService,
     deviceProtectionStatusRepository,
     protectionStatusAlerting: protectionAlerting,
@@ -985,6 +1015,7 @@ async function start(): Promise<void> {
     childRequestService,
     bonusGrantLedger,
     childProfileMembership: childProfileMembershipResolver,
+    childProfileRegistryRepository,
     familyMemberInvitationService,
     familyAuditEventLedger,
     protectionAlertLedger,

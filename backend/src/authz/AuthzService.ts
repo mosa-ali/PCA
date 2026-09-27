@@ -30,8 +30,9 @@ export class AuthzService {
 
   /**
    * Throws AuthzError if not authorized; resolves with no value if
-   * authorized. This method only ever answers "may this account perform
-   * this service-plane operation" -- it never returns or implies a family
+   * authorized. Its repository requires an ACTIVE family scope and matching
+   * ACTIVE Parent membership. This method only ever answers "may this account
+   * perform this service-plane operation" -- it never returns or implies a family
    * role, and it never authorizes any of the operations deliberately
    * absent from ServiceOperation (policy update, family role change,
    * retention control, child removal, family activity read).

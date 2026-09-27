@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execute, isDuplicateEntry, runInTransaction } from '../../db/pool.js';
 import type {
-  CommercialStepUpOperation,
+  ParentStepUpOperation,
   FailurePolicy,
   ParentMfaRecoveryCode,
   ParentMfaRepository,
@@ -278,7 +278,7 @@ export class MySqlParentMfaRepository implements ParentMfaRepository {
     });
   }
 
-  async insertStepUpGrant(record: { grantId: string; accountId: string; familyId: string; operation: CommercialStepUpOperation; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void> {
+  async insertStepUpGrant(record: { grantId: string; accountId: string; familyId: string; operation: ParentStepUpOperation; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void> {
     await runInTransaction((conn) =>
       execute(
         conn,
@@ -288,7 +288,7 @@ export class MySqlParentMfaRepository implements ParentMfaRepository {
     );
   }
 
-  async consumeStepUpGrant(input: { tokenHash: string; accountId: string; familyId: string; operation: CommercialStepUpOperation; now: Date }): Promise<boolean> {
+  async consumeStepUpGrant(input: { tokenHash: string; accountId: string; familyId: string; operation: ParentStepUpOperation; now: Date }): Promise<boolean> {
     const { rowCount } = await runInTransaction((conn) =>
       execute(
         conn,

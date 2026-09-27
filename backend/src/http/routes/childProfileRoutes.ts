@@ -5,6 +5,8 @@ import { createRequireFamilyAuthorization } from '../requireFamilyAuthorization.
 import { createRateLimiter } from '../rateLimit.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
+import type { FamilyMembershipRepository, FamilyMembershipRole } from '../../familymembers/FamilyMembershipRepository.js';
+import type { OpaqueFamilyId } from '../../familymembers/types.js';
 
 const MAX_BODY_BYTES = 1 * 1024; // the body carries at most one short idempotency key -- see below
 const MAX_IDEMPOTENCY_KEY_LENGTH = 191;
@@ -14,10 +16,12 @@ const MAX_IDEMPOTENCY_KEY_LENGTH = 191;
  * change CHG-2026-09-04-01, doc 10 Section 7.1). Same preHandler shape and
  * error-mapping discipline as invitationRoutes.ts: service-session
  * authentication, then family authorization BEFORE any data access, on
- * the SAME plane CREATE_INVITATION already uses (the only plane that
- * authorizes a family-scoped mutation in production today -- see
- * ParentActionAuthorizationService's own header on why it cannot be used
- * here, unchanged by this file).
+ * the service-session + family-scope plane, followed by an ACTIVE Parent
+ * membership-role check. CREATE_CHILD_PROFILE is a normal Parent
+ * Administrator action: the active same-family role must be ADMINISTRATOR.
+ * Listing opaque child-profile ids is available to an active Administrator
+ * or Viewer. This uses the Parent membership repository, not the retired
+ * Parent browser / trust-set authority path.
  *
  * NEVER accepts a readable child field. `POST` accepts exactly one
  * optional body field -- `idempotencyKey`, an operational retry-safety
@@ -31,6 +35,7 @@ export interface ChildProfileRoutesDeps {
   childProfileService: ChildProfileService;
   authService: AuthService;
   authzService: AuthzService;
+  familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   /** Runs before requireServiceSession on every route below -- bounds session-validation DB load per IP regardless of token validity, matching invitationRoutes.ts. */
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
@@ -39,6 +44,29 @@ export interface ChildProfileRoutesDeps {
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+function requireParentMembershipRole(
+  familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>,
+  allowedRoles: ReadonlySet<FamilyMembershipRole>,
+) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const { familyId } = request.params as { familyId?: unknown };
+    const accountId = request.accountId;
+    if (typeof familyId !== 'string' || typeof accountId !== 'string') {
+      await reply.code(403).send({ error: 'forbidden' });
+      return;
+    }
+
+    const role = await familyMembershipRepository.findActiveRoleByServiceAccountId(accountId, familyId as OpaqueFamilyId);
+    if (role === null || !allowedRoles.has(role)) {
+      // Keep absent, inactive, and insufficient roles indistinguishable.
+      await reply.code(403).send({ error: 'forbidden' });
+    }
+  };
+}
+
+const PARENT_PROFILE_READ_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR', 'VIEWER']);
+const PARENT_PROFILE_CREATE_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR']);
 
 export function toChildProfileDto(row: { childProfileId: string; createdAtUtc: string }) {
   return { childProfileId: row.childProfileId, createdAt: row.createdAtUtc };
@@ -56,6 +84,7 @@ export function registerChildProfileRoutes(app: FastifyInstance, deps: ChildProf
         requireServiceSession,
         deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'create-child-profile' }),
         createRequireFamilyAuthorization(deps.authzService, 'CREATE_CHILD_PROFILE'),
+        requireParentMembershipRole(deps.familyMembershipRepository, PARENT_PROFILE_CREATE_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -96,6 +125,7 @@ export function registerChildProfileRoutes(app: FastifyInstance, deps: ChildProf
         deps.authAttemptLimiter,
         requireServiceSession,
         createRequireFamilyAuthorization(deps.authzService, 'LIST_CHILD_PROFILES'),
+        requireParentMembershipRole(deps.familyMembershipRepository, PARENT_PROFILE_READ_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {

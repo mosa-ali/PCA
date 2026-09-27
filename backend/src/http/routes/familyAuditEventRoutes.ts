@@ -1,16 +1,9 @@
 /**
  * PCA product-completion programme, Writer P0-D (/security/audit): the
- * authenticated HTTP surface a parent's OWN trusted browser device polls to
- * receive its family's opaque audit-event envelopes (FamilyAuditEventLedger).
- * Follows the SAME session/CSRF/actor-device conventions
- * familyMemberRoutes.ts/childPolicyRoutes.ts already established --
- * `actorDeviceId` is derived EXCLUSIVELY from a verified DeviceSessionService
- * bearer token, never a client-supplied field, and is used here as the
- * `parentDeviceId` key the ledger was written under (see
- * FamilyAuditEventProducer/MySqlOwnerParentDeviceResolver -- an envelope is
- * only ever queued for a family's real, resolved parent device, so a
- * caller's own verified device identity is the correct, and only, key to
- * read its own queue by).
+ * authenticated HTTP surface for authorized Parent family members to read
+ * the family's opaque audit-event envelopes. Active family Administrator
+ * and Viewer roles come from the Parent session; encrypted content remains
+ * opaque until handled by the client-side decryption boundary.
  *
  * This route returns OPAQUE fields only (envelopeId/encryptedPayloadB64/
  * nonceB64/keyEpoch/generatedAtUtc) -- never a FamilyAuditRecord field.
@@ -23,12 +16,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
-import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
 
 export interface FamilyAuditEventRoutesDeps {
   parentAccountService: ParentAccountService;
-  deviceSessionService: DeviceSessionService;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- when omitted, this file registers nothing (mirrors registerFamilyMemberRoutes' own optional-feature convention). */
   familyAuditEventLedger?: FamilyAuditEventLedger;
 }
@@ -49,16 +40,18 @@ function toEnvelopeDto(envelope: { envelopeId: string; keyEpoch: number; generat
 
 export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: FamilyAuditEventRoutesDeps): void {
   if (!deps.familyAuditEventLedger) return;
-  const { parentAccountService, deviceSessionService, familyAuditEventLedger } = deps;
+  const { parentAccountService, familyAuditEventLedger } = deps;
 
   app.get('/api/parent/families/:familyId/audit-events', async (request: FastifyRequest, reply: FastifyReply) => {
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     let familyIdFromSession: string;
+    let accountId: string;
     try {
       const session = await parentAccountService.readSession(token);
       if (!session.familyId) return reply.code(403).send({ error: 'family_scope_required' });
       familyIdFromSession = session.familyId;
+      accountId = session.accountId;
     } catch (error) {
       if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
       throw error;
@@ -68,21 +61,10 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     if (!familyId || familyId !== familyIdFromSession) {
       return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
+    const role = await parentAccountService.activeFamilyRole(accountId! as never, familyId);
+    if (role !== 'ADMINISTRATOR' && role !== 'VIEWER') return reply.code(403).send({ error: 'forbidden' });
 
-    const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-      return reply.code(401).send({ error: 'actor_device_session_required' });
-    }
-    let actorDeviceId: string;
-    try {
-      const identity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      actorDeviceId = identity.deviceId;
-    } catch (error) {
-      if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'actor_device_session_invalid' });
-      throw error;
-    }
-
-    const envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId);
+    const envelopes = await familyAuditEventLedger.listForFamily(familyId);
     return reply.code(200).send({ envelopes: envelopes.map(toEnvelopeDto) });
   });
 }

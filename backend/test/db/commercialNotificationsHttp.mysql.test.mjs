@@ -81,7 +81,7 @@ function server() {
 }
 
 function family() {
-  return `family-${randomUUID()}`;
+  return randomUUID();
 }
 
 async function createAccountWithSession() {
@@ -90,9 +90,24 @@ async function createAccountWithSession() {
 }
 
 async function grantScope(accountId, familyId, status = 'ACTIVE') {
+  const parentAccountId = randomUUID();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`,
+    [familyId, randomBytes(32)],
+  );
+  await getPool().query(
+    `INSERT INTO parent_accounts (account_id, email_hash, password_hash, status, family_id, service_account_id, free_access_mode, created_at, verified_at)
+     VALUES (?, ?, 'commercial-notification-test-placeholder', 'VERIFIED', ?, ?, 'PERPETUAL', NOW(3), NOW(3))`,
+    [parentAccountId, randomBytes(32), familyId, accountId],
+  );
   await getPool().query(
     `INSERT INTO service_account_family_scopes (account_id, family_id, status, created_at) VALUES (?, ?, ?, NOW(3))`,
     [accountId, familyId, status],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', NOW(3), NOW(3))`,
+    [randomUUID(), familyId, parentAccountId, accountId],
   );
 }
 
@@ -190,8 +205,7 @@ test('MySQL HTTP: the real parent session cookie reaches /api/parent/session and
   const verificationCode = parentEmailSender.codeFor(email);
   assert.equal(typeof verificationCode, 'string');
   await parentAccountService.verifyEmail(email, verificationCode);
-  await parentAccountService.login(email, password);
-  const signedIn = await parentAccountService.completeLoginStepUp(email, parentEmailSender.codeFor(email));
+  const signedIn = await parentAccountService.login(email, password);
   assert.equal(signedIn.status, 'AUTHENTICATED');
   const familyId = signedIn.familyId;
   const published = await publisher.publish({

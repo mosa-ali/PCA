@@ -3,7 +3,7 @@
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 92 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0050; 48 files, 0009/0010 never existed) from an empty database
+// through 0057; 55 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -25,6 +25,10 @@
 // migration.
 // Migration 0050 adds the immutable server-side 24-hour Parent MFA recovery
 // hold deadline and the pending/completed recovery security event types.
+// Migration 0051 adds the successful-login security event; migrations 0052
+// and 0053 add nullable Parent names and protected contact fields; migration
+// 0054 and 0055 expand the sensitive-operation allowlist for one-use Parent
+// MFA grants; 0056 adds a durable family device-session epoch.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -1405,11 +1409,12 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0022_enrollment_administration_persistence.sql",
-    alteredByMigrations: ["0023_removal_decision_authority_persistence.sql"],
+    alteredByMigrations: ["0023_removal_decision_authority_persistence.sql", "0057_parent_actor_provenance_for_removal_decisions.sql"],
     ownerModule: "backend/src/db",
     columns: [
       { name: "request_id", columnType: "varchar(200)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "requested_by_parent_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Authenticated Parent account reference; never returned in Parent-facing request DTOs." },
       { name: "child_id", columnType: "varchar(200)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "device_id", columnType: "varchar(200)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "operation", columnType: "varchar(32)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed enum ('REMOVE_REVOKE_DEVICE','DISABLE_PROTECTION_POLICY')." },
@@ -1422,6 +1427,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "decided_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "decision_method", columnType: "varchar(32)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "temporary_disable_until", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "decided_by_parent_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Authenticated Parent account reference; null for device-only or legacy decisions and never returned in Parent-facing request DTOs." },
       { name: "decided_by_device_id", columnType: "varchar(200)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "decision_action_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "idempotency_key", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Idempotency/dedup/uniqueness key, opaque." },
@@ -1432,10 +1438,13 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "enrollment_protection_approval_decision_action_uq", columns: ["decision_action_id"], unique: true },
     ],
     indexes: [
+      { name: "enrollment_protection_approval_requested_by_parent_idx", columns: ["requested_by_parent_account_id"], unique: false },
+      { name: "enrollment_protection_approval_decided_by_parent_idx", columns: ["decided_by_parent_account_id"], unique: false },
       { name: "enrollment_protection_approval_family_state_idx", columns: ["family_id", "state", "expires_at"], unique: false },
     ],
     foreignKeys: [
-
+      { name: "enrollment_protection_approval_requested_by_parent_fk", columns: ["requested_by_parent_account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "enrollment_protection_approval_decided_by_parent_fk", columns: ["decided_by_parent_account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
       { name: "enrollment_protection_approval_authority_check", clause: "(`protective_authority_applies` = 1)" },
@@ -1760,12 +1769,13 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0001_mysql_baseline.sql",
-    alteredByMigrations: ["0017_platform_admin_settings_family_status.sql", "0049_parent_totp_mfa_and_family_provisioning.sql"],
+    alteredByMigrations: ["0017_platform_admin_settings_family_status.sql", "0049_parent_totp_mfa_and_family_provisioning.sql", "0056_family_device_session_epoch.sql"],
     ownerModule: "backend/src/http",
     columns: [
       { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "family_reference_hash", columnType: "varbinary(255)", dataType: "varbinary", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Authentication/verification/integrity hash material, never a raw secret or raw identifying value." },
       { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: "ACTIVE", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "device_session_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "1", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
       { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: "CURRENT_TIMESTAMP(3)", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "deleted_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "suspended_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
@@ -2260,7 +2270,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
-    alteredByMigrations: ["0050_parent_mfa_recovery_hold.sql"],
+    alteredByMigrations: ["0050_parent_mfa_recovery_hold.sql", "0051_parent_successful_login_notice.sql"],
     ownerModule: "backend/src/parentaccount/mfa",
     columns: [
       { name: "event_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2280,7 +2290,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "parent_account_security_events_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
-      { name: "parent_account_security_events_type_check", clause: "(`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED'))" },
+      { name: "parent_account_security_events_type_check", clause: "(`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'PARENT_LOGIN_SUCCESS',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED'))" },
     ],
     applicationEnforcedRelations: [],
   },
@@ -2290,11 +2300,18 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0013_parent_account_identity.sql",
-    alteredByMigrations: ["0042_parent_login_step_up_codes.sql", "0043_parent_family_memberships_and_profile.sql"],
+    alteredByMigrations: ["0042_parent_login_step_up_codes.sql", "0043_parent_family_memberships_and_profile.sql", "0052_parent_identity_names.sql", "0053_parent_identity_contacts.sql"],
     ownerModule: "backend/src/familymembers",
     columns: [
       { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "email_hash", columnType: "binary(32)", dataType: "binary", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Authentication/verification/integrity hash material, never a raw secret or raw identifying value." },
+      { name: "first_name", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "READABLE_PARENT_DATA", privacyNote: "Parent account display identity; nullable for legacy accounts and validated at the account boundary." },
+      { name: "last_name", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "READABLE_PARENT_DATA", privacyNote: "Parent account display identity; nullable for legacy accounts and validated at the account boundary." },
+      { name: "protected_display_email_ciphertext", columnType: "varbinary(1280)", dataType: "varbinary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM encrypted display email; decryptable only through the dedicated PCA_PARENT_IDENTITY_ENC_KEY keyring and account-bound AAD." },
+      { name: "protected_display_email_nonce", columnType: "binary(12)", dataType: "binary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM nonce paired with the protected display email ciphertext." },
+      { name: "protected_display_email_auth_tag", columnType: "binary(16)", dataType: "binary", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM authentication tag paired with the protected display email ciphertext." },
+      { name: "phone_number", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "READABLE_PARENT_DATA", privacyNote: "Optional Parent contact number stored in canonical E.164 form; verification is tracked separately." },
+      { name: "phone_verified_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Phone verification timestamp; null means the optional phone is not verified." },
       { name: "password_hash", columnType: "varchar(255)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ACCOUNT_AUTH", privacyNote: "Password/credential material." },
       { name: "status", columnType: "varchar(24)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: "PENDING_VERIFICATION", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2324,6 +2341,10 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
 
     ],
     checkConstraints: [
+      { name: "parent_accounts_identity_names_check", clause: "(((`first_name` is null) and (`last_name` is null)) or ((`first_name` is not null) and (`last_name` is not null) and (char_length(trim(`first_name`)) between 1 and 128) and (char_length(trim(`last_name`)) between 1 and 128)))" },
+      { name: "parent_accounts_display_email_cipher_pair_check", clause: "(((`protected_display_email_ciphertext` is null) and (`protected_display_email_nonce` is null) and (`protected_display_email_auth_tag` is null)) or ((`protected_display_email_ciphertext` is not null) and (length(`protected_display_email_ciphertext`) between 1 and 1280) and (`protected_display_email_nonce` is not null) and (`protected_display_email_auth_tag` is not null)))" },
+      { name: "parent_accounts_phone_e164_check", clause: "((`phone_number` is null) or regexp_like(`phone_number`,_utf8mb4'^[+][1-9][0-9]{7,14}$'))" },
+      { name: "parent_accounts_phone_verified_pair_check", clause: "((`phone_number` is not null) or (`phone_verified_at` is null))" },
       { name: "parent_accounts_free_access_mode_check", clause: "((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))" },
       { name: "parent_accounts_status_check", clause: "(`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))" },
       { name: "parent_accounts_account_type_check", clause: "((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))" },
@@ -2648,7 +2669,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0054_parent_sensitive_step_up_operations.sql", "0055_parent_device_invitation_step_up.sql"],
     ownerModule: "backend/src/parentaccount/mfa",
     columns: [
       { name: "grant_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2675,7 +2696,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     checkConstraints: [
       { name: "parent_mfa_step_up_grants_expiry_check", clause: "(`expires_at` > `created_at`)" },
       { name: "parent_mfa_step_up_grants_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
-      { name: "parent_mfa_step_up_grants_operation_check", clause: "(`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME'))" },
+      { name: "parent_mfa_step_up_grants_operation_check", clause: "(`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change'))" },
     ],
     applicationEnforcedRelations: [],
   },

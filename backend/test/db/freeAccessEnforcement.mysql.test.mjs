@@ -81,8 +81,9 @@ async function createVerifiedParentAccount() {
   await service.verifyEmail(email, code);
   const account = await parentAccountRepository.findByEmailHash(hashParentEmail(email));
   assert.ok(account, 'email verification leaves a durable account for the later first sign-in');
-  await service.login(email, password);
-  const login = await service.completeLoginStepUp(email, emailSender.lastCodeFor(email));
+  const firstLogin = await service.login(email, password);
+  assert.equal(firstLogin.status, 'AUTHENTICATED');
+  const login = await service.login(email, password, firstLogin.rawDailyLoginGrantToken);
   assert.equal(login.status, 'AUTHENTICATED');
   return { accountId: account.accountId, email, rawSessionToken: login.rawSessionToken, service };
 }

@@ -84,9 +84,10 @@ test('suspend: a real PLATFORM_ADMIN, with real step-up, sets families.status = 
   assert.equal(record.suspensionReason, 'Fraudulent chargeback pattern');
   assert.ok(record.suspendedAt);
 
-  const [rows] = await getPool().query(`SELECT status, suspended_by_admin_id FROM families WHERE family_id = ?`, [familyId]);
+  const [rows] = await getPool().query(`SELECT status, suspended_by_admin_id, device_session_epoch FROM families WHERE family_id = ?`, [familyId]);
   assert.equal(rows[0].status, 'SUSPENDED');
   assert.equal(rows[0].suspended_by_admin_id, admin.adminId);
+  assert.equal(rows[0].device_session_epoch, 2, 'suspension advances the epoch and invalidates sessions issued before it');
 
   const auditCount = await countAuditEvents('ACCOUNT_SUSPENDED', `family:${familyId}`);
   assert.equal(auditCount, 1);
@@ -103,6 +104,9 @@ test('reactivate: a real PLATFORM_ADMIN, with real step-up, sets a suspended fam
   assert.equal(record.status, 'ACTIVE');
   assert.equal(record.suspensionReason, null);
   assert.equal(record.suspendedAt, null);
+
+  const [familyRows] = await getPool().query(`SELECT device_session_epoch FROM families WHERE family_id = ?`, [familyId]);
+  assert.equal(familyRows[0].device_session_epoch, 3, 'reactivation advances the epoch again so old sessions cannot revive');
 
   const auditCount = await countAuditEvents('ACCOUNT_REACTIVATED', `family:${familyId}`);
   assert.equal(auditCount, 1);

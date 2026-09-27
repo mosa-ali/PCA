@@ -1,12 +1,10 @@
 /**
  * PCA eye-protection reminders: the authenticated HTTP surface over
- * eyeprotection/EyeProtectionSettingsService.ts. Follows the SAME
- * session/CSRF/actor-device-binding conventions childPolicyRoutes.ts and
- * childRequestRoutes.ts already established (see either file's own header
- * comment for the full rationale): `actorDeviceId` for the mutating route
- * is derived EXCLUSIVELY from a verified DeviceSessionService session token
- * presented as `Authorization: Bearer <token>`, never a client-supplied
- * field.
+ * eyeprotection/EyeProtectionSettingsService.ts. Parent-session membership is
+ * the authority for these ordinary settings.
+ * Reads allow active family Administrators and Viewers; writes require an
+ * active Administrator and the session's CSRF token. Child-device auth is
+ * not used as Parent authority here.
  *
  * Unlike childPolicyRoutes.ts's schedule-policy route, this is a plain,
  * non-E2EE settings read/write (see EyeProtectionSettingsRepository's own
@@ -16,21 +14,21 @@
  * envelope, it reads/writes the setting directly through the service.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { randomUUID } from 'node:crypto';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
-import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import { EyeProtectionError, type EyeProtectionSettingsService } from '../../eyeprotection/EyeProtectionSettingsService.js';
+import type { EyeProtectionSettingsService } from '../../eyeprotection/EyeProtectionSettingsService.js';
 import type { EyeProtectionSettings } from '../../eyeprotection/EyeProtectionSettingsRepository.js';
+import type { ChildProfileRegistryRepository } from '../../childprofiles/ChildProfileRegistryRepository.js';
 
 const MAX_BODY_BYTES = 1024;
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export interface EyeProtectionRoutesDeps {
   parentAccountService: ParentAccountService;
-  deviceSessionService: DeviceSessionService;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- omitting it fails the route closed with 503 (matching childPolicyRoutes.ts's own `not_configured` convention), never a silent allow. */
   eyeProtectionSettingsService?: EyeProtectionSettingsService;
+  /** Durable opaque membership proof; absent compositions fail closed for both reads and writes. */
+  childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   now?: () => Date;
 }
 
@@ -60,8 +58,6 @@ function toSettingsDto(settings: EyeProtectionSettings): Record<string, unknown>
 }
 
 export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProtectionRoutesDeps): void {
-  const now = deps.now ?? (() => new Date());
-
   async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
     const token = readSessionCookie(request);
     if (token === null) {
@@ -89,23 +85,29 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
     }
   }
 
-  /** Same actor-identity-binding rationale as childPolicyRoutes.ts's requireActorDevice -- see this file's own header comment. */
-  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<string | null> {
-    const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-      await reply.code(401).send({ error: 'actor_device_session_required' });
-      return null;
+  async function requireRole(session: { accountId: string; familyId: string }, reply: FastifyReply, allowed: ReadonlySet<string>): Promise<boolean> {
+    const role = await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId);
+    if (!role || !allowed.has(role)) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
     }
-    try {
-      const identity = await deps.deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      return identity.deviceId;
-    } catch (error) {
-      if (error instanceof RuntimeSyncAuthError) {
-        await reply.code(401).send({ error: 'actor_device_session_invalid' });
-        return null;
-      }
-      throw error;
+    return true;
+  }
+
+  const READ_ROLES = new Set(['ADMINISTRATOR', 'VIEWER']);
+  const ADMIN_ROLES = new Set(['ADMINISTRATOR']);
+
+  async function requireChildProfileMember(familyId: string, childProfileId: string, reply: FastifyReply): Promise<boolean> {
+    if (!deps.childProfileRegistryRepository) {
+      await reply.code(503).send({ error: 'membership_authority_unavailable' });
+      return false;
     }
+    const membership = await deps.childProfileRegistryRepository.resolveMembership(familyId, childProfileId);
+    if (membership !== 'MEMBER') {
+      await reply.code(403).send({ error: 'family_scope_forbidden' });
+      return false;
+    }
+    return true;
   }
 
   // ---- Parent: current eye-protection reminders setting for one child ----
@@ -115,11 +117,13 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
       if (!deps.eyeProtectionSettingsService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
+      if (!(await requireRole(session, reply, READ_ROLES))) return;
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!(await requireChildProfileMember(session.familyId, childProfileId, reply))) return;
 
       const settings = await deps.eyeProtectionSettingsService.get(session.familyId, childProfileId);
       return reply.code(200).send({ eyeProtection: toSettingsDto(settings) });
@@ -135,8 +139,7 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
+      if (!(await requireRole(session, reply, ADMIN_ROLES))) return;
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
@@ -146,23 +149,10 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
       if (!isPlainObject(body) || typeof body.remindersEnabled !== 'boolean') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!(await requireChildProfileMember(session.familyId, childProfileId, reply))) return;
 
-      try {
-        const settings = await deps.eyeProtectionSettingsService.updateReminders(
-          session.familyId,
-          childProfileId,
-          actorDeviceId,
-          body.remindersEnabled,
-          randomUUID(),
-          randomUUID(),
-        );
-        return reply.code(200).send({ eyeProtection: toSettingsDto(settings) });
-      } catch (error) {
-        if (error instanceof EyeProtectionError) {
-          return reply.code(403).send({ error: 'forbidden' });
-        }
-        throw error;
-      }
+      const settings = await deps.eyeProtectionSettingsService.updateReminders(session.familyId, childProfileId, body.remindersEnabled);
+      return reply.code(200).send({ eyeProtection: toSettingsDto(settings) });
     },
   );
 }

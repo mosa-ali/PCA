@@ -11,11 +11,13 @@ import { InMemoryActionIdempotencyLedger } from '../../dist/familyrbac/ActionIde
 import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryFamilyTrustSetStore.js';
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
+import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 
 const FAMILY = 'family-bonus-http-1';
+const FAMILY_B = 'family-bonus-http-2';
 const CHILD_PROFILE_FAMILY_MAP = new Map([
   ['child-1', FAMILY],
-  ['child-in-other-family', 'some-other-family'],
+  ['child-in-other-family', FAMILY_B],
 ]);
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 
@@ -43,14 +45,29 @@ function buildApp({ nowFn = () => T0 } = {}) {
     nowFn,
     childProfileResolver,
   );
-  const childRequestService = new ChildRequestService(new InMemoryChildRequestRepository(), authorization, nowFn);
+  const parentRoles = new Map([
+    [`acct-owner\u0000${FAMILY}`, 'ADMINISTRATOR'],
+    [`acct-viewer\u0000${FAMILY}`, 'VIEWER'],
+    [`acct-owner-b\u0000${FAMILY_B}`, 'ADMINISTRATOR'],
+  ]);
+  const parentSessionAuthorizer = {
+    async authorize({ parentAccountId, familyId, targetScope }) {
+      if (parentRoles.get(`${parentAccountId}\u0000${familyId}`) !== 'ADMINISTRATOR') return { verdict: 'DENY' };
+      if (targetScope?.kind === 'CHILD_PROFILE' && childProfileResolver.resolveMembership(familyId, targetScope.id).status !== 'MEMBER_OF_FAMILY') {
+        return { verdict: 'DENY' };
+      }
+      return { verdict: 'ALLOW' };
+    },
+  };
+  const childRequestService = new ChildRequestService(new InMemoryChildRequestRepository(), authorization, nowFn, parentSessionAuthorizer);
   const bonusGrantLedger = new BonusGrantLedger();
 
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
-    // PCA-DW-W3-L: a second family's own valid, authenticated Owner session --
+    ['session-viewer', { accountId: 'acct-viewer', familyId: FAMILY }],
+    // PCA-DW-W3-L: a second family's own valid, authenticated Administrator session --
     // used only by the cross-family existence-oracle test below.
-    ['session-owner-family-b', { accountId: 'acct-owner-b', familyId: 'family-bonus-http-2' }],
+    ['session-owner-family-b', { accountId: 'acct-owner-b', familyId: FAMILY_B }],
   ]);
   const parentAccountService = {
     async readSession(token) {
@@ -58,20 +75,17 @@ function buildApp({ nowFn = () => T0 } = {}) {
       if (!session) throw new Error('unauthorized');
       return session;
     },
+    async activeFamilyRole(accountId, familyId) { return parentRoles.get(`${accountId}\u0000${familyId}`) ?? null; },
   };
   const deviceTokens = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
-    ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY }],
     ['dev-token-child', { deviceId: 'dev-child', familyId: FAMILY }],
-    ['dev-token-owner-family-b', { deviceId: 'dev-owner-b', familyId: 'family-bonus-http-2' }],
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
       const identity = deviceTokens.get(token);
       if (!identity || identity.familyId !== expectedFamilyId) {
-        const err = new Error('unauthorized');
-        err.name = 'RuntimeSyncAuthError';
-        throw err;
+        throw new RuntimeSyncAuthError('UNAUTHORIZED');
       }
       return identity;
     },
@@ -92,8 +106,31 @@ function buildApp({ nowFn = () => T0 } = {}) {
 }
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
+const viewerAuthHeaders = { cookie: 'pca_family_session=session-viewer; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
+const familyBAuthHeaders = { cookie: 'pca_family_session=session-owner-family-b; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
 
-test('a child device can submit a BONUS_TIME request, and the Owner can list + approve it', async () => {
+test('child request submission still requires a same-family device-session bearer', async () => {
+  const { app, childRequestService } = buildApp();
+  try {
+    const payload = { requestType: 'BONUS_TIME', childProfileId: 'child-1', requestedExtraMinutes: 30, requestedAppScope: 'ALL' };
+    const noBearer = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`, payload });
+    assert.equal(noBearer.statusCode, 401, JSON.stringify(noBearer.json()));
+
+    const wrongFamilyBearer = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY_B}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload,
+    });
+    assert.equal(wrongFamilyBearer.statusCode, 401);
+    assert.equal((await childRequestService.listForFamily(FAMILY)).length, 0);
+    assert.equal((await childRequestService.listForFamily(FAMILY_B)).length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a child device can submit a BONUS_TIME request, and a same-family Parent Administrator can list + approve it by session', async () => {
   const { app } = buildApp();
   try {
     const submit = await app.inject({
@@ -105,6 +142,8 @@ test('a child device can submit a BONUS_TIME request, and the Owner can list + a
     assert.equal(submit.statusCode, 201);
     const requestId = submit.json().request.requestId;
     assert.equal(submit.json().request.state, 'PENDING');
+    assert.equal(submit.json().request.createdByParentAccountId, null);
+    assert.equal(submit.json().request.decidedByAccountId, null);
 
     const list = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/child-requests`, headers: { cookie: parentAuthHeaders.cookie } });
     assert.equal(list.statusCode, 200);
@@ -113,12 +152,14 @@ test('a child device can submit a BONUS_TIME request, and the Owner can list + a
     const decide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(decide.statusCode, 200);
     assert.equal(decide.json().request.state, 'APPROVED');
     assert.equal(decide.json().request.grantedExtraMinutes, 30);
+    assert.equal(decide.json().request.decidedByAccountId, 'acct-owner');
+    assert.equal(decide.json().request.decidedByDeviceId, null);
 
     const active = await app.inject({
       method: 'GET',
@@ -133,7 +174,7 @@ test('a child device can submit a BONUS_TIME request, and the Owner can list + a
   }
 });
 
-test('a VIEWER cannot decide a request (403), even with a valid family session and CSRF token', async () => {
+test('a VIEWER cannot decide a request (403), even with a valid same-family session and CSRF token', async () => {
   const { app, childRequestService } = buildApp();
   try {
     const draft = childRequestService.createDraft(FAMILY, 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
@@ -142,7 +183,7 @@ test('a VIEWER cannot decide a request (403), even with a valid family session a
     const decide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
+      headers: viewerAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(decide.statusCode, 403);
@@ -151,7 +192,7 @@ test('a VIEWER cannot decide a request (403), even with a valid family session a
   }
 });
 
-test('a decide POST without the CSRF header is rejected (403), and without a device-session bearer token is rejected (401)', async () => {
+test('Parent decision CSRF and session gates reject before any request mutation', async () => {
   const { app, childRequestService } = buildApp();
   try {
     const draft = childRequestService.createDraft(FAMILY, 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
@@ -160,18 +201,19 @@ test('a decide POST without the CSRF header is rejected (403), and without a dev
     const noCsrf = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
-      headers: { cookie: parentAuthHeaders.cookie, authorization: 'Bearer dev-token-owner' },
+      headers: { cookie: parentAuthHeaders.cookie },
       payload: { decision: 'APPROVED' },
     });
     assert.equal(noCsrf.statusCode, 403);
 
-    const noBearer = await app.inject({
+    const noSession = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
-      headers: parentAuthHeaders,
+      headers: { 'x-pca-csrf-token': 'csrf-a' },
       payload: { decision: 'APPROVED' },
     });
-    assert.equal(noBearer.statusCode, 401);
+    assert.equal(noSession.statusCode, 401);
+    assert.equal((await childRequestService.listForFamily(FAMILY)).length, 1);
   } finally {
     await app.close();
   }
@@ -191,7 +233,7 @@ test('requesting more than the bound is rejected with 400 at the HTTP layer (chi
     const grant = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1', extraMinutes: 999 },
     });
     assert.equal(grant.statusCode, 400);
@@ -200,17 +242,21 @@ test('requesting more than the bound is rejected with 400 at the HTTP layer (chi
   }
 });
 
-test('a parent can directly grant bonus time (no pending child request) and then revoke it before it expires', async () => {
-  const { app } = buildApp();
+test('a Parent Administrator can directly grant bonus time by session and revoke it by session before expiry', async () => {
+  const { app, bonusGrantLedger } = buildApp();
   try {
     const grant = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1', extraMinutes: 20, reasonNote: 'Finished chores early' },
     });
     assert.equal(grant.statusCode, 201);
     const grantId = grant.json().request.requestId;
+    assert.equal(grant.json().request.childDeviceId, null);
+    assert.equal(grant.json().request.createdByParentAccountId, 'acct-owner');
+    assert.equal(grant.json().request.decidedByAccountId, 'acct-owner');
+    assert.equal(grant.json().request.decidedByDeviceId, null);
 
     const beforeRevoke = await app.inject({
       method: 'GET',
@@ -222,10 +268,25 @@ test('a parent can directly grant bonus time (no pending child request) and then
     const revoke = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grants/${grantId}/revoke`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1' },
     });
     assert.equal(revoke.statusCode, 200);
+    assert.deepEqual(bonusGrantLedger.getRevocationMetadata('child-1', grantId), {
+      grantId,
+      childProfileId: 'child-1',
+      revokedAtUtc: T0,
+      revokedByParentAccountId: 'acct-owner',
+    });
+
+    const repeatedRevoke = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/bonus-time/grants/${grantId}/revoke`,
+      headers: parentAuthHeaders,
+      payload: { childProfileId: 'child-1' },
+    });
+    assert.equal(repeatedRevoke.statusCode, 404);
+    assert.equal(bonusGrantLedger.getRevocationMetadata('child-1', grantId).revokedByParentAccountId, 'acct-owner');
 
     const afterRevoke = await app.inject({
       method: 'GET',
@@ -233,6 +294,56 @@ test('a parent can directly grant bonus time (no pending child request) and then
       headers: { cookie: parentAuthHeaders.cookie },
     });
     assert.equal(afterRevoke.json().grants.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('unauthorized, cross-family, or non-member direct-grant attempts are rejected before a request draft is persisted', async () => {
+  const { app, childRequestService } = buildApp();
+  try {
+    const unauthenticated = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
+      headers: { 'x-pca-csrf-token': 'csrf-a' },
+      payload: { childProfileId: 'child-1', extraMinutes: 20 },
+    });
+    assert.equal(unauthenticated.statusCode, 401);
+
+    const noCsrf = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
+      headers: { cookie: parentAuthHeaders.cookie },
+      payload: { childProfileId: 'child-1', extraMinutes: 20 },
+    });
+    assert.equal(noCsrf.statusCode, 403);
+
+    const viewer = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
+      headers: viewerAuthHeaders,
+      payload: { childProfileId: 'child-1', extraMinutes: 20 },
+    });
+    assert.equal(viewer.statusCode, 403);
+
+    const wrongFamilyPath = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY_B}/bonus-time/grant`,
+      headers: parentAuthHeaders,
+      payload: { childProfileId: 'child-1', extraMinutes: 20 },
+    });
+    assert.equal(wrongFamilyPath.statusCode, 403);
+
+    const nonMemberTarget = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
+      headers: parentAuthHeaders,
+      payload: { childProfileId: 'child-in-other-family', extraMinutes: 20 },
+    });
+    assert.equal(nonMemberTarget.statusCode, 403);
+
+    assert.equal((await childRequestService.listForFamily(FAMILY)).length, 0, 'denied attempts must not leave a pending grant draft in the caller family');
+    assert.equal((await childRequestService.listForFamily(FAMILY_B)).length, 0, 'denied attempts must not create a draft in another family');
   } finally {
     await app.close();
   }
@@ -255,7 +366,7 @@ test('a request targeting a CHILD_PROFILE from a different family is denied at d
     const decide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(decide.statusCode, 403);
@@ -264,7 +375,7 @@ test('a request targeting a CHILD_PROFILE from a different family is denied at d
   }
 });
 
-// PCA-DW-W3-L: an authenticated Owner of a DIFFERENT family (family B) holding a real requestId
+// PCA-DW-W3-L: an authenticated Administrator of a DIFFERENT family (family B) holding a real requestId
 // that genuinely belongs to family A must see the SAME 404 an unknown/garbage requestId would --
 // never the distinguishable 403 the pre-fix authorization-layer check produced (a real, if
 // UUID-gated, cross-family existence oracle: "your own family's request decisions return 403 when
@@ -276,18 +387,16 @@ test('SECURITY: a DIFFERENT family session deciding a request that genuinely bel
     const draft = childRequestService.createDraft(FAMILY, 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
     const pending = await childRequestService.submit(draft);
 
-    const familyBHeaders = { cookie: 'pca_family_session=session-owner-family-b; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
-
     const decideOthersRequest = await app.inject({
       method: 'POST',
-      url: `/api/parent/families/family-bonus-http-2/child-requests/${pending.requestId}/decide`,
-      headers: { ...familyBHeaders, authorization: 'Bearer dev-token-owner-family-b' },
+      url: `/api/parent/families/${FAMILY_B}/child-requests/${pending.requestId}/decide`,
+      headers: familyBAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     const decideUnknownRequest = await app.inject({
       method: 'POST',
-      url: `/api/parent/families/family-bonus-http-2/child-requests/00000000-0000-0000-0000-000000000000/decide`,
-      headers: { ...familyBHeaders, authorization: 'Bearer dev-token-owner-family-b' },
+      url: `/api/parent/families/${FAMILY_B}/child-requests/00000000-0000-0000-0000-000000000000/decide`,
+      headers: familyBAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
 
@@ -303,7 +412,7 @@ test('SECURITY: a DIFFERENT family session deciding a request that genuinely bel
 // submission with the required target/capability fields, the honest applied-report route, and the
 // same VIEWER/cross-family denial shape every other request type already has HTTP coverage for.
 
-test('a device can submit an INSTALL_APPROVAL request, an Owner can approve it, and the device can then honestly report the applied outcome (distinct from the decision itself)', async () => {
+test('a device can submit an INSTALL_APPROVAL request, a Parent Administrator can approve it, and the device can then honestly report the applied outcome (distinct from the decision itself)', async () => {
   const { app } = buildApp();
   try {
     const submit = await app.inject({
@@ -327,7 +436,7 @@ test('a device can submit an INSTALL_APPROVAL request, an Owner can approve it, 
     const decide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(decide.statusCode, 200);
@@ -390,7 +499,7 @@ test('the /applied route only accepts the report from the SAME child device that
     await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
 
@@ -404,6 +513,12 @@ test('the /applied route only accepts the report from the SAME child device that
     // Device-level existence oracle closed (2026-09-08): a foreign device must see
     // EXACTLY what an unknown requestId produces -- same status, same body.
     assert.equal(wrongDevice.statusCode, 404);
+    const noBearer = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(noBearer.statusCode, 401);
     const unknownRequest = await app.inject({
       method: 'POST',
       url: `/api/families/${FAMILY}/child-requests/request-that-does-not-exist-0001/applied`,
@@ -422,6 +537,15 @@ test('the /applied route only accepts the report from the SAME child device that
     assert.equal(applied.statusCode, 200);
     assert.equal(applied.json().request.installEnforcementOutcome, 'REQUEST_ONLY');
     assert.notEqual(applied.json().request.installEnforcementOutcome, 'ENFORCED');
+    assert.equal(applied.json().request.decidedByAccountId, null);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { capabilityOutcome: 'REQUEST_ONLY' },
+    });
+    assert.equal(replay.statusCode, 409, 'the child device cannot replay an already-applied acknowledgement');
   } finally {
     await app.close();
   }
@@ -447,7 +571,7 @@ test('a VIEWER cannot decide an INSTALL_APPROVAL request (403), and a cross-fami
     const viewerDecide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
+      headers: viewerAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(viewerDecide.statusCode, 403);
@@ -469,7 +593,7 @@ test('a VIEWER cannot decide an INSTALL_APPROVAL request (403), and a cross-fami
     const crossDecide = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${crossPending.requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(crossDecide.statusCode, 403);
@@ -492,13 +616,13 @@ test('a repeated decide POST (same actor, same outcome) is idempotent -- same 20
     const first = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     const second = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
     });
     assert.equal(first.statusCode, 200);
@@ -524,12 +648,12 @@ test('a parent cannot read active bonus grants for a childProfileId belonging to
     const grant = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1', extraMinutes: 20 },
     });
     assert.equal(grant.statusCode, 201);
 
-    // The caller is a legitimately-authenticated Owner of FAMILY, but asks for a childProfileId
+    // The caller is a legitimately-authenticated Administrator of FAMILY, but asks for a childProfileId
     // (per CHILD_PROFILE_FAMILY_MAP) that belongs to 'some-other-family', not their own.
     const crossFamilyRead = await app.inject({
       method: 'GET',
@@ -553,12 +677,12 @@ test('a parent cannot read active bonus grants for a childProfileId belonging to
 });
 
 test('a parent cannot revoke a bonus grant for a childProfileId belonging to a DIFFERENT family (403), and the grant is unaffected', async () => {
-  const { app } = buildApp();
+  const { app, bonusGrantLedger } = buildApp();
   try {
     const grant = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grant`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1', extraMinutes: 20 },
     });
     const grantId = grant.json().request.requestId;
@@ -568,11 +692,12 @@ test('a parent cannot revoke a bonus grant for a childProfileId belonging to a D
     const crossFamilyRevoke = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grants/${grantId}/revoke`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-in-other-family' },
     });
     assert.equal(crossFamilyRevoke.statusCode, 403);
     assert.equal(crossFamilyRevoke.json().error, 'family_scope_forbidden');
+    assert.equal(bonusGrantLedger.getRevocationMetadata('child-1', grantId), null, 'a denied cross-family request must not attribute a revoke');
 
     const stillActive = await app.inject({
       method: 'GET',
@@ -613,11 +738,14 @@ test('with no ChildProfileMembershipResolver wired (the production default), act
   bonusGrantLedger.record('child-1', { id: 'seed-grant', appScope: 'ALL', extraMinutes: 20, grantedAtUtc: T0, expiresAtUtc: new Date(T0.getTime() + 20 * 60_000) }, T0);
 
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
-  const parentAccountService = { async readSession(token) {
-    const session = sessions.get(token);
-    if (!session) throw new Error('unauthorized');
-    return session;
-  } };
+  const parentAccountService = {
+    async readSession(token) {
+      const session = sessions.get(token);
+      if (!session) throw new Error('unauthorized');
+      return session;
+    },
+    async activeFamilyRole() { return 'ADMINISTRATOR'; },
+  };
   const deviceSessionService = { async requireActorDeviceInFamily(token, expectedFamilyId) {
     if (token !== 'dev-token-owner' || expectedFamilyId !== FAMILY) {
       const err = new Error('unauthorized');
@@ -649,7 +777,7 @@ test('with no ChildProfileMembershipResolver wired (the production default), act
     const revoke = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/bonus-time/grants/seed-grant/revoke`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1' },
     });
     assert.equal(revoke.statusCode, 403);

@@ -76,6 +76,13 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
       if (!session) throw new Error('unauthorized');
       return session;
     },
+    async activeFamilyRole(accountId, familyId) {
+      if (familyId !== FAMILY) return 'ADMINISTRATOR';
+      return accountId === 'acct-viewer' ? 'VIEWER' : 'ADMINISTRATOR';
+    },
+    async consumeSensitiveStepUpForSession(_sessionToken, _familyId, _operation, token) {
+      return token === 'test-sensitive-step-up';
+    },
   };
   const deviceTokens = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
@@ -93,7 +100,16 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
   };
 
   const app = Fastify();
-  registerFamilyMemberRoutes(app, { parentAccountService, familyMemberInvitationService, deviceSessionService });
+  registerFamilyMemberRoutes(app, { parentAccountService, familyMemberInvitationService });
+  const inject = app.inject.bind(app);
+  app.inject = (options) => {
+    if (options && typeof options === 'object' && options.method === 'POST' &&
+        (options.url?.includes('/members/invitations') || (options.url?.includes('/members/') && options.url.endsWith('/remove')))) {
+      const payload = options.payload && typeof options.payload === 'object' && !Array.isArray(options.payload) ? options.payload : {};
+      if (typeof payload.stepUpToken !== 'string') return inject({ ...options, payload: { ...payload, stepUpToken: 'test-sensitive-step-up' } });
+    }
+    return inject(options);
+  };
   return { app, repository };
 }
 
@@ -139,23 +155,23 @@ test('a VIEWER cannot invite an Administrator (ROLE_NOT_PERMITTED collapses to t
       payload: { invitedEmail: 'newadmin@example.test', role: 'ADMINISTRATOR' },
     });
     assert.equal(invite.statusCode, 403);
-    assert.equal(invite.json().error, 'not_authorized');
+    assert.equal(invite.json().error, 'forbidden');
   } finally {
     await app.close();
   }
 });
 
-test('a device from a different family cannot invite into this family (cross-family denial via the actor-device-session check itself)', async () => {
+test('a cross-family Parent session cannot invite into this family', async () => {
   const { app } = buildApp();
   try {
     const invite = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/members/invitations`,
-      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-other-owner' },
+      headers: { cookie: 'pca_family_session=session-other-owner; pca_family_csrf=csrf-c', 'x-pca-csrf-token': 'csrf-c' },
       payload: { invitedEmail: 'newmember@example.test', role: 'VIEWER' },
     });
-    assert.equal(invite.statusCode, 401);
-    assert.equal(invite.json().error, 'actor_device_session_invalid');
+    assert.equal(invite.statusCode, 403);
+    assert.equal(invite.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
   }
@@ -173,16 +189,7 @@ test('a session cookie for a different family cannot list or invite into this fa
   }
 });
 
-// CHANGE_ROLE is ALLOW_WITH_STEP_UP for OWNER unconditionally (OPERATION_MATRIX)
-// -- and, like ADD_ADMINISTRATOR, has no route in this entire codebase that
-// accepts/threads a client-supplied step-up assertion yet (every authorize()
-// call anywhere passes stepUp: null; see childRequestRoutes.ts/RemovalDecisionAuthority.ts).
-// This route honestly inherits that same gap rather than fabricating a
-// step-up ceremony just for itself. The PENDING-vs-ACCEPTED business rule is
-// verified with a controllable fake authorization at the service level
-// (service.test.mjs) instead, since it is genuinely unreachable via this real
-// HTTP path until step-up exists.
-test('changing a PENDING invitation\'s role is honestly blocked pending step-up, even for the legitimate Owner (403 not_authorized, no fabricated success)', async () => {
+test('an active family Administrator can change a pending invitation role with fresh TOTP step-up', async () => {
   const { app } = buildApp();
   try {
     const invite = await app.inject({
@@ -193,14 +200,21 @@ test('changing a PENDING invitation\'s role is honestly blocked pending step-up,
     });
     const invitationId = invite.json().invitation.invitationId;
 
+    const rejected = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { role: 'ADMINISTRATOR', stepUpToken: 'wrong-grant' },
+    });
+    assert.equal(rejected.statusCode, 403);
     const changeRole = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
       headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
-      payload: { role: 'ADMINISTRATOR' },
+      payload: { role: 'ADMINISTRATOR', stepUpToken: 'test-sensitive-step-up' },
     });
-    assert.equal(changeRole.statusCode, 403);
-    assert.equal(changeRole.json().error, 'not_authorized');
+    assert.equal(changeRole.statusCode, 200);
+    assert.equal(changeRole.json().invitation.role, 'ADMINISTRATOR');
   } finally {
     await app.close();
   }
@@ -442,7 +456,7 @@ test('a VIEWER cannot remove another member (ROLE_NOT_PERMITTED collapses to the
       headers: { ...viewerHeaders, authorization: 'Bearer dev-token-viewer' },
     });
     assert.equal(remove.statusCode, 403);
-    assert.equal(remove.json().error, 'not_authorized');
+    assert.equal(remove.json().error, 'forbidden');
   } finally {
     await app.close();
   }
@@ -486,7 +500,7 @@ test('removing an account with no ACCEPTED invitation into this family is refuse
   }
 });
 
-test('a device from a different family cannot remove a member in this family (cross-family denial via the actor-device-session check itself)', async () => {
+test('a cross-family Parent session cannot remove a member in this family', async () => {
   const { app, repository } = buildApp();
   try {
     await seedAcceptedMember(repository, { accountId: 'acct-some-member' });
@@ -494,10 +508,10 @@ test('a device from a different family cannot remove a member in this family (cr
     const remove = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/members/acct-some-member/remove`,
-      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-other-owner' },
+      headers: { cookie: 'pca_family_session=session-other-owner; pca_family_csrf=csrf-c', 'x-pca-csrf-token': 'csrf-c' },
     });
-    assert.equal(remove.statusCode, 401);
-    assert.equal(remove.json().error, 'actor_device_session_invalid');
+    assert.equal(remove.statusCode, 403);
+    assert.equal(remove.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
   }

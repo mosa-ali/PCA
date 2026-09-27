@@ -1,6 +1,13 @@
 import { appScopeIncludes } from '../schedule/policy.js';
 import type { AppScope, BonusGrant } from '../schedule/types.js';
 
+export interface BonusGrantRevocationMetadata {
+  grantId: string;
+  childProfileId: string;
+  revokedAtUtc: Date;
+  revokedByParentAccountId: string;
+}
+
 /**
  * PCA-FR-130: tracks decided bonus-time grants per child profile so the
  * "overlapping grants" and "revocation" principles have somewhere real to
@@ -49,6 +56,7 @@ import type { AppScope, BonusGrant } from '../schedule/types.js';
  */
 export class BonusGrantLedger {
   private readonly grantsByChild = new Map<string, BonusGrant[]>();
+  private readonly revocationsByChildAndGrant = new Map<string, BonusGrantRevocationMetadata>();
 
   /**
    * Records a newly-decided grant for `childProfileId`, superseding (per
@@ -69,6 +77,9 @@ export class BonusGrantLedger {
   record(childProfileId: string, grant: BonusGrant, nowUtc: Date): void {
     const existing = this.grantsByChild.get(childProfileId) ?? [];
     const withoutSameId = existing.filter((prior) => prior.id !== grant.id);
+    // A replay can replace a previously revoked entry with a current grant;
+    // keep actor metadata attached only to the grant's current lifecycle.
+    this.revocationsByChildAndGrant.delete(revocationKey(childProfileId, grant.id));
     const superseded = withoutSameId.map((prior) => {
       if (prior.expiresAtUtc.getTime() <= nowUtc.getTime()) return prior; // already inactive -- nothing to supersede
       if (!scopesOverlap(prior.appScope, grant.appScope)) return prior;
@@ -88,6 +99,12 @@ export class BonusGrantLedger {
     return [...(this.grantsByChild.get(childProfileId) ?? [])];
   }
 
+  /** Process-local attribution for a successful revoke; this is not a durable audit record. */
+  getRevocationMetadata(childProfileId: string, grantId: string): BonusGrantRevocationMetadata | null {
+    const metadata = this.revocationsByChildAndGrant.get(revocationKey(childProfileId, grantId));
+    return metadata ? { ...metadata, revokedAtUtc: new Date(metadata.revokedAtUtc) } : null;
+  }
+
   /**
    * Revokes `grantId` for `childProfileId` by capping its `expiresAtUtc` to
    * `nowUtc` (never later, never deleting the record) -- a no-op, returning
@@ -96,7 +113,7 @@ export class BonusGrantLedger {
    * to resurrect or extend a grant that isn't currently active. Returns
    * true only when an actually-active grant was shortened.
    */
-  revoke(childProfileId: string, grantId: string, nowUtc: Date): boolean {
+  revoke(childProfileId: string, grantId: string, nowUtc: Date, revokedByParentAccountId: string): boolean {
     const existing = this.grantsByChild.get(childProfileId);
     if (!existing) return false;
     let revoked = false;
@@ -107,9 +124,21 @@ export class BonusGrantLedger {
       revoked = true;
       return { ...grant, expiresAtUtc: nowUtc };
     });
-    if (revoked) this.grantsByChild.set(childProfileId, next);
+    if (revoked) {
+      this.grantsByChild.set(childProfileId, next);
+      this.revocationsByChildAndGrant.set(revocationKey(childProfileId, grantId), {
+        grantId,
+        childProfileId,
+        revokedAtUtc: new Date(nowUtc),
+        revokedByParentAccountId,
+      });
+    }
     return revoked;
   }
+}
+
+function revocationKey(childProfileId: string, grantId: string): string {
+  return `${childProfileId}\u0000${grantId}`;
 }
 
 function scopesOverlap(a: AppScope, b: AppScope): boolean {

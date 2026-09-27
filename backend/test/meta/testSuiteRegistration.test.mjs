@@ -174,12 +174,11 @@ test('no test file is executed twice by `npm test`', () => {
   );
 });
 
-// The DB suite has exactly the same orphan hole -- its file list is inlined in
-// package.json's "test:db" script string. It is in sync today (52/52); this
-// keeps it that way. `npm run test:db` needs a MySQL instance and so is not run
-// by this suite, but the REGISTRATION check needs no database at all.
+// The DB runner delegates to test:db:inner after its disposable-schema setup.
+// Parse that inner script rather than the wrapper, which intentionally contains
+// no test paths. This keeps the parity check independent of database access.
 test('every DB-backed test file on disk is executed by `npm run test:db`', () => {
-  const registeredForDb = testPathsNamedInScript('test:db');
+  const registeredForDb = testPathsNamedInScript('test:db:inner');
   const orphans = dbFilesOnDisk.filter((file) => !registeredForDb.has(file));
 
   assert.deepEqual(

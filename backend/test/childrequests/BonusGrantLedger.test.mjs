@@ -88,14 +88,24 @@ test('revoke shortens an active grant to expire immediately and it is idempotenc
   ledger.record('child-1', g, g.grantedAtUtc);
 
   const revokedAt = new Date('2026-01-07T09:10:00.000Z');
-  const firstRevoke = ledger.revoke('child-1', 'grant-1', revokedAt);
+  const firstRevoke = ledger.revoke('child-1', 'grant-1', revokedAt, 'acct-parent');
   assert.equal(firstRevoke, true);
+  assert.deepEqual(ledger.getRevocationMetadata('child-1', 'grant-1'), {
+    grantId: 'grant-1',
+    childProfileId: 'child-1',
+    revokedAtUtc: revokedAt,
+    revokedByParentAccountId: 'acct-parent',
+  });
+  const returnedMetadata = ledger.getRevocationMetadata('child-1', 'grant-1');
+  returnedMetadata.revokedAtUtc.setTime(0);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1').revokedAtUtc.getTime(), revokedAt.getTime(), 'metadata reads must not expose the stored Date');
   assert.deepEqual(ledger.listActive('child-1', revokedAt), []); // exclusive upper bound: revoked-at instant itself is no longer active
   assert.deepEqual(ledger.listActive('child-1', new Date('2026-01-07T09:05:00.000Z')), [g].map((x) => ({ ...x, expiresAtUtc: revokedAt })));
 
   // Revoking an already-inactive grant again is a no-op, not an error and not a "re-revoke".
-  const secondRevoke = ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:20:00.000Z'));
+  const secondRevoke = ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:20:00.000Z'), 'acct-other');
   assert.equal(secondRevoke, false);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1').revokedByParentAccountId, 'acct-parent', 'inactive retries must not replace successful actor attribution');
 });
 
 test('revoke never extends a grant that already expired earlier on its own', () => {
@@ -104,8 +114,9 @@ test('revoke never extends a grant that already expired earlier on its own', () 
   ledger.record('child-1', g, g.grantedAtUtc);
 
   // "Revoking" after natural expiry must not resurrect/extend it.
-  const result = ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:20:00.000Z'));
+  const result = ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:20:00.000Z'), 'acct-parent');
   assert.equal(result, false);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1'), null, 'naturally expired grants receive no revoke attribution');
   const stored = ledger.listAll('child-1')[0];
   assert.equal(stored.expiresAtUtc.getTime(), new Date('2026-01-07T09:15:00.000Z').getTime());
 });
@@ -118,10 +129,17 @@ test('recording the SAME grant id twice (replay) replaces in place -- it is neve
 
   assert.equal(ledger.listAll('child-1').length, 1);
   assert.equal(ledger.listActive('child-1', new Date('2026-01-07T09:10:00.000Z')).length, 1);
+  assert.equal(ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:05:00.000Z'), 'acct-parent'), true);
+  ledger.record('child-1', g, g.grantedAtUtc);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1'), null, 'a replayed active grant must not retain stale revocation attribution');
+  assert.equal(ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:10:00.000Z'), 'acct-next'), true);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1').revokedByParentAccountId, 'acct-next');
 });
 
 test('revoking an unknown grant id is a safe no-op', () => {
   const ledger = new BonusGrantLedger();
-  assert.equal(ledger.revoke('child-1', 'does-not-exist', new Date()), false);
-  assert.equal(ledger.revoke('unknown-child', 'grant-1', new Date()), false);
+  assert.equal(ledger.revoke('child-1', 'does-not-exist', new Date(), 'acct-parent'), false);
+  assert.equal(ledger.revoke('unknown-child', 'grant-1', new Date(), 'acct-parent'), false);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'does-not-exist'), null);
+  assert.equal(ledger.getRevocationMetadata('unknown-child', 'grant-1'), null);
 });

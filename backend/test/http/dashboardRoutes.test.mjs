@@ -9,9 +9,10 @@ const OTHER_FAMILY = 'family-dashboard-http-other';
 
 function buildApp({ dashboardAggregatorService } = {}) {
   const sessions = new Map([
-    ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
-    ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
-    ['session-no-family', { accountId: 'acct-no-family', familyId: null }],
+    ['session-owner', { accountId: 'acct-owner', familyId: FAMILY, role: 'ADMINISTRATOR' }],
+    ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY, role: 'ADMINISTRATOR' }],
+    ['session-no-family', { accountId: 'acct-no-family', familyId: null, role: null }],
+    ['session-child', { accountId: 'acct-child', familyId: FAMILY, role: 'CHILD' }],
   ]);
   const parentAccountService = {
     async readSession(token) {
@@ -96,6 +97,21 @@ test('an account with no family scope yet is rejected honestly, not treated as a
     });
     assert.equal(response.statusCode, 403);
     assert.equal(response.json().error, 'family_scope_required');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a child-only family role cannot read the Parent dashboard', async () => {
+  const { app } = buildApp({ dashboardAggregatorService: { async getDashboard() { throw new Error('should never be called'); } } });
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/dashboard`,
+      headers: { cookie: 'pca_family_session=session-child' },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json().error, 'forbidden');
   } finally {
     await app.close();
   }

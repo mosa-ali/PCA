@@ -1,18 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { BrowserEndpointError, type BrowserEndpointService } from '../../device/BrowserEndpointService.js';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
-import { createRequireFamilyAuthorization } from '../requireFamilyAuthorization.js';
+import { createRequireFamilyAuthorization, createRequireFamilyMembershipRole } from '../requireFamilyAuthorization.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
+import type { FamilyMembershipRepository, FamilyMembershipRole } from '../../familymembers/FamilyMembershipRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
+const ADMINISTRATOR_ROLE: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR']);
 
 export interface BrowserEndpointRoutesDeps {
   /** Optional -- when omitted, no route in this file is registered at all (404, not merely 401), mirroring runtimeSyncRoutes.ts's deviceProtectionStatusRepository precedent. */
   browserEndpointService?: BrowserEndpointService;
   authService: AuthService;
   authzService: AuthzService;
+  familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   /** Runs before requireServiceSession -- bounds session-validation DB load per IP regardless of token validity. */
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
@@ -26,8 +29,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * PCA-FR-063 / doc 08 Section 8-style trusted-browser registration step.
  * Registration alone is never trust: the resulting device is
  * PAIRING_PENDING (see BrowserEndpointService's own doc comment) and still
- * requires the EXISTING, unchanged pairing-requests/:deviceId/confirm route
- * (CONFIRM_PAIRING_REQUEST) -- a separate authorized-parent action -- before
+ * requires the EXISTING pairing-requests/:deviceId/confirm route
+ * (CONFIRM_PAIRING_REQUEST), which requires an active Administrator membership, before
  * it is PAIRED, and confirmPairing itself rejects that SAME account
  * confirming its own registration (SELF_APPROVAL_DENIED).
  */
@@ -45,6 +48,7 @@ export function registerBrowserEndpointRoutes(app: FastifyInstance, deps: Browse
         requireServiceSession,
         deps.rateLimiter({ windowMs: 60_000, max: 10, bucket: 'register-browser-endpoint' }),
         createRequireFamilyAuthorization(deps.authzService, 'REGISTER_BROWSER_ENDPOINT'),
+        createRequireFamilyMembershipRole(deps.familyMembershipRepository, ADMINISTRATOR_ROLE),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {

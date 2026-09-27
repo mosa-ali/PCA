@@ -76,7 +76,7 @@ function buildService(ownerFamilyId, childProfileFamilyMap) {
  * ('session-owner') actually authenticates as -- in the cross-family tests
  * below this is the ATTACKER's own family (the URL segment they're allowed
  * to hit), never the real data owner's. */
-function buildApp({ service, sessionFamilyId }) {
+function buildApp({ service, sessionFamilyId, childProfileFamilyMap, sessionRole = 'ADMINISTRATOR' }) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: sessionFamilyId }]]);
   const parentAccountService = {
     async readSession(token) {
@@ -84,6 +84,7 @@ function buildApp({ service, sessionFamilyId }) {
       if (!session) throw new Error('unauthorized');
       return session;
     },
+    async activeFamilyRole() { return sessionRole; },
   };
   const deviceTokens = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: sessionFamilyId }],
@@ -101,7 +102,15 @@ function buildApp({ service, sessionFamilyId }) {
     },
   };
   const app = Fastify();
-  registerEyeProtectionRoutes(app, { parentAccountService, deviceSessionService, eyeProtectionSettingsService: service, now: () => T0 });
+  registerEyeProtectionRoutes(app, {
+    parentAccountService,
+    eyeProtectionSettingsService: service,
+    childProfileRegistryRepository: {
+      async resolveMembership(familyId, childProfileId) {
+        return childProfileFamilyMap?.get(childProfileId) === familyId ? 'MEMBER' : 'NOT_MEMBER_OR_NOT_FOUND';
+      },
+    },
+  });
   return { app };
 }
 
@@ -112,7 +121,11 @@ test('MySQL HTTP: GET returns the parent\'s own existing (non-default) setting f
   const childProfileId = uniqueChildId();
   const { service, repository } = buildService(ownerFamilyId, new Map([[childProfileId, ownerFamilyId]]));
   await repository.update(ownerFamilyId, childProfileId, { remindersEnabled: true });
-  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId });
+  const { app } = buildApp({
+    service,
+    sessionFamilyId: ownerFamilyId,
+    childProfileFamilyMap: new Map([[childProfileId, ownerFamilyId]]),
+  });
   try {
     const response = await app.inject({
       method: 'GET',
@@ -132,7 +145,7 @@ test('MySQL HTTP: GET for the parent\'s own child with no explicit setting yet r
   const ownerFamilyId = uniqueFamilyId('owner');
   const childProfileId = uniqueChildId();
   const { service } = buildService(ownerFamilyId, new Map([[childProfileId, ownerFamilyId]]));
-  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId });
+  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId, childProfileFamilyMap: new Map([[childProfileId, ownerFamilyId]]) });
   try {
     const response = await app.inject({
       method: 'GET',
@@ -146,18 +159,13 @@ test('MySQL HTTP: GET for the parent\'s own child with no explicit setting yet r
   }
 });
 
-test('MySQL HTTP: a foreign-family child WITH a real saved setting does not leak it -- attacker sees only the safe default, never the real value or familyId', async () => {
+test('MySQL HTTP: a foreign-family child WITH a real saved setting is denied before it can leak the real value or familyId', async () => {
   const ownerFamilyId = uniqueFamilyId('owner');
   const attackerFamilyId = uniqueFamilyId('attacker');
   const childProfileId = uniqueChildId();
-  // Authorization is wired against the ATTACKER's family (the family whose
-  // session is actually used for the request) -- exactly matching
-  // production wiring, where one service instance is shared by every
-  // family. childProfileId is deliberately absent from the membership map
-  // from the attacker's point of view: the point of this test is that the
-  // READ path (EyeProtectionSettingsService.get()) never even consults
-  // authorization -- it must be the REPOSITORY's family_id filter alone
-  // that keeps this safe.
+  // Authorization is wired against the ATTACKER's family. The current route
+  // additionally requires a durable membership match before the read; this
+  // test proves the foreign family is denied before the repository is read.
   const { service, repository } = buildService(attackerFamilyId, new Map([[childProfileId, ownerFamilyId]]));
   // The real owner (family A) saves a real, non-default setting directly
   // through the repository (simulating a prior legitimate write by the
@@ -166,19 +174,15 @@ test('MySQL HTTP: a foreign-family child WITH a real saved setting does not leak
 
   const { app } = buildApp({ service, sessionFamilyId: attackerFamilyId });
   try {
-    // The attacker hits THEIR OWN family's URL (passes the HTTP layer's
-    // familySession() family-scope check) but supplies the real owner's
-    // childProfileId -- the live cross-family IDOR this whole fix closes.
+    // The attacker hits THEIR OWN family's URL but supplies the real owner's
+    // childProfileId. Family-scoped membership rejects this before lookup.
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${attackerFamilyId}/children/${childProfileId}/eye-protection`,
       headers: ownerAuthHeaders,
     });
-    assert.equal(response.statusCode, 200, 'the route itself must not reject this -- the repository is the enforcement point');
-    const body = response.json().eyeProtection;
-    assert.equal(body.remindersEnabled, false, 'the true (foreign) remindersEnabled=true value must never leak over HTTP');
-    assert.equal(body.childProfileId, childProfileId);
-    assert.equal('familyId' in body, false, 'the response DTO must never expose any familyId at all (defense in depth beyond the repository fix)');
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'family_scope_forbidden' });
 
     // The real owner is unaffected and still sees their own real setting.
     const ownerView = await repository.get(ownerFamilyId, childProfileId);
@@ -210,24 +214,16 @@ test('MySQL HTTP: a nonexistent childProfileId returns the identical 200/safe-de
       headers: ownerAuthHeaders,
     });
 
-    assert.equal(foreignResponse.statusCode, 200);
+    assert.equal(foreignResponse.statusCode, 403);
     assert.equal(nonexistentResponse.statusCode, foreignResponse.statusCode);
-
-    const foreignBody = foreignResponse.json().eyeProtection;
-    const nonexistentBody = nonexistentResponse.json().eyeProtection;
-    // Same shape/keys and same values for everything except childProfileId,
-    // which trivially echoes back whatever the caller requested in BOTH
-    // cases (not a leak -- the caller already supplied that id itself).
-    assert.deepEqual(Object.keys(foreignBody).sort(), Object.keys(nonexistentBody).sort());
-    assert.equal(foreignBody.remindersEnabled, nonexistentBody.remindersEnabled);
-    assert.equal(foreignBody.updatedAtUtc, nonexistentBody.updatedAtUtc);
-    assert.equal(foreignBody.remindersEnabled, false);
+    assert.deepEqual(foreignResponse.json(), nonexistentResponse.json());
+    assert.deepEqual(foreignResponse.json(), { error: 'family_scope_forbidden' });
   } finally {
     await app.close();
   }
 });
 
-test('MySQL HTTP: zero foreign setting/family_id leakage across several distinct attacking families reading the same real child', async () => {
+test('MySQL HTTP: several attacking families are denied when reading the same foreign child', async () => {
   const ownerFamilyId = uniqueFamilyId('owner');
   const childProfileId = uniqueChildId();
   const seed = buildService(ownerFamilyId, new Map());
@@ -243,8 +239,8 @@ test('MySQL HTTP: zero foreign setting/family_id leakage across several distinct
         url: `/api/parent/families/${attackerFamilyId}/children/${childProfileId}/eye-protection`,
         headers: ownerAuthHeaders,
       });
-      assert.equal(response.statusCode, 200);
-      assert.equal(response.json().eyeProtection.remindersEnabled, false, `attacker family ${attackerFamilyId} must never see the real remindersEnabled=true`);
+      assert.equal(response.statusCode, 403);
+      assert.deepEqual(response.json(), { error: 'family_scope_forbidden' });
 
       // Repository-level double-check that this attacker's OWN familyId
       // (never the real owner's) is what would back any further write.
@@ -261,7 +257,7 @@ test('MySQL HTTP (no regression): an Owner can enable reminders through the REAL
   const ownerFamilyId = uniqueFamilyId('owner');
   const childProfileId = uniqueChildId();
   const { service, repository } = buildService(ownerFamilyId, new Map([[childProfileId, ownerFamilyId]]));
-  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId });
+  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId, childProfileFamilyMap: new Map([[childProfileId, ownerFamilyId]]), sessionRole: 'ADMINISTRATOR' });
   try {
     const response = await app.inject({
       method: 'POST',
@@ -284,7 +280,12 @@ test('MySQL HTTP (no regression): a VIEWER still cannot edit the eye-protection 
   const ownerFamilyId = uniqueFamilyId('owner');
   const childProfileId = uniqueChildId();
   const { service, repository } = buildService(ownerFamilyId, new Map([[childProfileId, ownerFamilyId]]));
-  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId });
+  const { app } = buildApp({
+    service,
+    sessionFamilyId: ownerFamilyId,
+    childProfileFamilyMap: new Map([[childProfileId, ownerFamilyId]]),
+    sessionRole: 'VIEWER',
+  });
   try {
     const response = await app.inject({
       method: 'POST',
@@ -306,7 +307,7 @@ test('MySQL HTTP (no regression): a childProfileId belonging to another family i
   // Membership map marks this child as belonging to a DIFFERENT family --
   // the authorization pre-check (unrelated to this fix) must still deny it.
   const { service, repository } = buildService(ownerFamilyId, new Map([[foreignChildProfileId, uniqueFamilyId('other')]]));
-  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId });
+  const { app } = buildApp({ service, sessionFamilyId: ownerFamilyId, childProfileFamilyMap: new Map([[foreignChildProfileId, uniqueFamilyId('other')]]) });
   try {
     const response = await app.inject({
       method: 'POST',

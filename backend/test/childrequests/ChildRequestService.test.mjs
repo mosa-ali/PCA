@@ -17,6 +17,24 @@ const CHILD_PROFILE_FAMILY_MAP = new Map([['child-1', 'fam-1']]);
 
 const T0 = new Date('2026-01-01T00:00:00Z');
 
+function makeParentSessionAuthorizer() {
+  const roles = new Map([
+    ['parent-admin|fam-1', 'ADMINISTRATOR'],
+    ['parent-viewer|fam-1', 'VIEWER'],
+  ]);
+  const calls = [];
+  return {
+    calls,
+    async authorize(input) {
+      calls.push(input);
+      const role = roles.get(`${input.parentAccountId}|${input.familyId}`);
+      const targetResolved = input.targetScope.kind !== 'CHILD_PROFILE' ||
+        CHILD_PROFILE_FAMILY_MAP.get(input.targetScope.id) === input.familyId;
+      return { verdict: role === 'ADMINISTRATOR' && targetResolved ? 'ALLOW' : 'DENY' };
+    },
+  };
+}
+
 function epoch() {
   return {
     familyId: 'fam-1',
@@ -32,15 +50,15 @@ function epoch() {
   };
 }
 
-function makeHarness(nowFn = () => T0) {
+function makeHarness(nowFn = () => T0, parentSessionAuthorizer = undefined) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch(epoch());
   const resolver = new FamilyTrustSetRoleResolver(store);
   const childProfileResolver = new StaticChildProfileMembershipResolver(CHILD_PROFILE_FAMILY_MAP);
   const authz = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, new InMemoryActionIdempotencyLedger(), nowFn, childProfileResolver);
   const repo = new InMemoryChildRequestRepository();
-  const service = new ChildRequestService(repo, authz, nowFn);
-  return { store, repo, service };
+  const service = new ChildRequestService(repo, authz, nowFn, parentSessionAuthorizer);
+  return { store, repo, service, authz };
 }
 
 test('createDraft returns a DRAFT_LOCAL request that is never persisted', () => {
@@ -573,4 +591,136 @@ test('NOT_SUPPORTED is an honest, distinct capability state (e.g. iOS: no OS mec
   await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-unsupported', 'idem-unsupported');
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'NOT_SUPPORTED');
   assert.equal(acknowledged.installEnforcementOutcome, 'NOT_SUPPORTED');
+});
+
+test('a same-family active Parent Administrator can decide through the Parent-session lane with account provenance', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { service } = makeHarness(() => T0, authorizer);
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL',
+  ));
+
+  const decided = await service.decideAsParent(
+    pending.requestId, 'fam-1', 'parent-admin', 'APPROVED', 'parent-action-1', 'parent-idem-1',
+  );
+
+  assert.equal(decided.state, 'APPROVED');
+  assert.equal(decided.decidedByAccountId, 'parent-admin');
+  assert.equal(decided.decidedByDeviceId, null);
+  assert.equal(decided.createdByParentAccountId, null);
+  assert.equal(authorizer.calls.length, 1);
+  assert.equal(authorizer.calls[0].familyId, 'fam-1');
+  assert.equal(authorizer.calls[0].parentAccountId, 'parent-admin');
+  assert.equal(authorizer.calls[0].action, 'DECIDE');
+  assert.equal(authorizer.calls[0].idempotencyKey, 'parent-idem-1');
+});
+
+test('a Parent Viewer is denied by the Parent-session authorizer', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { service } = makeHarness(() => T0, authorizer);
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' },
+  ));
+
+  await assert.rejects(
+    () => service.decideAsParent(pending.requestId, 'fam-1', 'parent-viewer', 'APPROVED', 'viewer-action', 'viewer-idem'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+  assert.equal((await service.listForFamily('fam-1'))[0].state, 'PENDING');
+});
+
+test('Parent-session family mismatch is collapsed to NOT_FOUND before authorization', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { service } = makeHarness(() => T0, authorizer);
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' },
+  ));
+
+  await assert.rejects(
+    () => service.decideAsParent(pending.requestId, 'fam-2', 'parent-admin', 'APPROVED', 'wrong-family-action', 'wrong-family-idem'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_FOUND',
+  );
+  assert.equal(authorizer.calls.length, 0);
+});
+
+test('an unresolved Parent-session child-profile target fails closed', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { service } = makeHarness(() => T0, authorizer);
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-unknown', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-unknown' },
+  ));
+
+  await assert.rejects(
+    () => service.decideAsParent(pending.requestId, 'fam-1', 'parent-admin', 'APPROVED', 'unresolved-action', 'unresolved-idem'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+  assert.equal((await service.listForFamily('fam-1'))[0].state, 'PENDING');
+});
+
+test('Parent-session repeat by the same account is idempotent; a different terminal decision is rejected', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { service } = makeHarness(() => T0, authorizer);
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL',
+  ));
+  const first = await service.decideAsParent(pending.requestId, 'fam-1', 'parent-admin', 'APPROVED', 'parent-action-2', 'parent-idem-2');
+  const repeated = await service.decideAsParent(pending.requestId, 'fam-1', 'parent-admin', 'APPROVED', 'parent-action-2-retry', 'parent-idem-2-retry');
+  assert.deepEqual(repeated, first);
+
+  await assert.rejects(
+    () => service.decideAsParent(pending.requestId, 'fam-1', 'parent-admin', 'DENIED', 'parent-action-2-deny', 'parent-idem-2-deny'),
+    (err) => err instanceof ChildRequestError && err.code === 'ILLEGAL_TRANSITION',
+  );
+});
+
+test('Parent direct-grant target denial happens before any draft is persisted', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { repo, service } = makeHarness(() => T0, authorizer);
+
+  await assert.rejects(
+    () => service.grantDirectlyAsParent(
+      'fam-1', null, 'child-unknown', { kind: 'CHILD_PROFILE', id: 'child-unknown' },
+      45, 'ALL', 'parent-admin', 'direct-action-denied', 'direct-idem-denied',
+    ),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+  assert.deepEqual(await repo.listForFamily('fam-1'), []);
+  assert.equal(authorizer.calls[0].action, 'DIRECT_GRANT');
+});
+
+test('Parent direct grants have Parent origin and decision provenance, with no child-device sentinel', async () => {
+  const authorizer = makeParentSessionAuthorizer();
+  const { repo, service } = makeHarness(() => T0, authorizer);
+  const granted = await service.grantDirectlyAsParent(
+    'fam-1', null, 'child-1', { kind: 'CHILD_PROFILE', id: 'child-1' },
+    45, 'ALL', 'parent-admin', 'direct-action-ok', 'direct-idem-ok', 'Parent-created bonus',
+  );
+
+  assert.equal(granted.state, 'APPROVED');
+  assert.equal(granted.childDeviceId, null);
+  assert.equal(granted.createdByParentAccountId, 'parent-admin');
+  assert.equal(granted.decidedByAccountId, 'parent-admin');
+  assert.equal(granted.decidedByDeviceId, null);
+  assert.equal(granted.grantedExtraMinutes, 45);
+  assert.equal((await repo.listForFamily('fam-1')).length, 1);
+});
+
+test('existing child-device submission, decision, and applied acknowledgement stay device-bound', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(service.createDraft(
+    'fam-1', 'dev-child', 'child-1', 'INSTALL_APPROVAL',
+    { kind: 'CHILD_PROFILE', id: 'child-1' }, null, null, null,
+    'com.example.child-app', 'Child App', 'ENFORCED',
+  ));
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'device-path-action', 'device-path-idem');
+  assert.equal(decided.childDeviceId, 'dev-child');
+  assert.equal(decided.decidedByDeviceId, 'dev-owner');
+  assert.equal(decided.decidedByAccountId, null);
+  await assert.rejects(
+    () => service.acknowledgeApplied(pending.requestId, 'different-child-device', 'ENFORCED'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_FOUND',
+  );
+  const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'ENFORCED');
+  assert.equal(acknowledged.state, 'APPLIED_ACKNOWLEDGED');
+  assert.equal(acknowledged.childDeviceId, 'dev-child');
 });

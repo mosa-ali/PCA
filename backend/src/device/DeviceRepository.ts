@@ -83,6 +83,16 @@ export interface DeviceRepository {
    * every other caller must keep using the family-scoped methods above.
    */
   findDeviceUnscoped(deviceId: DeviceId): Promise<DeviceRecord | null>;
+  /**
+   * Authoritative session-time check. Runtime sessions are only accepted
+   * while this device remains ACTIVE and its family remains ACTIVE and not
+   * deleted. Implementations must read current durable lifecycle state so
+   * device revocation/family suspension takes effect on the next request,
+   * including across backend instances.
+   */
+  isDeviceSessionActive(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<boolean>;
+  /** Returns the active family's durable session epoch, or null when either identity is inactive. */
+  getActiveDeviceSessionEpoch(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<number | null>;
   revokeDeviceAndKeysAtomically(
     familyId: OpaqueFamilyId,
     deviceId: DeviceId,

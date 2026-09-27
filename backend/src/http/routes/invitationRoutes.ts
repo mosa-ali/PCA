@@ -5,7 +5,10 @@ import { createRequireFamilyAuthorization } from '../requireFamilyAuthorization.
 import { createRateLimiter } from '../rateLimit.js';
 import { toInvitationCreatedDto, toInvitationDto, toInvitationTransitionDto } from '../dto.js';
 import type { AuthService } from '../../auth/AuthService.js';
+import type { ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
+import type { FamilyMembershipRepository, FamilyMembershipRole } from '../../familymembers/FamilyMembershipRepository.js';
+import type { OpaqueFamilyId } from '../../familymembers/types.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const VALID_PLATFORMS = new Set(['ANDROID', 'IOS']);
@@ -31,6 +34,8 @@ const VALID_AGE_UX_TIERS = new Set(['YOUNG_CHILD', 'TEEN']);
 const VALID_INITIAL_POLICY_PROFILES = new Set(['BALANCED', 'STRICT']);
 const CHILD_PROFILE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_TOKEN_LENGTH = 64;
+const DEVICE_INVITATION_ADMIN_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR']);
+const DEVICE_INVITATION_READ_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR', 'VIEWER']);
 
 /**
  * PCA-ADD-ENR-005/PCA-SEC-001: every device-facing lifecycle-transition
@@ -46,6 +51,8 @@ export interface InvitationRoutesDeps {
   invitationService: InvitationService;
   authService: AuthService;
   authzService: AuthzService;
+  parentAccountService?: Pick<ParentAccountService, 'consumeSensitiveStepUp'>;
+  familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   /** Runs before requireServiceSession on every route below -- bounds session-validation DB load per IP regardless of token validity. */
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
@@ -53,6 +60,25 @@ export interface InvitationRoutesDeps {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireParentMembershipRole(
+  familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>,
+  allowedRoles: ReadonlySet<FamilyMembershipRole>,
+) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const { familyId } = request.params as { familyId?: unknown };
+    const serviceAccountId = request.accountId;
+    if (typeof familyId !== 'string' || typeof serviceAccountId !== 'string') {
+      await reply.code(403).send({ error: 'forbidden' });
+      return;
+    }
+    const role = await familyMembershipRepository.findActiveRoleByServiceAccountId(serviceAccountId, familyId as OpaqueFamilyId);
+    if (role === null || !allowedRoles.has(role)) {
+      // Keep missing, inactive, and insufficient Parent roles indistinguishable.
+      await reply.code(403).send({ error: 'forbidden' });
+    }
+  };
 }
 
 export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationRoutesDeps): void {
@@ -67,13 +93,14 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         requireServiceSession,
         deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'create-invitation' }),
         createRequireFamilyAuthorization(deps.authzService, 'CREATE_INVITATION'),
+        requireParentMembershipRole(deps.familyMembershipRepository, DEVICE_INVITATION_ADMIN_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { platform, requestedProtectionMode, childProfileId, ageUxTier, initialPolicyProfile, ttlMs } = body;
+      const { platform, requestedProtectionMode, childProfileId, ageUxTier, initialPolicyProfile, ttlMs, stepUpToken } = body;
       if (typeof platform !== 'string' || !VALID_PLATFORMS.has(platform)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
@@ -104,6 +131,18 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       }
       if (ttlMs !== undefined && typeof ttlMs !== 'number') {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (
+        typeof stepUpToken !== 'string' ||
+        !deps.parentAccountService ||
+        !(await deps.parentAccountService.consumeSensitiveStepUp(
+          request.accountId as string,
+          familyId,
+          'family.device.enrollment.create',
+          stepUpToken,
+        ))
+      ) {
+        return reply.code(403).send({ error: 'forbidden' });
       }
 
       try {
@@ -148,6 +187,7 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         deps.authAttemptLimiter,
         requireServiceSession,
         createRequireFamilyAuthorization(deps.authzService, 'VIEW_INVITATION_STATUS'),
+        requireParentMembershipRole(deps.familyMembershipRepository, DEVICE_INVITATION_READ_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -169,6 +209,7 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         deps.authAttemptLimiter,
         requireServiceSession,
         createRequireFamilyAuthorization(deps.authzService, 'LIST_OWN_INVITATIONS'),
+        requireParentMembershipRole(deps.familyMembershipRepository, DEVICE_INVITATION_READ_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -185,10 +226,16 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         deps.authAttemptLimiter,
         requireServiceSession,
         createRequireFamilyAuthorization(deps.authzService, 'REVOKE_INVITATION'),
+        requireParentMembershipRole(deps.familyMembershipRepository, DEVICE_INVITATION_ADMIN_ROLES),
       ],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { familyId, invitationId } = request.params as { familyId: string; invitationId: string };
+      const body = request.body;
+      if (!isPlainObject(body) || typeof body.stepUpToken !== 'string' || !deps.parentAccountService ||
+          !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.device.enrollment.revoke', body.stepUpToken))) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       try {
         const record = await deps.invitationService.revokeInvitationForFamily(familyId, invitationId);
         return reply.send(toInvitationDto(record));

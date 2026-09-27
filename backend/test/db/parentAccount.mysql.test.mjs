@@ -11,11 +11,12 @@
 // the only way to obtain a Parent session. A session for an account that never
 // completed such a sign-in (no parent_mfa_state row) is refused.
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
+import { MySqlRemovalDecisionRepository } from '../../dist/familyrbac/MySqlRemovalDecisionRepository.js';
 import { MySqlParentMfaRepository } from '../../dist/parentaccount/mfa/MySqlParentMfaRepository.js';
 import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlFamilyMembershipRepository.js';
 import { TestSandboxEmailSender } from '../../dist/parentaccount/TestSandboxEmailSender.js';
@@ -48,11 +49,16 @@ async function countRows(sql, params) {
   return Number(rows[0].n);
 }
 
+const browserGrants = new Map();
 async function loginWithOtp(service, emailSender, email, password) {
-  const pending = await service.login(email, password);
-  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' });
-  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
-  return service.completeLoginStepUp(email, stepUpCode);
+  let outcome = await service.login(email, password, browserGrants.get(email));
+  if (outcome.status === 'STEP_UP_REQUIRED') {
+    const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+    assert.ok(code, 'unknown-browser login must send the email OTP');
+    outcome = await service.completeLoginStepUp(email, code);
+  }
+  if (outcome.rawDailyLoginGrantToken) browserGrants.set(email, outcome.rawDailyLoginGrantToken);
+  return outcome;
 }
 
 /** register -> verify-email. Returns the durable account record (verify-email itself returns only {status:'VERIFIED'}). */
@@ -71,6 +77,145 @@ test('MySQL: registration persists a PENDING_VERIFICATION row, findable by email
   assert.ok(account);
   assert.equal(account.status, 'PENDING_VERIFICATION');
   assert.equal(account.freeAccess, null);
+});
+
+test('MySQL: removal decision request and Parent decision actor IDs persist independently', async () => {
+  const { service, emailSender } = buildService();
+  const email = uniqueEmail();
+  const password = 'a genuinely long password';
+  const account = await registerAndVerifyRealAccount(service, emailSender, email, password);
+  const session = await loginWithOtp(service, emailSender, email, password);
+  assert.equal(session.role, 'ADMINISTRATOR');
+
+  const repository = new MySqlRemovalDecisionRepository();
+  const requestedAt = new Date();
+  const pending = {
+    requestId: `request-${randomUUID()}`,
+    familyId: session.familyId,
+    requestedByParentAccountId: account.accountId,
+    childId: `child-${randomUUID()}`,
+    deviceId: `device-${randomUUID()}`,
+    operation: 'REMOVE_REVOKE_DEVICE',
+    protectionLevel: 'PROTECTED',
+    requestedAt,
+    expiresAt: new Date(requestedAt.getTime() + 60_000),
+    reasonCategory: 'ROUTINE_POLICY_CHANGE',
+    protectiveAuthorityApplies: true,
+    state: 'PARENT_APPROVAL_REQUIRED',
+    decidedAt: null,
+    decisionMethod: null,
+    temporaryDisableUntil: null,
+    decidedByParentAccountId: null,
+    decidedByDeviceId: null,
+    decisionActionId: null,
+    idempotencyKey: null,
+    decisionFingerprint: null,
+  };
+  await repository.create(pending);
+
+  const loaded = await repository.get(pending.requestId);
+  assert.equal(loaded.requestedByParentAccountId, account.accountId);
+  assert.equal(loaded.decidedByParentAccountId, null);
+
+  const decided = {
+    ...loaded,
+    state: 'KEEP_ACTIVE',
+    decidedAt: new Date(),
+    decisionMethod: 'LOCAL_ADMINISTRATION_PIN',
+    decidedByParentAccountId: account.accountId,
+  };
+  assert.equal(await repository.commitDecision(pending.requestId, decided), 'APPLIED');
+  const reloaded = await repository.get(pending.requestId);
+  assert.equal(reloaded.requestedByParentAccountId, account.accountId);
+  assert.equal(reloaded.decidedByParentAccountId, account.accountId);
+  assert.equal(reloaded.decidedByDeviceId, null);
+
+  const deviceOnly = {
+    ...pending,
+    requestId: `request-${randomUUID()}`,
+    requestedByParentAccountId: null,
+    deviceId: `device-${randomUUID()}`,
+    requestedAt: new Date(),
+  };
+  deviceOnly.expiresAt = new Date(deviceOnly.requestedAt.getTime() + 60_000);
+  await repository.create(deviceOnly);
+  const deviceDecision = {
+    ...deviceOnly,
+    state: 'KEEP_ACTIVE',
+    decidedAt: new Date(),
+    decisionMethod: 'REMOTE_PARENT',
+    decidedByParentAccountId: null,
+    decidedByDeviceId: 'signed-parent-device',
+    decisionActionId: `action-${randomUUID()}`,
+    idempotencyKey: `idem-${randomUUID()}`,
+    decisionFingerprint: 'a'.repeat(64),
+  };
+  assert.equal(await repository.commitDecision(deviceOnly.requestId, deviceDecision), 'APPLIED');
+  const deviceReloaded = await repository.get(deviceOnly.requestId);
+  assert.equal(deviceReloaded.requestedByParentAccountId, null);
+  assert.equal(deviceReloaded.decidedByParentAccountId, null);
+  assert.equal(deviceReloaded.decidedByDeviceId, 'signed-parent-device');
+});
+
+test('MySQL SECURITY: removal decision Parent actor foreign keys reject unknown accounts and leave the decision pending', async () => {
+  const { service, emailSender } = buildService();
+  const email = uniqueEmail();
+  const password = 'a genuinely long password';
+  const account = await registerAndVerifyRealAccount(service, emailSender, email, password);
+  const session = await loginWithOtp(service, emailSender, email, password);
+  const repository = new MySqlRemovalDecisionRepository();
+  const unknownAccountId = randomUUID();
+  const requestedAt = new Date();
+  const baseRecord = {
+    requestId: `request-${randomUUID()}`,
+    familyId: session.familyId,
+    requestedByParentAccountId: account.accountId,
+    childId: `child-${randomUUID()}`,
+    deviceId: `device-${randomUUID()}`,
+    operation: 'REMOVE_REVOKE_DEVICE',
+    protectionLevel: 'PROTECTED',
+    requestedAt,
+    expiresAt: new Date(requestedAt.getTime() + 60_000),
+    reasonCategory: 'ROUTINE_POLICY_CHANGE',
+    protectiveAuthorityApplies: true,
+    state: 'PARENT_APPROVAL_REQUIRED',
+    decidedAt: null,
+    decisionMethod: null,
+    temporaryDisableUntil: null,
+    decidedByParentAccountId: null,
+    decidedByDeviceId: null,
+    decisionActionId: null,
+    idempotencyKey: null,
+    decisionFingerprint: null,
+  };
+
+  await assert.rejects(
+    () => repository.create({
+      ...baseRecord,
+      requestId: `request-${randomUUID()}`,
+      requestedByParentAccountId: unknownAccountId,
+    }),
+    (error) => error?.errno === 1452,
+    'the requester FK rejects an account ID that does not exist',
+  );
+
+  await repository.create(baseRecord);
+  const invalidDecision = {
+    ...baseRecord,
+    state: 'KEEP_ACTIVE',
+    decidedAt: new Date(),
+    decisionMethod: 'LOCAL_ADMINISTRATION_PIN',
+    decidedByParentAccountId: unknownAccountId,
+  };
+  await assert.rejects(
+    () => repository.commitDecision(baseRecord.requestId, invalidDecision),
+    (error) => error?.errno === 1452,
+    'the decider FK rejects an account ID that does not exist',
+  );
+
+  const unchanged = await repository.get(baseRecord.requestId);
+  assert.equal(unchanged?.state, 'PARENT_APPROVAL_REQUIRED', 'failed FK update rolls back the decision transition');
+  assert.equal(unchanged?.decidedByParentAccountId, null);
 });
 
 test('MySQL CONCURRENCY: two concurrent registrations for the same email are DB-uniqueness-enforced -- only one account row ever exists', async () => {
@@ -107,18 +252,20 @@ test('MySQL: verify-email transitions to VERIFIED and snapshots FREE_ACCESS atom
   assert.equal(session.familyId, signedIn.familyId);
   assert.equal(session.role, 'ADMINISTRATOR');
   assert.equal(session.mfa.status, 'GRACE');
+  assert.ok(session.mfa.graceExpiresAt instanceof Date);
+  assert.ok(session.mfa.graceExpiresAt.getTime() > Date.now() + (71 * 60 * 60 * 1000));
 });
 
-test('MySQL SECURITY: a session for an account that never completed a PCA-DEC-037 sign-in (no MFA grace record) is refused by readSession', async () => {
+test('MySQL SECURITY: a legacy session with no MFA start state fails closed and cannot provision a family', async () => {
   const { service, emailSender, authService, parentAccountRepository } = buildService();
   const email = uniqueEmail();
   const account = await registerAndVerifyRealAccount(service, emailSender, email, 'a genuinely long password');
   // A legacy-shaped session: a real service_sessions row bound to this account,
-  // but minted outside the sign-in flow, so no grace record exists.
+  // but minted outside the sign-in flow, so no MFA state row exists.
   const issued = await authService.issueSession({ accountReferenceHash: createHash('sha256').update(account.accountId, 'utf8').digest() });
   await parentAccountRepository.setServiceAccountIdIfAbsent(account.accountId, issued.session.accountId);
-  await assert.rejects(() => service.readSession(issued.rawToken), (err) => err.code === 'UNAUTHORIZED');
-  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [account.accountId]), 0, 'a refused session provisions nothing');
+  await assert.rejects(() => service.readSession(issued.rawToken), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM families WHERE provisioned_for_account_id = ?', [account.accountId]), 0);
 });
 
 test('MySQL CONCURRENCY: two concurrent verify-email calls with the same code -- exactly one wins (compare-and-swap on consumed_at)', async () => {
@@ -177,8 +324,6 @@ test('MySQL: verify-email creates no family; the first sign-in provisions exactl
   assert.equal(typeof signedIn.familyId, 'string');
   assert.equal(signedIn.role, 'ADMINISTRATOR');
   assert.equal(signedIn.mfa.status, 'GRACE');
-  assert.ok(signedIn.mfa.graceExpiresAt instanceof Date);
-  assert.equal(typeof signedIn.rawDailyLoginGrantToken, 'string');
 
   const account = await parentAccountRepository.findById(signedIn.accountId);
   const familyId = signedIn.familyId;
@@ -187,7 +332,7 @@ test('MySQL: verify-email creates no family; the first sign-in provisions exactl
   const [memberships] = await getPool().query('SELECT family_id, role, status FROM family_parent_memberships WHERE account_id = ?', [account.accountId]);
   assert.deepEqual(memberships.map((row) => ({ ...row })), [{ family_id: familyId, role: 'ADMINISTRATOR', status: 'ACTIVE' }]);
   assert.equal(await countRows('SELECT COUNT(*) AS n FROM service_account_family_scopes WHERE account_id = ? AND family_id = ? AND status = ?', [account.serviceAccountId, familyId, 'ACTIVE']), 1);
-  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_mfa_state WHERE account_id = ?', [account.accountId]), 1, 'grace started once');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_mfa_state WHERE account_id = ?', [account.accountId]), 1, 'the mandatory authenticator grace state is initialized once');
 
   for (const table of ['family_authority_genesis_anchors', 'family_authority_attestations', 'family_authority_chain_heads', 'devices']) {
     assert.equal(await countRows(`SELECT COUNT(*) AS n FROM ${table} WHERE family_id = ?`, [familyId]), 0, `first sign-in must write nothing to ${table}`);
@@ -246,12 +391,19 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const { service: parentService, emailSender } = buildService();
   const email = uniqueEmail();
   const password = 'a genuinely long password';
-  await registerAndVerifyRealAccount(parentService, emailSender, email, password);
+  const parentAccount = await registerAndVerifyRealAccount(parentService, emailSender, email, password);
 
   // Sanity: login works before any suspend action, and it is what provisions the family.
   const preSuspendLogin = await loginWithOtp(parentService, emailSender, email, password);
   const familyId = preSuspendLogin.familyId;
   assert.equal(typeof familyId, 'string');
+  assert.ok(preSuspendLogin.rawDailyLoginGrantToken);
+  assert.equal((await parentService.readSession(preSuspendLogin.rawSessionToken)).familyId, familyId);
+
+  const pendingUnknownBrowser = await parentService.login(email, password, randomBytes(32).toString('base64url'));
+  assert.equal(pendingUnknownBrowser.status, 'STEP_UP_REQUIRED');
+  const pendingLoginCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.ok(pendingLoginCode);
 
   // Real suspend: real RBAC check, real step-up consumption, real audit row.
   adminClockOffsetMs += 31_000; // fresh TOTP counter -- see TOTP-REPLAY-1 in PlatformAdminAuthService.
@@ -259,6 +411,10 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const suspendStepUp = await adminAuthService.assertStepUp(admin.adminId, admin.sessionId, 'FAMILY_ACCOUNT_SUSPEND', suspendStepUpCode, admin.roles[0]);
   const suspended = await familyStatusService.suspend(admin, familyId, 'Writer73 DB-level enforcement proof', suspendStepUp.stepUpId);
   assert.equal(suspended.status, 'SUSPENDED');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_daily_login_grants WHERE account_id = ? AND revoked_at IS NOT NULL', [parentAccount.accountId]), 1);
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_login_step_up_codes WHERE account_id = ? AND consumed_at IS NOT NULL', [parentAccount.accountId]), 1);
+  await assert.rejects(() => parentService.readSession(preSuspendLogin.rawSessionToken), (err) => err.code === 'UNAUTHORIZED');
+  await assert.rejects(() => parentService.completeLoginStepUp(email, pendingLoginCode), (err) => err.code === 'UNAUTHORIZED');
 
   // The negative case this item exists to prove: login now genuinely fails --
   // with or without this browser's own daily grant.
@@ -275,7 +431,12 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const reactivated = await familyStatusService.reactivate(admin, familyId, reactivateStepUp.stepUpId);
   assert.equal(reactivated.status, 'ACTIVE');
 
-  const relogin = await loginWithOtp(parentService, emailSender, email, password);
+  await assert.rejects(() => parentService.completeLoginStepUp(email, pendingLoginCode), (err) => err.code === 'UNAUTHORIZED');
+  const staleBrowserLogin = await parentService.login(email, password, preSuspendLogin.rawDailyLoginGrantToken);
+  assert.equal(staleBrowserLogin.status, 'STEP_UP_REQUIRED', 'a trusted browser grant from before suspension must not survive reactivation');
+  const relogin = await parentService.completeLoginStepUp(email, emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
+  assert.equal(relogin.status, 'AUTHENTICATED');
+  assert.notEqual(relogin.rawDailyLoginGrantToken, preSuspendLogin.rawDailyLoginGrantToken);
   assert.equal(typeof relogin.rawSessionToken, 'string');
   assert.equal(relogin.familyId, familyId, 'reactivation restores the same family, never a newly provisioned one');
 });

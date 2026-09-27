@@ -41,4 +41,16 @@ export class MySqlFamilyMembershipRepository implements FamilyMembershipReposito
     );
     return rows[0]?.role ?? null;
   }
+
+  async findActiveRoleByServiceAccountId(serviceAccountId: string, familyId: OpaqueFamilyId): Promise<FamilyMembershipRole | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<RoleRow>(
+        conn,
+        `SELECT role FROM family_parent_memberships
+         WHERE service_account_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+        [serviceAccountId, familyId],
+      ),
+    );
+    return rows[0]?.role ?? null;
+  }
 }

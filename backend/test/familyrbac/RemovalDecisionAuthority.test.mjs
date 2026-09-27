@@ -165,6 +165,7 @@ async function createPending(authority, overrides = {}) {
   return authority.createRequest({
     requestId: overrides.requestId ?? `request-${Math.random().toString(16).slice(2)}`,
     familyId: FAMILY,
+    requestedByParentAccountId: overrides.requestedByParentAccountId ?? null,
     childId: CHILD,
     deviceId: DEVICE,
     operation: overrides.operation ?? 'REMOVE_REVOKE_DEVICE',
@@ -400,8 +401,10 @@ test('authorized recovery decision requires the coordinator authority and receiv
     created.familyId,
     { decision: 'ALLOW_REMOVAL', temporaryDisableUntil: null },
     { proof: 'opaque-recovery-proof', recoveryTransactionId: 'recovery-transaction-84' },
+    'parent-account-recovery-actor',
   );
   assert.equal(recovered.decisionMethod, 'AUTHORIZED_RECOVERY');
+  assert.equal(recovered.decidedByParentAccountId, 'parent-account-recovery-actor');
   assert.equal(recoveryCalls[0].request.requestId, created.requestId);
 });
 
