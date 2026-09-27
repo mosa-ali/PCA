@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 23:26 UTC
-LOCAL_HEAD = 2fa1995cd2210a1c6275fa2b52e37ebffc122051
-REMOTE_HEAD = 2fa1995cd2210a1c6275fa2b52e37ebffc122051 (fresh fetch and GitHub ref match)
-CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (Parent source; ledger sync `2fa1995c`)
+LAST_UPDATED_UTC = 2026-09-27 23:27 UTC
+LOCAL_HEAD = 578dc0bbfcb050b8289adf7f10cbf1002c3082a2
+REMOTE_HEAD = 578dc0bbfcb050b8289adf7f10cbf1002c3082a2 (fresh fetch and GitHub ref match)
+CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (Parent source; verified ledger publication `578dc0bb`)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-18, TODO-20 final exact-head CI and live 0059 schema/grant verification, and literal localhost acceptance. Parent Quality Gates run `36358651535` is queued at `2fa1995c`.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-18, TODO-20 final exact-head CI and live 0059 schema/grant verification, and literal localhost acceptance. Parent Quality Gates run `36358762949` is PENDING at `578dc0bb`; require a pass on the final ledger-sync head before live work.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 
@@ -429,5 +429,5 @@ NEXT_ACTION = Publish source and ledger sync; inspect exact-head CI before conti
 PARENT_SOURCE = `fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29` adds locally tested migration 0059, updates the canonical schema from MySQL 8.4.11 SHOW CREATE evidence, adds replay/data-preservation coverage, and regenerates database bootstrap artifacts. Parent DB target passed 61 tests with 3 expected privileged skips; Platform Admin DB target passed 11/11; focused migration-upgrade suite passed 3/3.
 PARENT_LIVE = Migrations 0051–0058 are applied and reconciled on `pca_pro`; 0059 remains pending exact-head CI and fresh immediate preflight. Existing runtime grants were exact at 92/92 after 0058 and must be checked again after 0059.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform source, database, deployment, activation, or owner acceptance changed in this checkpoint.
-NEXT_ACTION = Source `fbba783d` and ledger sync `2fa1995c` are published; fresh fetch/local/GitHub heads match and required files are present remotely. Quality Gates run `36358651535` is QUEUED at `2fa1995c`; wait for the final ledger-sync head’s result before Parent TODO-20 final live verification, keeping dependent Platform activation held.
+NEXT_ACTION = Source `fbba783d` and ledger sync `578dc0bb` are published; fresh fetch/local/GitHub heads match and required files are present remotely. Quality Gates run `36358762949` is PENDING at `578dc0bb`; wait for the final ledger-sync head’s result before Parent TODO-20 final live verification, keeping dependent Platform activation held.
 PRIOR_CI = Exact-head Quality Gates run `36356186069` completed SUCCESS at `399304c080e82c36719e4d5bf34953444181ecb8`; local, fetched tracking and live GitHub refs matched at this SHA. This prior CI pass does not cover the new 0059 checkpoint.
