@@ -213,6 +213,18 @@ const connection = await mysql.createConnection({
 try {
   await assertSupportedEnvironment(connection);
 
+  // Never infer that an allowed host/database is empty. In particular, a
+  // developer's pca_test may already contain a complete schema. The owner
+  // runner creates a uniquely named database and sets this marker after it
+  // has created that database itself; direct invocations must point at an
+  // actually empty schema before the first migration can run.
+  const [[existingSchema]] = await connection.query(
+    `SELECT COUNT(*) AS tableCount FROM information_schema.tables WHERE table_schema = DATABASE()`,
+  );
+  if (Number(existingSchema.tableCount) !== 0) {
+    throw new Error('Refusing migration-from-zero: selected database is not empty. Use npm run test:db to create an owned disposable database; existing database was not changed.');
+  }
+
   for (const file of files) {
     const migration = await readFile(fileURLToPath(new URL(file, root)), 'utf8');
     await connection.query(migration);

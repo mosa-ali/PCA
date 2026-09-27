@@ -31,28 +31,25 @@ export function createDisposableParentAccountService({ emailSender, now = () => 
 }
 
 /**
- * register -> verify -> login -> emailed login code. Returns the provisioned
- * family, the ADMINISTRATOR role, the grace deadline, a live session token and
- * this "browser's" daily grant (valid 24 h, inside grace only).
+ * register -> verify -> email/password login. Returns the provisioned family,
+ * the ADMINISTRATOR role and a live session token. An authenticator is optional.
  */
 export async function provisionSignedInParent({ service, emailSender, email, password }) {
-  await service.register(email, password, password);
+  await service.register(email, password, password, { firstName: 'E2E', lastName: 'Parent' });
   const verificationCode = emailSender.lastCodeFor(email);
   if (!verificationCode) throw new Error('Fixture failed: no verification code was recorded.');
   await service.verifyEmail(email, verificationCode);
   const login = await service.login(email, password);
-  if (login.status !== 'STEP_UP_REQUIRED') throw new Error(`Fixture failed: expected STEP_UP_REQUIRED, got ${login.status}.`);
-  const completed = await service.completeLoginStepUp(email, emailSender.lastCodeFor(email, 'LOGIN_STEP_UP'));
-  if (completed.status !== 'AUTHENTICATED' || !completed.familyId || completed.role !== 'ADMINISTRATOR') {
+  if (login.status !== 'AUTHENTICATED' || !login.familyId || login.role !== 'ADMINISTRATOR') {
     throw new Error('Fixture failed: first login did not provision an ADMINISTRATOR family.');
   }
   return {
-    accountId: completed.accountId,
-    familyId: completed.familyId,
-    role: completed.role,
-    graceExpiresAt: completed.mfa.graceExpiresAt?.toISOString() ?? null,
-    sessionToken: completed.rawSessionToken,
-    dailyLoginGrant: completed.rawDailyLoginGrantToken,
+    accountId: login.accountId,
+    familyId: login.familyId,
+    role: login.role,
+    graceExpiresAt: null,
+    sessionToken: login.rawSessionToken,
+    dailyLoginGrant: login.rawDailyLoginGrantToken,
   };
 }
 

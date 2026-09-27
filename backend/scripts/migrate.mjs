@@ -24,6 +24,7 @@ import mysql from 'mysql2/promise';
 import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 import { isProductionSensitiveRuntime } from '../dist/runtime/environment.js';
 import { DEFAULT_MIGRATION_LOCK_TIMEOUT_SECONDS, MIGRATION_LOCK_NAME, withMigrationLock } from './migrationAdvisoryLock.mjs';
+import { inspectParentActorMigrationState } from './lib/parentActorMigrationRecovery.mjs';
 
 // PCA_MIGRATION_DATABASE_URL, if set, is a distinct, more-privileged
 // migration/provisioning credential (able to CREATE/ALTER/DROP), separate
@@ -96,6 +97,19 @@ async function main() {
         let appliedCount = 0;
         for (const file of files) {
           if (applied.has(file)) continue;
+          if (file === '0057_parent_actor_provenance_for_removal_decisions.sql') {
+            const recoveryState = await inspectParentActorMigrationState(connection);
+            if (recoveryState === 'COMPLETE') {
+              await connection.query(`INSERT INTO schema_migrations (version) VALUES (?)`, [file]);
+              applied.add(file);
+              appliedCount++;
+              console.log(`Recovered migration journal entry for ${file}; its complete atomic DDL was already present.`);
+              continue;
+            }
+            if (recoveryState === 'PARTIAL') {
+              throw new Error(`Migration ${file} has a partial schema object set; refusing duplicate DDL. Repair the named columns, indexes, and foreign keys, then rerun.`);
+            }
+          }
           const sql = await readFile(fileURLToPath(new URL(file, migrationsDir)), 'utf8');
           console.log(`Applying ${file}...`);
           try {

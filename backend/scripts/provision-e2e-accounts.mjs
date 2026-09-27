@@ -39,7 +39,8 @@
 // path, grants expire in 24h, and everything is deleted with the disposable
 // database. PCA_PARENT_MFA_ENC_KEY must match the backend under test.
 import { writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { resolve, relative, isAbsolute } from 'node:path';
+import { tmpdir } from 'node:os';
 import { getPool, closePool } from '../dist/db/pool.js';
 import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
@@ -56,6 +57,8 @@ const PARENT_KEY = 'e2e-parent';
 const SECOND_PARENT_KEY = 'e2e-cross-family';
 // A parent that has already enrolled an authenticator app (TOTP on every login).
 const MFA_PARENT_KEY = 'e2e-mfa';
+// A fresh, unenrolled Parent whose real-browser flow enrolls TOTP itself.
+const MFA_SETUP_PARENT_KEY = 'e2e-mfa-setup';
 const ADMIN_KEY = 'e2e-owner';
 
 function refuse(reason) {
@@ -64,12 +67,22 @@ function refuse(reason) {
 
 const connectionString = process.env.PCA_DATABASE_URL;
 if (!connectionString) refuse('PCA_DATABASE_URL is required.');
-const databaseHost = new URL(connectionString).hostname;
-if (!DISPOSABLE_DATABASE_HOSTS.includes(databaseHost)) {
+const databaseUrl = new URL(connectionString);
+const databaseHost = databaseUrl.hostname;
+const databaseName = decodeURIComponent(databaseUrl.pathname.slice(1));
+if (!DISPOSABLE_DATABASE_HOSTS.includes(databaseHost)
+  || process.env.PCA_DISPOSABLE_TEST_DATABASE_OWNER !== 'with-disposable-db'
+  || !/^pca_test_codex_[a-f0-9]{32}$/.test(databaseName)) {
   refuse('PCA_DATABASE_URL must point at the disposable local/Compose database.');
 }
 if (process.env.NODE_ENV === 'production') {
   refuse('this script is a test fixture and must never run in production.');
+}
+const manifestPath = process.env.QA_E2E_MANIFEST_PATH;
+if (!manifestPath || !isAbsolute(manifestPath)) refuse('QA_E2E_MANIFEST_PATH must point to the wrapper-owned private temporary manifest.');
+const relativeManifestPath = relative(resolve(tmpdir()), resolve(manifestPath));
+if (relativeManifestPath === '' || relativeManifestPath === '..' || relativeManifestPath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
+  refuse('QA_E2E_MANIFEST_PATH must be inside the operating system temporary directory.');
 }
 
 const now = new Date();
@@ -94,13 +107,17 @@ async function provisionParent(key) {
 
 const { sessionToken: _parentSession, ...parent } = await provisionParent(PARENT_KEY);
 const { sessionToken: _secondSession, ...secondParent } = await provisionParent(SECOND_PARENT_KEY);
+const { sessionToken: _mfaSetupSession, ...mfaSetupParent } = await provisionParent(MFA_SETUP_PARENT_KEY);
 const mfaProvisioned = await provisionParent(MFA_PARENT_KEY);
+const mfaTotpEnrollmentAt = Date.now();
 const mfaTotpSecretBase32 = await enrollParentAuthenticator({
   service: parentAccountService,
   sessionToken: mfaProvisioned.sessionToken,
   email: mfaProvisioned.email,
   password: TEST_PASSWORD,
+  nowMs: mfaTotpEnrollmentAt,
 });
+const mfaTotpEnrollmentCounter = Math.floor(mfaTotpEnrollmentAt / 30_000);
 // Enrollment revokes every browser grant; the manifest must not carry a dead one.
 const { sessionToken: _mfaSession, dailyLoginGrant: _revokedGrant, ...mfaParent } = mfaProvisioned;
 
@@ -151,7 +168,6 @@ await getPool().query(
 // seed-local.mjs's QA seed manifest is. Stdout deliberately reports no
 // addresses, no codes and no tokens: it lands in terminal scrollback and in the
 // log of whatever harness invokes this script.
-const manifestPath = process.env.QA_E2E_MANIFEST_PATH ?? fileURLToPath(new URL('../qa-e2e-manifest.json', import.meta.url));
 await writeFile(
   manifestPath,
   JSON.stringify(
@@ -159,7 +175,8 @@ await writeFile(
       generatedAtUtc: now.toISOString(),
       parent: { ...parent, password: TEST_PASSWORD },
       secondParent: { ...secondParent, password: TEST_PASSWORD },
-      mfaParent: { ...mfaParent, password: TEST_PASSWORD, totpSecretBase32: mfaTotpSecretBase32 },
+      mfaSetupParent: { ...mfaSetupParent, password: TEST_PASSWORD },
+      mfaParent: { ...mfaParent, password: TEST_PASSWORD, totpSecretBase32: mfaTotpSecretBase32, totpEnrollmentCounter: mfaTotpEnrollmentCounter },
       operator: { email: adminEmail, password: TEST_PASSWORD, role: 'APP_OWNER', totpSecretBase32: base32Encode(totpSecret) },
       family: { familyId: testFamilyId },
     },
@@ -170,7 +187,7 @@ await writeFile(
 );
 
 console.log('Provisioned the disposable E2E accounts.');
-console.log('Parent fixtures: two inside the MFA grace window, one with an enrolled authenticator.');
+console.log('Parent fixtures: two grace-window controls, one fresh MFA-setup account, and one enrolled authenticator account.');
 console.log('Wrote the E2E fixture manifest.');
 
 await closePool();

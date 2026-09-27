@@ -30,6 +30,10 @@ import path from 'node:path';
 const backendRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const files = [
+  "test/familyrbac/RemovalTargetResolver.test.mjs",
+  "test/tooling/parentActorMigrationRecovery.test.mjs",
+  "test/parentaccount/identityProfile.test.mjs",
+  "test/parentaccount/identityContact.test.mjs",
   "test/invitation/token.test.mjs",
   "test/invitation/service.test.mjs",
   "test/childprofiles/registryRepository.test.mjs",
@@ -152,6 +156,7 @@ const files = [
   "test/platformadmin/authService.test.mjs",
   "test/platformadmin/accountService.test.mjs",
   "test/platformadmin/parentEmailFamilyLookup.test.mjs",
+  "test/platformadmin/parentIdentityRoutes.test.mjs",
   "test/platformadmin/activation.test.mjs",
   "test/platformadmin/activationDiagnostics.test.mjs",
   "test/platformadmin/bootstrapPlatformOwner.test.mjs",
@@ -196,6 +201,7 @@ const files = [
   "test/parentaccount/routes.test.mjs",
   "test/http/parentMfaRoutes.test.mjs",
   "test/parentaccount/parentMfa.test.mjs",
+  "test/parentaccount/optionalMfaLogin.test.mjs",
   "test/parentaccount/parentCommercialStepUpAuthority.test.mjs",
   "test/parentaccount/cookies.test.mjs",
   "test/parentaccount/verificationCode.test.mjs",
@@ -231,6 +237,7 @@ const files = [
   "test/http/childRequestRoutes.test.mjs",
   "test/http/childPolicyRoutes.test.mjs",
   "test/http/familyMemberRoutes.test.mjs",
+  "test/http/invitationParentRoleAuthorization.test.mjs",
   "test/familyrbac/FamilyAuditEventProducer.test.mjs",
   "test/familyrbac/auditEventDelivery.wiring.test.mjs",
   "test/http/familyAuditEventRoutes.test.mjs",
@@ -302,7 +309,29 @@ const files = [
   "test/meta/testSuiteRegistration.test.mjs",
 ];
 
-const result = spawnSync(process.execPath, ['--test', ...files], {
+const testRunnerArgs = ['--test', '--test-concurrency=1', ...files];
+// Some restricted Windows environments deny the child process Node's test
+// runner normally creates for each file (`spawn EPERM`). Keep the regular CI
+// behavior by default, with an explicit local opt-in that launches each
+// registered file in its own single-process test runner. This preserves
+// per-file isolation while avoiding Node's blocked nested process creation.
+if (process.env.PCA_TEST_PER_FILE === '1') {
+  const failures = [];
+  for (const file of files) {
+    const result = spawnSync(process.execPath, [
+      '--experimental-test-isolation=none',
+      '--test',
+      '--test-concurrency=1',
+      file,
+    ], { cwd: backendRoot, stdio: 'inherit' });
+    if (result.error || result.status !== 0) failures.push({ file, error: result.error?.message ?? null, status: result.status });
+  }
+  console.log(`\nSingle-process per-file suite: ${files.length - failures.length}/${files.length} files passed.`);
+  if (failures.length > 0) console.error(JSON.stringify(failures, null, 2));
+  process.exit(failures.length === 0 ? 0 : 1);
+}
+
+const result = spawnSync(process.execPath, testRunnerArgs, {
   cwd: backendRoot,
   stdio: 'inherit',
 });

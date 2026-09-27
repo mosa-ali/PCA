@@ -731,6 +731,10 @@ jobs:
             if (!second || !second.dailyLoginGrant) {
               process.exit(1);
             }
+            const mfaSetup = manifest.mfaSetupParent;
+            if (!mfaSetup || !mfaSetup.email || !mfaSetup.password || !mfaSetup.dailyLoginGrant || !mfaSetup.familyId) {
+              process.exit(1);
+            }
             const mfa = manifest.mfaParent;
             if (!mfa || !mfa.totpSecretBase32 || !mfa.familyId || mfa.dailyLoginGrant) {
               process.exit(1);
@@ -744,6 +748,7 @@ jobs:
             for (const value of [
               account.email, account.password, account.dailyLoginGrant,
               second.email, second.password, second.dailyLoginGrant,
+              mfaSetup.email, mfaSetup.password, mfaSetup.dailyLoginGrant, mfaSetup.familyId,
               mfa.email, mfa.password, mfa.totpSecretBase32, mfa.familyId,
               family.familyId,
               operator.email, operator.password, operator.totpSecretBase32,
@@ -757,9 +762,13 @@ jobs:
               'E2E_REAL_SECOND_PARENT_EMAIL=' + second.email,
               'E2E_REAL_SECOND_PARENT_PASSWORD=' + second.password,
               'E2E_REAL_SECOND_PARENT_DAILY_GRANT=' + second.dailyLoginGrant,
+              'E2E_REAL_MFA_SETUP_PARENT_EMAIL=' + mfaSetup.email,
+              'E2E_REAL_MFA_SETUP_PARENT_PASSWORD=' + mfaSetup.password,
+              'E2E_REAL_MFA_SETUP_PARENT_DAILY_GRANT=' + mfaSetup.dailyLoginGrant,
               'E2E_REAL_MFA_PARENT_EMAIL=' + mfa.email,
               'E2E_REAL_MFA_PARENT_PASSWORD=' + mfa.password,
               'E2E_REAL_MFA_PARENT_TOTP_SECRET=' + mfa.totpSecretBase32,
+              'E2E_REAL_MFA_PARENT_TOTP_ENROLLMENT_COUNTER=' + mfa.totpEnrollmentCounter,
               'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
@@ -815,7 +824,7 @@ jobs:
         working-directory: parent-web
         run: |
           actual=$(ls e2e-real/*.spec.ts | xargs -n1 basename | sort | tr '\n' ' ')
-          expected="acceptance-flow.spec.ts notStartedProgramme.spec.ts parentMfa.spec.ts realBackend.spec.ts "
+          expected="acceptance-flow.spec.ts notStartedProgramme.spec.ts optionalMfaSetup.spec.ts parentMfa.spec.ts realBackend.spec.ts "
           if [ "$actual" != "$expected" ]; then
             echo "The e2e-real/ spec set changed since this job's scope was set."
             echo "  found:    $actual"
@@ -823,17 +832,17 @@ jobs:
             echo "Certify the new spec here, or exclude it with a documented follow-up."
             exit 1
           fi
-          echo "Certified spec set unchanged; parentMfa.spec.ts, realBackend.spec.ts, and acceptance-flow.spec.ts are the certified suites."
+          echo "Certified spec set unchanged; acceptance-flow.spec.ts, realBackend.spec.ts, parentMfa.spec.ts, and optionalMfaSetup.spec.ts are certified. notStartedProgramme.spec.ts remains excluded with its documented follow-up."
       - name: Run parent-web real-backend E2E -- owner acceptance flow (certified)
-        # THREE CERTIFIED SPECS, THREE RUNS, EACH BEHIND A FRESH BACKEND.
+        # FOUR CERTIFIED PARENT SPECS, FOUR RUNS, EACH BEHIND A FRESH BACKEND.
         #
         # buildServer applies ONE SHARED, per-IP anti-flood budget to every
         # authenticated route -- http/buildServer.ts's authAttemptLimiter,
         # 60 requests / 60s / IP / 'auth-attempt' bucket -- deliberately, so one
         # IP cannot force unlimited session-validation DB round-trips. A single
         # owner acceptance flow makes ~43 of those requests at Playwright's pace.
-        # When realBackend.spec.ts, acceptance-flow.spec.ts, and parentMfa.spec.ts
-        # run in ONE invocation, the later specs begin inside an
+        # When realBackend.spec.ts, acceptance-flow.spec.ts, parentMfa.spec.ts,
+        # and optionalMfaSetup.spec.ts run in ONE invocation, later specs begin inside an
         # already-consumed window and every request came back 429: the session
         # bootstrap failed, the browser never left /login, and the symptom was
         # indistinguishable from a broken login. Measured directly from the
@@ -856,7 +865,7 @@ jobs:
         env:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: /
-          # The json reporter's own output path, overridden per run so the three
+          # The json reporter's own output path, overridden per run so the four
           # certified specs cannot overwrite each other's report (the config
           # writes test-results/real-e2e-results.json for both apps).
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-acceptance-flow.json
@@ -891,7 +900,8 @@ jobs:
         # SCOPE, and why this is not the whole e2e-real directory.
         #
         # Certified and included: realBackend.spec.ts, acceptance-flow.spec.ts,
-        # and parentMfa.spec.ts (each runs separately behind a fresh backend).
+        # parentMfa.spec.ts, and optionalMfaSetup.spec.ts (each runs separately
+        # behind a fresh backend).
         # acceptance-flow.spec.ts declares no skip site for missing fixture
         # environment (it is driven entirely by the provisioned accounts and
         # grants this job exports), so it is deterministic and excluding it would
@@ -946,13 +956,45 @@ jobs:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: /
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-parentMfa.json
-        run: npx playwright test --config=playwright.real.config.ts --project=chromium parentMfa.spec.ts
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium --trace=off --timeout=120000 parentMfa.spec.ts
       - name: Assert the Parent MFA run was not vacuously skipped, and record evidence
         if: always()
         working-directory: parent-web
         run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-parentMfa.json --label "parent-web real-browser Parent MFA E2E" --manifest-out ../backend/parent-web-mfa-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Restart the backend so the Parent MFA setup spec starts with a fresh abuse budget
+        # Keep each authenticated Parent journey on a fresh process: the shared
+        # auth-attempt limiter is intentionally not relaxed for the test suite.
+        working-directory: backend
+        run: |
+          pkill -f 'node dist/main.js' || true
+          for attempt in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          nohup node dist/main.js > backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then
+              echo "Backend restarted after ${attempt}s; its in-process abuse budget is fresh."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not come back within 30s. Log follows:"
+          cat backend.log
+          exit 1
+      - name: Run parent-web real-backend E2E -- optional Parent MFA setup and TOTP relogin (certified)
+        working-directory: parent-web
+        env:
+          VITE_PCA_DEMO_MODE: 'false'
+          VITE_PCA_API_BASE_URL: /
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-optionalMfaSetup.json
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium --trace=off --timeout=120000 optionalMfaSetup.spec.ts
+      - name: Assert the Parent MFA setup run was not vacuously skipped, and record evidence
+        if: always()
+        working-directory: parent-web
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-optionalMfaSetup.json --label "parent-web real-browser optional Parent MFA setup E2E" --manifest-out ../backend/parent-web-optional-mfa-setup-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
       - name: Restart the backend before the platform-admin suite
-        # Same reason: the platform-admin suite is a third independent consumer of
+        # Same reason: the platform-admin suite is the fifth independent consumer of
         # the same per-IP 'auth-attempt' budget.
         working-directory: backend
         run: |
