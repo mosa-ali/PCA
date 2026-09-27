@@ -5,16 +5,16 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 21:11 UTC
-LOCAL_HEAD = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
-REMOTE_HEAD = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
-CURRENT_CHECKPOINT_SHA = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
+LAST_UPDATED_UTC = 2026-09-27 21:16 UTC
+LOCAL_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
+REMOTE_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
+CURRENT_CHECKPOINT_SHA = a76aacae1710a7ff2fdc37788b0a291b3220decd  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent repairs and reruns real-backend acceptance login under exact-head CI; then resolve remaining Parent MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
+NEXT_ACTION = Keep Agents 6/7 held while Parent runs exact-head Quality Gates `36351084552` for the browser-grant correction; then resolve remaining Parent MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
 
-This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, and latest ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`. Exact-head Quality Gates run `36350073129` failed only real-backend browser E2E; 26 jobs passed.
+This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, and daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`. Exact-head Quality Gates run `36351084552` is queued; no PASS is inferred.
 
 ### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed
 
@@ -349,3 +349,9 @@ NEXT_ACTION = Publish and inspect exact-head CI; retain Platform HOLD_PARENT_DEP
 PARENT_CI = Exact-head run `36350073129` at `0daf6600` completed FAILED with 26 jobs passing and only real-backend browser E2E failing. Parent traced the two login failures to omitted disposable daily browser grants; a local fix is pending review and publication.
 PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
 NEXT_ACTION = Keep Platform Enrollment held through the next exact-head Parent CI result and all other Parent acceptance gates.
+
+### 2026-09-27 21:16 UTC — Parent daily browser-grant correction published
+
+PARENT_CHECKPOINT = `a76aacae1710a7ff2fdc37788b0a291b3220decd` pushed and verified; exact-head Quality Gates run `36351084552` queued. Parent E2E correction now installs the fixture's primary and secondary browser grants before login. CI confirmation is pending.
+PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
+NEXT_ACTION = Monitor Parent CI and keep Enrollment held until Parent activation gates, projection, TODO-18, and literal localhost acceptance pass.

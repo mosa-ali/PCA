@@ -5,15 +5,15 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 21:11 UTC
-LOCAL_HEAD = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
-REMOTE_HEAD = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
-CURRENT_CHECKPOINT_SHA = 0daf66008a801e5006c16130ae9f1adb052bd1f4  
+LAST_UPDATED_UTC = 2026-09-27 21:16 UTC
+LOCAL_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
+REMOTE_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
+CURRENT_CHECKPOINT_SHA = a76aacae1710a7ff2fdc37788b0a291b3220decd  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Fix the certified real-backend acceptance flow's missing daily browser-grant setup, publish with both ledgers, and monitor exact-head CI. Continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Monitor exact-head Quality Gates run `36351084552` for the real-backend acceptance-flow browser-grant fix; address any remaining failures, then continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
-The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; latest ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`. Exact-head run `36350073129` at `0daf6600` failed only the real-backend browser E2E job; 26 jobs passed. The E2E error mapping and local retry are appended below.
+The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`. Exact-head run `36351084552` at `a76aacae` is queued; no PASS is inferred.
 
 ### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed and verified
 
@@ -554,3 +554,11 @@ LOCAL_VALIDATION = Backend build PASS; bounded TODO-14 route/action campaign PAS
 PARENT_FIX = Acceptance-flow UI login and both API logins now attach the fixture's primary/secondary daily browser-grant cookie before authenticating; required grant variables fail closed with the other fixture prerequisites. The correction is local and pending review/publication and a new exact-head run.
 TODO20 = Owner authorization remains active. No live DB/grants inspected or mutated; full schema equivalence and verified `pca_pro` target/preflight remain open.
 NEXT_ACTION = Review, publish, and validate the E2E grant fix; retain all TODO-20 fail-closed gates and continue the same goal after CI.
+
+### 2026-09-27 21:16 UTC — daily browser-grant E2E correction published
+
+CHECKPOINT = `a76aacae1710a7ff2fdc37788b0a291b3220decd` fast-forward pushed to `origin/pca-dev`; post-push fetch, tracking ref, and remote branch SHA agree. Commit contains the acceptance-flow real-backend spec and both updated master TODO files.
+CI = Exact-head Quality Gates run `36351084552` is queued at this SHA. The prior `36350073129` run completed with 26 jobs passed and one real-backend E2E job failed because the acceptance-flow login omitted its disposable daily browser grants.
+LOCAL_VALIDATION = Parent Web typecheck/lint PASS and acceptance-flow Playwright collection PASS (two tests listed); backend build and TODO-14 route/action suite PASS 154/154 under `NODE_ENV=test`. Real-browser assertions await CI.
+TODO20 = Authorization remains active. No live database/grants inspected or mutated; exact MySQL 8.4 schema equivalence and verified live target remain open.
+NEXT_ACTION = Inspect `36351084552` to completion and continue the same mission from the next executable Parent TODO; Platform remains on HOLD_PARENT_DEPENDENCY.
