@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 23:21 UTC
-LOCAL_HEAD = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (TODO-20 migration checkpoint; ledger sync and publication pending)
-REMOTE_HEAD = 399304c080e82c36719e4d5bf34953444181ecb8 (last fetched and verified)
-CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29
+LAST_UPDATED_UTC = 2026-09-27 23:26 UTC
+LOCAL_HEAD = 2fa1995cd2210a1c6275fa2b52e37ebffc122051
+REMOTE_HEAD = 2fa1995cd2210a1c6275fa2b52e37ebffc122051 (fresh fetch and GitHub ref match)
+CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (source migration checkpoint; ledger sync `2fa1995c`)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 (0059 exact-head CI plus final live schema/grant reconciliation)
-NEXT_ACTION = Publish this 0059 checkpoint with both updated master ledgers, verify remote equality, and inspect exact-head CI. If CI passes, repeat live preflight immediately before applying 0059 to `pca_pro`; compare exact schema, data row counts, and grants, then continue the same TODO board. Keep schedule-policy/Web Rules fail-closed.
+NEXT_ACTION = Inspect exact-head Quality Gates run `36358651535` for published SHA `2fa1995c`; after it passes on the final ledger-sync head, repeat live preflight immediately before applying 0059 to `pca_pro`, compare exact schema, data row counts, and grants, then continue the same TODO board. Keep schedule-policy/Web Rules fail-closed.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -646,5 +646,5 @@ NEXT_ACTION = Run and inspect the fresh live preflight; if target, schema journa
 SOURCE = Local commit `fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29` adds additive/corrective migration 0059 for the two proven literal-charset drifts, updates canonical schema from local MySQL 8.4.11 SHOW CREATE output, and regenerates schema/bootstrap artifacts. No business-row DML or seeds are in 0059.
 LOCAL = MySQL 8.4.11 from-zero gate passed at 57 migrations. Focused upgrade-safety suite passed 3/3 after simulating historical cp850 check clauses; both checks remain enforced, the ticket row count is unchanged, and migration replay is stable. Parent DB target passed 61/0/3 expected skip; Platform Admin DB target passed 11/11. Initial broad-suite attempts caught and corrected a test expectation about MySQL’s stored purpose literal (`_ascii`) versus the hash literal (`_utf8mb4`); the focused final regression passes.
 LIVE = `pca_pro` already applied 0051–0058 after fresh preflight. Postflight journal=56 and schema totals match repository (92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique indexes, 141 non-unique indexes, 282 checks); exact application row-count comparison passed for 90 readable tables; runtime grants are exact 92/92. The 0059 two-check reconciliation has not been applied live.
-GATE = Exact-head CI for `fbba783d` and publication are pending. No live work before exact-head CI PASS and a fresh immediate preflight. Preserve NO_SEED_DATA=YES and DATA_LOSS=0.
-NEXT_ACTION = Commit/push this ledger update with the source checkpoint, verify remote equality and exact-head CI, then apply/verify 0059 live under the existing authorization and continue the same TODO board.
+GATE = Source `fbba783d` plus ledger sync `2fa1995c` are pushed; fresh fetch/local/remote heads match, and the five required remote paths are present. Exact-head Quality Gates run `36358651535` is QUEUED at `2fa1995c`; live 0059 remains held until the latest ledger-sync SHA passes CI and a fresh immediate preflight succeeds.
+NEXT_ACTION = Record run `36358651535` outcome, complete any required final-ledger sync, then apply/verify 0059 live only after exact-head CI PASS and fresh preflight; continue the same TODO board.
