@@ -5,15 +5,22 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 20:54 UTC
-LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-CURRENT_CHECKPOINT_SHA = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
+LAST_UPDATED_UTC = 2026-09-27 20:58 UTC
+LOCAL_HEAD = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
+REMOTE_HEAD = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
+CURRENT_CHECKPOINT_SHA = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Integrate the evidenced workflow/database-lifecycle and Viewer-fixture corrections, publish them with both ledger updates, then monitor a fresh exact-head Quality Gates run. Run `36348596733` confirmed Parent Web demo-browser E2E PASS but failed database fixture/certification setup and one Viewer component case. Continue TODO-12/14/17; keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Monitor exact-head Quality Gates run `36349986015` for checkpoint `1949ead0`; resolve any remaining CI failures, then continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
-The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`. Quality Gates run `36348596733` at `47d564c4` failed; the earlier run `36348261937` at `0ba4c0d8` was cancelled when the ledger sync superseded it. No current checkpoint CI result is PASS.
+The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`. Quality Gates run `36349986015` at `1949ead0` is queued; no current checkpoint CI result is PASS.
+
+### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed and verified
+
+CHECKPOINT = `1949ead054ae93b30fbd7c69dd4e41649b50bdbc` pushed fast-forward to `origin/pca-dev`; fresh fetch, local HEAD, origin tracking ref, and `git ls-remote` all agree. Commit contains exactly the workflow, backend package/runner, Viewer component test, and both mission ledgers.
+CI = Exact-head Quality Gates run `36349986015` is queued at this SHA. Local evidence remains syntax PASS, 14/14 structural/resumability tests PASS, Parent Web typecheck PASS, and lint PASS; CI/browser component execution has not yet been proven.
+TODO20 = Full owner authorization remains recorded. No live `pca_pro`/grant inspection or mutation occurred; exact MySQL 8.4 schema equivalence and verified live target/preflight remain open.
+NEXT_ACTION = Inspect run `36349986015` to completion and continue the same Parent mission from the earliest unfinished TODO. Preserve the Platform dependency hold.
 
 ## Final Architecture
 

@@ -5,16 +5,22 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 20:54 UTC
-LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-CURRENT_CHECKPOINT_SHA = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
+LAST_UPDATED_UTC = 2026-09-27 20:58 UTC
+LOCAL_HEAD = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
+REMOTE_HEAD = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
+CURRENT_CHECKPOINT_SHA = 1949ead054ae93b30fbd7c69dd4e41649b50bdbc  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent publishes corrections for exact-head run `36348596733`, then resolves MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
+NEXT_ACTION = Keep Agents 6/7 held while exact-head Quality Gates run `36349986015` validates Parent checkpoint `1949ead0`; then resolve remaining Parent MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
 
-This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, and ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`. Exact-head Quality Gates run `36348596733` failed; no CI PASS is inferred.
+This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, and corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`. Exact-head Quality Gates run `36349986015` is queued; no CI PASS is inferred.
+
+### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed
+
+PARENT_CHECKPOINT = `1949ead054ae93b30fbd7c69dd4e41649b50bdbc` pushed fast-forward and verified by fetch plus remote branch SHA. Both ledgers were updated with the current checkpoint and queued exact-head Quality Gates run `36349986015`.
+PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
+NEXT_ACTION = Monitor Parent CI and maintain the dependency hold until Parent activation gates, projection, TODO-18, and literal localhost acceptance pass.
 
 ## Parent Dependency
 
