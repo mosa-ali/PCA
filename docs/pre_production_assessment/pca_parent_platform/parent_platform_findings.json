@@ -1,0 +1,138 @@
+{
+  "register": "parent_platform_findings",
+  "baseline": "worktree D:\\PCA\\pca-app 2026-09-26; local 6a2cc073; origin/pca-dev 9496fb19; LOCAL_REMOTE_EQUAL=False; read-only assessment (0 source/db/production/git mutations)",
+  "counts": {
+    "PARENT": { "P0": 0, "P1": 1, "P2": 2, "P3": 2 },
+    "PLATFORM": { "P0": 0, "P1": 0, "P2": 2, "P3": 1 }
+  },
+  "findings": [
+    {
+      "id": "PP-F01",
+      "application": "PARENT",
+      "area": "device enrollment (link + QR) / client configuration",
+      "files": [
+        "parent-web/src/config/env.ts:79",
+        "parent-web/src/pages/family/devices/enrollmentState.tsx:191-192",
+        "parent-web/src/pages/family/devices/AddDeviceWizard.tsx:560-586",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentLinkParser.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentDeepLinkConfig.kt:30,47"
+      ],
+      "severity": "P1",
+      "category": "PRODUCTION_CONFIGURATION",
+      "root_layer": "MULTI_LAYER",
+      "evidence": [
+        "env var VITE_PCA_DEVICE_ENROLLMENT_LINK_BASE_URL appears ONLY in env.ts (absent from .env.example, docs, CI)",
+        "LIVE production bundle https://parent.pcasafe.com/assets/index-pwh0Qt3P.js contains deviceEnrollmentLinkBaseUrl:\"http://localhost:4000/enroll\" as the active value",
+        "Android EnrollmentLinkParser accepts pca://enroll?token=... or https://<APP_LINK_HOST>/<token>; APP_LINK_HOST = enroll.pca.app (placeholder domain)"
+      ],
+      "current_behavior": "Every production enrollment link/QR is http://localhost:4000/enroll/<token> — unresolvable on any device and unmatchable by the Android App-Link parser.",
+      "expected_behavior": "A working production enrollment URL matching the deep-link contract (fallback-code and pairing paths remain the only working mechanisms today).",
+      "android_impact": "Enrollment QR/deep-link path cannot work in production; APP_LINK_HOST is a placeholder dependency.",
+      "ios_impact": "None (iOS minting refused by decision per API assessment).",
+      "blocks_pre_production": true,
+      "blocks_production": true,
+      "recommended_fix": "Add a production guard like apiBaseUrl's, document the variable, set it to the parent origin, and decide/provision the canonical Android host (DNS + assetlinks).",
+      "owner": "parent-web + Android + deployment",
+      "api_finding_id": null
+    },
+    {
+      "id": "PP-F02",
+      "application": "BOTH",
+      "area": "anti-abuse / rate limiting",
+      "files": ["backend/src/http/clientAddress.ts", "backend/src/http/trustProxyConfig.ts", "backend/src/http/rateLimit.ts"],
+      "severity": "P2",
+      "category": "PRODUCTION_CONFIGURATION",
+      "root_layer": "PRODUCTION_CONFIGURATION",
+      "evidence": [
+        "RECORDED 2026-09-24 live A/B: request.ip resolves to a platform hop; per-IP buckets never engage (10x401, no 429; second client unaffected); PCA_TRUSTED_PROXY_CIDRS lists private CIDRs only",
+        "API assessment R-01 (same root cause); per-email keying exact where used (login 10/email/15min proven live)"
+      ],
+      "current_behavior": "Per-IP rate limits ineffective in production for parent login/step-up and platform login/activation; per-email keys and server lockouts still bound abuse.",
+      "expected_behavior": "Limits key on the real client address (trust the front-end chain or use its client-IP header).",
+      "android_impact": "None.",
+      "ios_impact": "None.",
+      "blocks_pre_production": false,
+      "blocks_production": true,
+      "recommended_fix": "Extend trusted-proxy configuration to the Azure front-end chain; re-run the two-client live A/B validation.",
+      "owner": "deployment + backend",
+      "api_finding_id": "R-01 (API assessment risk)"
+    },
+    {
+      "id": "PP-F03",
+      "application": "BOTH",
+      "area": "release identity / deployment provenance",
+      "files": ["git worktree state", "backend/migrations/0051..0054 (untracked)", "docs/deployment/*"],
+      "severity": "P2",
+      "category": "RELEASE_PROCESS",
+      "root_layer": "PRODUCTION_CONFIGURATION",
+      "evidence": [
+        "LOCAL_HEAD 6a2cc073 != origin/pca-dev 9496fb19 (AHEAD=1); 194-line dirty worktree",
+        "live shells dated 2026-09-25 (parent 17:55Z, platform 22:12Z); no SHA/digest surface on either site",
+        "migrations 0051-0054 untracked; deployed-schema vs source reconciliation unproven"
+      ],
+      "current_behavior": "Live revisions cannot be proven equal to any assessed SHA; deployed schema state unknown relative to untracked migrations.",
+      "expected_behavior": "Digest + source SHA recorded per deploy; acceptance pinned to one revision.",
+      "android_impact": "None directly.",
+      "ios_impact": "None directly.",
+      "blocks_pre_production": true,
+      "blocks_production": true,
+      "recommended_fix": "Publish digest<->SHA evidence; land or park the in-flight lanes; commit/park 0051-0054 explicitly.",
+      "owner": "deployment + migration lane",
+      "api_finding_id": null
+    },
+    {
+      "id": "PP-F04",
+      "application": "BOTH",
+      "area": "edge / security headers",
+      "files": ["nginx configs", "index.html meta CSP templates (both apps)"],
+      "severity": "P3",
+      "category": "HARDENING",
+      "root_layer": "PRODUCTION_CONFIGURATION",
+      "evidence": [
+        "LIVE: no strict-transport-security on either domain",
+        "parent serves CSP via meta only (no header); both meta CSPs contain frame-ancestors 'none' which browsers ignore from meta",
+        "observed console error per page load: \"The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element.\"",
+        "XFO DENY + nosniff + referrer/permissions policies + COOP present on both"
+      ],
+      "current_behavior": "Advisory gaps only; clickjacking still covered by XFO; CSP still enforced via meta.",
+      "expected_behavior": "HSTS enabled; parent CSP promoted to a response header; frame-ancestors removed from meta.",
+      "android_impact": "None.",
+      "ios_impact": "None.",
+      "blocks_pre_production": false,
+      "blocks_production": false,
+      "recommended_fix": "Add HSTS + parent CSP header; drop frame-ancestors from meta.",
+      "owner": "deployment/nginx",
+      "api_finding_id": null
+    },
+    {
+      "id": "PP-F05",
+      "application": "PARENT",
+      "area": "test stability",
+      "files": ["parent-web/tests/component/DeviceEnrollmentSections.test.tsx"],
+      "severity": "P3",
+      "category": "TEST_STABILITY",
+      "root_layer": "PARENT_SOURCE",
+      "evidence": [
+        "full-suite runs: 1 failure under contention (two consecutive runs), with --testTimeout=30000; passes 24/24 in isolation x3",
+        "sibling load-sensitive tests (ParentGuide axe, noDirectLocaleFormatting) pass in isolation",
+        "repo ruling: LOCAL_FULL_PARENT_SUITE = INDETERMINATE_RESOURCE_CONTENTION; CI shards parent suite x8"
+      ],
+      "current_behavior": "Local full-suite noise only; no product behavior implication found.",
+      "expected_behavior": "Stable pass under load or explicitly longer timeout.",
+      "android_impact": "None.",
+      "ios_impact": "None.",
+      "blocks_pre_production": false,
+      "blocks_production": false,
+      "recommended_fix": "Deterministic timing or explicit longer timeout; or keep CI as authority per existing ruling.",
+      "owner": "parent-web tests",
+      "api_finding_id": null
+    }
+  ],
+  "non_findings_checked_clean": [
+    "Demo/fixture production risk: NONE (both apps; build-time gate + CI negative control)",
+    "Web Protection authoring 503: intentional fail-closed with honest UI (product-completion item)",
+    "Client privilege assumptions: none (server authority everywhere)",
+    "Cross-app config collapse (PCA-ADD-PA-001): none",
+    "Open redirects / token-in-storage / secret logging: none found"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "register": "parent_platform_release_gates",
+  "baseline": "worktree D:\\PCA\\pca-app 2026-09-26; read-only assessment",
+  "vocabulary": ["PASS", "PARTIAL", "FAIL", "BLOCKED_EXTERNAL", "UNPROVEN"],
+  "parent": {
+    "SOURCE": "PARTIAL", "BUILD": "PASS", "TYPECHECK": "PASS", "LINT": "PASS", "TESTS": "PASS",
+    "AUTH": "PASS", "SESSION": "PASS", "API_CONTRACT": "PASS", "FAMILY_STATE": "PASS",
+    "ERROR_HANDLING": "PASS", "ARABIC": "PASS", "RESPONSIVE": "PASS",
+    "SECURITY_FRONTEND": "PARTIAL", "LIVE_DOMAIN": "PASS", "SOURCE_LIVE_MATCH": "PARTIAL",
+    "PRE_PRODUCTION": "CONDITIONAL", "PRODUCTION": "NO-GO"
+  },
+  "platform": {
+    "SOURCE": "PASS", "BUILD": "PASS", "TYPECHECK": "PASS", "LINT": "PASS", "TESTS": "PASS",
+    "AUTH": "PASS", "MFA": "PARTIAL", "RBAC_CLIENT_BEHAVIOR": "PASS", "API_CONTRACT": "PASS",
+    "ERROR_HANDLING": "PASS", "LOCALIZATION": "PASS", "SECURITY_FRONTEND": "PARTIAL",
+    "LIVE_DOMAIN": "PASS", "SOURCE_LIVE_MATCH": "PARTIAL",
+    "PRE_PRODUCTION": "CONDITIONAL", "PRODUCTION": "NO-GO"
+  },
+  "shared_external_gates": [
+    { "gate": "OWNER_PLATFORM_ACTIVATION", "value": "BLOCKED_EXTERNAL", "basis": "recovery runbook ready; owner required (R-PP-01)" },
+    { "gate": "ANDROID_APP_LINK_HOST", "value": "BLOCKED_EXTERNAL", "basis": "enroll.pca.app placeholder domain; DNS/assetlinks needed (R-PP-02)" },
+    { "gate": "CRYPTO_REVIEW", "value": "BLOCKED_EXTERNAL", "basis": "PCA-DEC-020 lineage; gates device-session crypto features (R-PP-03)" },
+    { "gate": "NATIVE_ARABIC_SIGNOFF", "value": "EXTERNAL", "basis": "unchanged; review notes doc exists" },
+    { "gate": "REAL_EMAIL_DELIVERY", "value": "NOT_EXECUTED", "basis": "out of read-only scope" },
+    { "gate": "REPO_WORKTREE_GREEN", "value": "OPEN", "basis": "API-F01 (16 backend failures) + R-PP-05" },
+    { "gate": "DEPLOYMENT_PROVENANCE", "value": "UNPROVEN", "basis": "PP-F03" }
+  ]
+}

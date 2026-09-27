@@ -1,0 +1,83 @@
+{
+  "register": "api_release_gates",
+  "baseline": "worktree of D:\\PCA\\pca-app 2026-09-26",
+  "gates": [
+    {
+      "id": "API_GATE_CRYPTO_REVIEW", "state": "BLOCKED_EXTERNAL",
+      "what": "PCA-DEC-020 human security review that authorizes a real device-signature verifier and (later) envelope decrypt.",
+      "evidence": ["backend/src/main.ts:363 comment PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW"],
+      "blocks": ["device sessions", "both mobile platforms end-to-end", "physical-device UAT of sync/enrollment"],
+      "owner": "owner / external reviewer"
+    },
+    {
+      "id": "API_GATE_VERIFIER_WIRING_SLICE", "state": "PENDING_DEPENDENCY",
+      "what": "Land P256DeviceSignatureVerifier wiring + durable device sessions + session revocation as one slice after the review.",
+      "evidence": ["P256DeviceSignatureVerifier.ts:13-16 unwired", "API-F02", "API-F03"],
+      "blocks": ["safe UAT start", "production"],
+      "owner": "backend"
+    },
+    {
+      "id": "API_GATE_DEENROLLMENT_CONTRACT", "state": "OPEN",
+      "what": "Define device-initiated unenrollment + session revocation semantics; wire or explicitly record absence.",
+      "evidence": ["API-F03", "API-F04"],
+      "blocks": ["production de-enrollment journeys"],
+      "owner": "product + backend"
+    },
+    {
+      "id": "API_GATE_WORKTREE_GREEN", "state": "OPEN",
+      "what": "Current worktree must land green (full unit suite + CI) on a frozen revision before acceptance.",
+      "evidence": ["API-F01", "report 10 section 3"],
+      "blocks": ["pre-production acceptance", "CI merges"],
+      "owner": "coordinator + concurrent lanes"
+    },
+    {
+      "id": "API_GATE_TRUSTED_PROXY_CONFIG", "state": "UNVERIFIED",
+      "what": "Confirm PCA_TRUSTED_PROXY_CIDRS in production so per-IP limits key on the client address.",
+      "evidence": ["R-01", "trustProxyConfig.ts:80-107"],
+      "blocks": ["rate-limit correctness"],
+      "owner": "owner / ops"
+    },
+    {
+      "id": "API_GATE_DEPLOY_IDENTITY", "state": "UNPROVEN",
+      "what": "No revision surface on live API; provide digest<->SHA deployment evidence for api.pcasafe.com.",
+      "evidence": ["report 09 section 4", "docs/deployment/DOCKER_AZURE_SUPPORT_REVIEW.md:431"],
+      "blocks": ["source<->live revision proof"],
+      "owner": "owner / deployment"
+    },
+    {
+      "id": "API_GATE_OBSERVABILITY", "state": "OPEN",
+      "what": "Durable request/error logging + security-event audit for enrollment/device flows.",
+      "evidence": ["API-F05"],
+      "blocks": ["production operability"],
+      "owner": "backend"
+    },
+    {
+      "id": "API_GATE_POLICY_READBACK", "state": "OPEN",
+      "what": "Version/cursor/delivery-state for policy relay (delivered vs applied).",
+      "evidence": ["API-F06"],
+      "blocks": ["multi-device rollout verification"],
+      "owner": "backend"
+    },
+    {
+      "id": "API_GATE_WEBRULES_DECISION", "state": "OPEN",
+      "what": "web-rules scaffold: remove or replace with encrypted storage/delivery.",
+      "evidence": ["API-F07"],
+      "blocks": ["web-rule feature"],
+      "owner": "backend + product"
+    },
+    {
+      "id": "API_GATE_PHYSICAL_DEVICES", "state": "BLOCKED_EXTERNAL",
+      "what": "Physical device availability + signed builds + runner registration (from the mobile programme).",
+      "evidence": ["mobile assessment reports 11/12"],
+      "blocks": ["device UAT"],
+      "owner": "owner"
+    },
+    {
+      "id": "API_GATE_EDGE_HEADERS", "state": "UNVERIFIED",
+      "what": "Confirm edge security-header policy (HSTS etc.) for api.pcasafe.com.",
+      "evidence": ["R-07", "report 09 section 2"],
+      "blocks": [],
+      "owner": "owner / ops"
+    }
+  ]
+}

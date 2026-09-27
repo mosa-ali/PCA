@@ -1,0 +1,76 @@
+{
+  "register": "parent_platform_risks",
+  "baseline": "worktree D:\\PCA\\pca-app 2026-09-26; read-only assessment",
+  "risks": [
+    {
+      "risk_id": "R-PP-01",
+      "application": "PLATFORM",
+      "area": "owner/external gate",
+      "description": "Production Platform Admin activation + MFA have never been completed live (PENDING_ACTIVATION; MFA_COMPLETED=0 as of 2026-09-24; S7 lockout test never run). Real MFA UAT cannot start without the owner.",
+      "likelihood": "HIGH", "impact": "HIGH", "rating": "HIGH",
+      "evidence": ["repo session records 2026-09-24 (owner state read via sidecar)", "recovery runbook ready; live login page verified rendering"],
+      "mitigation": "Owner executes recovery runbook; then S4-S7 sequence with recorded evidence.",
+      "blocks_pre_production": true, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-02",
+      "application": "PARENT+ANDROID",
+      "area": "multi-layer dependency",
+      "description": "Enrollment deep-link alignment: fixing the web base alone is insufficient - Android APP_LINK_HOST = enroll.pca.app (placeholder domain, no assetlinks/DNS).",
+      "likelihood": "HIGH", "impact": "MEDIUM", "rating": "HIGH",
+      "evidence": ["EnrollmentDeepLinkConfig.kt:30,47", "PP-F01 live bundle extraction"],
+      "mitigation": "Decide canonical host; DNS + assetlinks + manifest; set web env var; E2E on a real device.",
+      "blocks_pre_production": true, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-03",
+      "application": "PARENT",
+      "area": "external gate (crypto review)",
+      "description": "The crypto-review gate (PCA-DEC-020 lineage) still governs device-session crypto features the console surfaces depend on; fail-closed server = honest but feature-limited console.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["API assessment reports 05/07", "API-F02/F03"],
+      "mitigation": "Track gate exit slice (P256 verifier + durable sessions + revocation) as one package.",
+      "blocks_pre_production": false, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-04",
+      "application": "BOTH",
+      "area": "production configuration",
+      "description": "Rate-limit correction risk: if the trusted-proxy fix lands without an A/B re-test, limits may remain bypassable or start 429-ing legitimate clients behind a shared hop.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["PP-F02"],
+      "mitigation": "Apply fix with the proven two-client live A/B check.",
+      "blocks_pre_production": false, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-05",
+      "application": "BOTH",
+      "area": "process/migrations",
+      "description": "Untracked migrations 0051-0054 (+ modified 0050) in the dirty worktree; environment drift if any deploy applies them (or diverges).",
+      "likelihood": "MEDIUM", "impact": "HIGH", "rating": "HIGH",
+      "evidence": ["git status 2026-09-26", "migrations list"],
+      "mitigation": "Land or explicitly park the migration lane; record applied-migration state; never deploy untracked DDL.",
+      "blocks_pre_production": true, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-06",
+      "application": "BOTH",
+      "area": "dependency (API assessment)",
+      "description": "Carried API items (in-memory device sessions, no session revocation, no unenroll, audit gaps, no policy read-back, post-commit 500) weaken production qualities the consoles report on.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["API assessment reports 12-15 (API-F02..F08)"],
+      "mitigation": "Sequence per API roadmap; console copy already avoids over-claiming.",
+      "blocks_pre_production": false, "blocks_production": true
+    },
+    {
+      "risk_id": "R-PP-07",
+      "application": "PARENT",
+      "area": "product journey",
+      "description": "No family-creation UI exists in the current console (Genesis superseded); onboarding depends on invitation/platform provisioning. If that is not the intended journey, first-family setup is an unbuilt product path.",
+      "likelihood": "MEDIUM", "impact": "HIGH", "rating": "HIGH",
+      "evidence": ["0 genesis refs in parent-web source AND live bundle; DEC-037 commit f66e0e28"],
+      "mitigation": "Owner confirms the intended provisioning journey; scope UI if required.",
+      "blocks_pre_production": true, "blocks_production": true
+    }
+  ]
+}

@@ -1,0 +1,680 @@
+{
+  "register": "platform_api_contract_matrix",
+  "baseline": "worktree 2026-09-26; local 6a2cc073; origin/pca-dev 9496fb19; read-only assessment",
+  "summary": "53/53 client calls matched; 0 unmatched; every backend route session-guarded; live 401 denial verified through the same-origin proxy",
+  "rows": [
+    {
+      "client_call_path": "/platform-admin/accounts",
+      "client_sites": [
+        "AccountsList.tsx:46",
+        "Entitlements.tsx:47"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts/resolve-parent-email",
+        "/platform-admin/accounts",
+        "/platform-admin/accounts/search",
+        "/platform-admin/accounts/:accountId",
+        "/platform-admin/accounts/:accountId/identity",
+        "/platform-admin/accounts/:accountId/suspend",
+        "/platform-admin/accounts/:accountId/reactivate"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/accounts/${encodeURIComponent(account.familyId)}/reactivate",
+      "client_sites": [
+        "AccountDetail.tsx:90"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts",
+        "/platform-admin/accounts/:accountId",
+        "/platform-admin/accounts/:accountId/reactivate"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/accounts/${encodeURIComponent(account.familyId)}/suspend",
+      "client_sites": [
+        "AccountDetail.tsx:77"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts",
+        "/platform-admin/accounts/:accountId",
+        "/platform-admin/accounts/:accountId/suspend"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/accounts/${encodeURIComponent(id)}",
+      "client_sites": [
+        "AccountDetail.tsx:35"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts",
+        "/platform-admin/accounts/:accountId",
+        "/platform-admin/accounts/:accountId/identity",
+        "/platform-admin/accounts/:accountId/suspend",
+        "/platform-admin/accounts/:accountId/reactivate"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/accounts/resolve-parent-email",
+      "client_sites": [
+        "ParentEmailFamilyLookup.tsx:83"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts/resolve-parent-email",
+        "/platform-admin/accounts"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/accounts/search",
+      "client_sites": [
+        "AccountsList.tsx:36",
+        "Entitlements.tsx:46"
+      ],
+      "backend_routes": [
+        "/platform-admin/accounts",
+        "/platform-admin/accounts/search"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/activation/complete",
+      "client_sites": [
+        "platformAdminActivationClient.ts:12"
+      ],
+      "backend_routes": [
+        "/platform-admin/activation/complete"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/activation/start",
+      "client_sites": [
+        "platformAdminActivationClient.ts:11"
+      ],
+      "backend_routes": [
+        "/platform-admin/activation/start"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users",
+      "client_sites": [
+        "AdminUsers.tsx:299",
+        "AdminUsers.tsx:42"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/activation",
+        "/platform-admin/admin-users/:adminId/mfa/enrollment",
+        "/platform-admin/admin-users/:adminId/mfa/activate",
+        "/platform-admin/admin-users/:adminId/roles",
+        "/platform-admin/admin-users/:adminId/disable",
+        "/platform-admin/admin-users/:adminId/reactivate",
+        "/platform-admin/admin-users/:adminId/sessions/revoke-all"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/activation",
+      "client_sites": [
+        "AdminUsers.tsx:185"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/activation"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/disable",
+      "client_sites": [
+        "AdminUsers.tsx:127"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/disable"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/mfa/activate",
+      "client_sites": [
+        "AdminUsers.tsx:167"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/mfa/activate"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/mfa/enrollment",
+      "client_sites": [
+        "AdminUsers.tsx:148"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/mfa/enrollment"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/reactivate",
+      "client_sites": [
+        "AdminUsers.tsx:133"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/reactivate"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/roles",
+      "client_sites": [
+        "AdminUsers.tsx:115",
+        "AdminUsers.tsx:121"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/roles"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/sessions/revoke-all",
+      "client_sites": [
+        "AdminUsers.tsx:139"
+      ],
+      "backend_routes": [
+        "/platform-admin/admin-users",
+        "/platform-admin/admin-users/:adminId",
+        "/platform-admin/admin-users/:adminId/sessions/revoke-all"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/audit",
+      "client_sites": [
+        "Audit.tsx:53"
+      ],
+      "backend_routes": [
+        "/platform-admin/audit"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/disputes",
+      "client_sites": [
+        "BillingPayments.tsx:120"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/disputes",
+        "/platform-admin/billing/disputes/:disputeId",
+        "/platform-admin/billing/disputes/:disputeId/evidence",
+        "/platform-admin/billing/disputes/:disputeId/resolve"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/invoices",
+      "client_sites": [
+        "BillingInvoices.tsx:45"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/invoices"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/payment-attempts",
+      "client_sites": [
+        "BillingPayments.tsx:117"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/payment-attempts"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/payment-transactions",
+      "client_sites": [
+        "BillingPayments.tsx:118"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/payment-transactions"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/plans",
+      "client_sites": [
+        "BillingPlans.tsx:105",
+        "BillingPlans.tsx:50",
+        "BillingPlans.tsx:65"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/plans",
+        "/platform-admin/billing/plans/:planCode"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/price-book",
+      "client_sites": [
+        "BillingPricing.tsx:102",
+        "BillingPricing.tsx:42",
+        "BillingPricing.tsx:54"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/price-book"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/refunds",
+      "client_sites": [
+        "BillingPayments.tsx:119"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/refunds"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/billing/subscriptions",
+      "client_sites": [
+        "BillingInvoices.tsx:45"
+      ],
+      "backend_routes": [
+        "/platform-admin/billing/subscriptions",
+        "/platform-admin/billing/subscriptions/:subscriptionId/cancel"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/complimentary-capacity",
+      "client_sites": [
+        "ComplimentaryCapacity.tsx:71"
+      ],
+      "backend_routes": [
+        "/platform-admin/complimentary-capacity"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/complimentary-grants/${encodeURIComponent(grantId)}/renew",
+      "client_sites": [
+        "ComplimentaryCapacity.tsx:201"
+      ],
+      "backend_routes": [
+        "/platform-admin/complimentary-grants/:grantId/renew"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/complimentary-grants/${encodeURIComponent(grantId)}/revoke",
+      "client_sites": [
+        "ComplimentaryCapacity.tsx:180"
+      ],
+      "backend_routes": [
+        "/platform-admin/complimentary-grants/:grantId/revoke"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/dashboard",
+      "client_sites": [
+        "Dashboard.tsx:74"
+      ],
+      "backend_routes": [
+        "/platform-admin/dashboard"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/entitlement-requests",
+      "client_sites": [
+        "EntitlementRequests.tsx:145"
+      ],
+      "backend_routes": [
+        "/platform-admin/entitlement-requests",
+        "/platform-admin/entitlement-requests/:requestId",
+        "/platform-admin/entitlement-requests/:requestId/approve-parent-member",
+        "/platform-admin/entitlement-requests/:requestId/deny",
+        "/platform-admin/entitlement-requests/:requestId/quote"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/entitlement-requests/${encodeURIComponent(requestId)}/approve-parent-member",
+      "client_sites": [
+        "EntitlementRequests.tsx:197"
+      ],
+      "backend_routes": [
+        "/platform-admin/entitlement-requests",
+        "/platform-admin/entitlement-requests/:requestId",
+        "/platform-admin/entitlement-requests/:requestId/approve-parent-member"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/entitlement-requests/${encodeURIComponent(requestId)}/deny",
+      "client_sites": [
+        "EntitlementRequests.tsx:98"
+      ],
+      "backend_routes": [
+        "/platform-admin/entitlement-requests",
+        "/platform-admin/entitlement-requests/:requestId",
+        "/platform-admin/entitlement-requests/:requestId/deny"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/entitlement-requests/${encodeURIComponent(requestId)}/quote",
+      "client_sites": [
+        "BillingQuotes.tsx:33",
+        "EntitlementRequests.tsx:42"
+      ],
+      "backend_routes": [
+        "/platform-admin/entitlement-requests",
+        "/platform-admin/entitlement-requests/:requestId",
+        "/platform-admin/entitlement-requests/:requestId/quote"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/families/${encodeURIComponent(familyId)}/complimentary-grants",
+      "client_sites": [
+        "ComplimentaryCapacity.tsx:148"
+      ],
+      "backend_routes": [
+        "/platform-admin/families/:familyId/complimentary-grants"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/families/${encodeURIComponent(familyId)}/entitlement/device-override",
+      "client_sites": [
+        "Entitlements.tsx:150"
+      ],
+      "backend_routes": [
+        "/platform-admin/families/:familyId/entitlement",
+        "/platform-admin/families/:familyId/entitlement/device-override"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/families/${encodeURIComponent(familyId)}/entitlement/limit",
+      "client_sites": [
+        "Entitlements.tsx:120"
+      ],
+      "backend_routes": [
+        "/platform-admin/families/:familyId/entitlement",
+        "/platform-admin/families/:familyId/entitlement/limit"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/families/${encodeURIComponent(id)}/complimentary-grants",
+      "client_sites": [
+        "ComplimentaryCapacity.tsx:95"
+      ],
+      "backend_routes": [
+        "/platform-admin/families/:familyId/complimentary-grants"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/families/${encodeURIComponent(id)}/entitlement",
+      "client_sites": [
+        "Entitlements.tsx:74"
+      ],
+      "backend_routes": [
+        "/platform-admin/families/:familyId/entitlement",
+        "/platform-admin/families/:familyId/entitlement/usage",
+        "/platform-admin/families/:familyId/entitlement/requests",
+        "/platform-admin/families/:familyId/entitlement/reservations",
+        "/platform-admin/families/:familyId/entitlement/device-override",
+        "/platform-admin/families/:familyId/entitlement/limit"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/parent-accounts/${encodeURIComponent(accountId)}/free-access/adjust",
+      "client_sites": [
+        "FreeAccessPolicy.tsx:128"
+      ],
+      "backend_routes": [
+        "/platform-admin/parent-accounts/:accountId/free-access",
+        "/platform-admin/parent-accounts/:accountId/free-access/adjust"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/parent-accounts/${encodeURIComponent(id)}/free-access",
+      "client_sites": [
+        "FreeAccessPolicy.tsx:85"
+      ],
+      "backend_routes": [
+        "/platform-admin/parent-accounts/:accountId/free-access",
+        "/platform-admin/parent-accounts/:accountId/free-access/adjust"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/quotes/pending",
+      "client_sites": [
+        "BillingQuotes.tsx:78"
+      ],
+      "backend_routes": [
+        "/platform-admin/quotes/pending"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/category/${encodeURIComponent(category)}",
+      "client_sites": [
+        "Settings.tsx:59"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/category/:category"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/currencies",
+      "client_sites": [
+        "Settings.tsx:198"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/currencies"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/free-access-defaults",
+      "client_sites": [
+        "FreeAccessPolicy.tsx:60"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/free-access-defaults"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/free-starter-defaults",
+      "client_sites": [
+        "Settings.tsx:191",
+        "Settings.tsx:229"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/free-starter-defaults"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/key/${encodeURIComponent(settingKey)}",
+      "client_sites": [
+        "Settings.tsx:91"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/key/:settingKey"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settings/market-mapping",
+      "client_sites": [
+        "Settings.tsx:199",
+        "Settings.tsx:251"
+      ],
+      "backend_routes": [
+        "/platform-admin/settings/market-mapping"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/accounts",
+      "client_sites": [
+        "SettlementAccounts.tsx:45",
+        "SettlementAccounts.tsx:66",
+        "SettlementBatches.tsx:59"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/accounts",
+        "/platform-admin/settlement/accounts/:accountId",
+        "/platform-admin/settlement/accounts/:accountId/status"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/accounts/${encodeURIComponent(account.settlementAccountId)}/status",
+      "client_sites": [
+        "SettlementAccounts.tsx:89"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/accounts",
+        "/platform-admin/settlement/accounts/:accountId",
+        "/platform-admin/settlement/accounts/:accountId/status"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/batches",
+      "client_sites": [
+        "SettlementBatches.tsx:59",
+        "SettlementBatches.tsx:99",
+        "SettlementReconciliation.tsx:41"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/batches",
+        "/platform-admin/settlement/batches/:batchId",
+        "/platform-admin/settlement/batches/:batchId/items",
+        "/platform-admin/settlement/batches/:batchId/resolve",
+        "/platform-admin/settlement/batches/:batchId/usd-normalization"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/batches/${encodeURIComponent(batch.settlementBatchId)}/items",
+      "client_sites": [
+        "SettlementBatches.tsx:128",
+        "SettlementBatches.tsx:148"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/batches",
+        "/platform-admin/settlement/batches/:batchId",
+        "/platform-admin/settlement/batches/:batchId/items"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/batches/${encodeURIComponent(batch.settlementBatchId)}/resolve",
+      "client_sites": [
+        "SettlementReconciliation.tsx:62"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/batches",
+        "/platform-admin/settlement/batches/:batchId",
+        "/platform-admin/settlement/batches/:batchId/resolve"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/platform-admin/settlement/usd-rollup",
+      "client_sites": [
+        "Dashboard.tsx:93"
+      ],
+      "backend_routes": [
+        "/platform-admin/settlement/usd-rollup"
+      ],
+      "authority": "platform-admin session; requirePlatformAdminSession guards all 93 backend routes (login adds attempt limiter)",
+      "status": "MATCH"
+    }
+  ]
+}

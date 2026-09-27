@@ -1,0 +1,47 @@
+{
+  "register": "mobile_external_gates",
+  "source": "docs/release_readiness/external_gate_matrix.json (all 39 gates open; Closed: 0)",
+  "generated_for": "PCA Application (Android + iOS) pre-production assessment",
+  "baseline": "pca-dev @ 9496fb19",
+  "mobile_gates": [
+    { "id": "ANDROID_REAL_DEVICE_UAT", "state": "BLOCKED", "blocks": "Real-hardware UAT of the Android app", "evidence": "external_gate_matrix.json:27-35" },
+    { "id": "ANDROID_APP_LINK_ASSETLINKS_HOSTING", "state": "EXTERNAL", "blocks": "App Links enrollment links (domain owner + assetlinks hosting)", "evidence": "external_gate_matrix.json:121-129" },
+    { "id": "ANDROID_PHYSICAL_INSTALL_CONTINUATION", "state": "EXTERNAL", "blocks": "Install-continuation flow on a real device + distribution path", "evidence": "external_gate_matrix.json:132-140" },
+    { "id": "ANDROID_RELEASE_SIGNING_CONFIG", "state": "EXTERNAL", "blocks": "Signed release builds (repo half closed 2026-09-08)", "evidence": "external_gate_matrix.json:445-453" },
+    { "id": "ANDROID_APP_LINK_HOST_OWNERSHIP", "state": "EXTERNAL", "blocks": "Same owned-domain requirement as assetlinks; enroll.pca.app is an unowned placeholder", "evidence": "docs/supervision/PCA_FABLE_RELEASE_ROADMAP.md:200-201" },
+    { "id": "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION", "state": "EXTERNAL", "blocks": "Device-owner authority for schedule enforcement (runtime reports UNAVAILABLE without it)", "evidence": "external_gate_matrix.json:198-206" },
+    { "id": "REAL_DEVICE_TELEPHONY_UAT", "state": "EXTERNAL", "blocks": "Telephony behavior validation", "evidence": "external_gate_matrix.json:222-230" },
+    { "id": "REAL_DEVICE_TELEPHONY_SMS_UAT", "state": "EXTERNAL", "blocks": "SMS receipt behavior validation", "evidence": "external_gate_matrix.json:233-241" },
+    { "id": "CAMERA_REAL_DEVICE_VALIDATION", "state": "EXTERNAL", "blocks": "Eye-distance camera tier on hardware", "evidence": "external_gate_matrix.json:257-265" },
+    { "id": "OEM_DEVICE_DIVERSITY_VALIDATION", "state": "EXTERNAL", "blocks": "OEM compatibility matrix", "evidence": "external_gate_matrix.json:373-381" },
+    { "id": "OFFLINE_DEVICE_INTERRUPTION_RECOVERY_VALIDATION", "state": "EXTERNAL", "blocks": "Reliability under device interruption (device lab)", "evidence": "external_gate_matrix.json:340-348" },
+    { "id": "PCA_DEC_009_DISCLOSURE_TEXT", "state": "BLOCKED", "blocks": "Named disclosure item; description ties to the device gates (reconcile with register owner)", "evidence": "external_gate_matrix.json:351-359" },
+    { "id": "IOS_MAC_XCODE", "state": "EXTERNAL", "blocks": "Any iOS build/test/signing outside CI simulators", "evidence": "external_gate_matrix.json:38-46" },
+    { "id": "IOS_FAMILY_CONTROLS_ENTITLEMENT", "state": "EXTERNAL", "blocks": "Family Controls authorization on real devices", "evidence": "external_gate_matrix.json:49-57" },
+    { "id": "IOS_PHYSICAL_DEVICE", "state": "EXTERNAL", "blocks": "On-device iOS validation (simulator cannot exercise Family Controls)", "evidence": "external_gate_matrix.json:60-68" },
+    { "id": "REQUIRES_ENTITLEMENT", "state": "EXTERNAL", "blocks": "ChildAuthorizationCenter flow until the Apple entitlement is granted", "evidence": "external_gate_matrix.json:291-299" },
+    { "id": "PARENT_WEB_ENROLLMENT_LINK_PRODUCTION_CONFIG", "state": "OPEN (production defect)", "blocks": "Link/QR-based Android enrollment: the live parent production bundle generates http://localhost:4000/enroll/<token> (PP-F01)", "evidence": "pca_parent_platform report 04 section 2 + register PP-F01; mobile finding MOB-025" },
+    { "id": "ANDROID_APP_LINK_HOST_ALIGNMENT_WITH_PARENT_WEB", "state": "EXTERNAL", "blocks": "End-to-end App-Link enrollment once both sides agree on the canonical host (enroll.pca.app is a placeholder)", "evidence": "PP-F01 + PP-F02 chain; pca_parent_platform R-PP-02; mobile finding MOB-025" },
+    { "id": "API_DEVICE_SESSION_DURABILITY_AND_REVOCATION", "state": "OPEN", "blocks": "Meaningful device UAT after the crypto gate opens (in-memory sessions die on restart; no session revocation)", "evidence": "api findings API-F02/F03 (docs/pre_production_assessment/api/12)" }
+  ],
+  "conditional_scope": [
+    { "id": "PRODUCTION_EMAIL_DELIVERY", "state": "CONDITIONAL", "evidence": "external_gate_matrix.json:419-431" },
+    { "id": "PRODUCTION_EMAIL_CREDENTIAL_ROTATION", "state": "BLOCKED", "evidence": "external_gate_matrix.json:456-473" },
+    { "id": "CLOUD_AI_OWNER_DECISION", "state": "CONDITIONAL" },
+    { "id": "YOUTUBE_*", "state": "CONDITIONAL" }
+  ],
+  "summary": {
+    "android_hard_gates": 17,
+    "ios_hard_gates": 9,
+    "ios_conditional_gates": 5,
+    "closed": 0,
+    "source_note": "EXTERNAL_GATE_MATRIX.md:16,73-75 (original external register unchanged; three cross-assessment gates appended below)"
+  },
+  "cross_assessment_update_2026_09_26": {
+    "source_assessments": ["docs/pre_production_assessment/api", "docs/pre_production_assessment/pca_parent_platform"],
+    "note": "PP-F01 expands the Android enrollment-link dependency to MULTI_LAYER (Parent Web + Android + API/security gate + deployment/domain config); API-F02/F03 add backend pre-UAT dependencies. Readiness conclusions unchanged.",
+    "appended_gates": ["PARENT_WEB_ENROLLMENT_LINK_PRODUCTION_CONFIG", "ANDROID_APP_LINK_HOST_ALIGNMENT_WITH_PARENT_WEB", "API_DEVICE_SESSION_DURABILITY_AND_REVOCATION"],
+    "final_conclusions": { "PCA_MOBILE_ASSESSMENT_FINAL_RECONCILIATION": "COMPLETE", "ORIGINAL_MOBILE_VERDICT": "NOT_READY", "FINAL_MOBILE_VERDICT": "NOT_READY", "MOBILE_VERDICT_CHANGED": "NO", "API_ASSESSMENT_EFFECT": "CONFIRMED_AND_EXPANDED_EXISTING_MOBILE_FINDINGS", "API_MOBILE_FINDINGS_CONFIRMED": "YES", "API_FINDINGS_CONTRADICTING_MOBILE": 0, "NEW_API_DEPENDENCIES_RECORDED": "YES", "NEW_API_DEPENDENCIES": ["API-F02", "API-F03", "API-F04", "API-F05", "API-F06", "API-F07", "API-F08", "API-F12"], "PP_F01_PARENT_ANDROID_DEPENDENCY_RECORDED": "YES", "NEW_PARENT_PLATFORM_CROSS_LAYER_FINDING": "PP-F01 / R-PP-02", "ANDROID_ENROLLMENT_CHAIN_STATUS": "BLOCKED_MULTI_LAYER", "ANDROID_ENROLLMENT_DEPENDENCIES": ["Parent production enrollment-link base", "canonical Android App-Link host", "DNS / assetlinks where required", "Android deep-link configuration", "Android runtime composition", "approved device-proof / crypto path", "API durable device sessions", "API session revocation", "documented de-enrollment/recovery path"], "ANDROID_FORMAL_REAL_PHONE_UAT": "NOT_READY", "ANDROID_FORMAL_REAL_PHONE_UAT_READY": "NO", "IOS_REAL_IPHONE_UAT": "NOT_READY", "IOS_REAL_IPHONE_UAT_READY": "NO", "MOBILE_PRODUCTION": "NO_GO", "MOBILE_PRODUCTION_READY": "NO" },
+    "verdict_changed": "NO"
+  }
+}

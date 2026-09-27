@@ -1,0 +1,62 @@
+{
+  "register": "api_risks",
+  "baseline": "worktree of D:\\PCA\\pca-app 2026-09-26",
+  "risks": [
+    {
+      "risk_id": "R-01", "area": "production configuration",
+      "description": "PCA_TRUSTED_PROXY_CIDRS value unverified in production; if unset, proxy trust=false and per-IP limits key on the platform hop (S8-class regression).",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["backend/src/http/trustProxyConfig.ts:31-36,80-107", "prod env not readable in this session"],
+      "android_impact": "rate-limit accuracy", "ios_impact": "rate-limit accuracy",
+      "mitigation": "Verify/confirm allowlist in App Service; add ops check.", "blocks_uat": false, "blocks_release": true
+    },
+    {
+      "risk_id": "R-02", "area": "crypto gate exit",
+      "description": "When PCA-DEC-020 review clears, P256 verifier wiring + durable sessions + session revocation must land together, or device UAT starts on a fragile session layer.",
+      "likelihood": "MEDIUM", "impact": "HIGH", "rating": "HIGH",
+      "evidence": ["backend/src/main.ts:363", "API-F02", "API-F03"],
+      "android_impact": "session stability in UAT", "ios_impact": "session stability in UAT",
+      "mitigation": "Bundle as one gated implementation slice.", "blocks_uat": true, "blocks_release": true
+    },
+    {
+      "risk_id": "R-03", "area": "worktree stability",
+      "description": "Concurrent lanes editing: backend/src/http 13 dirty files; dirty 162->175; unit suite 21->16 failures in 5 minutes. Merge/CI instability; wrong-layer fix risk.",
+      "likelihood": "HIGH", "impact": "MEDIUM", "rating": "HIGH",
+      "evidence": ["git status evidence in report 01/10", "PARENT_IDENTITY_AUTHORITY_MIGRATION_TODO.md"],
+      "android_impact": "indirect", "ios_impact": "indirect",
+      "mitigation": "Freeze + green the tree before acceptance; attribute fixes per layer.", "blocks_uat": false, "blocks_release": true
+    },
+    {
+      "risk_id": "R-04", "area": "policy relay",
+      "description": "Ack loss/expiry: expired queued envelope drops from the inbox list; application never confirmed (no read-back) -> silent policy non-application.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["backend/src/relay/MySqlRelayRepository.ts:116-138", "InboundReconnectService.ts:47", "API-F06"],
+      "android_impact": "policy may not apply", "ios_impact": "policy may not apply",
+      "mitigation": "Version/read-back + alerting on drops.", "blocks_uat": false, "blocks_release": true
+    },
+    {
+      "risk_id": "R-05", "area": "scale-out",
+      "description": "In-memory device sessions + per-process limiter state assume single-instance; App Service scale-out/restart breaks sessions and multiplies budgets.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["DeviceSessionRepository.ts:11-19", "rateLimit.ts:25-36"],
+      "android_impact": "random 401s", "ios_impact": "random 401s",
+      "mitigation": "Durable store before scaling; document constraint.", "blocks_uat": false, "blocks_release": true
+    },
+    {
+      "risk_id": "R-06", "area": "compatibility",
+      "description": "No version negotiation on /v1; future contract change can silently strand installed apps.",
+      "likelihood": "MEDIUM", "impact": "MEDIUM", "rating": "MEDIUM",
+      "evidence": ["API-F12", "no version surface on live API"],
+      "android_impact": "future breakage", "ios_impact": "future breakage",
+      "mitigation": "Version header + min-supported gate with the next contract change.", "blocks_uat": false, "blocks_release": false
+    },
+    {
+      "risk_id": "R-07", "area": "edge headers",
+      "description": "No HSTS/X-Content-Type-Options/X-Frame-Options observed on API responses; edge policy unverified.",
+      "likelihood": "LOW", "impact": "LOW", "rating": "LOW",
+      "evidence": ["live probes in report 09 section 2"],
+      "android_impact": "baseline", "ios_impact": "baseline",
+      "mitigation": "Confirm App Service edge policy.", "blocks_uat": false, "blocks_release": false
+    }
+  ]
+}

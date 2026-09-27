@@ -1,0 +1,148 @@
+{
+  "register": "api_findings",
+  "baseline": "worktree of D:\\PCA\\pca-app 2026-09-26 (local 6a2cc073; origin/pca-dev 9496fb19; dirty 162-175)",
+  "counts": { "P0": 0, "P1": 1, "P2": 7, "P3": 5 },
+  "findings": [
+    {
+      "id": "API-F01", "severity": "P1", "category": "WORKTREE_STATE", "root_layer": "MULTI_LAYER",
+      "area": "repo quality / CI", "route_component": "invitationRoutes, parentaccount safe-zones, meta gates",
+      "file": "backend/src/http/routes/invitationRoutes.ts (dirty); backend/test/invitation/iosEnrollmentUnavailable.test.mjs; backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs",
+      "evidence": ["npm test: 2615 tests, 2599 pass / 16 fail (previous run 2594/21)", "fresh-build recheck of the two API suites: 1 pass / 9 fail, all 500 vs expected 400/403/200/401", "raw/unit_suite_failures.json"],
+      "current_behavior": "Concurrent migration in flight; routes answer 500 under their own committed harnesses; meta registration/schema/certification gates red.",
+      "expected_behavior": "Tree green on its own suite before acceptance.",
+      "android_impact": "none directly (blocks CI/merge)",
+      "ios_impact": "none directly (blocks CI/merge)",
+      "blocks_physical_uat": false, "blocks_pre_production": true, "blocks_production": true,
+      "recommended_fix": "Land the in-flight migration green on a frozen revision; re-run full unit suite + CI.",
+      "owner": "concurrent migration lane + coordinator"
+    },
+    {
+      "id": "API-F02", "severity": "P2", "category": "SCALABILITY/DURABILITY", "root_layer": "API_SOURCE",
+      "area": "device sessions", "route_component": "DeviceSessionService / repository",
+      "file": "backend/src/runtime-sync/DeviceSessionRepository.ts:11-21; backend/src/main.ts:827",
+      "evidence": ["no device-session table in schema", "store constructed in-memory in production wiring"],
+      "current_behavior": "Restart invalidates all device sessions; multi-instance inconsistent sessions.",
+      "expected_behavior": "Durable/shared store (or documented single-instance constraint).",
+      "android_impact": "unexplained 401s after deploy/restart; re-challenge required",
+      "ios_impact": "same",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Add MySQL-backed session store.", "owner": "backend"
+    },
+    {
+      "id": "API-F03", "severity": "P2", "category": "SECURITY_LIFECYCLE", "root_layer": "API_SOURCE",
+      "area": "de-enrollment", "route_component": "session revocation",
+      "file": "backend/src/runtime-sync/DeviceSessionService.ts:112-117,154",
+      "evidence": ["revokeSession defined, no caller (grep)", "validateSession reads in-memory record only"],
+      "current_behavior": "Revoked device keeps Bearer token until 1 h TTL.",
+      "expected_behavior": "Immediate session revocation on device revocation.",
+      "android_impact": "revocation delayed up to 1 h", "ios_impact": "same",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Hook revokeSession into revokeDevice; clear store; add test.", "owner": "backend"
+    },
+    {
+      "id": "API-F04", "severity": "P2", "category": "PRODUCT_CONTRACT", "root_layer": "SHARED_CONTRACT",
+      "area": "de-enrollment", "route_component": "device unenroll",
+      "file": "backend/src/device/MySqlDeviceRepository.ts:136 (only REVOKED write)",
+      "evidence": ["grep unenroll|deregister|unpair|remove-device in backend/src -> none", "no DELETE from devices; no PAIRING_PENDING revival"],
+      "current_behavior": "Device cannot initiate unenrollment; server cannot represent unenrolled state.",
+      "expected_behavior": "Defined contract per product scope.",
+      "android_impact": "no de-enrollment journey", "ios_impact": "no de-enrollment journey",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Product decision, then route + client wiring.", "owner": "product + backend"
+    },
+    {
+      "id": "API-F05", "severity": "P2", "category": "OBSERVABILITY", "root_layer": "API_SOURCE",
+      "area": "logging/audit", "route_component": "buildServer logger; family audit; deviceauth",
+      "file": "backend/src/http/buildServer.ts:359,431-438; backend/src/main.ts (InMemoryFamilyAuditRepository); backend/src/deviceauth/** (no audit)",
+      "evidence": ["logger:false", "5xx body fixed with error discarded", "family audit doc: 'deliberately never a durable PCA server audit log'", "grep audit in deviceauth -> 0"],
+      "current_behavior": "No request/error logs; security events not durably audited.",
+      "expected_behavior": "Redacted logging + durable audit for enrollment/device events.",
+      "android_impact": "no server-side forensics for mobile incidents", "ios_impact": "same",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Wire logger + durable audit sinks.", "owner": "backend"
+    },
+    {
+      "id": "API-F06", "severity": "P2", "category": "SYNC_SEMANTICS", "root_layer": "API_SOURCE",
+      "area": "policy sync", "route_component": "relay envelopes",
+      "file": "backend/src/relay/RelayService.ts:96; backend/migrations/0001_mysql_baseline.sql:221-240; backend/src/http/routes/childPolicyRoutes.ts:201",
+      "evidence": ["relay_envelopes has no message_type/version column", "202 {status:'PENDING'} is client-facing label only", "no read-back/version endpoint"],
+      "current_behavior": "Delivery != application; no version/cursor to reconcile.",
+      "expected_behavior": "Versioned policy state or delivery-state projection.",
+      "android_impact": "cannot prove application", "ios_impact": "same",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Persist version/message_type; expose delivery state.", "owner": "backend"
+    },
+    {
+      "id": "API-F07", "severity": "P2", "category": "PRODUCT_GAP", "root_layer": "API_SOURCE",
+      "area": "web rules", "route_component": "webRuleRoutes",
+      "file": "backend/src/http/routes/webRuleRoutes.ts:23-30,130; backend/src/http/buildServer.ts:657-663",
+      "evidence": ["all three routes 503 not_configured in production", "scaffold stores readable domains under PCA-SEC-023 (test-only)"],
+      "current_behavior": "Web-rule surface permanently unavailable in production.",
+      "expected_behavior": "Remove scaffold or replace with encrypted storage/delivery.",
+      "android_impact": "web-rule consumer un-fed (MOB-014 confirmed)", "ios_impact": "n/a",
+      "blocks_physical_uat": false, "blocks_pre_production": true, "blocks_production": true,
+      "recommended_fix": "Per existing classification: REMOVE_OBSOLETE or encrypted replacement.", "owner": "backend + product"
+    },
+    {
+      "id": "API-F08", "severity": "P2", "category": "TRANSACTIONAL", "root_layer": "API_SOURCE",
+      "area": "enrollment", "route_component": "post-commit side effects",
+      "file": "backend/src/enrollment/EnrollmentCoordinator.ts:130-145",
+      "evidence": ["slot consumption + success audit run after commit", "unhandled throw -> 500 while enrollment committed"],
+      "current_behavior": "500 with committed enrollment; recoverable via /recover.",
+      "expected_behavior": "No misreport of committed state.",
+      "android_impact": "client must call /recover on 500 (it does not)", "ios_impact": "same",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": true,
+      "recommended_fix": "Move side effects into tx or return committed-success.", "owner": "backend"
+    },
+    {
+      "id": "API-F09", "severity": "P3", "category": "HARDENING", "root_layer": "API_SOURCE",
+      "area": "rate limiting", "route_component": "rateLimit + route coverage",
+      "file": "backend/src/http/rateLimit.ts:35-75; backend/src/http/buildServer.ts:417-424",
+      "evidence": ["in-process fixed window; IP key only", "no route-level limiter on childPolicy/webRule/childRequest/familyMember (global hook only)"],
+      "current_behavior": "Limits scale with instances; some routes rely on the global hook.", "expected_behavior": "Shared store; route-level coverage.",
+      "android_impact": "n/a", "ios_impact": "n/a",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": false,
+      "recommended_fix": "Harden per roadmap P3.", "owner": "backend"
+    },
+    {
+      "id": "API-F10", "severity": "P3", "category": "IDEMPOTENCY", "root_layer": "API_SOURCE",
+      "area": "parent action routes", "route_component": "idempotency ledger usage",
+      "file": "backend/src/http/routes/childPolicyRoutes.ts:173-174",
+      "evidence": ["server mints randomUUID idempotency keys per request"],
+      "current_behavior": "Client retries not deduplicated by client keys.", "expected_behavior": "Accept client idempotency keys on retryable routes.",
+      "android_impact": "n/a", "ios_impact": "n/a",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": false,
+      "recommended_fix": "Accept client-supplied keys.", "owner": "backend"
+    },
+    {
+      "id": "API-F11", "severity": "P3", "category": "LIFECYCLE", "root_layer": "API_SOURCE",
+      "area": "enrollment", "route_component": "bootstrap attempts",
+      "file": "backend/migrations/0003_enrollment_bootstrap_attempts.sql:60-107",
+      "evidence": ["no expiry column on attempt rows"],
+      "current_behavior": "Held recovery token re-readable indefinitely (rate-limited).", "expected_behavior": "Expiry/rotation policy.",
+      "android_impact": "minor", "ios_impact": "minor",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": false,
+      "recommended_fix": "Add expiry policy.", "owner": "backend"
+    },
+    {
+      "id": "API-F12", "severity": "P3", "category": "COMPATIBILITY", "root_layer": "SHARED_CONTRACT",
+      "area": "versioning", "route_component": "client version gating",
+      "file": "backend/src/** (grep minimumVersion|clientVersion|X-PCA-Client -> none)",
+      "evidence": ["only /v1 path prefix; no min-supported client handling"],
+      "current_behavior": "Old/new clients indistinguishable.", "expected_behavior": "Version header + min-supported policy before store rollouts.",
+      "android_impact": "rollout risk", "ios_impact": "rollout risk",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": false,
+      "recommended_fix": "Add version gating.", "owner": "backend + mobile"
+    },
+    {
+      "id": "API-F13", "severity": "P3", "category": "CONTRACT_NUANCE", "root_layer": "API_SOURCE",
+      "area": "enrollment", "route_component": "exact-replay",
+      "file": "backend/src/enrollment/EnrollmentCoordinator.ts:116-119",
+      "evidence": ["replay match checks token + keys; platform not re-compared"],
+      "current_behavior": "Same token+keys replay with different platform returns original result.", "expected_behavior": "Comparison parity with first-accept.",
+      "android_impact": "negligible", "ios_impact": "negligible",
+      "blocks_physical_uat": false, "blocks_pre_production": false, "blocks_production": false,
+      "recommended_fix": "Include platform in replay comparison.", "owner": "backend"
+    }
+  ]
+}

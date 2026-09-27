@@ -1,0 +1,17 @@
+# 13 — Combined Risk Register
+
+Confirmed defects are in report 12; these are risks (not yet realized). Machine-readable mirror:
+`parent_platform_risks.json`.
+
+| ID | Application | Area | Description | L | I | Rating | Evidence | Mitigation | Blocks pre-prod | Blocks prod |
+|---|---|---|---|---|---|---|---|---|---|---|
+| R-PP-01 | PLATFORM | owner/external gate | Production Platform Admin activation + MFA have never been completed live (PENDING_ACTIVATION; MFA_COMPLETED=0 as of 2026-09-24; S7 lockout test never run). Real MFA UAT cannot start without the owner. | H | H | **HIGH** | repo session records 2026-09-24; recovery runbook exists; live login page ready | Owner executes recovery runbook; then S4–S7 sequence; record evidence | YES | YES |
+| R-PP-02 | PARENT+ANDROID | multi-layer | Enrollment deep-link alignment: fixing the web base alone is insufficient — Android APP_LINK_HOST = `enroll.pca.app` (placeholder domain, no assetlinks/DNS). End-to-end link enrollment needs both sides + production infra. | H | M | **HIGH** | `EnrollmentDeepLinkConfig.kt:30,47`; PP-F01 | Decide canonical host; DNS + assetlinks + manifest; set web env var; E2E on a real device | YES | YES |
+| R-PP-03 | PARENT | external gate | Crypto-review scope (PCA-DEC-020 lineage) still gates device-session crypto features the console surfaces depend on (device sessions, envelope delivery). Fail-closed server = honest but feature-limited console. | M | M | MEDIUM | API assessment reports 05/07; API-F02/F03 | Track gate exit slice (verifier + durable sessions + revocation) as one package | NO | YES |
+| R-PP-04 | BOTH | production config | Rate-limit effectiveness (PP-F02): if the trusted-proxy correction lands without an A/B re-test, limits could still be bypassed or could start 429-ing legitimate clients behind a shared hop. | M | M | MEDIUM | PP-F02 evidence | Apply fix with a live two-client A/B check (method already proven 2026-09-24) | NO | YES |
+| R-PP-05 | BOTH | process/migrations | Untracked migrations 0051–0054 + modified 0050 in the dirty worktree; if any environment (incl. production) has applied them (or the lane diverges), schema/source drift becomes hard to unwind. | M | H | **HIGH** | git status 2026-09-26; migrations list | Land or explicitly park the migration lane; record applied-migration state per environment; never deploy untracked DDL | YES | YES |
+| R-PP-06 | BOTH | dependency | Carried API-assessment items (API-F02 in-memory device sessions; F03 no revocation; F04 no unenroll; F05 audit gaps; F06 no policy read-back; F08 post-commit 500) — each weakens a production quality the web consoles report on (device status, policy delivery). | M | M | MEDIUM | API assessment reports 12–15 | Sequence per API roadmap; console copy already avoids over-claiming | NO | YES |
+| R-PP-07 | PARENT | product | New parents in production: no family-creation UI exists in the current console (Genesis superseded); onboarding depends on invitation/platform provisioning. If that is not the intended journey, first-family setup is an unbuilt product path. | M | H | **HIGH** | 0 genesis refs (source + live bundle); DEC-037 commit | Owner confirms the intended provisioning journey; if UI is required, scope it | YES | YES |
+
+Priorities for the supervisor: **R-PP-01** (owner MFA), **R-PP-02** (enrollment link chain),
+**R-PP-07** (family provisioning journey), **R-PP-05** (migrations), then R-PP-04.

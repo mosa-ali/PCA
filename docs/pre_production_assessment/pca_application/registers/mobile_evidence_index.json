@@ -1,0 +1,41 @@
+{
+  "register": "mobile_evidence_index",
+  "baseline": "pca-dev @ 9496fb19dc29217b4e515305fe68ab70a48981e1",
+  "assessment_date": "2026-09-26",
+  "provenance": {
+    "method": "read-only source assessment; no application files modified; reports written to docs/pre_production_assessment/pca_application only",
+    "evidence_passes": [
+      "Android core deep-dive (enrollment, identity, composition)",
+      "Android runtime/background/tests/security-lite",
+      "iOS core deep-dive (project, enrollment, FamilyControls/DeviceActivity/ManagedSettings)",
+      "Contracts/CI/gates/docs cross-check"
+    ],
+    "limitations": "No terminal available in this session: git/gh/gradle/xcodebuild could not be executed; such items are labeled RECORDED or listed under blocked_commands."
+  },
+  "claims": [
+    { "claim": "HEAD == origin/pca-dev == 9496fb19", "evidence": ".git/refs/heads/pca-dev; .git/refs/remotes/origin/pca-dev", "method": "READ" },
+    { "claim": "HEAD subject/date", "evidence": ".git/logs/HEAD (last entry: fix(platform-admin): restore family-scoped enrollment lookup, 2026-09-25 21:46 +0300)", "method": "READ" },
+    { "claim": "Android enrollment cannot reach network in production (crypto gate)", "evidence": "DeviceKeyPairGenerator.kt:60-70; EnrollmentCoordinator.kt:143-151", "method": "READ + spot-check" },
+    { "claim": "iOS enrollment similarly blocked (empty proof keys)", "evidence": "PCADeviceAPI.swift:114-119; PCAApplication.swift:326-331,401", "method": "READ" },
+    { "claim": "iOS pca:// scheme never registered", "evidence": "pbxproj:255-256; grep CFBundleURLTypes across ios/** = 0", "method": "READ" },
+    { "claim": "FamilyActivityPicker has no UI usage", "evidence": "grep FamilyActivityPicker( across ios/** = 4 comment-only hits", "method": "READ + spot-check" },
+    { "claim": "iOS applyVerifiedPolicy has no production caller", "evidence": "PCAApplication.swift:261-299 + grep", "method": "READ" },
+    { "claim": "Android sync transport never composed (OFFLINE placeholder)", "evidence": "PcaAppGraph.kt:1040,1063; FamilySyncRuntimePort.kt:57-66", "method": "READ" },
+    { "claim": "Android unit tests: 249 files / 176 classes / 1001 @Test; instrumentation 4 classes / 10 tests", "evidence": "grep counts over android/app/src/test and src/androidTest", "method": "READ" },
+    { "claim": "iOS tests: 23 files / 157 func test", "evidence": "ios/PCATests inventory", "method": "READ" },
+    { "claim": "CI jobs: android (gradlew lint test assembleDebug assembleRelease + unsigned-APK assertion), ios (xcodebuild test, simulator, CODE_SIGNING_ALLOWED=NO)", "evidence": ".github/workflows/quality-gates.yml:1221-1408", "method": "READ" },
+    { "claim": "Physical Android job label pca-android-device; never executed; no runners", "evidence": "mobile-device-uat-core.yml:476-584 [workflow]; run history + gh runners [RECORDED]", "method": "READ + RECORDED" },
+    { "claim": "Quality-gates run 36193353496 SUCCESS 27/27 at 9496fb19", "evidence": "session record of prior run (gh output)", "method": "RECORDED" },
+    { "claim": "All 39 external gates open", "evidence": "docs/release_readiness/EXTERNAL_GATE_MATRIX.md:16", "method": "READ" },
+    { "claim": "No secrets found in Android main/test sources", "evidence": "secret-pattern scan", "method": "READ" }
+  ],
+  "blocked_commands": [
+    "git status --short",
+    "git log -1 --format='%H %ci %s' -- android/ (and ios/)",
+    "gh run view 36193353496 --json conclusion,jobs",
+    "gh api /repos/mosa-ali/PCA/actions/runners",
+    "cd android; .\\gradlew.bat --no-daemon assembleDebug",
+    "apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk"
+  ],
+  "reproduction_note": "Every claim marked READ can be reproduced by opening the cited file:line at 9496fb19. RECORDED items should be re-run via the blocked_commands list when a terminal is available."
+}
