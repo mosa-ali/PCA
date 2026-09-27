@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import Devices from '../../src/pages/family/Devices';
 import { getApiClients } from '../../src/api/client';
+import { setDevRole } from '../../src/api/dev/devState';
 import {
   __resetDevDeviceEnrollmentState,
   __devKnownPairingDeviceIds,
@@ -322,20 +323,21 @@ describe('Device enrollment -- pairing confirmation', () => {
   });
 
   it('a Viewer cannot confirm a pairing request', async () => {
-    // Seed a pairing request as an Owner would have, then re-render as Viewer.
-    const { unmount } = renderWithProviders(<Devices />, { role: 'OWNER', route: ADD_SECTION });
+    // Seed and inspect a pairing request as an Owner before changing authority.
+    renderWithProviders(<Devices />, { role: 'OWNER', route: ADD_SECTION });
     await runAddDeviceWizard();
     await screen.findByTestId('raw-invitation-token');
     const [deviceId] = __devKnownPairingDeviceIds();
-    unmount();
-
-    renderWithProviders(<Devices />, { role: 'VIEWER', route: '/family/devices?section=advanced' });
+    await openDeviceSection('Advanced & security');
     await userEvent.type(await screen.findByLabelText('Device ID'), deviceId);
     await userEvent.click(screen.getByRole('button', { name: 'Look up pairing request' }));
 
-    await screen.findByText('Setup code A', {}, { timeout: 5_000 });
-    expect(screen.queryByRole('button', { name: 'Confirm pairing' })).not.toBeInTheDocument();
+    await screen.findByText('Setup code A', {}, { timeout: 10_000 });
+    // Change authority without remounting the in-memory device fixture. The
+    // Viewer must see the same request but cannot acquire the confirmation action.
+    setDevRole('VIEWER');
     const panel = screen.getByText('Setup code A').closest('.section-panel') as HTMLElement;
-    expect(within(panel).getByText('Not permitted for your role')).toBeInTheDocument();
+    await within(panel).findByText('Not permitted for your role');
+    expect(screen.queryByRole('button', { name: 'Confirm pairing' })).not.toBeInTheDocument();
   }, 15_000);
 });

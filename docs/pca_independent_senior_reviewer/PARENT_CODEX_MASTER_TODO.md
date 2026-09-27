@@ -5,15 +5,15 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 20:30 UTC
-LOCAL_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
-REMOTE_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
-CURRENT_CHECKPOINT_SHA = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
+LAST_UPDATED_UTC = 2026-09-27 20:54 UTC
+LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
+REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
+CURRENT_CHECKPOINT_SHA = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Monitor corrected exact-head Quality Gates run `36348261937` at `0ba4c0d8`, then continue the still-open TODO-12/14/17 evidence. The corrective checkpoint is pushed and local/remote heads match. Do not infer browser PASS before a current browser run. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Integrate the evidenced workflow/database-lifecycle and Viewer-fixture corrections, publish them with both ledger updates, then monitor a fresh exact-head Quality Gates run. Run `36348596733` confirmed Parent Web demo-browser E2E PASS but failed database fixture/certification setup and one Viewer component case. Continue TODO-12/14/17; keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
-The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`. Quality Gates run `36338197362` at `8f3f45b4` failed; corrected exact-head run `36348261937` at `0ba4c0d8` is in progress. No checkpoint CI result is PASS.
+The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`. Quality Gates run `36348596733` at `47d564c4` failed; the earlier run `36348261937` at `0ba4c0d8` was cancelled when the ledger sync superseded it. No current checkpoint CI result is PASS.
 
 ## Final Architecture
 
@@ -203,8 +203,8 @@ extra PII/commercial fields = 0
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head CI `36338197362` failed on `8f3f45b4`: Parent Web unit shard 6 timed out in `DeviceEnrollmentPanel.test.tsx`; full DB certification replayed migration 0050 against the widened event constraint; backend non-DB rejected migration 0057 as unguarded; real-backend E2E used fixed `pca_test` and lacked its private manifest; Parent Web browser E2E had five failures. Corrective migration/resumability/E2E-fixture changes and all five browser-spec contract corrections are committed in `0ba4c0d8`; fresh exact-head run `36348261937` is queued. Local browser bodies have not been executed. Historical Parent Web Vitest 1065/1065, backend 2648/2648 and real Parent MFA browser flows 1/1 each remain historical.  
-BLOCKER = Fresh disposable MySQL 9.7 is active on loopback; migrations 0050/0058 pass locally 2/2 and structural reconciliation passes 13/13, but this is not a full MySQL 8.4 suite. Parent Web lint, typecheck, and Playwright test collection pass; no current browser bodies were executed because the prior CI-mode local Chromium attempt was rejected by automatic approval review. Mobile/device external crypto gates remain.  
+EVIDENCE = Exact-head run `36348596733` at `47d564c4` completed with 24 jobs passing and three failing. Parent Web demo-mode Chromium E2E passed. The backend full MySQL suite passed on MySQL 8.4, but the following populated-path campaign ran against an empty `pca_test` after `test:db` had already dropped its owned random database. Real-backend E2E database setup issued a `CREATE DATABASE` statement with an empty identifier because shell quoting removed the dynamically joined name. Parent unit shard 6 failed only the Viewer pairing case: remounting the demo page lost its in-memory fixture, so lookup returned Not found instead of the pairing data. Corrective local changes make the E2E SQL shell-safe, run both DB campaigns inside one disposable DB lifetime, and change Viewer authority in place without remounting.  
+BLOCKER = The fixes above are not yet pushed or rerun. Parent Web lint/typecheck pass; the 14-test DB-free migration/production-path structural suite passes. Local Vitest cannot start esbuild in this Windows sandbox (`spawn EPERM`); GitHub CI must verify the changed component. MySQL 9.7 local migration 0050/0058 and schema evidence remain distinct from the CI MySQL 8.4 full DB suite. Mobile/device external crypto gates remain.  
 DONE_WHEN = integrated local regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
@@ -221,14 +221,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552` was fast-forward pushed to `origin/pca-dev`. `git fetch origin pca-dev` succeeded; local HEAD, `origin/pca-dev`, and GitHub branch ref all equal `0ba4c0d8`. GitHub confirms both master TODO files exist at the pushed checkpoint. Corrected Quality Gates run `36348261937` is in progress at the exact SHA.  
-BLOCKER = Exact-head CI/browser result remains pending; overall TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation.  
+EVIDENCE = Ledger-sync checkpoint `47d564c4af1fd6535dd1c9211cbf9c06a46970fb` is fast-forward pushed to `origin/pca-dev`; post-push fetch and GitHub ref both confirmed equal heads, and both master TODO files exist remotely. Exact-head run `36348596733` completed FAILED at this SHA. Current corrective workflow/component changes are local and pending publication.  
+BLOCKER = Fresh exact-head CI must verify the current corrections; overall TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation.  
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552 (current committed head)  
-REMOTE_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552 (fetch + GitHub ref verified)  
-PARENT_LOCAL_ONLY_FILES_REMAINING = 0 mission paths; 2 stale snapshots, 2 machine-local .vscode paths, and root fragment `0` remain excluded  
+LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (current committed baseline; corrective changes are local)  
+REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (fetch + GitHub ref verified)  
+PARENT_LOCAL_ONLY_FILES_REMAINING = 6 current mission correction/ledger paths; 2 stale snapshots, 2 machine-local .vscode paths, and root fragment `0` remain excluded  
 PARENT_UNPUSHED_COMMITS_REMAINING = 0  
-EXACT_HEAD_CI = IN_PROGRESS (`36348261937` at `0ba4c0d8`); previous run `36338197362` FAILED at `8f3f45b4`
+EXACT_HEAD_CI = FAILED (`36348596733` at `47d564c4`); previous run `36338197362` FAILED at `8f3f45b4`; its replacement run `36348261937` was cancelled by superseding push
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
@@ -239,12 +239,12 @@ AUTHORIZATION = Owner reminder received 2026-09-27: full repository/local/live p
 EVIDENCE = Canonical `schema.ts` + migrations through 0058 declare 92 tables, 792 columns, 104 foreign keys, 92 primary keys, 38 unique non-primary indexes, 141 non-unique indexes, and 282 checks. A fresh disposable MySQL 9.7 instance applied all 56 migrations with no test-fixture/application seed rows. Schema comparison found one real index drift: canonical source declared `family_authority_request_challenges_service_fk`, but migration 0044 omitted it. Additive migration 0058 and source provenance now reconcile it; migration 0050/0058 replay tests pass 2/2 and migration rerun is a no-op. Migrated and canonical-bootstrap DBs now have matching index structure and aggregate tables/columns/FKs/checks. Local least-privilege grants were provisioned for a disposable local principal and matched all 92 table-level grants exactly, with zero broad/elevated grants; no live grant mutation occurred. Eight table CHECK-clause renderings still differ by `_ascii` versus `_utf8mb4` introducers on MySQL 9.7; confirm full schema equality using required MySQL 8.4. Disposable-bootstrap artifacts were regenerated by their source generator and `--check` passes. Pre-existing stale snapshots remain untouched; no live DB was inspected or mutated.  
 LOCAL_SERVICE_REPAIR = Docker Desktop engine remains unavailable and starting `com.docker.service` was denied. A fresh disposable MySQL 9.7 server is running loopback-only on 127.0.0.1:33061 from a newly initialized OS-temp datadir; no installed MySQL service or existing data directory was started or touched. MySQL 9.7 does not certify the required MySQL 8.4 environment.  
 PCA_PRO_TARGET = Not configured in checked process/test environment; no unambiguous live connection target found; read-only inspection not yet performed.  
-BLOCKER = Corrected TODO-19 exact-head Quality Gates run `36348261937` at `0ba4c0d8` is in progress; previous run `36338197362` failed at `8f3f45b4`. Required MySQL 8.4 confirmation and verified read-only live `pca_pro` target/preflight remain unavailable. Owner has authorized full reconciliation; continue automatically as soon as TODO-19 is executable and the live target/preflight is verified.  
+BLOCKER = TODO-19 exact-head run `36348596733` failed at `47d564c4`; workflow fixture/certification corrections are underway. MySQL 9.7 local evidence exists; required MySQL 8.4 exact schema comparison and verified read-only live `pca_pro` target/preflight remain unavailable. Owner has authorized full reconciliation; continue automatically as soon as TODO-19 is executable and the live target/preflight is verified.  
 DONE_WHEN = repository schema matches local DB and pca_pro; required migration locally tested and live-applied if required; grants match; no seed data  
 NO_SEED_DATA = YES (no test fixtures or application rows; only migration-required reference data)  
 DATA_LOSS = 0  
 NO_BLIND_DB_PUSH = YES  
-LOCAL_TEST_FIRST = PASS for migrations 0050/0058 on fresh disposable MySQL 9.7; MySQL 8.4 rerun pending  
+LOCAL_TEST_FIRST = PASS for migrations 0050/0058 on fresh disposable MySQL 9.7; run `36348596733` full MySQL suite passed on disposable MySQL 8.4, but complete schema equivalence remains unproven  
 LIVE_PREFLIGHT_BEFORE_MUTATION = YES  
 REPOSITORY_SCHEMA_MATCH_AFTER = NOT_YET_PROVEN (8 CHECK renderings remain version-sensitive under local MySQL 9.7)  
 LOCAL_DB_SCHEMA_MATCH_AFTER = PARTIAL (counts and indexes match; confirm all constraints on MySQL 8.4)  
@@ -532,3 +532,10 @@ FILES = 21 reviewed mission paths committed; stale schema snapshots, `.vscode/`,
 CI = Corrected exact-head Quality Gates run `36348261937` is in progress at `0ba4c0d8`; prior failed run remains historical evidence only.
 TODO20 = Owner's reminder reconfirmed existing full TODO-20 authorization: repository/local/live `pca_pro`/runtime grant reconciliation and ordinary proven additive/corrective migration are approved with NO_SEED_DATA=YES, DATA_LOSS=0, LOCAL_TEST_FIRST=YES, and fresh live preflight before mutation. Local disposable MySQL 9.7 is responding at 127.0.0.1:33061 but its CHECK rendering equivalence remains version-sensitive; required MySQL 8.4 equivalence and verified live `pca_pro` target are unavailable. No live DB/grants inspected or mutated.
 NEXT_ACTION = Update and publish both ledgers for checkpoint `0ba4c0d8`; monitor exact-head run `36348261937`; continue TODO-20 local environment/version diagnosis and verified live-target discovery when gates are executable. Do not seed data, mutate unverified live resources, or promote partial schema equality.
+
+### 2026-09-27 20:57 UTC — corrective CI harness local verification; TODO-20 authorization reaffirmed
+
+LOCAL_VALIDATION = `node --check scripts/with-disposable-db.mjs` PASS; `productionPathCertification.test.mjs` + `migrationResumability.test.mjs` PASS 14/14 after the `all-certified` runner change. Parent Web `pnpm run typecheck` PASS and `pnpm run lint` PASS after the Viewer test edit. No browser/component execution or fresh exact-head CI PASS is claimed.
+PUBLISH_SET = Four reviewed implementation paths plus both existing mission ledgers are intended for the next checkpoint. Dirty generated schema snapshots `backend/schema/current_schema.sql` and `schema_manifest.json`, `.vscode/`, and root fragment `0` remain excluded; their state was not used to manufacture TODO-20 schema agreement.
+TODO20 = Owner reaffirms the existing TODO-20 authorization and all required zero-seed, zero-data-loss, local-first, live-preflight, and post-reconciliation checks. Local-only validation does not close the MySQL 8.4 or verified-live-target gates. `pca_pro` and live grants remain uninspected and unmutated.
+NEXT_ACTION = Publish the exact six mission paths, inspect new exact-head CI results, then continue the earliest unfinished Parent TODO and TODO-20 when its version/target gates are executable. Platform remains on HOLD_PARENT_DEPENDENCY.

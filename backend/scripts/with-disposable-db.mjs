@@ -27,8 +27,11 @@ if (endpoint(runtimeBaseUrl) !== endpoint(migrationBaseUrl)) {
 const databaseName = `pca_test_codex_${randomUUID().replaceAll('-', '')}`;
 const requestedTarget = process.argv[2] ?? 'all';
 const isParentMfaTarget = requestedTarget === 'parent-mfa-real-e2e';
+const isFullCertifiedTarget = requestedTarget === 'all-certified';
 const targetScript = requestedTarget === 'all'
   ? 'test:db:inner'
+  : requestedTarget === 'all-certified'
+    ? 'test:db:inner'
   : requestedTarget === 'authority-diagnostics'
     ? 'test:db:authority-diagnostics:inner'
     : requestedTarget === 'enrollment-binding'
@@ -42,7 +45,7 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-real-e2e', 'parent-mfa-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-real-e2e, parent-mfa-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-real-e2e', 'parent-mfa-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-real-e2e, parent-mfa-real-e2e.');
 const runtimeDatabaseUrl = new URL(runtimeBaseUrl);
 runtimeDatabaseUrl.pathname = `/${databaseName}`;
 const migrationDatabaseUrl = new URL(migrationBaseUrl);
@@ -580,6 +583,9 @@ try {
       PLATFORM_ADMIN_MFA_ENC_KEY: randomBytes(32).toString('hex'),
       HOST: '127.0.0.1',
     });
+  } else if (isFullCertifiedTarget) {
+    await run('npm', ['run', targetScript], childEnv);
+    await run(process.execPath, ['--env-file=test.env', '--env-file=test.db.env', 'scripts/run-certified-production-paths.mjs'], migrationEnv);
   } else if (requestedTarget !== 'parent-real-e2e') {
     await run('npm', ['run', targetScript], childEnv);
   } else {
