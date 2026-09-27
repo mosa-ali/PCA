@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 21:37 UTC
-LOCAL_HEAD = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
-REMOTE_HEAD = 9c50e8efd7f18c18d7e16ec0ef6697fb88026064  
+LAST_UPDATED_UTC = 2026-09-27 21:40 UTC
+LOCAL_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
+REMOTE_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
 CURRENT_CHECKPOINT_SHA = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Publish implementation checkpoint `f51fe3df` and this ledger sync to `pca-dev`; fetch and prove remote equality, then restore exact-head CI evidence when access is available. Continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Resolve blocked GitHub Actions API access and inspect exact-head CI for `effb3837`; continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -583,4 +583,11 @@ NEXT_ACTION = Commit only the reviewed acceptance-flow spec and these two ledger
 CHECKPOINT = `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7` commits exactly `parent-web/e2e-real/acceptance-flow.spec.ts` and the two existing master TODO ledgers. Parent Web typecheck/lint and real-config test collection (12 total, including two acceptance-flow cases) pass. Browser execution and exact-head CI remain unverified.
 GIT = Local `pca-dev` is one implementation checkpoint ahead of recorded remote `9c50e8ef`; earlier `git ls-remote` failed on GitHub HTTPS egress. No force update, remote change, or unrelated file staging occurred.
 TODO20 = Reaffirmed owner authorization remains in effect. No local database connection was made because `backend/test.env` only sets `NODE_ENV`; Docker Engine is inaccessible. Live target/grants remain uninspected and unmutated.
-NEXT_ACTION = Publish this commit and ledger sync when GitHub access is available, fetch, verify local/tracking/remote SHAs, and resume exact-head CI and earliest executable Parent TODOs.
+NEXT_ACTION = Publish the ledger correction describing verified remote publication, resolve GitHub Actions API access, then inspect exact-head CI and resume earliest executable Parent TODOs.
+
+### 2026-09-27 21:40 UTC — checkpoint publication verified; TODO-20 engine diagnosis
+
+PUSH = Fast-forward push succeeded. Fresh `git fetch origin pca-dev`, local HEAD, `origin/pca-dev`, and `git ls-remote origin refs/heads/pca-dev` all returned `effb3837990cb4dadbd99f5143dd25ba8459f143`. Implementation commit `f51fe3df` is a descendant of prior remote `9c50e8ef`; its tree contains exactly the acceptance-flow spec and two master TODO ledgers, followed by ledger sync `effb3837`.
+CI = `gh run list --commit effb3837` could not reach GitHub API because configured proxy `127.0.0.1:9` refused connections. No CI result is inferred.
+TODO20_ENVIRONMENT = Correction: `backend/test.db.env` does define loopback root URL for `pca_test`, but read-only connection was rejected `ER_ACCESS_DENIED_ERROR`; no SQL read or write succeeded. Docker service start was denied by Windows (`Cannot open 'com.docker.service'`). Read-only service inspection found MySQL80 stopped (8.0 config) and MySQL97 stopped with config `D:\MySQL\my.ini`, port 3306, and configured `D:\MySQL\Data` directory absent; neither service was started. The loopback 33061 listener did not authenticate the test-only credentials, so its server identity/version remains unproven. Live `pca_pro` and grants remain uninspected/unmutated.
+NEXT_ACTION = Restore access to the disposable MySQL 8.4.11 environment without opening an unidentified data directory; establish server identity/version and schema locally, inspect live `pca_pro` read-only only after target proof, and inspect CI when GitHub API connectivity returns.

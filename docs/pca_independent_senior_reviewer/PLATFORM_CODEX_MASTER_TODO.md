@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 21:37 UTC
-LOCAL_HEAD = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
-REMOTE_HEAD = 9c50e8efd7f18c18d7e16ec0ef6697fb88026064  
+LAST_UPDATED_UTC = 2026-09-27 21:40 UTC
+LOCAL_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
+REMOTE_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
 CURRENT_CHECKPOINT_SHA = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent publishes checkpoint `f51fe3df` and obtains exact-head CI for the TOTP-gated invitation acceptance path; then resolve remaining Parent MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
+NEXT_ACTION = Keep Agents 6/7 held while Parent obtains exact-head CI for `effb3837` and resolves remaining MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 
@@ -374,3 +374,11 @@ NEXT_ACTION = Maintain the Platform hold until Parent activation/projection, TOD
 PARENT_CHECKPOINT = `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7` contains the Parent acceptance-flow correction plus both mission ledgers. Typecheck/lint and real-config collection pass; browser execution and exact-head CI remain unverified. GitHub egress is unavailable and the checkpoint has not been pushed.
 PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
 NEXT_ACTION = Continue the hold through Parent exact-head CI, TODO-20 reconciliation, activation/projection gates, and literal localhost acceptance.
+
+### 2026-09-27 21:40 UTC — Parent checkpoint published; external evidence unavailable
+
+PARENT_CHECKPOINT = `f51fe3df` implementation and `effb3837` ledger sync are fast-forward published. Fresh fetch, local HEAD, tracking ref, and remote branch all agree at `effb3837990cb4dadbd99f5143dd25ba8459f143`.
+PARENT_CI = GitHub Actions API query was blocked by the configured local proxy refusing connections; no exact-head CI result is claimed.
+PARENT_TODO20 = Owner authorization is reconfirmed. Disposable MySQL 8.4 is not available from the current host state; Docker start was denied and the test URL did not authenticate. No live DB inspection or mutation occurred.
+PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
+NEXT_ACTION = Maintain the Platform hold; resume Parent CI and TODO-20 as soon as the required external and local database access is available.
