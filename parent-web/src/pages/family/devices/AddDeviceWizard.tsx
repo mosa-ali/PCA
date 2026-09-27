@@ -342,7 +342,7 @@ export default function AddDeviceWizard({
   const minutesLeft = expiresAt
     ? Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 60000))
     : null;
-  const connected = liveStatus === 'REDEEMED';
+  const redeemed = liveStatus === 'REDEEMED';
 
   return (
     <PermissionGate action="CREATE_DEVICE_INVITATION" showDisabledFallback>
@@ -366,7 +366,7 @@ export default function AddDeviceWizard({
 
         <div className="wizard-body">
           <h3 ref={headingRef} tabIndex={-1}>
-            {t(connected && step.id === 'waiting' ? 'deviceEnrollment.stepConnected' : step.labelKey)}
+            {t(redeemed && step.id === 'waiting' ? 'deviceEnrollment.stepEnrollmentSubmitted' : step.labelKey)}
           </h3>
 
           {step.id === 'child' && (
@@ -645,7 +645,11 @@ export default function AddDeviceWizard({
                   label={t(`deviceEnrollment.invitationStatuses.${liveStatus}`, { defaultValue: liveStatus ?? '' })}
                 />
               </p>
-              {!connected && <p>{t('deviceEnrollment.waitingBody')}</p>}
+              {redeemed ? (
+                <p>{t('deviceEnrollment.redeemedPendingPairingBody')}</p>
+              ) : (
+                <p>{t('deviceEnrollment.waitingBody')}</p>
+              )}
 
               {/* The lifecycle a device walks through. Only the stage the
                   server currently reports carries a pill -- the others make no
@@ -669,11 +673,10 @@ export default function AddDeviceWizard({
                 </>
               )}
 
-              {connected && (
+              {redeemed && (
                 <>
-                  <p>{t('deviceEnrollment.pairingPlain')}</p>
-                  <button type="button" className="btn btn-primary" onClick={() => onGoToSection('devices')}>
-                    {t('devicesPage.tabDevices')}
+                  <button type="button" className="btn btn-primary" onClick={() => onGoToSection('advanced')}>
+                    {t('deviceEnrollment.openPairingConfirmation')}
                   </button>
                 </>
               )}

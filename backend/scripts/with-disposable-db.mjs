@@ -272,10 +272,13 @@ function parentWebRealE2eEnvironment(baseEnv, proxyTarget) {
 }
 
 function assertLocalComposeMfaDatabase() {
-  const host = baseUrl.hostname;
-  const port = baseUrl.port || (host === 'mysql' ? '3306' : '');
-  const endpointAllowed = (['127.0.0.1', 'localhost'].includes(host) && port === '33061') || (host === 'mysql' && port === '3306');
-  if (!endpointAllowed || baseUrl.pathname !== '/pca_test') {
+  const baseUrls = [runtimeBaseUrl, migrationBaseUrl];
+  const endpointAllowed = (url) => {
+    const host = url.hostname;
+    const port = url.port || (host === 'mysql' ? '3306' : '');
+    return (['127.0.0.1', 'localhost'].includes(host) && port === '33061') || (host === 'mysql' && port === '3306');
+  };
+  if (!baseUrls.every((url) => endpointAllowed(url) && url.pathname === '/pca_test')) {
     throw new Error('Parent MFA E2E requires the repository local/Compose disposable database endpoint and database name pca_test.');
   }
   if (process.env.NODE_ENV !== 'test') throw new Error('Parent MFA E2E requires NODE_ENV=test; refusing any production or ambiguous runtime.');

@@ -622,8 +622,8 @@ jobs:
           MYSQL_DATABASE: pca_test
           MYSQL_USER: pca_test_app
           MYSQL_PASSWORD: pca_test_only_not_a_secret
-        # Host port 33061, matching backend/test.db.env's own PCA_DATABASE_URL
-        # exactly (127.0.0.1:33061/pca_test).
+        # Host port 33061 is loopback-only. The E2E step below creates a
+        # run-owned random database rather than provisioning into this default.
         ports:
           - 33061:3306
         options: >-
@@ -633,11 +633,10 @@ jobs:
           --health-retries=10
           --health-start-period=30s
     env:
-      # Disposable-database credentials, using the repository's own explicitly
-      # named test-only values (see backend/test.db.env and docker-compose.yml).
-      # Not GitHub Secrets, and never a production credential.
-      PCA_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
+      # This marker is required by the disposable-database provisioner. Its
+      # target URL is injected only after the run-owned database is created.
       PCA_DATABASE_TLS: DISABLED
+      PCA_DISPOSABLE_TEST_DATABASE_OWNER: with-disposable-db
       NODE_ENV: development
       # seed-local.mjs defaults this to 'ab'.repeat(32); the RUNNING BACKEND must
       # use the identical value or the TOTP secrets it seeds into the disposable
@@ -680,6 +679,26 @@ jobs:
               await conn.end();
             })().catch((error) => { console.error(error); process.exit(1); });
           "
+      - name: Create a run-owned disposable database and private fixture manifest path
+        working-directory: backend
+        run: |
+          suffix=$(openssl rand -hex 16)
+          database="pca_test_codex_${suffix}"
+          manifest="$(node -p "require('node:os').tmpdir()")/pca-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          DB_NAME="$database" node -e "
+            const mysql = require('mysql2/promise');
+            (async () => {
+              const name = process.env.DB_NAME;
+              if (!/^pca_test_codex_[a-f0-9]{32}$/.test(name)) throw new Error('Generated disposable DB name failed validation.');
+              const conn = await mysql.createConnection({ host: '127.0.0.1', port: 33061, user: 'root', password: 'pca_test_only_not_a_secret' });
+              await conn.query('CREATE DATABASE `' + name + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');
+              await conn.end();
+            })().catch((error) => { console.error(error); process.exit(1); });
+          "
+          {
+            echo "PCA_DATABASE_URL=mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/${database}"
+            echo "QA_E2E_MANIFEST_PATH=${manifest}"
+          } >> "$GITHUB_ENV"
       - name: Apply the full migration chain to the disposable database
         working-directory: backend
         run: npm run db:migrate
@@ -714,7 +733,9 @@ jobs:
         run: |
           node -e "
             const fs = require('node:fs');
-            const manifest = require('./qa-e2e-manifest.json');
+            const manifestPath = process.env.QA_E2E_MANIFEST_PATH;
+            if (!manifestPath) process.exit(1);
+            const manifest = require(manifestPath);
             const account = manifest.parent;
             const operator = manifest.operator;
             const family = manifest.family;
@@ -1025,6 +1046,13 @@ jobs:
         if: always()
         working-directory: platform-admin-web
         run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-results.json --label "platform-admin-web real-backend E2E" --manifest-out ../backend/platform-admin-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Remove private E2E fixture manifest
+        if: always()
+        working-directory: backend
+        run: |
+          if [ -n "${QA_E2E_MANIFEST_PATH:-}" ]; then
+            node -e "require('node:fs').rmSync(process.env.QA_E2E_MANIFEST_PATH, { force: true });"
+          fi
       - name: Upload real-E2E evidence (bounded, avoids committing transient browser output)
         # P1-14: the bulky, machine-specific and transient parts of a Playwright
         # run (traces, video, screenshots, retry data, absolute paths) belong in

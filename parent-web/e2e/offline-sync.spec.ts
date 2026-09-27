@@ -38,29 +38,10 @@ test.describe('offline / reconnect / policy status UX', () => {
     await context.setOffline(false);
   });
 
-  test('trusted-browser page walks through all five non-initial states without illegal transitions', async ({
-    page,
-  }) => {
+  test('retired trusted-browser deep links return to the Parent dashboard', async ({ page }) => {
     await page.goto('/security/trusted-browser');
-    await page.getByRole('button', { name: "Reset this browser's trust" }).click();
-    await expect(page.getByText('This browser is not trusted for protected information yet.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.getByText('You are signed in. Pair this browser with your Parent account before viewing protected information.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Request pairing' }).click();
-    await expect(page.getByText('Pairing request sent. Waiting for parent approval on an already-trusted device.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Simulate parent approval (demo mode)' }).click();
-    await expect(page.getByText('This browser is trusted and can show protected information.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Simulate an out-of-date security status (demo mode)' }).click();
-    await expect(page.getByText("This browser's security status is out of date. Some information may not be shown until it syncs again.")).toBeVisible();
-
-    await page.getByRole('button', { name: 'Resync (demo mode)' }).click();
-    await expect(page.getByText('This browser is trusted and can show protected information.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Simulate revoke (demo mode)' }).click();
-    await expect(page.getByText("This browser's trust has been revoked. Pair again to regain access.")).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Request pairing' })).toHaveCount(0);
   });
 });

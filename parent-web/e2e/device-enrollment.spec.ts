@@ -19,6 +19,13 @@ async function runAddDeviceWizard(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'How much protection?' }).click();
   await page.getByRole('button', { name: 'Review and confirm' }).click();
   await page.getByRole('button', { name: 'I understand, create invitation' }).click();
+
+  // Invitation creation is a sensitive Parent action. The demo fixture accepts
+  // any well-formed six-digit code other than its explicit rejection vector.
+  const stepUp = page.getByRole('dialog');
+  await expect(stepUp.getByRole('heading', { name: 'Confirm this sensitive change' })).toBeVisible();
+  await stepUp.getByLabel('6-digit authenticator code').fill('123456');
+  await stepUp.getByRole('button', { name: 'Confirm change' }).click();
 }
 
 test.describe('Device enrollment (invitations / pairing) -- real browser', () => {

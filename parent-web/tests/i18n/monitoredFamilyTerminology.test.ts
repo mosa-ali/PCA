@@ -12,6 +12,18 @@ function text(locale: unknown, path: string): string {
 }
 
 describe('monitored-family terminology boundaries', () => {
+  it('describes redeemed device enrollment as submitted and still pending pairing in both locales', () => {
+    expect(text(en, 'deviceEnrollment.stepEnrollmentSubmitted')).toBe('Enrollment submitted');
+    expect(text(en, 'deviceEnrollment.redeemedPendingPairingBody')).toContain('fingerprints before pairing');
+    expect(text(en, 'deviceEnrollment.redeemedPendingPairingBody')).toContain('not paired or active yet');
+    expect(text(en, 'deviceEnrollment.openPairingConfirmation')).toBe('Open pairing confirmation');
+
+    expect(text(ar, 'deviceEnrollment.stepEnrollmentSubmitted')).toBe('تم إرسال بيانات التسجيل');
+    expect(text(ar, 'deviceEnrollment.redeemedPendingPairingBody')).toContain('التحقق من بصمتي الجهاز قبل إقرانه');
+    expect(text(ar, 'deviceEnrollment.redeemedPendingPairingBody')).toContain('لم يتم إقرانه أو تفعيله بعد');
+    expect(text(ar, 'deviceEnrollment.openPairingConfirmation')).toBe('افتح تأكيد الإقران');
+  });
+
   it('uses Children wording for parent-visible monitored data in both locales', () => {
     expect(text(en, 'deviceEnrollment.consentMonitored')).toContain("children's");
     expect(text(en, 'deviceEnrollment.consentNotMonitored')).toContain("your children's devices");

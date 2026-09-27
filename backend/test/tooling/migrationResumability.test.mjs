@@ -43,6 +43,9 @@ const PRODUCTION_APPLIED_THROUGH = 40;
 
 const TOP_LEVEL_DDL = /^(CREATE TABLE|ALTER TABLE|CREATE INDEX|DROP TABLE|DROP INDEX)\b/;
 const GUARDED_CREATE = /^CREATE TABLE IF NOT EXISTS\b/;
+const ATOMIC_RECOVERY_MIGRATIONS = new Map([
+  ['0057_parent_actor_provenance_for_removal_decisions.sql', 'ALTER TABLE enrollment_protection_approval_requests'],
+]);
 
 /**
  * Drops full-line `--` comments before any token analysis. The migration
@@ -140,7 +143,9 @@ test('PCA-P1-07: every migration not yet applied in production is resumable afte
   for (const file of pending) {
     const { topLevelAlters, unguardedCreates } = assessResumability(file.text);
     for (const statement of topLevelAlters) {
-      offenders.push(`${file.name}: unguarded top-level "${statement}"`);
+      if (ATOMIC_RECOVERY_MIGRATIONS.get(file.name) !== statement) {
+        offenders.push(`${file.name}: unguarded top-level "${statement}"`);
+      }
     }
     for (const statement of unguardedCreates) {
       offenders.push(`${file.name}: "${statement}" must be CREATE TABLE IF NOT EXISTS`);
@@ -152,6 +157,20 @@ test('PCA-P1-07: every migration not yet applied in production is resumable afte
     [],
     `pending migrations must survive a retry after an interrupted apply:\n${offenders.join('\n')}`,
   );
+});
+
+test('the named migration-0057 atomic recovery exception remains single-statement and fail-closed', () => {
+  const file = migrationFiles().find((candidate) => candidate.name === '0057_parent_actor_provenance_for_removal_decisions.sql');
+  assert.ok(file, 'migration 0057 must remain in the migration chain');
+  const analysis = assessResumability(file.text);
+  assert.equal(analysis.topLevelDdlCount, 1, 'migration 0057 must remain one atomic top-level DDL statement');
+  assert.deepEqual(analysis.topLevelAlters, [ATOMIC_RECOVERY_MIGRATIONS.get(file.name)]);
+  assert.deepEqual(analysis.unguardedCreates, []);
+
+  const runner = readFileSync(fileURLToPath(new URL('../../scripts/migrate.mjs', import.meta.url)), 'utf8');
+  assert.match(runner, /file === '0057_parent_actor_provenance_for_removal_decisions\.sql'/);
+  assert.match(runner, /recoveryState === 'COMPLETE'/);
+  assert.match(runner, /recoveryState === 'PARTIAL'/);
 });
 
 test('every migration that prepares a statement also deallocates it', () => {

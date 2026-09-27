@@ -29,9 +29,10 @@ test.describe('RBAC route guards (real browser)', () => {
   test('Owner triggers a step-up dialog for a sensitive action (export)', async ({ page }) => {
     await page.goto('/privacy/export?demoRole=OWNER');
     await page.getByRole('button', { name: 'Export' }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByText('Re-authenticate to continue')).toBeVisible();
-    await page.getByRole('button', { name: 'Re-authenticate' }).click();
+    const stepUp = page.getByRole('dialog');
+    await expect(stepUp.getByRole('heading', { name: 'Confirm this sensitive change' })).toBeVisible();
+    await stepUp.getByLabel('6-digit authenticator code').fill('123456');
+    await stepUp.getByRole('button', { name: 'Confirm change' }).click();
     // PCA-FR-093: the real backend intake response is always shown here
     // (pending crypto review, never a fabricated completed export) --
     // see Export.tsx's own header comment for why this changed from an

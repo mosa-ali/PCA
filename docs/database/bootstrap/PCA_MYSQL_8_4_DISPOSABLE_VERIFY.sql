@@ -36,7 +36,7 @@ FROM (
          (SELECT COUNT(*) FROM (SELECT DISTINCT table_name, index_name
             FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND non_unique = 0 AND index_name <> 'PRIMARY') u)
-  UNION ALL SELECT 'non-unique indexes', 140,
+  UNION ALL SELECT 'non-unique indexes', 141,
          (SELECT COUNT(*) FROM (SELECT DISTINCT table_name, index_name
             FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND non_unique = 1) n)
@@ -45,7 +45,7 @@ FROM (
             WHERE table_schema = DATABASE() AND constraint_type = 'CHECK')
   UNION ALL SELECT 'reference data rows', 14,
          (SELECT COUNT(*) FROM `billing_currencies`) + (SELECT COUNT(*) FROM `billing_commercial_markets`) + (SELECT COUNT(*) FROM `billing_country_market_rules`) + (SELECT COUNT(*) FROM `entitlement_defaults`)
-  UNION ALL SELECT 'schema_migrations rows', 55,
+  UNION ALL SELECT 'schema_migrations rows', 56,
          (SELECT COUNT(*) FROM `schema_migrations`)
   UNION ALL SELECT 'views (must be 0)', 0,
          (SELECT COUNT(*) FROM information_schema.tables
@@ -59,8 +59,8 @@ FROM (
 -- Journal endpoints, so a truncated paste is visible rather than silent.
 SELECT
   '0001_mysql_baseline.sql' AS expected_first, MIN(version) AS actual_first,
-  '0057_parent_actor_provenance_for_removal_decisions.sql' AS expected_last,  MAX(version) AS actual_last,
-  CASE WHEN MIN(version) = '0001_mysql_baseline.sql' AND MAX(version) = '0057_parent_actor_provenance_for_removal_decisions.sql' THEN 'PASS' ELSE 'FAIL' END AS result
+  '0058_family_authority_request_challenges_service_index.sql' AS expected_last,  MAX(version) AS actual_last,
+  CASE WHEN MIN(version) = '0001_mysql_baseline.sql' AND MAX(version) = '0058_family_authority_request_challenges_service_index.sql' THEN 'PASS' ELSE 'FAIL' END AS result
 FROM `schema_migrations`;
 
 -- Environment, which PCA pins independently of the schema. MySQL must be

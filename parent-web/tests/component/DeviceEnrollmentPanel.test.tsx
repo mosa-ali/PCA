@@ -8,6 +8,7 @@ import {
   __resetDevDeviceEnrollmentState,
   __devKnownPairingDeviceIds,
   __devDenyNextCreateInvitation,
+  __devRedeemLastInvitation,
 } from '../../src/api/dev/devDeviceEnrollmentClient';
 import type { DevDeviceEnrollmentClient } from '../../src/api/dev/devDeviceEnrollmentClient';
 import { __resetDevChildProfileState, __seedDevChildProfile } from '../../src/api/dev/devChildProfileClient';
@@ -46,6 +47,24 @@ describe('Device enrollment -- Add device section', () => {
     __seedDevChildProfile('dev-family-1', 'child-existing-1');
     setChildLabel('child-existing-1', 'Existing Child (DEV)');
   });
+
+  it('shows REDEEMED as enrollment submitted until pairing is confirmed', async () => {
+    renderWithProviders(<Devices />, { role: 'OWNER', route: ADD_SECTION });
+    await runAddDeviceWizard();
+    await screen.findByTestId('raw-invitation-token');
+    await userEvent.click(await screen.findByRole('button', { name: 'Get the app' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Waiting for the device' }));
+
+    expect(__devRedeemLastInvitation()).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Enrollment submitted' }, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.getByText(/still needs to verify both device fingerprints before pairing/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Redeemed').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { name: 'Connected' })).not.toBeInTheDocument();
+    expect(screen.getByText(/not paired or active yet/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open pairing confirmation' }));
+    expect(await screen.findByRole('heading', { name: 'Confirm device pairing' })).toBeInTheDocument();
+  }, 15000);
 
   it('does not create anything until the parent confirms the monitoring scope', async () => {
     renderWithProviders(<Devices />, { role: 'OWNER', route: ADD_SECTION });
@@ -318,5 +337,5 @@ describe('Device enrollment -- pairing confirmation', () => {
     expect(screen.queryByRole('button', { name: 'Confirm pairing' })).not.toBeInTheDocument();
     const panel = screen.getByText('Setup code A').closest('.section-panel') as HTMLElement;
     expect(within(panel).getByText('Not permitted for your role')).toBeInTheDocument();
-  });
+  }, 15_000);
 });

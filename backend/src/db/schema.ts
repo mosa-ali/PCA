@@ -3,7 +3,7 @@
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 92 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0057; 55 files, 0009/0010 never existed) from an empty database
+// through 0058; 56 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -28,7 +28,9 @@
 // Migration 0051 adds the successful-login security event; migrations 0052
 // and 0053 add nullable Parent names and protected contact fields; migration
 // 0054 and 0055 expand the sensitive-operation allowlist for one-use Parent
-// MFA grants; 0056 adds a durable family device-session epoch.
+// MFA grants; 0056 adds a durable family device-session epoch; 0057 persists
+// Parent actor provenance; 0058 reconciles the missing service-account index
+// on family_authority_request_challenges with this canonical declaration.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -1969,7 +1971,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0058_family_authority_request_challenges_service_index.sql"],
     ownerModule: "backend/src/familycommercial/authority",
     columns: [
       { name: "challenge_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "One-time request challenge identifier." },
@@ -2468,6 +2470,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     uniqueIndexes: [],
     indexes: [
       { name: "parent_genesis_step_up_session_idx", columns: ["account_id", "service_account_id", "session_id_hash", "created_at"], unique: false },
+      { name: "parent_genesis_step_up_service_account_fk", columns: ["service_account_id"], unique: false },
     ],
     foreignKeys: [
       { name: "parent_genesis_step_up_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },

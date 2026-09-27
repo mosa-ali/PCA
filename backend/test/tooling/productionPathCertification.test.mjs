@@ -697,6 +697,16 @@ test('PCA_PRODUCTION_PATH_CERTIFICATION 4: the certified file list in the runner
   );
 });
 
+test('Parent MFA disposable runner validates both configured database URLs before connecting', () => {
+  const runner = readFileSync(DISPOSABLE_RUNNER_PATH, 'utf8');
+  const guard = runner.match(/function assertLocalComposeMfaDatabase\(\)\s*\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(guard, 'Parent MFA database guard must remain directly identifiable');
+  assert.match(guard, /\[runtimeBaseUrl,\s*migrationBaseUrl\]/, 'both configured database URLs are checked');
+  assert.match(guard, /baseUrls\.every\(/, 'every configured endpoint and database path must pass');
+  assert.match(guard, /url\.pathname === '\/pca_test'/, 'only the repository test database may seed a scratch DB');
+  assert.doesNotMatch(guard, /\bbaseUrl\b/, 'the removed undeclared URL variable must not return');
+});
+
 test('PCA_PRODUCTION_PATH_CERTIFICATION: the uncertified count may only go DOWN (ratchet), and only by real certification', () => {
   // The ratchet tracks QUANTITY AND QUALITY, not just the number. Equality rather
   // than `<=' on purpose: closing a gap requires LOWERING this baseline, so

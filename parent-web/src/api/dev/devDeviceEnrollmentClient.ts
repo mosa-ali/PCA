@@ -38,6 +38,18 @@ export function __devDenyNextCreateInvitation(code: 'MANAGED_DEVICE_LIMIT_REACHE
   nextCreateInvitationDenial = code;
 }
 
+/** Test/dev-only lifecycle transition: the device claimed the invitation but remains PAIRING_PENDING. */
+export function __devRedeemLastInvitation(): string | null {
+  const last = invitations.at(-1);
+  if (!last) return null;
+  invitations[invitations.length - 1] = {
+    ...last,
+    status: 'REDEEMED',
+    redeemedAt: new Date().toISOString(),
+  };
+  return last.invitationId;
+}
+
 /** Test/dev-only accessor: the device ids seeded by createInvitation() calls so far, most recent last. */
 export function __devKnownPairingDeviceIds(): string[] {
   return [...pairingRequests.keys()];

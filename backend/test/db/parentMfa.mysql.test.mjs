@@ -204,7 +204,7 @@ test('migration 0049 is idempotent: re-running it against the migrated schema ch
   assert.equal(columns[0].n, 1);
 });
 
-test('migration 0050 is idempotent: hold columns and event constraint can be safely reapplied', async () => {
+test('migration 0050 is idempotent after 0051 owns the widened successful-login event constraint', async () => {
   const sql = await readFile(new URL('../../migrations/0050_parent_mfa_recovery_hold.sql', import.meta.url), 'utf8');
   const connection = await getPool().getConnection();
   try {
@@ -221,6 +221,47 @@ test('migration 0050 is idempotent: hold columns and event constraint can be saf
   assert.equal(Number(columns[0].n), 2);
   const checks = await query("SELECT COUNT(*) AS n FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'parent_account_security_events' AND constraint_name = 'parent_account_security_events_type_check'");
   assert.equal(Number(checks[0].n), 1);
+});
+
+test('migration 0058 reconciles the canonical service-account index and can be replayed', async () => {
+  const sql = await readFile(new URL('../../migrations/0058_family_authority_request_challenges_service_index.sql', import.meta.url), 'utf8');
+  const connection = await getPool().getConnection();
+  const replay = async () => connection.query({ sql, multipleStatements: true }).catch(async (error) => {
+      if (error.code !== 'ER_PARSE_ERROR') throw error;
+      for (const statement of sql.split(/;\s*\n/).map((part) => part.replace(/^(\s*--[^\n]*\n)+/g, '').trim()).filter(Boolean)) {
+        await connection.query(statement);
+      }
+    });
+  let restoreIndex = false;
+  try {
+    await replay();
+    await connection.query('DROP INDEX family_authority_request_challenges_service_fk ON family_authority_request_challenges');
+    restoreIndex = true;
+    await connection.query('CREATE INDEX family_authority_request_challenges_service_fk ON family_authority_request_challenges (device_id)');
+    await assert.rejects(replay(), (error) => error.code === 'ER_DUP_KEYNAME');
+    await connection.query('DROP INDEX family_authority_request_challenges_service_fk ON family_authority_request_challenges');
+    await replay();
+    restoreIndex = false;
+  } finally {
+    try {
+      if (restoreIndex) {
+        await connection.query('DEALLOCATE PREPARE pca_0058_create_index_stmt').catch((error) => {
+          if (error.code !== 'ER_UNKNOWN_STMT_HANDLER') throw error;
+        });
+        const [existing] = await connection.query("SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'family_authority_request_challenges' AND index_name = 'family_authority_request_challenges_service_fk'");
+        if (Number(existing[0].n) > 0) {
+          await connection.query('DROP INDEX family_authority_request_challenges_service_fk ON family_authority_request_challenges');
+        }
+        await replay();
+      }
+    } finally {
+      connection.release();
+    }
+  }
+  const indexes = await query("SELECT column_name AS columnName, non_unique AS nonUnique, seq_in_index AS sequence FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'family_authority_request_challenges' AND index_name = 'family_authority_request_challenges_service_fk'");
+  assert.deepEqual(indexes.map((index) => ({ column: index.columnName, nonUnique: Number(index.nonUnique), sequence: Number(index.sequence) })), [
+    { column: 'service_account_id', nonUnique: 1, sequence: 1 },
+  ]);
 });
 
 test.after(async () => {
