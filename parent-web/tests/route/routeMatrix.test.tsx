@@ -34,7 +34,6 @@ const PUBLIC_ROUTES = [
   '/family/roles',
   '/family/devices',
   '/security/status',
-  '/security/trusted-browser',
   '/security/audit',
   '/notifications',
   '/settings',
@@ -103,6 +102,15 @@ describe('route matrix: unknown paths hit the catch-all NotFound route', () => {
       expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
     });
   }
+});
+
+describe('route matrix: legacy Parent Trusted Browser links are retired safely', () => {
+  it('does not render the retired pairing page or prompt from its old URL', async () => {
+    renderWithProviders(<App />, { route: '/security/trusted-browser', role: 'OWNER' });
+    const heading = await screen.findByRole('heading', { level: 1 });
+    expect(heading).not.toHaveTextContent(/trusted browser status/i);
+    expect(screen.queryByRole('button', { name: /pair|trust this browser/i })).not.toBeInTheDocument();
+  });
 });
 
 describe('route matrix: RBAC gates hold across every guarded route', () => {

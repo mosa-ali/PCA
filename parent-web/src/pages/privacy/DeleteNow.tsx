@@ -32,9 +32,9 @@ export default function DeleteNow() {
 
   const confirmDelete = async () => {
     try {
-      await runFamilyAction('DELETE_HISTORY', async () => {
+      await runFamilyAction('DELETE_HISTORY', async (stepUpToken) => {
         const actionId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `delete-now-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const result = await clients.retention.deleteNow(actionId);
+        const result = await clients.retention.deleteNow(actionId, stepUpToken!);
         // The backend's literal enum (DELETE_PENDING_REMOTE_DEVICE) used to be
         // interpolated straight into the sentence a parent reads. The
         // disposition itself is unchanged -- still always "pending", never

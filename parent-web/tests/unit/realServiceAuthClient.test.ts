@@ -6,7 +6,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const ACTIVE = { status: 'ACTIVE' } as const;
-const GRACE = { status: 'GRACE', graceExpiresAt: '2026-09-28T10:00:00.000Z' } as const;
+const GRACE = { status: 'GRACE', graceExpiresAt: '2026-09-27T00:00:00.000Z' } as const;
 
 function sessionBody(overrides: Record<string, unknown> = {}) {
   return { accountId: 'acc-1', familyId: 'fam-1', role: 'ADMINISTRATOR', mfa: ACTIVE, sessionEstablished: true, ...overrides };
@@ -26,6 +26,7 @@ describe('RealServiceAuthClient', () => {
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     clearCookie('pca_family_csrf');
+    document.cookie = 'pca_family_csrf=csrf-token-value';
   });
 
   afterEach(() => {
@@ -58,12 +59,11 @@ describe('RealServiceAuthClient', () => {
     });
   });
 
-  it('getSession maps ACTIVE and SETUP_REQUIRED authenticator states verbatim', async () => {
+  it('getSession maps ACTIVE and GRACE authenticator states', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true, role: 'VIEWER', mfa: ACTIVE }));
     expect((await client.getSession())?.mfa).toEqual(ACTIVE);
-    const setupRequired = { status: 'SETUP_REQUIRED', graceExpiresAt: '2026-09-20T10:00:00.000Z' };
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true, role: 'VIEWER', mfa: setupRequired }));
-    expect((await client.getSession())?.mfa).toEqual(setupRequired);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true, role: 'VIEWER', mfa: GRACE }));
+    expect((await client.getSession())?.mfa).toEqual(GRACE);
   });
 
   it('getSession fails closed on a body without a family or role (no pre-family state exists any more)', async () => {
@@ -168,41 +168,9 @@ describe('RealServiceAuthClient', () => {
     await expect(client.signIn('parent@example.test', 'x')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 
-  it('signIn returns STEP_UP_REQUIRED (never a fabricated session) when the backend emails a code', async () => {
+  it('maps an unknown-browser email step-up response without establishing a session', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { sessionEstablished: false, stepUpRequired: true }));
-    const result = await client.signIn('parent@example.test', 'correct-password');
-    expect(result).toEqual({ status: 'STEP_UP_REQUIRED' });
-  });
-
-  // ---------------------------------------------------------------------
-  // POST /api/parent/login/step-up
-  // ---------------------------------------------------------------------
-
-  it('completeLoginStepUp posts email/code and returns the established session', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, sessionBody({ mfa: GRACE })));
-    const result = await client.completeLoginStepUp('parent@example.test', '123456');
-    if (result.status !== 'AUTHENTICATED') throw new Error('expected AUTHENTICATED');
-    expect(result.session.accountId).toBe('acc-1');
-    expect(result.session.mfa).toEqual(GRACE);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`${apiBaseUrl}/api/parent/login/step-up`);
-    expect(init.credentials).toBe('include');
-    expect(JSON.parse(init.body as string)).toEqual({ email: 'parent@example.test', code: '123456' });
-  });
-
-  it('completeLoginStepUp returns MFA_SETUP_REQUIRED (no session) once the grace period is over', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { sessionEstablished: false, mfaSetupRequired: true }));
-    expect(await client.completeLoginStepUp('parent@example.test', '123456')).toEqual({ status: 'MFA_SETUP_REQUIRED' });
-  });
-
-  it('completeLoginStepUp surfaces INVALID_CREDENTIALS on 401 (wrong/expired code)', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'invalid_code' }));
-    await expect(client.completeLoginStepUp('parent@example.test', '000000')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
-  });
-
-  it('completeLoginStepUp surfaces RATE_LIMITED on 429', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate_limited' }));
-    await expect(client.completeLoginStepUp('parent@example.test', '000000')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    await expect(client.signIn('parent@example.test', 'correct-password')).resolves.toEqual({ status: 'EMAIL_OTP_REQUIRED' });
   });
 
   // ---------------------------------------------------------------------
@@ -223,10 +191,25 @@ describe('RealServiceAuthClient', () => {
     expect(JSON.stringify(client)).not.toContain('ABCD');
   });
 
+  it('fetches the host-only API CSRF cookie through the authenticated no-store endpoint', async () => {
+    clearCookie('pca_family_csrf');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 'server-issued-csrf-token-value-0123456789' }))
+      .mockResolvedValueOnce(jsonResponse(200, { otpauthUri: 'otpauth://totp/PCA:x?secret=ABCD', secret: 'ABCD' }));
+    await client.startMfaEnrollment('parent@example.test', 'pw');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/api/parent/csrf`);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' });
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe(`${apiBaseUrl}/api/parent/mfa/enrollment/start`);
+    expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('server-issued-csrf-token-value-0123456789');
+  });
+
   it('startMfaEnrollment on the ticket path (no CSRF cookie) sends no CSRF header', async () => {
+    clearCookie('pca_family_csrf');
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { otpauthUri: 'otpauth://totp/PCA:x?secret=ABCD', secret: 'ABCD' }));
     await client.startMfaEnrollment('parent@example.test', 'pw');
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(init.headers as Record<string, string>).not.toHaveProperty('X-PCA-CSRF-Token');
   });
 
@@ -235,6 +218,12 @@ describe('RealServiceAuthClient', () => {
     await expect(client.startMfaEnrollment('parent@example.test', 'pw')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
     fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate_limited' }));
     await expect(client.startMfaEnrollment('parent@example.test', 'pw')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
+
+  it('preserves a CSRF mismatch as a distinct setup error', async () => {
+    document.cookie = 'pca_family_csrf=csrf-token-value';
+    fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'csrf_mismatch' }));
+    await expect(client.startMfaEnrollment('parent@example.test', 'pw')).rejects.toMatchObject({ code: 'CSRF_FAILED' });
   });
 
   it('confirmMfaEnrollment reports whether the ticket path established a session', async () => {
@@ -293,6 +282,18 @@ describe('RealServiceAuthClient', () => {
     expect(url).toBe(`${apiBaseUrl}/api/parent/mfa/step-up`);
     expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-token-value');
     expect(JSON.parse(init.body as string)).toEqual({ operation: 'BILLING_CHECKOUT_CREATE', code: '123456' });
+  });
+
+  it('issueSensitiveStepUp posts the exact sensitive operation and returns its account/family-bound grant', async () => {
+    document.cookie = 'pca_family_csrf=csrf-token-value';
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { stepUpToken: 'sensitive-grant-1', operation: 'family.retention.update', expiresAt: '2026-09-26T10:05:00.000Z' }));
+    await expect(client.issueSensitiveStepUp('family.retention.update', '123456')).resolves.toEqual({
+      stepUpToken: 'sensitive-grant-1', operation: 'family.retention.update', expiresAt: '2026-09-26T10:05:00.000Z',
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${apiBaseUrl}/api/parent/mfa/step-up`);
+    expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-token-value');
+    expect(JSON.parse(init.body as string)).toEqual({ operation: 'family.retention.update', code: '123456' });
   });
 
   it('issueCommercialStepUp rejects a grant minted for a different operation', async () => {

@@ -18,7 +18,8 @@ describe('Retention', () => {
     expect(locationRadio).not.toBeDisabled();
     await userEvent.click(locationRadio);
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
+    await userEvent.type(await screen.findByLabelText('6-digit authenticator code'), '123456');
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm change' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('not yet stored or applied to any device');
     expect(__devLastSubmittedRetentionPolicy()?.locationMode).toEqual({ window: '14_DAYS' });

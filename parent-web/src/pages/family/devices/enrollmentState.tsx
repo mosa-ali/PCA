@@ -124,7 +124,7 @@ export function useInvitations(familyId: string): InvitationsState {
 }
 
 export interface InvitationCreationState {
-  create: (input: CreateInvitationInput) => Promise<InvitationDto | null>;
+  create: (input: CreateInvitationInput, stepUpToken: string) => Promise<InvitationDto | null>;
   creating: boolean;
   createError: string | null;
   createErrorServerCode: string | null;
@@ -162,12 +162,12 @@ export function useInvitationCreation(familyId: string, onCreated?: () => void):
   }, [justCreated]);
 
   const create = useCallback(
-    async (input: CreateInvitationInput) => {
+    async (input: CreateInvitationInput, stepUpToken: string) => {
       setCreateError(null);
       setCreateErrorServerCode(null);
       setCreating(true);
       try {
-        const created = await clients.deviceEnrollment.createInvitation(familyId, input);
+        const created = await clients.deviceEnrollment.createInvitation(familyId, input, stepUpToken);
         const { rawInvitationToken, ...invitation } = created;
         setJustCreated({ invitation, rawInvitationToken });
         onCreated?.();
@@ -212,7 +212,7 @@ export interface PairingState {
   /** INVARIANT 3: BOTH fingerprints, on a PAIRING_PENDING request. Nothing else. */
   canConfirm: boolean;
   lookup: (deviceId: string) => Promise<void>;
-  confirm: () => Promise<void>;
+  confirm: (stepUpToken: string) => Promise<void>;
 }
 
 export function usePairing(familyId: string): PairingState {
@@ -244,13 +244,13 @@ export function usePairing(familyId: string): PairingState {
 
   // INVARIANT 2: never automatic. This is only ever reached from an explicit
   // button click in PairingConfirmation.
-  const confirm = useCallback(async () => {
+  const confirm = useCallback(async (stepUpToken: string) => {
     if (!pairing) return;
     setPairingError(null);
     setConfirming(true);
     try {
       // INVARIANT 4: the rendered result is the server's own `status`.
-      setPairing(await clients.deviceEnrollment.confirmPairing(familyId, pairing.deviceId));
+      setPairing(await clients.deviceEnrollment.confirmPairing(familyId, pairing.deviceId, stepUpToken));
     } catch (e) {
       setPairingError(t(errorMessageKey(e)));
     } finally {

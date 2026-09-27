@@ -39,6 +39,7 @@ interface BackendRemovalDecision {
   childId: string;
   deviceId: string;
   protectionLevel: ProtectionTargetOption['protectionLevel'];
+  operation: 'REMOVE_REVOKE_DEVICE' | 'DISABLE_PROTECTION_POLICY';
   requestedAt: string;
   expiresAt: string;
   reasonCategory: string | null;
@@ -98,6 +99,7 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
       childLabel: target?.childLabel ?? record.childId,
       deviceId: record.deviceId,
       deviceLabel: target?.deviceLabel ?? record.deviceId,
+      operation: record.operation,
       requestedAtUtc: record.requestedAt,
       expiresAtUtc: record.expiresAt,
       protectionLevel: record.protectionLevel,
@@ -122,11 +124,11 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
     return this.toPinStatus(body.pinStatus);
   }
 
-  async configurePin(pin: string): Promise<ProtectionPinStatus> {
+  async configurePin(pin: string, stepUpToken: string): Promise<ProtectionPinStatus> {
     const familyId = await this.familyId('configurePin');
     const response = await this.request('configurePin', familyId, '/administration-pin', {
       method: 'POST',
-      body: JSON.stringify({ pin }),
+      body: JSON.stringify({ pin, stepUpToken }),
     });
     const body = (await response.json()) as { pinStatus: BackendPinStatus };
     return this.toPinStatus(body.pinStatus);
@@ -145,6 +147,7 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
     protectionLevel: ProtectionTargetOption['protectionLevel'];
     operation: 'REMOVE_REVOKE_DEVICE' | 'DISABLE_PROTECTION_POLICY';
     reasonCategory: string | null;
+    stepUpToken: string;
   }): Promise<ProtectionApprovalView> {
     const familyId = await this.familyId('requestApproval');
     const requestedAt = new Date();
@@ -159,6 +162,7 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
         requestedAt: requestedAt.toISOString(),
         expiresAt: new Date(requestedAt.getTime() + 5 * 60 * 1000).toISOString(),
         reasonCategory: input.reasonCategory,
+        stepUpToken: input.stepUpToken,
       }),
     });
     const body = (await response.json()) as { removalDecision: BackendRemovalDecision };
@@ -171,6 +175,7 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
     decision: ProtectionDecision;
     temporaryDisableUntilUtc?: string | null;
     pin?: string;
+    stepUpToken?: string;
   }): Promise<ProtectionApprovalView> {
     const familyId = await this.familyId('decideApproval');
     const decisionBody = {
@@ -182,7 +187,7 @@ export class RealProtectionAdministrationActions implements ProtectionAdministra
         'decideApproval',
         familyId,
         `/removal-decisions/${encodeURIComponent(input.requestId)}/decide/local-pin`,
-        { method: 'POST', body: JSON.stringify({ ...decisionBody, pin: input.pin ?? '' }) },
+        { method: 'POST', body: JSON.stringify({ ...decisionBody, pin: input.pin ?? '', stepUpToken: input.stepUpToken }) },
       );
       const body = (await response.json()) as { removalDecision: BackendRemovalDecision };
       return this.toApprovalView(body.removalDecision);

@@ -97,7 +97,26 @@
   "settings": {
     "languageSectionTitle": "Language preferences",
     "loadPreferencesFailed": "We could not load your saved settings.",
-    "saveLanguageFailed": "We could not save your language preference. It is applied on this browser only."
+    "saveLanguageFailed": "We could not save your language preference. It is applied on this browser only.",
+    "identitySectionTitle": "Your identity",
+    "firstNameLabel": "First name",
+    "lastNameLabel": "Last name",
+    "emailLabel": "Email address",
+    "phoneNumberLabel": "Phone number",
+    "notProvided": "Not provided",
+    "emailVerified": "Verified",
+    "emailVerificationPending": "Verification pending",
+    "phoneVerified": "Verified",
+    "phoneVerificationPending": "Not verified",
+    "saveIdentity": "Save name",
+    "identitySaveFailed": "We could not save your name. Please try again.",
+    "identitySaved": "Your name has been updated.",
+    "identityLoadFailed": "We could not load your identity details.",
+    "identityNameRequired": "Enter your first and last name.",
+    "identityNameTooLong": "Each name must be 128 characters or fewer.",
+    "identityNameInvalid": "Names cannot contain control characters.",
+    "phoneInvalid": "Enter a phone number with its country code, such as +14155552671.",
+    "identityLoading": "Loading your identity details..."
   },
   "roles": {
     "owner": "Owner",
@@ -155,7 +174,7 @@
   },
   "errors": {
     "cryptoReviewRequired": "Your children's protected data cannot be opened on this browser yet. This feature is not available in this version -- no data was lost, and nothing was shown from an unverified source.",
-    "endpointNotTrusted": "This browser is not trusted for your children's protected data yet. Pair it from an already-trusted device, then try again.",
+    "endpointNotTrusted": "This protected information is not available yet. Browser pairing is not needed for parent access.",
     "serviceUnavailable": "This feature is not connected to PCA's service yet, so there is nothing to show here. No data was hidden or lost.",
     "unknown": "We could not complete that. Please try again."
   },
@@ -165,6 +184,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "familyDataUnavailableBody": "Protected data could not be verified, so it remains hidden.",
     "children": "Children",
     "deviceState": "Device",
     "screenTime": "Screen time",
@@ -243,8 +263,9 @@
       "CHILD_CANNOT_EDIT_POLICY": "A child may only submit requests, not edit policy.",
       "VIEWER_MANAGEMENT_NOT_DELEGATED": "The Owner has not delegated Viewer management to Administrators.",
       "OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS": "Only the Owner (or a delegated Administrator) may manage Viewers.",
-      "OWNER_ONLY_STEP_UP": "Only the Owner may perform this action, with step-up authentication.",
-      "OWNER_ONLY_RETENTION_DELETE_EXPORT": "Only the Owner may change retention, delete history, or export by default.",
+      "OWNER_ONLY_STEP_UP": "Only an Owner or Administrator may perform this action, with fresh authenticator confirmation.",
+      "OWNER_ONLY_TRUST_ROOT": "Only the account Owner may perform this action, with fresh authenticator confirmation.",
+      "OWNER_ONLY_RETENTION_DELETE_EXPORT": "Only a Parent Administrator may change retention, delete history, or export, with fresh authenticator confirmation.",
       "DEVICE_REVOCATION_NOT_DELEGATED": "The Owner has not delegated device revocation to Administrators.",
       "OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES": "Only the Owner (or a delegated Administrator) may revoke devices or disable protection.",
       "ENROLLMENT_NOT_FOR_CHILD": "Device enrollment status is a parent-management surface, not shown to a Child.",
@@ -255,7 +276,7 @@
       "UNRECOGNISED_ACTION": "This action is not recognised."
     },
     "nextStep": {
-      "ownerOnly": "Only the account owner can do this. Ask them directly.",
+      "ownerOnly": "Ask the account Owner to do this.",
       "notDelegated": "The Owner has not turned this on for Administrators. Ask the Owner to do it themselves, or to enable it for Administrators.",
       "ownerOrAdmin": "Ask the account owner or an Administrator to do this for you.",
       "askAParent": "Ask a Parent or Administrator for help.",
@@ -302,6 +323,16 @@
       "setupLink": "Set up an authenticator app",
       "notPermitted": "Only an Administrator can make payment and subscription changes.",
       "expired": "Your confirmation expired or was already used. Please try again and enter a new code."
+    },
+    "sensitive": {
+      "title": "Confirm this sensitive change",
+      "body": "Enter the current 6-digit code from your authenticator app. The confirmation applies to this change only.",
+      "confirm": "Confirm change",
+      "setupRequiredTitle": "Set up an authenticator app first",
+      "setupRequiredBody": "Sensitive account and privacy changes need a code from an authenticator app. Set one up, then try again.",
+      "setupLink": "Set up an authenticator app",
+      "notPermitted": "Only an active Parent Administrator can make this change.",
+      "expired": "Your confirmation expired or was already used. Please try again and enter a new code."
     }
   },
   "mfa": {
@@ -312,11 +343,13 @@
     "sessionExpired": "This setup session has expired. Please sign in again.",
     "setup": {
       "title": "Set up your authenticator app",
-      "requiredNotice": "For your security, an authenticator app is now required to sign in to your account.",
-      "intro": "Add PCA to an authenticator app on your phone. When you sign in, you'll enter the 6-digit code the app shows.",
+      "requiredNotice": "Set up an authenticator within the time shown to keep using your Parent Console.",
+      "intro": "Add PCA to an authenticator app. You may need its 6-digit code to verify a new browser.",
       "appsNote": "This works with Microsoft Authenticator, Google Authenticator or any other authenticator (TOTP) app. You do not need a Microsoft or Google account.",
       "reauthBody": "First, confirm your email address and password.",
       "continue": "Continue",
+      "csrfFailed": "We could not validate this browser's security token. Refresh the page and try again.",
+      "forbidden": "Authenticator setup is not available for this account right now.",
       "credentialsOrExpired": "Email or password is incorrect, or this setup session has expired. If it has expired, sign in again.",
       "scanTitle": "Scan this QR code with your authenticator app",
       "qrLabel": "QR code for adding PCA to your authenticator app",
@@ -329,14 +362,12 @@
       "notNow": "Not now"
     },
     "grace": {
-      "title": "Protect your account with an authenticator app",
-      "body": "Add a second sign-in step with an authenticator app on your phone. It becomes required when the time below runs out.",
-      "timeLeft": "Time left to set it up: {{days}} and {{hours}}.",
-      "timeLeftHours": "Time left to set it up: {{hours}}.",
-      "lessThanAnHour": "Time left to set it up: less than an hour.",
-      "deadline": "Required from {{date}}.",
-      "setUpNow": "Set up now",
-      "remindLater": "Remind me later"
+      "title": "Set up your authenticator",
+      "body": "Set up an authenticator within {{remaining}}. Your Parent Console stays available during this period.",
+      "countdownDays": "{{days}} days and {{hours}} hours",
+      "countdownHours": "{{hours}} hours",
+      "setUpNow": "Set up an authenticator",
+      "remindLater": "Dismiss"
     },
     "recover": {
       "title": "Lost your authenticator?",
@@ -546,6 +577,7 @@
     "invitationSecurityNotice": "Enrollment links and fallback codes are short-lived and single-use. Treat them as sensitive setup material and send them only to the intended child device.",
     "pairingSecurityNotice": "Pairing securely connects the device. Confirm only after both fingerprints match exactly; a requested protection mode does not prove that setup succeeded.",
     "confirmPairing": "Confirm pairing",
+    "stepUpRequired": "Confirm this action with your authenticator app before pairing the device.",
     "confirming": "Confirming...",
     "paired": "This device is now paired.",
     "invitationStatuses": {
@@ -1288,6 +1320,14 @@
   "auth": {
     "registerTitle": "Create your PCA account",
     "registerBody": "Register with your email and a password. We'll send a one-time code to verify your email before your account is active.",
+    "firstNameLabel": "First name",
+    "lastNameLabel": "Last name",
+    "phoneNumberLabel": "Phone number (optional)",
+    "phoneOptionalHint": "Include the country code, for example +14155552671. Leave blank if you prefer.",
+    "identityNameRequired": "Enter your first and last name.",
+    "identityNameTooLong": "Each name must be 128 characters or fewer.",
+    "identityNameInvalid": "Names cannot contain control characters.",
+    "phoneInvalid": "Enter a phone number with its country code, such as +14155552671.",
     "emailLabel": "Email address",
     "passwordLabel": "Password",
     "passwordConfirmationLabel": "Confirm password",
@@ -1313,11 +1353,8 @@
     "loginTitle": "Sign in to PCA",
     "loginBody": "Sign in with your email and password to access your PCA parent console.",
     "loginSubmit": "Sign in",
-    "loginStepUpTitle": "Check your email",
-    "loginStepUpBody": "We sent a verification code to {{email}}. Enter the code to continue.",
-    "loginStepUpSubmit": "Verify and sign in",
-    "loginStepUpResend": "Resend code",
-    "loginStepUpBack": "Back to sign in",
+    "loginMfaSubmit": "Verify and sign in",
+    "loginMfaBack": "Back to sign in",
     "needAccount": "Need an account?",
     "registerLink": "Create one",
     "genericError": "We could not complete that. Please try again.",
@@ -1343,10 +1380,14 @@
     "backToLogin": "Back to sign in",
     "loginMfaTitle": "Enter your authenticator code",
     "loginMfaBody": "Open your authenticator app and enter the current 6-digit code for PCA.",
+    "newBrowserTitle": "Verify this browser",
+    "newBrowserBody": "Enter the 6-digit code sent to your email. If you have set up an authenticator, you will also be asked for its code.",
+    "emailOtpLabel": "Email verification code",
     "lostAuthenticatorLink": "Lost your authenticator?",
     "accountActivatedSignIn": "Your account is active — sign in to continue."
   },
   "states": {
+    "familyDataUnavailableTitle": "Protected data is unavailable in this browser",
     "browserSetupNeededTitle": "Finish setting up this browser",
     "browserSetupNeededAction": "Set up this browser",
     "notAvailableYetTitle": "Not available yet",
@@ -1444,9 +1485,9 @@
         "purpose": "This is the recommended order for setting up Parent Web and connecting your child's device.",
         "when": "Use it when you are new to PCA or when setup stopped before a device became ready.",
         "actions": ["Create a Parent account and verify your email.", "Sign in and open Children.", "Download the Child App when a real Android download is configured.", "Add and pair your child's device, then choose first protection settings."],
-        "steps": ["Create and verify your Parent account.", "Sign in, then open or create a child profile.", "Download the Child App and follow the device pairing instructions.", "Trust this browser if protected information asks for it.", "Review protection settings and remember that delivery to the device can remain pending."],
+        "steps": ["Create and verify your Parent account.", "Sign in, then open or create a child profile.", "Download the Child App and follow the device pairing instructions.", "Review protection settings and remember that delivery to the device can remain pending."],
         "next": "After setup, Dashboard shows the latest Parent account status that PCA can verify. Open Devices when pairing or delivery needs attention.",
-        "important": "Signing in and trusting a browser are separate steps. A saved setting is not always already applied on the child's device."
+        "important": "Signing in establishes your Parent session. A saved setting is not always already applied on the child's device."
       },
       "parentAccount": {
         "title": "Create, verify, and sign in",
@@ -1454,8 +1495,8 @@
         "purpose": "Use the account screens to register, verify the email address, sign in, or recover access through the available account flow.",
         "when": "Use this before managing children or devices, and whenever you need to return to the Parent Web session.",
         "actions": ["Create an account with your email address.", "Complete email verification.", "Sign in with your Parent account.", "Review account preferences in Settings."],
-        "steps": ["Register, then open the verification message sent to your email.", "Verify the account and return to Sign in.", "If a page asks for protected setup, follow the separate Trusted Browser step."],
-        "next": "A successful sign-in opens the authenticated Parent Web shell. It does not by itself connect a child device or trust the browser.",
+        "steps": ["Register, then open the verification message sent to your email.", "Verify the account and return to Sign in.", "If a feature is not available yet, its page will explain its current status."],
+        "next": "A successful sign-in opens the authenticated Parent Web shell. It does not by itself connect a child device.",
         "important": "Only use the Parent account you intend to use for this Parent account scope. Ask an Administrator if you need another Parent or Guardian added."
       },
       "dashboard": {
@@ -1475,7 +1516,7 @@
         "when": "Use it when you want to manage one child rather than review the whole Parent account.",
         "actions": ["Open a child's overview.", "Move between Screen Time, Apps & Games, Web Protection, YouTube, Location, Eye Protection, Prayer, Wellbeing Messages, and Activity Timeline.", "Return to the Parent account page when a child picker is required."],
         "steps": [],
-        "next": "Choose the child first. Some actions then require your role, a connected device, or trusted-browser setup.",
+        "next": "Choose the child first. Some actions then require your role or a connected device.",
         "important": "The child-specific address contains a child identifier selected by the product. Do not replace it with an identifier copied from another child."
       },
       "activityTimeline": {
@@ -1801,9 +1842,9 @@
       "troubleshooting": {
         "title": "Troubleshooting",
         "summary": "Find the common reason an action is unavailable and the next practical step.",
-        "purpose": "Use this section to understand permission, setup, delivery, browser, platform, and payment messages.",
+        "purpose": "Use this section to understand permission, setup, delivery, platform, and payment messages.",
         "when": "Open it when a button is unavailable, a change is pending, protected information is hidden, or payment cannot continue.",
-        "actions": ["If you cannot change a setting, check whether your role is read-only, another Parent role is required, setup is incomplete, browser trust is needed, or the feature is unavailable.", "If you see Not permitted, ask an Administrator or the Parent role responsible for that action.", "If a change is pending, check device delivery or offline state.", "If protected information is hidden, complete the displayed browser or setup requirement.", "If you cannot download the Child App, check platform and deployment availability.", "If you cannot pay, check provider availability and the current request state."],
+        "actions": ["If you cannot change a setting, check whether your role is read-only, another Parent role is required, setup is incomplete, or the feature is unavailable.", "If you see Not permitted, ask an Administrator or the Parent role responsible for that action.", "If a change is pending, check device delivery or offline state.", "If protected information is unavailable, follow the status shown on that page; browser pairing is not a requirement for your Parent role.", "If you cannot download the Child App, check platform and deployment availability.", "If you cannot pay, check provider availability and the current request state."],
         "steps": [],
         "next": "Return to the specific page after completing the suggested step. If the state remains pending, rely on the status shown rather than repeating a destructive action.",
         "important": "Not permitted is a permission explanation, not a prompt to bypass access controls. A saved change, payment return, export request, or deletion request is not automatically a completed result."

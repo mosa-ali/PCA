@@ -62,7 +62,7 @@ export function safeReturnPath(from: unknown): string {
   return from;
 }
 
-type LoginStage = 'PASSWORD' | 'EMAIL_CODE' | 'AUTHENTICATOR_CODE';
+type LoginStage = 'PASSWORD' | 'AUTHENTICATOR_CODE' | 'EMAIL_CODE' | 'EMAIL_AND_TOTP';
 
 interface LoginLocationState {
   from?: unknown;
@@ -72,19 +72,12 @@ interface LoginLocationState {
 }
 
 /**
- * PCA-AUTH-SESSION-1 + PCA-DEC-037 -- sign-in against an already-VERIFIED
- * account, in up to three stages:
- *   1. email + password;
- *   2a. an emailed one-time code (accounts without an authenticator app), or
- *   2b. the 6-digit code from the account's authenticator app -- sent as a
- *       SECOND /login call with the same email and password.
+ * Sign-in against an already-verified account. A first successful sign-in
+ * trusts this browser automatically. Unknown browsers prove the mailbox with
+ * email OTP and, when enrolled, also provide a 6-digit authenticator code.
  * The password therefore lives in React state memory for the length of the
  * attempt; it is never written to any storage, URL or log, and it is cleared
  * as soon as the attempt ends.
- *
- * If the emailed code reports that the authenticator grace period is over,
- * the server sets an enrollment ticket instead of a session and this page
- * sends the parent straight to mandatory authenticator setup.
  *
  * A full page navigation is used after success so AuthProvider's mount-time
  * getSession() call picks up the freshly issued pca_family_session cookie.
@@ -107,18 +100,13 @@ export default function Login() {
   // code stage with no prior password step would have nothing to check against.
   const [stage, setStage] = useState<LoginStage>('PASSWORD');
   const [code, setCode] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [codeInvalid, setCodeInvalid] = useState(false);
 
   function proceedToReturnPath() {
     setPassword('');
     // NEVER pass `from` through unvalidated -- see safeReturnPath above.
     window.location.assign(safeReturnPath(locationState?.from));
-  }
-
-  function goToMandatorySetup() {
-    setPassword('');
-    setCode('');
-    navigate('/mfa/setup', { replace: true, state: { email } });
   }
 
   function showSignInError(err: unknown) {
@@ -147,15 +135,56 @@ export default function Login() {
         setSubmitting(false);
         return;
       }
-      if (result.status === 'STEP_UP_REQUIRED' || result.status === 'MFA_REQUIRED') {
+      if (result.status === 'MFA_REQUIRED') {
         setCode('');
         setCodeInvalid(false);
-        setStage(result.status === 'STEP_UP_REQUIRED' ? 'EMAIL_CODE' : 'AUTHENTICATOR_CODE');
+        setStage('AUTHENTICATOR_CODE');
         setSubmitting(false);
+        return;
+      }
+      if (result.status === 'EMAIL_OTP_REQUIRED') {
+        setEmailCode('');
+        setStage('EMAIL_CODE');
+        setSubmitting(false);
+        return;
+      }
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        navigate('/mfa/setup', { state: { email, password, from: locationState?.from } });
         return;
       }
       proceedToReturnPath();
     } catch (err) {
+      showSignInError(err);
+      setSubmitting(false);
+    }
+  }
+
+  async function handleEmailCodeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    const submittedTotp = stage === 'EMAIL_AND_TOTP' ? code : undefined;
+    if (!/^\d{6}$/.test(emailCode) || (submittedTotp !== undefined && !/^\d{6}$/.test(submittedTotp))) {
+      setError(t('mfa.codeFormat'));
+      setCodeInvalid(true);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await clients.serviceAuth.completeLoginStepUp(email, emailCode, submittedTotp);
+      if (result.status === 'MFA_REQUIRED') {
+        setCode('');
+        setCodeInvalid(false);
+        setStage('EMAIL_AND_TOTP');
+        setSubmitting(false);
+        return;
+      }
+      if (result.status === 'MFA_SETUP_REQUIRED') {
+        navigate('/mfa/setup', { state: { email, password, from: locationState?.from } });
+        return;
+      }
+      proceedToReturnPath();
+    } catch (err) {
+      setCode('');
       showSignInError(err);
       setSubmitting(false);
     }
@@ -187,66 +216,10 @@ export default function Login() {
       // The password step is not expected to change its answer between the
       // two calls; if it does, follow the server rather than guess.
       setCode('');
-      setStage(result.status === 'STEP_UP_REQUIRED' ? 'EMAIL_CODE' : 'AUTHENTICATOR_CODE');
+      setStage('AUTHENTICATOR_CODE');
       setSubmitting(false);
     } catch (err) {
       setCode('');
-      showSignInError(err);
-      setSubmitting(false);
-    }
-  }
-
-  async function handleStepUpSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setCodeInvalid(false);
-    setSubmitting(true);
-    try {
-      const result = await clients.serviceAuth.completeLoginStepUp(email, code);
-      if (result.status === 'MFA_SETUP_REQUIRED') {
-        goToMandatorySetup();
-        return;
-      }
-      proceedToReturnPath();
-    } catch (err) {
-      if (err instanceof ServiceAuthError) {
-        if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
-        else if (err.code === 'INVALID_CREDENTIALS') {
-          setError(t('auth.invalidCode'));
-          setCodeInvalid(true);
-        } else setError(t('auth.genericError'));
-      } else {
-        setError(t('auth.genericError'));
-      }
-      setSubmitting(false);
-    }
-  }
-
-  async function handleResendCode() {
-    setError(null);
-    setCodeInvalid(false);
-    setSubmitting(true);
-    try {
-      const result = await clients.serviceAuth.signIn(email, password);
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        setRecoveryPendingAt(result.recoveryAvailableAt);
-        setPassword('');
-        setSubmitting(false);
-        return;
-      }
-      if (result.status === 'STEP_UP_REQUIRED') {
-        setCode('');
-        setSubmitting(false);
-        return;
-      }
-      if (result.status === 'MFA_REQUIRED') {
-        setCode('');
-        setStage('AUTHENTICATOR_CODE');
-        setSubmitting(false);
-        return;
-      }
-      proceedToReturnPath();
-    } catch (err) {
       showSignInError(err);
       setSubmitting(false);
     }
@@ -309,63 +282,37 @@ export default function Login() {
           )}
 
           <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
-            {t('auth.loginStepUpSubmit')}
+            {t('auth.loginMfaSubmit')}
           </button>
         </form>
         {lostAuthenticatorLink}
         <p>
           <button type="button" className="btn" onClick={handleBackToLogin} disabled={submitting}>
-            {t('auth.loginStepUpBack')}
+            {t('auth.loginMfaBack')}
           </button>
         </p>
       </section>
     );
   }
 
-  if (stage === 'EMAIL_CODE') {
+  if (stage === 'EMAIL_CODE' || stage === 'EMAIL_AND_TOTP') {
     return (
-      <section aria-labelledby="login-step-up-title" className="auth-page">
-        <h1 id="login-step-up-title">{t('auth.loginStepUpTitle')}</h1>
-        <p>{t('auth.loginStepUpBody', { email })}</p>
-        <form onSubmit={handleStepUpSubmit} noValidate>
+      <section aria-labelledby="login-email-code-title" className="auth-page">
+        <h1 id="login-email-code-title">{t('auth.newBrowserTitle')}</h1>
+        <p>{t('auth.newBrowserBody')}</p>
+        <form onSubmit={handleEmailCodeSubmit} noValidate>
           <div className="field">
-            <label htmlFor="login-step-up-code">{t('auth.codeLabel')}</label>
-            <input
-              id="login-step-up-code"
-              name="code"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              autoComplete="one-time-code"
-              required
-              aria-describedby={error ? 'login-step-up-error' : undefined}
-              aria-invalid={codeInvalid || undefined}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            />
+            <label htmlFor="login-email-code">{t('auth.emailOtpLabel')}</label>
+            <input id="login-email-code" name="emailCode" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={emailCode} onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
           </div>
-
-          {error && (
-            <p id="login-step-up-error" role="alert" className="field-error">
-              {error}
-            </p>
-          )}
-
-          <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
-            {t('auth.loginStepUpSubmit')}
-          </button>
+          {stage === 'EMAIL_AND_TOTP' && <div className="field">
+            <label htmlFor="login-stepup-totp">{t('mfa.codeLabel')}</label>
+            <input id="login-stepup-totp" name="totpCode" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+          </div>}
+          {error && <p role="alert" className="field-error">{error}</p>}
+          <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>{t('auth.loginMfaSubmit')}</button>
         </form>
-        <p>
-          <button type="button" className="btn" onClick={handleResendCode} disabled={submitting}>
-            {t('auth.loginStepUpResend')}
-          </button>
-        </p>
-        <p>
-          <button type="button" className="btn" onClick={handleBackToLogin} disabled={submitting}>
-            {t('auth.loginStepUpBack')}
-          </button>
-        </p>
+        <p><button type="button" className="btn" onClick={handleBackToLogin} disabled={submitting}>{t('auth.loginMfaBack')}</button></p>
       </section>
     );
   }

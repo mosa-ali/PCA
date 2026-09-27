@@ -18,17 +18,12 @@
 //         mutating envelope methods (inherited from
 //         UnavailableParentRuntimeSyncClient) still have no real backend
 //         counterpart -- see that class's own file header.
-//     (b) trusted-browser E2EE family-content providers
-//         (RealTrustedBrowserProvider, RealParentFamilyDataGateway,
-//         RealDeviceStatusClient, RealRequestClient) -- these perform real
-//         local WebCrypto (endpoint key generation) and real trust-state
-//         checks, but are additionally gated on
-//         @pca/parent-sdk-browser-runtime's crypto-review gate, which is
-//         hardcoded not-ready until a human security review approves the
-//         production E2EE suite (see that package's src/cryptoGate.ts).
-//         Until then they honestly reject with EndpointNotTrustedError or
-//         CryptoReviewRequiredError rather than ever fabricating family
-//         data -- see src/api/real/realParentFamilyDataGateway.ts.
+//     (b) reviewed-crypto-gated family content and device provisioning
+//         providers. Parent family session/API roles authorize ordinary
+//         Parent actions. TrustedBrowserProvider remains available for
+//         explicit device-security flows; it is not used as Parent authority
+//         for family data or device-status reads. Decrypted family content
+//         still fails closed while the SDK crypto-review gate is not ready.
 //    For familyAuthority and wellbeingMessages, no real implementation
 //    exists yet in this repository slice at all, so an explicit
 //    "unavailable" provider (src/api/real/unavailableProviders.ts) is used.
@@ -53,6 +48,7 @@ import type {
   FamilyAuthorityGateway,
   FamilyMemberInvitationClient,
   FreeAccessStatusClient,
+  ParentIdentityClient,
   ParentPreferencesClient,
   SafeZoneClient,
   ParentFamilyDataGateway,
@@ -82,6 +78,7 @@ import { DevBillingClient } from './dev/devBillingClient';
 import { DevCommercialNotificationClient } from './dev/devCommercialNotificationClient';
 import { DevFreeAccessStatusClient } from './dev/devFreeAccessStatusClient';
 import { DevParentPreferencesClient } from './dev/devParentPreferencesClient';
+import { DevParentIdentityClient } from './dev/devParentIdentityClient';
 import { DevSafeZoneClient } from './dev/devSafeZoneClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
@@ -90,11 +87,11 @@ import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEnrollmentBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import { RealChildProfileClient, noServiceBearerTokenAvailable as noChildProfileBearerTokenAvailable } from './real/realChildProfileClient';
-import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, cookieSessionFamilyId } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
+import { RealParentIdentityClient } from './real/realParentIdentityClient';
 import { RealSafeZoneClient } from './real/realSafeZoneClient';
 import { RealFamilyAuthorityGateway } from './real/realFamilyAuthorityGateway';
 import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
@@ -110,7 +107,7 @@ import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient
 import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
 import { RealProtectionAlertDeliveryClient } from './real/realProtectionAlertDeliveryClient';
 import { DevProtectionAlertDeliveryClient } from './dev/devProtectionAlertDeliveryClient';
-import { UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
+import { UnavailableWebRuleAdminClient, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -180,6 +177,7 @@ export interface PcaApiClients {
    * `deviceEnrollment` and `retention` all rely on.
    */
   freeAccessStatus: FreeAccessStatusClient;
+  parentIdentity: ParentIdentityClient;
   parentPreferences: ParentPreferencesClient;
   safeZones: SafeZoneClient;
   safeZonePolicyAuthoring: SafeZonePolicyAuthoring;
@@ -224,6 +222,7 @@ function buildDevClients(): PcaApiClients {
     billing: new DevBillingClient(),
     commercialNotifications: new DevCommercialNotificationClient(),
     freeAccessStatus: new DevFreeAccessStatusClient(),
+    parentIdentity: new DevParentIdentityClient(),
     parentPreferences: new DevParentPreferencesClient(),
     safeZones: new DevSafeZoneClient(),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('ENCRYPTION_UNAVAILABLE'),
@@ -256,7 +255,7 @@ function buildRealClients(): PcaApiClients {
   // (DeviceProtectionStatus.deviceId) that the gateway addresses policy
   // envelopes to and that the UI passes to runtimeSync -- see
   // ./real/realParentFamilyDataGateway.ts's resolveChildDeviceId.
-  const deviceStatus = new RealDeviceStatusClient(trustedBrowser);
+  const deviceStatus = new RealDeviceStatusClient();
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     // PCA product-completion programme: removeMember is now real, HTTP-backed
@@ -267,12 +266,11 @@ function buildRealClients(): PcaApiClients {
     // counterpart in this repository slice, so RealFamilyAuthorityGateway
     // extends UnavailableFamilyAuthorityGateway and inherits their existing
     // honest rejection/denial behavior unchanged.
-    familyAuthority: new RealFamilyAuthorityGateway(config.apiBaseUrl, trustedBrowser),
-    familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl, trustedBrowser),
-    familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, trustedBrowser, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
-    protectionAlertDelivery: new RealProtectionAlertDeliveryClient(config.apiBaseUrl, trustedBrowser),
+    familyAuthority: new RealFamilyAuthorityGateway(config.apiBaseUrl),
+    familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl),
+    familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
+    protectionAlertDelivery: new RealProtectionAlertDeliveryClient(config.apiBaseUrl),
     parentFamilyData: new RealParentFamilyDataGateway(
-      trustedBrowser,
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
       new RealSchedulePolicyClient(config.apiBaseUrl, trustedBrowser),
       config.apiBaseUrl,
@@ -282,7 +280,7 @@ function buildRealClients(): PcaApiClients {
     deviceStatus,
     requests: new RealRequestClient(config.apiBaseUrl, trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
-    webRuleAdmin: new RealWebRuleAdminClient(config.apiBaseUrl, trustedBrowser),
+    webRuleAdmin: new UnavailableWebRuleAdminClient(),
     trustedBrowser,
     // Real, HTTP-backed against the parent-facing
     // backend/src/http/routes/parentRuntimeSyncRoutes.ts route for its 3
@@ -318,8 +316,9 @@ function buildRealClients(): PcaApiClients {
     billing: new RealBillingClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
+    parentIdentity: new RealParentIdentityClient(config.apiBaseUrl),
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
-    safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
+    safeZones: new RealSafeZoneClient(config.apiBaseUrl),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     schedulePolicyAuthoring: new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     // Browser retention uses the same cookie transport as billing above:

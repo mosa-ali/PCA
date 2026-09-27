@@ -29,7 +29,7 @@
 import type { WebRuleAdminClient } from '../interfaces';
 import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../../domain/webRulePolicy';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
-import { requireTrustedAndCryptoReady } from './familyDataGate';
+import { requireFamilyCryptoReady } from './familyDataGate';
 import { cookieSessionFamilyId } from './realBillingClient';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -78,7 +78,7 @@ export class RealWebRuleAdminClient implements WebRuleAdminClient {
   }
 
   async listRules(childId: string): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus; revision: number | null }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'WebRuleAdminClient.listRules');
+    await requireFamilyCryptoReady('WebRuleAdminClient.listRules');
     const familyId = await this.familyId('WebRuleAdminClient.listRules');
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/web-rules`), {
       method: 'GET',
@@ -108,7 +108,7 @@ export class RealWebRuleAdminClient implements WebRuleAdminClient {
   }
 
   async setRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'WebRuleAdminClient.setRule');
+    await requireFamilyCryptoReady('WebRuleAdminClient.setRule');
     const familyId = await this.familyId('WebRuleAdminClient.setRule');
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/web-rules`), {
       method: 'POST',
@@ -127,7 +127,7 @@ export class RealWebRuleAdminClient implements WebRuleAdminClient {
   }
 
   async removeRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'WebRuleAdminClient.removeRule');
+    await requireFamilyCryptoReady('WebRuleAdminClient.removeRule');
     const familyId = await this.familyId('WebRuleAdminClient.removeRule');
     const response = await fetch(
       this.url(`/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/web-rules/remove`),

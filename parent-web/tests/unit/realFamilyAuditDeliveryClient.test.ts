@@ -1,8 +1,7 @@
 // PCA product-completion programme, Writer P0-D: proves RealFamilyAuditDeliveryClient
 // genuinely fetches opaque envelopes and hands them to the injected
 // decryption boundary -- honestly reporting PENDING_TRUSTED_DECRYPTION
-// whenever ANY link in the chain (no trusted browser, no actor-device
-// session, network failure, decryption boundary rejection) is unavailable,
+// whenever the Parent session, network, or decryption boundary is unavailable,
 // and READY with real entries only once every link succeeds. A genuinely
 // empty envelope list is reported as READY/empty, never conflated with a
 // pending-decryption state.
@@ -73,7 +72,7 @@ describe('RealFamilyAuditDeliveryClient', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reports PENDING_TRUSTED_DECRYPTION without ever calling fetch when the browser is not trusted', async () => {
+  it('reports pending when the Parent session cannot be resolved, without requiring browser trust', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const client = new RealFamilyAuditDeliveryClient(
@@ -83,7 +82,7 @@ describe('RealFamilyAuditDeliveryClient', () => {
     );
     const result = await client.list();
     expect(result).toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('fetches real opaque envelopes and decrypts each one when trusted, resolving READY with real entries', async () => {
@@ -116,7 +115,7 @@ describe('RealFamilyAuditDeliveryClient', () => {
     const auditCall = fetchMock.mock.calls.find(([input]) => (typeof input === 'string' ? input : input.toString()).includes('/audit-events'));
     expect(auditCall).toBeTruthy();
     const [, init] = auditCall as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer actor-device-session-token');
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it('reports READY with an empty list when the family genuinely has zero envelopes -- never conflated with pending', async () => {

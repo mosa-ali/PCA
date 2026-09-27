@@ -21,6 +21,8 @@ describe('auth page error presentation and field association', () => {
   it('Register renders its error with the shared .field-error class, not an inline off-palette colour', async () => {
     renderWithProviders(<Register />);
 
+    await userEvent.type(screen.getByLabelText('First name'), 'Maya');
+    await userEvent.type(screen.getByLabelText('Last name'), 'Parent');
     await userEvent.type(screen.getByLabelText('Email address'), 'parent@example.test');
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
     await userEvent.type(screen.getByLabelText('Confirm password'), 'does-not-match-at-all');
@@ -36,6 +38,8 @@ describe('auth page error presentation and field association', () => {
   it('Register associates the error with the fields it is about, and only marks those fields invalid', async () => {
     renderWithProviders(<Register />);
 
+    await userEvent.type(screen.getByLabelText('First name'), 'Maya');
+    await userEvent.type(screen.getByLabelText('Last name'), 'Parent');
     await userEvent.type(screen.getByLabelText('Email address'), 'parent@example.test');
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
     await userEvent.type(screen.getByLabelText('Confirm password'), 'does-not-match-at-all');
@@ -44,9 +48,7 @@ describe('auth page error presentation and field association', () => {
     const error = await screen.findByRole('alert');
     expect(error.id).toBe('register-error');
 
-    for (const label of ['Email address', 'Confirm password']) {
-      expect(screen.getByLabelText(label)).toHaveAttribute('aria-describedby', 'register-error');
-    }
+    expect(screen.getByLabelText('Confirm password')).toHaveAttribute('aria-describedby', 'register-error');
     // Password also carries its always-on requirements hint, so the error is
     // appended to that id rather than replacing it.
     expect(screen.getByLabelText('Password')).toHaveAttribute('aria-describedby', 'register-password-hint register-error');

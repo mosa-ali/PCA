@@ -45,13 +45,13 @@ export default function Retention() {
     setStatus(null);
     setSaving(true);
     try {
-          await runFamilyAction('CHANGE_RETENTION', async () => {
+          await runFamilyAction('CHANGE_RETENTION', async (stepUpToken) => {
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             const result = await clients.retention.submitPolicy({
               generalWindow: effectiveWindow,
               locationMode: effectiveLocationMode,
               timezone,
-            });
+            }, stepUpToken!);
         setStatus(t('retention.updatedStatus', { window: t(`retention.windowLabels.${result.policy.generalWindow}`) }));
       });
     } catch (e) {

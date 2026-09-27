@@ -12,10 +12,8 @@ import { __resetDevFamilyMemberInvitationsForTests } from '../../src/api/dev/dev
  * it, mirroring tests/route/familyActions.test.tsx's established pattern.
  */
 async function confirmStepUp() {
-  // The step-up confirm button's label lost its '(dev stub)' developer marker
-  // when that copy was made production-honest; StepUpProvider is mounted
-  // app-wide with no fixture gate, so real users were reading it.
-  await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
+  await userEvent.type(await screen.findByLabelText('6-digit authenticator code'), '123456');
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm change' }));
 }
 
 async function sendInvite(email: string) {
@@ -123,7 +121,7 @@ describe('Members', () => {
       await userEvent.click(removeButtons[0]);
 
       expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(screen.queryByRole('button', { name: 'Re-authenticate' })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('6-digit authenticator code')).not.toBeInTheDocument();
       // Give any (incorrect) in-flight removal a chance to resolve before asserting absence.
       await new Promise((r) => setTimeout(r, 50));
       expect(screen.getByText('Sara (Administrator, DEV)')).toBeInTheDocument();

@@ -8,14 +8,29 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   // Real-backend E2E proxy (mirrors platform-admin-web/vite.config.ts's
   // identical VITE_E2E_REAL_PROXY_TARGET pattern). The backend has no CORS
-  // layer, so a real E2E run must reach it same-origin through this dev-
-  // server proxy rather than cross-origin -- a dev-server port mismatch
-  // would be a real security regression, not a test convenience worth
-  // making. Completely inert unless VITE_E2E_REAL_PROXY_TARGET is
+  // layer, so a real E2E run must reach it same-origin through the dev or
+  // preview server proxy rather than cross-origin. Completely inert unless
+  // VITE_E2E_REAL_PROXY_TARGET is
   // explicitly set -- normal `npm run dev`/`npm run build`/production usage
   // never sets it, so this proxy block never activates outside that one
   // opt-in test flow.
   const e2eRealProxyTarget = env.VITE_E2E_REAL_PROXY_TARGET;
+  const e2eRealProxy = () => {
+    if (!e2eRealProxyTarget) return undefined;
+    return {
+      '/api': {
+        target: e2eRealProxyTarget,
+        changeOrigin: true,
+      },
+      // Real HTTP clients whose backend routes live under /v1 (billing/
+      // commercial, retention, device enrollment/pairing) use the same
+      // same-origin path as /api in both dev and preview mode.
+      '/v1': {
+        target: e2eRealProxyTarget,
+        changeOrigin: true,
+      },
+    };
+  };
   return {
     plugins: [
       securityHeadersPlugin(),
@@ -77,31 +92,14 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 4000,
       strictPort: true,
-      proxy: e2eRealProxyTarget
-        ? {
-            '/api': {
-              target: e2eRealProxyTarget,
-              changeOrigin: true,
-            },
-            // Real HTTP clients whose backend routes live under /v1 (billing/
-            // commercial, retention, device enrollment/pairing) -- confirmed
-            // by direct reproduction that without this rule, RealBillingClient's
-            // cookie-authenticated (no bearer-token gate) requests to
-            // /v1/families/:familyId/commercial/* 404 against THIS dev
-            // server itself instead of reaching the real backend, which looks
-            // indistinguishable from "route doesn't exist" even though the
-            // backend route (backend/src/http/routes/familyCommercialRoutes.ts)
-            // is genuinely implemented.
-            '/v1': {
-              target: e2eRealProxyTarget,
-              changeOrigin: true,
-            },
-          }
-        : undefined,
+      proxy: e2eRealProxy(),
     },
     preview: {
       port: 4000,
       strictPort: true,
+      // Keep the same-origin API transport when real-browser specs serve the
+      // built bundle through `vite preview` instead of loading dev modules.
+      proxy: e2eRealProxy(),
     },
   };
 });

@@ -1,6 +1,6 @@
 // PCA product-completion Writer P0-B: proves RealParentFamilyDataGateway's
-// updateScreenTime/updateAppRule are genuinely real writes once trust +
-// crypto-review both pass (previously hardcoded throws) -- they construct
+// updateScreenTime/updateAppRule are genuinely real writes once the
+// crypto-review gate passes (previously hardcoded throws) -- they construct
 // the right SchedulePolicyPlaintextDefinition and submit it through the
 // authoring -> transport chain, returning a PENDING-only result.
 //
@@ -24,49 +24,12 @@ vi.mock('@pca/parent-sdk-browser-runtime', async () => {
 
 const { RealParentFamilyDataGateway } = await import('../../src/api/real/realParentFamilyDataGateway');
 const { createLocalFamilyDataStore } = await import('../../src/security/localFamilyDataStore');
-type TrustedBrowserProvider = import('../../src/domain/trustedBrowser').TrustedBrowserProvider;
-type TrustedBrowserSnapshot = import('../../src/domain/trustedBrowser').TrustedBrowserSnapshot;
 type DeviceStatusClient = import('../../src/api/interfaces').DeviceStatusClient;
 type DeviceProtectionStatus = import('../../src/domain/types').DeviceProtectionStatus;
 type SchedulePolicyAuthoring = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyAuthoring;
 type SchedulePolicyEnvelopeInput = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyEnvelopeInput;
 type SchedulePolicyPlaintextDefinition = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyPlaintextDefinition;
 type SchedulePolicyTransport = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyTransport;
-
-const TRUSTED_SNAPSHOT: TrustedBrowserSnapshot = {
-  state: 'TRUSTED',
-  serviceAuthenticated: true,
-  browserEndpointId: 'endpoint-a',
-  trustSetEpoch: 5,
-  acceptedMinEpoch: 5,
-  pairingRequestedAtUtc: null,
-  lastFingerprint: null,
-  actorDeviceSessionToken: 'actor-device-session-token',
-};
-
-class StubTrustedBrowserProvider implements TrustedBrowserProvider {
-  async getSnapshot() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async beginServiceAuthentication() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async requestPairing() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async simulateParentApproval() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async simulateEpochGoneStale() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async simulateRevoke() {
-    return TRUSTED_SNAPSHOT;
-  }
-  async reset() {
-    return TRUSTED_SNAPSHOT;
-  }
-}
 
 /**
  * A real device id shape: 36 characters, exactly what
@@ -140,7 +103,6 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
     );
     try {
       const gateway = new RealParentFamilyDataGateway(
-        new StubTrustedBrowserProvider(),
         fakeAuthoring(definitions),
         fakeTransport(submissions),
         'http://localhost',
@@ -169,7 +131,6 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
     );
     try {
       const gateway = new RealParentFamilyDataGateway(
-        new StubTrustedBrowserProvider(),
         fakeAuthoring(definitions),
         fakeTransport(submissions),
         'http://localhost',
@@ -190,7 +151,6 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
 
   it('updateScreenTime rejects a partial patch rather than silently submitting an incomplete policy', async () => {
     const gateway = new RealParentFamilyDataGateway(
-      new StubTrustedBrowserProvider(),
       fakeAuthoring([]),
       fakeTransport([]),
       'http://localhost',
@@ -212,7 +172,6 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
         },
       };
       const gateway = new RealParentFamilyDataGateway(
-        new StubTrustedBrowserProvider(),
         failingAuthoring,
         fakeTransport([]),
         'http://localhost',
@@ -237,7 +196,6 @@ describe('RealParentFamilyDataGateway recipient device id is real, never fabrica
     );
     try {
       const gateway = new RealParentFamilyDataGateway(
-        new StubTrustedBrowserProvider(),
         fakeAuthoring(definitions, recipients),
         fakeTransport(submissions),
         'http://localhost',
@@ -266,7 +224,6 @@ describe('RealParentFamilyDataGateway recipient device id is real, never fabrica
     );
     try {
       const gateway = new RealParentFamilyDataGateway(
-        new StubTrustedBrowserProvider(),
         fakeAuthoring(definitions, recipients),
         fakeTransport(submissions),
         'http://localhost',

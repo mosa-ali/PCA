@@ -5,6 +5,7 @@ import { getApiClients } from '../../../api/client';
 import { useAsync } from '../../../hooks/useAsync';
 import { ActionNeededState, AsyncStates, ErrorState } from '../../../components/common/States';
 import { PermissionGate } from '../../../rbac/PermissionGate';
+import { useFamilyAction } from '../../../rbac/useFamilyAction';
 import { formatDateTime, formatNumber } from '../../../i18n/formatters';
 import { getChildLabel, setChildLabel } from '../../../domain/childLabels';
 import { ChildProfileError } from '../../../api/childProfileClient';
@@ -115,6 +116,7 @@ export default function AddDeviceWizard({
 }) {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
+  const runFamilyAction = useFamilyAction();
 
   // STEP 0 -- the gate. `getDashboard()` is fail-closed by design in real
   // (non-fixture) mode: it ALWAYS throws EndpointNotTrustedError or
@@ -166,6 +168,7 @@ export default function AddDeviceWizard({
   const [ageUxTier, setAgeUxTier] = useState<AgeUxTier>('YOUNG_CHILD');
   const [protectionMode, setProtectionMode] = useState<RequestedProtectionMode>('ANDROID_STANDARD');
   const [initialPolicyProfile, setInitialPolicyProfile] = useState<InitialPolicyProfile>('BALANCED');
+  const [stepUpError, setStepUpError] = useState(false);
 
   const { invitations, reload: reloadInvitations } = useInvitations(familyId);
   const {
@@ -236,18 +239,23 @@ export default function AddDeviceWizard({
   }, []);
 
   const submit = useCallback(async () => {
+    setStepUpError(false);
     // By 'review', child creation already happened (advanceFromChildStep, on
     // leaving step 0) -- selectedChild is always a real, server-minted id.
     const resolvedChildId = selectedChild?.childId;
-    const created = await create({
-      platform: 'ANDROID',
-      requestedProtectionMode: protectionMode,
-      childProfileId: resolvedChildId,
-      ageUxTier,
-      initialPolicyProfile,
-    });
-    if (created) setStepIndex(STEPS.findIndex((s) => s.id === 'code'));
-  }, [selectedChild, create, protectionMode, ageUxTier, initialPolicyProfile]);
+    try {
+      const created = await runFamilyAction('CREATE_DEVICE_INVITATION', (stepUpToken) => create({
+        platform: 'ANDROID',
+        requestedProtectionMode: protectionMode,
+        childProfileId: resolvedChildId,
+        ageUxTier,
+        initialPolicyProfile,
+      }, stepUpToken!));
+      if (created) setStepIndex(STEPS.findIndex((s) => s.id === 'code'));
+    } catch {
+      setStepUpError(true);
+    }
+  }, [selectedChild, create, runFamilyAction, protectionMode, ageUxTier, initialPolicyProfile]);
 
   // Leaving step 0: if the parent is adding a new child, this is where the
   // REAL, server-minted childProfileId is obtained -- never before, never
@@ -554,6 +562,7 @@ export default function AddDeviceWizard({
                   )}
                 </>
               )}
+              {stepUpError && <p className="field-error" role="alert">{t('deviceEnrollment.stepUpRequired')}</p>}
             </>
           )}
 

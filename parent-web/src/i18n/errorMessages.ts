@@ -111,12 +111,14 @@ export interface ActionNeededPlan {
 }
 
 const ACTION_NEEDED_PLANS: Readonly<Record<string, ActionNeededPlan>> = {
-  // The trust gate refused this browser. The next step is real and specific.
+  // The retired Parent browser-pairing flow is not a valid recovery path.
+  // Keep this as a neutral capability state; never send Parents to pair a
+  // browser to gain ordinary family authority.
   'errors.endpointNotTrusted': {
-    titleKey: 'states.browserSetupNeededTitle',
+    titleKey: 'states.notAvailableYetTitle',
     bodyKey: 'errors.endpointNotTrusted',
-    actionLabelKey: 'states.browserSetupNeededAction',
-    actionTo: '/security/trusted-browser',
+    actionLabelKey: null,
+    actionTo: null,
   },
   // The production crypto suite has not been security-reviewed. A parent
   // cannot fix that, but they can read exactly what it means for them.

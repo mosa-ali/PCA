@@ -11,7 +11,6 @@
 // `encryptedPayloadB64`/`nonceB64` payload is validated for shape (proving
 // this stays a real opaque-envelope fetch, not a fabricated list) but is
 // deliberately never read or surfaced past this file.
-import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import type { ProtectionAlertDeliveryClient, ProtectionAlertFeedResult } from '../interfaces';
 import type { ParentProtectionAlert, ParentProtectionAlertTrigger } from '../../pages/security/ProtectionAlertPanel';
 import { cookieSessionFamilyId } from './realBillingClient';
@@ -69,7 +68,7 @@ function toParentProtectionAlert(envelope: OpaqueProtectionAlertEnvelope): Paren
 export class RealProtectionAlertDeliveryClient implements ProtectionAlertDeliveryClient {
   constructor(
     private readonly apiBaseUrl: string,
-    private readonly trustedBrowser: TrustedBrowserProvider,
+    _legacyBrowserAuthority?: unknown,
   ) {}
 
   private url(path: string): string {
@@ -77,11 +76,6 @@ export class RealProtectionAlertDeliveryClient implements ProtectionAlertDeliver
   }
 
   async list(): Promise<ProtectionAlertFeedResult> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED' || !snapshot.actorDeviceSessionToken) {
-      return { status: 'PENDING_TRUSTED_DECRYPTION' };
-    }
-
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) return { status: 'PENDING_TRUSTED_DECRYPTION' };
 
@@ -89,7 +83,7 @@ export class RealProtectionAlertDeliveryClient implements ProtectionAlertDeliver
     try {
       const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/protection-alerts`), {
         credentials: 'include',
-        headers: { Accept: 'application/json', Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` },
+        headers: { Accept: 'application/json' },
       });
       if (!response.ok) return { status: 'PENDING_TRUSTED_DECRYPTION' };
       const body: unknown = await response.json();

@@ -2,14 +2,16 @@ import type {
   AuthenticatedSession,
   CommercialStepUpGrant,
   CommercialStepUpOperation,
-  LoginStepUpResult,
   MfaEnrollmentConfirmResult,
   MfaRecoveryCompletionResult,
   MfaEnrollmentStart,
+  LoginStepUpResult,
   RegistrationResult,
   RequestPasswordResetResult,
   ResetPasswordResult,
   ServiceAuthClient,
+  SensitiveParentStepUpGrant,
+  SensitiveParentStepUpOperation,
   SignInResult,
   VerifyEmailResult,
 } from '../interfaces';
@@ -65,7 +67,7 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     return { status: 'AUTHENTICATED', session: buildDevSession() };
   }
 
-  async completeLoginStepUp(_email: string, _code: string): Promise<LoginStepUpResult> {
+  async completeLoginStepUp(_email: string, _emailCode: string, _totpCode?: string): Promise<LoginStepUpResult> {
     await delay();
     setServiceAuthenticated(true);
     return { status: 'AUTHENTICATED', session: buildDevSession() };
@@ -139,6 +141,16 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     assertCodeAccepted(code);
     return {
       stepUpToken: `dev-step-up-${operation}-${Date.now()}`,
+      operation,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    };
+  }
+
+  async issueSensitiveStepUp(operation: SensitiveParentStepUpOperation, code: string): Promise<SensitiveParentStepUpGrant> {
+    await delay();
+    assertCodeAccepted(code);
+    return {
+      stepUpToken: `dev-sensitive-step-up-${operation}-${Date.now()}`,
       operation,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     };

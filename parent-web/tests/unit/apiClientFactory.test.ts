@@ -58,15 +58,14 @@ describe('getApiClients demo-mode discipline', () => {
     expect(clients.parentFamilyData).not.toBeInstanceOf(DevParentFamilyDataGateway);
   });
 
-  it('demoMode false: the real parentFamilyData provider rejects with EndpointNotTrustedError rather than returning fixture-shaped data (this browser has never paired)', async () => {
+  it('demoMode false: the real parentFamilyData provider stays crypto-gated rather than returning fixture-shaped data', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
     const clients = getApiClients();
-    await expect(clients.parentFamilyData.getScreenTime('child-amir')).rejects.toMatchObject({
-      code: 'ENDPOINT_NOT_TRUSTED',
-    });
+    const { CryptoReviewRequiredError } = await import('@pca/parent-sdk-browser-runtime');
+    await expect(clients.parentFamilyData.getScreenTime('child-amir')).rejects.toBeInstanceOf(CryptoReviewRequiredError);
   });
 
   it('demoMode false: an unavailable familyAuthority provider denies permission by default (fail closed), never grants', async () => {

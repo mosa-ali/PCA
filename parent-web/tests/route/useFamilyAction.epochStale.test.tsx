@@ -29,57 +29,30 @@ function ActionButton({ label, run }: { label: string; run: () => Promise<unknow
   );
 }
 
-describe('useFamilyAction trusted-browser epoch gating', () => {
-  it('blocks a sensitive mutation while the trusted browser is EPOCH_STALE, even for an Owner', async () => {
-    const clients = getApiClients();
-    await clients.trustedBrowser.reset();
-    await clients.trustedBrowser.beginServiceAuthentication();
-    await clients.trustedBrowser.requestPairing();
-    await clients.trustedBrowser.simulateParentApproval();
-    await clients.trustedBrowser.simulateEpochGoneStale();
+describe('useFamilyAction does not depend on retired Parent browser authority', () => {
+  it.each(['EPOCH_STALE', 'REVOKED'] as const)(
+    'does not let %s browser state block an otherwise authorized family action',
+    async (state) => {
+      const clients = getApiClients();
+      await clients.trustedBrowser.reset();
+      await clients.trustedBrowser.beginServiceAuthentication();
+      await clients.trustedBrowser.requestPairing();
+      await clients.trustedBrowser.simulateParentApproval();
+      if (state === 'EPOCH_STALE') await clients.trustedBrowser.simulateEpochGoneStale();
+      else await clients.trustedBrowser.simulateRevoke();
 
-    const run = vi.fn().mockResolvedValue(undefined);
-    renderWithProviders(<ActionButton label="Edit policy" run={run} />, { role: 'OWNER' });
-    await userEvent.click(screen.getByText('Edit policy'));
-    await waitFor(() => expect(screen.getByTestId('result')).not.toHaveTextContent('idle'));
-    expect(screen.getByTestId('result')).toHaveTextContent(/EPOCH_STALE/);
-    expect(run).not.toHaveBeenCalled();
-
-    // Cleanup shared dev singleton state so it doesn't leak into other test files.
-    await clients.trustedBrowser.reset();
-  });
-
-  it('blocks a sensitive mutation while the trusted browser is REVOKED', async () => {
-    const clients = getApiClients();
-    await clients.trustedBrowser.reset();
-    await clients.trustedBrowser.beginServiceAuthentication();
-    await clients.trustedBrowser.requestPairing();
-    await clients.trustedBrowser.simulateParentApproval();
-    await clients.trustedBrowser.simulateRevoke();
-
-    const run = vi.fn().mockResolvedValue(undefined);
-    renderWithProviders(<ActionButton label="Edit policy" run={run} />, { role: 'OWNER' });
-    await userEvent.click(screen.getByText('Edit policy'));
-    await waitFor(() => expect(screen.getByTestId('result')).not.toHaveTextContent('idle'));
-    expect(screen.getByTestId('result')).toHaveTextContent(/REVOKED/);
-    expect(run).not.toHaveBeenCalled();
-
-    await clients.trustedBrowser.reset();
-  });
-
-  it('allows the mutation once trust converges back to TRUSTED', async () => {
-    const clients = getApiClients();
-    await clients.trustedBrowser.reset();
-    await clients.trustedBrowser.beginServiceAuthentication();
-    await clients.trustedBrowser.requestPairing();
-    await clients.trustedBrowser.simulateParentApproval();
-
-    const run = vi.fn().mockResolvedValue(undefined);
-    renderWithProviders(<ActionButton label="Edit policy" run={run} />, { role: 'OWNER' });
-    await userEvent.click(screen.getByText('Edit policy'));
-    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
-    expect(screen.getByTestId('result')).toHaveTextContent('success');
-
-    await clients.trustedBrowser.reset();
-  });
+      const getSnapshot = vi.spyOn(clients.trustedBrowser, 'getSnapshot');
+      const run = vi.fn().mockResolvedValue(undefined);
+      try {
+        renderWithProviders(<ActionButton label="Edit policy" run={run} />, { role: 'OWNER' });
+        await userEvent.click(screen.getByText('Edit policy'));
+        await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+        expect(screen.getByTestId('result')).toHaveTextContent('success');
+        expect(getSnapshot).not.toHaveBeenCalled();
+      } finally {
+        getSnapshot.mockRestore();
+        await clients.trustedBrowser.reset();
+      }
+    },
+  );
 });

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AsyncStates } from '../../components/common/States';
 import { StatusRampIcon } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
+import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { copyToClipboard, pairingStatusRamp, usePairing } from './devices/enrollmentState';
 import type { RampState } from '../../domain/dashboardStatus';
 
@@ -118,9 +119,20 @@ export function PairingConfirmation({
   describedBy?: string;
 }) {
   const { t } = useTranslation();
+  const runFamilyAction = useFamilyAction();
   const [deviceIdDraft, setDeviceIdDraft] = useState('');
+  const [stepUpError, setStepUpError] = useState(false);
   const { pairing, pairingError, pairingLoading, confirming, canConfirm, lookup, confirm } = usePairing(familyId);
   const inputId = `pairing-device-id-${idSuffix}`;
+
+  const confirmWithStepUp = async () => {
+    setStepUpError(false);
+    try {
+      await runFamilyAction('CONFIRM_DEVICE_PAIRING', (stepUpToken) => confirm(stepUpToken!));
+    } catch {
+      setStepUpError(true);
+    }
+  };
 
   return (
     <div className="device-section">
@@ -173,12 +185,13 @@ export function PairingConfirmation({
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => void confirm()}
+                onClick={() => void confirmWithStepUp()}
                 disabled={!canConfirm || confirming}
               >
                 {confirming ? t('deviceEnrollment.confirming') : t('deviceEnrollment.confirmPairing')}
               </button>
             </PermissionGate>
+            {stepUpError && <p className="field-error" role="alert">{t('deviceEnrollment.stepUpRequired')}</p>}
             {pairing.status === 'PAIRED' && <p role="status">{t('deviceEnrollment.paired')}</p>}
           </div>
         )}

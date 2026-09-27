@@ -1,11 +1,10 @@
-// Real (non-fixture) ParentFamilyDataGateway. Every method is gated by
-// requireTrustedAndCryptoReady (trust state, then the crypto suite's
+// Real (non-fixture) ParentFamilyDataGateway. Every family-content method is gated by
+// requireFamilyCryptoReady (the crypto suite's
 // human-security-review gate) before it will ever read
 // ../../security/localFamilyDataStore.ts -- which itself is never populated
 // with real data by anything in this repository slice today (the only
 // decryptor shipped, NotReadyDecryptor, always throws). So in practice
-// every method here rejects with EndpointNotTrustedError or
-// CryptoReviewRequiredError -- that is the correct, honest behavior, not a
+// every family-content method here rejects with CryptoReviewRequiredError -- that is the correct, honest behavior, not a
 // bug. Once a real EnvelopeDecryptor is approved and something actually
 // calls localFamilyDataStore.put(...), the read paths below already know
 // how to serve that data (including honestly labeling offline/stale reads
@@ -34,9 +33,8 @@ import type {
 import type { ActivityTimelineEntry } from '../../domain/activityTimeline';
 type ScreenTimePatch = Partial<Pick<ScreenTimeStatus, 'continuousUseLimitMinutes' | 'breakDurationMinutes'>>;
 import type { DeviceStatusClient, ParentFamilyDataGateway } from '../interfaces';
-import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { localFamilyDataStore, type LocalFamilyDataStore } from '../../security/localFamilyDataStore';
-import { requireTrustedAndCryptoReady } from './familyDataGate';
+import { requireFamilyCryptoReady } from './familyDataGate';
 import { cookieSessionFamilyId } from './realBillingClient';
 import { RealDeviceStatusClient } from './realDeviceStatusClient';
 import {
@@ -85,7 +83,6 @@ function readCsrfCookie(): string | null {
 
 export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   constructor(
-    private readonly trustedBrowser: TrustedBrowserProvider,
     private readonly schedulePolicyAuthoring: SchedulePolicyAuthoring,
     private readonly schedulePolicyTransport: SchedulePolicyTransport,
     private readonly apiBaseUrl: string,
@@ -96,18 +93,17 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
      * `clients.deviceStatus`, so "which device is this child's" can never
      * mean one thing to this gateway and another to the UI.
      */
-    private readonly deviceStatus: DeviceStatusClient = new RealDeviceStatusClient(trustedBrowser, store),
+    private readonly deviceStatus: DeviceStatusClient = new RealDeviceStatusClient(store),
   ) {}
 
   private async readOrExplainUnavailable<T>(operation: string, storeKey: string): Promise<T> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, operation);
-    // Reached only once trust + crypto-review checks both pass (never true
-    // in this repository slice). Serves whatever the (currently always
+    await requireFamilyCryptoReady(operation);
+    // Reached only once crypto review passes. Serves whatever the (currently always
     // empty) local store holds, or throws if this specific record was never
     // decrypted, rather than fabricating a value.
     const record = this.store.get<T>(storeKey);
     if (!record) {
-      throw new Error(`${operation}: endpoint is trusted and crypto is ready, but no decrypted record is cached yet for "${storeKey}".`);
+      throw new Error(`${operation}: crypto is ready, but no decrypted record is cached yet for "${storeKey}".`);
     }
     return record.data;
   }
@@ -119,7 +115,7 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getScreenTime', `screenTime:${childId}`);
   }
   async updateScreenTime(childId: string, patch: ScreenTimePatch): Promise<{ auditEventId: string }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateScreenTime');
+    await requireFamilyCryptoReady('ParentFamilyDataGateway.updateScreenTime');
     if (patch.continuousUseLimitMinutes === undefined || patch.breakDurationMinutes === undefined) {
       throw new Error('ParentFamilyDataGateway.updateScreenTime: both continuousUseLimitMinutes and breakDurationMinutes are required -- this is a full-policy replacement, not a partial patch (see schedulePolicyAuthoring.ts).');
     }
@@ -135,7 +131,7 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getAppRules', `appRules:${childId}`);
   }
   async updateAppRule(childId: string, appId: string, patch: Partial<AppRule>): Promise<{ auditEventId: string }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateAppRule');
+    await requireFamilyCryptoReady('ParentFamilyDataGateway.updateAppRule');
     if (patch.allowed === undefined) {
       throw new Error('ParentFamilyDataGateway.updateAppRule: allowed is required.');
     }
@@ -178,27 +174,17 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
    * enabled preference is a plain, non-E2EE boolean (see backend
    * migrations/0032_eye_protection_settings.sql's own header for why that
    * is the reviewed posture for this specific field), so this calls the
-   * real backend/src/http/routes/eyeProtectionRoutes.ts endpoint directly,
-   * using the SAME actor-device-bound session+CSRF pattern
-   * RealRequestClient.decide() already established (HttpOnly family
-   * session cookie, double-submit CSRF header, and an
-   * `Authorization: Bearer <actorDeviceSessionToken>` header sourced from
-   * TrustedBrowserProvider.getSnapshot(), never a self-asserted id).
-   * Production currently wires UnavailableTrustSetRoleResolver under the
-   * shared ParentActionAuthorizationService (see main.ts), so even a fully
-   * authenticated real call fails closed with a 403 today -- an honest,
-   * by-design external gate, not a reason to leave this stubbed.
+   * real backend/src/http/routes/eyeProtectionRoutes.ts endpoint directly.
+   * The endpoint derives authority from the active Parent family session,
+   * checks Administrator membership, and enforces the double-submit CSRF
+   * header; no paired-browser token is needed for this ordinary setting.
    */
   async updateEyeProtection(childId: string, remindersEnabled: boolean): Promise<{ remindersEnabled: boolean }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateEyeProtection');
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
-    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) throw new Error('ParentFamilyDataGateway.updateEyeProtection: no authenticated family session available.');
 
     const csrf = readCsrfCookie();
+    if (!csrf) throw new Error('ParentFamilyDataGateway.updateEyeProtection: CSRF token unavailable.');
     const url = `${this.apiBaseUrl.replace(/\/+$/, '')}/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/eye-protection`;
     const response = await fetch(url, {
       method: 'POST',
@@ -206,8 +192,7 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        Authorization: `Bearer ${snapshot.actorDeviceSessionToken}`,
-        ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}),
+        [CSRF_HEADER_NAME]: csrf,
       },
       body: JSON.stringify({ remindersEnabled }),
     });

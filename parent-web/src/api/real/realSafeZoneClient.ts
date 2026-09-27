@@ -1,5 +1,4 @@
 import type { NewSafeZoneInput, SafeZone, SafeZoneClient, SafeZonePatch } from '../interfaces';
-import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { validateOpaqueSafeZoneInput, validateOpaqueSafeZonePatch } from '../safeZonePolicyAuthoring';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -83,7 +82,7 @@ function parseSafeZone(value: unknown, familyId: string): SafeZone {
 }
 
 export class RealSafeZoneClient implements SafeZoneClient {
-  constructor(private readonly apiBaseUrl: string, private readonly trustedBrowser: TrustedBrowserProvider) {}
+  constructor(private readonly apiBaseUrl: string) {}
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
@@ -91,7 +90,7 @@ export class RealSafeZoneClient implements SafeZoneClient {
 
   async list(familyId: string): Promise<SafeZone[]> {
     assertSafeZoneIdentifier(familyId);
-    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones`), { credentials: 'include', headers: { Accept: 'application/json', ...(await this.actorHeaders()) } });
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones`), { credentials: 'include', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`Safe-zone request failed (${response.status})`);
     const body = await json(response);
     if (!isRecord(body) || !Array.isArray(body.safeZones)) throw new Error('SAFE_ZONE_RESPONSE_INVALID');
@@ -118,47 +117,18 @@ export class RealSafeZoneClient implements SafeZoneClient {
     assertSafeZoneIdentifier(familyId);
     assertSafeZoneIdentifier(zoneId);
     const csrf = readCsrfCookie();
-    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones/${encodeURIComponent(zoneId)}`), { method: 'DELETE', credentials: 'include', headers: { ...(await this.actorHeaders()), ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) } });
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones/${encodeURIComponent(zoneId)}`), { method: 'DELETE', credentials: 'include', headers: { ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) } });
     if (!response.ok) throw new Error(`Safe-zone deletion failed (${response.status})`);
   }
 
   private async mutate(familyId: string, zoneId: string, method: 'POST' | 'PATCH', body: unknown): Promise<SafeZone> {
     const csrf = readCsrfCookie();
     const suffix = zoneId ? `/${encodeURIComponent(zoneId)}` : '';
-    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones${suffix}`), { method, credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(await this.actorHeaders()), ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) }, body: JSON.stringify(body) });
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones${suffix}`), { method, credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error(`Safe-zone update failed (${response.status})`);
     const responseBody = await json(response);
     if (!isRecord(responseBody)) throw new Error('SAFE_ZONE_RESPONSE_INVALID');
     return parseSafeZone(responseBody.safeZone, familyId);
   }
 
-  /**
-   * SECURITY (actor-identity binding): sends the backend a verified,
-   * session-bound actor identity -- never a self-reported opaque string.
-   * Earlier this sent `snapshot.browserEndpointId` (a browser-local,
-   * self-asserted value from `TrustedBrowserProvider.getSnapshot()`) as the
-   * `x-pca-actor-device-id` header, which the server only regex-validated
-   * with no cryptographic binding to the caller; that header is now
-   * DEPRECATED server-side (see parentAccountRoutes.ts's
-   * `authorizeSafeZoneRequest` doc comment) and this client no longer sends
-   * it at all, to avoid a spurious mismatch against the real,
-   * session-derived deviceId.
-   *
-   * Instead this sends `snapshot.actorDeviceSessionToken` as
-   * `Authorization: Bearer <token>` -- a `DeviceSessionService` device
-   * session token the server verifies server-side via
-   * `DeviceSessionService.requireActorDeviceInFamily` (see
-   * backend/src/runtime-sync/DeviceSessionService.ts). See
-   * `TrustedBrowserSnapshot.actorDeviceSessionToken`'s own doc comment for
-   * why this is `null` (and this therefore throws) for
-   * `RealTrustedBrowserProvider` today: the browser-side challenge-response
-   * ceremony that would populate it is not yet built.
-   */
-  private async actorHeaders(): Promise<Record<string, string>> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
-    if (!snapshot.browserEndpointId) throw new Error('DEVICE_IDENTITY_UNAVAILABLE');
-    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
-  }
 }

@@ -8,6 +8,7 @@ import { formatDateTime } from '../../../i18n/formatters';
 import { PairingConfirmation, RampPill } from '../DeviceEnrollmentPanel';
 import { errorMessageKey, invitationStatusRamp, useInvitations } from './enrollmentState';
 import type { DevicesSectionId } from './DevicesTabs';
+import { useFamilyAction } from '../../../rbac/useFamilyAction';
 
 /**
  * Section 3 -- every enrollment that has been started but is not finished, in
@@ -34,13 +35,14 @@ export default function PendingSetupSection({
 }) {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
+  const runFamilyAction = useFamilyAction();
   const { invitations, loading, error, reload } = useInvitations(familyId);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const revoke = async (invitationId: string) => {
     setActionError(null);
     try {
-      await clients.deviceEnrollment.revokeInvitation(familyId, invitationId);
+      await runFamilyAction('REVOKE_DEVICE_INVITATION', (stepUpToken) => clients.deviceEnrollment.revokeInvitation(familyId, invitationId, stepUpToken!));
       reload();
     } catch (e) {
       setActionError(t(errorMessageKey(e)));

@@ -175,12 +175,12 @@ export class RealRetentionClient implements RetentionClient {
     return body;
   }
 
-  async submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult> {
+  async submitPolicy(policy: RetentionPolicySettings, stepUpToken: string): Promise<RetentionPolicySubmitResult> {
     const operation = 'submitPolicy';
     const familyId = await this.familyId(operation);
     const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/retention-policy`, {
       method: 'POST',
-      body: JSON.stringify(policy),
+      body: JSON.stringify({ ...policy, stepUpToken }),
     });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<RetentionPolicySubmitResult>(response);
@@ -188,7 +188,7 @@ export class RealRetentionClient implements RetentionClient {
     return body;
   }
 
-  async deleteNow(actionId: string): Promise<DeleteNowResult> {
+  async deleteNow(actionId: string, stepUpToken: string): Promise<DeleteNowResult> {
     const operation = 'deleteNow';
     const familyId = await this.familyId(operation);
     // records is intentionally omitted: this client has no local index of
@@ -199,7 +199,7 @@ export class RealRetentionClient implements RetentionClient {
     // client fabricating record ids it cannot actually enumerate.
     const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/delete-now`, {
       method: 'POST',
-      body: JSON.stringify({ actionId }),
+      body: JSON.stringify({ actionId, stepUpToken }),
     });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<DeleteNowResult>(response);
@@ -207,10 +207,10 @@ export class RealRetentionClient implements RetentionClient {
     return body;
   }
 
-  async requestExport(): Promise<ExportRequestResult> {
+  async requestExport(stepUpToken: string): Promise<ExportRequestResult> {
     const operation = 'requestExport';
     const familyId = await this.familyId(operation);
-    const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/export-requests`, { method: 'POST' });
+    const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/export-requests`, { method: 'POST', body: JSON.stringify({ stepUpToken }) });
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<ExportRequestResult>(response);
     if (!body) throw new RetentionApiError('UNKNOWN', `${operation}: empty response body.`);

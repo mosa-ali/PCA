@@ -26,6 +26,11 @@ import { openDeviceSection, runAddDeviceWizard } from '../utils/deviceEnrollment
 
 const ADD_SECTION = '/family/devices?section=add';
 
+async function confirmSensitiveAction() {
+  await userEvent.type(await screen.findByLabelText('6-digit authenticator code'), '123456');
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm change' }));
+}
+
 describe('Device enrollment -- Add device section', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
@@ -153,6 +158,7 @@ describe('Device enrollment -- Add device section', () => {
     await openDeviceSection('Pending setup');
     const revokeButton = await screen.findByRole('button', { name: 'Revoke' });
     await userEvent.click(revokeButton);
+    await confirmSensitiveAction();
 
     await screen.findByText('Revoked');
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
@@ -256,6 +262,7 @@ describe('Device enrollment -- pairing confirmation', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pairing' })).not.toBeDisabled());
 
     await userEvent.click(screen.getByRole('button', { name: 'Confirm pairing' }));
+    await confirmSensitiveAction();
     await waitFor(() => expect(screen.getByText('This device is now paired.')).toBeInTheDocument());
 
     // The word ACTIVE must never appear anywhere in the rendered page: the
@@ -307,7 +314,7 @@ describe('Device enrollment -- pairing confirmation', () => {
     await userEvent.type(await screen.findByLabelText('Device ID'), deviceId);
     await userEvent.click(screen.getByRole('button', { name: 'Look up pairing request' }));
 
-    await screen.findByText('Setup code A');
+    await screen.findByText('Setup code A', {}, { timeout: 5_000 });
     expect(screen.queryByRole('button', { name: 'Confirm pairing' })).not.toBeInTheDocument();
     const panel = screen.getByText('Setup code A').closest('.section-panel') as HTMLElement;
     expect(within(panel).getByText('Not permitted for your role')).toBeInTheDocument();

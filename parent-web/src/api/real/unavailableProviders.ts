@@ -34,7 +34,8 @@
 // acknowledgeEnvelope) still have no real backend counterpart (they need
 // the not-yet-built, crypto-review-gated parent-sdk E2EE client) and keep
 // this class's own honest rejection behavior unchanged.
-import type { FamilyAuthorityGateway, WellbeingMessageAdminClient } from '../interfaces';
+import type { FamilyAuthorityGateway, WebRuleAdminClient, WellbeingMessageAdminClient } from '../interfaces';
+import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../../domain/webRulePolicy';
 import type {
   ConnectionStatus,
   CiphertextEnvelope,
@@ -75,13 +76,13 @@ export class UnavailableFamilyAuthorityGateway implements FamilyAuthorityGateway
   inviteMember(): Promise<{ invitationId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.inviteMember'));
   }
-  removeMember(_memberId: string): Promise<{ auditEventId: string }> {
+  removeMember(_memberId: string, _stepUpToken: string): Promise<{ auditEventId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.removeMember'));
   }
-  changeRole(_memberId: string, _newRole: FamilyRole): Promise<{ auditEventId: string }> {
+  changeRole(_memberId: string, _newRole: FamilyRole, _stepUpToken: string): Promise<{ auditEventId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.changeRole'));
   }
-  transferOwnership(): Promise<{ auditEventId: string }> {
+  transferOwnership(_newOwnerMemberId: string, _stepUpToken: string): Promise<{ auditEventId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.transferOwnership'));
   }
   listAuditTrail(): Promise<AuditEntrySummary[]> {
@@ -116,6 +117,19 @@ export class UnavailableWellbeingMessageAdminClient implements WellbeingMessageA
   }
   restoreCustomMessage(): Promise<WellbeingMessageControlV1> {
     return Promise.reject(new ServiceUnavailableError('WellbeingMessageAdminClient.restoreCustomMessage'));
+  }
+}
+
+/** Production Web Rule authoring is unavailable until encrypted storage and delivery replace the readable rule-store scaffold. */
+export class UnavailableWebRuleAdminClient implements WebRuleAdminClient {
+  listRules(_childId: string): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus; revision: number | null }> {
+    return Promise.reject(new ServiceUnavailableError('WebRuleAdminClient.listRules'));
+  }
+  setRule(_childId: string, _domain: string, _listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }> {
+    return Promise.reject(new ServiceUnavailableError('WebRuleAdminClient.setRule'));
+  }
+  removeRule(_childId: string, _domain: string, _listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }> {
+    return Promise.reject(new ServiceUnavailableError('WebRuleAdminClient.removeRule'));
   }
 }
 

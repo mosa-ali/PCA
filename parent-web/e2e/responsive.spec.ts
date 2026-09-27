@@ -161,7 +161,7 @@ test('every first-level sidebar row leads to a real page, not a dead end', async
   const rows = [
     'Dashboard', 'Children', 'Devices', 'Requests', 'Parents & Guardians', 'Roles & Permissions',
     'Protection Status', 'Screen Time', 'Apps & Web', 'Schedules', 'Wellbeing Messages',
-    'Alerts', 'Data & Privacy', 'Recovery', 'Security Log', 'Trusted Browser',
+    'Alerts', 'Data & Privacy', 'Recovery', 'Security Log',
     'Notifications', 'Subscription', 'Settings',
   ];
   await page.goto('/dashboard');

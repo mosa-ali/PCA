@@ -112,10 +112,10 @@ export interface DeviceEnrollmentClient {
    * must never attempt to refetch it later (getInvitation/listInvitations
    * never return it, matching the server).
    */
-  createInvitation(familyId: string, input: CreateInvitationInput): Promise<InvitationCreatedDto>;
+  createInvitation(familyId: string, input: CreateInvitationInput, stepUpToken: string): Promise<InvitationCreatedDto>;
   getInvitation(familyId: string, invitationId: string): Promise<InvitationDto>;
   listInvitations(familyId: string): Promise<InvitationDto[]>;
-  revokeInvitation(familyId: string, invitationId: string): Promise<InvitationDto>;
+  revokeInvitation(familyId: string, invitationId: string, stepUpToken: string): Promise<InvitationDto>;
   getPairingRequest(familyId: string, deviceId: string): Promise<PairingRequestDto>;
   /**
    * Confirms a pending pairing request. Only ever transitions
@@ -123,5 +123,5 @@ export interface DeviceEnrollmentClient {
    * target surfaces DeviceEnrollmentError('CONFLICT'). The resolved status
    * must be rendered as PAIRED, never as ACTIVE.
    */
-  confirmPairing(familyId: string, deviceId: string): Promise<PairingRequestDto>;
+  confirmPairing(familyId: string, deviceId: string, stepUpToken: string): Promise<PairingRequestDto>;
 }

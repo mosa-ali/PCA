@@ -40,19 +40,19 @@ describe('RealDeviceEnrollmentClient', () => {
       const result = await client.createInvitation('fam-1', {
         platform: 'ANDROID',
         requestedProtectionMode: 'ANDROID_STANDARD',
-      });
+      }, 'fresh-create-grant');
       expect(result.rawInvitationToken).toBe('raw-invite-token-xyz');
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/invitations`);
       expect(init.method).toBe('POST');
       expect((init.headers as Record<string, string>).Authorization).toBe('Bearer raw-session-token-abc');
-      expect(JSON.parse(init.body as string)).toEqual({ platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' });
+      expect(JSON.parse(init.body as string)).toEqual({ platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', stepUpToken: 'fresh-create-grant' });
     });
 
     it('fails fast with SERVICE_SESSION_UNAVAILABLE when no bearer token is available, without ever calling fetch', async () => {
       const client = new RealDeviceEnrollmentClient(apiBaseUrl, async () => null);
       await expect(
-        client.createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+        client.createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
       expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -113,7 +113,7 @@ describe('RealDeviceEnrollmentClient', () => {
         }),
       );
 
-      await cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' });
+      await cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant');
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(init.method).toBe('POST');
@@ -126,7 +126,7 @@ describe('RealDeviceEnrollmentClient', () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'MANAGED_DEVICE_LIMIT_REACHED' }));
 
       await expect(
-        cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+        cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: 'MANAGED_DEVICE_LIMIT_REACHED', httpStatus: 403 });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -178,11 +178,12 @@ describe('RealDeviceEnrollmentClient', () => {
           revokedAt: '2026-01-01T00:05:00.000Z',
         }),
       );
-      const result = await client().revokeInvitation('fam-1', 'inv-1');
+      const result = await client().revokeInvitation('fam-1', 'inv-1', 'step-up-token');
       expect(result.status).toBe('REVOKED');
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/invitations/inv-1/revoke`);
       expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ stepUpToken: 'step-up-token' });
     });
 
     it('getPairingRequest calls GET /v1/families/:familyId/pairing-requests/:deviceId', async () => {
@@ -212,11 +213,12 @@ describe('RealDeviceEnrollmentClient', () => {
           dekFingerprint: 'cc:dd',
         }),
       );
-      const result = await client().confirmPairing('fam-1', 'dev-1');
+      const result = await client().confirmPairing('fam-1', 'dev-1', 'step-up-token');
       expect(result.status).toBe('PAIRED');
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/pairing-requests/dev-1/confirm`);
       expect(init.method).toBe('POST');
+      expect(init.body).toBe(JSON.stringify({ stepUpToken: 'step-up-token' }));
     });
 
     it('confirmPairing throws (defense-in-depth) if the server ever illegally returns ACTIVE', async () => {
@@ -229,7 +231,7 @@ describe('RealDeviceEnrollmentClient', () => {
           dekFingerprint: 'cc:dd',
         }),
       );
-      await expect(client().confirmPairing('fam-1', 'dev-1')).rejects.toThrow(/ACTIVE/);
+      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token')).rejects.toThrow(/ACTIVE/);
     });
   });
 
@@ -244,14 +246,14 @@ describe('RealDeviceEnrollmentClient', () => {
     it('maps 403 to FORBIDDEN (a real RBAC rejection, not a client guess)', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 403 }));
       await expect(
-        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: null });
     });
 
     it('forwards the body\'s code on 403 so MANAGED_DEVICE_LIMIT_REACHED is distinguishable from a generic authority rejection', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'MANAGED_DEVICE_LIMIT_REACHED' }));
       await expect(
-        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: 'MANAGED_DEVICE_LIMIT_REACHED' });
     });
 
@@ -262,13 +264,13 @@ describe('RealDeviceEnrollmentClient', () => {
 
     it('maps 409 to CONFLICT', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 409 }));
-      await expect(client().confirmPairing('fam-1', 'dev-1')).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token')).rejects.toMatchObject({ code: 'CONFLICT' });
     });
 
     it('maps 429 to RATE_LIMITED', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 429 }));
       await expect(
-        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
     });
 

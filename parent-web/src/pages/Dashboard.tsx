@@ -121,7 +121,6 @@ export default function Dashboard() {
   );
 
   const familyReadFailed = dashboard.error !== null;
-
   return (
     <section aria-labelledby="dashboard-title">
       {/* The accessible name "Dashboard" is pinned by e2e and component tests. */}
@@ -142,9 +141,6 @@ export default function Dashboard() {
           />
 
           {familyReadFailed ? (
-            // Not "Something went wrong". AsyncStates routes the three
-            // fail-closed conditions to the action-needed treatment with a
-            // real next step; anything unrecognised stays a genuine error.
             <AsyncStates error={dashboard.error} onRetry={dashboard.reload} />
           ) : childSummaries.length === 0 ? (
             <EmptyState />

@@ -44,15 +44,16 @@ describe('data-load errors are shown as localized user copy, not developer prose
     expect(screen.queryByText(/requires a TRUSTED browser endpoint/)).not.toBeInTheDocument();
   });
 
-  it('renders the Children trust boundary as action-needed, not a generic failure', async () => {
+  it('renders the retired browser trust boundary without asking the Parent to pair a browser', async () => {
     const failure = new EndpointNotTrustedError('BROWSER_NOT_TRUSTED', 'ParentFamilyDataGateway.getDashboard');
     vi.spyOn(getApiClients().parentFamilyData, 'getDashboard').mockRejectedValue(failure);
 
     renderWithProviders(<ChildrenList />, { role: 'OWNER', route: '/children' });
 
-    expect(await screen.findByRole('heading', { name: i18n.t('states.browserSetupNeededTitle') })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: i18n.t('states.notAvailableYetTitle') })).toBeInTheDocument();
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.getByText(i18n.t('errors.endpointNotTrusted'))).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: i18n.t('states.browserSetupNeededAction') })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(i18n.t('common.errorTitle'))).not.toBeInTheDocument();
   });

@@ -1,8 +1,8 @@
 // PCA product-completion programme (/security/status): proves
 // RealProtectionAlertDeliveryClient genuinely fetches opaque protection-alert
 // envelopes from the family's real queue -- honestly reporting
-// PENDING_TRUSTED_DECRYPTION whenever any link in the chain (no trusted
-// browser, no actor-device session, no resolvable family, network failure,
+// PENDING_TRUSTED_DECRYPTION whenever Parent session resolution, network,
+// no resolvable family, network failure,
 // a malformed response) is unavailable, and READY with real alerts only
 // once every link succeeds. A genuinely empty envelope list is reported as
 // READY/empty, never conflated with a pending state. Mirrors
@@ -51,13 +51,13 @@ describe('RealProtectionAlertDeliveryClient', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reports PENDING_TRUSTED_DECRYPTION without ever calling fetch when the browser is not trusted', async () => {
+  it('reports pending when the Parent session cannot be resolved, without requiring browser trust', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(NOT_TRUSTED_SNAPSHOT));
     const result = await client.list();
     expect(result).toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('fetches real opaque alert envelopes and maps only their safe routing metadata (never the encrypted payload) when trusted, resolving READY', async () => {
@@ -88,7 +88,7 @@ describe('RealProtectionAlertDeliveryClient', () => {
     const alertsCall = fetchMock.mock.calls.find(([input]) => (typeof input === 'string' ? input : input.toString()).includes('/protection-alerts'));
     expect(alertsCall).toBeTruthy();
     const [, init] = alertsCall as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer actor-device-session-token');
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it('reports READY with an empty list when the family genuinely has zero alerts -- never conflated with pending', async () => {

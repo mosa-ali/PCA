@@ -134,7 +134,7 @@ describe('mobile drawer is keyboard-operable', () => {
 // simplification is never allowed to drop one. These tests are the proof.
 // ---------------------------------------------------------------------------
 
-/** The complete nav surface before the regrouping (navConfig.ts, 18 entries). */
+/** Prior nav routes that remain supported after the Parent browser route retired. */
 const PREVIOUS_NAV_ROUTES = [
   '/dashboard',
   '/children',
@@ -148,13 +148,14 @@ const PREVIOUS_NAV_ROUTES = [
   '/privacy/transparency',
   '/privacy/permissions',
   '/security/status',
-  '/security/trusted-browser',
   '/security/recovery',
   '/security/audit',
   '/notifications',
   '/subscription',
   '/settings',
 ];
+
+const ROUTES_RETIRED_FROM_NAV = ['/security/trusted-browser'];
 
 /**
  * The five routes that moved off the first level. They are not gone: each is
@@ -169,8 +170,8 @@ const ROUTES_REHOMED_ON_THE_PRIVACY_HUB = [
   '/privacy/permissions',
 ];
 
-describe('first-level navigation: five consumer groups, zero drops', () => {
-  it('is exactly the five groups and 19 entries the IA specifies', () => {
+describe('first-level navigation: five consumer groups, supported routes retained', () => {
+  it('is exactly the five groups and 18 entries the IA specifies', () => {
     expect(NAV_SECTIONS.map((section) => section.titleKey)).toEqual([
       'nav.groupHome',
       'nav.groupFamily',
@@ -178,18 +179,19 @@ describe('first-level navigation: five consumer groups, zero drops', () => {
       'nav.groupSafetyPrivacy',
       'nav.groupAccount',
     ]);
-    // 18 previous entries + the recovered /wellbeing-messages orphan + the
+    // 17 supported previous entries + the recovered /wellbeing-messages orphan + the
     // three new /protection/* index pages - the five privacy rows now reached
     // through the hub, + the hub itself + /safety/alerts.
-    expect(NAV_PATHS).toHaveLength(19);
-    expect(new Set(NAV_PATHS).size).toBe(19);
+    expect(NAV_PATHS).toHaveLength(18);
+    expect(new Set(NAV_PATHS).size).toBe(18);
   });
 
-  it('drops nothing: every previously-navigable route is still in the nav or on the privacy hub', () => {
+  it('keeps every supported prior route in the nav or on the privacy hub and retires browser authority', () => {
     const missing = PREVIOUS_NAV_ROUTES.filter(
       (route) => !NAV_PATHS.includes(route) && !ROUTES_REHOMED_ON_THE_PRIVACY_HUB.includes(route),
     );
     expect(missing).toEqual([]);
+    for (const route of ROUTES_RETIRED_FROM_NAV) expect(NAV_PATHS).not.toContain(route);
     // And the five that moved really did move to the hub, not out of the app.
     for (const route of ROUTES_REHOMED_ON_THE_PRIVACY_HUB) {
       expect(NAV_PATHS).not.toContain(route);
@@ -206,11 +208,7 @@ describe('first-level navigation: five consumer groups, zero drops', () => {
     const noop = () => {};
     renderWithProviders(<Sidebar collapsed={false} drawerOpen={false} onNavigate={noop} onClose={noop} />);
 
-    // tests/component/SidebarTrustedBrowserLink.test.tsx, e2e/responsive.spec.ts,
-    // e2e/keyboard-accessibility.spec.ts.
-    expect(screen.getByRole('link', { name: 'Trusted Browser' }).getAttribute('href')).toBe(
-      '/security/trusted-browser',
-    );
+    expect(screen.queryByRole('link', { name: 'Trusted Browser' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Requests' }).getAttribute('href')).toBe('/requests');
     expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/dashboard');
   });

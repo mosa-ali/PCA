@@ -21,16 +21,15 @@ function initialDevRole(): FamilyRole {
   return 'OWNER';
 }
 
-type DevMfaState = 'ACTIVE' | 'GRACE' | 'SETUP_REQUIRED';
+type DevMfaState = 'ACTIVE' | 'GRACE' | 'SETUP_REQUIRED' | 'RECOVERY_PENDING';
 
 function initialDevMfa(): DevMfaState {
-  // Test-only convenience, same rationale as `demoRole`: `?demoMfa=GRACE`
-  // (or SETUP_REQUIRED) lets Playwright preset the authenticator status
-  // across a full page navigation. Defaults to ACTIVE so the grace reminder
-  // never appears in unrelated fixture journeys.
+  // Test-only convenience, same rationale as `demoRole`: `?demoMfa=NOT_ENROLLED`
+  // remains a compatibility alias for the server's 72-hour GRACE state.
   if (typeof window !== 'undefined') {
     const requested = new URLSearchParams(window.location.search).get('demoMfa');
-    if (requested === 'GRACE' || requested === 'SETUP_REQUIRED') return requested;
+    if (requested === 'NOT_ENROLLED' || requested === 'GRACE') return 'GRACE';
+    if (requested === 'SETUP_REQUIRED' || requested === 'RECOVERY_PENDING') return requested;
   }
   return 'ACTIVE';
 }
@@ -38,8 +37,6 @@ function initialDevMfa(): DevMfaState {
 let currentRole: FamilyRole = initialDevRole();
 let serviceAuthenticated = true;
 let devMfa: DevMfaState = initialDevMfa();
-// Fixed once per page load, so the displayed time left counts down rather than resetting on every read.
-const devGraceExpiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000).toISOString();
 
 const listeners = new Set<() => void>();
 
@@ -90,6 +87,13 @@ export function buildDevSession(): AuthenticatedSession {
             : 'member-amir',
     role: currentRole,
     serviceAuthenticated,
-    mfa: devMfa === 'ACTIVE' ? { status: 'ACTIVE' } : { status: devMfa, graceExpiresAt: devGraceExpiresAt },
+    mfa:
+      devMfa === 'ACTIVE'
+        ? { status: 'ACTIVE' }
+        : devMfa === 'GRACE'
+          ? { status: 'GRACE', graceExpiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString() }
+          : devMfa === 'SETUP_REQUIRED'
+            ? { status: 'SETUP_REQUIRED', graceExpiresAt: new Date(0).toISOString() }
+            : { status: 'RECOVERY_PENDING', recoveryAvailableAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
   };
 }

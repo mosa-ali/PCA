@@ -72,7 +72,7 @@ describe('RealRetentionClient', () => {
       document.cookie = 'pca_family_csrf=csrf-token-value; path=/';
       fetchMock.mockResolvedValueOnce(jsonResponse(202, { policy: POLICY, validated: true, persisted: false, deliveryStatus: 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW' }));
 
-      await cookieClient().submitPolicy(POLICY);
+      await cookieClient().submitPolicy(POLICY, 'step-up-token');
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/retention-policy`);
@@ -81,7 +81,7 @@ describe('RealRetentionClient', () => {
       const headers = init.headers as Record<string, string>;
       expect(headers['X-PCA-CSRF-Token']).toBe('csrf-token-value');
       expect(headers['Content-Type']).toBe('application/json');
-      expect(JSON.parse(init.body as string)).toEqual(POLICY);
+      expect(JSON.parse(init.body as string)).toEqual({ ...POLICY, stepUpToken: 'step-up-token' });
     });
 
     it('deleteNow and requestExport also carry the CSRF header (every non-GET route the server double-submit-checks)', async () => {
@@ -89,9 +89,9 @@ describe('RealRetentionClient', () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(200, { actionId: 'a-1', idempotent: false, plan: { toDelete: [], retainedCount: 0 }, deliveryStatus: 'DELETE_PENDING_REMOTE_DEVICE' }),
       );
-      await cookieClient().deleteNow('a-1');
+      await cookieClient().deleteNow('a-1', 'step-up-token');
       fetchMock.mockResolvedValueOnce(jsonResponse(202, { exportId: 'x-1', status: 'PENDING_CRYPTO_REVIEW', disclosures: [] }));
-      await cookieClient().requestExport();
+      await cookieClient().requestExport('step-up-token');
 
       for (const call of fetchMock.mock.calls as Array<[string, RequestInit]>) {
         expect((call[1].headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-token-value');
@@ -103,7 +103,7 @@ describe('RealRetentionClient', () => {
     it('sends an empty CSRF header rather than inventing a value when the cookie is absent -- the server then fails closed with 403', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'csrf_mismatch' }));
 
-      await expect(cookieClient().submitPolicy(POLICY)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(cookieClient().submitPolicy(POLICY, 'step-up-token')).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('');
@@ -124,7 +124,7 @@ describe('RealRetentionClient', () => {
     });
 
     it('cookie mode with no signed-in family session fails a family-scoped call with FAMILY_CONTEXT_UNAVAILABLE, without calling fetch', async () => {
-      await expect(cookieClient(null).submitPolicy(POLICY)).rejects.toMatchObject({ code: 'FAMILY_CONTEXT_UNAVAILABLE' });
+      await expect(cookieClient(null).submitPolicy(POLICY, 'step-up-token')).rejects.toMatchObject({ code: 'FAMILY_CONTEXT_UNAVAILABLE' });
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -155,12 +155,12 @@ describe('RealRetentionClient', () => {
 
     it('maps 403 to FORBIDDEN', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 403 }));
-      await expect(cookieClient().requestExport()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(cookieClient().requestExport('step-up-token')).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('maps 429 to RATE_LIMITED', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 429 }));
-      await expect(cookieClient().deleteNow('a-1')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+      await expect(cookieClient().deleteNow('a-1', 'step-up-token')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
     });
   });
 });

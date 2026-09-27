@@ -9,15 +9,14 @@ import { DeviceEnrollmentError } from '../deviceEnrollmentClient';
 
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
-interface DevInvitationRecord extends InvitationDto {
-  /** Kept only in this module-local dev store, never exposed again after creation -- mirrors the real backend never re-serving it. */
-  rawTokenIssuedOnce: string;
+type DevPairingRecord = PairingRequestDto;
+interface DevPairingEntry {
+  familyId: string;
+  request: DevPairingRecord;
 }
 
-type DevPairingRecord = PairingRequestDto;
-
-let invitations: DevInvitationRecord[] = [];
-let pairingRequests: Map<string, DevPairingRecord> = new Map();
+let invitations: InvitationDto[] = [];
+let pairingRequests: Map<string, DevPairingEntry> = new Map();
 let seq = 0;
 let nextCreateInvitationDenial: 'MANAGED_DEVICE_LIMIT_REACHED' | null = null;
 
@@ -57,7 +56,7 @@ function nextId(prefix: string): string {
  * yet cannot be confirmed.
  */
 export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
-  async createInvitation(familyId: string, input: CreateInvitationInput): Promise<InvitationCreatedDto> {
+  async createInvitation(familyId: string, input: CreateInvitationInput, _stepUpToken: string): Promise<InvitationCreatedDto> {
     await delay();
     if (nextCreateInvitationDenial) {
       const code = nextCreateInvitationDenial;
@@ -73,7 +72,7 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
     const ttlMs = input.ttlMs ?? 15 * 60_000;
     const invitationId = nextId('inv');
     const rawToken = `dev-raw-token-${invitationId}-${Math.random().toString(36).slice(2)}`;
-    const record: DevInvitationRecord = {
+    const record: InvitationDto = {
       invitationId,
       familyId,
       platform: input.platform,
@@ -91,7 +90,6 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
       redeemedAt: null,
       expiredAt: null,
       revokedAt: null,
-      rawTokenIssuedOnce: rawToken,
     };
     invitations = [...invitations, record];
 
@@ -100,46 +98,44 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
     // can exercise the "confirm disabled until fingerprints resolve" path.
     const deviceId = nextId('device');
     pairingRequests.set(deviceId, {
-      deviceId,
-      platform: input.platform,
-      status: 'PAIRING_PENDING',
-      dskFingerprint: null,
-      dekFingerprint: null,
+      familyId,
+      request: {
+        deviceId,
+        platform: input.platform,
+        status: 'PAIRING_PENDING',
+        dskFingerprint: null,
+        dekFingerprint: null,
+      },
     });
 
-    const { rawTokenIssuedOnce: _drop, ...dto } = record;
-    return { ...dto, rawInvitationToken: rawToken };
+    return { ...record, rawInvitationToken: rawToken };
   }
 
   async getInvitation(familyId: string, invitationId: string): Promise<InvitationDto> {
     await delay();
     const record = invitations.find((i) => i.familyId === familyId && i.invitationId === invitationId);
     if (!record) throw new DeviceEnrollmentError('NOT_FOUND', 'Invitation not found.', 404);
-    const { rawTokenIssuedOnce: _drop, ...dto } = record;
-    return dto;
+    return { ...record };
   }
 
   async listInvitations(familyId: string): Promise<InvitationDto[]> {
     await delay();
-    return invitations
-      .filter((i) => i.familyId === familyId)
-      .map(({ rawTokenIssuedOnce: _drop, ...dto }) => dto);
+    return invitations.filter((i) => i.familyId === familyId).map((invitation) => ({ ...invitation }));
   }
 
-  async revokeInvitation(familyId: string, invitationId: string): Promise<InvitationDto> {
+  async revokeInvitation(familyId: string, invitationId: string, _stepUpToken: string): Promise<InvitationDto> {
     await delay();
     const idx = invitations.findIndex((i) => i.familyId === familyId && i.invitationId === invitationId);
     if (idx === -1) throw new DeviceEnrollmentError('NOT_FOUND', 'Invitation not found.', 404);
     invitations[idx] = { ...invitations[idx], status: 'REVOKED', revokedAt: new Date().toISOString() };
-    const { rawTokenIssuedOnce: _drop, ...dto } = invitations[idx];
-    return dto;
+    return { ...invitations[idx] };
   }
 
-  async getPairingRequest(_familyId: string, deviceId: string): Promise<PairingRequestDto> {
+  async getPairingRequest(familyId: string, deviceId: string): Promise<PairingRequestDto> {
     await delay();
-    const record = pairingRequests.get(deviceId);
-    if (!record) throw new DeviceEnrollmentError('NOT_FOUND', 'Pairing request not found.', 404);
-    return { ...record };
+    const entry = pairingRequests.get(deviceId);
+    if (!entry || entry.familyId !== familyId) throw new DeviceEnrollmentError('NOT_FOUND', 'Pairing request not found.', 404);
+    return { ...entry.request };
   }
 
   /**
@@ -147,10 +143,11 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
    * Only reaches PAIRED -- never ACTIVE. Confirming an already-PAIRED or
    * REVOKED target is a CONFLICT, matching the real backend.
    */
-  async confirmPairing(_familyId: string, deviceId: string): Promise<PairingRequestDto> {
+  async confirmPairing(familyId: string, deviceId: string, _stepUpToken: string): Promise<PairingRequestDto> {
     await delay();
-    const record = pairingRequests.get(deviceId);
-    if (!record) throw new DeviceEnrollmentError('NOT_FOUND', 'Pairing request not found.', 404);
+    const entry = pairingRequests.get(deviceId);
+    if (!entry || entry.familyId !== familyId) throw new DeviceEnrollmentError('NOT_FOUND', 'Pairing request not found.', 404);
+    const record = entry.request;
     if (record.status === 'PAIRED') return { ...record }; // idempotent
     if (record.status !== 'PAIRING_PENDING') {
       throw new DeviceEnrollmentError('CONFLICT', `Cannot confirm pairing in status ${record.status}.`, 409);
@@ -165,18 +162,21 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
       dskFingerprint: record.dskFingerprint ?? 'dev:dsk:aa11-bb22-cc33-dd44',
       dekFingerprint: record.dekFingerprint ?? 'dev:dek:ee55-ff66-0077-8899',
     };
-    pairingRequests.set(deviceId, resolved);
+    pairingRequests.set(deviceId, { ...entry, request: resolved });
     return { ...resolved };
   }
 
   /** Dev-only convenience so the UI/tests can watch fingerprints "arrive" for a pending pairing request. */
   __devResolveFingerprints(deviceId: string): void {
-    const record = pairingRequests.get(deviceId);
-    if (!record) return;
+    const entry = pairingRequests.get(deviceId);
+    if (!entry) return;
     pairingRequests.set(deviceId, {
-      ...record,
-      dskFingerprint: 'dev:dsk:aa11-bb22-cc33-dd44',
-      dekFingerprint: 'dev:dek:ee55-ff66-0077-8899',
+      ...entry,
+      request: {
+        ...entry.request,
+        dskFingerprint: 'dev:dsk:aa11-bb22-cc33-dd44',
+        dekFingerprint: 'dev:dek:ee55-ff66-0077-8899',
+      },
     });
   }
 }

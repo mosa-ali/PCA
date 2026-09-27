@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PermissionGate } from '../../rbac/PermissionGate';
+import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { Disclosure } from '../../components/common/Disclosure';
 import { formatDateTime } from '../../i18n/formatters';
 
@@ -25,6 +26,7 @@ export interface ProtectionApprovalView {
   requestedAtUtc: string;
   expiresAtUtc: string;
   protectionLevel: ProtectionTargetOption['protectionLevel'];
+  operation: 'REMOVE_REVOKE_DEVICE' | 'DISABLE_PROTECTION_POLICY';
   reasonCategory: string | null;
   state: ProtectionApprovalState;
 }
@@ -43,7 +45,7 @@ export interface ProtectionPinStatus {
  */
 export interface ProtectionAdministrationActions {
   getPinStatus(): Promise<ProtectionPinStatus>;
-  configurePin(pin: string): Promise<ProtectionPinStatus>;
+  configurePin(pin: string, stepUpToken: string): Promise<ProtectionPinStatus>;
   listPendingApprovals(): Promise<ProtectionApprovalView[]>;
   requestApproval(input: {
     childId: string;
@@ -51,6 +53,7 @@ export interface ProtectionAdministrationActions {
     protectionLevel: ProtectionTargetOption['protectionLevel'];
     operation: 'REMOVE_REVOKE_DEVICE' | 'DISABLE_PROTECTION_POLICY';
     reasonCategory: string | null;
+    stepUpToken: string;
   }): Promise<ProtectionApprovalView>;
   decideApproval(input: {
     requestId: string;
@@ -58,7 +61,13 @@ export interface ProtectionAdministrationActions {
     decision: ProtectionDecision;
     temporaryDisableUntilUtc?: string | null;
     pin?: string;
+    stepUpToken?: string;
   }): Promise<ProtectionApprovalView>;
+}
+
+function requireStepUpToken(token: string | undefined): string {
+  if (!token) throw new Error('Step-up authentication is required for this action.');
+  return token;
 }
 
 /**
@@ -81,6 +90,7 @@ interface ProtectionAdministrationPanelProps {
 
 export default function ProtectionAdministrationPanel({ section, targets, actions }: ProtectionAdministrationPanelProps) {
   const { t, i18n } = useTranslation();
+  const runFamilyAction = useFamilyAction();
   const [pinStatus, setPinStatus] = useState<ProtectionPinStatus | null>(null);
   const [approvals, setApprovals] = useState<ProtectionApprovalView[]>([]);
   const [pinDraft, setPinDraft] = useState('');
@@ -130,7 +140,11 @@ export default function ProtectionAdministrationPanel({ section, targets, action
     }
     setBusy(true);
     try {
-      setPinStatus(await actions.configurePin(pinDraft));
+      setPinStatus(await runFamilyAction(
+        'DISABLE_PROTECTION_POLICY',
+        (stepUpToken) => actions.configurePin(pinDraft, requireStepUpToken(stepUpToken)),
+        'family.security.settings.change',
+      ));
       setPinDraft('');
       setPinConfirmation('');
       setMessage(t('protectionAdministration.pinSaved'));
@@ -147,13 +161,22 @@ export default function ProtectionAdministrationPanel({ section, targets, action
     setMessage(null);
     setBusy(true);
     try {
-      const created = await actions.requestApproval({
-        childId: selectedTarget.childId,
-        deviceId: selectedTarget.deviceId,
-        protectionLevel: selectedTarget.protectionLevel,
-        operation,
-        reasonCategory,
-      });
+      const familyAction = operation === 'REMOVE_REVOKE_DEVICE' ? 'REMOVE_OR_REVOKE_DEVICE' : 'DISABLE_PROTECTION_POLICY';
+      const stepUpOperation = operation === 'REMOVE_REVOKE_DEVICE'
+        ? 'family.device.enrollment.revoke'
+        : 'family.security.settings.change';
+      const created = await runFamilyAction(
+        familyAction,
+        (stepUpToken) => actions.requestApproval({
+          childId: selectedTarget.childId,
+          deviceId: selectedTarget.deviceId,
+          protectionLevel: selectedTarget.protectionLevel,
+          operation,
+          reasonCategory,
+          stepUpToken: requireStepUpToken(stepUpToken),
+        }),
+        stepUpOperation,
+      );
       setApprovals((current) => [created, ...current.filter((item) => item.requestId !== created.requestId)]);
       setMessage(t('protectionAdministration.requestCreated'));
     } catch {
@@ -163,7 +186,7 @@ export default function ProtectionAdministrationPanel({ section, targets, action
     }
   };
 
-  const applyDecision = async (requestId: string, method: ProtectionDecisionMethod) => {
+  const applyDecision = async (approval: ProtectionApprovalView, method: ProtectionDecisionMethod) => {
     if (!actions) return;
     setError(null);
     setMessage(null);
@@ -173,15 +196,24 @@ export default function ProtectionAdministrationPanel({ section, targets, action
     }
     setBusy(true);
     try {
-      const updated = await actions.decideApproval({
-        requestId,
+      const runDecision = (stepUpToken?: string) => actions.decideApproval({
+        requestId: approval.requestId,
         method,
         decision,
         ...(decision === 'TEMPORARILY_DISABLE'
           ? { temporaryDisableUntilUtc: new Date(Date.now() + Number(temporaryDisableMinutes) * 60_000).toISOString() }
           : { temporaryDisableUntilUtc: null }),
-        ...(method === 'LOCAL_ADMINISTRATION_PIN' ? { pin: decisionPin } : {}),
+        ...(method === 'LOCAL_ADMINISTRATION_PIN' ? { pin: decisionPin, stepUpToken } : {}),
       });
+      const updated = method === 'LOCAL_ADMINISTRATION_PIN'
+        ? await runFamilyAction(
+            approval.operation === 'REMOVE_REVOKE_DEVICE' ? 'REMOVE_OR_REVOKE_DEVICE' : 'DISABLE_PROTECTION_POLICY',
+            (stepUpToken) => runDecision(requireStepUpToken(stepUpToken)),
+            approval.operation === 'REMOVE_REVOKE_DEVICE'
+              ? 'family.device.enrollment.revoke'
+              : 'family.security.settings.change',
+          )
+        : await runDecision();
       setApprovals((current) => current.map((item) => item.requestId === updated.requestId ? updated : item));
       if (method === 'LOCAL_ADMINISTRATION_PIN') setDecisionPin('');
       setMessage(t('protectionAdministration.decisionAccepted'));
@@ -355,13 +387,13 @@ export default function ProtectionAdministrationPanel({ section, targets, action
                           </label>
                         )}
                         <input aria-label={t('protectionAdministration.pinForDecision')} type="password" inputMode="numeric" autoComplete="off" maxLength={64} value={decisionPin} onChange={(event) => setDecisionPin(event.target.value)} disabled={!actions || busy} />
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'LOCAL_ADMINISTRATION_PIN')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'LOCAL_ADMINISTRATION_PIN')} disabled={!actions || busy}>
                           {t('protectionAdministration.applyPin')}
                         </button>
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'REMOTE_PARENT')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'REMOTE_PARENT')} disabled={!actions || busy}>
                           {t('protectionAdministration.applyRemote')}
                         </button>
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'AUTHORIZED_RECOVERY')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'AUTHORIZED_RECOVERY')} disabled={!actions || busy}>
                           {t('protectionAdministration.applyRecovery')}
                         </button>
                       </>

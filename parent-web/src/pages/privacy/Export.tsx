@@ -19,8 +19,8 @@ export default function Export() {
 
   const doExport = async () => {
     try {
-      await runFamilyAction('EXPORT_DATA', async () => {
-        const result = await clients.retention.requestExport();
+      await runFamilyAction('EXPORT_DATA', async (stepUpToken) => {
+        const result = await clients.retention.requestExport(stepUpToken!);
         setStatus(t('export.generatedStatus', { exportId: result.exportId }));
       });
     } catch (e) {

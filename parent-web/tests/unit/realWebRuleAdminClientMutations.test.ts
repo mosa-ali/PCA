@@ -112,7 +112,7 @@ describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
     expect(result.rules).toEqual([{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }]);
   });
 
-  it('listRules still fails before any fetch when the browser is not trusted, even with crypto mocked ready', async () => {
+  it('listRules no longer treats browser pairing as Parent authority', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const notTrustedBrowser = {
@@ -129,7 +129,7 @@ describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
     } as unknown as TrustedBrowserProviderType;
     const client = new RealWebRuleAdminClient('https://pca.example', notTrustedBrowser);
     await expect(client.listRules('child-1')).rejects.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/parent/session'))).toBe(true);
   });
 
   it('setRule POSTs {domain, listType} with the actor-device bearer token, never a self-reported device id', async () => {
@@ -193,7 +193,7 @@ describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
     expect(result.rules).toEqual([{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }]);
   });
 
-  it('setRule still fails before any fetch when the browser is not trusted, even with crypto mocked ready', async () => {
+  it('setRule no longer treats browser pairing as Parent authority', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const notTrustedBrowser = {
@@ -210,6 +210,6 @@ describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
     } as unknown as TrustedBrowserProviderType;
     const client = new RealWebRuleAdminClient('https://pca.example', notTrustedBrowser);
     await expect(client.setRule('child-1', 'example.com', 'DENY')).rejects.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/parent/session'))).toBe(true);
   });
 });

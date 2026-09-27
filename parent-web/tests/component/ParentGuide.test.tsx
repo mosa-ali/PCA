@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import ParentGuide from '../../src/pages/guide/ParentGuide';
-import { GUIDE_CATEGORIES } from '../../src/guide/guideTopics';
+import { GUIDE_CATEGORIES, GUIDE_TOPICS } from '../../src/guide/guideTopics';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
 describe('Parent Guide', () => {
@@ -23,6 +23,18 @@ describe('Parent Guide', () => {
     expect(screen.getAllByRole('link', { name: i18n.t('guide.openPage') }).length).toBeGreaterThan(10);
     expect(container.querySelector('a.guide-open-link[href="/dashboard"]')).toBeInTheDocument();
     expect(screen.getByText(i18n.t('guide.topics.recovery.important'))).toBeInTheDocument();
+  });
+
+  it('does not advertise retired Parent browser setup or its legacy route', () => {
+    const { container } = renderWithProviders(<ParentGuide />, { route: '/guide' });
+
+    expect(GUIDE_TOPICS.some((topic) => topic.id === 'trusted-browser')).toBe(false);
+    expect(GUIDE_TOPICS.some((topic) => topic.openPagePath === '/security/trusted-browser')).toBe(false);
+    expect(GUIDE_TOPICS.some((topic) => topic.routePatterns.includes('/security/trusted-browser'))).toBe(false);
+    expect(GUIDE_TOPICS.some((topic) => topic.relatedTopicIds.includes('trusted-browser'))).toBe(false);
+    expect(container.querySelector('a[href="/security/trusted-browser"]')).toBeNull();
+    expect(container.querySelector('a[href="#guide-topic-trusted-browser"]')).toBeNull();
+    expect(screen.queryByRole('heading', { name: i18n.t('guide.topics.trustedBrowser.title') })).not.toBeInTheDocument();
   });
 
   it('searches the central topic model and links to the authoritative topic anchor', async () => {

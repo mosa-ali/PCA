@@ -41,7 +41,8 @@ function stubFamilySessionAndFetch(fetchImpl: (input: unknown, init?: RequestIni
 describe('RealRequestClient decide/grantBonusTime', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('decide() posts to the real backend route with the actor device bearer token, never a self-reported header', async () => {
+  it('decide() posts with the Parent session and CSRF header without a device bearer', async () => {
+    vi.stubGlobal('document', { cookie: 'pca_family_csrf=csrf-token' });
     const fetchMock = stubFamilySessionAndFetch(async () => ({
       ok: true,
       json: async () => ({ request: { requestId: 'req-1', decisionActionId: 'audit-1' } }),
@@ -57,7 +58,8 @@ describe('RealRequestClient decide/grantBonusTime', () => {
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
     const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer actor-device-session-token-1');
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['X-PCA-CSRF-Token']).toBe('csrf-token');
     expect(JSON.parse(init.body as string)).toEqual({ decision: 'APPROVED' });
   });
 
@@ -86,6 +88,7 @@ describe('RealRequestClient decide/grantBonusTime', () => {
     const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/bonus-time/grant'));
     const [url, init] = call as unknown as [string, RequestInit];
     expect(url).toBe('https://pca.example/api/parent/families/family-1/bonus-time/grant');
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
     expect(JSON.parse(init.body as string)).toEqual({ childProfileId: 'child-1', extraMinutes: 20 });
   });
 
@@ -96,16 +99,19 @@ describe('RealRequestClient decide/grantBonusTime', () => {
       .rejects.toThrow(/403.*not_authorized_to_decide/);
   });
 
-  it('refuses to call the backend when no verified actor device session token is available', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+  it('calls the backend when the Parent session is available even without a trusted device session', async () => {
+    const fetchMock = stubFamilySessionAndFetch(async () => ({
+      ok: true,
+      json: async () => ({ request: { requestId: 'req-1', decisionActionId: 'audit-1' } }),
+    }));
     const noSessionToken = {
       getSnapshot: vi.fn(async () => ({ ...(await trustedBrowser.getSnapshot()), actorDeviceSessionToken: null })),
     } as unknown as TrustedBrowserProviderType;
 
     await expect(new RealRequestClient('https://pca.example', noSessionToken).decide('req-1', 'APPROVED'))
-      .rejects.toThrow('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    expect(fetchMock).not.toHaveBeenCalled();
+      .resolves.toEqual({ auditEventId: 'audit-1' });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/child-requests/req-1/decide'))).toBe(true);
+    expect(noSessionToken.getSnapshot).not.toHaveBeenCalled();
   });
 
   it('refuses to call the backend when no family session is available', async () => {

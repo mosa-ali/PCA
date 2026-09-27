@@ -27,7 +27,7 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
     return invitations;
   }
 
-  async invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string): Promise<FamilyMemberInvitation> {
+  async invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string, _stepUpToken: string): Promise<FamilyMemberInvitation> {
     await delay();
     if (invitations.some((i) => i.status === 'PENDING')) {
       throw new FamilyMemberInvitationError(
@@ -57,7 +57,7 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
     return record;
   }
 
-  async revoke(invitationId: string): Promise<FamilyMemberInvitation> {
+  async revoke(invitationId: string, _stepUpToken: string): Promise<FamilyMemberInvitation> {
     await delay();
     const existing = invitations.find((i) => i.invitationId === invitationId);
     if (!existing) {
@@ -69,7 +69,7 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
     return updated;
   }
 
-  async changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER'): Promise<FamilyMemberInvitation> {
+  async changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER', _stepUpToken: string): Promise<FamilyMemberInvitation> {
     await delay();
     const existing = invitations.find((i) => i.invitationId === invitationId);
     if (!existing) {

@@ -167,12 +167,12 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
     throw new DeviceEnrollmentError('UNKNOWN', `${operation}: unexpected status ${status}.`, status);
   }
 
-  async createInvitation(familyId: string, input: CreateInvitationInput): Promise<InvitationCreatedDto> {
+  async createInvitation(familyId: string, input: CreateInvitationInput, stepUpToken: string): Promise<InvitationCreatedDto> {
     const operation = 'createInvitation';
     const response = await this.request(
       operation,
       `/v1/families/${encodeURIComponent(familyId)}/invitations`,
-      { method: 'POST', body: JSON.stringify(input) },
+      { method: 'POST', body: JSON.stringify({ ...input, stepUpToken }) },
     );
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<InvitationCreatedDto>(response);
@@ -204,12 +204,12 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
     return (await parseJsonSafe<InvitationDto[]>(response)) ?? [];
   }
 
-  async revokeInvitation(familyId: string, invitationId: string): Promise<InvitationDto> {
+  async revokeInvitation(familyId: string, invitationId: string, stepUpToken: string): Promise<InvitationDto> {
     const operation = 'revokeInvitation';
     const response = await this.request(
       operation,
       `/v1/families/${encodeURIComponent(familyId)}/invitations/${encodeURIComponent(invitationId)}/revoke`,
-      { method: 'POST' },
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stepUpToken }) },
     );
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<InvitationDto>(response);
@@ -231,23 +231,22 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
   }
 
   /** Resolves to PAIRED only (idempotent) -- never ACTIVE. See file header and PairingService doc comment. */
-  async confirmPairing(familyId: string, deviceId: string): Promise<PairingRequestDto> {
+  async confirmPairing(familyId: string, deviceId: string, stepUpToken: string): Promise<PairingRequestDto> {
     const operation = 'confirmPairing';
     const response = await this.request(
       operation,
       `/v1/families/${encodeURIComponent(familyId)}/pairing-requests/${encodeURIComponent(deviceId)}/confirm`,
-      { method: 'POST' },
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stepUpToken }) },
     );
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<PairingRequestDto>(response);
     if (!body) throw new DeviceEnrollmentError('UNKNOWN', `${operation}: empty response body.`);
-    if (body.status === 'ACTIVE') {
-      // Defense in depth: this must never happen per the verified backend
-      // contract, but never let a client-side rendering bug propagate a
-      // false "ACTIVE" claim if the contract is ever violated upstream.
+    if (body.status !== 'PAIRED') {
+      // Defense in depth: confirmation must resolve to PAIRED only. Never
+      // let an unexpected server state propagate as a successful result.
       throw new DeviceEnrollmentError(
         'UNKNOWN',
-        `${operation}: server returned unexpected status ACTIVE (pairing confirmation must only reach PAIRED).`,
+        `${operation}: server returned unexpected status ${body.status} (pairing confirmation must only reach PAIRED).`,
       );
     }
     return body;

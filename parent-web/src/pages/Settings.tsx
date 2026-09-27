@@ -1,14 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { applyDocumentDirection, hasStoredLanguagePreference } from '../i18n';
 import { errorDiagnosticDetail, userFacingErrorKey } from '../i18n/errorMessages';
 import { reportDiagnostic } from '../security/diagnosticConsole';
 import { getApiClients } from '../api/client';
+import { validateParentIdentityNames } from '../identity/identityForm';
+import type { ParentIdentityProfile } from '../api/interfaces';
+import './settingsIdentity.css';
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<ParentIdentityProfile | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [identityLoading, setIdentityLoading] = useState(true);
+  const [identitySaving, setIdentitySaving] = useState(false);
+  const [identityError, setIdentityError] = useState<string | null>(null);
+  const [identityFeedback, setIdentityFeedback] = useState<string | null>(null);
+  const [invalidNameField, setInvalidNameField] = useState<'firstName' | 'lastName' | null>(null);
+  const identityLoadErrorText = useRef(t('settings.identityLoadFailed'));
+
+  useEffect(() => {
+    identityLoadErrorText.current = t('settings.identityLoadFailed');
+  }, [t]);
 
   useEffect(() => {
     void clients.parentPreferences.get().then((preferences) => {
@@ -26,6 +42,59 @@ export default function Settings() {
       setPreferencesError(t('settings.loadPreferencesFailed'));
     });
   }, [clients.parentPreferences, i18n, t]);
+
+  useEffect(() => {
+    let active = true;
+    void clients.parentIdentity.get().then((profile) => {
+      if (!active) return;
+      setIdentity(profile);
+      setFirstName(profile.firstName ?? '');
+      setLastName(profile.lastName ?? '');
+      setIdentityError(null);
+      setIdentityLoading(false);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      reportDiagnostic('[pca] loading parent identity failed:', errorDiagnosticDetail(error), error);
+      setIdentityError(identityLoadErrorText.current);
+      setIdentityLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [clients.parentIdentity]);
+
+  const saveIdentity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIdentityError(null);
+    setIdentityFeedback(null);
+    setInvalidNameField(null);
+    const validation = validateParentIdentityNames(firstName, lastName);
+    if (!validation.valid) {
+      setInvalidNameField(validation.field);
+      setIdentityError(
+        validation.reason === 'required'
+          ? t('settings.identityNameRequired')
+          : validation.reason === 'too_long'
+            ? t('settings.identityNameTooLong')
+            : t('settings.identityNameInvalid'),
+      );
+      return;
+    }
+
+    setIdentitySaving(true);
+    try {
+      const updated = await clients.parentIdentity.updateNames(validation.value);
+      setIdentity(updated);
+      setFirstName(updated.firstName ?? validation.value.firstName);
+      setLastName(updated.lastName ?? validation.value.lastName);
+      setIdentityFeedback(t('settings.identitySaved'));
+    } catch (error) {
+      reportDiagnostic('[pca] saving parent identity failed:', errorDiagnosticDetail(error), error);
+      setIdentityError(t('settings.identitySaveFailed'));
+    } finally {
+      setIdentitySaving(false);
+    }
+  };
 
   const setLanguage = async (language: 'en' | 'ar') => {
     // changeLanguage also writes the choice to this browser's language cache
@@ -64,6 +133,88 @@ export default function Settings() {
           </select>
         </div>
         {preferencesError && <p role="alert">{preferencesError}</p>}
+      </div>
+
+      <div className="card" aria-labelledby="settings-identity-title">
+        <h2 id="settings-identity-title">{t('settings.identitySectionTitle')}</h2>
+        {identityLoading ? (
+          <p role="status">{t('settings.identityLoading')}</p>
+        ) : identityError && !identity ? (
+          <p role="alert">{identityError}</p>
+        ) : identity ? (
+          <>
+            <dl className="settings-identity-contact">
+              <div>
+                <dt>{t('settings.emailLabel')}</dt>
+                <dd>
+                  <bdi dir="auto">{identity.email ?? t('settings.notProvided')}</bdi>
+                  <span className="field-hint">
+                    {identity.emailVerified ? t('settings.emailVerified') : t('settings.emailVerificationPending')}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>{t('settings.phoneNumberLabel')}</dt>
+                <dd>
+                  <bdi dir="auto">{identity.phoneNumber ?? t('settings.notProvided')}</bdi>
+                  <span className="field-hint">
+                    {identity.phoneVerified ? t('settings.phoneVerified') : t('settings.phoneVerificationPending')}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+
+            <form onSubmit={saveIdentity} noValidate>
+              <div className="field">
+                <label htmlFor="settings-first-name">{t('settings.firstNameLabel')}</label>
+                <input
+                  id="settings-first-name"
+                  name="firstName"
+                  type="text"
+                  autoComplete="given-name"
+                  dir="auto"
+                  required
+                  maxLength={256}
+                  aria-invalid={invalidNameField === 'firstName' || undefined}
+                  aria-describedby={invalidNameField === 'firstName' && identityError ? 'settings-identity-error' : undefined}
+                  value={firstName}
+                  onChange={(event) => {
+                    setFirstName(event.target.value);
+                    setIdentityError(null);
+                    setIdentityFeedback(null);
+                    if (invalidNameField === 'firstName') setInvalidNameField(null);
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="settings-last-name">{t('settings.lastNameLabel')}</label>
+                <input
+                  id="settings-last-name"
+                  name="lastName"
+                  type="text"
+                  autoComplete="family-name"
+                  dir="auto"
+                  required
+                  maxLength={256}
+                  aria-invalid={invalidNameField === 'lastName' || undefined}
+                  aria-describedby={invalidNameField === 'lastName' && identityError ? 'settings-identity-error' : undefined}
+                  value={lastName}
+                  onChange={(event) => {
+                    setLastName(event.target.value);
+                    setIdentityError(null);
+                    setIdentityFeedback(null);
+                    if (invalidNameField === 'lastName') setInvalidNameField(null);
+                  }}
+                />
+              </div>
+              {identityError && <p id="settings-identity-error" role="alert">{identityError}</p>}
+              {identityFeedback && <p role="status">{identityFeedback}</p>}
+              <button type="submit" className="btn" disabled={identitySaving} aria-busy={identitySaving}>
+                {t('settings.saveIdentity')}
+              </button>
+            </form>
+          </>
+        ) : null}
       </div>
     </section>
   );

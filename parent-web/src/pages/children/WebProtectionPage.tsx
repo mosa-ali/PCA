@@ -24,10 +24,10 @@ interface WebProtectionPageData {
  * authoring surface. doc 36: "parent saved != child applied" -- this page
  * only ever claims [WebRuleDeliveryStatus] as reported by
  * [WebRuleAdminClient], never fabricates APPLIED locally. doc 35: the
- * mutation path itself is crypto-gated (RealWebRuleAdminClient) -- in a
- * production, non-demo build this page's add/remove actions will honestly
- * fail with the crypto-review-required message until that gate clears; the
- * dev/demo fixture simulates a full working round trip for UI development.
+ * mutation path has no approved production storage/delivery contract yet;
+ * the non-demo client therefore reports an honest unavailable state rather
+ * than using the readable rule-store scaffold. The dev/demo fixture simulates
+ * a full working round trip for UI development.
  */
 export default function WebProtectionPage() {
   const { t } = useTranslation();

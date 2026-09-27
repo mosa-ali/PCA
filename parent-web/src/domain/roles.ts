@@ -1,22 +1,13 @@
-// Family RBAC role model. This is NOT a central SQL role authority -- it is
-// the client-side reflection of the signed Family Trust Set role assigned to
-// the current member (see docs/architecture/18_PARENT_CONTROL_PANEL_RBAC.md
-// and docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 3.2). Real
-// enforcement happens server/device-side via signed envelopes; this module
-// exists so the UI never pretends hiding a button is authorization.
+// Client-side reflection of the server-resolved active family membership.
+// This keeps the UI understandable; every API mutation still enforces role,
+// family scope, session, and any required fresh-TOTP grant on the backend.
 
 export type FamilyRole = 'OWNER' | 'ADMINISTRATOR' | 'VIEWER' | 'CHILD';
 
-// NOTE on VIEW_DEVICE_ENROLLMENT / CREATE_DEVICE_INVITATION /
-// REVOKE_DEVICE_INVITATION / CONFIRM_DEVICE_PAIRING: the real backend
-// authorization for these (backend/src/authz/policy.ts) is account
-// family-scope + license based (AuthzService), NOT this client-side
-// FamilyRole model -- there is no server-side mapping from
-// OWNER/ADMINISTRATOR/VIEWER/CHILD to CREATE_INVITATION etc. today. The
-// evaluation below is therefore a conservative client-side UX heuristic
-// only (same tier as device revocation/policy edits), never authoritative
-// -- the server's 403 (AuthzError) is the real rejection signal and every
-// caller must handle it explicitly rather than trust this gate alone.
+// Device enrollment availability/capacity is still enforced by the backend.
+// Parent family membership is the normal authority for management actions;
+// device token possession, pairing, signatures, and replay checks remain a
+// separate child-device security boundary.
 
 export type FamilyAction =
   | 'VIEW_DASHBOARD'
@@ -39,10 +30,7 @@ export type FamilyAction =
   | 'CREATE_DEVICE_INVITATION'
   | 'REVOKE_DEVICE_INVITATION'
   | 'CONFIRM_DEVICE_PAIRING'
-  // PCA-ADD-BILL-040 (doc PCA_ADDENDUM_002 Section 18): billing/subscription
-  // self-service is Family-Owner-only by default, same tier as
-  // CHANGE_RETENTION/DELETE_HISTORY/EXPORT_DATA -- never delegable to
-  // Administrator, unlike ADD_VIEWER/REMOVE_OR_REVOKE_DEVICE.
+  // Commercial mutations use their own operation-specific step-up grants.
   | 'VIEW_BILLING'
   | 'REQUEST_DEVICE_INCREASE'
   | 'REQUEST_PARENT_MEMBER_INCREASE'
@@ -75,6 +63,7 @@ export type DenialReasonCode =
   | 'VIEWER_MANAGEMENT_NOT_DELEGATED'
   | 'OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS'
   | 'OWNER_ONLY_STEP_UP'
+  | 'OWNER_ONLY_TRUST_ROOT'
   | 'OWNER_ONLY_RETENTION_DELETE_EXPORT'
   | 'DEVICE_REVOCATION_NOT_DELEGATED'
   | 'OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES'
@@ -121,8 +110,9 @@ const NEXT_STEP_BUCKET: Record<DenialReasonCode, 'ownerOnly' | 'notDelegated' | 
   CHILD_CANNOT_EDIT_POLICY: 'askAParent',
   VIEWER_MANAGEMENT_NOT_DELEGATED: 'notDelegated',
   OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS: 'ownerOrAdmin',
-  OWNER_ONLY_STEP_UP: 'ownerOnly',
-  OWNER_ONLY_RETENTION_DELETE_EXPORT: 'ownerOnly',
+  OWNER_ONLY_STEP_UP: 'askAParent',
+  OWNER_ONLY_TRUST_ROOT: 'ownerOnly',
+  OWNER_ONLY_RETENTION_DELETE_EXPORT: 'askAParent',
   DEVICE_REVOCATION_NOT_DELEGATED: 'notDelegated',
   OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES: 'ownerOrAdmin',
   ENROLLMENT_NOT_FOR_CHILD: 'askAParent',
@@ -140,9 +130,8 @@ export function nextStepKey(code: DenialReasonCode): string {
 
 /**
  * Retained as a compatibility shape for older fixture/configuration callers.
- * Normal family administration is now Administrator authority with step-up;
- * cryptographic, destructive privacy, platform, and commercial actions remain
- * Owner-only internally.
+ * Normal family administration uses active Administrator membership; sensitive
+ * actions add a server-issued single-use TOTP grant.
  */
 export interface DelegableAdministratorPolicy {
   administratorsCanManageViewers: boolean;
@@ -166,10 +155,10 @@ const STEP_UP_ACTIONS: ReadonlySet<FamilyAction> = new Set<FamilyAction>([
   'REVEAL_RECOVERY_MATERIAL',
   'ADD_VIEWER',
   'REMOVE_NON_OWNER_PARENT',
-  'CREATE_DEVICE_INVITATION',
   'REVOKE_DEVICE_INVITATION',
   'CONFIRM_DEVICE_PAIRING',
   'REQUEST_DEVICE_INCREASE',
+  'REQUEST_PARENT_MEMBER_INCREASE',
   'MANAGE_PAYMENT_METHOD',
 ]);
 
@@ -218,13 +207,13 @@ export function evaluatePermission(
     case 'REVEAL_RECOVERY_MATERIAL':
       return role === 'OWNER'
         ? allow()
-        : deny('OWNER_ONLY_STEP_UP', 'Only the internal family trust owner may perform this action, with step-up authentication.');
+        : deny('OWNER_ONLY_TRUST_ROOT', 'Only the account Owner may perform this action, with step-up authentication.');
     case 'CHANGE_RETENTION':
     case 'DELETE_HISTORY':
     case 'EXPORT_DATA':
-      return role === 'OWNER'
+      return role === 'OWNER' || role === 'ADMINISTRATOR'
         ? allow()
-        : deny('OWNER_ONLY_RETENTION_DELETE_EXPORT', 'Only the Owner may change retention, delete history, or export by default.');
+        : deny('OWNER_ONLY_RETENTION_DELETE_EXPORT', 'Only a family Administrator may change retention, delete history, or export.');
     case 'REMOVE_OR_REVOKE_DEVICE':
     case 'DISABLE_PROTECTION_POLICY':
       if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
@@ -243,10 +232,8 @@ export function evaluatePermission(
     case 'REQUEST_DEVICE_INCREASE':
     case 'REQUEST_PARENT_MEMBER_INCREASE':
     case 'MANAGE_PAYMENT_METHOD':
-      // PCA-DEC-037: the server's COMMERCIAL_OWNER_AUTHORITY is a family
-      // ADMINISTRATOR plus a fresh authenticator step-up (the step-up is
-      // collected per action by StepUpContext). OWNER is the fixture-only
-      // internal trust owner and keeps access.
+      // The server requires active Administrator membership and an
+      // operation-specific fresh authenticator grant for mutations.
       return role === 'OWNER' || role === 'ADMINISTRATOR'
         ? allow()
         : deny('ADMIN_ONLY_BILLING', 'Billing and subscription self-service is available only to an Administrator.');

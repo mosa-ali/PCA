@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EmptyState } from '../../../components/common/States';
 import { PermissionGate } from '../../../rbac/PermissionGate';
+import { useFamilyAction } from '../../../rbac/useFamilyAction';
 import ProtectionAdministrationPanel, {
   type ProtectionAdministrationActions,
   type ProtectionTargetOption,
@@ -32,6 +33,7 @@ export default function ProtectionRemovalSection({
   actions?: ProtectionAdministrationActions;
 }) {
   const { t } = useTranslation();
+  const runFamilyAction = useFamilyAction();
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
@@ -44,13 +46,21 @@ export default function ProtectionRemovalSection({
     setRemoveError(null);
     setRemovingDeviceId(deviceId);
     try {
-      await actions.requestApproval({
-        childId,
-        deviceId,
-        protectionLevel,
-        operation: 'REMOVE_REVOKE_DEVICE',
-        reasonCategory: null,
-      });
+      await runFamilyAction(
+        'REMOVE_OR_REVOKE_DEVICE',
+        (stepUpToken) => {
+          if (!stepUpToken) throw new Error('Step-up authentication is required for this action.');
+          return actions.requestApproval({
+            childId,
+            deviceId,
+            protectionLevel,
+            operation: 'REMOVE_REVOKE_DEVICE',
+            reasonCategory: null,
+            stepUpToken,
+          });
+        },
+        'family.device.enrollment.revoke',
+      );
     } catch {
       // `devicesTable.removeRequestFailed` now exists in BOTH locales, so the
       // English `defaultValue` fallback is no longer the string an Arabic

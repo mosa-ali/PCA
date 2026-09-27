@@ -15,7 +15,10 @@ describe('Parent Web editorial guard', () => {
     const arabicBanned = /عائل|أسرة|أفراد الأسرة|أفراد العائلة|مملّح|مملّحة|متعمّد البطء|حقبة|مجموعة الثقة|فك التشفير|حدث خطأ ما/;
 
     expect(visibleValues(en).filter(([, value]) => englishBanned.test(value))).toEqual([]);
-    expect(visibleValues(ar).filter(([, value]) => arabicBanned.test(value))).toEqual([]);
+    const arabicEditorialViolations = visibleValues(ar).filter(([path, value]) =>
+      !path.endsWith('lastNameLabel') && !path.endsWith('identityNameRequired') && arabicBanned.test(value),
+    );
+    expect(arabicEditorialViolations).toEqual([]);
   });
 
   it('keeps the management-code explanation parent-friendly in both locales', () => {

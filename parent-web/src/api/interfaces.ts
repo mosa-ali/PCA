@@ -64,7 +64,8 @@ import type { ActivityTimelineEntry } from '../domain/activityTimeline';
 export type ParentMfaStatus =
   | { status: 'ACTIVE' }
   | { status: 'GRACE'; graceExpiresAt: string }
-  | { status: 'SETUP_REQUIRED'; graceExpiresAt: string };
+  | { status: 'SETUP_REQUIRED'; graceExpiresAt: string }
+  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: string };
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -83,8 +84,26 @@ export interface RegistrationResult {
 
 export type ParentAccountType = 'PARENT_GUARDIAN' | 'OTHER';
 export interface ParentSignupProfile {
+  firstName: string;
+  lastName: string;
+  phoneNumber?: string | null;
   accountType: ParentAccountType;
   estimatedChildCount: number | null;
+}
+
+export interface ParentIdentityProfile {
+  firstName: string | null;
+  lastName: string | null;
+  /** Legacy accounts may not have a recoverable display email. */
+  email: string | null;
+  phoneNumber: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+}
+
+export interface ParentIdentityClient {
+  get(): Promise<ParentIdentityProfile>;
+  updateNames(input: { firstName: string; lastName: string }): Promise<ParentIdentityProfile>;
 }
 
 /** Deliberately identical whether or not the email matches an account -- see requestPasswordReset's own doc comment. */
@@ -96,27 +115,15 @@ export interface ResetPasswordResult {
   status: 'PASSWORD_RESET';
 }
 
-/**
- * The password step of sign-in has three expected outcomes besides an
- * immediate session, all modelled as results rather than thrown errors:
- *  - STEP_UP_REQUIRED: an emailed one-time code was sent (accounts without an
- *    authenticator app); finish with `completeLoginStepUp`.
- *  - MFA_REQUIRED: the account has an authenticator app; call `signIn` again
- *    with the SAME email and password plus the current 6-digit `totpCode`.
- */
+/** Browser-risk verification and mandatory MFA setup are explicit login outcomes. */
 export type SignInResult =
   | { status: 'AUTHENTICATED'; session: AuthenticatedSession }
-  | { status: 'STEP_UP_REQUIRED' }
+  | { status: 'EMAIL_OTP_REQUIRED' }
+  | { status: 'MFA_SETUP_REQUIRED' }
   | { status: 'MFA_REQUIRED' }
   | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: string };
 
-/**
- * The emailed login code either establishes the session, or -- when the
- * account's authenticator grace period is over -- establishes NO session and
- * instead sets a short-lived HttpOnly enrollment ticket: the caller must go
- * straight to mandatory authenticator setup.
- */
-export type LoginStepUpResult = { status: 'AUTHENTICATED'; session: AuthenticatedSession } | { status: 'MFA_SETUP_REQUIRED' };
+export type LoginStepUpResult = Extract<SignInResult, { status: 'AUTHENTICATED' | 'MFA_REQUIRED' | 'MFA_SETUP_REQUIRED' }>;
 
 /** Email verification activates the account. It deliberately establishes NO session: the parent signs in next. */
 export interface VerifyEmailResult {
@@ -149,6 +156,21 @@ export type CommercialStepUpOperation =
   | 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL'
   | 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME';
 
+/** Fresh-TOTP operations for sensitive Parent family mutations. */
+export type SensitiveParentStepUpOperation =
+  | 'family.member.add'
+  | 'family.member.remove'
+  | 'family.member.role_change'
+  | 'family.member.invitation.revoke'
+  | 'family.device.enrollment.create'
+  | 'family.device.enrollment.revoke'
+  | 'family.retention.update'
+  | 'family.history.export'
+  | 'family.history.delete'
+  | 'family.ownership.transfer'
+  | 'family.recovery.material.reveal'
+  | 'family.security.settings.change';
+
 /** A single-use grant for exactly one commercial operation. Held in memory only and sent once, in that operation's request body. */
 export interface CommercialStepUpGrant {
   stepUpToken: string;
@@ -156,13 +178,20 @@ export interface CommercialStepUpGrant {
   expiresAt: string;
 }
 
+/** A single-use grant for exactly one sensitive family operation. Never persisted client-side. */
+export interface SensitiveParentStepUpGrant {
+  stepUpToken: string;
+  operation: SensitiveParentStepUpOperation;
+  expiresAt: string;
+}
+
 /** Service-level (account) authentication -- separate from family authority. */
 export interface ServiceAuthClient {
   getSession(): Promise<AuthenticatedSession | null>;
-  /** `totpCode` is sent only on the second call after an MFA_REQUIRED result. */
+  /** First credential call; unknown-browser email verification is a separate method. */
   signIn(email: string, password: string, totpCode?: string): Promise<SignInResult>;
-  /** Consumes the one-time emailed login step-up code issued when signIn() returned STEP_UP_REQUIRED. */
-  completeLoginStepUp(email: string, code: string): Promise<LoginStepUpResult>;
+  /** Completes unknown-browser email verification and, where enrolled, TOTP. */
+  completeLoginStepUp(email: string, emailCode: string, totpCode?: string): Promise<LoginStepUpResult>;
   signOut(): Promise<void>;
   /** Re-authentication for a step-up-protected (non-commercial) family action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;
@@ -210,6 +239,8 @@ export interface ServiceAuthClient {
   completeMfaRecovery(email: string, password: string, code: string): Promise<MfaRecoveryCompletionResult>;
   /** Mints a single-use grant for one sensitive commercial operation from a fresh authenticator code. ADMINISTRATOR with an active authenticator only. */
   issueCommercialStepUp(operation: CommercialStepUpOperation, code: string): Promise<CommercialStepUpGrant>;
+  /** Mints a single-use grant for one sensitive family operation from a fresh authenticator code. */
+  issueSensitiveStepUp(operation: SensitiveParentStepUpOperation, code: string): Promise<SensitiveParentStepUpGrant>;
 }
 
 /**
@@ -294,9 +325,9 @@ export interface FamilyAuthorityGateway {
   checkPermission(action: FamilyAction): Promise<PermissionResult>;
   listMembers(): Promise<FamilyMember[]>;
   inviteMember(role: 'ADMINISTRATOR' | 'VIEWER', label: string): Promise<{ invitationId: string }>;
-  removeMember(memberId: string): Promise<{ auditEventId: string }>;
-  changeRole(memberId: string, newRole: FamilyRole): Promise<{ auditEventId: string }>;
-  transferOwnership(newOwnerMemberId: string): Promise<{ auditEventId: string }>;
+  removeMember(memberId: string, stepUpToken: string): Promise<{ auditEventId: string }>;
+  changeRole(memberId: string, newRole: FamilyRole, stepUpToken: string): Promise<{ auditEventId: string }>;
+  transferOwnership(newOwnerMemberId: string, stepUpToken: string): Promise<{ auditEventId: string }>;
   listAuditTrail(): Promise<AuditEntrySummary[]>;
 }
 
@@ -331,9 +362,9 @@ export interface FamilyMemberInvitation {
  */
 export interface FamilyMemberInvitationClient {
   list(): Promise<FamilyMemberInvitation[]>;
-  invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string): Promise<FamilyMemberInvitation>;
-  revoke(invitationId: string): Promise<FamilyMemberInvitation>;
-  changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER'): Promise<FamilyMemberInvitation>;
+  invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string, stepUpToken: string): Promise<FamilyMemberInvitation>;
+  revoke(invitationId: string, stepUpToken: string): Promise<FamilyMemberInvitation>;
+  changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER', stepUpToken: string): Promise<FamilyMemberInvitation>;
   accept(invitationId: string): Promise<FamilyMemberInvitation>;
 }
 
@@ -561,9 +592,9 @@ export interface CommercialNotificationClient {
  */
 export interface RetentionClient {
   getDefaults(): Promise<RetentionDefaults>;
-  submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult>;
-  deleteNow(actionId: string): Promise<DeleteNowResult>;
-  requestExport(): Promise<ExportRequestResult>;
+  submitPolicy(policy: RetentionPolicySettings, stepUpToken: string): Promise<RetentionPolicySubmitResult>;
+  deleteNow(actionId: string, stepUpToken: string): Promise<DeleteNowResult>;
+  requestExport(stepUpToken: string): Promise<ExportRequestResult>;
 }
 
 export interface WellbeingMessageAdminClient {

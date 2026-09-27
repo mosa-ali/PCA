@@ -24,14 +24,14 @@ export class DevRetentionClient implements RetentionClient {
     return { generalWindow: '1_MONTH', availableWindows: RETENTION_WINDOWS, locationMode: 'CURRENT_LAST_ONLY' };
   }
 
-  async submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult> {
+  async submitPolicy(policy: RetentionPolicySettings, _stepUpToken: string): Promise<RetentionPolicySubmitResult> {
     await delay();
     lastSubmittedPolicy = policy;
     // Mirrors the real backend contract exactly: validated only, never persisted.
     return { policy, validated: true, persisted: false, deliveryStatus: 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW' };
   }
 
-  async deleteNow(actionId: string): Promise<DeleteNowResult> {
+  async deleteNow(actionId: string, _stepUpToken: string): Promise<DeleteNowResult> {
     await delay();
     return {
       actionId,
@@ -50,7 +50,7 @@ export class DevRetentionClient implements RetentionClient {
     };
   }
 
-  async requestExport(): Promise<ExportRequestResult> {
+  async requestExport(_stepUpToken: string): Promise<ExportRequestResult> {
     await delay();
     return { exportId: `dev-export-${Date.now()}`, status: 'PENDING_CRYPTO_REVIEW', disclosures: ['EXPORT_WILL_EXIST_OUTSIDE_APP_MANAGED_RETENTION_ONCE_CREATED'] };
   }

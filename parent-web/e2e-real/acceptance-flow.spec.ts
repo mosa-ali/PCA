@@ -13,36 +13,23 @@ import { test, expect } from '@playwright/test';
  * a real parent's continuous session would, rather than a fresh login per
  * assertion.
  *
- * PREREQUISITE (disposable fixture manifest, and why the login helper sets a
- * cookie). The fixture provisions a real family membership for both parent
+ * PREREQUISITE (disposable fixture manifest). The fixture provisions a real family membership for both parent
  * identities (since PCA-DEC-037 the server provisions it at first sign-in;
  * the fixture does it up front so the journey starts from a normal account).
- * It also issues one daily
- * login grant per account, representing the state a returning browser would
- * hold after completing step-up. Nothing in the production login path is
- * weakened to make this pass.
  */
 test.use({ serviceWorkers: 'block' });
 
 const PRIMARY_EMAIL = process.env.E2E_REAL_PARENT_EMAIL;
 const PRIMARY_PASSWORD = process.env.E2E_REAL_PARENT_PASSWORD;
-const PRIMARY_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
 const SECOND_EMAIL = process.env.E2E_REAL_SECOND_PARENT_EMAIL;
 const SECOND_PASSWORD = process.env.E2E_REAL_SECOND_PARENT_PASSWORD;
-const SECOND_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
 test.skip(
-  !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !PRIMARY_GRANT || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_GRANT,
-  'real-backend acceptance flow requires both disposable parent fixtures and their daily-login grants.',
+  !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !SECOND_EMAIL || !SECOND_PASSWORD,
+  'real-backend acceptance flow requires both disposable parent fixtures.',
 );
-/** The bare (non-`__Host-`) name: this suite runs under NODE_ENV=development, where the production `__Host-` prefix is deliberately not applied. */
-const DAILY_LOGIN_GRANT_COOKIE = 'pca_parent_daily_login_grant';
 // owner-a/owner-b are pre-seeded with an existing enrollment_invitations row
-async function login(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
-  // See this file's header: the seeded grant stands in for a step-up this
-  // browser completed on an earlier visit, which is a real state a real parent
-  // browser reaches -- not a bypass of any production control.
+async function login(page: import('@playwright/test').Page, email: string, password: string) {
   await page.context().clearCookies();
-  await page.context().addCookies([{ name: DAILY_LOGIN_GRANT_COOKIE, value: dailyLoginGrant, url: 'http://localhost:4002' }]);
   await page.goto('/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
@@ -56,9 +43,8 @@ async function login(page: import('@playwright/test').Page, email: string, passw
  * API here keeps it from spending the shared per-IP authenticated-request
  * budget on dashboard capability reads before the boundary request runs.
  */
-async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string) {
   await page.context().clearCookies();
-  await page.context().addCookies([{ name: DAILY_LOGIN_GRANT_COOKIE, value: dailyLoginGrant, url: 'http://localhost:4002' }]);
   const response = await page.request.post('/api/parent/login', { data: { email, password } });
   expect(response.status(), 'real API login must establish the disposable fixture session').toBe(200);
   expect(await response.json()).toMatchObject({ sessionEstablished: true });
@@ -67,7 +53,7 @@ async function loginViaApi(page: import('@playwright/test').Page, email: string,
 test.describe('PPR-2 owner acceptance flow -- real backend, one continuous session', () => {
   test('login -> new family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
     // 1. login
-    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
+    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!);
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -158,24 +144,15 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     expect(scrollWidth, 'page must not scroll horizontally at 375px width').toBeLessThanOrEqual(clientWidth + 1);
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    // 14. reload -> setup-required expected (trusted-browser gate, unrelated
-    // to the child registry, must never be weakened by this session's edits).
-    //
-    // The body copy asserted here is UX-2's (PCA_PPR2_BROWSER_UAT_REPORT.md,
-    // finding L3): the fail-closed state is presented as a SETUP step, not as
-    // an error, so "Finish setting up this browser" replaced the old
-    // "Something went wrong" headline and the old
-    // "This browser is not trusted with your family's data yet." sentence was
-    // deleted from both locales. This assertion still named that retired
-    // sentence, so it could only ever fail. It now asserts the copy that
-    // actually ships, plus the action that makes the state recoverable --
-    // which is the substance the original assertion was reaching for.
+    // 14. reload -> protected family information stays hidden when this
+    // browser fails the independent data-protection gate, without presenting
+    // the retired Genesis/trusted-browser onboarding card.
     await page.goto('/dashboard');
-    await expect(page.getByText('Finish setting up this browser')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Set up this browser' })).toBeVisible();
+    await expect(page.getByText('Family information is unavailable in this browser')).toBeVisible();
+    await expect(page.getByText('Protected family data could not be verified, so it remains hidden.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Set up this browser' })).toHaveCount(0);
     await page.reload();
-    await expect(page.getByText('Finish setting up this browser')).toBeVisible();
-    await expect(page.getByText('Nothing was lost, and nothing was shown from an unverified source.')).toBeVisible();
+    await expect(page.getByText('Family information is unavailable in this browser')).toBeVisible();
   });
 });
 
@@ -191,12 +168,12 @@ test.describe('PPR-2 cross-family isolation -- real backend', () => {
     // full dashboard navigation. The owner flow and realBackend.spec.ts cover
     // the UI login; this test must reserve the backend's shared authenticated
     // request budget for the two cross-family authorization decisions.
-    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
+    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!);
     const meRes = await page.request.get('/api/parent/session');
     expect(meRes.status()).toBe(200);
     const ownFamilyId = (await meRes.json()).familyId as string;
 
-    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_GRANT!);
+    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!);
     const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`);
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 

@@ -27,6 +27,8 @@ export async function clickCreateInvitation(): Promise<void> {
   const confirm = await screen.findByRole('button', { name: 'I understand, create invitation' });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   await userEvent.click(confirm);
+  await userEvent.type(await screen.findByLabelText('6-digit authenticator code'), '123456');
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm change' }));
 }
 
 /** Switches to one of the six device sections by clicking its tab. */

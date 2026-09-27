@@ -1,10 +1,5 @@
-// Proves RealParentFamilyDataGateway.updateEyeProtection is a genuinely
-// real write (not a stub) once trust + crypto-review both pass: it calls
-// the real backend/src/http/routes/eyeProtectionRoutes.ts endpoint
-// directly with the actor-device bearer token and CSRF header, NOT the
-// schedule-policy encrypted-envelope relay updateScreenTime/updateAppRule
-// use (see realParentFamilyDataGateway.ts's own doc comment on this
-// method for why).
+// Proves the ordinary eye-protection write uses Parent session + CSRF and
+// does not consult or send Trusted Browser authority.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // The crypto gate is a hardcoded, non-configurable `false` in source (see
@@ -20,7 +15,6 @@ vi.mock('@pca/parent-sdk-browser-runtime', async () => {
 
 const { RealParentFamilyDataGateway } = await import('../../src/api/real/realParentFamilyDataGateway');
 const { createLocalFamilyDataStore } = await import('../../src/security/localFamilyDataStore');
-type TrustedBrowserProviderType = import('../../src/domain/trustedBrowser').TrustedBrowserProvider;
 type SchedulePolicyAuthoring = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyAuthoring;
 type SchedulePolicyTransport = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyTransport;
 
@@ -35,7 +29,7 @@ const trustedBrowser = {
     lastFingerprint: null,
     actorDeviceSessionToken: 'actor-device-session-token-1',
   })),
-} as unknown as TrustedBrowserProviderType;
+};
 
 const noopAuthoring: SchedulePolicyAuthoring = { async encrypt() { throw new Error('not used by this test'); } };
 const noopTransport: SchedulePolicyTransport = { async submit() { throw new Error('not used by this test'); } };
@@ -52,14 +46,14 @@ function stubFamilySessionAndFetch(fetchImpl: (input: unknown, init?: RequestIni
   return fetchMock;
 }
 
-function buildGateway(trustedBrowserOverride: TrustedBrowserProviderType = trustedBrowser) {
-  return new RealParentFamilyDataGateway(trustedBrowserOverride, noopAuthoring, noopTransport, 'https://pca.example', createLocalFamilyDataStore());
+function buildGateway() {
+  return new RealParentFamilyDataGateway(noopAuthoring, noopTransport, 'https://pca.example', createLocalFamilyDataStore());
 }
 
 describe('RealParentFamilyDataGateway.updateEyeProtection', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('posts to the real eye-protection backend route with the actor device bearer token and CSRF header, never the schedule-policy relay', async () => {
+  it('posts to the backend with Parent session + CSRF, without Trusted Browser authority or schedule-policy relay', async () => {
     const fetchMock = stubFamilySessionAndFetch(async () => ({
       ok: true,
       json: async () => ({ eyeProtection: { childProfileId: 'child-1', remindersEnabled: true, updatedAtUtc: '2026-01-01T00:00:00.000Z' } }),
@@ -76,8 +70,9 @@ describe('RealParentFamilyDataGateway.updateEyeProtection', () => {
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
     const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer actor-device-session-token-1');
+    expect(headers.Authorization).toBeUndefined();
     expect(headers['X-PCA-CSRF-Token']).toBe('csrf-token-1');
+    expect(trustedBrowser.getSnapshot).not.toHaveBeenCalled();
     expect(JSON.parse(init.body as string)).toEqual({ remindersEnabled: true });
   });
 
@@ -87,15 +82,12 @@ describe('RealParentFamilyDataGateway.updateEyeProtection', () => {
     await expect(buildGateway().updateEyeProtection('child-1', true)).rejects.toThrow(/403.*forbidden/);
   });
 
-  it('refuses to call the backend when no verified actor device session token is available', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const noSessionToken = {
-      getSnapshot: vi.fn(async () => ({ ...(await trustedBrowser.getSnapshot()), actorDeviceSessionToken: null })),
-    } as unknown as TrustedBrowserProviderType;
-
-    await expect(buildGateway(noSessionToken).updateEyeProtection('child-1', true)).rejects.toThrow('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('refuses to call the backend without CSRF, without consulting Trusted Browser', async () => {
+    const fetchMock = stubFamilySessionAndFetch(async () => { throw new Error('should not reach the eye-protection endpoint'); });
+    document.cookie = 'pca_family_csrf=';
+    await expect(buildGateway().updateEyeProtection('child-1', true)).rejects.toThrow('CSRF token unavailable');
+    expect(trustedBrowser.getSnapshot).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/eye-protection'))).toBe(false);
   });
 
   it('refuses to call the backend when no family session is available', async () => {

@@ -68,7 +68,7 @@ export class DevFamilyAuthorityGateway implements FamilyAuthorityGateway {
     return { invitationId: `inv-${Date.now()}` };
   }
 
-  async removeMember(memberId: string): Promise<{ auditEventId: string }> {
+  async removeMember(memberId: string, _stepUpToken: string): Promise<{ auditEventId: string }> {
     const permission = evaluatePermission(getDevRole(), 'REMOVE_NON_OWNER_PARENT');
     await delay();
     if (!permission.allowed) {
@@ -80,7 +80,7 @@ export class DevFamilyAuthorityGateway implements FamilyAuthorityGateway {
     return { auditEventId: e.eventId };
   }
 
-  async changeRole(memberId: string, newRole: FamilyRole): Promise<{ auditEventId: string }> {
+  async changeRole(memberId: string, newRole: FamilyRole, _stepUpToken: string): Promise<{ auditEventId: string }> {
     const permission = evaluatePermission(getDevRole(), 'CHANGE_ANY_ROLE');
     await delay();
     if (!permission.allowed) {
@@ -92,7 +92,7 @@ export class DevFamilyAuthorityGateway implements FamilyAuthorityGateway {
     return { auditEventId: e.eventId };
   }
 
-  async transferOwnership(newOwnerMemberId: string): Promise<{ auditEventId: string }> {
+  async transferOwnership(newOwnerMemberId: string, _stepUpToken: string): Promise<{ auditEventId: string }> {
     const permission = evaluatePermission(getDevRole(), 'TRANSFER_OWNERSHIP');
     await delay();
     if (!permission.allowed) {

@@ -4,25 +4,16 @@
 // text and are therefore treated as family content requiring decryption,
 // not server-visible metadata.
 //
-// decide()/grantBonusTime() call the real, wired backend
-// (backend/src/http/routes/childRequestRoutes.ts) using the SAME
-// actor-identity-binding pattern RealSafeZoneClient already established:
-// the HttpOnly family session cookie for family/account identity, a
-// double-submit CSRF header for the mutation, and an
-// `Authorization: Bearer <actorDeviceSessionToken>` header (sourced from
-// TrustedBrowserProvider.getSnapshot(), never a self-asserted id) for the
-// acting device's identity. Production currently wires
-// UnavailableTrustSetRoleResolver under the shared
-// ParentActionAuthorizationService (see childRequestRoutes.ts's own header
-// comment), so even a fully-authenticated real call fails closed with a
-// 403 NOT_AUTHORIZED_TO_DECIDE today -- an honest, by-design external gate,
-// not a reason to leave this client throwing a hardcoded stub error before
-// the request is ever sent.
+// decide()/grantBonusTime() use the Parent's HttpOnly family session cookie,
+// family-scoped role check, and double-submit CSRF header. These are Parent
+// account actions; they do not impersonate a device actor or require browser
+// device enrollment. Child submission and applied acknowledgements remain
+// device-session-bound in the backend's child-facing routes.
 import type { FamilyRequest, RequestStatus } from '../../domain/types';
 import type { RequestClient } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { localFamilyDataStore, type LocalFamilyDataStore } from '../../security/localFamilyDataStore';
-import { requireTrustedAndCryptoReady } from './familyDataGate';
+import { requireFamilyCryptoReady } from './familyDataGate';
 import { cookieSessionFamilyId } from './realBillingClient';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -42,7 +33,7 @@ interface WireChildRequest {
 export class RealRequestClient implements RequestClient {
   constructor(
     private readonly apiBaseUrl: string,
-    private readonly trustedBrowser: TrustedBrowserProvider,
+    _trustedBrowser: TrustedBrowserProvider,
     private readonly store: LocalFamilyDataStore = localFamilyDataStore,
   ) {}
 
@@ -51,15 +42,14 @@ export class RealRequestClient implements RequestClient {
   }
 
   async listRequests(status?: RequestStatus): Promise<FamilyRequest[]> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'RequestClient.listRequests');
+    await requireFamilyCryptoReady('RequestClient.listRequests');
     const record = this.store.get<FamilyRequest[]>('familyRequests');
     const all = record?.data ?? [];
     return status ? all.filter((r) => r.status === status) : all;
   }
 
   async decide(requestId: string, decision: 'APPROVED' | 'DENIED' | 'COUNTERED', counterOfferExtraMinutes?: number): Promise<{ auditEventId: string }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'RequestClient.decide');
-    const actorHeaders = await this.actorHeaders();
+    await requireFamilyCryptoReady('RequestClient.decide');
     const familyId = await this.familyId('RequestClient.decide');
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/child-requests/${encodeURIComponent(requestId)}/decide`), {
       method: 'POST',
@@ -67,7 +57,6 @@ export class RealRequestClient implements RequestClient {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        ...actorHeaders,
         ...this.csrfHeader(),
       },
       body: JSON.stringify(decision === 'COUNTERED' ? { decision, counterOfferExtraMinutes } : { decision }),
@@ -77,10 +66,9 @@ export class RealRequestClient implements RequestClient {
     return { auditEventId: typeof body.request?.decisionActionId === 'string' ? body.request.decisionActionId : '' };
   }
 
-  /** PCA-FR-130 "grant directly" -- same not-implemented-yet posture as decide() above; see this file's header comment. */
+  /** PCA-FR-130 direct grant, authorized by the signed-in Parent session. */
   async grantBonusTime(childId: string, extraMinutes: number, reasonText?: string | null): Promise<{ auditEventId: string; requestId: string }> {
-    await requireTrustedAndCryptoReady(this.trustedBrowser, 'RequestClient.grantBonusTime');
-    const actorHeaders = await this.actorHeaders();
+    await requireFamilyCryptoReady('RequestClient.grantBonusTime');
     const familyId = await this.familyId('RequestClient.grantBonusTime');
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/bonus-time/grant`), {
       method: 'POST',
@@ -88,7 +76,6 @@ export class RealRequestClient implements RequestClient {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        ...actorHeaders,
         ...this.csrfHeader(),
       },
       body: JSON.stringify({ childProfileId: childId, extraMinutes, ...(reasonText ? { reasonNote: reasonText } : {}) }),
@@ -110,20 +97,6 @@ export class RealRequestClient implements RequestClient {
   private csrfHeader(): Record<string, string> {
     const csrf = readCsrfCookie();
     return csrf ? { [CSRF_HEADER_NAME]: csrf } : {};
-  }
-
-  /**
-   * SECURITY (actor-identity binding): mirrors RealSafeZoneClient's
-   * actorHeaders() exactly -- see that file's doc comment for the full
-   * rationale. Sends the server a verified, session-bound device identity
-   * (`actorDeviceSessionToken` as `Authorization: Bearer <token>`), never a
-   * self-reported id.
-   */
-  private async actorHeaders(): Promise<Record<string, string>> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
-    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 
   private async json(response: Response): Promise<unknown> {

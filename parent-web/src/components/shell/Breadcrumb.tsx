@@ -47,7 +47,6 @@ const SEGMENT_LABEL_KEYS: Readonly<Record<string, string>> = {
   permissions: 'nav.permissionsPolicy',
   security: 'nav.security',
   status: 'nav.protectionStatus',
-  'trusted-browser': 'nav.trustedBrowser',
   recovery: 'nav.recovery',
   audit: 'nav.audit',
   // First-level groups that are also URL segments of the pages introduced with

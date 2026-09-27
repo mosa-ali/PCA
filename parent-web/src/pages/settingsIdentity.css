@@ -1,0 +1,21 @@
+.settings-identity-contact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.settings-identity-contact > div {
+  min-width: 0;
+}
+
+.settings-identity-contact dt {
+  font-weight: var(--weight-semibold);
+}
+
+.settings-identity-contact dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}

@@ -59,10 +59,12 @@ describe('evaluatePermission', () => {
     if (owner.allowed) expect(owner.requiresStepUp).toBe(true);
   });
 
-  it('only Owner can change retention, delete history, or export by default', () => {
+  it('allows Administrator retention, delete, and export actions only with step-up', () => {
     for (const action of ['CHANGE_RETENTION', 'DELETE_HISTORY', 'EXPORT_DATA'] as const) {
       expect(evaluatePermission('OWNER', action).allowed).toBe(true);
-      expect(evaluatePermission('ADMINISTRATOR', action).allowed).toBe(false);
+      const administrator = evaluatePermission('ADMINISTRATOR', action);
+      expect(administrator.allowed).toBe(true);
+      if (administrator.allowed) expect(administrator.requiresStepUp).toBe(true);
       expect(evaluatePermission('VIEWER', action).allowed).toBe(false);
       expect(evaluatePermission('CHILD', action).allowed).toBe(false);
     }
@@ -81,10 +83,10 @@ describe('evaluatePermission', () => {
       expect(evaluatePermission('CHILD', 'VIEW_DEVICE_ENROLLMENT').allowed).toBe(false);
     });
 
-    it('only Owner or Administrator can create a device invitation, with step-up required', () => {
+    it('only Owner or Administrator can create a device invitation, without a sensitive-action step-up', () => {
       const owner = evaluatePermission('OWNER', 'CREATE_DEVICE_INVITATION');
       expect(owner.allowed).toBe(true);
-      if (owner.allowed) expect(owner.requiresStepUp).toBe(true);
+      if (owner.allowed) expect(owner.requiresStepUp).toBe(false);
       expect(evaluatePermission('ADMINISTRATOR', 'CREATE_DEVICE_INVITATION').allowed).toBe(true);
       expect(evaluatePermission('VIEWER', 'CREATE_DEVICE_INVITATION').allowed).toBe(false);
       expect(evaluatePermission('CHILD', 'CREATE_DEVICE_INVITATION').allowed).toBe(false);

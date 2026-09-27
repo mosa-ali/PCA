@@ -7,8 +7,8 @@
 // `role="alert"` -- which told a parent the product was broken at the exact
 // moment it was working as specified, with no next step.
 //
-// These tests pin the replacement: the action-needed treatment, with the one
-// real next step, and six em-dash KPIs rather than a page of reassuring zeros.
+// Dashboard remains honest without turning the obsolete Genesis onboarding
+// card into a browser-pairing CTA; protected data stays fail closed.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { EndpointNotTrustedError } from '../../src/api/familyDataAccessErrors';
@@ -43,11 +43,11 @@ beforeEach(() => {
 });
 
 describe('Dashboard when the family-data read is fail-closed', () => {
-  it('renders the action-needed treatment, not "Something went wrong"', async () => {
+  it('renders a neutral unavailable state, not a Genesis browser setup card or error', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     const { container } = renderWithProviders(<Dashboard />);
 
-    expect(await screen.findByText('Finish setting up this browser')).toBeInTheDocument();
+    expect(await screen.findByText('Not available yet')).toBeInTheDocument();
     expect(screen.queryByText('Something went wrong')).toBeNull();
 
     const block = container.querySelector('.state-action-needed');
@@ -57,27 +57,29 @@ describe('Dashboard when the family-data read is fail-closed', () => {
     expect(container.querySelectorAll('.state-error')).toHaveLength(0);
   });
 
-  it('names the one next step and keeps it inside the app', async () => {
+  it('does not present the obsolete dashboard pairing CTA', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     renderWithProviders(<Dashboard />);
 
-    const action = await screen.findByRole('link', { name: 'Set up this browser' });
-    expect(action.getAttribute('href')).toBe('/security/trusted-browser');
+    await screen.findByText('Not available yet');
+    expect(screen.queryByRole('link', { name: 'Set up this browser' })).toBeNull();
   });
 
-  it('keeps the existing honest reason sentence', async () => {
+  it('explains that unverified protected family data stays hidden without asking to trust this browser', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     renderWithProviders(<Dashboard />);
 
     expect(
-      await screen.findByText(/This browser is not trusted for your children's protected data yet/),
+      await screen.findByText('This protected information is not available yet. Browser pairing is not needed for parent access.'),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/This browser is not trusted/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Set up this browser' })).toBeNull();
   });
 
   it('shows every KPI as an em dash rather than a reassuring zero', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     const { container } = renderWithProviders(<Dashboard />);
-    await screen.findByText('Finish setting up this browser');
+    await screen.findByText('Not available yet');
 
     const values = Array.from(container.querySelectorAll('.kpi-value'));
     expect(values).toHaveLength(6);
@@ -90,7 +92,7 @@ describe('Dashboard when the family-data read is fail-closed', () => {
   it('never renders a child card built from a read that threw', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     const { container } = renderWithProviders(<Dashboard />);
-    await screen.findByText('Finish setting up this browser');
+    await screen.findByText('Not available yet');
 
     expect(container.querySelectorAll('.child-card')).toHaveLength(0);
     expect(container.querySelectorAll('.children-grid')).toHaveLength(0);
@@ -99,7 +101,7 @@ describe('Dashboard when the family-data read is fail-closed', () => {
   it('still shows the standing honesty note at the foot', async () => {
     const { default: Dashboard } = await import('../../src/pages/Dashboard');
     const { container } = renderWithProviders(<Dashboard />);
-    await screen.findByText('Finish setting up this browser');
+    await screen.findByText('Not available yet');
 
     const note = container.querySelector('.banner-neutral');
     expect(note).not.toBeNull();

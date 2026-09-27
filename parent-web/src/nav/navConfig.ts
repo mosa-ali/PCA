@@ -19,12 +19,13 @@ export interface NavSection {
 }
 
 /**
- * FIRST-LEVEL NAVIGATION -- five consumer groups, 19 entries.
+ * FIRST-LEVEL NAVIGATION -- five consumer groups, 18 entries.
  *
  * This replaces a flat six-section/18-entry list whose groups were named after
  * the system ("Privacy & Data", "Security") rather than after what a parent is
- * trying to do. NOTHING WAS REMOVED. Every route that was in the old config is
- * still in this one, and one route that was registered but reachable only by
+ * trying to do. One retired Parent browser-authority route was removed.
+ * Every other route that was in the old config is still in this one, and one
+ * route that was registered but reachable only by
  * typing its URL (`/wellbeing-messages`, App.tsx) is now reachable from the
  * nav for the first time:
  *
@@ -38,7 +39,6 @@ export interface NavSection {
  *   /family/devices        -> FAMILY
  *   /security/status       -> PROTECTION
  *   /wellbeing-messages    -> PROTECTION         was in NO section at all
- *   /security/trusted-browser -> SAFETY&PRIVACY  label pinned "Trusted Browser"
  *   /security/recovery     -> SAFETY&PRIVACY     controlled: route kept
  *   /security/audit        -> SAFETY&PRIVACY     controlled: route kept,
  *                                                 label -> "Security Log"
@@ -102,9 +102,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: '/privacy', labelKey: 'nav.dataPrivacy' },
       { path: '/security/recovery', labelKey: 'nav.recovery' },
       { path: '/security/audit', labelKey: 'nav.securityLog' },
-      // Pinned accessible name: tests/component/SidebarTrustedBrowserLink.test.tsx
-      // asserts a link named exactly "Trusted Browser" pointing here.
-      { path: '/security/trusted-browser', labelKey: 'nav.trustedBrowser' },
     ],
   },
   {

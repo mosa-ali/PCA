@@ -1,11 +1,11 @@
-const DISMISS_KEY = 'pca_mfa_grace_reminder_dismissed_v1';
+const DISMISS_KEY = 'pca_mfa_optional_reminder_dismissed_v1';
 
 /**
- * "Remind me later" hides the authenticator reminder for THIS BROWSER SESSION
+ * Dismiss hides the optional authenticator reminder for THIS BROWSER SESSION
  * only. Only the dismissal is stored -- a non-secret "1" flag in
  * sessionStorage, which the browser discards when the session ends, so the
- * reminder reappears on the next visit (and after signing out). The deadline
- * itself is never stored: it always comes from the server's `graceExpiresAt`.
+ * reminder reappears on the next visit (and after signing out). No deadline is
+ * created or stored because authenticator setup is optional.
  */
 export function isMfaGraceReminderDismissed(): boolean {
   try {

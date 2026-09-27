@@ -4,8 +4,8 @@ import { Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../../src/components/shell/AppLayout';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
-describe('Sidebar links to the Trusted Browser page', () => {
-  it('renders a Trusted Browser nav link pointing at /security/trusted-browser', async () => {
+describe('Sidebar retires Parent Trusted Browser navigation', () => {
+  it('does not advertise browser pairing and keeps child-device and recovery links available', async () => {
     renderWithProviders(
       <Routes>
         <Route element={<AppLayout />}>
@@ -15,7 +15,8 @@ describe('Sidebar links to the Trusted Browser page', () => {
       { route: '/dashboard' },
     );
 
-    const link = await screen.findByRole('link', { name: 'Trusted Browser' });
-    expect(link.getAttribute('href')).toBe('/security/trusted-browser');
+    expect(screen.queryByRole('link', { name: 'Trusted Browser' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Devices' })).toHaveAttribute('href', '/family/devices');
+    expect(screen.getByRole('link', { name: 'Recovery' })).toHaveAttribute('href', '/security/recovery');
   });
 });

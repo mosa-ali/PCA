@@ -74,17 +74,6 @@ export function AppLayout() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  /*
-   * MANDATORY AUTHENTICATOR SETUP (PCA-DEC-037). The server normally never
-   * issues a session once the grace period is over -- it issues an enrollment
-   * ticket instead, and Login sends the parent to /mfa/setup directly. A
-   * session that nevertheless reports SETUP_REQUIRED goes to the same page,
-   * which is mounted OUTSIDE this layout (so this cannot redirect-loop).
-   */
-  if (session.mfa.status === 'SETUP_REQUIRED') {
-    return <Navigate to="/mfa/setup" replace state={{ from: location.pathname }} />;
-  }
-
   return (
     <div className={`app-shell${collapsed ? ' sidebar-collapsed' : ''}`}>
       <a href="#main-content" className="skip-link">

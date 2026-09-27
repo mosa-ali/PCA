@@ -17,21 +17,22 @@ describe('Breadcrumb labels', () => {
   });
 
   it('renders translated English labels for static route segments', async () => {
-    renderWithProviders(<Breadcrumb />, { route: '/security/trusted-browser' });
+    renderWithProviders(<Breadcrumb />, { route: '/security/status' });
     const nav = await screen.findByRole('navigation', { name: 'Breadcrumb' });
     expect(nav).toHaveTextContent('Security');
-    expect(nav).toHaveTextContent('Trusted Browser');
+    expect(nav).toHaveTextContent('Protection Status');
   });
 
   it('renders Arabic labels under the Arabic locale instead of the URL words', async () => {
     await i18n.changeLanguage('ar');
     applyDocumentDirection('ar');
 
-    renderWithProviders(<Breadcrumb />, { route: '/security/trusted-browser' });
+    renderWithProviders(<Breadcrumb />, { route: '/security/status' });
     const nav = await screen.findByRole('navigation', { name: i18n.t('shell.breadcrumbNav') });
 
     expect(nav).toHaveTextContent(i18n.t('nav.security'));
-    expect(nav).toHaveTextContent(i18n.t('nav.trustedBrowser'));
+    expect(nav).toHaveTextContent(i18n.t('nav.protectionStatus'));
+    expect(nav).toHaveTextContent(i18n.t('nav.protectionStatus'));
     expect(nav).not.toHaveTextContent('Trusted Browser');
     expect(nav).not.toHaveTextContent('Security');
   });

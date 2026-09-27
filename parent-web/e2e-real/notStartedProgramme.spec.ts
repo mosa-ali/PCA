@@ -77,31 +77,20 @@ test('N2: Dashboard importantAlertCount links to /security/status and the page f
   if (response) expect(response.status(), 'protection-alerts route must not 404/500').toBeLessThan(500);
 });
 
-test('N3: trusted-browser pairing reaches the real backend (no fabricated UUID)', async ({ page }) => {
+test('N3: retired trusted-browser URL safely redirects without registering a browser endpoint', async ({ page }) => {
   await signIn(page);
+  const browserEndpointRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/browser-endpoints')) browserEndpointRequests.push(request.url());
+  });
   await page.goto('/security/trusted-browser');
-  // State machine: BROWSER_NOT_TRUSTED -> beginServiceAuthentication() ->
-  // PAIRING_REQUIRED -> requestPairing() (the button that reaches N3's real
-  // endpoints). A fresh account starts in BROWSER_NOT_TRUSTED.
-  await page.waitForTimeout(1500); // let the initial getSnapshot() resolve past LoadingState
-  // The BROWSER_NOT_TRUSTED state's beginServiceAuthentication() button is
-  // labeled with the trustedBrowser.beginServiceAuth i18n string, which
-  // literally renders as "Sign in" (not "Begin...") -- confirmed by direct
-  // inspection of the live page.
-  const beginAuthButton = page.getByRole('button', { name: /^sign in$/i });
-  if (await beginAuthButton.count()) {
-    await beginAuthButton.first().click();
-    await page.waitForTimeout(1500);
-  }
-  const registerPromise = page.waitForResponse((res) => res.url().includes('/browser-endpoints'), { timeout: 10_000 }).catch(() => null);
-  const pairButton = page.getByRole('button', { name: /request pairing/i });
-  if ((await pairButton.count()) === 0) {
-    test.skip(true, `TrustedBrowser did not reach PAIRING_REQUIRED state; page shows: ${(await page.locator('body').innerText()).slice(0, 400)}`);
-  }
-  await pairButton.first().click();
-  const response = await registerPromise;
-  expect(response, 'requestPairing must issue a real POST to /v1/families/:familyId/browser-endpoints, not fabricate a UUID locally').not.toBeNull();
-  if (response) expect(response!.status(), 'browser-endpoint registration must not 404/500').toBeLessThan(500);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /request pairing|trust this browser/i })).toHaveCount(0);
+  // Allow any accidental post-navigation effect to run before asserting no
+  // registration request was sent from the retired route.
+  await page.waitForTimeout(1000);
+  expect(browserEndpointRequests).toEqual([]);
 });
 
 test('N4: member removal -- honest client-side pre-gate (item H, pre-existing/documented) correctly blocks the whole page pending the crypto-trust gate; verified the block itself is the DOCUMENTED behavior, not a new N4 regression', async ({ page }) => {

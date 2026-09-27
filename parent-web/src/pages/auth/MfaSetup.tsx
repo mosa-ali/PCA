@@ -16,15 +16,16 @@ function groupSecret(secret: string): string {
 interface MfaSetupLocationState {
   email?: unknown;
   from?: unknown;
+  password?: unknown;
 }
 
 /**
- * PCA-DEC-037 authenticator-app setup. Two ways in:
- *  - TICKET mode (no session): the grace period is over, or the parent just
- *    completed lost-authenticator recovery. The server has set a short-lived
+ * Authenticator-app setup. Two ways in:
+ *  - TICKET mode (no session): the parent just completed lost-authenticator
+ *    recovery. The server has set a short-lived
  *    HttpOnly enrollment ticket; confirming the app signs this browser in.
  *  - SESSION mode: a signed-in parent setting the app up voluntarily during
- *    the grace period (or the rare SETUP_REQUIRED session).
+ *    an existing signed-in session.
  * Both start with email + password re-authentication.
  *
  * SECRET HANDLING: the otpauth URI and the secret are held in this
@@ -42,7 +43,7 @@ export default function MfaSetup() {
   const locationState = (location.state as MfaSetupLocationState | null) ?? null;
 
   const [email, setEmail] = useState(typeof locationState?.email === 'string' ? locationState.email : '');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(typeof locationState?.password === 'string' ? locationState.password : '');
   const [enrollment, setEnrollment] = useState<MfaEnrollmentStart | null>(null);
   const [code, setCode] = useState('');
   const [codeInvalid, setCodeInvalid] = useState(false);
@@ -59,6 +60,15 @@ export default function MfaSetup() {
     [],
   );
 
+  // A just-authenticated login may pass the in-memory password to complete
+  // required setup without asking the parent to sign in again. Remove it
+  // from the history entry immediately after taking it into component state.
+  useEffect(() => {
+    if (typeof locationState?.password === 'string') {
+      navigate(location.pathname, { replace: true, state: { email: locationState.email, from: locationState.from } });
+    }
+  }, [location.pathname, locationState?.email, locationState?.from, locationState?.password, navigate]);
+
   if (loading) return null;
   const sessionMode = session !== null;
 
@@ -73,7 +83,9 @@ export default function MfaSetup() {
       else if (err.code === 'SESSION_EXPIRED') {
         setExpired(true);
         setError(t('mfa.sessionExpired'));
-      } else setError(t('auth.genericError'));
+      } else if (err.code === 'CSRF_FAILED') setError(t('mfa.setup.csrfFailed'));
+      else if (err.code === 'FORBIDDEN') setError(t('mfa.setup.forbidden'));
+      else setError(t('auth.genericError'));
     } else {
       setError(t('auth.genericError'));
     }
@@ -225,11 +237,9 @@ export default function MfaSetup() {
         </button>
       </form>
       {sessionMode ? (
-        session.mfa.status !== 'SETUP_REQUIRED' && (
-          <p>
-            <Link to={safeReturnPath(locationState?.from)}>{t('mfa.setup.notNow')}</Link>
-          </p>
-        )
+        <p>
+          <Link to={safeReturnPath(locationState?.from)}>{t('mfa.setup.notNow')}</Link>
+        </p>
       ) : (
         <p>
           <Link to="/login">{t('auth.backToLogin')}</Link>

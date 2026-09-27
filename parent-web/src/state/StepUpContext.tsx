@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { getApiClients } from '../api/client';
-import type { CommercialStepUpOperation } from '../api/interfaces';
+import type { CommercialStepUpOperation, SensitiveParentStepUpOperation } from '../api/interfaces';
 import { ServiceAuthError } from '../api/real/realServiceAuthClient';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { useOptionalAuth } from './AuthContext';
@@ -13,8 +13,9 @@ interface PendingStepUp {
   resolve: (granted: boolean) => void;
 }
 
-interface PendingCommercialStepUp {
-  operation: CommercialStepUpOperation;
+interface PendingGrantStepUp {
+  kind: 'COMMERCIAL' | 'SENSITIVE';
+  operation: CommercialStepUpOperation | SensitiveParentStepUpOperation;
   resolve: (stepUpToken: string | null) => void;
 }
 
@@ -29,6 +30,7 @@ interface StepUpContextValue {
    * stored anywhere.
    */
   requestCommercialStepUp: (operation: CommercialStepUpOperation) => Promise<string | null>;
+  requestSensitiveStepUp: (operation: SensitiveParentStepUpOperation) => Promise<string | null>;
 }
 
 const StepUpContext = createContext<StepUpContextValue | undefined>(undefined);
@@ -36,7 +38,7 @@ const StepUpContext = createContext<StepUpContextValue | undefined>(undefined);
 /** Roles the server's COMMERCIAL_OWNER_AUTHORITY can ever accept (OWNER is the fixture-only internal trust owner). */
 const COMMERCIAL_ROLES = new Set(['ADMINISTRATOR', 'OWNER']);
 
-function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercialStepUp; onDone: (token: string | null) => void }) {
+function CommercialStepUpDialog({ pending, onDone }: { pending: PendingGrantStepUp; onDone: (token: string | null) => void }) {
   const { t } = useTranslation();
   const clients = getApiClients();
   const auth = useOptionalAuth();
@@ -55,6 +57,7 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
   // still loading (or absent) the code form is shown and the server decides.
   const permitted = session === null || COMMERCIAL_ROLES.has(session.role);
   const hasAuthenticator = session === null || session.mfa.status === 'ACTIVE';
+  const copy = pending.kind === 'COMMERCIAL' ? 'stepUp.commercial' : 'stepUp.sensitive';
 
   useEffect(() => {
     if (permitted && hasAuthenticator) inputRef.current?.focus();
@@ -72,7 +75,9 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
     }
     setSubmitting(true);
     try {
-      const grant = await clients.serviceAuth.issueCommercialStepUp(pending.operation, code);
+      const grant = pending.kind === 'COMMERCIAL'
+        ? await clients.serviceAuth.issueCommercialStepUp(pending.operation as CommercialStepUpOperation, code)
+        : await clients.serviceAuth.issueSensitiveStepUp(pending.operation as SensitiveParentStepUpOperation, code);
       setCode('');
       onDone(grant.stepUpToken);
     } catch (err) {
@@ -99,8 +104,8 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
   if (!permitted) {
     content = (
       <>
-        <h2 id="commercial-step-up-title">{t('stepUp.commercial.title')}</h2>
-        <p id="commercial-step-up-body">{t('stepUp.commercial.notPermitted')}</p>
+        <h2 id="commercial-step-up-title">{t(`${copy}.title`)}</h2>
+        <p id="commercial-step-up-body">{t(`${copy}.notPermitted`)}</p>
         <div className="modal-actions">
           <button ref={cancelRef} type="button" className="btn" onClick={cancel}>
             {t('common.cancel')}
@@ -111,14 +116,14 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
   } else if (!hasAuthenticator) {
     content = (
       <>
-        <h2 id="commercial-step-up-title">{t('stepUp.commercial.setupRequiredTitle')}</h2>
-        <p id="commercial-step-up-body">{t('stepUp.commercial.setupRequiredBody')}</p>
+        <h2 id="commercial-step-up-title">{t(`${copy}.setupRequiredTitle`)}</h2>
+        <p id="commercial-step-up-body">{t(`${copy}.setupRequiredBody`)}</p>
         <div className="modal-actions">
           <button ref={cancelRef} type="button" className="btn" onClick={cancel}>
             {t('common.cancel')}
           </button>
           <Link className="btn btn-primary" to="/mfa/setup" onClick={cancel}>
-            {t('stepUp.commercial.setupLink')}
+            {t(`${copy}.setupLink`)}
           </Link>
         </div>
       </>
@@ -126,8 +131,8 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
   } else {
     content = (
       <>
-        <h2 id="commercial-step-up-title">{t('stepUp.commercial.title')}</h2>
-        <p id="commercial-step-up-body">{t('stepUp.commercial.body')}</p>
+        <h2 id="commercial-step-up-title">{t(`${copy}.title`)}</h2>
+        <p id="commercial-step-up-body">{t(`${copy}.body`)} </p>
         <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <label htmlFor="commercial-step-up-code">{t('mfa.codeLabel')}</label>
@@ -157,7 +162,7 @@ function CommercialStepUpDialog({ pending, onDone }: { pending: PendingCommercia
               {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn-primary" disabled={submitting} aria-busy={submitting}>
-              {t('stepUp.commercial.confirm')}
+              {t(`${copy}.confirm`)}
             </button>
           </div>
         </form>
@@ -185,7 +190,7 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const clients = getApiClients();
   const [pending, setPending] = useState<PendingStepUp | null>(null);
-  const [pendingCommercial, setPendingCommercial] = useState<PendingCommercialStepUp | null>(null);
+  const [pendingGrant, setPendingGrant] = useState<PendingGrantStepUp | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -203,17 +208,23 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
 
   const requestCommercialStepUp = useCallback((operation: CommercialStepUpOperation) => {
     return new Promise<string | null>((resolve) => {
-      setPendingCommercial({ operation, resolve });
+      setPendingGrant({ kind: 'COMMERCIAL', operation, resolve });
+    });
+  }, []);
+
+  const requestSensitiveStepUp = useCallback((operation: SensitiveParentStepUpOperation) => {
+    return new Promise<string | null>((resolve) => {
+      setPendingGrant({ kind: 'SENSITIVE', operation, resolve });
     });
   }, []);
 
   const handleCommercialDone = useCallback(
     (token: string | null) => {
-      if (!pendingCommercial) return;
-      pendingCommercial.resolve(token);
-      setPendingCommercial(null);
+      if (!pendingGrant) return;
+      pendingGrant.resolve(token);
+      setPendingGrant(null);
     },
-    [pendingCommercial],
+    [pendingGrant],
   );
 
   const handleConfirm = useCallback(async () => {
@@ -230,9 +241,9 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
   }, [pending]);
 
   return (
-    <StepUpContext.Provider value={{ requestStepUp, requestCommercialStepUp }}>
+    <StepUpContext.Provider value={{ requestStepUp, requestCommercialStepUp, requestSensitiveStepUp }}>
       {children}
-      {pendingCommercial && <CommercialStepUpDialog pending={pendingCommercial} onDone={handleCommercialDone} />}
+      {pendingGrant && <CommercialStepUpDialog pending={pendingGrant} onDone={handleCommercialDone} />}
       {pending && (
         <div className="modal-overlay" role="presentation" onKeyDown={(e) => e.key === 'Escape' && handleCancel()}>
           <div

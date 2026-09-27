@@ -55,8 +55,8 @@ export default function Members() {
     setActionError(null);
     setInviting(true);
     try {
-      await runFamilyAction(inviteRole === 'ADMINISTRATOR' ? 'ADD_ADMINISTRATOR' : 'ADD_VIEWER', () =>
-        clients.familyMemberInvitations.invite(inviteRole, inviteEmail),
+      await runFamilyAction(inviteRole === 'ADMINISTRATOR' ? 'ADD_ADMINISTRATOR' : 'ADD_VIEWER', (stepUpToken) =>
+        clients.familyMemberInvitations.invite(inviteRole, inviteEmail, stepUpToken!), 'family.member.add',
       );
       setInviteEmail('');
       reloadInvitations();
@@ -70,7 +70,7 @@ export default function Members() {
   const revokeInvitation = async (invitationId: string) => {
     setActionError(null);
     try {
-      await runFamilyAction('REMOVE_NON_OWNER_PARENT', () => clients.familyMemberInvitations.revoke(invitationId));
+      await runFamilyAction('REMOVE_NON_OWNER_PARENT', (stepUpToken) => clients.familyMemberInvitations.revoke(invitationId, stepUpToken!), 'family.member.invitation.revoke');
       reloadInvitations();
     } catch (e) {
       setActionError(describeInvitationError(t, e));
@@ -80,7 +80,7 @@ export default function Members() {
   const changeInvitationRole = async (invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER') => {
     setActionError(null);
     try {
-      await runFamilyAction('CHANGE_ANY_ROLE', () => clients.familyMemberInvitations.changeRole(invitationId, newRole));
+      await runFamilyAction('CHANGE_ANY_ROLE', (stepUpToken) => clients.familyMemberInvitations.changeRole(invitationId, newRole, stepUpToken!), 'family.member.role_change');
       reloadInvitations();
     } catch (e) {
       setActionError(describeInvitationError(t, e));
@@ -96,7 +96,7 @@ export default function Members() {
     if (!window.confirm(t('family.removeMemberConfirm'))) return;
     setActionError(null);
     try {
-      await runFamilyAction('REMOVE_NON_OWNER_PARENT', () => clients.familyAuthority.removeMember(memberId));
+      await runFamilyAction('REMOVE_NON_OWNER_PARENT', (stepUpToken) => clients.familyAuthority.removeMember(memberId, stepUpToken!));
       reloadMembers();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));

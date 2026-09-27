@@ -72,7 +72,7 @@ describe('header language control', () => {
     expect(document.documentElement.getAttribute('lang')).toBe('ar');
     expect(screen.getByRole('button', { name: 'العربية' })).toHaveAttribute('aria-pressed', 'true');
     // Applies globally: the sidebar, not just the header, is now Arabic.
-    expect(screen.getByRole('link', { name: i18n.t('nav.trustedBrowser') })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: i18n.t('nav.trustedBrowser') })).not.toBeInTheDocument();
 
     // Endonym, not a translation: still "English" with the UI in Arabic (see
     // LanguageSwitch.tsx's own contract, and rtl.spec.ts's header).

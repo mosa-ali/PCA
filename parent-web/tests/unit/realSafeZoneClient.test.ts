@@ -1,19 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RealSafeZoneClient } from '../../src/api/real/realSafeZoneClient';
-import type { TrustedBrowserProvider } from '../../src/domain/trustedBrowser';
-
-const trustedBrowser = {
-  getSnapshot: vi.fn(async () => ({
-    state: 'TRUSTED' as const,
-    serviceAuthenticated: true,
-    browserEndpointId: 'browser-1',
-    trustSetEpoch: 4,
-    acceptedMinEpoch: 4,
-    pairingRequestedAtUtc: null,
-    lastFingerprint: null,
-    actorDeviceSessionToken: 'actor-device-session-token-1',
-  })),
-} as unknown as TrustedBrowserProvider;
 
 const safeZone = {
   zoneId: 'zone-1',
@@ -37,7 +23,7 @@ describe('RealSafeZoneClient opaque response boundary', () => {
       json: async () => ({ safeZones: [safeZone] }),
     })));
 
-    const result = await new RealSafeZoneClient('https://pca.example', trustedBrowser).list('family-1');
+    const result = await new RealSafeZoneClient('https://pca.example').list('family-1');
     expect(result).toEqual([safeZone]);
   });
 
@@ -47,28 +33,21 @@ describe('RealSafeZoneClient opaque response boundary', () => {
       json: async () => ({ safeZones: [{ ...safeZone, label: 'Home', latitude: 24.7 }] }),
     })));
 
-    await expect(new RealSafeZoneClient('https://pca.example', trustedBrowser).list('family-1'))
+    await expect(new RealSafeZoneClient('https://pca.example').list('family-1'))
       .rejects.toThrow('SAFE_ZONE_RESPONSE_INVALID');
   });
 
-  it('does not call the safe-zone endpoint from an untrusted browser', async () => {
-    const fetchMock = vi.fn();
+  it('reads family safe zones through the Parent session without a browser trust provider', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ safeZones: [safeZone] }) }));
     vi.stubGlobal('fetch', fetchMock);
-    const untrusted = {
-      ...trustedBrowser,
-      getSnapshot: vi.fn(async () => ({ ...(await trustedBrowser.getSnapshot()), state: 'PAIRING_REQUIRED' as const })),
-    } as unknown as TrustedBrowserProvider;
-
-    await expect(new RealSafeZoneClient('https://pca.example', untrusted).list('family-1'))
-      .rejects.toThrow('TRUSTED_BROWSER_REQUIRED');
-    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(new RealSafeZoneClient('https://pca.example').list('family-1')).resolves.toEqual([safeZone]);
   });
 
   it('rejects a plaintext-shaped create before it can reach fetch', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(new RealSafeZoneClient('https://pca.example', trustedBrowser).create('family-1', {
+    await expect(new RealSafeZoneClient('https://pca.example').create('family-1', {
       label: 'Home',
       latitude: 24.7,
       longitude: 46.6,
@@ -81,7 +60,7 @@ describe('RealSafeZoneClient opaque response boundary', () => {
   it('rejects extra fields and malformed identifiers before update/delete fetches', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const client = new RealSafeZoneClient('https://pca.example', trustedBrowser);
+    const client = new RealSafeZoneClient('https://pca.example');
 
     await expect(client.update('family-1', 'zone-1', { ciphertextB64: 'AQID', label: 'Home' } as never))
       .rejects.toMatchObject({ code: 'ENCRYPTION_UNAVAILABLE' });
@@ -89,29 +68,16 @@ describe('RealSafeZoneClient opaque response boundary', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('asserts identity to the server via a verified device session token, never a self-reported header', async () => {
+  it('uses the Parent session cookie and does not send a browser device token', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ safeZones: [safeZone] }) }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await new RealSafeZoneClient('https://pca.example', trustedBrowser).list('family-1');
+    await new RealSafeZoneClient('https://pca.example').list('family-1');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer actor-device-session-token-1');
+    expect(headers.Authorization).toBeUndefined();
     expect(headers['x-pca-actor-device-id']).toBeUndefined();
-  });
-
-  it('refuses to call the safe-zone endpoint when no verified actor device session token is available', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const noSessionToken = {
-      ...trustedBrowser,
-      getSnapshot: vi.fn(async () => ({ ...(await trustedBrowser.getSnapshot()), actorDeviceSessionToken: null })),
-    } as unknown as TrustedBrowserProvider;
-
-    await expect(new RealSafeZoneClient('https://pca.example', noSessionToken).list('family-1'))
-      .rejects.toThrow('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

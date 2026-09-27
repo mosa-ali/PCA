@@ -1,22 +1,12 @@
 // Real (non-fixture) FamilyMemberInvitationClient. Calls the real, wired
 // backend (backend/src/http/routes/familyMemberRoutes.ts) using the SAME
-// actor-identity-binding pattern RealRequestClient/RealSafeZoneClient
-// already established: the HttpOnly family session cookie for
-// family/account identity, a double-submit CSRF header for the mutation,
-// and an `Authorization: Bearer <actorDeviceSessionToken>` header
-// (sourced from TrustedBrowserProvider.getSnapshot(), never a
-// self-asserted id) for the acting device's identity.
+// Parent-session authority: the HttpOnly family session cookie scopes the
+// family and a double-submit CSRF header protects mutations. The backend
+// checks the active membership role for each request.
 //
-// Production currently wires UnavailableTrustSetRoleResolver under the
-// shared ParentActionAuthorizationService (see familyMemberRoutes.ts's own
-// header comment), so even a fully-authenticated real call fails closed
-// with an honest 403 today -- an external gate, not a reason to leave this
-// client throwing a hardcoded stub error before the request is ever sent.
-// ADD_ADMINISTRATOR/CHANGE_ROLE additionally require step-up
-// (ALLOW_WITH_STEP_UP unconditionally per OPERATION_MATRIX), and no route
-// in this codebase threads a client-supplied step-up assertion through yet
-// -- inviting/changing-role-to ADMINISTRATOR will therefore also fail
-// closed even once trust-set is real, until a real step-up ceremony exists.
+// Mutating routes require an active Administrator membership, CSRF, and a
+// fresh operation-bound TOTP grant. The server repeats those checks for every
+// request; client-side permission checks are only for clear UI feedback.
 //
 // Every rejection (transport-level precondition or a non-2xx response) is
 // surfaced as a FamilyMemberInvitationError, never a bare Error -- mirrors
@@ -25,7 +15,6 @@
 // message instead of displaying a raw diagnostic string.
 import type { FamilyMemberInvitation, FamilyMemberInvitationClient, FamilyMemberInvitationErrorCode } from '../interfaces';
 import { FamilyMemberInvitationError } from '../interfaces';
-import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { cookieSessionFamilyId } from './realBillingClient';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -60,10 +49,7 @@ interface WireInvitationEnvelope {
 }
 
 export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationClient {
-  constructor(
-    private readonly apiBaseUrl: string,
-    private readonly trustedBrowser: TrustedBrowserProvider,
-  ) {}
+  constructor(private readonly apiBaseUrl: string) {}
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
@@ -81,40 +67,37 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
     return body.invitations ?? [];
   }
 
-  async invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string): Promise<FamilyMemberInvitation> {
+  async invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string, stepUpToken: string): Promise<FamilyMemberInvitation> {
     const familyId = await this.familyId('FamilyMemberInvitationClient.invite');
-    const actorHeaders = await this.actorHeaders();
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/members/invitations`), {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...actorHeaders, ...this.csrfHeader() },
-      body: JSON.stringify({ invitedEmail, role }),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.csrfHeader() },
+      body: JSON.stringify({ invitedEmail, role, stepUpToken }),
     });
     if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.invite', response);
     return this.invitationFrom('FamilyMemberInvitationClient.invite', response);
   }
 
-  async revoke(invitationId: string): Promise<FamilyMemberInvitation> {
+  async revoke(invitationId: string, stepUpToken: string): Promise<FamilyMemberInvitation> {
     const familyId = await this.familyId('FamilyMemberInvitationClient.revoke');
-    const actorHeaders = await this.actorHeaders();
     const response = await fetch(
       this.url(`/api/parent/families/${encodeURIComponent(familyId)}/members/invitations/${encodeURIComponent(invitationId)}/revoke`),
-      { method: 'POST', credentials: 'include', headers: { Accept: 'application/json', ...actorHeaders, ...this.csrfHeader() } },
+      { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.csrfHeader() }, body: JSON.stringify({ stepUpToken }) },
     );
     if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.revoke', response);
     return this.invitationFrom('FamilyMemberInvitationClient.revoke', response);
   }
 
-  async changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER'): Promise<FamilyMemberInvitation> {
+  async changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER', stepUpToken: string): Promise<FamilyMemberInvitation> {
     const familyId = await this.familyId('FamilyMemberInvitationClient.changeRole');
-    const actorHeaders = await this.actorHeaders();
     const response = await fetch(
       this.url(`/api/parent/families/${encodeURIComponent(familyId)}/members/invitations/${encodeURIComponent(invitationId)}/role`),
       {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...actorHeaders, ...this.csrfHeader() },
-        body: JSON.stringify({ role: newRole }),
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.csrfHeader() },
+        body: JSON.stringify({ role: newRole, stepUpToken }),
       },
     );
     if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.changeRole', response);
@@ -143,18 +126,6 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
   private csrfHeader(): Record<string, string> {
     const csrf = readCsrfCookie();
     return csrf ? { [CSRF_HEADER_NAME]: csrf } : {};
-  }
-
-  /** SECURITY (actor-identity binding): mirrors RealRequestClient.actorHeaders()/RealSafeZoneClient's own doc comment exactly -- never a self-reported device id. */
-  private async actorHeaders(): Promise<Record<string, string>> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') {
-      throw new FamilyMemberInvitationError('UNAUTHORIZED', 'TRUSTED_BROWSER_REQUIRED', null, 'trusted_browser_required');
-    }
-    if (!snapshot.actorDeviceSessionToken) {
-      throw new FamilyMemberInvitationError('UNAUTHORIZED', 'ACTOR_DEVICE_SESSION_UNAVAILABLE', null, 'actor_device_session_unavailable');
-    }
-    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 
   private async json(response: Response): Promise<unknown> {

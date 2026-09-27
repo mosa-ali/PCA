@@ -20,12 +20,12 @@ export const GUIDE_CATEGORIES: readonly GuideCategory[] = [
 export const GUIDE_TOPICS: readonly GuideTopic[] = [
   {
     id: 'getting-started', category: 'gettingStarted', contentKey: 'guide.topics.gettingStarted', availability: 'setup',
-    routePatterns: ['/register', '/verify-email', '/login', '/dashboard'], relatedTopicIds: ['parent-account', 'devices', 'download', 'trusted-browser'],
+    routePatterns: ['/register', '/verify-email', '/login', '/dashboard'], relatedTopicIds: ['parent-account', 'devices', 'download'],
     searchTerms: ['start', 'begin', 'setup', 'account', 'verify', 'إنشاء الحساب', 'البدء', 'إعداد'],
   },
   {
     id: 'parent-account', category: 'gettingStarted', contentKey: 'guide.topics.parentAccount', availability: 'available',
-    openPagePath: '/settings', routePatterns: ['/register', '/verify-email', '/login', '/settings'], relatedTopicIds: ['getting-started', 'roles', 'trusted-browser'],
+    openPagePath: '/settings', routePatterns: ['/register', '/verify-email', '/login', '/settings'], relatedTopicIds: ['getting-started', 'roles'],
     searchTerms: ['parent account', 'guardian account', 'sign in', 'email verification', 'حساب الوالدين', 'تسجيل الدخول', 'التحقق من البريد'],
   },
   {
@@ -45,7 +45,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
   },
   {
     id: 'devices', category: 'devices', contentKey: 'guide.topics.devices', availability: 'setup',
-    openPagePath: '/family/devices', routePatterns: ['/family/devices'], relatedTopicIds: ['children', 'download', 'trusted-browser', 'screen-time'],
+    openPagePath: '/family/devices', routePatterns: ['/family/devices'], relatedTopicIds: ['children', 'download', 'screen-time'],
     searchTerms: ['device', 'pair', 'pairing', 'connect', 'pending setup', 'جهاز', 'إقران', 'ربط', 'إعداد معلّق'],
   },
   {
@@ -65,7 +65,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
   },
   {
     id: 'protection-status', category: 'protection', contentKey: 'guide.topics.protectionStatus', availability: 'setup',
-    openPagePath: '/security/status', routePatterns: ['/security/status'], relatedTopicIds: ['devices', 'trusted-browser', 'alerts'],
+    openPagePath: '/security/status', routePatterns: ['/security/status'], relatedTopicIds: ['devices', 'alerts'],
     searchTerms: ['protection status', 'protected', 'device state', 'حالة الحماية', 'محمي', 'حالة الجهاز'],
   },
   {
@@ -149,18 +149,13 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     searchTerms: ['app permissions', 'permission', 'access', 'أذونات التطبيق', 'الوصول'],
   },
   {
-    id: 'trusted-browser', category: 'safetyPrivacy', contentKey: 'guide.topics.trustedBrowser', availability: 'setup',
-    openPagePath: '/security/trusted-browser', routePatterns: ['/security/trusted-browser'], relatedTopicIds: ['parent-account', 'protection-status', 'devices', 'troubleshooting'],
-    searchTerms: ['trusted browser', 'trust', 'pair browser', 'متصفح موثوق', 'ثقة المتصفح', 'إقران المتصفح'],
-  },
-  {
     id: 'recovery', category: 'safetyPrivacy', contentKey: 'guide.topics.recovery', availability: 'unavailable',
-    openPagePath: '/security/recovery', routePatterns: ['/security/recovery'], relatedTopicIds: ['trusted-browser', 'security-log'], permissionAction: 'REVEAL_RECOVERY_MATERIAL',
+    openPagePath: '/security/recovery', routePatterns: ['/security/recovery'], relatedTopicIds: ['security-log'], permissionAction: 'REVEAL_RECOVERY_MATERIAL',
     searchTerms: ['recovery', 'recover account', 'استرداد', 'استعادة الحساب'],
   },
   {
     id: 'security-log', category: 'safetyPrivacy', contentKey: 'guide.topics.securityLog', availability: 'setup',
-    openPagePath: '/security/audit', routePatterns: ['/security/audit'], relatedTopicIds: ['activity-timeline', 'alerts', 'trusted-browser'],
+    openPagePath: '/security/audit', routePatterns: ['/security/audit'], relatedTopicIds: ['activity-timeline', 'alerts'],
     searchTerms: ['security log', 'audit', 'account actions', 'سجل الأمان', 'إجراءات الحساب'],
   },
   {
@@ -190,7 +185,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
   },
   {
     id: 'settings', category: 'settings', contentKey: 'guide.topics.settings', availability: 'available',
-    openPagePath: '/settings', routePatterns: ['/settings'], relatedTopicIds: ['parent-account', 'notifications', 'trusted-browser'],
+    openPagePath: '/settings', routePatterns: ['/settings'], relatedTopicIds: ['parent-account', 'notifications'],
     searchTerms: ['settings', 'language', 'preferences', 'الإعدادات', 'اللغة', 'التفضيلات'],
   },
   {
@@ -200,7 +195,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
   },
   {
     id: 'troubleshooting', category: 'troubleshooting', contentKey: 'guide.topics.troubleshooting', availability: 'available',
-    routePatterns: ['/not-permitted', '/security/trusted-browser', '/family/devices', '/download'], relatedTopicIds: ['roles', 'devices', 'trusted-browser', 'download', 'device-increase'],
+    routePatterns: ['/not-permitted', '/family/devices', '/download'], relatedTopicIds: ['roles', 'devices', 'download', 'device-increase'],
     searchTerms: ['problem', 'why', 'not permitted', 'pending', 'cannot', 'مشكلة', 'لماذا', 'غير مسموح', 'معلّق'],
   },
 ] as const;

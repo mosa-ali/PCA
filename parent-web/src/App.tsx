@@ -64,12 +64,8 @@ export default function App() {
         <Route path="login" element={<Login />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
-        {/* PCA-DEC-037 authenticator-app setup and lost-authenticator
-            recovery. OUTSIDE AppLayout on purpose: mandatory setup runs on an
-            enrollment ticket with NO session (AppLayout would bounce it to
-            /login), and AppLayout itself redirects a SETUP_REQUIRED session
-            here, so nesting it would redirect-loop. A signed-in parent in the
-            grace period reaches the same page from the console reminder. */}
+        {/* Authenticator setup and lost-authenticator recovery. Setup is
+            optional for a signed-in parent and ticket-based after recovery. */}
         <Route path="mfa/setup" element={<MfaSetup />} />
         <Route path="mfa/recover" element={<MfaRecover />} />
       </Route>

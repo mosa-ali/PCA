@@ -9,7 +9,6 @@
 // for why PENDING_TRUSTED_DECRYPTION covers BOTH "no trusted browser yet"
 // and "envelopes exist but decryption is unavailable" -- Audit.tsx must
 // never distinguish these two honest-pending cases from each other.
-import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import type { AuditTrailFeedResult, FamilyAuditDeliveryClient } from '../interfaces';
 import type { FamilyAuditEnvelopeDecryptionBoundary, OpaqueFamilyAuditEnvelope } from '../familyAuditDecryption';
 import { cookieSessionFamilyId } from './realBillingClient';
@@ -30,22 +29,20 @@ function isOpaqueEnvelope(value: unknown): value is OpaqueFamilyAuditEnvelope {
 }
 
 export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient {
+  private readonly decryption: FamilyAuditEnvelopeDecryptionBoundary;
   constructor(
     private readonly apiBaseUrl: string,
-    private readonly trustedBrowser: TrustedBrowserProvider,
-    private readonly decryption: FamilyAuditEnvelopeDecryptionBoundary,
-  ) {}
+    decryptionOrLegacyAuthority: FamilyAuditEnvelopeDecryptionBoundary | unknown,
+    legacyDecryption?: FamilyAuditEnvelopeDecryptionBoundary,
+  ) {
+    this.decryption = legacyDecryption ?? decryptionOrLegacyAuthority as FamilyAuditEnvelopeDecryptionBoundary;
+  }
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
   }
 
   async list(): Promise<AuditTrailFeedResult> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED' || !snapshot.actorDeviceSessionToken) {
-      return { status: 'PENDING_TRUSTED_DECRYPTION' };
-    }
-
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) return { status: 'PENDING_TRUSTED_DECRYPTION' };
 
@@ -53,7 +50,7 @@ export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient 
     try {
       const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/audit-events`), {
         credentials: 'include',
-        headers: { Accept: 'application/json', Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` },
+        headers: { Accept: 'application/json' },
       });
       if (!response.ok) return { status: 'PENDING_TRUSTED_DECRYPTION' };
       const body: unknown = await response.json();
