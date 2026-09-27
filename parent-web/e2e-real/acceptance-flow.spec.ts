@@ -106,9 +106,15 @@ async function loginWithMfa(page: import('@playwright/test').Page, email: string
  * API here keeps it from spending the shared per-IP authenticated-request
  * budget on dashboard capability reads before the boundary request runs.
  */
-async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+async function loginViaApi(
+  page: import('@playwright/test').Page,
+  email: string,
+  password: string,
+  dailyLoginGrant: string,
+  headers: Record<string, string> = {},
+) {
   await addDailyLoginGrant(page.context(), dailyLoginGrant);
-  const response = await page.request.post('/api/parent/login', { data: { email, password } });
+  const response = await page.request.post('/api/parent/login', { data: { email, password }, headers });
   expect(response.status(), 'real API login must establish the disposable fixture session').toBe(200);
   expect(await response.json()).toMatchObject({ sessionEstablished: true });
 }
@@ -248,20 +254,25 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
 // genuinely a second identity, not reusable session state.
 test.describe('PPR-2 cross-family isolation -- real backend', () => {
   test("a second family's session cannot read or create against the first family's id", async ({ page }) => {
+    // This suite runs after the long owner-flow browser journey against one
+    // disposable backend. The certified E2E backend explicitly trusts only
+    // its loopback Vite proxy, so give this independent client a separate
+    // forwarded address and a fresh per-IP authenticated-request budget.
+    const isolationClientHeaders = { 'x-forwarded-for': '198.51.100.42' };
     // This is intentionally an API/session-boundary test rather than a second
     // full dashboard navigation. The owner flow and realBackend.spec.ts cover
     // the UI login; this test must reserve the backend's shared authenticated
     // request budget for the two cross-family authorization decisions.
-    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!);
-    const meRes = await page.request.get('/api/parent/session');
+    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!, isolationClientHeaders);
+    const meRes = await page.request.get('/api/parent/session', { headers: isolationClientHeaders });
     expect(meRes.status()).toBe(200);
     const ownFamilyId = (await meRes.json()).familyId as string;
 
-    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_DAILY_LOGIN_GRANT!);
-    const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`);
+    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_DAILY_LOGIN_GRANT!, isolationClientHeaders);
+    const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`, { headers: isolationClientHeaders });
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 
-    const crossCreate = await page.request.post(`/v1/families/${ownFamilyId}/children`, { data: {} });
+    const crossCreate = await page.request.post(`/v1/families/${ownFamilyId}/children`, { data: {}, headers: isolationClientHeaders });
     expect(crossCreate.status(), 'cross-family CREATE must be 403').toBe(403);
   });
 });

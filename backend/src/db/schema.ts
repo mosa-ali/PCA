@@ -2559,7 +2559,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0059_parent_mfa_ascii_check_literal_charset.sql"],
     ownerModule: "backend/src/parentaccount/mfa",
     columns: [
       { name: "ticket_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },

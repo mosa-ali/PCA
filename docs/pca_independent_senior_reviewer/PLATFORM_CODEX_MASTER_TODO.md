@@ -431,3 +431,9 @@ PARENT_LIVE = Migrations 0051–0058 are applied and reconciled on `pca_pro`; 00
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform source, database, deployment, activation, or owner acceptance changed in this checkpoint.
 NEXT_ACTION = Source `fbba783d` and ledger sync `578dc0bb` are published; fresh fetch/local/GitHub heads match and required files are present remotely. Quality Gates run `36358762949` is PENDING at `578dc0bb`; wait for the final ledger-sync head’s result before Parent TODO-20 final live verification, keeping dependent Platform activation held.
 PRIOR_CI = Exact-head Quality Gates run `36356186069` completed SUCCESS at `399304c080e82c36719e4d5bf34953444181ecb8`; local, fetched tracking and live GitHub refs matched at this SHA. This prior CI pass does not cover the new 0059 checkpoint.
+
+### 2026-09-27 23:43 UTC — Parent TODO-20 CI gate remains closed
+
+PARENT_CI = Exact-head run `36358827739` at `c71546343db8ef982b28d432711058db6c5d7a80` FAILED: disposable MySQL full DB certification passed, while canonical migration provenance had one backend unit failure and the Parent real-backend cross-family CREATE check hit 429 after a shared per-IP budget was consumed. Android and iOS passed. Parent corrections add migration trace metadata and isolate only the disposable E2E clients behind the explicitly trusted loopback test proxy; corrective CI is pending.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform source, live data, activation, deployment, or owner acceptance changed.
+NEXT_ACTION = Require the corrective Parent exact-head Quality Gates run to pass, then continue Parent TODO-20 immediate-preflight/schema/grant reconciliation and preserve the dependent Platform hold.

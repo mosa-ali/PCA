@@ -1286,7 +1286,7 @@ CREATE TABLE `parent_daily_login_grants` (
   CONSTRAINT `parent_daily_login_grants_purpose_check` CHECK ((`purpose` = _ascii'PARENT_DAILY_LOGIN'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_mfa_enrollment_tickets (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)
+-- parent_mfa_enrollment_tickets (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql, altered by 0059_parent_mfa_ascii_check_literal_charset.sql)
 CREATE TABLE `parent_mfa_enrollment_tickets` (
   `ticket_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
