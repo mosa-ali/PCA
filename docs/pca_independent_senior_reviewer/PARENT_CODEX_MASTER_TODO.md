@@ -662,3 +662,10 @@ NEXT_ACTION = Review the narrow source/workflow/artifact changes, sync both ledg
 PUBLISHED = Commit `6d368042a21d4e5fbc6b69f440c69c3858e7db8b` contains only the seven reviewed source/workflow/bootstrap/ledger paths. Fast-forward push to `origin/pca-dev` succeeded; after fetch, local HEAD, `origin/pca-dev`, and `git ls-remote` all equal `6d368042a21d4e5fbc6b69f440c69c3858e7db8b`. Unrelated dirty `backend/schema/current_schema.sql`, `backend/schema/schema_manifest.json`, `.vscode/`, and root `0` remain excluded.
 CI = Exact-head Quality Gates run `36359758120` was queued for source checkpoint `6d368042`; ledger-only publication is being prepared and requires its own latest-head run before any live mutation.
 NEXT_ACTION = Complete the ledger sync, verify remote equality and required path presence, then inspect the resulting exact-head run. TODO-20 live 0059 remains gated on exact-head PASS plus immediate preflight.
+
+### 2026-09-27 23:50 UTC — TODO-20 corrective validation refresh
+
+LOCAL_E2E = Retried `npm run test:e2e:parent:real` against disposable local MySQL 8.4.11 after the initial worker launch returned `spawn EPERM`. The elevated retry built the backend, passed the 57-migration DB gate, provisioned and then removed its run-owned disposable database, but Playwright's configured web server did not become ready within 60 seconds. This wrapper runs `realBackend.spec.ts`; it did not execute the changed `acceptance-flow.spec.ts`. Classify as local harness/environment failure, not a product or corrective-test PASS. No live DB was contacted.
+REMOTE_CI = Exact-head Quality Gates run `36359820131` for ledger-sync head `a97de7545ca61b0ee662b0808f9b1f9c9773da63` remains IN_PROGRESS; no completed failures reported at this check. A ledger-only sync will require fresh exact-head CI on the resulting head.
+TODO20_GATE = Live migration 0059 remains unapplied pending an exact-head CI PASS and immediate fresh live preflight.
+NEXT_ACTION = Publish this validation update, inspect the resulting latest-head Quality Gates run, and proceed only when the exact head passes.

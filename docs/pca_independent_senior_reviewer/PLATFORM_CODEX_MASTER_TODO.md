@@ -443,3 +443,9 @@ NEXT_ACTION = Require the corrective Parent exact-head Quality Gates run to pass
 PARENT_PUBLISHED = Commit `6d368042a21d4e5fbc6b69f440c69c3858e7db8b` contains only the reviewed Parent fixes, generated bootstrap comments, and mission ledger checkpoint. Fetch verification matched local, `origin/pca-dev`, and server branch refs exactly. Parent exact-head run `36359758120` is queued for this source SHA; ledger sync will require latest-head verification as well.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform implementation, database, deployment, activation, or owner acceptance changed.
 NEXT_ACTION = Finish ledger publication and exact-head CI verification before resuming live Parent TODO-20 reconciliation. Keep the dependent Platform hold.
+
+### 2026-09-27 23:50 UTC — Parent validation update; Platform remains held
+
+PARENT_CI = Quality Gates run `36359820131` at `a97de7545ca61b0ee662b0808f9b1f9c9773da63` remains in progress. The local Parent real-backend wrapper reached its MySQL 8.4.11/57-migration gate and cleaned up its run-owned DB, but the preview web server timed out before browser tests; this is not a pass and did not execute the changed acceptance-flow spec.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform change or live mutation occurred.
+NEXT_ACTION = Publish the factual Parent validation update, then require a passing exact-head CI result before TODO-20 live preflight/migration and dependent Platform work.
