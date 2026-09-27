@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 21:52 UTC
-LOCAL_HEAD = 85fd9bdee7f1d6acda70c411af22ddf1005423ec  
+LAST_UPDATED_UTC = 2026-09-27 21:53 UTC
+LOCAL_HEAD = 7a62fe603c7c09358321bdecace20fd544f5da44  
 REMOTE_HEAD = 85fd9bdee7f1d6acda70c411af22ddf1005423ec  
-CURRENT_CHECKPOINT_SHA = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
+CURRENT_CHECKPOINT_SHA = 7a62fe603c7c09358321bdecace20fd544f5da44  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Correct the stale dashboard-state assertion found by exact-head run `36352633376`, validate and publish the fix, then inspect its exact-head CI. Continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Publish implementation checkpoint `7a62fe60` and this ledger update, then inspect its exact-head CI. Continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -598,3 +598,9 @@ CI = Exact-head Quality gates run `36352633376` at `85fd9bdee7f1d6acda70c411af22
 PARENT_FIX = Updated the browser regression to assert the current fail-closed notice after navigation and reload while still asserting the retired “Set up this browser” action is absent. Local validation and a new exact-head run are pending.
 TODO20 = Existing owner authorization remains. CI full DB suite passed on disposable MySQL; this does not close local MySQL 8.4 or live `pca_pro`/grant reconciliation. No live DB was inspected or mutated.
 NEXT_ACTION = Run Parent Web typecheck/lint and Playwright collection, commit the assertion/ledger correction, push and verify, then inspect new exact-head CI.
+
+### 2026-09-27 21:53 UTC — current dashboard copy assertion corrected locally
+
+CHECKPOINT = `7a62fe603c7c09358321bdecace20fd544f5da44` commits the Parent E2E assertion correction and both mission ledgers. Parent Web typecheck/lint PASS; real config collection PASS (12 tests). This change is local-only pending publication.
+EXPECTED_UI = After the MFA/invitation journey and reload, assert the current `Not available yet` heading and the truthful protected-data-unavailable sentence; continue asserting the retired `Set up this browser` action is absent.
+NEXT_ACTION = Publish checkpoint `7a62fe60` and this ledger sync, verify local/tracking/remote SHA equality, then inspect its exact-head browser E2E.
