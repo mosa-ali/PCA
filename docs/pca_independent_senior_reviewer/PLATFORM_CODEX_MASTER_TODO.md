@@ -5,16 +5,16 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 20:23 UTC
-LOCAL_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
-REMOTE_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
-CURRENT_CHECKPOINT_SHA = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
+LAST_UPDATED_UTC = 2026-09-27 20:30 UTC
+LOCAL_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
+REMOTE_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
+CURRENT_CHECKPOINT_SHA = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent publishes and validates the corrective checkpoint, then resolves MySQL 8.4/live DB gates and owner acceptance. Parent's enrollment-state correction and local migration reconciliation are ongoing; Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
+NEXT_ACTION = Keep Agents 6/7 held while corrected Parent exact-head run `36348261937` completes, then resolve MySQL 8.4/live DB gates and owner acceptance. Parent's corrective checkpoint is pushed; Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
 
-This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, and publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`. Quality Gates run `36338197362` at `8f3f45b4` failed. No CI PASS is inferred.
+This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, and corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`. Corrected exact-head Quality Gates run `36348261937` is in progress; no CI PASS is inferred.
 
 ## Parent Dependency
 
@@ -153,8 +153,8 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Local=remote at `114b784e`; exact Quality Gates run `36337595300` is pending at that SHA; prior payload run `36337455750` is in progress at `3d31cb5b`.  
-BLOCKER = Exact-head CI run `36338197362` failed; Platform Enrollment changes are still held.  
+EVIDENCE = Corrective Parent checkpoint `0ba4c0d8` is pushed and local/remote aligned; exact-head Quality Gates run `36348261937` is in progress. Previous run `36338197362` failed; Platform Enrollment changes are still held.  
+BLOCKER = Fresh exact-head CI and Parent owner gates remain pending; Platform Enrollment changes are still held.  
 DONE_WHEN = local=remote and exact-head CI PASS
 
 ### PLATFORM-14 — Refresh rollback baseline
@@ -204,14 +204,14 @@ CLEAN_SNAPSHOT = NOT RUN
 
 ## Git
 
-LOCAL_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
-REMOTE_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
+LOCAL_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
+REMOTE_HEAD = 0ba4c0d8c5631283267c0af2a8dc6046bd4c0552  
 LOCAL_REMOTE_EQUAL = YES (fresh fetch)  
 PLATFORM_FILES_CHANGED = 0 uncommitted Platform paths; the two current Platform commits are pushed  
 PLATFORM_LOCAL_ONLY_FILES_REMAINING = 0 for existing scope  
 PLATFORM_UNPUSHED_COMMITS_REMAINING = 0  
 PLATFORM_COMMIT = `24603231`, `2fde86de` in checkpoint; additional backend projection is included in the integrated Parent backend commit  
-EXACT_HEAD_CI = FAILED (`36338197362` at `8f3f45b4`)
+EXACT_HEAD_CI = IN_PROGRESS (`36348261937` at `0ba4c0d8`); previous run `36338197362` FAILED at `8f3f45b4`
 
 ## Rollback Baseline
 
@@ -240,9 +240,9 @@ PLATFORM_WORK_PACKAGE_STATUS = HOLD_PARENT_DEPENDENCY
 
 CURRENT_P0 = NOT_YET_PROVEN (fresh severity re-review not complete)  
 CURRENT_P1 = NOT_YET_PROVEN (revalidate pre-production reports before release)  
-CURRENT_P2 = Enrollment Name/Email/Phone remains unimplemented; exact-head CI pending; MySQL unavailable; dependent Platform work remains held.  
-BLOCKERS = Parent TODO-17 integration; TODO-18 literal owner localhost acceptance; current exact-head CI; Docker/MySQL availability; schema/grant reconciliation; existing device crypto/trust gates.  
-NEXT_ACTION = Monitor run 36338197362 for SHA 8f3f45b4. Do not activate Agents 6/7 until the Parent gate is satisfied. Once activated, implement Enrollment projection consumption and columns, then focused/full tests, lint/build, clean snapshot and exact-head CI.
+CURRENT_P2 = Enrollment Name/Email/Phone remains unimplemented; exact-head CI pending; MySQL 8.4 validation unavailable (local MySQL 9.7 only); dependent Platform work remains held.  
+BLOCKERS = Parent TODO-17 integration; TODO-18 literal owner localhost acceptance; current exact-head CI; MySQL 8.4 and live database target; schema/grant reconciliation; existing device crypto/trust gates.  
+NEXT_ACTION = Monitor run 36348261937 for SHA 0ba4c0d8. Do not activate Agents 6/7 until the Parent gate is satisfied. Once activated, implement Enrollment projection consumption and columns, then focused/full tests, lint/build, clean snapshot and exact-head CI.
 
 ## Checkpoint History
 
@@ -316,3 +316,10 @@ PARENT_CI = Exact-head run 36338197362 remains FAILED at 8f3f45b4; `gh` read acc
 PARENT_BROWSER = Enrollment/export specs now complete their operation-bound demo TOTP prompts; retired trusted-browser route spec expects its dashboard redirect. Playwright collection lists 17 tests across the edited three files; browser bodies have not been rerun.
 PARENT_DB = Disposable MySQL 9.7 remains local-only. Platform stays on HOLD_PARENT_DEPENDENCY; no Platform files beyond its ledger and no Platform database/deployment work changed.
 NEXT_ACTION = Keep Platform hold. Review/publish the Parent corrective checkpoint, then validate exact-head CI before asking for literal localhost acceptance.
+
+### 2026-09-27 20:30 UTC — Parent corrective checkpoint publication
+
+PARENT_CHECKPOINT = `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552` fast-forward pushed and verified with fetch; local HEAD = origin/pca-dev = GitHub ref. Both master TODO files are present remotely.
+PARENT_CI = Corrected exact-head run `36348261937` is in progress; no pass inferred. Parent TODO-20 MySQL 8.4 and live `pca_pro` target gates remain open.
+PLATFORM = HOLD_PARENT_DEPENDENCY remains unchanged. No Platform product source, database, deployment or owner UAT changed.
+NEXT_ACTION = Maintain Platform hold until Parent CI, TODO-17, TODO-20 and literal localhost acceptance gates are satisfied.
