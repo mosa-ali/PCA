@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 22:37 UTC  
-LOCAL_HEAD = 102192b31c1e883198ec68343064427697fbbfaa (Platform E2E correction; ledger sync pending)  
-REMOTE_HEAD = d32fc1b729aee263f9aaf1d9d501ad0622950314 (last verified before current source commit)  
-CURRENT_CHECKPOINT_SHA = 102192b31c1e883198ec68343064427697fbbfaa (ledger sync pending)  
+LAST_UPDATED_UTC = 2026-09-27 23:21 UTC
+LOCAL_HEAD = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (TODO-20 migration checkpoint; ledger sync and publication pending)
+REMOTE_HEAD = 399304c080e82c36719e4d5bf34953444181ecb8 (last fetched and verified)
+CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and live DB schema phase)  
-NEXT_ACTION = Publish source checkpoint `102192b3` with these ledger updates, verify remote equality, rerun exact-head CI, then continue TODO-20 live reconciliation only when TODO-19's exact-head CI gate passes; keep schedule-policy/Web Rules fail-closed.
+CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 (0059 exact-head CI plus final live schema/grant reconciliation)
+NEXT_ACTION = Publish this 0059 checkpoint with both updated master ledgers, verify remote equality, and inspect exact-head CI. If CI passes, repeat live preflight immediately before applying 0059 to `pca_pro`; compare exact schema, data row counts, and grants, then continue the same TODO board. Keep schedule-policy/Web Rules fail-closed.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -228,8 +228,8 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Ledger-sync checkpoint `47d564c4af1fd6535dd1c9211cbf9c06a46970fb` is fast-forward pushed to `origin/pca-dev`; post-push fetch and GitHub ref both confirmed equal heads, and both master TODO files exist remotely. Exact-head run `36348596733` completed FAILED at this SHA. Current corrective workflow/component changes are local and pending publication.  
-BLOCKER = Fresh exact-head CI must verify the current corrections; overall TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation.  
+EVIDENCE = Checkpoint `399304c080e82c36719e4d5bf34953444181ecb8` (Platform real-backend E2E correction plus both master TODO ledgers) is fast-forward pushed to `origin/pca-dev`; post-push fetch, tracking ref and `git ls-remote` agree. Exact-head Quality Gates run `36356186069` completed SUCCESS at this SHA with all jobs passing. Source correction `102192b3` and ledgers are published; unrelated dirty paths remain excluded.
+BLOCKER = Exact-head CI gate is PASS. Remaining TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation; this does not block the separately authorized TODO-20 schema reconciliation.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
 LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (current committed baseline; corrective changes are local)  
 REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (fetch + GitHub ref verified)  
@@ -239,24 +239,24 @@ EXACT_HEAD_CI = FAILED (`36348596733` at `47d564c4`); previous run `36338197362`
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
-STATUS = IN_PROGRESS (local MySQL 8.4 reconciliation PASS; live mutation held by TODO-19 exact-head CI)  
+STATUS = IN_PROGRESS (0051–0058 live migration PASS; corrective 0059 local validation PASS; exact-head CI and 0059 live preflight pending)
 OWNER = Coordinator  
 FILES = Repository schema/migrations, local PCA DB, live `pca_pro`, runtime grants  
 AUTHORIZATION = Owner reminder received 2026-09-27: full repository/local/live pca_pro/runtime-grant reconciliation is approved; ordinary additive/corrective migrations may proceed only after local test and fresh live preflight.  
-EVIDENCE = Canonical `schema.ts` + migrations through 0058 declare 92 tables, 792 columns, 104 foreign keys, 92 primary keys, 38 unique non-primary indexes, 141 non-unique indexes, and 282 checks. A fresh isolated MySQL 8.4.11 server now passes the complete from-zero migration/privacy/environment gate (56 migrations, 92 expected tables, canonical text collations). A separate no-row upgrade fixture applied migrations through 0050, then the official migration runner applied 0051–0058; journal=56, tables=92, and checked family/Parent fixture row counts remain 0. Parent MySQL auth/authority suite: 61 passed, 0 failed, 3 expected privileged-mode skips; Platform Admin DB suite: 11/11 passed; dedicated Parent grant acceptance: 3/3; Platform audit grant acceptance: 5/5. The earlier migration/index drift is corrected by 0058. Fresh live `pca_pro` read-only metadata remains 92 tables, 782 columns, 102 FKs, 92 PKs, 38 unique indexes, 138 non-unique indexes, and 278 checks; journal ends at 0050. The absent 0051–0058 effects account for 10 columns, 2 FKs, 3 non-unique indexes, and 4 checks. Live runtime table grants match the repository plan exactly (92/92, no missing/extra/mismatched grants); `parent_account_security_events` is intentionally INSERT-only, so its row contents/count are inaccessible through the runtime account. Live enforced 0050 event and operation CHECK clauses are strict subsets of 0051/0054/0055 allowlists; their new checks preserve all values admitted by the old checks. No live DDL, data, or grants were changed.  
+EVIDENCE = Canonical schema + migrations through 0059 declare 92 tables, 792 columns, 104 foreign keys, 92 primary keys, 38 unique non-primary indexes, 141 non-unique indexes, and 282 checks. Isolated MySQL 8.4.11 from-zero verification passed with 57 migrations; Parent target passed 61 tests with 3 expected privileged-mode skips; Platform Admin target passed 11/11. Focused migration-upgrade safety tests passed 3/3, including 0059 conversion of the two historical cp850 checks to the actual canonical clauses (`purpose` `_ascii`, hash `_utf8mb4`), enforced state, row-count preservation, and replay. Generated canonical schema and bootstrap artifacts were rebuilt from repository migrations plus local SHOW CREATE introspection. Live official runner applied 0051–0058; postflight reports journal=56, 92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique indexes, 141 non-unique indexes, and 282 checks. Exact object-by-object row-count comparison passed for 90 application tables; the journal increased by the expected eight rows and `parent_account_security_events` remains unreadable through the runtime identity. The 7 Parent identity columns were null across 3 existing Parent rows; Family epoch=1 for the existing family; actor fields null with zero approval requests. One index, two Parent actor FKs, and six enforced Parent checks were verified. Live runtime grants remained exact at 92/92 after 0051–0058. A historical literal-charset difference remained in the two 0049 checks; corrective 0059 is locally tested and committed, awaiting exact-head CI and fresh live preflight/application. No live changes from 0059 have occurred.
 LOCAL_SERVICE_REPAIR = Downloaded official MySQL 8.4.11 Windows archive and verified its published MD5; extracted and initialized a loopback-only instance on 127.0.0.1:33361 under a fresh OS-temp datadir. No installed MySQL service or existing datadir was started or touched. Local DB harness uses only disposable databases and test-only credentials; no live credentials/data were used locally.  
 PCA_PRO_TARGET = VERIFIED read-only at Azure MySQL Flexible Server `pca-mysql.mysql.database.azure.com` / database `pca_pro`, version `8.4.9-azure`; TLS cipher `TLS_AES_256_GCM_SHA384`. The API CNAME points to a hostname absent from the listed App Services; API owner remains unidentified.  
-BLOCKER = Exact-head run `36354470524` at `d32fc1b7` failed only Platform Admin real-backend E2E: lookup correctly returned eligible before the first entitlement read lazily created the FREE_STARTER row; its second-state assertion was premature. Correction is committed locally at `102192b3`; the full local Platform real-browser + Fastify + MySQL flow now passes 1/1, including the second lookup's ALREADY_ENTITLED result. Publish and obtain exact-head CI PASS before any live DDL; TODO-19 remains the live mutation gate. Live schema mismatch is proven and runtime grants match exactly. A fresh live preflight must be repeated immediately before any authorized mutation.  
+BLOCKER = Exact-head CI for local checkpoint `fbba783d` is pending. On pass, perform fresh live read-only preflight immediately before 0059; live application through 0058 is complete and verified.
 DONE_WHEN = repository schema matches local DB and pca_pro; required migration locally tested and live-applied if required; grants match; no seed data  
 NO_SEED_DATA = YES (no test fixtures or application rows; only migration-required reference data)  
 DATA_LOSS = 0  
 NO_BLIND_DB_PUSH = YES  
-LOCAL_TEST_FIRST = PASS on disposable MySQL 8.4.11: from-zero 56-migration verify; 0050→0058 upgrade; Parent 61/0/3skip; Platform 11/11; Parent grant 3/3; Platform grant 5/5  
+LOCAL_TEST_FIRST = PASS on disposable MySQL 8.4.11: from-zero 57-migration verify; focused migration-upgrade 3/3; Parent 61/0/3skip; Platform 11/11; prior dedicated Parent grant 3/3 and Platform grant 5/5
 LIVE_PREFLIGHT_BEFORE_MUTATION = YES  
-REPOSITORY_SCHEMA_MATCH_AFTER = PASS locally through the MySQL 8.4.11 migration/environment gate; live `pca_pro` still differs until 0051–0058 are applied.  
-LOCAL_DB_SCHEMA_MATCH_AFTER = PASS for fresh and 0050-upgrade MySQL 8.4.11 disposable schemas (56 migrations, 92 tables, canonical collation checks).  
-LIVE_PCA_PRO_SCHEMA_MATCH_AFTER = NO; fresh read-only metadata is short by 10 columns, 2 FKs, 3 non-unique indexes, and 4 checks; journal ends at 0050.  
-LIVE_GRANTS_MATCH_AFTER = PASS; 92 expected/92 present, exact, no broad grants. `parent_account_security_events` is intentionally INSERT-only per plan; do not treat its denied SELECT as a mismatch.  
+REPOSITORY_SCHEMA_MATCH_AFTER = PARTIAL; the two corrected local expressions match MySQL 8.4.11 SHOW CREATE, and generated bootstrap artifacts pass `--check`; full structural local/live comparison awaits live 0059.
+LOCAL_DB_SCHEMA_MATCH_AFTER = PASS; fresh Parent/Platform databases applied all 57 migrations; post-0059 local snapshot has canonical totals and normalized checks.
+LIVE_PCA_PRO_SCHEMA_MATCH_AFTER = PARTIAL; migration/count/data effects through 0058 pass, with only the two proven 0049 literal-check expressions pending 0059.
+LIVE_GRANTS_MATCH_AFTER = PASS after live 0051–0058; 92 expected/92 present, exact, no broad grants. Reverify after 0059. `parent_account_security_events` is intentionally INSERT-only per plan; do not treat its denied SELECT as a mismatch.
 LOCAL_RUNTIME_GRANTS = PASS (92/92 exact table grants; zero broad/elevated grants on disposable local principal)
 
 ### TODO-21 — Azure deployment
@@ -423,11 +423,11 @@ CURRENT_P2 = Schedule-policy Trust Set authority; web-rule `503 not_configured`;
 
 ## Blockers
 
-BLOCKERS = Docker unavailable; local MySQL 9.7 passes migration checks but is not MySQL 8.4; live `pca_pro` schema/grants remain uninspected because no verified target is configured; exact-head CI run `36338197362` failed and GitHub is unreachable through current proxy; integrated browser/mobile/owner tests remain open; schedule-policy and web-rule production authority remain fail-closed; device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by the checkpoint.
+BLOCKERS = Exact-head CI for the new 0059 checkpoint and final live 0059 schema/grant comparison remain open; integrated browser/mobile/owner tests remain open; schedule-policy and web-rule production authority remain fail-closed; device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by the checkpoint.
 
 ## Next Action
 
-NEXT_ACTION = Resolve failed Quality Gates and obtain corrected exact-head results; reproduce browser failures under CI env; run schema/migration equivalence on MySQL 8.4; verify the read-only `pca_pro` target before any live action. Continue TODO-12/15 and keep Platform Enrollment held until Parent TODO-01…17, TODO-16 projection and TODO-18 literal acceptance pass.
+NEXT_ACTION = Publish and obtain exact-head CI for 0059; after CI PASS, repeat live preflight, apply 0059, and verify exact schema/data/grants. Then resume the earliest unfinished Parent TODO and keep Platform Enrollment held until Parent TODO-01…17, TODO-16 projection and TODO-18 literal acceptance pass.
 
 ## Checkpoint History
 
@@ -634,3 +634,17 @@ TODO20_LIVE_READ_ONLY = Fresh identity remains `pca-mysql.mysql.database.azure.c
 LIVE_GATE = No pca_pro mutation until TODO-19 exact-head CI passes. Run `36354470524` is FAILED solely at Platform Admin real-backend E2E; all other jobs passed. The correction is local in `102192b3`, and exact-head CI for that correction is pending publication. Repeat live preflight immediately before any eventual live mutation; preserve no-seed/data-loss requirements.
 GIT = Current local source `102192b3`; last remote `origin/pca-dev` verified at `d32fc1b7` before this commit. Only the two mission ledgers remain to sync; generated schema snapshots, `.vscode/`, and root fragment `0` remain excluded.
 NEXT_ACTION = Publish this source checkpoint and ledger sync, inspect the new exact-head CI result, then resume TODO-20 live migration/grant reconciliation only after the TODO-19 gate permits it.
+
+### 2026-09-27 22:50 UTC — exact-head CI passed; TODO-20 live mutation gate open
+
+CI = Quality Gates run `36356186069` completed SUCCESS at `399304c080e82c36719e4d5bf34953444181ecb8`; no failed jobs. The run includes the Platform real-backend browser correction and the current published master TODO ledgers. `git fetch origin pca-dev`, local HEAD, `origin/pca-dev`, and `git ls-remote origin refs/heads/pca-dev` all matched at this SHA.
+TODO20 = Local MySQL 8.4.11 full-from-zero and 0050→0058 upgrade tests, Parent/Platform DB regressions, and both dedicated runtime-grant suites are PASS as recorded above. Live remains read-only at this point. Since TODO-19 exact-head CI now passes and the target is verified, proceed with a fresh immediate pca_pro preflight before any live migration; do not use local test credentials/data for live access.
+NEXT_ACTION = Run and inspect the fresh live preflight; if target, schema journal, check compatibility, row-count baseline, and runtime grant-plan checks remain as proven, apply the official migration runner for 0051–0058 and verify schema, row preservation, and grants. Stop before any destructive or unexpected state.
+
+### 2026-09-27 23:21 UTC — TODO-20 corrective migration locally validated
+
+SOURCE = Local commit `fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29` adds additive/corrective migration 0059 for the two proven literal-charset drifts, updates canonical schema from local MySQL 8.4.11 SHOW CREATE output, and regenerates schema/bootstrap artifacts. No business-row DML or seeds are in 0059.
+LOCAL = MySQL 8.4.11 from-zero gate passed at 57 migrations. Focused upgrade-safety suite passed 3/3 after simulating historical cp850 check clauses; both checks remain enforced, the ticket row count is unchanged, and migration replay is stable. Parent DB target passed 61/0/3 expected skip; Platform Admin DB target passed 11/11. Initial broad-suite attempts caught and corrected a test expectation about MySQL’s stored purpose literal (`_ascii`) versus the hash literal (`_utf8mb4`); the focused final regression passes.
+LIVE = `pca_pro` already applied 0051–0058 after fresh preflight. Postflight journal=56 and schema totals match repository (92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique indexes, 141 non-unique indexes, 282 checks); exact application row-count comparison passed for 90 readable tables; runtime grants are exact 92/92. The 0059 two-check reconciliation has not been applied live.
+GATE = Exact-head CI for `fbba783d` and publication are pending. No live work before exact-head CI PASS and a fresh immediate preflight. Preserve NO_SEED_DATA=YES and DATA_LOSS=0.
+NEXT_ACTION = Commit/push this ledger update with the source checkpoint, verify remote equality and exact-head CI, then apply/verify 0059 live under the existing authorization and continue the same TODO board.
