@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { createHmac } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 /**
  * PPR-2 Step 5: the owner's exact acceptance flow, against the REAL local
@@ -25,19 +28,76 @@ const PRIMARY_DAILY_LOGIN_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
 const SECOND_EMAIL = process.env.E2E_REAL_SECOND_PARENT_EMAIL;
 const SECOND_PASSWORD = process.env.E2E_REAL_SECOND_PARENT_PASSWORD;
 const SECOND_DAILY_LOGIN_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
+const MFA_EMAIL = process.env.E2E_REAL_MFA_PARENT_EMAIL;
+const MFA_PASSWORD = process.env.E2E_REAL_MFA_PARENT_PASSWORD;
+const MFA_TOTP_SECRET = process.env.E2E_REAL_MFA_PARENT_TOTP_SECRET;
+const MFA_ENROLLMENT_COUNTER_RAW = process.env.E2E_REAL_MFA_PARENT_TOTP_ENROLLMENT_COUNTER;
+const MFA_ENROLLMENT_COUNTER = /^\d+$/.test(MFA_ENROLLMENT_COUNTER_RAW ?? '') ? Number(MFA_ENROLLMENT_COUNTER_RAW) : Number.NaN;
 test.skip(
   !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !PRIMARY_DAILY_LOGIN_GRANT
-    || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_DAILY_LOGIN_GRANT,
-  'real-backend acceptance flow requires both disposable parent fixtures.',
+    || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_DAILY_LOGIN_GRANT
+    || !MFA_EMAIL || !MFA_PASSWORD || !MFA_TOTP_SECRET || !Number.isSafeInteger(MFA_ENROLLMENT_COUNTER),
+  'real-backend acceptance flow requires the disposable primary, second, and enrolled-MFA Parent fixtures.',
 );
 // owner-a/owner-b are pre-seeded with an existing enrollment_invitations row
-async function login(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
-  await addDailyLoginGrant(page.context(), dailyLoginGrant);
+function decodeBase32(value: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of value.replace(/=+$/g, '').toUpperCase()) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error('The E2E authenticator secret is not valid base32.');
+    bits += digit.toString(2).padStart(5, '0');
+  }
+  const bytes: number[] = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  return Buffer.from(bytes);
+}
+
+function totp(secret: string, at = Date.now()): { code: string; counter: number } {
+  const counter = Math.floor(at / 30_000);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', decodeBase32(secret)).update(message).digest();
+  const offset = digest[digest.length - 1]! & 0x0f;
+  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
+  return { code: String(binary % 1_000_000).padStart(6, '0'), counter };
+}
+
+async function currentTotp(secret: string): Promise<{ code: string; counter: number }> {
+  while (30_000 - (Date.now() % 30_000) <= 3_000) await new Promise((resolve) => setTimeout(resolve, 500));
+  return totp(secret);
+}
+
+async function waitForNextTotpCounter(usedCounter: number): Promise<void> {
+  while (Math.floor(Date.now() / 30_000) <= usedCounter) await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+function setLoginStepUpCode(email: string): string {
+  const code = '481926';
+  execFileSync(
+    process.execPath,
+    ['scripts/e2e-support/parentE2eSupport.mjs', 'set-login-step-up-code', email, code],
+    { cwd: resolve(process.cwd(), '../backend'), env: process.env },
+  );
+  return code;
+}
+
+async function loginWithMfa(page: import('@playwright/test').Page, email: string, password: string, totpSecret: string): Promise<number> {
+  await page.context().clearCookies();
   await page.goto('/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.locator('input[name="emailCode"]')).toBeVisible();
+  await page.locator('input[name="emailCode"]').fill(setLoginStepUpCode(email));
+  await page.locator('form button[type="submit"]').click();
+  await expect(page.locator('input[name="totpCode"]')).toBeVisible();
+  await waitForNextTotpCounter(MFA_ENROLLMENT_COUNTER);
+  const loginCode = await currentTotp(totpSecret);
+  await page.locator('input[name="totpCode"]').fill(loginCode.code);
+  await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/dashboard/);
+  return loginCode.counter;
 }
 
 /**
@@ -65,9 +125,13 @@ async function addDailyLoginGrant(context: import('@playwright/test').BrowserCon
 }
 
 test.describe('PPR-2 owner acceptance flow -- real backend, one continuous session', () => {
-  test('login -> new family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
+  test('login -> provisioned empty family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
+    // The first-login and invitation-step-up TOTP codes must use counters
+    // newer than their previous accepted counters. Each may legitimately wait
+    // for the next 30-second authenticator window on a slower CI runner.
+    test.setTimeout(120_000);
     // 1. login
-    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!);
+    let usedTotpCounter = await loginWithMfa(page, MFA_EMAIL!, MFA_PASSWORD!, MFA_TOTP_SECRET!);
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -116,6 +180,11 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
       (res) => res.url().includes('/invitations') && res.request().method() === 'POST',
     );
     await page.getByRole('button', { name: 'I understand, create invitation' }).click();
+    await waitForNextTotpCounter(usedTotpCounter);
+    const invitationStepUpCode = await currentTotp(MFA_TOTP_SECRET!);
+    await page.getByRole('dialog').getByLabel(/authenticator code/i).fill(invitationStepUpCode.code);
+    await page.getByRole('dialog').getByRole('button', { name: /confirm/i }).click();
+    usedTotpCounter = invitationStepUpCode.counter;
     const invRes = await invitationResponse;
     const invBody = await invRes.json().catch(() => null);
     expect(invRes.status(), `expected 201 (basic/free V1, no license required), got ${invRes.status()}: ${JSON.stringify(invBody)}`).toBe(201);

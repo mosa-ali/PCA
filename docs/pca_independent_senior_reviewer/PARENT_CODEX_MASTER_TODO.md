@@ -5,15 +5,15 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 21:16 UTC
-LOCAL_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
-REMOTE_HEAD = a76aacae1710a7ff2fdc37788b0a291b3220decd  
-CURRENT_CHECKPOINT_SHA = a76aacae1710a7ff2fdc37788b0a291b3220decd  
+LAST_UPDATED_UTC = 2026-09-27 21:34 UTC
+LOCAL_HEAD = 9c50e8efd7f18c18d7e16ec0ef6697fb88026064  
+REMOTE_HEAD = 9c50e8efd7f18c18d7e16ec0ef6697fb88026064  
+CURRENT_CHECKPOINT_SHA = 9c50e8efd7f18c18d7e16ec0ef6697fb88026064  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Monitor exact-head Quality Gates run `36351084552` for the real-backend acceptance-flow browser-grant fix; address any remaining failures, then continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Publish the reviewed acceptance-flow fix and ledger update; restore exact-head CI evidence when remote access is available; continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
-The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`. Exact-head run `36351084552` at `a76aacae` is queued; no PASS is inferred.
+The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed, while the MFA-gated invitation step-up still needed proof.
 
 ### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed and verified
 
@@ -562,3 +562,18 @@ CI = Exact-head Quality Gates run `36351084552` is queued at this SHA. The prior
 LOCAL_VALIDATION = Parent Web typecheck/lint PASS and acceptance-flow Playwright collection PASS (two tests listed); backend build and TODO-14 route/action suite PASS 154/154 under `NODE_ENV=test`. Real-browser assertions await CI.
 TODO20 = Authorization remains active. No live database/grants inspected or mutated; exact MySQL 8.4 schema equivalence and verified live target remain open.
 NEXT_ACTION = Inspect `36351084552` to completion and continue the same mission from the next executable Parent TODO; Platform remains on HOLD_PARENT_DEPENDENCY.
+
+### 2026-09-27 21:26 UTC — real E2E grant fixed; MFA step-up uncovered
+
+CI = Exact-head run `36351171969` completed FAILED at `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`: 26 jobs passed, one real-backend E2E job failed. The grant-based cross-family API test passed. The owner flow authenticated and reached device invitation creation, where the test timed out waiting for the invitation POST because `CREATE_DEVICE_INVITATION` requires fresh TOTP step-up.
+PARENT_FIX = Owner-flow E2E now uses the disposable enrolled-MFA Parent, completes unknown-browser email OTP + TOTP login, then enters a fresh TOTP in the sensitive-action dialog after waiting for a new counter. Cross-family isolation retains the primary/secondary grace accounts and their daily grants. Local typecheck, lint, and two-test collection PASS; browser execution is pending.
+TODO20 = Existing authorization remains active; no live database/grants inspection or mutation. MySQL 8.4 schema equivalence and verified live target/preflight remain open.
+NEXT_ACTION = Complete independent test review, publish the MFA step-up correction and ledger updates, then validate exact-head CI and continue the same Pursuing Goal.
+
+### 2026-09-27 21:34 UTC — TODO-20 authorization reconfirmed; local validation refreshed
+
+OWNER_AUTHORIZATION = Owner reconfirmed that existing TODO-20 already authorizes full repository/local/live `pca_pro`/runtime-grant reconciliation and ordinary proven corrective migrations. Preserve NO_SEED_DATA=YES, DATA_LOSS=0, LOCAL_TEST_FIRST=YES, fresh live preflight, and every post-migration equality check. No new TODO or mission was created.
+LOCAL_VALIDATION = Parent Web typecheck PASS; lint PASS; `playwright.real.config.ts --list` PASS with 12 real-backend tests collected (including both acceptance-flow cases). The first collection invocation used a nonexistent config path and is disregarded. Browser execution has not run locally.
+TODO20_ENVIRONMENT = Docker service is stopped and Docker Engine reports access denied. Loopback port 33061 accepts TCP, but `backend/test.env` contains no `PCA_DATABASE_URL`, so the disposable server identity/version and schema cannot be safely established from this session. No database connection, live read, or mutation occurred. Continue local-environment diagnosis; do not infer MySQL 8.4 equality or treat port reachability as DB evidence.
+REMOTE = `git ls-remote origin refs/heads/pca-dev` failed because GitHub HTTPS egress through the configured proxy was unavailable. No push or exact-head CI was attempted after that failure.
+NEXT_ACTION = Commit only the reviewed acceptance-flow spec and these two ledgers, retry fetch/push/remote verification when network is available, then monitor exact-head CI. Continue TODO-20 local MySQL repair/version confirmation and verified live-target discovery under existing authorization; keep Platform on HOLD_PARENT_DEPENDENCY.
