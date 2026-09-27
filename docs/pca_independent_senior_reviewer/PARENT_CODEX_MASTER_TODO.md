@@ -5,15 +5,15 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 17:40 UTC
-LOCAL_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-REMOTE_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-CURRENT_CHECKPOINT_SHA = 114b784ea33112cb3bebd64b454866481d8b3ba3  
+LAST_UPDATED_UTC = 2026-09-27 17:42 UTC
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+CURRENT_CHECKPOINT_SHA = 27757ca77e0edec417516784dc3e59da6855896e  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17 (integrated Parent authority/device and regression evidence)  
-NEXT_ACTION = Continue Parent authority and child-device blockers; rerun integrated regressions when MySQL is available; monitor exact-head CI; offer localhost acceptance only when TODO-17 is ready.
+NEXT_ACTION = Monitor Quality Gates run 36337926059 at exact SHA 27757ca7; resume TODO-12 route/action work and TODO-15 device boundaries; rerun integrated regressions when MySQL is available.
 
-The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; the canonical-ledger synchronization commit at `114b784ea33112cb3bebd64b454866481d8b3ba3` is the current fetched/pushed base. Quality Gates run `36337455750` is still in progress for the implementation payload; run `36337595300` is pending for this current checkpoint SHA. Neither is recorded as PASS.
+The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`. Quality Gates run `36337926059` is queued for the current SHA. Superseded runs `36337455750` and `36337595300` were cancelled; no checkpoint CI result is PASS.
 
 ## Final Architecture
 
@@ -221,14 +221,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Eight logical commits pushed in the checkpoint; code payload `3d31cb5b`, current synchronized base `114b784e`; fresh fetch proves local=remote; representative remote sources verified; Parent local-only files=0 and unpushed commits=0. Quality Gates `36337455750` is in progress for `3d31cb5b`; `36337595300` is pending for current `114b784e`.  
+EVIDENCE = Eight logical implementation/peer commits plus ledger synchronization were pushed; master TODO publication is `27757ca7`; fresh fetch proves local=remote; representative remote sources verified; Parent local-only files=0 and unpushed commits=0. Quality Gates `36337926059` is queued at this exact SHA.  
 BLOCKER = Exact-head CI has not passed; overall TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation.  
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
 LOCAL_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
 REMOTE_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
 PARENT_LOCAL_ONLY_FILES_REMAINING = 0  
 PARENT_UNPUSHED_COMMITS_REMAINING = 0  
-EXACT_HEAD_CI = PENDING (`36337595300`)
+EXACT_HEAD_CI = QUEUED (`36337926059`)
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
@@ -363,13 +363,13 @@ REAL_BROWSER_E2E = NOT RUN in this checkpoint; historical Parent MFA flows 1/1 e
 
 ## Git Status
 
-LOCAL_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-REMOTE_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
 LOCAL_REMOTE_EQUAL = YES (fresh fetch)  
 FILES_LEFT_DIRTY = 5 explicitly excluded: generated stale schema snapshots (2), `.vscode` local files (2), unrelated root `0` (1)  
 PARENT_LOCAL_ONLY_FILES_REMAINING = 0  
 PARENT_UNPUSHED_COMMITS_REMAINING = 0  
-EXACT_HEAD_CI = PENDING for `114b784e` run `36337595300`; prior payload SHA `3d31cb5b` run `36337455750` in progress
+EXACT_HEAD_CI = QUEUED for `27757ca7` run `36337926059`; superseded runs were cancelled
 
 ## Database
 
@@ -432,3 +432,14 @@ TESTS = No source changes; existing checkpoint evidence summarized with historic
 BLOCKERS = Exact-head CI pending; MySQL unavailable; owner acceptance not received.  
 DECISIONS = Base both ledgers on exact synchronized source tree 114b784e.  
 NEXT_ACTION = Commit/push the two ledgers, verify remote contents/equal heads, then continue TODO-12/15.
+
+### 2026-09-27 17:42 UTC — master TODO publication verified
+
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e before this ledger update  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e before this ledger update  
+TODO_CHANGES = 23/23 Parent TODOs and 16/16 Platform TODOs populated; no TODO was promoted without evidence.  
+FILES_CHANGED = Both requested master TODO files were committed as `27757ca7` and verified on origin/pca-dev.  
+TESTS = Structural ledger checks passed; no product source changed.  
+BLOCKERS = Exact-head CI run 36337926059 is queued; MySQL unavailable; Parent localhost acceptance not received.  
+DECISIONS = Base both ledgers on pushed checkpoint 27757ca7 and keep historical test evidence distinct from current runs.  
+NEXT_ACTION = Monitor exact-head CI and resume the earliest unfinished Parent TODO-12.

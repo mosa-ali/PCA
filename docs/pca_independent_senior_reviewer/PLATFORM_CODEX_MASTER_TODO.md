@@ -5,16 +5,16 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 17:40 UTC
-LOCAL_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-REMOTE_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-CURRENT_CHECKPOINT_SHA = 114b784ea33112cb3bebd64b454866481d8b3ba3  
+LAST_UPDATED_UTC = 2026-09-27 17:42 UTC
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+CURRENT_CHECKPOINT_SHA = 27757ca77e0edec417516784dc3e59da6855896e  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
 NEXT_ACTION = Keep Agents 6/7 held; after Parent localhost acceptance, activate Platform specialists and implement/test Enrollment Name/Email/Phone integration.
 
-This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e` and its synchronized current head `114b784ea33112cb3bebd64b454866481d8b3ba3`. Exact-head Quality Gates run `36337595300` is pending for the current head; run `36337455750` is in progress for the source payload. No CI PASS is inferred.
+This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, and master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`. Quality Gates run `36337926059` is queued for the current SHA; superseded runs `36337455750` and `36337595300` were cancelled. No CI PASS is inferred.
 
 ## Parent Dependency
 
@@ -204,14 +204,14 @@ CLEAN_SNAPSHOT = NOT RUN
 
 ## Git
 
-LOCAL_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
-REMOTE_HEAD = 114b784ea33112cb3bebd64b454866481d8b3ba3  
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e  
 LOCAL_REMOTE_EQUAL = YES (fresh fetch)  
 PLATFORM_FILES_CHANGED = 0 uncommitted Platform paths; the two current Platform commits are pushed  
 PLATFORM_LOCAL_ONLY_FILES_REMAINING = 0 for existing scope  
 PLATFORM_UNPUSHED_COMMITS_REMAINING = 0  
 PLATFORM_COMMIT = `24603231`, `2fde86de` in checkpoint; additional backend projection is included in the integrated Parent backend commit  
-EXACT_HEAD_CI = PENDING (`36337595300` at `114b784e`)
+EXACT_HEAD_CI = QUEUED (`36337926059` at `27757ca7`)
 
 ## Rollback Baseline
 
@@ -242,7 +242,7 @@ CURRENT_P0 = NOT_YET_PROVEN (fresh severity re-review not complete)
 CURRENT_P1 = NOT_YET_PROVEN (revalidate pre-production reports before release)  
 CURRENT_P2 = Enrollment Name/Email/Phone remains unimplemented; exact-head CI pending; MySQL unavailable; dependent Platform work remains held.  
 BLOCKERS = Parent TODO-17 integration; TODO-18 literal owner localhost acceptance; current exact-head CI; Docker/MySQL availability; schema/grant reconciliation; existing device crypto/trust gates.  
-NEXT_ACTION = Monitor run 36337595300 for SHA 114b784e. Do not activate Agents 6/7 until the Parent gate is satisfied. Once activated, implement Enrollment projection consumption and columns, then focused/full tests, lint/build, clean snapshot and exact-head CI.
+NEXT_ACTION = Monitor run 36337926059 for SHA 27757ca7. Do not activate Agents 6/7 until the Parent gate is satisfied. Once activated, implement Enrollment projection consumption and columns, then focused/full tests, lint/build, clean snapshot and exact-head CI.
 
 ## Checkpoint History
 
@@ -256,3 +256,14 @@ TESTS = Platform typecheck PASS; prior projection route/UI/DB evidence retained 
 BLOCKERS = HOLD_PARENT_DEPENDENCY; exact-head CI pending; no Enrollment columns, Azure deployment or owner UAT.  
 DECISIONS = Parent owns identity projection; Platform reads it; no duplicate identity selector; no deployment.  
 NEXT_ACTION = Maintain the hold until the literal Parent localhost acceptance gate.
+
+### 2026-09-27 17:42 UTC — master TODO publication verified
+
+LOCAL_HEAD = 27757ca77e0edec417516784dc3e59da6855896e before this ledger update  
+REMOTE_HEAD = 27757ca77e0edec417516784dc3e59da6855896e before this ledger update  
+TODO_CHANGES = 23/23 Parent TODOs and 16/16 Platform TODOs populated; no TODO was promoted without evidence.  
+FILES_CHANGED = Both requested master TODO files were committed as `27757ca7` and verified on origin/pca-dev.  
+TESTS = Structural ledger checks passed; no product source changed.  
+BLOCKERS = Exact-head CI run 36337926059 is queued; MySQL unavailable; Parent localhost acceptance not received.  
+DECISIONS = Keep Platform Enrollment held on the Parent projection/acceptance gates and distinguish historical evidence from current runs.  
+NEXT_ACTION = Monitor exact-head CI and resume the earliest unfinished Parent TODO-12.
