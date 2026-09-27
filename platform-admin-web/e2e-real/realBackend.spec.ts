@@ -139,7 +139,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await expect(page.getByText(/total accounts/i)).toBeVisible();
   });
 
-  await test.step('Parent-email lookup distinguishes an unknown email and accurately classifies a verified, already-entitled Parent through real MySQL', async () => {
+  await test.step('Parent-email lookup distinguishes an unknown email, resolves an eligible Parent family, and observes the resulting entitlement through real MySQL', async () => {
     await navigateToWorkspace(/^enrollment management$/i, /^entitlements$/i);
     const parentEmail = process.env.E2E_REAL_PARENT_EMAIL;
     expect(parentEmail, 'real-backend Parent fixture is required for the Parent email lookup check').toBeTruthy();
@@ -151,9 +151,17 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
 
     await parentLookup.getByLabel(/search by parent email/i).fill(parentEmail!);
     await parentLookup.getByRole('button', { name: /^search$/i }).click();
-    await expect(parentLookup.getByRole('status')).toContainText(/family already has an entitlement/i);
+    await expect(parentLookup.getByRole('status')).toContainText(/an eligible family was found/i);
     await expect(page.getByRole('heading', { name: /entitlement overview/i })).toBeVisible();
     await expect(page.getByText('FREE_STARTER')).toBeVisible();
+
+    // The first entitlement read lazily creates the family's FREE_STARTER
+    // record. A second server-side lookup must now classify the same family
+    // as already entitled, based on the real MySQL row rather than a fixture
+    // assumption made before that row existed.
+    await parentLookup.getByLabel(/search by parent email/i).fill(parentEmail!);
+    await parentLookup.getByRole('button', { name: /^search$/i }).click();
+    await expect(parentLookup.getByRole('status')).toContainText(/family already has an entitlement/i);
   });
 
   let createdAdminName = '';
