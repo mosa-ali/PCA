@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-27 21:40 UTC
-LOCAL_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
-REMOTE_HEAD = effb3837990cb4dadbd99f5143dd25ba8459f143  
+LAST_UPDATED_UTC = 2026-09-27 21:52 UTC
+LOCAL_HEAD = 85fd9bdee7f1d6acda70c411af22ddf1005423ec  
+REMOTE_HEAD = 85fd9bdee7f1d6acda70c411af22ddf1005423ec  
 CURRENT_CHECKPOINT_SHA = f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7  
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 through TODO-17, TODO-19, and TODO-20 local reconciliation (integrated Parent authority/device, regression evidence, exact-head CI recovery, and local DB schema phase)  
-NEXT_ACTION = Resolve blocked GitHub Actions API access and inspect exact-head CI for `effb3837`; continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
+NEXT_ACTION = Correct the stale dashboard-state assertion found by exact-head run `36352633376`, validate and publish the fix, then inspect its exact-head CI. Continue the earliest unfinished Parent TODOs and TODO-20 local/live reconciliation gates. Keep schedule-policy/Web Rules fail-closed and do not mutate live `pca_pro` before its verified read-only preflight.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -591,3 +591,10 @@ PUSH = Fast-forward push succeeded. Fresh `git fetch origin pca-dev`, local HEAD
 CI = `gh run list --commit effb3837` could not reach GitHub API because configured proxy `127.0.0.1:9` refused connections. No CI result is inferred.
 TODO20_ENVIRONMENT = Correction: `backend/test.db.env` does define loopback root URL for `pca_test`, but read-only connection was rejected `ER_ACCESS_DENIED_ERROR`; no SQL read or write succeeded. Docker service start was denied by Windows (`Cannot open 'com.docker.service'`). Read-only service inspection found MySQL80 stopped (8.0 config) and MySQL97 stopped with config `D:\MySQL\my.ini`, port 3306, and configured `D:\MySQL\Data` directory absent; neither service was started. The loopback 33061 listener did not authenticate the test-only credentials, so its server identity/version remains unproven. Live `pca_pro` and grants remain uninspected/unmutated.
 NEXT_ACTION = Restore access to the disposable MySQL 8.4.11 environment without opening an unidentified data directory; establish server identity/version and schema locally, inspect live `pca_pro` read-only only after target proof, and inspect CI when GitHub API connectivity returns.
+
+### 2026-09-27 21:52 UTC — exact-head CI exposed retired dashboard-copy assertion
+
+CI = Exact-head Quality gates run `36352633376` at `85fd9bdee7f1d6acda70c411af22ddf1005423ec` completed FAILED: 26 jobs passed; only `Real-backend browser E2E` failed. Full backend MySQL certification, Web real-browser E2E, real-backend cross-family isolation, and all other jobs passed. The owner journey authenticated with MFA, created the child and invitation through fresh TOTP step-up, then failed on `/dashboard` because its final assertion expected removed copy `Family information is unavailable in this browser`. The rendered current state was the fail-closed `Not available yet` notice with “Your children's protected data cannot be opened on this browser yet.” No auth, invitation, or API isolation failure was reported.
+PARENT_FIX = Updated the browser regression to assert the current fail-closed notice after navigation and reload while still asserting the retired “Set up this browser” action is absent. Local validation and a new exact-head run are pending.
+TODO20 = Existing owner authorization remains. CI full DB suite passed on disposable MySQL; this does not close local MySQL 8.4 or live `pca_pro`/grant reconciliation. No live DB was inspected or mutated.
+NEXT_ACTION = Run Parent Web typecheck/lint and Playwright collection, commit the assertion/ledger correction, push and verify, then inspect new exact-head CI.

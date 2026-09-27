@@ -227,15 +227,16 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     expect(scrollWidth, 'page must not scroll horizontally at 375px width').toBeLessThanOrEqual(clientWidth + 1);
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    // 14. reload -> protected family information stays hidden when this
-    // browser fails the independent data-protection gate, without presenting
-    // the retired Genesis/trusted-browser onboarding card.
+    // 14. after reload, protected family information remains fail-closed on
+    // this browser. The current UI uses its "Not available yet" notice; it
+    // must not present the retired Genesis/trusted-browser onboarding card.
     await page.goto('/dashboard');
-    await expect(page.getByText('Family information is unavailable in this browser')).toBeVisible();
-    await expect(page.getByText('Protected family data could not be verified, so it remains hidden.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Not available yet' })).toBeVisible();
+    await expect(page.getByText(/Your children's protected data cannot be opened on this browser yet\./)).toBeVisible();
     await expect(page.getByRole('link', { name: 'Set up this browser' })).toHaveCount(0);
     await page.reload();
-    await expect(page.getByText('Family information is unavailable in this browser')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Not available yet' })).toBeVisible();
+    await expect(page.getByText(/Your children's protected data cannot be opened on this browser yet\./)).toBeVisible();
   });
 });
 
