@@ -21,15 +21,18 @@ test.use({ serviceWorkers: 'block' });
 
 const PRIMARY_EMAIL = process.env.E2E_REAL_PARENT_EMAIL;
 const PRIMARY_PASSWORD = process.env.E2E_REAL_PARENT_PASSWORD;
+const PRIMARY_DAILY_LOGIN_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
 const SECOND_EMAIL = process.env.E2E_REAL_SECOND_PARENT_EMAIL;
 const SECOND_PASSWORD = process.env.E2E_REAL_SECOND_PARENT_PASSWORD;
+const SECOND_DAILY_LOGIN_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
 test.skip(
-  !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !SECOND_EMAIL || !SECOND_PASSWORD,
+  !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !PRIMARY_DAILY_LOGIN_GRANT
+    || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_DAILY_LOGIN_GRANT,
   'real-backend acceptance flow requires both disposable parent fixtures.',
 );
 // owner-a/owner-b are pre-seeded with an existing enrollment_invitations row
-async function login(page: import('@playwright/test').Page, email: string, password: string) {
-  await page.context().clearCookies();
+async function login(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+  await addDailyLoginGrant(page.context(), dailyLoginGrant);
   await page.goto('/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
@@ -43,17 +46,28 @@ async function login(page: import('@playwright/test').Page, email: string, passw
  * API here keeps it from spending the shared per-IP authenticated-request
  * budget on dashboard capability reads before the boundary request runs.
  */
-async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string) {
-  await page.context().clearCookies();
+async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+  await addDailyLoginGrant(page.context(), dailyLoginGrant);
   const response = await page.request.post('/api/parent/login', { data: { email, password } });
   expect(response.status(), 'real API login must establish the disposable fixture session').toBe(200);
   expect(await response.json()).toMatchObject({ sessionEstablished: true });
 }
 
+async function addDailyLoginGrant(context: import('@playwright/test').BrowserContext, grant: string) {
+  await context.clearCookies();
+  await context.addCookies([{
+    name: 'pca_parent_daily_login_grant',
+    value: grant,
+    url: 'http://localhost:4002',
+    httpOnly: true,
+    sameSite: 'Strict',
+  }]);
+}
+
 test.describe('PPR-2 owner acceptance flow -- real backend, one continuous session', () => {
   test('login -> new family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
     // 1. login
-    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!);
+    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!);
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -168,12 +182,12 @@ test.describe('PPR-2 cross-family isolation -- real backend', () => {
     // full dashboard navigation. The owner flow and realBackend.spec.ts cover
     // the UI login; this test must reserve the backend's shared authenticated
     // request budget for the two cross-family authorization decisions.
-    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!);
+    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!);
     const meRes = await page.request.get('/api/parent/session');
     expect(meRes.status()).toBe(200);
     const ownFamilyId = (await meRes.json()).familyId as string;
 
-    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!);
+    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_DAILY_LOGIN_GRANT!);
     const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`);
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 
