@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 21:53 UTC
-LOCAL_HEAD = 7a62fe603c7c09358321bdecace20fd544f5da44  
-REMOTE_HEAD = 85fd9bdee7f1d6acda70c411af22ddf1005423ec  
-CURRENT_CHECKPOINT_SHA = 7a62fe603c7c09358321bdecace20fd544f5da44  
+LAST_UPDATED_UTC = 2026-09-27 22:10 UTC
+LOCAL_HEAD = c76e22736649d2ff6e188373879c00deaf3810d0  
+REMOTE_HEAD = c76e22736649d2ff6e188373879c00deaf3810d0  
+CURRENT_CHECKPOINT_SHA = c76e22736649d2ff6e188373879c00deaf3810d0  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent publishes checkpoint `7a62fe60` and obtains its exact-head CI result; then resolve remaining MySQL 8.4/live DB gates and owner acceptance. Platform Enrollment proceeds only after Parent localhost acceptance and activation gates.
+NEXT_ACTION = Keep Agents 6/7 held while Parent resolves its gates. Wire the existing Parent Email lookup because exact-head real-backend E2E exposed it as absent in Enrollment > Entitlements; then obtain new exact-head CI. Product activation remains held through Parent and TODO-20 gates.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 
@@ -394,3 +394,18 @@ NEXT_ACTION = Keep Enrollment held until the corrected Parent exact-head CI, TOD
 PARENT_CHECKPOINT = `7a62fe60` fixes the stale final dashboard assertion to match current fail-closed UI copy. Typecheck/lint and real-config collection pass; publication and new exact-head CI are pending.
 PLATFORM = HOLD_PARENT_DEPENDENCY remains; no Platform product/database/deployment work or owner acceptance occurred.
 NEXT_ACTION = Keep Enrollment held through publication and Parent exact-head CI, TODO-20, activation/projection gates, and literal localhost acceptance.
+
+### 2026-09-27 22:06 UTC — Parent Email lookup rendering gap in Platform E2E
+
+PARENT_CI = Run `36353386170` at `c76e2273` completed FAILED with 26 jobs passing. Parent MFA invitation journey and cross-family isolation passed; only combined real-backend E2E failed.
+PLATFORM_SOURCE = The existing `ParentEmailFamilyLookup` component and server-side `resolve-parent-email` call existed but were not rendered. Coordinator began wiring it into Enrollment Management > Entitlements and connecting the resolved family ID to its existing entitlement read path; validation was pending at this checkpoint.
+PARENT_TODO20 = Live `pca_pro` is verified read-only on MySQL 8.4.9. Migration journal stops at 0050 while source goes through 0058; counts reflect 10 columns, 2 FKs, 3 indexes and 4 checks missing. Runtime grants match repository policy 92/92. No DB writes occurred; local MySQL 8.4 test-first gate remains open.
+PLATFORM = HOLD_PARENT_DEPENDENCY remains; no production activation, database mutation or owner acceptance occurred.
+NEXT_ACTION = Validate/publish the Parent Email resolver integration and keep Enrollment held through Parent exact-head CI, TODO-20, activation/projection and localhost acceptance gates.
+
+### 2026-09-27 22:10 UTC — Parent Email resolver integration validated locally
+
+PLATFORM_FIX = `ParentEmailFamilyLookup` is now rendered on Enrollment Management > Entitlements; it resolves Parent Email server-side and binds one selected internal Family ID to the entitlement detail read. Multiple-family selection remains intact.
+LOCAL_VALIDATION = Platform Admin typecheck PASS, lint PASS, production build PASS, and three focused suites PASS 14/14. The unprivileged Vitest/Vite starts hit `spawn EPERM`; elevated reruns completed successfully.
+GATES = Exact-head browser E2E pending. `HOLD_PARENT_DEPENDENCY` for production activation remains; no production or database mutation and no owner acceptance occurred.
+NEXT_ACTION = Publish and rerun exact-head Quality gates; retain Parent/TODO-20 and localhost activation gates.

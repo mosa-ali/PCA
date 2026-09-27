@@ -10,6 +10,7 @@ import type { EntitlementRequestDto } from '../../domain/entitlements';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
+import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useStepUp } from '../../state/StepUpContext';
 import { useToast } from '../../state/ToastContext';
@@ -173,6 +174,12 @@ export default function Entitlements() {
   return (
     <div className="page">
       <h2>{t('nav.entitlements')}</h2>
+
+      <ParentEmailFamilyLookup
+        id="entitlements-parent-email"
+        familyId={familyId}
+        onFamilyIdChange={selectFamily}
+      />
 
       <form className="filters enrollment-filter-row" onSubmit={(event) => {
         event.preventDefault();
