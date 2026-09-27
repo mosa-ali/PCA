@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 22:10 UTC
-LOCAL_HEAD = c76e22736649d2ff6e188373879c00deaf3810d0  
+LAST_UPDATED_UTC = 2026-09-27 22:11 UTC
+LOCAL_HEAD = 643cb866feee65887623f71a536d9a8a34bb8643  
 REMOTE_HEAD = c76e22736649d2ff6e188373879c00deaf3810d0  
-CURRENT_CHECKPOINT_SHA = c76e22736649d2ff6e188373879c00deaf3810d0  
+CURRENT_CHECKPOINT_SHA = 643cb866feee65887623f71a536d9a8a34bb8643  
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep Agents 6/7 held while Parent resolves its gates. Wire the existing Parent Email lookup because exact-head real-backend E2E exposed it as absent in Enrollment > Entitlements; then obtain new exact-head CI. Product activation remains held through Parent and TODO-20 gates.
+NEXT_ACTION = Keep Agents 6/7 held while Parent resolves its gates. Publish `643cb866` with the validated Parent Email lookup integration, then obtain new exact-head CI. Product activation remains held through Parent and TODO-20 gates.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 
@@ -409,3 +409,9 @@ PLATFORM_FIX = `ParentEmailFamilyLookup` is now rendered on Enrollment Managemen
 LOCAL_VALIDATION = Platform Admin typecheck PASS, lint PASS, production build PASS, and three focused suites PASS 14/14. The unprivileged Vitest/Vite starts hit `spawn EPERM`; elevated reruns completed successfully.
 GATES = Exact-head browser E2E pending. `HOLD_PARENT_DEPENDENCY` for production activation remains; no production or database mutation and no owner acceptance occurred.
 NEXT_ACTION = Publish and rerun exact-head Quality gates; retain Parent/TODO-20 and localhost activation gates.
+
+### 2026-09-27 22:11 UTC — Platform Parent Email lookup committed locally
+
+PARENT_CHECKPOINT = `643cb866feee65887623f71a536d9a8a34bb8643` adds the server-side Parent Email resolver to Enrollment > Entitlements and was validated locally: typecheck, lint, build and focused tests 14/14 PASS.
+PLATFORM = Production activation remains `HOLD_PARENT_DEPENDENCY`; no deployment, live database mutation or owner acceptance occurred.
+NEXT_ACTION = Publish the source checkpoint and ledger sync, then inspect combined real-backend E2E at the exact pushed head.
