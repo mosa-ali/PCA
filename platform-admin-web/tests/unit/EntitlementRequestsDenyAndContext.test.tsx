@@ -97,7 +97,9 @@ describe('EntitlementRequests deny confirmation and request context', () => {
     // half of the change is no longer missing.
     expect(await screen.findByRole('cell', { name: '3' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: '9' })).toBeInTheDocument();
-    expect(screen.getByText(new Date(PENDING_REQUEST.createdAt).toLocaleString())).toBeInTheDocument();
+    // This fixture leaves createdAt and updatedAt equal, so both date cells
+    // intentionally render the same text.
+    expect(screen.getAllByRole('cell', { name: new Date(PENDING_REQUEST.createdAt).toLocaleString() })).toHaveLength(2);
   });
 
   it('requires a reason AND a second Confirm click before denying -- a single click never calls the backend', async () => {

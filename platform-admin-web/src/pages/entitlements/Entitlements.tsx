@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../../api/platformAdminApiClient';
 import type { FamilyEntitlement, LimitType } from '../../domain/entitlements';
+import type { AccountSummaryDto, PagedResult } from '../../domain/accounts';
+import { planRefLabel } from '../../i18n/enumLabels';
 import { LIMIT_TYPES } from '../../domain/entitlements';
 import type { EntitlementRequestDto } from '../../domain/entitlements';
 import { LoadingState } from '../../components/common/LoadingState';
@@ -10,7 +12,6 @@ import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useStepUp } from '../../state/StepUpContext';
-import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 import { useToast } from '../../state/ToastContext';
 
 export default function Entitlements() {
@@ -18,13 +19,41 @@ export default function Entitlements() {
   const { notify } = useToast();
   const { requestStepUp } = useStepUp();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [familyIdInput, setFamilyIdInput] = useState(searchParams.get('familyId') ?? '');
   const [familyId, setFamilyId] = useState(searchParams.get('familyId') ?? '');
   const [entitlement, setEntitlement] = useState<FamilyEntitlement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [directory, setDirectory] = useState<AccountSummaryDto[]>([]);
+  const [directoryTotal, setDirectoryTotal] = useState(0);
+  const [directoryOffset, setDirectoryOffset] = useState(0);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [directoryRetry, setDirectoryRetry] = useState(0);
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [email, setEmail] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({ from: '', to: '', email: '' });
   const requestSequence = useRef(0);
+  const directoryPageSize = 20;
+
+  useEffect(() => {
+    let active = true;
+    setDirectoryLoading(true);
+    setDirectoryError(null);
+    const params = { limit: directoryPageSize, offset: directoryOffset, createdFrom: appliedFilters.from || undefined, createdTo: appliedFilters.to || undefined };
+    const request = appliedFilters.email
+      ? platformAdminApi.post<PagedResult<AccountSummaryDto>>('/platform-admin/accounts/search', { ...params, parentEmail: appliedFilters.email })
+      : platformAdminApi.get<PagedResult<AccountSummaryDto>>('/platform-admin/accounts', params);
+    request.then((result) => {
+      if (!active) return;
+      setDirectory(result.items);
+      setDirectoryTotal(result.total);
+    }).catch(() => {
+      if (active) { setDirectory([]); setDirectoryTotal(0); setDirectoryError(t('common.unexpectedError')); }
+    }).finally(() => { if (active) setDirectoryLoading(false); });
+    return () => { active = false; };
+  }, [directoryOffset, appliedFilters, directoryRetry, t]);
 
   const [limitType, setLimitType] = useState<LimitType>('MANAGED_DEVICE_LIMIT');
   const [limitValue, setLimitValue] = useState('');
@@ -134,24 +163,48 @@ export default function Entitlements() {
     }
   };
 
+  const selectFamily = (id: string) => {
+    setFamilyId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('familyId', id);
+    setSearchParams(next);
+  };
+
   return (
     <div className="page">
       <h2>{t('nav.entitlements')}</h2>
 
-      <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} showAccountSummary onLookupStart={() => {
-        requestSequence.current += 1;
-        setEntitlement(null);
-        setLoading(false);
-        setError(null);
-        setNotFound(false);
-      }} onFamilyIdChange={(value) => {
-            setFamilyIdInput(value);
-            setFamilyId(value);
-            const next = new URLSearchParams(searchParams);
-            if (value) next.set('familyId', value);
-            else next.delete('familyId');
-            setSearchParams(next);
-          }} />
+      <form className="filters enrollment-filter-row" onSubmit={(event) => {
+        event.preventDefault();
+        setDirectoryOffset(0);
+        setAppliedFilters({ from: createdFrom, to: createdTo, email: email.trim() });
+      }}>
+        <label htmlFor="entitlements-email">{t('accounts.emailFilterLabel')}<input id="entitlements-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <label htmlFor="entitlements-created-from">{t('common.createdFrom', 'Created from')}<input id="entitlements-created-from" type="date" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} /></label>
+        <label htmlFor="entitlements-created-to">{t('common.createdTo', 'Created to')}<input id="entitlements-created-to" type="date" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} /></label>
+        <button className="btn btn-primary" type="submit">{t('common.applyFilters', 'Apply filters')}</button>
+        <button className="btn" type="button" onClick={() => { setEmail(''); setCreatedFrom(''); setCreatedTo(''); setAppliedFilters({ from: '', to: '', email: '' }); setDirectoryOffset(0); }}>{t('common.clear', 'Clear')}</button>
+      </form>
+      {directoryLoading ? <LoadingState /> : directoryError ? <ErrorState message={directoryError} onRetry={() => setDirectoryRetry((retry) => retry + 1)} /> : directory.length === 0 ? <p className="status-unavailable">{t('accounts.directoryEmpty', 'No accounts found.')}</p> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>{t('accounts.familyId')}</th><th>{t('accounts.createdAt')}</th><th>{t('accounts.status')}</th><th>{t('accounts.plan')}</th><th>{t('accounts.parentMembers')}</th><th>{t('accounts.devices')}</th><th>{t('common.actions')}</th></tr></thead>
+            <tbody>{directory.map((account) => <tr key={account.familyId}>
+              <td>{account.familyId}</td><td>{account.createdAt ? new Date(account.createdAt).toLocaleDateString() : '—'}</td>
+              <td>{account.deletedAt ? t('accounts.deleted') : t(`accounts.statuses.${account.status}`)}</td>
+              <td>{account.entitlement?.planRef ? planRefLabel(t, account.entitlement.planRef) : '—'}</td>
+              <td>{account.entitlement ? `${account.entitlement.parentMemberUsedCount}/${account.entitlement.parentMemberLimit}` : '—'}</td>
+              <td>{account.entitlement ? `${account.entitlement.managedDeviceActiveCount}/${account.entitlement.managedDeviceLimit} (${t('accounts.reserved')}: ${account.entitlement.managedDeviceReservedCount})` : '—'}</td>
+              <td><button type="button" className="btn" aria-pressed={familyId === account.familyId} onClick={() => selectFamily(account.familyId)}>{t('common.view', 'View')}</button></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      )}
+      <div className="pagination">
+        <button type="button" className="btn" disabled={directoryOffset === 0 || directoryLoading} onClick={() => setDirectoryOffset(Math.max(0, directoryOffset - directoryPageSize))}>{t('common.previous')}</button>
+        <span>{t('common.pageInfo', { from: directoryTotal === 0 ? 0 : directoryOffset + 1, to: Math.min(directoryOffset + directoryPageSize, directoryTotal), total: directoryTotal })}</span>
+        <button type="button" className="btn" disabled={directoryOffset + directoryPageSize >= directoryTotal || directoryLoading} onClick={() => setDirectoryOffset(directoryOffset + directoryPageSize)}>{t('common.next')}</button>
+      </div>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={() => load(familyId)} />}

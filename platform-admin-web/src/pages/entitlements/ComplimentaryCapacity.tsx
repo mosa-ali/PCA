@@ -10,8 +10,14 @@ import { PermissionGate } from '../../rbac/PermissionGate';
 import { isPermitted } from '../../domain/roles';
 import { useCurrentRoles } from '../../state/AuthContext';
 import { useStepUp } from '../../state/StepUpContext';
-import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 import { useToast } from '../../state/ToastContext';
+
+const DIRECTORY_PAGE_SIZE = 20;
+interface CapacityDirectoryRow {
+  familyId: string; createdAt: string; status: 'ACTIVE' | 'SUSPENDED'; planRef: string | null;
+  parentMemberLimit: number | null; parentMemberUsed: number | null; deviceLimit: number | null; deviceActive: number | null;
+  activeGrantCount: number; complimentaryParentMemberCapacity: number; complimentaryDeviceCapacity: number; complimentaryAccess: boolean;
+}
 
 /**
  * Platform Administration -> Accounts -> Entitlements -> Complimentary
@@ -29,8 +35,17 @@ export default function ComplimentaryCapacity() {
   const { requestStepUp } = useStepUp();
   const roles = useCurrentRoles();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [familyIdInput, setFamilyIdInput] = useState(searchParams.get('familyId') ?? '');
   const [familyId, setFamilyId] = useState(searchParams.get('familyId') ?? '');
+  const [directoryRows, setDirectoryRows] = useState<CapacityDirectoryRow[]>([]);
+  const [directoryTotal, setDirectoryTotal] = useState(0);
+  const [directoryOffset, setDirectoryOffset] = useState(0);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [directoryRetry, setDirectoryRetry] = useState(0);
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [emailFilter, setEmailFilter] = useState('');
+  const [appliedDates, setAppliedDates] = useState({ from: '', to: '', email: '' });
   const [grants, setGrants] = useState<ComplimentaryGrantDto[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +63,24 @@ export default function ComplimentaryCapacity() {
   const [renewExpiresByGrant, setRenewExpiresByGrant] = useState<Record<string, string>>({});
   const [busyGrantId, setBusyGrantId] = useState<string | null>(null);
   const requestSequence = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    setDirectoryLoading(true);
+    setDirectoryError(null);
+    platformAdminApi.get<{ items: CapacityDirectoryRow[]; total: number }>('/platform-admin/complimentary-capacity', {
+      limit: DIRECTORY_PAGE_SIZE, offset: directoryOffset,
+      createdFrom: appliedDates.from || undefined, createdTo: appliedDates.to || undefined,
+      parentEmail: appliedDates.email || undefined,
+    }).then((result) => {
+      if (!active) return;
+      setDirectoryRows(result.items);
+      setDirectoryTotal(result.total);
+    }).catch(() => {
+      if (active) { setDirectoryRows([]); setDirectoryTotal(0); setDirectoryError(t('common.unexpectedError')); }
+    }).finally(() => { if (active) setDirectoryLoading(false); });
+    return () => { active = false; };
+  }, [directoryOffset, appliedDates, directoryRetry, t]);
 
   const canMutate = isPermitted(roles, 'ADMINISTER_COMPLIMENTARY_GRANT');
   const canMutatePermanent = isPermitted(roles, 'ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT');
@@ -178,23 +211,43 @@ export default function ComplimentaryCapacity() {
     }
   };
 
+  const selectFamily = (id: string) => {
+    setFamilyId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('familyId', id);
+    setSearchParams(next);
+  };
+
   return (
     <div className="page">
       <h2>{t('nav.complimentaryCapacity')}</h2>
 
-      <ParentEmailFamilyLookup id="complimentary-capacity" familyId={familyIdInput} showAccountSummary onLookupStart={() => {
-        requestSequence.current += 1;
-        setGrants(null);
-        setLoading(false);
-        setError(null);
-      }} onFamilyIdChange={(value) => {
-            setFamilyIdInput(value);
-            setFamilyId(value);
-            const next = new URLSearchParams(searchParams);
-            if (value) next.set('familyId', value);
-            else next.delete('familyId');
-            setSearchParams(next);
-          }} />
+      <form className="filters enrollment-filter-row" onSubmit={(event) => {
+        event.preventDefault(); setDirectoryOffset(0); setAppliedDates({ from: createdFrom, to: createdTo, email: emailFilter.trim() });
+      }}>
+        <label htmlFor="capacity-email">{t('accounts.emailFilterLabel')}<input id="capacity-email" type="email" value={emailFilter} onChange={(e) => setEmailFilter(e.target.value)} /></label>
+        <label htmlFor="capacity-created-from">{t('common.createdFrom', 'Created from')}<input id="capacity-created-from" type="date" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} /></label>
+        <label htmlFor="capacity-created-to">{t('common.createdTo', 'Created to')}<input id="capacity-created-to" type="date" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} /></label>
+        <button className="btn btn-primary" type="submit">{t('common.applyFilters', 'Apply filters')}</button>
+        <button className="btn" type="button" onClick={() => { setEmailFilter(''); setCreatedFrom(''); setCreatedTo(''); setAppliedDates({ from: '', to: '', email: '' }); setDirectoryOffset(0); }}>{t('common.clear', 'Clear')}</button>
+      </form>
+      {directoryLoading ? <LoadingState /> : directoryError ? <ErrorState message={directoryError} onRetry={() => setDirectoryRetry((retry) => retry + 1)} /> : directoryRows.length === 0 ? <p className="status-unavailable">{t('complimentaryCapacity.directoryEmpty', 'No family capacity records found.')}</p> : (
+        <div className="table-wrap"><table className="table">
+          <thead><tr><th>{t('accounts.familyId')}</th><th>{t('accounts.createdAt')}</th><th>{t('accounts.status')}</th><th>{t('accounts.plan')}</th><th>{t('accounts.parentMembers')}</th><th>{t('accounts.devices')}</th><th>{t('complimentaryCapacity.grantsTitle')}</th><th>{t('common.actions')}</th></tr></thead>
+          <tbody>{directoryRows.map((row) => <tr key={row.familyId}>
+            <td>{row.familyId}</td><td>{row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—'}</td><td>{t(`accounts.statuses.${row.status}`)}</td><td>{row.planRef ?? '—'}</td>
+            <td>{row.parentMemberLimit === null ? '—' : `${row.parentMemberUsed ?? 0}/${row.parentMemberLimit} (+${row.complimentaryParentMemberCapacity})`}</td>
+            <td>{row.deviceLimit === null ? '—' : `${row.deviceActive ?? 0}/${row.deviceLimit} (+${row.complimentaryDeviceCapacity})`}</td>
+            <td>{row.activeGrantCount}; {row.complimentaryAccess ? t('complimentaryCapacity.freeAccessActive') : t('complimentaryCapacity.freeAccessNone')}</td>
+            <td><button type="button" className="btn" aria-pressed={familyId === row.familyId} onClick={() => selectFamily(row.familyId)}>{t('common.view', 'View')}</button></td>
+          </tr>)}</tbody>
+        </table></div>
+      )}
+      <div className="pagination">
+        <button type="button" className="btn" disabled={directoryOffset === 0 || directoryLoading} onClick={() => setDirectoryOffset(Math.max(0, directoryOffset - DIRECTORY_PAGE_SIZE))}>{t('common.previous')}</button>
+        <span>{t('common.pageInfo', { from: directoryTotal === 0 ? 0 : directoryOffset + 1, to: Math.min(directoryOffset + DIRECTORY_PAGE_SIZE, directoryTotal), total: directoryTotal })}</span>
+        <button type="button" className="btn" disabled={directoryOffset + DIRECTORY_PAGE_SIZE >= directoryTotal || directoryLoading} onClick={() => setDirectoryOffset(directoryOffset + DIRECTORY_PAGE_SIZE)}>{t('common.next')}</button>
+      </div>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={() => load(familyId)} />}

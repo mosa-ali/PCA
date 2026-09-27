@@ -17,6 +17,7 @@ const ALL_OPERATIONS: PlatformAdminOperation[] = [
   'VIEW_AUDIT_LOG_FULL',
   'VIEW_AUDIT_LOG_OWN',
   'VIEW_SUPPORT_ACCOUNT_METADATA',
+  'VIEW_PARENT_IDENTITY',
   'PERFORM_SUPPORT_ACTION',
 ];
 
@@ -63,6 +64,14 @@ describe('client-side RBAC hint (mirrors backend/src/platformadmin/auth/rbacPoli
     expect(isPermitted(['SUPPORT_ADMIN'], 'ADMINISTER_BILLING')).toBe(false);
     expect(isPermitted(['SUPPORT_ADMIN'], 'ISSUE_REFUND')).toBe(false);
     expect(isPermitted(['SUPPORT_ADMIN'], 'ADMINISTER_SETTLEMENT')).toBe(false);
+  });
+
+  it('Parent identity is limited to support/Platform owner roles, excluding finance and audit roles', () => {
+    expect(isPermitted(['APP_OWNER'], 'VIEW_PARENT_IDENTITY')).toBe(true);
+    expect(isPermitted(['PLATFORM_ADMIN'], 'VIEW_PARENT_IDENTITY')).toBe(true);
+    expect(isPermitted(['SUPPORT_ADMIN'], 'VIEW_PARENT_IDENTITY')).toBe(true);
+    expect(isPermitted(['FINANCE_ADMIN'], 'VIEW_PARENT_IDENTITY')).toBe(false);
+    expect(isPermitted(['AUDITOR_READ_ONLY'], 'VIEW_PARENT_IDENTITY')).toBe(false);
   });
 
   it('FINANCE_ADMIN cannot administer admin-user roles or entitlement quantities', () => {

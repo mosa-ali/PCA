@@ -175,6 +175,8 @@
     "AUDITOR_READ_ONLY": "مدقق (قراءة فقط)"
   },
   "accounts": {
+    "directoryEmpty": "لم يتم العثور على حسابات.",
+    "emailFilterLabel": "البريد الإلكتروني",
     "includeDeleted": "تضمين الحسابات المحذوفة",
     "parentEmailSearchLabel": "البحث ببريد ولي الأمر الإلكتروني",
     "parentEmailPlaceholder": "parent@example.com",
@@ -201,6 +203,13 @@
     "parentDefaultMemberLimit": "الحد الافتراضي لأعضاء الوالدين",
     "parentDefaultDeviceLimit": "الحد الافتراضي للأجهزة المُدارة",
     "familyStatusTitle": "حالة الأسرة",
+    "parentIdentityTitle": "بيانات ولي الأمر",
+    "parentIdentityLoading": "جارٍ تحميل بيانات ولي الأمر…",
+    "parentIdentityUnavailable": "بيانات ولي الأمر غير متاحة.",
+    "parentFirstName": "الاسم الأول",
+    "parentLastName": "اسم العائلة",
+    "parentEmail": "البريد الإلكتروني",
+    "parentPhone": "الهاتف",
     "parentEmailNoFamilyRows": "لا تتوفر سجلات حساب أسرة لولي الأمر هذا.",
     "parentStatuses": {
       "verified": "موثّق",
@@ -292,6 +301,7 @@
     "overrideApplied": "تم تطبيق التجاوز (الطلب {{requestId}})."
   },
   "complimentaryCapacity": {
+    "directoryEmpty": "لم يتم العثور على سجلات سعة عائلية.",
     "overview": "نظرة عامة على السعة المجانية",
     "activeDeviceCapacity": "سعة الأجهزة المجانية النشطة",
     "activeMemberCapacity": "سعة أعضاء الوالدين المجانية النشطة",
@@ -387,6 +397,7 @@
     "adjusted": "تم تعديل الوصول المجاني."
   },
   "entitlementRequests": {
+    "directoryEmpty": "لم يتم العثور على طلبات استحقاق.",
     "familyUnavailable": "لم تُنشأ أسرة لولي الأمر هذا. طلبات الأسرة غير متاحة.",
     "chooseFamilyToLoad": "اختر أسرة مرتبطة أعلاه لعرض طلباتها.",
     "invalidAmount": "أدخل مبلغًا صالحًا غير سالب، مثل 19.99.",

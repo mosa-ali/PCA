@@ -175,6 +175,8 @@
     "AUDITOR_READ_ONLY": "Auditor (Read Only)"
   },
   "accounts": {
+    "directoryEmpty": "No accounts found.",
+    "emailFilterLabel": "Email",
     "includeDeleted": "Include deleted accounts",
     "parentEmailSearchLabel": "Search by Parent Email",
     "parentEmailPlaceholder": "parent@example.com",
@@ -201,6 +203,13 @@
     "parentDefaultMemberLimit": "Default parent member limit",
     "parentDefaultDeviceLimit": "Default managed device limit",
     "familyStatusTitle": "Family status",
+    "parentIdentityTitle": "Parent identity",
+    "parentIdentityLoading": "Loading Parent identity…",
+    "parentIdentityUnavailable": "Parent identity is unavailable.",
+    "parentFirstName": "First name",
+    "parentLastName": "Last name",
+    "parentEmail": "Email",
+    "parentPhone": "Phone",
     "parentEmailNoFamilyRows": "No family account rows are available for this Parent.",
     "parentStatuses": {
       "verified": "Verified",
@@ -292,6 +301,7 @@
     "overrideApplied": "Override applied (request {{requestId}})."
   },
   "complimentaryCapacity": {
+    "directoryEmpty": "No family capacity records found.",
     "overview": "Complimentary capacity overview",
     "activeDeviceCapacity": "Active complimentary device capacity",
     "activeMemberCapacity": "Active complimentary parent-member capacity",
@@ -387,6 +397,7 @@
     "adjusted": "Free access adjusted."
   },
   "entitlementRequests": {
+    "directoryEmpty": "No entitlement requests found.",
     "familyUnavailable": "This Parent has no provisioned family. Family requests are unavailable.",
     "chooseFamilyToLoad": "Choose a linked family above to load its requests.",
     "invalidAmount": "Enter a valid non-negative amount, e.g. 19.99.",

@@ -10,18 +10,32 @@ import { PermissionGate } from '../../rbac/PermissionGate';
 import { useStepUp } from '../../state/StepUpContext';
 import { useToast } from '../../state/ToastContext';
 import type { PlatformAdminStepUpScope } from '../../domain/stepUpScopes';
+import { isPermitted } from '../../domain/roles';
+import { useCurrentRoles } from '../../state/AuthContext';
 
 const SUSPENSION_REASON_MAX_LENGTH = 500;
+
+interface ParentIdentityDto {
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phoneNumber: string | null;
+}
 
 export default function AccountDetail() {
   const { t } = useTranslation();
   const { notify } = useToast();
+  const roles = useCurrentRoles();
+  const canViewParentIdentity = isPermitted(roles, 'VIEW_PARENT_IDENTITY');
   const { requestStepUp } = useStepUp();
   const { id } = useParams<{ id: string }>();
   const [account, setAccount] = useState<AccountSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [parentIdentity, setParentIdentity] = useState<ParentIdentityDto | null>(null);
+  const [parentIdentityLoading, setParentIdentityLoading] = useState(true);
+  const [parentIdentityUnavailable, setParentIdentityUnavailable] = useState(false);
 
   const [suspendReason, setSuspendReason] = useState('');
   const [statusActionBusy, setStatusActionBusy] = useState(false);
@@ -46,6 +60,35 @@ export default function AccountDetail() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [id]);
+
+  useEffect(() => {
+    if (!id || !canViewParentIdentity) {
+      setParentIdentity(null);
+      setParentIdentityUnavailable(false);
+      setParentIdentityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setParentIdentity(null);
+    setParentIdentityUnavailable(false);
+    setParentIdentityLoading(true);
+    platformAdminApi
+      .get<ParentIdentityDto>(`/platform-admin/accounts/${encodeURIComponent(id)}/identity`)
+      .then((identity) => {
+        if (!cancelled) setParentIdentity(identity);
+      })
+      .catch(() => {
+        // 403, unresolved/ambiguous identity, and unavailable states share a
+        // generic message; the UI never guesses a Parent or exposes candidates.
+        if (!cancelled) setParentIdentityUnavailable(true);
+      })
+      .finally(() => {
+        if (!cancelled) setParentIdentityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, canViewParentIdentity]);
 
   // PCA-ADD-PA-017: every mutating call here requires a fresh step-up
   // re-verification (never assumes login MFA suffices, see StepUpContext) --
@@ -136,6 +179,26 @@ export default function AccountDetail() {
               )}
             </dl>
           </section>
+
+          {canViewParentIdentity && <section className="card" aria-labelledby="parent-identity-heading">
+            <h2 id="parent-identity-heading" className="section-title">{t('accounts.parentIdentityTitle')}</h2>
+            {parentIdentityLoading ? (
+              <p role="status">{t('accounts.parentIdentityLoading')}</p>
+            ) : parentIdentityUnavailable || !parentIdentity ? (
+              <p className="status-unavailable">{t('accounts.parentIdentityUnavailable')}</p>
+            ) : (
+              <dl className="kv-list">
+                <dt>{t('accounts.parentFirstName')}</dt>
+                <dd>{parentIdentity.firstName ?? '—'}</dd>
+                <dt>{t('accounts.parentLastName')}</dt>
+                <dd>{parentIdentity.lastName ?? '—'}</dd>
+                <dt>{t('accounts.parentEmail')}</dt>
+                <dd>{parentIdentity.email ?? '—'}</dd>
+                <dt>{t('accounts.parentPhone')}</dt>
+                <dd>{parentIdentity.phoneNumber ?? '—'}</dd>
+              </dl>
+            )}
+          </section>}
 
           <section className="card">
             <h2 className="section-title">{t('accounts.entitlement')}</h2>

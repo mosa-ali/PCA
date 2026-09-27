@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { planRefLabel } from '../../i18n/enumLabels';
 import { Link } from 'react-router-dom';
@@ -6,7 +6,6 @@ import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdmin
 import type { AccountSummaryDto, PagedResult } from '../../domain/accounts';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
-import { ParentEmailFamilyLookup, type ParentEmailLookupResult } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -20,30 +19,27 @@ export default function AccountsList() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [includeDeleted, setIncludeDeleted] = useState(false);
-  const [appliedParentEmailQuery, setAppliedParentEmailQuery] = useState('');
-  const [parentEmailLookupActive, setParentEmailLookupActive] = useState(false);
-  const [parentEmailLookupResult, setParentEmailLookupResult] = useState<ParentEmailLookupResult | null>(null);
+  const [email, setEmail] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [filters, setFilters] = useState({ email: '', createdFrom: '', createdTo: '' });
   const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
-    if (parentEmailLookupActive && (!parentEmailLookupResult || parentEmailLookupResult.outcome === 'ACCOUNT_NOT_FOUND' || parentEmailLookupResult.familyIds.length === 0)) {
-      setItems([]);
-      setTotal(0);
-      setLoading(false);
-      setError(null);
-      return;
-    }
     setLoading(true);
     setError(null);
-    const request = parentEmailLookupActive
+    const hasDirectoryFilters = Boolean(filters.email || filters.createdFrom || filters.createdTo);
+    const request = hasDirectoryFilters
       ? platformAdminApi.post<PagedResult<AccountSummaryDto>>('/platform-admin/accounts/search', {
         limit: PAGE_SIZE,
         offset,
         includeDeleted: includeDeleted ? 'true' : undefined,
-        parentEmail: appliedParentEmailQuery || undefined,
+        parentEmail: filters.email || undefined,
+        createdFrom: filters.createdFrom || undefined,
+        createdTo: filters.createdTo || undefined,
         sortBy,
         sortDir,
       })
@@ -51,6 +47,8 @@ export default function AccountsList() {
         limit: PAGE_SIZE,
         offset,
         includeDeleted: includeDeleted ? 'true' : undefined,
+        createdFrom: filters.createdFrom || undefined,
+        createdTo: filters.createdTo || undefined,
         sortBy,
         sortDir,
       });
@@ -66,7 +64,21 @@ export default function AccountsList() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on paging/filter/search/sort change only
-  useEffect(load, [offset, includeDeleted, appliedParentEmailQuery, parentEmailLookupActive, parentEmailLookupResult, sortBy, sortDir]);
+  useEffect(load, [offset, includeDeleted, filters, sortBy, sortDir]);
+
+  const applyFilters = (event: FormEvent) => {
+    event.preventDefault();
+    setOffset(0);
+    setFilters({ email: email.trim(), createdFrom, createdTo });
+  };
+
+  const clearFilters = () => {
+    setEmail('');
+    setCreatedFrom('');
+    setCreatedTo('');
+    setFilters({ email: '', createdFrom: '', createdTo: '' });
+    setOffset(0);
+  };
 
   /** Clicking the already-active column reverses direction; clicking the other column switches to it, defaulting to descending (matches this list's original default order). */
   const toggleSort = (field: AccountSortField) => {
@@ -87,24 +99,18 @@ export default function AccountsList() {
     <div className="page">
       <h2>{t('nav.accounts')}</h2>
 
-      <ParentEmailFamilyLookup id="accounts" familyId="" includeDeleted={includeDeleted} showAccountSummary
-        onLookupStart={() => {
-          setParentEmailLookupActive(true);
-          setParentEmailLookupResult(null);
-          setAppliedParentEmailQuery('');
-          setItems([]);
-          setTotal(0);
-          setLoading(false);
-          setError(null);
-          setOffset(0);
-        }}
-        onResult={(result, normalizedEmail) => {
-          setParentEmailLookupResult(result);
-          setAppliedParentEmailQuery(result.outcome !== 'ACCOUNT_NOT_FOUND' && result.familyIds.length > 0 ? normalizedEmail : '');
-        }}
-        onFamilyIdChange={() => {}} />
-
-      <div className="filters enrollment-filter-row">
+      <form className="filters enrollment-filter-row" onSubmit={applyFilters}>
+        <label htmlFor="accounts-email">{t('accounts.emailFilterLabel')}
+          <input id="accounts-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label htmlFor="accounts-created-from">{t('common.createdFrom', 'Created from')}
+          <input id="accounts-created-from" type="date" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} />
+        </label>
+        <label htmlFor="accounts-created-to">{t('common.createdTo', 'Created to')}
+          <input id="accounts-created-to" type="date" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} />
+        </label>
+        <button type="submit" className="btn btn-primary">{t('common.applyFilters', 'Apply filters')}</button>
+        <button type="button" className="btn" onClick={clearFilters}>{t('common.clear', 'Clear')}</button>
         <label htmlFor="accounts-include-deleted" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <input
             id="accounts-include-deleted"
@@ -118,13 +124,11 @@ export default function AccountsList() {
           />
           {t('accounts.includeDeleted')}
         </label>
-      </div>
+      </form>
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}
 
-      {!loading && !error && items.length === 0 && (!parentEmailLookupActive || (parentEmailLookupResult !== null && parentEmailLookupResult.outcome !== 'ACCOUNT_NOT_FOUND' && parentEmailLookupResult.familyIds.length > 0)) && (
-        <p className="status-unavailable">{parentEmailLookupActive ? t('accounts.parentEmailNoFamilyRows') : t('common.empty')}</p>
-      )}
+      {!loading && !error && items.length === 0 && <p className="status-unavailable">{t('accounts.directoryEmpty', 'No accounts found.')}</p>}
 
       {!loading && !error && items.length > 0 && (
         <div className="table-wrap">
@@ -181,7 +185,7 @@ export default function AccountsList() {
         </div>
       )}
 
-      {(!parentEmailLookupActive || (parentEmailLookupResult !== null && parentEmailLookupResult.outcome !== 'ACCOUNT_NOT_FOUND' && parentEmailLookupResult.familyIds.length > 0)) && <div className="pagination">
+      <div className="pagination">
         <button type="button" className="btn" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
           {t('common.previous')}
         </button>
@@ -189,7 +193,7 @@ export default function AccountsList() {
         <button type="button" className="btn" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
           {t('common.next')}
         </button>
-      </div>}
+      </div>
     </div>
   );
 }

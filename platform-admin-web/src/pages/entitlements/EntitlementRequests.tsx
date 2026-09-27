@@ -18,7 +18,6 @@ import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
-import { ParentEmailFamilyLookup, type ParentEmailLookupResult } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -127,9 +126,10 @@ export default function EntitlementRequests() {
   const [state, setState] = useState<EntitlementChangeRequestState | ''>('');
   const [appliedState, setAppliedState] = useState<EntitlementChangeRequestState | ''>('');
   const [familyIdFilter, setFamilyIdFilter] = useState(searchParams.get('familyId') ?? '');
-  const [parentEmailLookupActive, setParentEmailLookupActive] = useState(false);
-  const [lookupFamilyIds, setLookupFamilyIds] = useState<string[]>([]);
-  const [parentEmailLookupResult, setParentEmailLookupResult] = useState<ParentEmailLookupResult | null>(null);
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [emailFilter, setEmailFilter] = useState('');
+  const [appliedDates, setAppliedDates] = useState({ from: '', to: '', email: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -147,6 +147,9 @@ export default function EntitlementRequests() {
         offset,
         state: appliedState || undefined,
         familyId: familyIdFilter || undefined,
+        createdFrom: appliedDates.from || undefined,
+        createdTo: appliedDates.to || undefined,
+        parentEmail: appliedDates.email || undefined,
       })
       .then((result) => {
         if (sequence !== requestSequence.current) return;
@@ -163,22 +166,15 @@ export default function EntitlementRequests() {
   };
 
   useEffect(() => {
-    if (parentEmailLookupActive && (!familyIdFilter || !lookupFamilyIds.includes(familyIdFilter))) {
-      requestSequence.current += 1;
-      setItems([]);
-      setTotal(0);
-      setLoading(false);
-      setError(null);
-      return;
-    }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offset, appliedState, familyIdFilter, parentEmailLookupActive, lookupFamilyIds]);
+  }, [offset, appliedState, familyIdFilter, appliedDates]);
 
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
     setAppliedState(state);
+    setAppliedDates({ from: createdFrom, to: createdTo, email: emailFilter.trim() });
     const next = new URLSearchParams(searchParams);
     if (familyIdFilter) next.set('familyId', familyIdFilter);
     else next.delete('familyId');
@@ -212,28 +208,6 @@ export default function EntitlementRequests() {
     <div className="page">
       <h2>{t('nav.entitlementRequests')}</h2>
 
-      <ParentEmailFamilyLookup id="entitlement-requests" familyId={familyIdFilter} showAccountSummary
-        onLookupStart={() => {
-          setParentEmailLookupActive(true);
-          setLookupFamilyIds([]);
-          setParentEmailLookupResult(null);
-          setItems([]);
-          setTotal(0);
-          setError(null);
-          setLoading(false);
-        }}
-        onResult={(result) => {
-          setParentEmailLookupResult(result);
-          setLookupFamilyIds(result.outcome === 'ACCOUNT_NOT_FOUND' ? [] : result.familyIds);
-        }}
-        onFamilyIdChange={(value) => {
-          setFamilyIdFilter(value);
-          const next = new URLSearchParams(searchParams);
-          if (value) next.set('familyId', value);
-          else next.delete('familyId');
-          setSearchParams(next);
-        }} />
-
       <form className="filters enrollment-filter-row" onSubmit={onFilterSubmit}>
         <div>
           <label htmlFor="er-state">{t('entitlements.state')}</label>
@@ -246,18 +220,17 @@ export default function EntitlementRequests() {
             ))}
           </select>
         </div>
-        <button type="submit" className="btn">
-          {t('common.applyFilters')}
-        </button>
+        <label htmlFor="er-family">{t('entitlements.familyIdLabel')}<input id="er-family" value={familyIdFilter} onChange={(e) => setFamilyIdFilter(e.target.value)} /></label>
+        <label htmlFor="er-email">{t('accounts.emailFilterLabel')}<input id="er-email" type="email" value={emailFilter} onChange={(e) => setEmailFilter(e.target.value)} /></label>
+        <label htmlFor="er-created-from">{t('common.createdFrom', 'Created from')}<input id="er-created-from" type="date" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} /></label>
+        <label htmlFor="er-created-to">{t('common.createdTo', 'Created to')}<input id="er-created-to" type="date" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} /></label>
+        <button type="submit" className="btn btn-primary">{t('common.applyFilters', 'Apply filters')}</button>
+        <button type="button" className="btn" onClick={() => { setState(''); setFamilyIdFilter(''); setEmailFilter(''); setCreatedFrom(''); setCreatedTo(''); setAppliedState(''); setAppliedDates({ from: '', to: '', email: '' }); setOffset(0); setSearchParams((current) => { const next = new URLSearchParams(current); next.delete('familyId'); return next; }); }}>{t('common.clear', 'Clear')}</button>
       </form>
-
-      {parentEmailLookupActive && parentEmailLookupResult !== null && parentEmailLookupResult.outcome !== 'ACCOUNT_NOT_FOUND' && !familyIdFilter && !loading && !error && (
-        <p className="status-unavailable" role="status">{lookupFamilyIds.length > 1 ? t('entitlementRequests.chooseFamilyToLoad') : t('entitlementRequests.familyUnavailable')}</p>
-      )}
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}
-      {!loading && !error && items.length === 0 && <p className="status-unavailable">{t('common.empty')}</p>}
+      {!loading && !error && items.length === 0 && <p className="status-unavailable">{t('entitlementRequests.directoryEmpty')}</p>}
 
       {!loading && !error && items.length > 0 && (
         <div className="table-wrap">
@@ -272,6 +245,7 @@ export default function EntitlementRequests() {
                 <th scope="col">{t('entitlements.state')}</th>
                 <th scope="col">{t('entitlementRequests.quote')}</th>
                 <th scope="col">{t('accounts.createdAt')}</th>
+                <th scope="col">{t('accounts.updatedAt')}</th>
                 <th scope="col">{t('common.actions')}</th>
               </tr>
             </thead>
@@ -298,6 +272,7 @@ export default function EntitlementRequests() {
                       : '—'}
                   </td>
                   <td>{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
+                  <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '—'}</td>
                   <td>
                     <div className="actions-row">
                       {r.limitType === 'PARENT_MEMBER_LIMIT' && r.state === 'PENDING' && (

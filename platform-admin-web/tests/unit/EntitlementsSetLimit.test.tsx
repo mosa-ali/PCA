@@ -57,6 +57,12 @@ const LIMIT_MUTATION_RESPONSE = {
   updatedAt: '2026-08-01T00:00:00.000Z',
 };
 
+const DIRECTORY_ACCOUNT = {
+  familyId: 'fam-1', createdAt: '2026-08-01T00:00:00.000Z', deletedAt: null,
+  statusCapability: 'AVAILABLE', status: 'ACTIVE', suspendedAt: null, suspensionReason: null,
+  entitlement: { planRef: 'PLAN_A', parentMemberLimit: 2, managedDeviceLimit: 3, parentMemberUsedCount: 1, managedDeviceActiveCount: 2, managedDeviceReservedCount: 0, overLimitParentMember: false, overLimitManagedDevice: false },
+};
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -72,6 +78,7 @@ function renderPage(entitlementReads: string[], limitPosts: Array<{ url: string;
         limitPosts.push({ url, body: init?.body });
         return Promise.resolve(jsonResponse(200, LIMIT_MUTATION_RESPONSE));
       }
+      if (url.includes('/platform-admin/accounts')) return Promise.resolve(jsonResponse(200, { items: [DIRECTORY_ACCOUNT], total: 1, limit: 20, offset: 0 }));
       if (url.includes('/entitlement')) {
         entitlementReads.push(url);
         return Promise.resolve(jsonResponse(200, entitlementReads.length === 1 ? ENTITLEMENT_BEFORE : ENTITLEMENT_AFTER));
@@ -81,7 +88,7 @@ function renderPage(entitlementReads: string[], limitPosts: Array<{ url: string;
   );
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/entitlements?familyId=fam-1']}>
+      <MemoryRouter initialEntries={['/entitlements']}>
         <ToastProvider>
           <AuthProvider>
             <StepUpProvider>
@@ -105,8 +112,12 @@ describe('Entitlements "Set limit"', () => {
     const limitPosts: Array<{ url: string; body: unknown }> = [];
     renderPage(entitlementReads, limitPosts);
 
+    expect(await screen.findByText('fam-1')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
     // Initial read rendered: 2 of 3 devices active, 1 slot available.
-    expect(await screen.findByText(/2\/3/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/2\/3/)).length).toBeGreaterThan(0);
+    expect(screen.getByText('fam-1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
 
     const targetLimitInputs = await screen.findAllByLabelText('Target limit');
     await userEvent.type(targetLimitInputs[0], '9');
@@ -120,7 +131,7 @@ describe('Entitlements "Set limit"', () => {
     await waitFor(() => expect(entitlementReads.length).toBe(2));
 
     // Refreshed figures are on screen...
-    expect(await screen.findByText(/2\/9/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/2\/9/)).length).toBeGreaterThan(0);
     // ...and the section that used to crash (pendingRequestSummary.length on
     // an undefined field) is still rendered, i.e. the SPA did not blow up.
     expect(screen.getByRole('heading', { name: 'Pending requests' })).toBeInTheDocument();

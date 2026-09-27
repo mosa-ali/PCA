@@ -1,9 +1,4 @@
-// B103/B105: GET /platform-admin/accounts had rows but no way to search or
-// sort them (docs/product-completion/PCA_P1_P2_BEHAVIOR_LEDGER.csv). This
-// proves the search form sends `parentEmail`, and that clicking a sortable
-// column header sends `sortBy`/`sortDir` and toggles direction on a second
-// click -- mirrors AdminUsersMfaAndSearch.test.tsx's "assert on the query
-// string actually sent" convention.
+// Directory loads without a lookup and applies server-side email/date filters.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -36,18 +31,6 @@ function mockFetchFor(accountsCalls: string[]) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
-    if (url.includes('/platform-admin/accounts/resolve-parent-email')) {
-      accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
-      return Promise.resolve(jsonResponse(200, {
-        outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['fam-1'],
-        account: {
-          status: 'VERIFIED', createdAt: '2026-01-01T00:00:00.000Z', verifiedAt: '2026-01-01T00:00:00.000Z',
-          disabledAt: null, accountType: 'PARENT_GUARDIAN', estimatedChildCount: null, freeAccessMode: null,
-          freeAccessStartedAt: null, freeAccessExpiresAt: null, defaultParentMemberLimit: null, defaultManagedDeviceLimit: null,
-        },
-        families: [{ familyId: 'fam-1', status: 'ACTIVE', deletedAt: null }],
-      }));
-    }
     if (url.includes('/platform-admin/accounts')) {
       accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
       return Promise.resolve(jsonResponse(200, { items: [ACCOUNT], total: 1, limit: 20, offset: 0 }));
@@ -88,29 +71,19 @@ describe('AccountsList search and sort', () => {
     expect(calls[calls.length - 1]).toContain('sortDir=desc');
   });
 
-  it('resolves Parent Email first, then uses the family account read model', async () => {
+  it('shows the directory automatically and filters by exact Parent email and date range server-side', async () => {
     const calls: string[] = [];
     renderPage(calls);
     await screen.findAllByText('fam-1');
 
-    const input = screen.getByLabelText('Search by Parent Email');
-    await userEvent.type(input, ' parent@example.com ');
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(calls.some((call) => call.includes('/platform-admin/accounts?'))).toBe(true);
+    await userEvent.type(screen.getByLabelText('Email'), ' parent@example.com ');
+    await userEvent.type(screen.getByLabelText('Created from'), '2026-01-01');
+    await userEvent.type(screen.getByLabelText('Created to'), '2026-01-31');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     await screen.findAllByText('fam-1');
-    expect(calls.some((call) => call.includes('/resolve-parent-email') && call.includes('"email":"parent@example.com"'))).toBe(true);
-    expect(calls.some((call) => call.includes('/accounts/search') && call.includes('"parentEmail":"parent@example.com"'))).toBe(true);
-  });
-
-  it('shows invalid email feedback without issuing an email resolution request', async () => {
-    const calls: string[] = [];
-    renderPage(calls);
-    await screen.findByText('fam-1');
-    const previousCount = calls.length;
-    await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'not-an-email');
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid Parent email address.');
-    expect(calls).toHaveLength(previousCount);
+    expect(calls.some((call) => call.includes('/accounts/search') && call.includes('"parentEmail":"parent@example.com"') && call.includes('"createdFrom":"2026-01-01"') && call.includes('"createdTo":"2026-01-31"'))).toBe(true);
   });
 
   it('sorts by Family ID (descending) on first click, and reverses to ascending on a second click', async () => {

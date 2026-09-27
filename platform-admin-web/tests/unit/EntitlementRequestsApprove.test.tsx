@@ -65,7 +65,7 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-function renderPage(approveCalls: RequestInit[]) {
+function renderPage(approveCalls: RequestInit[], listCalls: string[] = []) {
   secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
   vi.stubGlobal(
     'fetch',
@@ -77,6 +77,7 @@ function renderPage(approveCalls: RequestInit[]) {
         return Promise.resolve(jsonResponse(200, APPROVED_REQUEST));
       }
       if (url.includes('/platform-admin/entitlement-requests')) {
+        listCalls.push(url);
         return Promise.resolve(jsonResponse(200, { items: [PENDING_REQUEST], total: 1, limit: 20, offset: 0 }));
       }
       return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
@@ -137,5 +138,22 @@ describe('EntitlementRequests approve round-trip', () => {
     const init = (fetchMock.mock.calls[0] as [string, RequestInit])[1];
     expect(init.body).toBe('{}');
     expect(JSON.parse(init.body as string)).toEqual({});
+  });
+
+  it('automatically lists requests and applies state, email, family, and date filters on the server', async () => {
+    const calls: string[] = [];
+    renderPage([], calls);
+    expect(await screen.findByText('req-1')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('State'), 'PENDING');
+    await userEvent.type(screen.getByLabelText('Family ID'), 'fam-1');
+    await userEvent.type(screen.getByLabelText('Email'), 'parent@example.test');
+    await userEvent.type(screen.getByLabelText('Created from'), '2026-08-01');
+    await userEvent.type(screen.getByLabelText('Created to'), '2026-08-02');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(calls.at(-1)).toContain('state=PENDING'));
+    expect(calls.at(-1)).toContain('familyId=fam-1');
+    expect(calls.at(-1)).toContain('parentEmail=parent%40example.test');
+    expect(calls.at(-1)).toContain('createdFrom=2026-08-01');
+    expect(calls.at(-1)).toContain('createdTo=2026-08-02');
   });
 });
