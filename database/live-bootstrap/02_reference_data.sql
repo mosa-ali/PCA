@@ -59,7 +59,17 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0046_parent_daily_login_grants.sql', CURRENT_TIMESTAMP(3)),
   ('0047_action_idempotency_ledger.sql', CURRENT_TIMESTAMP(3)),
   ('0048_commercial_quote_attribution_retry.sql', CURRENT_TIMESTAMP(3)),
-  ('0049_parent_totp_mfa_and_family_provisioning.sql', CURRENT_TIMESTAMP(3));
+  ('0049_parent_totp_mfa_and_family_provisioning.sql', CURRENT_TIMESTAMP(3)),
+  ('0050_parent_mfa_recovery_hold.sql', CURRENT_TIMESTAMP(3)),
+  ('0051_parent_successful_login_notice.sql', CURRENT_TIMESTAMP(3)),
+  ('0052_parent_identity_names.sql', CURRENT_TIMESTAMP(3)),
+  ('0053_parent_identity_contacts.sql', CURRENT_TIMESTAMP(3)),
+  ('0054_parent_sensitive_step_up_operations.sql', CURRENT_TIMESTAMP(3)),
+  ('0055_parent_device_invitation_step_up.sql', CURRENT_TIMESTAMP(3)),
+  ('0056_family_device_session_epoch.sql', CURRENT_TIMESTAMP(3)),
+  ('0057_parent_actor_provenance_for_removal_decisions.sql', CURRENT_TIMESTAMP(3)),
+  ('0058_family_authority_request_challenges_service_index.sql', CURRENT_TIMESTAMP(3)),
+  ('0059_parent_mfa_ascii_check_literal_charset.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

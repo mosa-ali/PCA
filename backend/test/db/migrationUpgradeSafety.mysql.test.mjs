@@ -32,6 +32,7 @@ if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
 }
 
 const MIGRATION_0004_PATH = fileURLToPath(new URL('../../migrations/0004_envelope_ledger_family_scope.sql', import.meta.url));
+const MIGRATION_0059_PATH = fileURLToPath(new URL('../../migrations/0059_parent_mfa_ascii_check_literal_charset.sql', import.meta.url));
 
 // Exact pre-0004 (0002_sync_durability.sql) DDL for the three tables this
 // migration re-keys -- what a real deployment's schema looks like the
@@ -203,4 +204,48 @@ test('PCA-17E MIGRATION_0004_EXISTING_ROW_UPGRADE_SAFETY: after the populated-up
   assert.deepEqual(result.decision, { kind: 'APPLY_NOW', idempotent: false });
 
   await closePool();
+});
+
+test('TODO-20 migration 0059 normalizes historical check literal charsets without changing rows and is replay-safe', async () => {
+  const conn = await mysql.createConnection({ uri: connectionString, multipleStatements: true, timezone: 'Z' });
+  try {
+    const [beforeRows] = await conn.query('SELECT COUNT(*) AS row_count FROM parent_mfa_enrollment_tickets');
+    await conn.query('ALTER TABLE parent_mfa_enrollment_tickets DROP CHECK parent_mfa_enrollment_tickets_purpose_check, ADD CONSTRAINT parent_mfa_enrollment_tickets_purpose_check CHECK (purpose IN (_cp850\'MFA_SETUP_REQUIRED\', _cp850\'MFA_RECOVERY\'))');
+    await conn.query('ALTER TABLE parent_mfa_enrollment_tickets DROP CHECK parent_mfa_enrollment_tickets_hash_check, ADD CONSTRAINT parent_mfa_enrollment_tickets_hash_check CHECK (REGEXP_LIKE(token_hash, _cp850\'^[0-9a-f]{64}$\'))');
+
+    const migration = await readFile(MIGRATION_0059_PATH, 'utf8');
+    await conn.query(migration);
+    const [normalized] = await conn.query(
+      `SELECT tc.constraint_name AS constraint_name, cc.check_clause AS normalized_clause, tc.enforced AS is_enforced
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.check_constraints cc
+           ON cc.constraint_schema = tc.constraint_schema
+          AND cc.constraint_name = tc.constraint_name
+        WHERE tc.constraint_schema = DATABASE()
+          AND tc.table_name = 'parent_mfa_enrollment_tickets'
+          AND tc.constraint_name IN ('parent_mfa_enrollment_tickets_purpose_check', 'parent_mfa_enrollment_tickets_hash_check')
+        ORDER BY tc.constraint_name`,
+    );
+    assert.equal(normalized.length, 2);
+    const purposeClause = normalized.find((row) => row.constraint_name === 'parent_mfa_enrollment_tickets_purpose_check')?.normalized_clause;
+    const hashClause = normalized.find((row) => row.constraint_name === 'parent_mfa_enrollment_tickets_hash_check')?.normalized_clause;
+    assert.ok(purposeClause?.includes('_ascii') && !purposeClause.includes('_cp850'), JSON.stringify(normalized));
+    assert.ok(hashClause?.includes('_utf8mb4') && !hashClause.includes('_cp850'), JSON.stringify(normalized));
+    assert.ok(normalized.every((row) => row.is_enforced === 'YES'));
+    const firstClauses = normalized.map((row) => row.normalized_clause);
+
+    await conn.query(migration);
+    const [replayed] = await conn.query(
+      `SELECT constraint_name AS constraint_name, check_clause AS normalized_clause
+         FROM information_schema.check_constraints
+        WHERE constraint_schema = DATABASE()
+          AND constraint_name IN ('parent_mfa_enrollment_tickets_purpose_check', 'parent_mfa_enrollment_tickets_hash_check')
+        ORDER BY constraint_name`,
+    );
+    assert.deepEqual(replayed.map((row) => row.normalized_clause), firstClauses);
+    const [afterRows] = await conn.query('SELECT COUNT(*) AS row_count FROM parent_mfa_enrollment_tickets');
+    assert.equal(afterRows[0].row_count, beforeRows[0].row_count, 'charset normalization must preserve every enrollment-ticket row');
+  } finally {
+    await conn.end();
+  }
 });

@@ -24,7 +24,7 @@
 --   282 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    56 schema_migrations journal rows
+--    57 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1301,7 +1301,7 @@ CREATE TABLE `parent_mfa_enrollment_tickets` (
   CONSTRAINT `parent_mfa_enrollment_tickets_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `parent_mfa_enrollment_tickets_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_mfa_enrollment_tickets_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
-  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY')))
+  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_ascii'MFA_SETUP_REQUIRED',_ascii'MFA_RECOVERY')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_mfa_recovery_codes (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)
@@ -1954,4 +1954,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0055_parent_device_invitation_step_up.sql'),
   ('0056_family_device_session_epoch.sql'),
   ('0057_parent_actor_provenance_for_removal_decisions.sql'),
-  ('0058_family_authority_request_challenges_service_index.sql');
+  ('0058_family_authority_request_challenges_service_index.sql'),
+  ('0059_parent_mfa_ascii_check_literal_charset.sql');

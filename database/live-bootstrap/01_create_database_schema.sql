@@ -955,7 +955,7 @@ CREATE TABLE `family_authority_genesis_anchors` (
   CONSTRAINT `family_authority_genesis_anchors_protocol_version_check` CHECK ((`protocol_version` between 1 and 100))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- family_authority_request_challenges (defined by backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql)
+-- family_authority_request_challenges (defined by backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql, altered by 0058_family_authority_request_challenges_service_index.sql)
 CREATE TABLE `family_authority_request_challenges` (
   `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1214,6 +1214,7 @@ CREATE TABLE `parent_genesis_step_up_authorizations` (
   `consumed_at` datetime(3) NULL,
   PRIMARY KEY (`authorization_id`),
   KEY `parent_genesis_step_up_session_idx` (`account_id`, `service_account_id`, `session_id_hash`, `created_at`),
+  KEY `parent_genesis_step_up_service_account_fk` (`service_account_id`),
   CONSTRAINT `parent_genesis_step_up_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `parent_genesis_step_up_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `parent_genesis_step_up_code_hash_check` CHECK ((char_length(`code_hash`) = 64)),
@@ -1270,7 +1271,7 @@ CREATE TABLE `parent_mfa_enrollment_tickets` (
   CONSTRAINT `parent_mfa_enrollment_tickets_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `parent_mfa_enrollment_tickets_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_mfa_enrollment_tickets_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
-  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY')))
+  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_ascii'MFA_SETUP_REQUIRED',_ascii'MFA_RECOVERY')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_mfa_recovery_codes (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql)

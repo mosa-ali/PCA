@@ -3,7 +3,7 @@
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 92 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0058; 56 files, 0009/0010 never existed) from an empty database
+// through 0059; 57 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -2583,7 +2583,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     checkConstraints: [
       { name: "parent_mfa_enrollment_tickets_expiry_check", clause: "(`expires_at` > `created_at`)" },
       { name: "parent_mfa_enrollment_tickets_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
-      { name: "parent_mfa_enrollment_tickets_purpose_check", clause: "(`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY'))" },
+      { name: "parent_mfa_enrollment_tickets_purpose_check", clause: "(`purpose` in (_ascii'MFA_SETUP_REQUIRED',_ascii'MFA_RECOVERY'))" },
     ],
     applicationEnforcedRelations: [],
   },
