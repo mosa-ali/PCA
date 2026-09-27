@@ -656,3 +656,9 @@ FIX = Canonical schema now traces migration 0059. Cross-family E2E uses a distin
 LOCAL_VALIDATION = Backend TypeScript build PASS. Serial Windows canonical schema drift suite PASS 5/5 (default worker launch first returned `spawn EPERM`, then the documented serial mode passed). Bootstrap generators report 92 tables, 792 columns, 104 FKs, 282 checks, 57 migrations; disposable bootstrap artifact check PASS. Local real-backend browser E2E and the corrective exact-head CI have not yet run.
 TODO20_GATE = 0059 remains unapplied to live `pca_pro`. Require a fresh exact-head CI PASS and immediate live read-only preflight before any migration; retain no-seed, zero-data-loss, local-first, post-schema/grant equality checks.
 NEXT_ACTION = Review the narrow source/workflow/artifact changes, sync both ledgers, publish the exact checkpoint fast-forward, then inspect exact-head CI. Continue the same TODO-20 and dependent Platform hold.
+
+### 2026-09-27 23:45 UTC — TODO-20 corrective source checkpoint published
+
+PUBLISHED = Commit `6d368042a21d4e5fbc6b69f440c69c3858e7db8b` contains only the seven reviewed source/workflow/bootstrap/ledger paths. Fast-forward push to `origin/pca-dev` succeeded; after fetch, local HEAD, `origin/pca-dev`, and `git ls-remote` all equal `6d368042a21d4e5fbc6b69f440c69c3858e7db8b`. Unrelated dirty `backend/schema/current_schema.sql`, `backend/schema/schema_manifest.json`, `.vscode/`, and root `0` remain excluded.
+CI = Exact-head Quality Gates run `36359758120` was queued for source checkpoint `6d368042`; ledger-only publication is being prepared and requires its own latest-head run before any live mutation.
+NEXT_ACTION = Complete the ledger sync, verify remote equality and required path presence, then inspect the resulting exact-head run. TODO-20 live 0059 remains gated on exact-head PASS plus immediate preflight.

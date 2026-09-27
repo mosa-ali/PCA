@@ -437,3 +437,9 @@ PRIOR_CI = Exact-head Quality Gates run `36356186069` completed SUCCESS at `3993
 PARENT_CI = Exact-head run `36358827739` at `c71546343db8ef982b28d432711058db6c5d7a80` FAILED: disposable MySQL full DB certification passed, while canonical migration provenance had one backend unit failure and the Parent real-backend cross-family CREATE check hit 429 after a shared per-IP budget was consumed. Android and iOS passed. Parent corrections add migration trace metadata and isolate only the disposable E2E clients behind the explicitly trusted loopback test proxy; corrective CI is pending.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform source, live data, activation, deployment, or owner acceptance changed.
 NEXT_ACTION = Require the corrective Parent exact-head Quality Gates run to pass, then continue Parent TODO-20 immediate-preflight/schema/grant reconciliation and preserve the dependent Platform hold.
+
+### 2026-09-27 23:45 UTC — Parent TODO-20 corrective source checkpoint published
+
+PARENT_PUBLISHED = Commit `6d368042a21d4e5fbc6b69f440c69c3858e7db8b` contains only the reviewed Parent fixes, generated bootstrap comments, and mission ledger checkpoint. Fetch verification matched local, `origin/pca-dev`, and server branch refs exactly. Parent exact-head run `36359758120` is queued for this source SHA; ledger sync will require latest-head verification as well.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform implementation, database, deployment, activation, or owner acceptance changed.
+NEXT_ACTION = Finish ledger publication and exact-head CI verification before resuming live Parent TODO-20 reconciliation. Keep the dependent Platform hold.
