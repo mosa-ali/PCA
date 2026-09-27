@@ -25,6 +25,9 @@ export type PlatformAdminOperation =
   | 'VIEW_AUDIT_LOG_FULL'
   | 'VIEW_AUDIT_LOG_OWN'
   | 'VIEW_SUPPORT_ACCOUNT_METADATA'
+  // Direct parent identity PII is narrower than support/account metadata:
+  // auditors and finance operators do not receive names, display email, or phone.
+  | 'VIEW_PARENT_IDENTITY'
   | 'PERFORM_SUPPORT_ACTION'
   // PCA-ADD-COMP-014: complimentary-grant create/revoke/renew, bounded
   // delegation to APP_OWNER + PLATFORM_ADMIN (FINANCE_ADMIN/SUPPORT_ADMIN/
@@ -80,8 +83,9 @@ export type PlatformAdminAuthorizationVerdict = 'ALLOW' | 'DENY';
  * missing matrix row can only mean the matrix itself is out of date.
  *
  * PCA-ADD-PA-008: AUDITOR_READ_ONLY is DENY on every mutating operation
- * and ALLOW only on VIEW_* operations -- asserted directly by a unit test
- * that iterates this matrix (backend/test/platformadmin/rbacPolicy.test.mjs),
+ * and on direct Parent identity PII; read access is granted only by the
+ * explicitly reviewed rows -- asserted directly by a unit test that
+ * iterates this matrix (backend/test/platformadmin/rbacPolicy.test.mjs),
  * not merely by eyeballing the table below.
  */
 const OPERATION_MATRIX: Record<PlatformAdminOperation, Record<PlatformAdminRole, PlatformAdminAuthorizationVerdict>> = {
@@ -189,6 +193,13 @@ const OPERATION_MATRIX: Record<PlatformAdminOperation, Record<PlatformAdminRole,
     FINANCE_ADMIN: 'ALLOW',
     SUPPORT_ADMIN: 'ALLOW',
     AUDITOR_READ_ONLY: 'ALLOW',
+  },
+  VIEW_PARENT_IDENTITY: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'ALLOW',
+    FINANCE_ADMIN: 'DENY',
+    SUPPORT_ADMIN: 'ALLOW',
+    AUDITOR_READ_ONLY: 'DENY',
   },
   PERFORM_SUPPORT_ACTION: {
     APP_OWNER: 'ALLOW',

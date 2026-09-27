@@ -63,7 +63,7 @@ function toRow(r: RequestRow): EntitlementRequestListRow {
 }
 
 export class EntitlementRequestsReadModel {
-  async list(page: PageRequest, filter: { state?: string; familyId?: string }): Promise<PageResult<EntitlementRequestListRow>> {
+  async list(page: PageRequest, filter: { state?: string; familyId?: string; createdFrom?: string; createdTo?: string; parentEmailHash?: Buffer }): Promise<PageResult<EntitlementRequestListRow>> {
     return runInTransaction(async (conn) => {
       const conditions: string[] = [];
       const params: unknown[] = [];
@@ -74,6 +74,26 @@ export class EntitlementRequestsReadModel {
       if (filter.familyId) {
         conditions.push('family_id = ?');
         params.push(filter.familyId);
+      }
+      if (filter.createdFrom) {
+        conditions.push('created_at >= ?');
+        params.push(`${filter.createdFrom} 00:00:00.000`);
+      }
+      if (filter.createdTo) {
+        conditions.push('created_at < DATE_ADD(?, INTERVAL 1 DAY)');
+        params.push(`${filter.createdTo} 00:00:00.000`);
+      }
+      if (filter.parentEmailHash) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM parent_accounts pa
+          WHERE pa.email_hash = ? AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
+            AND (pa.family_id = entitlement_change_requests.family_id
+              OR EXISTS (SELECT 1 FROM families f WHERE f.family_id = entitlement_change_requests.family_id AND f.provisioned_for_account_id = pa.account_id)
+              OR EXISTS (SELECT 1 FROM family_parent_memberships m
+                WHERE m.account_id = pa.account_id AND m.family_id = entitlement_change_requests.family_id
+                  AND m.status = 'ACTIVE' AND m.role = 'ADMINISTRATOR'))
+        )`);
+        params.push(filter.parentEmailHash);
       }
       const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 

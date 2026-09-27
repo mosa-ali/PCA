@@ -1,6 +1,6 @@
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { randomUUID } from 'node:crypto';
-import { execute, runInTransaction } from '../../db/pool.js';
+import { execute, isDeadlock, runInTransaction } from '../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../audit/MySqlPlatformAdminAuditRepository.js';
 import type {
   AssignRoleInput,
@@ -73,6 +73,23 @@ interface StepUpRow extends RowDataPacket {
   asserted_at: Date;
   expires_at: Date;
   consumed_at: Date | null;
+}
+
+const MAX_SESSION_REVOCATION_DEADLOCK_RETRIES = 3;
+
+async function runSessionRevocationTransaction<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < MAX_SESSION_REVOCATION_DEADLOCK_RETRIES; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      // InnoDB has rolled the deadlocked transaction back completely. These
+      // revocation operations are idempotent, so retrying the whole transaction
+      // cannot duplicate a partial revoke or its atomic audit rows.
+      if (!isDeadlock(error) || attempt === MAX_SESSION_REVOCATION_DEADLOCK_RETRIES - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
+    }
+  }
+  throw new Error('Platform Admin session revocation: exhausted deadlock retry budget unexpectedly');
 }
 
 function toAccount(row: AccountRow): PlatformAdminAccountRecord {
@@ -451,7 +468,7 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
   }
 
   async revokeSessionByTokenHash(tokenHash: string, revokedAt: Date, auditEvent?: PlatformAdminAuditEvent): Promise<boolean> {
-    return runInTransaction(async (conn) => {
+    return runSessionRevocationTransaction(() => runInTransaction(async (conn) => {
       const { rowCount } = await execute(
         conn,
         `UPDATE platform_admin_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`,
@@ -459,7 +476,7 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
       );
       if (rowCount > 0 && auditEvent) await insertPlatformAdminAuditEventRow(conn, auditEvent);
       return rowCount > 0;
-    });
+    }));
   }
 
   async revokeAllActiveSessions(
@@ -467,7 +484,9 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
     revokedAt: Date,
     buildAuditEvent: (sessionId: PlatformAdminSessionId) => PlatformAdminAuditEvent,
   ): Promise<RevokeRoleResult> {
-    return runInTransaction((conn) => revokeActiveSessionsOnConnection(conn, adminId, revokedAt, buildAuditEvent));
+    return runSessionRevocationTransaction(() =>
+      runInTransaction((conn) => revokeActiveSessionsOnConnection(conn, adminId, revokedAt, buildAuditEvent)),
+    );
   }
 
   async recentFailedLoginTimestampsDescending(emailHash: Buffer, limit: number): Promise<Date[]> {

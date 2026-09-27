@@ -23,6 +23,10 @@ import { COMPLIMENTARY_ENTITLEMENT_TYPES, COMPLIMENTARY_GRANT_CATEGORIES } from 
 import type { ComplimentaryEntitlementType, ComplimentaryGrantCategory } from '../../../entitlements/complimentary/types.js';
 import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
+import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
+import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
+import { ComplimentaryCapacityReadModel } from '../../../platformadmin/readmodels/ComplimentaryCapacityReadModel.js';
+import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
 
 export interface ComplimentaryGrantRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
@@ -35,6 +39,14 @@ const FAMILY_ID_MAX_LENGTH = 128;
 const REASON_CODE_MAX_LENGTH = 64;
 const INTERNAL_NOTE_MAX_LENGTH = 2000;
 const MAX_AMOUNT = 1_000_000;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseCalendarDate(value: unknown): string | undefined | null {
+  if (value === undefined || value === '') return undefined;
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value ? null : value;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,6 +107,7 @@ export function registerComplimentaryGrantRoutes(app: FastifyInstance, deps: Com
   const requirePlatformAdminSession = createRequirePlatformAdminSession(deps.platformAdminAuthService);
   const readLimiter = deps.rateLimiter({ windowMs: 60_000, max: 120, bucket: 'platform-admin-complimentary-grant-read' });
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'platform-admin-complimentary-grant-mutate' });
+  const directory = new ComplimentaryCapacityReadModel();
 
   function actor(request: FastifyRequest) {
     return {
@@ -103,6 +116,28 @@ export function registerComplimentaryGrantRoutes(app: FastifyInstance, deps: Com
       sessionId: request.platformAdminSessionId as string,
     };
   }
+
+  app.get(
+    '/platform-admin/complimentary-capacity',
+    { preHandler: [readLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      const query = (request.query ?? {}) as Record<string, unknown>;
+      const createdFrom = parseCalendarDate(query.createdFrom);
+      const createdTo = parseCalendarDate(query.createdTo);
+      const parentEmail = typeof query.parentEmail === 'string' ? query.parentEmail.trim() : undefined;
+      if (query.parentEmail !== undefined && (!parentEmail || !isPlausibleEmail(parentEmail))) return reply.code(400).send({ error: 'invalid_request' });
+      if (createdFrom === null || createdTo === null || (createdFrom && createdTo && createdFrom > createdTo)) return reply.code(400).send({ error: 'invalid_request' });
+      const result = await directory.list(parsePageRequest(query), { createdFrom, createdTo, parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined });
+      return reply.code(200).send({
+        items: result.items.map((item) => ({ ...item, createdAt: dateToJson(item.createdAt) })),
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+      });
+    },
+  );
 
   app.get(
     '/platform-admin/families/:familyId/complimentary-grants',

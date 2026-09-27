@@ -7,17 +7,10 @@
  * real audit event (`ACCOUNT_SUSPENDED`/`ACCOUNT_REACTIVATED`, already
  * accepted by migration 0005's event-type CHECK constraint).
  *
- * SCOPE BOUNDARY (deliberate, see this lane's final report): this service
- * only ever WRITES `families.status`. It does NOT enforce that status
- * anywhere else -- no route in `backend/src/parentaccount/**`
- * (ParentAccountService.login, the actual family-facing session/API
- * boundary) currently checks it. That enforcement wiring is a single
- * `if (family.status === 'SUSPENDED') throw ...` guard at login time, but
- * `backend/src/parentaccount/**` is outside this lane's owned files
- * (Writer65 owns `backend/src/platformadmin/**`/`backend/src/billing/**`
- * only) -- see INTERFACE_CHANGE_REQUESTS in this lane's final report for
- * the exact proposed addition, rather than this lane silently editing a
- * file it does not own.
+ * Suspending a family also revokes its Parent sessions, daily-login browser
+ * grants, pending email login challenges, and family-bound sensitive step-up
+ * grants in the same transaction. Parent grants are account-bound, so every
+ * active Parent account linked to the suspended family is invalidated.
  */
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../../db/pool.js';
@@ -71,6 +64,60 @@ function toRecord(row: FamilyStatusRow): FamilyAccountStatusRecord {
 
 const REASON_MAX_LENGTH = 500;
 
+async function revokeFamilyParentAccess(
+  conn: import('mysql2/promise').PoolConnection,
+  familyId: string,
+  revokedAt: Date,
+): Promise<void> {
+  const { rows } = await execute<{ account_id: string }>(
+    conn,
+    `SELECT provisioned_for_account_id AS account_id
+       FROM families
+      WHERE family_id = ? AND provisioned_for_account_id IS NOT NULL
+     UNION
+     SELECT account_id
+       FROM family_parent_memberships
+      WHERE family_id = ? AND status = 'ACTIVE'`,
+    [familyId, familyId],
+  );
+  const accountIds = [...new Set(rows.map((row) => row.account_id))];
+  if (accountIds.length > 0) {
+    const placeholders = accountIds.map(() => '?').join(', ');
+    await execute(
+      conn,
+      `UPDATE service_sessions
+          SET revoked_at = ?
+        WHERE revoked_at IS NULL
+          AND account_id IN (
+            SELECT service_account_id FROM parent_accounts
+             WHERE account_id IN (${placeholders}) AND service_account_id IS NOT NULL
+          )`,
+      [revokedAt, ...accountIds],
+    );
+    await execute(
+      conn,
+      `UPDATE parent_daily_login_grants
+          SET revoked_at = ?
+        WHERE revoked_at IS NULL AND account_id IN (${placeholders})`,
+      [revokedAt, ...accountIds],
+    );
+    await execute(
+      conn,
+      `UPDATE parent_login_step_up_codes
+          SET consumed_at = ?
+        WHERE consumed_at IS NULL AND account_id IN (${placeholders})`,
+      [revokedAt, ...accountIds],
+    );
+  }
+  await execute(
+    conn,
+    `UPDATE parent_mfa_step_up_grants
+        SET consumed_at = ?
+      WHERE family_id = ? AND consumed_at IS NULL`,
+    [revokedAt, familyId],
+  );
+}
+
 export class FamilyAccountStatusService {
   constructor(
     private readonly authService: PlatformAdminAuthService,
@@ -107,10 +154,12 @@ export class FamilyAccountStatusService {
 
       const { rowCount } = await execute(
         conn,
-        `UPDATE families SET status = 'SUSPENDED', suspended_at = ?, suspended_by_admin_id = ?, suspension_reason = ? WHERE family_id = ? AND status = 'ACTIVE'`,
+        `UPDATE families SET status = 'SUSPENDED', suspended_at = ?, suspended_by_admin_id = ?, suspension_reason = ?, device_session_epoch = device_session_epoch + 1 WHERE family_id = ? AND status = 'ACTIVE'`,
         [now, actor.adminId, reason, familyId],
       );
       if (rowCount !== 1) throw new FamilyAccountStatusError('ALREADY_SUSPENDED');
+
+      await revokeFamilyParentAccess(conn, familyId, now);
 
       await insertPlatformAdminAuditEventRow(conn, {
         eventId: randomUUID(),
@@ -150,7 +199,7 @@ export class FamilyAccountStatusService {
 
       const { rowCount } = await execute(
         conn,
-        `UPDATE families SET status = 'ACTIVE', suspended_at = NULL, suspended_by_admin_id = NULL, suspension_reason = NULL WHERE family_id = ? AND status = 'SUSPENDED'`,
+        `UPDATE families SET status = 'ACTIVE', suspended_at = NULL, suspended_by_admin_id = NULL, suspension_reason = NULL, device_session_epoch = device_session_epoch + 1 WHERE family_id = ? AND status = 'SUSPENDED'`,
         [familyId],
       );
       if (rowCount !== 1) throw new FamilyAccountStatusError('ALREADY_ACTIVE');

@@ -5,7 +5,7 @@ import { PLATFORM_ADMIN_ROLES } from '../../dist/platformadmin/auth/types.js';
 
 const VIEW_OPERATIONS = new Set(['VIEW_ADMIN_ACCOUNTS', 'VIEW_PLATFORM_DASHBOARD', 'VIEW_AUDIT_LOG_FULL', 'VIEW_AUDIT_LOG_OWN', 'VIEW_SUPPORT_ACCOUNT_METADATA', 'VIEW_SETTLEMENT_RECORDS', 'VIEW_RELEASE']);
 
-test('PCA-ADD-PA-008: AUDITOR_READ_ONLY is DENY on every operation not prefixed VIEW_*, across the whole matrix', () => {
+test('PCA-ADD-PA-008: AUDITOR_READ_ONLY is DENY on mutations and direct Parent identity PII, ALLOW only on approved views', () => {
   for (const operation of PLATFORM_ADMIN_OPERATIONS) {
     const verdict = authorizePlatformAdminOperation(['AUDITOR_READ_ONLY'], operation);
     if (VIEW_OPERATIONS.has(operation)) {
@@ -45,6 +45,14 @@ test('FINANCE_ADMIN cannot ASSIGN_ADMIN_ROLE', () => {
 
 test('SUPPORT_ADMIN cannot ISSUE_REFUND (a billing-mutation operation)', () => {
   assert.equal(authorizePlatformAdminOperation(['SUPPORT_ADMIN'], 'ISSUE_REFUND'), 'DENY');
+});
+
+test('Parent identity PII is limited to owner, platform, and support roles', () => {
+  assert.equal(authorizePlatformAdminOperation(['APP_OWNER'], 'VIEW_PARENT_IDENTITY'), 'ALLOW');
+  assert.equal(authorizePlatformAdminOperation(['PLATFORM_ADMIN'], 'VIEW_PARENT_IDENTITY'), 'ALLOW');
+  assert.equal(authorizePlatformAdminOperation(['SUPPORT_ADMIN'], 'VIEW_PARENT_IDENTITY'), 'ALLOW');
+  assert.equal(authorizePlatformAdminOperation(['FINANCE_ADMIN'], 'VIEW_PARENT_IDENTITY'), 'DENY');
+  assert.equal(authorizePlatformAdminOperation(['AUDITOR_READ_ONLY'], 'VIEW_PARENT_IDENTITY'), 'DENY');
 });
 
 test('APP_OWNER is ALLOW on every operation', () => {

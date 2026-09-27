@@ -5,11 +5,7 @@
  *
  * PCA-ADD-PA-017 (Writer65): POST .../suspend and .../reactivate now exist,
  * composing FamilyAccountStatusService for every RBAC/step-up/audit
- * decision -- this file is the HTTP adapter layer only. See
- * FamilyAccountStatusService's own header for this slice's deliberate
- * scope boundary (it writes `families.status`; it does not itself enforce
- * that status at the family login boundary, which lives outside this
- * lane's owned files).
+ * decision -- this file is the HTTP adapter layer only.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequirePlatformAdminSession } from '../../../platformadmin/auth/fastifyPlatformAdminAuthPlugin.js';
@@ -25,16 +21,27 @@ import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
 import { resolveParentEmailFamilyLookup } from '../../../platformadmin/accounts/ParentEmailFamilyLookup.js';
+import { ParentIdentityAmbiguousError, ParentIdentityReadModel } from '../../../platformadmin/readmodels/ParentIdentityReadModel.js';
 import type { PlatformAdminRole } from '../../../platformadmin/auth/types.js';
 
 export interface PlatformAdminAccountsRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
+  /** Injectable persistence seam for route contract tests; production uses the MySQL-backed default. */
+  parentIdentityReadModel?: ParentIdentityReadModel;
 }
 
 const FAMILY_ID_MAX_LENGTH = 128;
 const MAX_BODY_BYTES = 1024;
 const REASON_MAX_LENGTH = 500;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseCalendarDate(value: unknown): string | undefined | null {
+  if (value === undefined || value === '') return undefined;
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value ? null : value;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -130,6 +137,7 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'platform-admin-accounts-mutate' });
   const emailLookupLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'platform-admin-parent-email-lookup' });
   const readModel = new AccountsReadModel();
+  const parentIdentityReadModel = deps.parentIdentityReadModel ?? new ParentIdentityReadModel();
   const familyStatusService = new FamilyAccountStatusService(deps.platformAdminAuthService);
 
   app.post(
@@ -163,10 +171,15 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       if (query.parentEmail !== undefined && (!parentEmail || !isPlausibleEmail(parentEmail))) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      const createdFrom = parseCalendarDate(query.createdFrom);
+      const createdTo = parseCalendarDate(query.createdTo);
+      if (createdFrom === null || createdTo === null || (createdFrom && createdTo && createdFrom > createdTo)) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       const sortBy = query.sortBy === 'familyId' ? 'familyId' : 'createdAt';
       const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
       const canViewBilling = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
-      const result = await readModel.list(page, includeDeleted, { familyId, parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined, sortBy, sortDir });
+      const result = await readModel.list(page, includeDeleted, { familyId, parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined, createdFrom, createdTo, sortBy, sortDir });
       return reply.code(200).send({
         items: result.items.map((account) => toAccountDto(account, canViewBilling)),
         total: result.total,
@@ -215,6 +228,38 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       const account = await readModel.getById(accountId);
       if (!account) return reply.code(404).send({ error: 'not_found' });
       return reply.code(200).send(toAccountDto(account, authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW'));
+    },
+  );
+
+  app.get(
+    '/platform-admin/accounts/:accountId/identity',
+    { preHandler: [readLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      reply.header('Cache-Control', 'no-store');
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'VIEW_PARENT_IDENTITY') !== 'ALLOW') {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const { accountId: familyId } = request.params as { accountId?: string };
+      if (typeof familyId !== 'string' || familyId.length === 0 || familyId.length > FAMILY_ID_MAX_LENGTH) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      let identity;
+      try {
+        identity = await parentIdentityReadModel.getByFamilyId(familyId);
+      } catch (error) {
+        if (error instanceof ParentIdentityAmbiguousError) {
+          return reply.code(409).send({ error: 'identity_unavailable' });
+        }
+        throw error;
+      }
+      if (!identity) return reply.code(404).send({ error: 'not_found' });
+      return reply.code(200).send({
+        firstName: identity.firstName,
+        lastName: identity.lastName,
+        email: identity.email,
+        phoneNumber: identity.phoneNumber,
+      });
     },
   );
 

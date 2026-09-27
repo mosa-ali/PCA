@@ -119,6 +119,10 @@ export interface AccountListFilter {
   /** Exact match on the opaque family UUID -- mirrors this codebase's existing accountRef/familyId filter convention (BillingReadModel, EntitlementRequestsReadModel: always `= ?`, never a fuzzy LIKE, since these are opaque identifiers an operator pastes in whole, not names). */
   readonly familyId?: string;
   readonly parentEmailHash?: Buffer;
+  /** Inclusive calendar date in the database session timezone. */
+  readonly createdFrom?: string;
+  /** Inclusive calendar date in the database session timezone. */
+  readonly createdTo?: string;
   readonly sortBy?: AccountSortField;
   readonly sortDir?: SortDirection;
 }
@@ -144,6 +148,14 @@ export class AccountsReadModel {
             ))
         )`);
         params.push(filter.parentEmailHash);
+      }
+      if (filter.createdFrom) {
+        conditions.push('f.created_at >= ?');
+        params.push(`${filter.createdFrom} 00:00:00.000`);
+      }
+      if (filter.createdTo) {
+        conditions.push('f.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
+        params.push(`${filter.createdTo} 00:00:00.000`);
       }
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const { rows: countRows } = await execute<{ total: number }>(

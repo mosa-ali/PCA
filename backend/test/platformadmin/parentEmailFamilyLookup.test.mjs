@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyParentEmailFamilyLookup } from '../../dist/platformadmin/accounts/ParentEmailFamilyLookup.js';
+import { ParentIdentityReadModel } from '../../dist/platformadmin/readmodels/ParentIdentityReadModel.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 
 const activeParent = { status: 'VERIFIED', disabledAt: null };
@@ -89,4 +90,175 @@ test('account summary retains only operational Parent facts and does not contain
     assert.equal('email' in result.account, false);
     assert.equal('passwordHash' in result.account, false);
   }
+});
+
+test('Parent email lookup whitelists account and family data even when persistence rows carry sensitive extras', () => {
+  const marker = 'must-not-escape-this-test-boundary';
+  const result = classifyParentEmailFamilyLookup({
+    ...activeParent,
+    accountId: marker,
+    emailHash: marker,
+    protectedDisplayEmailCiphertext: marker,
+    passwordHash: marker,
+    mfaSecretCiphertext: marker,
+    recoveryCodeHash: marker,
+  }, [{
+    ...activeFamily('family-safe'),
+    accountId: marker,
+    emailHash: marker,
+    protectedDisplayEmailCiphertext: marker,
+    passwordHash: marker,
+    mfaSecretCiphertext: marker,
+  }]);
+
+  assert.equal(result.outcome, 'ELIGIBLE_FAMILY_FOUND');
+  assert.equal(JSON.stringify(result).includes(marker), false);
+  if (result.outcome !== 'ACCOUNT_NOT_FOUND') {
+    assert.deepEqual(Object.keys(result.account).sort(), [
+      'accountType',
+      'createdAt',
+      'defaultManagedDeviceLimit',
+      'defaultParentMemberLimit',
+      'disabledAt',
+      'estimatedChildCount',
+      'freeAccessExpiresAt',
+      'freeAccessMode',
+      'freeAccessStartedAt',
+      'status',
+      'verifiedAt',
+    ]);
+    assert.deepEqual(Object.keys(result.families[0]).sort(), ['deletedAt', 'familyId', 'status']);
+  }
+});
+
+test('Parent identity read model keeps legacy null identity fields and queries one family ID', async () => {
+  const legacy = {
+    accountId: 'legacy-account-1',
+    firstName: null,
+    lastName: null,
+    protectedDisplayEmail: null,
+    phoneNumber: null,
+    phoneVerifiedAt: null,
+    verifiedAt: null,
+    disabledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    status: 'VERIFIED',
+    emailHash: 'hash-must-stay-private',
+    passwordHash: 'credential-must-stay-private',
+    mfaSecretCiphertext: 'mfa-must-stay-private',
+  };
+  let queriedFamilyId = null;
+  const model = new ParentIdentityReadModel({
+    async findByFamilyId(familyId) {
+      queriedFamilyId = familyId;
+      return legacy;
+    },
+    async repairProtectedDisplayEmail() {
+      assert.fail('legacy null identity must not request ciphertext repair');
+    },
+  }, (_accountId, encrypted) => {
+    assert.equal(encrypted, null);
+    return null;
+  });
+
+  const dto = await model.getByFamilyId('legacy-family-1');
+  assert.equal(queriedFamilyId, 'legacy-family-1');
+  assert.deepEqual(dto, {
+    firstName: null,
+    lastName: null,
+    email: null,
+    phoneNumber: null,
+  });
+  assert.equal(JSON.stringify(dto).includes('must-stay-private'), false);
+});
+
+test('Parent identity DTO uses a whitelist and does not expose account or membership metadata', async () => {
+  const record = {
+    accountId: 'account-multi-family',
+    firstName: 'سارة',
+    lastName: 'الحسني',
+    protectedDisplayEmail: { ciphertext: Buffer.from('sealed'), nonce: Buffer.alloc(12), authTag: Buffer.alloc(16) },
+    phoneNumber: '+967123456789',
+    phoneVerifiedAt: new Date('2026-01-02T00:00:00.000Z'),
+    verifiedAt: new Date('2026-01-03T00:00:00.000Z'),
+    disabledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    status: 'VERIFIED',
+    familyMemberships: [
+      { familyId: 'family-a', role: 'ADMINISTRATOR', familyStatus: 'ACTIVE', familyDeletedAt: null },
+      { familyId: 'family-b', role: 'VIEWER', familyStatus: 'SUSPENDED', familyDeletedAt: null },
+      { familyId: 'family-a', role: 'ADMINISTRATOR', familyStatus: 'ACTIVE', familyDeletedAt: null },
+    ],
+    emailHash: 'hash-must-not-escape',
+    passwordHash: 'password-must-not-escape',
+    recoveryCodeHash: 'recovery-must-not-escape',
+    protectedDisplayEmailCiphertext: 'ciphertext-must-not-escape',
+    encryptionKey: 'key-must-not-escape',
+  };
+  const model = new ParentIdentityReadModel({
+    async findByFamilyId(familyId) {
+      assert.equal(familyId, 'family-a');
+      return record;
+    },
+    async repairProtectedDisplayEmail() {
+      assert.fail('active-key ciphertext must not request repair');
+    },
+  }, (accountId, encrypted) => {
+    assert.equal(accountId, 'account-multi-family');
+    assert.equal(encrypted, record.protectedDisplayEmail);
+    return { email: 'parent@example.test', needsReencryption: false };
+  });
+
+  const dto = await model.getByFamilyId('family-a');
+  assert.equal(dto.firstName, 'سارة');
+  assert.equal(dto.lastName, 'الحسني');
+  assert.equal(dto.email, 'parent@example.test');
+  assert.equal(dto.phoneNumber, '+967123456789');
+  assert.deepEqual(Object.keys(dto).sort(), ['email', 'firstName', 'lastName', 'phoneNumber']);
+  const json = JSON.stringify(dto);
+  for (const marker of ['must-not-escape', 'must-not-escape', 'must-not-escape', 'ciphertext-must-not-escape', 'key-must-not-escape']) {
+    assert.equal(json.includes(marker), false);
+  }
+});
+
+test('Parent identity read repairs previous-key ciphertext by exact-value CAS and ignores repair failure', async () => {
+  const observed = { ciphertext: Buffer.from('old-ciphertext'), nonce: Buffer.alloc(12, 1), authTag: Buffer.alloc(16, 2) };
+  const replacement = { ciphertext: Buffer.from('new-ciphertext'), nonce: Buffer.alloc(12, 3), authTag: Buffer.alloc(16, 4) };
+  const record = {
+    accountId: 'account-rotation',
+    firstName: 'Mina',
+    lastName: 'Hassan',
+    protectedDisplayEmail: observed,
+    phoneNumber: null,
+    phoneVerifiedAt: null,
+    verifiedAt: new Date('2026-01-03T00:00:00.000Z'),
+    disabledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    status: 'VERIFIED',
+    familyMemberships: [],
+  };
+  let casArguments = null;
+  const model = new ParentIdentityReadModel({
+    async findByFamilyId(familyId) {
+      assert.equal(familyId, 'family-rotation');
+      return record;
+    },
+    async repairProtectedDisplayEmail(accountId, expected, next) {
+      casArguments = { accountId, expected, next };
+      throw new Error('transient repair database failure');
+    },
+  }, (accountId, encrypted) => {
+    assert.equal(accountId, 'account-rotation');
+    assert.equal(encrypted, observed);
+    return { email: 'mina@example.test', needsReencryption: true };
+  }, (accountId, email) => {
+    assert.equal(accountId, 'account-rotation');
+    assert.equal(email, 'mina@example.test');
+    return replacement;
+  });
+
+  const dto = await model.getByFamilyId('family-rotation');
+  assert.equal(dto.email, 'mina@example.test');
+  assert.deepEqual(casArguments, { accountId: 'account-rotation', expected: observed, next: replacement });
+  assert.equal(JSON.stringify(dto).includes('ciphertext'), false);
 });

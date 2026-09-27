@@ -28,6 +28,7 @@ import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
 import { dateToJson, bigintAmountToJson } from '../../../platformadmin/api/dto.js';
 import type { LimitType } from '../../../entitlements/types.js';
 import type { createRateLimiter } from '../../rateLimit.js';
+import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
 
 export interface PlatformAdminEntitlementRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
@@ -41,6 +42,14 @@ const FAMILY_ID_MAX_LENGTH = 128;
 const REASON_MAX_LENGTH = 255;
 const DECIMAL_INTEGER_STRING = /^\d+$/;
 const LIMIT_TYPES: LimitType[] = ['PARENT_MEMBER_LIMIT', 'MANAGED_DEVICE_LIMIT'];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseCalendarDate(value: unknown): string | undefined | null {
+  if (value === undefined || value === '') return undefined;
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value ? null : value;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -251,6 +260,11 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       const page = parsePageRequest(query);
       const state = typeof query.state === 'string' ? query.state : undefined;
       const familyId = typeof query.familyId === 'string' ? query.familyId : undefined;
+      const parentEmail = typeof query.parentEmail === 'string' ? query.parentEmail.trim() : undefined;
+      if (query.parentEmail !== undefined && (!parentEmail || !isPlausibleEmail(parentEmail))) return reply.code(400).send({ error: 'invalid_request' });
+      const createdFrom = parseCalendarDate(query.createdFrom);
+      const createdTo = parseCalendarDate(query.createdTo);
+      if (createdFrom === null || createdTo === null || (createdFrom && createdTo && createdFrom > createdTo)) return reply.code(400).send({ error: 'invalid_request' });
       // PCA-BILLING-READ-SPLIT-1: quoteAmountMinor/quoteCurrencyCode are
       // billing records; this route's VIEW_SUPPORT_ACCOUNT_METADATA gate is
       // ALLOW for all five roles, so they are omitted for the roles
@@ -259,7 +273,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       // non-monetary quote timing GET /platform-admin/quotes/pending
       // already exposes under this identical gate.
       const billingVisible = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
-      const result = await requestsReadModel.list(page, { state, familyId });
+      const result = await requestsReadModel.list(page, { state, familyId, createdFrom, createdTo, parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined });
       return reply.code(200).send({
         items: result.items.map((r) => ({
           requestId: r.requestId,
