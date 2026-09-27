@@ -16,12 +16,13 @@ BRANCH = pca-dev
 LOCAL_HEAD = e9c93a78497a5e536ceb23d56c5ac825640810b2
 REMOTE = origin
 TARGET_DEV_BRANCH = pca-dev
-FETCHED_REMOTE_HEAD = e9c93a78497a5e536ceb23d56c5ac825640810b2 (last checked at the initial baseline)
-LOCAL_REMOTE_EQUAL = YES at the baseline fetch; not refreshed during this checkpoint
-REMOTE_ADVANCED_DURING_WORK = UNVERIFIED (the amended sequence places a fresh fetch after TODO-18 and before Platform writes)
-INITIAL_WORKTREE_ENTRY_COUNT = 256 (166 tracked modified; 90 untracked; none staged)
-WORKTREE_ENTRY_COUNT = pending re-inventory after authorized implementation updates (none staged)
-PEER_WORK_PRESERVED = YES (only authorized Parent/shared implementation and test paths edited; unrelated/mobile and .vscode paths remain preserved)
+FETCHED_REMOTE_HEAD = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e (fresh post-push fetch)
+LOCAL_REMOTE_EQUAL = YES at the verified checkpoint head
+REMOTE_ADVANCED_DURING_WORK = NO; pre-push fetch found no remote-only commits
+INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
+CHECKPOINT_WORKTREE_ENTRY_COUNT = 330 before the new classification file; 227 modified tracked and 103 untracked; no staged/deleted entries
+POST_CHECKPOINT_DIRTY_PATHS = 5 explicitly excluded paths: two generated schema snapshots, two .vscode local files, and root fragment 0
+PEER_WORK_PRESERVED = YES (all 61 date-bound assessment files committed separately; unrelated/mobile source remained untouched)
 
 PARENT_IMPLEMENTATION_PATHS = coordinator owns authorized Parent + dependent Platform family-identity implementation; existing dirty changes retained
 SHARED_PATHS = backend, database bootstrap, and cross-surface tests; one active writer per file, shared edits serialized
@@ -33,10 +34,10 @@ BROWSER_EVIDENCE = 2 real-browser Parent MFA journeys passed 1/1 each with zero 
 BROADER_REGRESSION = TODO-17 integrated web/browser/API/mobile matrix incomplete; Parent Web serial suite 1065/1065 PASS; historical full disposable DB suite 612/612 after 54 migrations; latest full disposable DB rerun FAILED under low-memory/auth fixture conditions; focused enrollment DB suite 22/22 PASS; authority diagnostics 61/62 before final Viewer-fixture correction; full post-fix serial backend npm test 2648/2648, zero failures or skips; browser/mobile/owner integration remains pending
 UNRELATED_FILES_TOUCHED = 0
 
-REMOTE_ALIGNMENT_AUTHORIZED = YES (amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = NO (baseline fetched; implementation not yet committed/pushed)
-PARENT_LOCAL_ONLY_FILES_REMAINING = YES (dirty in-scope changes remain)
-PARENT_UNPUSHED_COMMITS_REMAINING = not yet reconciled
+REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
+REMOTE_ALIGNMENT_COMPLETED = YES at 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+PARENT_LOCAL_ONLY_FILES_REMAINING = 0
+PARENT_UNPUSHED_COMMITS_REMAINING = 0
 
 REPO_SCHEMA_HEAD = source-level 0057 parent actor provenance added; 55 migration files through 0057
 REPO_MIGRATION_HEAD = 0057 (55 migration files; 0009 and 0010 absent)
@@ -103,6 +104,47 @@ LOCAL_IMPLEMENTATION_COMMITS = 7 (file count 324 before the two checkpoint-ledge
 LOCAL_IMPLEMENTATION_COMMIT_LIST = 309af06b feat(parent): add identity and authority migrations; adeff69d fix(test): isolate disposable database credentials; 3ea73df3 feat(parent): integrate authentication and family authority; 24603231 feat(platform): add family-scoped parent projection; 1e7f5c9d feat(parent-web): integrate auth identity and authority; 2fde86de feat(platform-web): add parent identity and directories; 514a5bbe docs: preserve pre-production assessment snapshots
 PRE_PUSH_LOCAL_HEAD_BEFORE_LEDGER_COMMIT = 514a5bbea0049970a13ff9656b506ef2ff725d55
 LEDGER_COMMIT_AND_PUSH = still required before checkpoint completion
+```
+
+### 2026-09-27 — checkpoint push and remote verification
+
+```text
+CHECKPOINT_PUSH_RESULT = PASS
+TARGET = origin/pca-dev
+PRE_PUSH_LOCAL_HEAD = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+PRE_PUSH_REMOTE_HEAD = e9c93a78497a5e536ceb23d56c5ac825640810b2
+AHEAD = 8
+BEHIND = 0
+DIVERGED = NO
+REMOTE_ONLY_COMMITS_RECONCILED = 0
+COMMITS_CREATED = 8
+COMMIT_LIST = 309af06b; adeff69d; 3ea73df3; 24603231; 1e7f5c9d; 2fde86de; 514a5bbe; 3d31cb5b
+FILES_COMMITTED_TOTAL = 326 (all classified commit-yes implementation/support/peer/ledger paths)
+POST_PUSH_LOCAL_HEAD = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+POST_PUSH_REMOTE_HEAD = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+LOCAL_REMOTE_EQUAL = YES
+REMOTE_SOURCE_VERIFIED = YES (Parent authentication, Parent authority, migrations 0051–0057, schema.ts, DB tests, identity profile, Platform projection, device binding, Parent Web, Platform Web and canonical ledger all exist at origin/pca-dev)
+PARENT_LOCAL_ONLY_FILES_REMAINING = 0
+PARENT_UNPUSHED_COMMITS_REMAINING = 0
+PLATFORM_LOCAL_ONLY_FILES_REMAINING = 0 for committed existing projection/UI work; new dependent specialist work remains HOLD_PARENT_DEPENDENCY
+PLATFORM_UNPUSHED_COMMITS_REMAINING = 0
+EXACT_PUSHED_SHA = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+CI_RUN = 36337455750 (Quality gates)
+CI_HEAD_SHA = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
+EXACT_HEAD_CI = QUEUED at last inspection; monitor; not claimed green
+POST_PUSH_DIRTY_PATHS = 5: two stale generated schema snapshots, two machine-local .vscode files, and unrelated root fragment 0; all retained and explicitly classified
+PCA_LEGITIMATE_FILES_LEFT_DIRTY = 0
+STASH_USED = NO; RESET_HARD_USED = NO; GIT_CLEAN_USED = NO; FORCE_PUSH_USED = NO
+PEER_WORK_PRESERVED = YES
+LEGITIMATE_CHANGES_LOST = 0
+LIVE_DB_MUTATED_BY_THIS_CHECKPOINT = NO
+NO_SEED_DATA = YES
+LOCALHOST_ACCEPTED = NO (literal owner response still required)
+OWNER_PRODUCTION_ACCEPTANCE = NOT OFFERED
+AZURE_DEPLOYED_BY_THIS_CHECKPOINT = NO
+PURSUING_GOAL_STATUS = IN_PROGRESS
+CURRENT_TODO = TODO-12 through TODO-17 (integrated Parent implementation/evidence)
+NEXT_ACTION = continue the earliest unfinished Parent authority/device and integrated-regression work; keep Platform activation held until TODO-18 and literal LOCALHOST ACCEPTED=YES
 ```
 
 ### Parallel agents
@@ -194,7 +236,7 @@ completion condition. Statuses are not PASS based solely on pre-existing edits.
 | TODO-16 — Identity/profile integration + Platform family identity projection | PASS | Coordinator | Parent identity APIs/UI, migrations, Platform read model/routes/UI and tests | Family-scoped projection source and exact four-field DTO are reviewed; Parent identity/UI tests 15/15 and backend identity/projection routes 11/11 pass; disposable MySQL 61/61 includes provisioning precedence, zero-admin fail-closed, nullable phone, and two-family isolation | TODO-04, TODO-12; broader authority audit remains open in TODO-12…15 | Required names + email and nullable phone work; Platform projection is minimal, family-scoped, authorized and fail-closed on zero/multiple candidates |
 | TODO-17 — Full MySQL/security/browser regression | IN_PROGRESS | Coordinator | Backend, Parent Web, Platform tests and E2E | Parent Web serial Vitest 151/151 files and 1065/1065 tests PASS; Parent-auth MySQL 61/61; historical full disposable backend DB 612/612 on 54 migrations; latest full disposable DB rerun FAILED overall with `Deriving bits failed`/Platform authentication failures under resource pressure; focused enrollment binding DB 22/22 PASS; eye-protection route unit suite 8/8 PASS and disposable authority diagnostics 61/62 before the corrected Viewer fixture, whose MySQL rerun is blocked by stopped Docker/MySQL; focused migration/artifact/iOS/Safe Zone/audit checks 33/33; full backend `npm test` 2648/2648 historical PASS and later registered-file run 272/272 PASS; production-path certification analyzer 8/8; browser Parent MFA and optional setup each 1/1; broader mobile/browser/owner evidence remains distinct and pending | TODO-02…TODO-16; repeat full disposable DB after service/resource recovery; browser/mobile/owner integration | Required local build/typecheck/MySQL/security/browser evidence is green without skips; outstanding device/authority boundaries are resolved or explicitly fail-safe for owner acceptance |
 | TODO-18 — Owner localhost acceptance | TODO | Owner + coordinator | Local Parent/API journey and acceptance evidence | Not offered; implementation is not yet ready | TODO-17 | Owner manually validates the full required journey and replies literal `LOCALHOST ACCEPTED` |
-| TODO-19 — Git reconciliation + exact-head CI | TODO | Coordinator | Approved Parent + Platform source/tests/migrations/docs | Amendment authorizes origin/pca-dev fetch, safe local checkpointing, and one combined Parent/Platform push after localhost acceptance and Platform validation; no new remote alignment in this turn | TODO-18 literal acceptance; Platform validation; safe path classification | Local = remote = exact CI head; complete approved Parent and Platform state is remote; unrelated paths excluded |
+| TODO-19 — Git reconciliation + exact-head CI | IN_PROGRESS | Coordinator | Approved Parent + Platform source/tests/migrations/docs | Checkpoint-sync exception pushed eight logical commits to `origin/pca-dev` at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; local=remote and representative source verified; exact-head Quality Gates run 36337455750 is queued | Monitor exact-head CI; final TODO-19 release/acceptance sequencing remains gated by TODO-18 literal owner acceptance and Platform validation | Local = remote = exact CI head; complete approved Parent and Platform state is remote; unrelated paths excluded |
 | TODO-20 — Live schema / DB grants reconciliation | TODO | Coordinator | Repository schema/migrations, local PCA DB, live `pca_pro` | Read-only source audit found and locally corrected 0055 step-up CHECK snapshot, stale schema.ts header, and altered-migration metadata; canonicalSchemaDrift suite passes 5/5; local/live DB schema and grants remain uninspected | TODO-19 exact-head CI; credentials/access and live preflight | Repository/local/live schema and grants match, with local-first tested migration if required, no seed data |
 | TODO-21 — Azure deployment | TODO | Coordinator + owner | Exact approved API/backend, Parent Web and Platform Web artifacts | No deployment attempted; the final release must be coordinated and from the approved exact head | TODO-19, TODO-20, rollback baseline and deployment gate | API, Parent Web and Platform Web deployed from one approved release candidate and running revisions verified |
 | TODO-22 — Owner production acceptance | TODO | Owner + coordinator | Combined Parent + Platform production journey evidence | Not offered | TODO-21 | Owner validates Parent auth/authority/step-up/device and Platform Enrollment identity/RBAC/privacy flows |
