@@ -1,7 +1,7 @@
 {
   "register": "parent_api_contract_matrix",
-  "baseline": "worktree 2026-09-28; local 1056546e; origin/pca-dev tracking ref 35f6c022; generated route declarations from current source",
-  "summary": "35/35 current Parent Web client paths mapped to backend routes; 52 Parent route declarations across 43 unique Parent routes inventoried; 6 declared Parent route paths have no current Parent Web client mapping",
+  "baseline": "worktree 2026-09-28; Parent source checkpoint 6b7bf8e12b67f349e38fa2271d564bf72dec975b; remote pca-dev ledger head a6fbc745bb153aa11f92a72d20e94e6475f6c67e; generated route declarations from current source",
+  "summary": "35/35 current Parent Web client paths mapped to backend routes; 52 Parent route declarations across 43 unique Parent routes inventoried; all 6 declared Parent route paths without a current Parent Web caller now have an explicit disposition; runtime authorization aggregates remain unproven",
   "rows": [
     {
       "client_call_path": "/api/auth/*",
@@ -973,6 +973,44 @@
       "method": "POST",
       "route": "/api/parent/families/:familyId/children/:childProfileId/web-rules/remove",
       "handler": "backend/src/http/routes/webRuleRoutes.ts:227"
+    }
+  ],
+  "unmapped_parent_route_dispositions": [
+    {
+      "route": "/api/parent/families/:familyId/bonus-time/active-grants",
+      "disposition": "DEFER_PARENT_WEB_EXPOSURE",
+      "reason": "The bonus grant ledger is process-local, and revocation actor attribution has no durable audit path; retain the route without a new UI caller until TODO-12 resolves the persistence and audit boundary.",
+      "owner_todo": "TODO-12"
+    },
+    {
+      "route": "/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke",
+      "disposition": "DEFER_PARENT_WEB_EXPOSURE",
+      "reason": "The grant ledger and revoke actor attribution are process-local; do not expose a revoke control until TODO-12 closes durable lifecycle and audit behavior.",
+      "owner_todo": "TODO-12"
+    },
+    {
+      "route": "/api/parent/families/:familyId/dashboard",
+      "disposition": "OPTIONAL_UNCONSUMED_READ_ROUTE",
+      "reason": "No current Parent Web call site consumes this optional route. Its backend requires an active same-family Administrator or Viewer; no normal UI action depends on it.",
+      "owner_todo": "TODO-14"
+    },
+    {
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId",
+      "disposition": "OPTIONAL_UNCONSUMED_DETAIL_ROUTE",
+      "reason": "No current Parent Web call site consumes the individual-detail route; the list route is the currently mapped read surface. Keep available for a future explicit detail view.",
+      "owner_todo": "TODO-14"
+    },
+    {
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery",
+      "disposition": "CRYPTO_RECOVERY_GATED",
+      "reason": "This is an authorized-recovery decision path with no Parent Web caller; do not add a caller until the reviewed recovery cryptography and authority flow are available.",
+      "owner_todo": "TODO-12/TODO-15"
+    },
+    {
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed",
+      "disposition": "CRYPTO_DEVICE_GATED",
+      "reason": "This route accepts signed remote-parent decisions and performs authority/signature/replay checks; it is not a Parent Web session-only operation. Keep it outside the browser client until the production Trust Set and crypto review gates close.",
+      "owner_todo": "TODO-12/TODO-15"
     }
   ],
   "unmapped_parent_route_paths": [

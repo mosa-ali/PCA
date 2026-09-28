@@ -5,10 +5,10 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 02:47 UTC
+LAST_UPDATED_UTC = 2026-09-28 03:09 UTC
 VALIDATED_PARENT_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (fresh fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (Parent source + evidence ledger sync; exact-head Quality Gates run 36370514236 PASS, 27/27)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = a6fbc745bb153aa11f92a72d20e94e6475f6c67e (fresh fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = a6fbc745bb153aa11f92a72d20e94e6475f6c67e (Parent ledger checkpoint; Quality Gates run 36371470989 FAILED in real-backend E2E, 26/27 jobs passed)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -79,6 +79,12 @@ NEXT_ACTION = Continue the Parent dependencies; keep Enrollment queued until Par
 PARENT = Parent TODO-02…09 are now PASS based on auth/migration DB, first-owner bootstrap, full MySQL, Parent MFA browser, unit, and real-browser jobs in run `36370514236` at exact HEAD `739133e9` (27/27 success). Parent TODO-10 still depends on TODO-14; TODO-12/14/15 and TODO-18 remain open.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` is unchanged. Enrollment Name/Email/nullable Phone columns remain incomplete; no activation, deployment, production smoke, or owner UAT is claimed.
 NEXT_ACTION = Keep Platform queued while Parent closes TODO-12/14/15 and receives literal localhost acceptance.
+
+### 2026-09-28 03:09 UTC — Parent real-backend E2E regressed at Settings; Platform remains held
+
+PARENT = Exact-head run `36371470989` at `a6fbc745` failed only the real-backend browser job: the owner journey's Settings navigation hit an auth-attempt 429 after repeated `/api/parent/session` polling. A local test-only forwarded-address isolation and 429 monitor now pass Parent Web typecheck and strict TypeScript compilation, with runtime CI validation pending. The run's other 26 jobs passed; prior exact-head run `36370514236` passed 27/27 at `739133e9`.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, Azure deployment, production smoke, or owner UAT is claimed.
+NEXT_ACTION = Require green exact-head CI after the Parent E2E harness correction; keep Enrollment queued behind Parent security and owner localhost gates.
 
 ### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
 

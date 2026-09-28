@@ -140,7 +140,7 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     const unexpectedAuthResponses: string[] = [];
     let monitorAuthenticatedRequests = false;
     page.on('response', (response) => {
-      if (!monitorAuthenticatedRequests || (response.status() !== 401 && response.status() !== 403)) return;
+      if (!monitorAuthenticatedRequests || ![401, 403, 429].includes(response.status())) return;
       const pathname = new URL(response.url()).pathname;
       if (pathname.startsWith('/api/parent/') || pathname.startsWith('/v1/families/')) {
         unexpectedAuthResponses.push(`${response.status()} ${pathname}`);
@@ -148,6 +148,17 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     });
     let usedTotpCounter = await loginWithMfa(page, MFA_EMAIL!, MFA_PASSWORD!, MFA_TOTP_SECRET!);
     monitorAuthenticatedRequests = true;
+    // Keep this long, real-browser acceptance journey inside its own
+    // per-IP auth-attempt budget. The disposable runner trusts only its
+    // loopback Vite proxy, so this TEST-NET forwarded address is accepted
+    // only by that isolated test backend and cannot alter production trust.
+    const ownerJourneyClientIp = '198.51.100.41';
+    await page.route('**/api/parent/**', (route) => route.continue({
+      headers: { ...route.request().headers(), 'x-forwarded-for': ownerJourneyClientIp },
+    }));
+    await page.route('**/v1/families/**', (route) => route.continue({
+      headers: { ...route.request().headers(), 'x-forwarded-for': ownerJourneyClientIp },
+    }));
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -254,7 +265,7 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     await expect(page.getByRole('heading', { name: 'Not available yet' })).toBeVisible();
     await expect(page.getByText(/Your children's protected data cannot be opened on this browser yet\./)).toBeVisible();
     monitorAuthenticatedRequests = false;
-    expect(unexpectedAuthResponses, 'authenticated Parent journey must not hit unexpected 401/403 responses').toEqual([]);
+    expect(unexpectedAuthResponses, 'authenticated Parent journey must not hit unexpected 401/403 responses or throttling 429').toEqual([]);
 
     // Revoke the disposable account's browser sessions through the real
     // Settings UI. This proves the user-facing confirmation, CSRF-protected
