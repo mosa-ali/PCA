@@ -5,14 +5,19 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 04:57 UTC
+LAST_UPDATED_UTC = 2026-09-28 05:07 UTC
 VALIDATED_PARENT_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (source/test Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (fresh post-push fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (report/CI ledger-sync exact-head Quality Gates run 36379266945 PASS, 27/27)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (fresh post-push fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (CI-result ledger-sync exact-head Quality Gates run 36379988964 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and ledger-sync runs 36377167205 at `678b1d33`, 36378245540 at `78ac5eac`, and 36379266945 at `9fc02b41` passed all 27 jobs. Parent TODO-17 is PASS for this integrated campaign; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and ledger-sync runs 36377167205 at `678b1d33`, 36378245540 at `78ac5eac`, 36379266945 at `9fc02b41`, and 36379988964 at `80e3ff47` passed all 27 jobs. The static Parent route/test crosswalk does not close TODO-14 aggregates. Parent TODO-17 is PASS; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+
+### 2026-09-28 05:07 UTC — Parent route audit evidence updated
+
+PARENT = Exact-head Quality Gates run `36379988964` passed 27/27 at `80e3ff47`. A first-pass crosswalk for 52 Parent method/path declarations to handlers and route-family test suites is prepared; exact assertion anchors and global runtime counts remain open.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and literal TODO-18 acceptance remain outstanding. No Enrollment activation or deployment is implied.
 
 ### 2026-09-28 04:44 UTC — historical status report reconciled
 

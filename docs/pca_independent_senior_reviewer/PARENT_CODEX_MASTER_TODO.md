@@ -5,13 +5,20 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 04:57 UTC
+LAST_UPDATED_UTC = 2026-09-28 05:07 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (fresh post-push fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (report/CI ledger sync; exact-head Quality Gates run 36379266945 PASS, 27/27; source/test parent 4a1b372d passed run 36376318648)
+VERIFIED_SOURCE_REMOTE_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (fresh post-push fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (CI result ledger sync; exact-head Quality Gates run 36379988964 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Record run 36379266945 and continue TODO-14 runtime matrix evidence while retaining TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Publish the TODO-14 first-pass crosswalk, then map exact status assertions and define a scoped disposable runtime collector while retaining TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 05:07 UTC — TODO-14 static test crosswalk and exact-head CI
+
+GIT = Last published checkpoint `80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9` is fresh-fetch/`git ls-remote` equal. Current local TODO-14 crosswalk and ledger updates are not yet published; unrelated `.vscode/` and root `0` remain excluded.
+CI = Quality Gates run `36379988964` completed SUCCESS at exact HEAD `80e3ff47`, 27/27, including real-backend E2E, full disposable MySQL, Android/iOS, builds, security and browser jobs.
+TODO14 = Added `parent_route_action_test_crosswalk.md`: all 52 method/path declarations link to source handlers, route-family test suites and current caller/disposition status. This static first pass explicitly leaves exact assertion-to-row anchors and scenario classification open. The bounded 154/154 campaign and one authenticated browser journey are not global status aggregates.
+NEXT_ACTION = Publish this evidence sync, then continue exact assertion mapping and define a disposable collector that separates expected denials from unexpected authorization and authority-unavailable results.
 
 ### 2026-09-28 04:57 UTC — report reconciliation checkpoint passed exact-head CI
 
@@ -248,8 +255,8 @@ DONE_WHEN = classified high-risk actions require fresh TOTP
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Parent backend routes/pages/actions and authority matrix  
-EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to backend handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. All six unmapped routes have explicit dispositions: the bonus active-grants read is optional/unconsumed; revoke browser exposure is deferred for actor provenance; dashboard/removal-detail are optional reads; authorized-recovery/signed-decision remain crypto/device gated. Bounded route/action campaign passed 154/154. Owner real-backend journey counts were zero unexpected 401/403/429 in its measured scope, and exact-head run 36376318648 passed all 27 jobs; neither is aggregate proof for all routes/actions. Current read-only audit also identified device-shaped FamilyAudit actor-field misuse and the PCA-DEC-034/035 configurable-policy implementation gate.
-BLOCKER = Global unexpected status counts and authority-unavailable totals remain NOT_YET_PROVEN. Schedule-policy/Web Rules Trust Set and encrypted-storage boundaries, correct typed actor attribution, and signed E2EE configurable-policy implementation remain gated; PCA-DEC-028 forbids treating plaintext ledger durability as a requirement or implementation.
+EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to backend handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. All six unmapped routes have explicit dispositions: bonus read/revoke exposure are unconsumed/deferred; dashboard/removal-detail are optional reads; authorized-recovery/signed-decision remain crypto/device gated. Bounded route/action campaign passed 154/154. Owner real-backend journey counts zero unexpected 401/403/429 only within that measured journey. New `parent_route_action_test_crosswalk.md` maps all 52 declarations to handler and route-family test suites, explicitly marking exact per-row assertion anchors and scenario classification as pending. Read-only specialists confirmed existing route suites are per-handler, not an aggregate; expected anonymous/CSRF/role/cross-family denials and known unavailable gates require separate classes. Exact-head run 36379988964 at `80e3ff47` passed all 27 jobs; none of these results proves aggregate runtime counts.
+BLOCKER = Global unexpected status counts and authority-unavailable totals remain NOT_YET_PROVEN. Define exact method/path scenario classes and a disposable collector that separates expected denials, unexpected 401/403/other errors, and known authority-unavailable outcomes. Schedule-policy/Web Rules Trust Set/encrypted-storage boundaries, typed actor attribution, and signed E2EE configurable-policy implementation remain gated; PCA-DEC-028 forbids plaintext ledger durability.
 DONE_WHEN = every required route is audited with proven authority and no normal action blocked by Genesis or browser trust  
 UNEXPECTED_401 = NOT_YET_PROVEN (aggregate)  
 UNEXPECTED_403 = NOT_YET_PROVEN (aggregate)  
@@ -286,7 +293,7 @@ extra PII/commercial fields = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, and `36378245540` at `78ac5eac` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
+EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, `36378245540` at `78ac5eac`, `36379266945` at `9fc02b41`, and `36379988964` at `80e3ff47` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
 BLOCKER = None for this integrated automated campaign at validated HEAD `4a1b372d`. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
@@ -304,14 +311,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); ledger syncs `678b1d33` and `78ac5eac` passed `36377167205` and `36378245540` (27/27 each), with fresh fetch/local/tracking/`git ls-remote` equality. Two tracked ledger changes record the latest CI result and DEC-035 owner constraint; unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Publish the current result/owner-ruling sync as a fast-forward and classify the unrelated worktree. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); report/CI ledger commits `9fc02b41` and `80e3ff47` passed exact-head runs `36379266945` and `36379988964` (27/27 each), with fresh fetch/local/tracking/`git ls-remote` equality. Four tracked local updates now contain the TODO-14 crosswalk and CI result; unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Publish the current crosswalk/CI result sync as a fast-forward and verify its exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732
-REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = Two tracked ledger updates; `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; two tracked mission-ledger updates are local
-EXACT_HEAD_CI = PASS (`36378245540` at `78ac5eac`, 27/27); previous ledger sync `36377167205` at `678b1d33` also passed 27/27
+LOCAL_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9
+REMOTE_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (fresh fetch and git ls-remote match)
+PARENT_LOCAL_ONLY_FILES_REMAINING = Four tracked crosswalk/ledger changes; `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits at last verified checkpoint; four tracked updates are local
+EXACT_HEAD_CI = PASS (`36379988964` at `80e3ff47`, 27/27); source/test run `36376318648` and ledger-sync runs `36377167205`, `36378245540`, and `36379266945` also passed 27/27
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
