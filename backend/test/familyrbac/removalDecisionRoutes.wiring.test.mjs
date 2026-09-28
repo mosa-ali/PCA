@@ -111,11 +111,11 @@ function removalRequestPayload(requestId, operation = 'REMOVE_REVOKE_DEVICE', st
   };
 }
 
-async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEVICE') {
+async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEVICE', familyId = app.__familyId) {
   const now = new Date();
   return app.__removalDecisionAuthority.createRequest({
     requestId,
-    familyId: app.__familyId,
+    familyId,
     requestedByParentAccountId: null,
     childId: 'child-a',
     deviceId: 'device-a',
@@ -508,6 +508,39 @@ test('a failed active-role lookup denies Administration PIN configuration', asyn
     headers: authHeaders,
   });
   assert.equal(status.json().pinStatus.configured, false);
+});
+
+test('removal-decision detail GET returns same-family records and hides unknown or cross-family IDs', async () => {
+  const app = buildApp();
+  await seedPendingRequest(app, 'req-detail-own');
+  await seedPendingRequest(app, 'req-detail-other-family', 'REMOVE_REVOKE_DEVICE', 'family-b');
+
+  try {
+    const own = await app.inject({
+      method: 'GET',
+      url: '/api/parent/families/family-a/removal-decisions/req-detail-own',
+      headers: authHeaders,
+    });
+    assert.equal(own.statusCode, 200);
+    assert.equal(own.json().removalDecision.requestId, 'req-detail-own');
+
+    const unknown = await app.inject({
+      method: 'GET',
+      url: '/api/parent/families/family-a/removal-decisions/req-detail-unknown',
+      headers: authHeaders,
+    });
+    assert.equal(unknown.statusCode, 404);
+
+    const otherFamily = await app.inject({
+      method: 'GET',
+      url: '/api/parent/families/family-a/removal-decisions/req-detail-other-family',
+      headers: authHeaders,
+    });
+    assert.equal(otherFamily.statusCode, 404);
+    assert.deepEqual(otherFamily.json(), unknown.json());
+  } finally {
+    await app.close();
+  }
 });
 
 test('administration-pin configure route requires CSRF like other mutations', async () => {

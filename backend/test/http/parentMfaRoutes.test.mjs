@@ -129,6 +129,7 @@ test('optional enrollment: session CSRF is required, no-store responses, and enr
   const { otpauthUri, secret } = start.json();
   assert.ok(otpauthUri.startsWith('otpauth://totp/'));
   const confirm = await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(secret, clock.ms()) }, { csrf: true });
+  assert.equal(confirm.statusCode, 200);
   assert.deepEqual(confirm.json(), { enrolled: true, sessionEstablished: false });
 
   await b.request('POST', '/api/parent/logout', {}, { csrf: true });
