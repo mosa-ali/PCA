@@ -978,14 +978,14 @@
   "unmapped_parent_route_dispositions": [
     {
       "route": "/api/parent/families/:familyId/bonus-time/active-grants",
-      "disposition": "DEFER_PARENT_WEB_EXPOSURE",
-      "reason": "The bonus grant ledger is process-local, and revocation actor attribution has no durable audit path; retain the route without a new UI caller until TODO-12 resolves the persistence and audit boundary.",
+      "disposition": "OPTIONAL_UNCONSUMED_READ_ROUTE",
+      "reason": "No current Parent Web call site consumes this optional history read. The BonusGrantLedger is intentionally process-local under PCA-DEC-028; this disposition does not imply that its family-policy contents should be persisted in plaintext.",
       "owner_todo": "TODO-12"
     },
     {
       "route": "/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke",
       "disposition": "DEFER_PARENT_WEB_EXPOSURE",
-      "reason": "The grant ledger and revoke actor attribution are process-local; do not expose a revoke control until TODO-12 closes durable lifecycle and audit behavior.",
+      "reason": "No current Parent Web call site consumes this mutation. Its actor/time attribution is process-local and has no reviewed FamilyAudit delivery path; retain the route without a browser control until TODO-12 resolves actor provenance. PCA-DEC-028 does not authorize plaintext persistence of grant contents.",
       "owner_todo": "TODO-12"
     },
     {
