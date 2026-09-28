@@ -1,6 +1,6 @@
 # Parent route/action test evidence crosswalk (static first pass)
 
-Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json. An opt-in runtime outcome collector now emits a bounded report for three removal-detail GET scenarios.
+Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json. An opt-in runtime outcome collector emits a bounded report for eight removal-decision method/path declarations.
 
 ## Scope and limits
 
@@ -8,7 +8,7 @@ Checkpoint: handler declarations remain unchanged from the source inventory in p
 - Six unique paths have no current Parent Web caller and retain explicit matrix dispositions.
 - The declaration table associates all 52 routes with route-family test suites. The assertion table below anchors every declaration to direct HTTP status assertions; response-body and side-effect assertions remain supplementary evidence.
 - Bounded 154/154 route/action campaign and green exact-head CI are suite evidence, not an all-route aggregate. The browser 401/403/429 monitor covers only its named authenticated owner journey.
-- The opt-in collector currently records one route and three scenarios: same-family allow (200), unknown-ID privacy denial (404), and cross-family privacy denial (404). Its local report shows zero unexpected 401/403/other results for this bounded slice and explicitly marks full inventory coverage false.
+- The opt-in collector currently records 12 scenarios across eight method/path declarations: five allows, three expected denials, one protective-authority-not-applicable result, two crypto/device gates and one validation result. It observed zero unexpected 401/403/other results in this test-file slice and explicitly marks full inventory coverage false. These test-double HTTP routes do not prove database-backed or all-route behavior.
 - Expected anonymous, CSRF, Viewer/role, cross-family, and step-up denials must remain distinct from unexpected results. Keep classifications separate: schedule-policy `NO_TRUST_SET` is a known authority gap; Web Rules is `SERVICE_NOT_CONFIGURED` (503); signed/recovery decisions are crypto-authority gated; and DEC-035 is a separate policy-configuration implementation gap where current Administrator behavior remains `ALLOW_WITH_STEP_UP`.
 - Do not infer aggregate unexpected 401/403 or AUTHORITY_UNAVAILABLE totals from these suite associations. TODO-14 remains IN_PROGRESS.
 
@@ -53,7 +53,7 @@ These anchors were read directly from the current test source. They tie all 52 m
 | GET `/api/parent/families/:familyId/children/:childProfileId/web-rules` | `backend/test/http/webRuleRoutes.test.mjs:91-107`; `:109-141`; `:143-158` | Configured family read gets 200; foreign/unknown child gets 403; absent readable-rule service gets 503 | `not_configured` is a known implementation gate and must not be counted as an unexpected authorization result. |
 | POST `/api/parent/families/:familyId/children/:childProfileId/web-rules` and `/remove` | `backend/test/http/webRuleRoutes.test.mjs:160-220`; `:300-390` | Configured mutations exercise authorized and denied requests; missing configuration returns 503 | Route-family assertions do not establish all-role/all-device aggregate coverage. |
 
-The assertion table now anchors direct HTTP status assertions for all 52 method/path declarations. The opt-in collector emits classified, status-only rows for the removal-detail GET slice; this is not a cross-suite disposable collector and does not establish whole-inventory counts. The exact integrated aggregate remains unproven: `UNEXPECTED_401`, `UNEXPECTED_403`, `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust counts stay `NOT_YET_PROVEN`; TODO-14 remains IN_PROGRESS.
+The assertion table now anchors direct HTTP status assertions for all 52 method/path declarations. The opt-in collector emits classified, status-only rows for eight removal-decision method/path declarations in one route test file; this is not a cross-suite disposable collector and does not establish whole-inventory counts. The exact integrated aggregate remains unproven: `UNEXPECTED_401`, `UNEXPECTED_403`, `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust counts stay `NOT_YET_PROVEN`; TODO-14 remains IN_PROGRESS.
 
 ## Declaration crosswalk
 

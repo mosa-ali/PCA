@@ -4,6 +4,7 @@ const scenarioRows = [];
 const scenarioClasses = new Set([
   'ALLOW_PROVEN',
   'EXPECTED_DENIAL',
+  'PROTECTIVE_AUTHORITY_NOT_APPLICABLE',
   'AUTHORITY_UNAVAILABLE',
   'CRYPTO_DEVICE_GATED',
   'SERVICE_NOT_CONFIGURED',
@@ -53,6 +54,7 @@ export async function writeParentRouteScenarioReport() {
     routes: new Set(scenarioRows.map(({ method, route }) => `${method} ${route}`)).size,
     allowProven: 0,
     expectedDenials: 0,
+    protectiveAuthorityNotApplicable: 0,
     authorityUnavailable: 0,
     cryptoDeviceGated: 0,
     serviceNotConfigured: 0,
@@ -67,6 +69,7 @@ export async function writeParentRouteScenarioReport() {
     if (row.matched) {
       if (row.classification === 'ALLOW_PROVEN') counts.allowProven += 1;
       else if (row.classification === 'EXPECTED_DENIAL') counts.expectedDenials += 1;
+      else if (row.classification === 'PROTECTIVE_AUTHORITY_NOT_APPLICABLE') counts.protectiveAuthorityNotApplicable += 1;
       else if (row.classification === 'AUTHORITY_UNAVAILABLE') counts.authorityUnavailable += 1;
       else if (row.classification === 'CRYPTO_DEVICE_GATED') counts.cryptoDeviceGated += 1;
       else if (row.classification === 'SERVICE_NOT_CONFIGURED') counts.serviceNotConfigured += 1;

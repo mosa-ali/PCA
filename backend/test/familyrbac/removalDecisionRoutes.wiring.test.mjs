@@ -136,6 +136,14 @@ async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEV
 test('removal-decision routes are registered and reachable (not 404) without a session', async () => {
   const app = buildApp();
   const response = await app.inject({ method: 'GET', url: '/api/parent/families/family-a/removal-decisions' });
+  recordParentRouteScenario({
+    method: 'GET',
+    route: '/api/parent/families/:familyId/removal-decisions',
+    scenarioId: 'anonymous_list_read',
+    classification: 'EXPECTED_DENIAL',
+    expectedStatus: 401,
+    response,
+  });
   assert.equal(response.statusCode, 401);
   assert.notEqual(response.statusCode, 404);
 });
@@ -156,6 +164,14 @@ test('create-request fails closed 409 while the coordinator protective-authority
       expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
       reasonCategory: 'ROUTINE_POLICY_CHANGE',
     },
+  });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/removal-decisions',
+    scenarioId: 'protective_authority_not_applicable',
+    classification: 'PROTECTIVE_AUTHORITY_NOT_APPLICABLE',
+    expectedStatus: 409,
+    response,
   });
   assert.equal(response.statusCode, 409);
   assert.deepEqual(response.json(), { error: 'protective_authority_not_applicable' });
@@ -225,6 +241,14 @@ test('removal request creation requires a one-use grant scoped to its requested 
       requestedByParentAccountId: 'attacker-controlled-account-id',
     },
   });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/removal-decisions',
+    scenarioId: 'step_up_authorized_device_revoke_create',
+    classification: 'ALLOW_PROVEN',
+    expectedStatus: 201,
+    response: deviceRevoke,
+  });
   assert.equal(deviceRevoke.statusCode, 201);
   assert.equal(deviceRevoke.json().removalDecision.operation, 'REMOVE_REVOKE_DEVICE');
   assert.equal(deviceRevoke.json().removalDecision.childId, 'child-from-authority');
@@ -280,6 +304,14 @@ test('local Administration PIN decisions work end-to-end (the one genuinely prod
       stepUpToken: 'step-up-correct-pin',
       decidedByParentAccountId: 'attacker-controlled-account-id',
     },
+  });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/removal-decisions/:requestId/decide/local-pin',
+    scenarioId: 'correct_pin_and_step_up_decision',
+    classification: 'ALLOW_PROVEN',
+    expectedStatus: 200,
+    response: correctPin,
   });
   assert.equal(correctPin.statusCode, 200);
   assert.equal(correctPin.json().removalDecision.state, 'ALLOW_REMOVAL');
@@ -378,6 +410,14 @@ test('signed remote-parent decisions fail closed NOT_AUTHORIZED (no real signing
       signature: 'deadbeef',
     },
   });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed',
+    scenarioId: 'signed_decision_crypto_gate',
+    classification: 'CRYPTO_DEVICE_GATED',
+    expectedStatus: 403,
+    response,
+  });
   assert.equal(response.statusCode, 403);
   assert.deepEqual(response.json(), { error: 'not_authorized' });
 });
@@ -395,6 +435,14 @@ test('authorized-recovery decisions fail closed NOT_AUTHORIZED (no real recovery
       proof: { proof: 'opaque-proof-bytes', recoveryTransactionId: 'recovery-txn-1' },
     },
   });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery',
+    scenarioId: 'recovery_decision_crypto_gate',
+    classification: 'CRYPTO_DEVICE_GATED',
+    expectedStatus: 403,
+    response,
+  });
   assert.equal(response.statusCode, 403);
   assert.deepEqual(response.json(), { error: 'not_authorized' });
 });
@@ -405,6 +453,14 @@ test('administration-pin status route is registered and reflects unconfigured st
     method: 'GET',
     url: '/api/parent/families/family-a/administration-pin',
     headers: authHeaders,
+  });
+  recordParentRouteScenario({
+    method: 'GET',
+    route: '/api/parent/families/:familyId/administration-pin',
+    scenarioId: 'administration_pin_status_read',
+    classification: 'ALLOW_PROVEN',
+    expectedStatus: 200,
+    response,
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().pinStatus.configured, false);
@@ -418,6 +474,14 @@ test('administration-pin configure route rejects a malformed PIN', async () => {
     headers: authHeaders,
     payload: { pin: '123' },
   });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/administration-pin',
+    scenarioId: 'malformed_pin_validation',
+    classification: 'VALIDATION_OR_PROTOCOL',
+    expectedStatus: 400,
+    response,
+  });
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'invalid_request' });
 });
@@ -430,6 +494,14 @@ test('administration-pin configure route persists a valid PIN and status reflect
     url: '/api/parent/families/family-a/administration-pin',
     headers: authHeaders,
     payload: { pin: '246810', stepUpToken: 'step-up-configure-pin' },
+  });
+  recordParentRouteScenario({
+    method: 'POST',
+    route: '/api/parent/families/:familyId/administration-pin',
+    scenarioId: 'step_up_authorized_pin_configuration',
+    classification: 'ALLOW_PROVEN',
+    expectedStatus: 200,
+    response: configure,
   });
   assert.equal(configure.statusCode, 200);
   assert.equal(configure.json().pinStatus.configured, true);
