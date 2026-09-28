@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 06:33 UTC
-VALIDATED_SOURCE_HEAD = 99de804ee27e7f000b9d0cba3e260a19bc690016 (backend build and removal-decision suite PASS 17/17; 12/12 collector scenarios matched; exact-head CI pending)
+LAST_UPDATED_UTC = 2026-09-28 06:38 UTC
+VALIDATED_SOURCE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (exact-head Quality Gates run 36385746422 PASS 27/27 after iOS failed-job rerun; local expansion `99de804e` has build and focused 17/17 evidence)
 VERIFIED_SOURCE_REMOTE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (initial run 36385746422 failed only iOS test-runner startup; failed-job rerun in progress)
-LOCAL_UNCOMMITTED_CHANGE = Collector expansion commit `99de804e` records 12 classified scenarios across 8/52 declarations; master-ledger sync remains local
+CURRENT_CHECKPOINT_SHA = 97d49cfe3873d066d6757a7cae70ce1075c40d91 (local ledger sync records the green ad9f46da run; collector expansion `99de804e` and ledger sync await publication)
+LOCAL_UNCOMMITTED_CHANGE = No tracked worktree edits; two local commits `99de804e` and `97d49cfe` await publication, while `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Inspect the iOS failed-job rerun for run 36385746422, sync its outcome, then publish local commit `99de804e` with both ledgers; preserve TODO-12/15 and owner/Platform gates.
+NEXT_ACTION = Publish local commits `99de804e` and `97d49cfe` as an authorized fast-forward, verify exact refs/files, and inspect the resulting exact-head CI; preserve TODO-12/15 and owner/Platform gates.
 
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
@@ -50,6 +50,13 @@ CI = Initial run `36385746422` completed with 26/27 jobs successful; only iOS fa
 RERUN = Requested `gh run rerun 36385746422 --failed` at unchanged SHA `ad9f46da7988bea2774923e7c15fb3ee9bdc690f`; only the iOS job is rerunning. Last check: 26/27 jobs remain successful and the iOS job is IN_PROGRESS.
 TODO14 = Local collector expansion remains commit `99de804e`; build and the focused 17/17 suite pass. It is not included in run `36385746422`.
 NEXT_ACTION = Wait for the failed iOS job rerun, record its result, then publish the reviewed collector expansion and synced ledgers.
+
+### 2026-09-28 06:38 UTC — exact-head iOS rerun passed
+
+CI = The failed-job rerun of `36385746422` completed SUCCESS; all 27/27 jobs are green at exact head `ad9f46da7988bea2774923e7c15fb3ee9bdc690f`. The first iOS attempt failed before tests began because the simulator test runner did not start and FamilyControlsAgent/ManagedSettings services were unreachable; rerun completed successfully without source changes. Record this as a transient simulator-runner failure followed by PASS, not as a Parent code defect.
+GIT = Local collector expansion commit `99de804ee27e7f000b9d0cba3e260a19bc690016` and ledger sync `97d49cfe3873d066d6757a7cae70ce1075c40d91` are fast-forward descendants of `ad9f46da` and remain unpublished. Unrelated `.vscode/` and root `0` remain excluded.
+TODO14 = Current 8/52 route, 12-scenario collector expansion passed focused local build/tests but is not covered by run `36385746422`.
+NEXT_ACTION = Publish the local collector and ledger commits as a narrow fast-forward, then verify its exact-head CI result.
 
 ### 2026-09-28 06:04 UTC — TODO-14 direct status-assertion checkpoint committed locally
 
