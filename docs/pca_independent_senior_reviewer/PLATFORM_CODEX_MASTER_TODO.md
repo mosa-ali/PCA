@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 21:57 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (Wave-2 certified exact-head Quality Gates run 36481310080 SUCCESS 27/27; the Wave-3 content commit is locally validated across the audit lane, bounded regression, parent-auth, authority-diagnostics and the full non-DB suite, with exact-head CI reported to the owner with the Wave-3 report)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (fresh fetch, local HEAD, tracking ref and git ls-remote agree at the Wave-3 baseline)
-CURRENT_CHECKPOINT_SHA = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (last certified exact-head run 36481310080 SUCCESS 27/27; the Wave-3 content commit SHA and CI are reported with the Wave-3 report)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = None after the single Wave-3 commit (two new disposable-MySQL suites, collector scope fix, crosswalk and both master ledgers); global aggregates and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 23:21 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (Wave-3 certified exact-head Quality Gates run 36489764549 SUCCESS 27/27; the Wave-4 evidence-only docs checkpoint is validated locally — git equality + diff checks — with exact-head CI reported to the owner with the Wave-4 report)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (fresh fetch, local HEAD, tracking ref and git ls-remote agree at the Wave-4 baseline)
+CURRENT_CHECKPOINT_SHA = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (last certified exact-head run 36489764549 SUCCESS 27/27; the Wave-4 docs checkpoint SHA and CI are reported with the Wave-4 report)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = None after the single Wave-4 docs commit (both master ledgers only); global aggregates and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = STOP for owner review of the Wave-3 Parent evidence closure (40/52 declarations database-backed; the remaining 12 intentionally gated). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = STOP for owner review of the Wave-4 Parent architecture/security qualification (TODO-12/TODO-15 decomposed with verified source facts; proposed Wave 5A–8 sequence awaiting owner authorization). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -785,3 +785,9 @@ NEXT_ACTION = Preserve the Platform hold; wait for owner review of the Parent Wa
 PARENT = All 12 `MYSQL_INTEGRATED_REQUIRED_BUT_MISSING` Parent declarations are closed with database-backed HTTP evidence (integrated tier 40/52; the remaining 12 are intentionally gated: 6 authority gaps, 3 service gaps, 2 crypto decision routes, 1 optional route). Local-validation matrix PASS: audit lane 50/50 with zero skipped; integrated collector report 40/52 declarations with 130 scenarios and zero unexpected 401/403/other; bounded regression 144/144 with the bounded report intact (52/52, 138 scenarios); parent-auth 61/0 with 3 expected privileged-mode skips; authority-diagnostics 62/62; full non-DB suite 2674/2674. The Wave-3 content commit and its exact-head CI are reported to the owner with the Wave-3 report.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = STOP for owner review of the Wave-3 closure; keep the dependent Platform hold unchanged.
+
+### 2026-09-28 23:21 UTC — Wave 4 Parent architecture/security qualification recorded
+
+PARENT = Read-only Wave 4 (REV-2 amended) completed with the seven-sub-agent gate PASSED (7/7 usable smoke reports; bounded retries used for full reviews — Agent 1/4/5 full reports delivered, Agents 2/3/6 smoke-only, limitation recorded). Verified: dual Trust-Set + child-profile-membership gate; Web Rules 503; FamilyAudit actor-field overload; PCA-DEC-034/035 discard + zero writers; no PAIRED-to-ACTIVE writer on any layer; device sessions un-mintable; no durable Trust Set/key-epoch store; schema changes for the safe architecture are additive with zero data loss (migration order: floors + store, then membership resolver, then activation, then encrypted storage, then mobile). No CRITICAL_FINDING; no implementation performed. The proposed Wave 5A–5F / 6A–6C / 7 / 8 sequence and owner policy decisions are in the Wave-4 report; the parent ledger carries the decomposition fields.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = STOP for owner review of the Wave-4 qualification; keep the dependent Platform hold unchanged.
