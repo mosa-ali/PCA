@@ -5,13 +5,23 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 05:32 UTC
+LAST_UPDATED_UTC = 2026-09-28 05:41 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (fresh post-push fetch and git ls-remote agree)
+VERIFIED_SOURCE_REMOTE_HEAD = aa26c1bab9530d6b1e8532545c5c831f3c485d61 (fresh fetch and git ls-remote agree; latest verified remote)
 CURRENT_CHECKPOINT_SHA = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (CI result sync; exact-head Quality Gates run 36381752337 PASS, 27/27)
+LOCAL_UNVALIDATED_DOC_HEAD = df4302bbf389cea232627961edea9d1b5e9ded13 (representative TODO-14 assertion anchors; awaits publication and exact-head CI)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Map exact TODO-14 status assertions and define a scoped disposable runtime collector while retaining TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Publish the representative TODO-14 assertion-anchor checkpoint after updating the ledgers; then continue the remaining per-route mapping and scoped collector while retaining TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 05:41 UTC — TODO-14 representative assertion anchors added
+
+GIT = Crosswalk commit `df4302bbf389cea232627961edea9d1b5e9ded13` is local and descends from remote `aa26c1bab9530d6b1e8532545c5c831f3c485d61`. Fresh fetch and `git ls-remote` agreed at `aa26c1ba`; the local documentation commit is not yet published. `.vscode/` and root `0` remain untracked and excluded.
+CI = Exact-head Quality Gates run `36382569294` is IN_PROGRESS at base head `aa26c1ba`; it does not cover `df4302bb`. No CI result is claimed for the new crosswalk evidence.
+TODO14 = `parent_route_action_test_crosswalk.md` now adds 12 representative entries covering 14 method/path declarations with test file line anchors and expected success, denial, optional-route and unavailable-authority outcomes. Remaining declarations retain suite-only associations. This does not prove an all-route runtime aggregate: `UNEXPECTED_401`, `UNEXPECTED_403`, aggregate `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust counts remain NOT_YET_PROVEN.
+VALIDATION = `git diff --check` passed. No tests ran; source/security behavior is unchanged.
+GATES = TODO-12/14/15, literal TODO-18 localhost acceptance, and Platform `HOLD_PARENT_DEPENDENCY` remain open; TODO-20 remains PASS through live migration 0059.
+NEXT_ACTION = Publish this narrow docs checkpoint after the ledger sync, inspect its exact-head CI, then continue remaining TODO-14 route assertions and collector design.
 
 ### 2026-09-28 05:32 UTC — crosswalk CI result synchronization passed
 
