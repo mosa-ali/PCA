@@ -6,13 +6,13 @@ PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
 LAST_UPDATED_UTC = 2026-09-28 19:45 UTC
-VALIDATED_SOURCE_HEAD = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (exact-head Quality Gates run 36396015633 SUCCESS 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (exact-head run 36396015633 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_CHANGE = Full TODO-14 collector coverage (52/52 declarations by inventory-key comparison), the crosswalk update and both master ledgers are local; `.vscode/` and root `0` remain excluded
+VALIDATED_SOURCE_HEAD = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (exact-head Quality Gates run 36472978551 SUCCESS 27/27)
+VERIFIED_SOURCE_REMOTE_HEAD = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (exact-head run 36472978551 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_CHANGE = None; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the 52/52 collector coverage, crosswalk and both master ledgers as a fast-forward, then verify exact-head CI. Keep global route/action aggregates NOT_YET_PROVEN, do not begin TODO-10/12/15 without owner review, and preserve owner/Platform gates.
+NEXT_ACTION = STOP for owner review. Keep global route/action aggregates NOT_YET_PROVEN; do not begin TODO-10/12/15 until the owner authorizes the next wave, and preserve owner/Platform gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -1087,3 +1087,10 @@ FILES = `backend/test/helpers/parentRouteOutcomeCollector.mjs`; `backend/test/ht
 GIT = This slice is local for the checkpoint entry; last verified published head remains `c460144aab45a0a91ce2fe52ca05b80a81636ce5` (exact-head run `36396015633` SUCCESS 27/27). `.vscode/` and root `0` remain excluded.
 CI = Exact-head CI for this new commit has not run yet; no result is claimed.
 NEXT_ACTION = Publish this slice as a fast-forward, record its exact-head run, then stop for owner review before any next wave. Candidate next waves: extend the collector into the guarded disposable-DB integration campaign, or begin TODO-10 Genesis proof closure (its recorded blocker is this route/action audit); TODO-12/15 remain unstarted.
+
+### 2026-09-28 19:45 UTC — 52/52 collector checkpoint published; exact-head CI passed
+
+GIT = Commit `6b0ea0f446c45b7db9ce6b310b35641987c1620d` was pushed as a fast-forward (`c460144a..6b0ea0f4`). Fresh fetch, local HEAD, tracking ref and `git ls-remote` agree; the collector helper, eight route suites, crosswalk and both master ledgers are present remotely. `.vscode/` and root `0` remain excluded.
+CI = Exact-head Quality Gates run `36472978551` completed SUCCESS 27/27 (zero failed jobs) at `6b0ea0f446c45b7db9ce6b310b35641987c1620d`, including the full disposable-MySQL certification, real-backend browser E2E, Android and iOS jobs.
+TODO14 = The published head validates the 52/52 declaration coverage code and both ledger updates. Coverage is complete in the bounded test-double slice; `globalAggregateStatus` remains NOT_YET_PROVEN and no authority boundary (schedule-policy Trust Set path, Web Rules storage/delivery, crypto-gated signed/recovery decisions) was resolved or bypassed.
+NEXT_ACTION = STOP for owner review. Candidate next waves: (a) run the collector under the guarded disposable-DB integration campaign; (b) TODO-10 Genesis proof closure. Do not begin TODO-12/15 without authorization.
