@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 04:00 UTC
-VALIDATED_SOURCE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (Parent owner-flow test-fixture correction; Quality Gates run 36373007968 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 55c9067bd80c8debbcb8959caed7594f8d44b2f9 (fresh post-push fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 55c9067bd80c8debbcb8959caed7594f8d44b2f9 (CI-result ledger sync; exact-head Quality Gates run 36374962516 failed only at real-backend E2E)
+LAST_UPDATED_UTC = 2026-09-28 04:11 UTC
+VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
+VERIFIED_SOURCE_REMOTE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (fresh fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 4a1b372dd959596938ce6477f6262c2d3afb2118 (E2E selector correction; exact-head Quality Gates run 36376318648 PASS, 27/27)
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the exact-text E2E selector correction with the failure record, then inspect its fresh exact-head run; continue TODO-12/14/15 and retain owner/Platform gates.
+CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
+NEXT_ACTION = Publish the 27/27 exact-head CI result to both ledgers, then continue TODO-12/14/15 and retain owner/Platform gates.
 
 ### 2026-09-28 03:25 UTC — owner-flow correction passed exact-head integrated CI
 
@@ -40,6 +40,14 @@ CI = Quality Gates run `36374962516` at `55c9067b` completed with 26/27 jobs suc
 FIX = The E2E assertion now targets the exact confirmation copy. Local Parent Web typecheck and touched-spec ESLint pass; the source behavior and backend were unchanged.
 TODO17 = IN_PROGRESS until the corrected exact-head integrated campaign passes. TODO19 remains IN_PROGRESS through publish, remote verification and fresh CI.
 NEXT_ACTION = Publish the narrow test correction and failure evidence; inspect its follow-on exact-head CI, then resume TODO-12/14/15.
+
+### 2026-09-28 04:11 UTC — corrected exact-head integrated regression passed
+
+GIT = Test-only locator correction and three synchronized mission ledgers were committed as `4a1b372dd959596938ce6477f6262c2d3afb2118`, pushed fast-forward, and verified equal to `origin/pca-dev` and `git ls-remote`. Only unrelated `.vscode/` and root `0` remain untracked and excluded.
+CI = Quality Gates run `36376318648` completed SUCCESS at exact HEAD `4a1b372d`; all 27 jobs passed, including real-backend browser E2E and full disposable-MySQL certification. This resolves the prior ambiguous Settings status-locator test failure; no product authorization or database behavior changed.
+TODO17 = PASS for the integrated automated campaign at exact HEAD `4a1b372d`. TODO19 remains IN_PROGRESS until this CI result is synchronized and its publication is verified. TODO-12/14/15 and literal TODO-18 owner localhost acceptance remain open; TODO-20 remains PASS through live migration 0059.
+PLATFORM = `HOLD_PARENT_DEPENDENCY` remains; no localhost owner acceptance, Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Publish this result sync, then continue TODO-12/14/15 without relaxing the Trust Set, encrypted-storage, or owner-acceptance gates.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -235,12 +243,12 @@ extra PII/commercial fields = 0
 
 ### TODO-17 — Full MySQL / security / browser regression
 
-STATUS = IN_PROGRESS
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head run `36373007968` at source/test SHA `3ace68d9` passed 27/27 with certified owner flow 2/2. Follow-on run `36374962516` at documentation-only SHA `55c9067b` completed with 26/27 jobs passing; only real-backend browser E2E failed. The owner-acceptance flow had one pass and one fail: Settings exposed both an identity-loading `role=status` and revoke confirmation `role=status`, making the test's unscoped status locator strict-mode ambiguous. The Playwright JSON report was absent after that command exited nonzero, and subsequent real-backend suites were not executed. Updated the test to locate the exact confirmation text. Parent Web typecheck and touched-spec ESLint pass locally.
-BLOCKER = Need a fresh exact-head Quality Gates pass after the test-only selector correction. TODO-15 crypto/Trust Set and TODO-18/21/22 owner/release gates remain separate.
-DONE_WHEN = integrated local regression is green and remaining external device/owner gates are accurately separated
+EVIDENCE = Exact-head Quality Gates run `36376318648` at `4a1b372dd959596938ce6477f6262c2d3afb2118` completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed, along with Parent/Platform browser, Android, iOS, security, builds, and unit jobs. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
+BLOCKER = None for this integrated automated campaign at validated HEAD `4a1b372d`. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
+DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
 
@@ -256,14 +264,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test commit `3ace68d92792e25de169d3dcb7cf6f1fd9b7075a` passed exact-head Quality Gates run `36373007968` (27/27). Evidence sync `baf3358f` passed run `36374085095` (27/27); its result was pushed documentation-only as `55c9067bd80c8debbcb8959caed7594f8d44b2f9`, with fresh fetch/local/tracking/`git ls-remote` equality. Exact-head run `36374962516` completed FAILURE: 26/27 jobs passed, with only real-backend E2E failing on the Settings status locator ambiguity. Local exact-text locator correction is uncommitted; Parent Web typecheck and touched-file ESLint pass. Unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Publish the narrow E2E selector correction and updated evidence, verify fast-forward/remote equality, and obtain a fresh exact-head CI result. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `3ace68d92792e25de169d3dcb7cf6f1fd9b7075a` passed run `36373007968` (27/27); evidence sync `baf3358f` passed `36374085095` (27/27), and result sync `55c9067b` exposed the ambiguous Settings status locator in run `36374962516` (26/27). The test-only exact-copy selector fix and ledger updates were pushed fast-forward as `4a1b372dd959596938ce6477f6262c2d3afb2118`; fresh fetch/local/tracking/`git ls-remote` match. Exact-head run `36376318648` passed all 27 jobs. Unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Synchronize this CI result, verify fast-forward/remote equality, and inspect the follow-on exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 55c9067bd80c8debbcb8959caed7594f8d44b2f9
-REMOTE_HEAD = 55c9067bd80c8debbcb8959caed7594f8d44b2f9 (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = Three tracked ledger refreshes plus `parent-web/e2e-real/acceptance-flow.spec.ts`; `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; current uncommitted changes include three ledgers and the focused E2E spec correction
-EXACT_HEAD_CI = FAIL (`36374962516` at `55c9067b`, 26/27 jobs; real-backend E2E locator ambiguity); preceding `baf3358f` passed run `36374085095`, 27/27
+LOCAL_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118
+REMOTE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (fresh fetch and git ls-remote match)
+PARENT_LOCAL_ONLY_FILES_REMAINING = Three tracked ledger result-sync updates; `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; three tracked ledger result-sync updates are local
+EXACT_HEAD_CI = PASS (`36376318648` at `4a1b372d`, 27/27); preceding `55c9067b` run `36374962516` failed 26/27 only at the corrected real-backend E2E selector
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
