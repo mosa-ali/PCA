@@ -5,13 +5,21 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 05:07 UTC
+LAST_UPDATED_UTC = 2026-09-28 05:19 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (fresh post-push fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (CI result ledger sync; exact-head Quality Gates run 36379988964 PASS, 27/27)
+VERIFIED_SOURCE_REMOTE_HEAD = 0e275bf14b95b843cd06dc8d3c92b090422096ea (fresh post-push fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 0e275bf14b95b843cd06dc8d3c92b090422096ea (TODO-14 crosswalk checkpoint; exact-head Quality Gates run 36380843449 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the TODO-14 first-pass crosswalk, then map exact status assertions and define a scoped disposable runtime collector while retaining TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Map exact TODO-14 status assertions and define a scoped disposable runtime collector while retaining TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 05:19 UTC — TODO-14 crosswalk checkpoint passed exact-head CI
+
+GIT = Commit `0e275bf14b95b843cd06dc8d3c92b090422096ea` published the first-pass 52-declaration crosswalk and matching ledgers; fresh fetch, local HEAD, tracking ref and `git ls-remote` agree. Route-family test associations are explicitly not exact assertion coverage.
+CI = Quality Gates run `36380843449` completed SUCCESS at exact HEAD `0e275bf1`, all 27 jobs. Real-backend E2E, full disposable MySQL, Android/iOS, browser, security, build and unit jobs passed.
+TODO14 = Remains IN_PROGRESS. The crosswalk separates 35 mapped Parent Web client paths, 43 unique backend paths, and six no-caller dispositions; exact method/path assertions and runtime scenario collector remain next.
+GATES = TODO-12/15 protocol constraints, literal TODO-18 owner acceptance and Platform `HOLD_PARENT_DEPENDENCY` remain unchanged. TODO-20 is PASS through live migration 0059.
+NEXT_ACTION = Continue exact assertion mapping and the disposable runtime collector design; do not infer all-route counts from suite association or journey evidence.
 
 ### 2026-09-28 05:07 UTC — TODO-14 static test crosswalk and exact-head CI
 
@@ -293,7 +301,7 @@ extra PII/commercial fields = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, `36378245540` at `78ac5eac`, `36379266945` at `9fc02b41`, and `36379988964` at `80e3ff47` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
+EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, `36378245540` at `78ac5eac`, `36379266945` at `9fc02b41`, `36379988964` at `80e3ff47`, and `36380843449` at `0e275bf1` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
 BLOCKER = None for this integrated automated campaign at validated HEAD `4a1b372d`. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
@@ -311,14 +319,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); report/CI ledger commits `9fc02b41` and `80e3ff47` passed exact-head runs `36379266945` and `36379988964` (27/27 each), with fresh fetch/local/tracking/`git ls-remote` equality. Four tracked local updates now contain the TODO-14 crosswalk and CI result; unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Publish the current crosswalk/CI result sync as a fast-forward and verify its exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); report/CI ledger commits `9fc02b41`, `80e3ff47` and crosswalk checkpoint `0e275bf1` passed runs `36379266945`, `36379988964` and `36380843449` (27/27 each), with fresh fetch/local/tracking/`git ls-remote` equality. The crosswalk is remote; unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Synchronize the latest 27/27 result and verify its follow-on exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9
-REMOTE_HEAD = 80e3ff47c36cd7c1bbc28f540b15eeeb0291b3c9 (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = Four tracked crosswalk/ledger changes; `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits at last verified checkpoint; four tracked updates are local
-EXACT_HEAD_CI = PASS (`36379988964` at `80e3ff47`, 27/27); source/test run `36376318648` and ledger-sync runs `36377167205`, `36378245540`, and `36379266945` also passed 27/27
+LOCAL_HEAD = 0e275bf14b95b843cd06dc8d3c92b090422096ea
+REMOTE_HEAD = 0e275bf14b95b843cd06dc8d3c92b090422096ea (fresh fetch and git ls-remote match)
+PARENT_LOCAL_ONLY_FILES_REMAINING = None; unrelated `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0
+EXACT_HEAD_CI = PASS (`36380843449` at `0e275bf1`, 27/27); source/test run `36376318648` and ledger-sync runs `36377167205`, `36378245540`, `36379266945`, and `36379988964` also passed 27/27
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
