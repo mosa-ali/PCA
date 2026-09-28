@@ -5,13 +5,39 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 05:41 UTC
-VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 6bddaf11252041bcb23c9e92d148390ba76ca61c (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 6bddaf11252041bcb23c9e92d148390ba76ca61c (representative TODO-14 assertion anchors; exact-head Quality Gates run 36383174064 IN_PROGRESS)
+LAST_UPDATED_UTC = 2026-09-28 06:04 UTC
+VALIDATED_SOURCE_HEAD = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (backend build and focused TODO-14 HTTP suites PASS 24/24; exact-head CI not yet run)
+VERIFIED_SOURCE_REMOTE_HEAD = ce296483507d8a92a61c2b6cdd1179e1d880e1be (fresh fetch and git ls-remote agree; local source checkpoint is a fast-forward descendant)
+CURRENT_CHECKPOINT_SHA = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (local validated source commit; publication and exact-head CI pending)
+LOCAL_UNCOMMITTED_CHANGE = Two master TODO ledgers record the validated 52/52 status-anchor checkpoint and its bounded evidence
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Continue remaining per-route TODO-14 assertion mapping and scoped collector while retaining TODO-12/15 protocol and owner/Platform gates; synchronize the exact-head run 36383174064 when complete.
+NEXT_ACTION = Publish the validated route-test checkpoint with its ledger sync, verify exact-head CI, then implement the disposable TODO-14 scenario collector; retain TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 06:04 UTC — TODO-14 direct status-assertion checkpoint committed locally
+
+SOURCE = Local commit `4efc4e44f662c922c7b44b759e1b923a2e59d4e7` adds an explicit MFA confirmation 200 assertion, same-family removal-detail 200 plus indistinguishable unknown/cross-family 404 assertions, and crosswalk anchors for all 52/52 method/path declarations. The stale blocker about a missing detail-route assertion is removed.
+VALIDATION = Backend build PASS; focused MFA and removal-decision HTTP suites PASS 24/24 using in-process serial Node execution after the default Windows test isolation failed before execution with `spawn EPERM`; `git diff --check` PASS.
+GIT = The source commit is a fast-forward descendant of fetched/server `pca-dev=ce296483507d8a92a61c2b6cdd1179e1d880e1be`; it is not yet published. Exact-head CI has not run for `4efc4e44`. Unrelated `.vscode/` and root `0` remain untracked and excluded.
+TODO14 = Static status assertion anchors are 52/52. Global scenario-classified 401/403/authority-unavailable aggregates and the disposable collector remain NOT_YET_PROVEN.
+NEXT_ACTION = Publish this source checkpoint with both master ledgers, then verify remote equality and exact-head CI before continuing the collector implementation.
+
+### 2026-09-28 05:52 UTC — TODO-14 assertion mapping extended locally
+
+TODO14 = The crosswalk now gives exact test-line anchors for 51/52 route declarations. The only remaining row without a direct HTTP status assertion anchor is optional removal-decision detail GET. Static assertion mapping still does not prove runtime aggregates: the disposable scenario collector and global `UNEXPECTED_401`, `UNEXPECTED_403`, `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust counts remain open/NOT_YET_PROVEN.
+VALIDATION = `git diff --check` passed; this documentation-only extension changed no source or tests, and no tests were run.
+GIT = The last published/local/remote head is `ce296483507d8a92a61c2b6cdd1179e1d880e1be`; the crosswalk extension is uncommitted. `.vscode/` and root `0` remain untouched and excluded.
+CI = Exact-head run `36383400891` at `ce296483` is IN_PROGRESS (22/27 jobs succeeded at last poll); it does not include this uncommitted expansion. Run `36383174064` for `6bddaf11` was cancelled after the newer ledger-sync checkpoint superseded that head.
+NEXT_ACTION = Let the current exact-head run finish, publish the reviewed crosswalk and ledger update fast-forward, then verify new exact-head CI and continue integrated collector design.
+
+### 2026-09-28 05:59 UTC — TODO-14 status assertions completed and locally certified
+
+CORRECTION = Specialist review found the prior `51/52` figure counted the MFA enrollment-confirm response-body assertion as a direct HTTP status assertion. The true pre-fix count was 50/52. Added an explicit 200 status assertion to that confirmation request and a direct removal-decision detail GET test, bringing the crosswalk to 52/52 direct status anchors. The detail test proves same-family 200 and identical 404 responses for unknown and cross-family request IDs.
+LOCAL_VALIDATION = Backend TypeScript build PASS; focused `removalDecisionRoutes.wiring.test.mjs` plus `parentMfaRoutes.test.mjs` PASS 24/24 with `--experimental-test-isolation=none --test-concurrency=1`; `git diff --check` PASS. Initial default serial invocation failed before executing suites with Windows `spawn EPERM`; bounded in-process retry completed successfully.
+REMOTE_CI = Quality Gates run `36383400891` completed SUCCESS, 27/27, on published base `ce296483`. It does not include these local test/crosswalk changes. Run `36383174064` at `6bddaf11` was cancelled after the newer ledger-sync checkpoint superseded that head.
+TODO14 = Static status assertions now cover all 52 method/path declarations. Scenario-classified all-route runtime aggregates and disposable collector remain NOT_YET_PROVEN. Schedule-policy `NO_TRUST_SET`, Web Rules `SERVICE_NOT_CONFIGURED`, crypto-gated signed/recovery decisions, protective-authority-not-applicable, and DEC-035 policy configuration remain separate categories; current Admin operations are still `ALLOW_WITH_STEP_UP`.
+GIT = Local and verified remote HEAD remain equal at `ce296483507d8a92a61c2b6cdd1179e1d880e1be`; the two test edits, crosswalk extension and ledger updates are local/unpublished. `.vscode/` and root `0` remain untouched.
+NEXT_ACTION = Publish the reviewed tests, crosswalk and ledgers in one narrow fast-forward, inspect its exact-head CI, then implement the bounded disposable scenario collector. TODO-14 stays IN_PROGRESS until global runtime aggregates and authority gates are resolved.
 
 ### 2026-09-28 05:46 UTC — assertion-anchor checkpoint published; exact-head CI running
 
@@ -289,8 +315,8 @@ DONE_WHEN = classified high-risk actions require fresh TOTP
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Parent backend routes/pages/actions and authority matrix  
-EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to backend handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. All six unmapped routes have explicit dispositions: bonus read/revoke exposure are unconsumed/deferred; dashboard/removal-detail are optional reads; authorized-recovery/signed-decision remain crypto/device gated. Bounded route/action campaign passed 154/154. Owner real-backend journey counts zero unexpected 401/403/429 only within that measured journey. New `parent_route_action_test_crosswalk.md` maps all 52 declarations to handler and route-family test suites, explicitly marking exact per-row assertion anchors and scenario classification as pending. Read-only specialists confirmed existing route suites are per-handler, not an aggregate; expected anonymous/CSRF/role/cross-family denials and known unavailable gates require separate classes. Exact-head run 36379988964 at `80e3ff47` passed all 27 jobs; none of these results proves aggregate runtime counts.
-BLOCKER = Global unexpected status counts and authority-unavailable totals remain NOT_YET_PROVEN. Define exact method/path scenario classes and a disposable collector that separates expected denials, unexpected 401/403/other errors, and known authority-unavailable outcomes. Schedule-policy/Web Rules Trust Set/encrypted-storage boundaries, typed actor attribution, and signed E2EE configurable-policy implementation remain gated; PCA-DEC-028 forbids plaintext ledger durability.
+EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. All six unmapped paths have explicit dispositions. The crosswalk maps all declarations to handlers, route-family suites and direct HTTP status assertions (52/52). The removal-decision detail route now has same-family success plus indistinguishable unknown/cross-family 404 coverage; enrollment confirm has an explicit 200 assertion. Bounded route/action campaign passed 154/154. The owner real-backend journey counts zero unexpected 401/403/429 only within that measured journey. These are not global aggregates. Local build and focused HTTP tests passed 24/24. Exact-head run 36383400891 passed 27/27 at `ce296483`, but does not cover these working-tree edits.
+BLOCKER = Global unexpected status counts and authority-unavailable totals remain NOT_YET_PROVEN. Define a disposable collector that separates expected denials, unexpected 401/403/other errors, and known authority/service/crypto outcomes. Schedule-policy/Web Rules Trust Set/encrypted-storage boundaries, typed actor attribution, and signed E2EE configurable-policy implementation remain gated; PCA-DEC-028 forbids plaintext ledger durability.
 DONE_WHEN = every required route is audited with proven authority and no normal action blocked by Genesis or browser trust  
 UNEXPECTED_401 = NOT_YET_PROVEN (aggregate)  
 UNEXPECTED_403 = NOT_YET_PROVEN (aggregate)  

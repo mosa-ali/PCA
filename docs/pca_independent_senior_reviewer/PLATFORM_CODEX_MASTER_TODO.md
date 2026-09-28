@@ -5,14 +5,29 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 05:41 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (source/test Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 6bddaf11252041bcb23c9e92d148390ba76ca61c (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 6bddaf11252041bcb23c9e92d148390ba76ca61c (representative TODO-14 assertion anchors; exact-head Quality Gates run 36383174064 IN_PROGRESS)
+LAST_UPDATED_UTC = 2026-09-28 06:04 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (backend build and focused TODO-14 HTTP suites PASS 24/24; exact-head CI not yet run)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = ce296483507d8a92a61c2b6cdd1179e1d880e1be (fresh fetch and git ls-remote agree; local source checkpoint is a fast-forward descendant)
+CURRENT_CHECKPOINT_SHA = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (local validated source commit; publication and exact-head CI pending)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Master ledger sync records the locally validated 52/52 Parent status-anchor checkpoint; aggregate counts and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and ledger-sync runs 36377167205 at `678b1d33`, 36378245540 at `78ac5eac`, 36379266945 at `9fc02b41`, 36379988964 at `80e3ff47`, 36380843449 at `0e275bf1`, and 36381752337 at `cc9fceb5` passed all 27 jobs. The published static Parent route/test crosswalk does not close TODO-14 aggregates. Parent TODO-17 is PASS; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. The latest published exact-head CI run `36383400891` at `ce296483` passed 27/27, but does not cover local source commit `4efc4e44`; its focused backend build/tests passed 24/24 locally. Parent TODO-17 is PASS at the published checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+
+### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
+
+PARENT = Local source commit `4efc4e44f662c922c7b44b759e1b923a2e59d4e7` supplies direct HTTP status assertions for all 52/52 route declarations. Backend build and focused route suites passed 24/24; this source checkpoint is not yet published or covered by exact-head CI.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Publish the Parent route-test/crosswalk checkpoint with the ledger sync, verify exact-head CI, and keep the dependent Platform hold unchanged.
+
+### 2026-09-28 05:59 UTC — Parent route assertion evidence completed
+
+PARENT = The local crosswalk now anchors all 52/52 method/path declarations with direct HTTP status assertions. Focused route tests and the source crosswalk are not yet in an exact-head CI checkpoint. Integrated TODO-14 aggregate counts remain unproven.
+LOCAL_VALIDATION = Backend build and focused Parent MFA/removal-decision HTTP suites passed 24/24 serially; `git diff --check` passed. The initial default Node test invocation hit `spawn EPERM` before suite execution and is not counted.
+CI = Run `36383400891` passed 27/27 at published head `ce296483`; it predates these local changes.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment, production smoke, or owner UAT is implied. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059.
+NEXT_ACTION = Publish the reviewed route tests/crosswalk/ledgers and verify exact-head CI; then preserve the Platform hold while Parent runtime aggregates remain open.
 
 ### 2026-09-28 05:46 UTC — Parent TODO-14 assertion checkpoint published
 
