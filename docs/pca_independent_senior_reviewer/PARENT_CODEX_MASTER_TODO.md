@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 06:15 UTC
-VALIDATED_SOURCE_HEAD = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (backend build and removal-decision suite PASS 17/17; bounded collector recorded 3/3 scenarios; exact-head CI pending)
-VERIFIED_SOURCE_REMOTE_HEAD = 5f17326a9f590b320444ce8686b90d689dcb45d9 (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (local validated collector commit; ledger sync and publication pending)
-LOCAL_UNCOMMITTED_CHANGE = Both master TODO ledgers record the committed bounded TODO-14 collector slice; exact-head CI pending
+LAST_UPDATED_UTC = 2026-09-28 06:33 UTC
+VALIDATED_SOURCE_HEAD = 99de804ee27e7f000b9d0cba3e260a19bc690016 (backend build and removal-decision suite PASS 17/17; 12/12 collector scenarios matched; exact-head CI pending)
+VERIFIED_SOURCE_REMOTE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (initial run 36385746422 failed only iOS test-runner startup; failed-job rerun in progress)
+LOCAL_UNCOMMITTED_CHANGE = Collector expansion commit `99de804e` records 12 classified scenarios across 8/52 declarations; master-ledger sync remains local
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish collector commit `4565e1b9` with both master ledgers, verify remote equality and exact-head CI, then extend coverage; retain TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Inspect the iOS failed-job rerun for run 36385746422, sync its outcome, then publish local commit `99de804e` with both ledgers; preserve TODO-12/15 and owner/Platform gates.
 
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
@@ -28,7 +28,28 @@ COMMIT = Local commit `4565e1b9378fe29b22485d6837e13c51a9e72ccb` adds an opt-in 
 VALIDATION = Backend build PASS; focused removal-decision suite PASS 17/17 with collector output enabled; `node --check` and `git diff --check` PASS. No exact-head CI has run for this local commit.
 GIT = Local source commit descends from verified remote `5f17326a`; both master ledger files remain the only intended tracked changes. The Actions API remains unreachable through the configured localhost proxy; run `36384812687` was last observed QUEUED at `5f17326a`.
 TODO14 = One of 52 method/path declarations is dynamically collected in a bounded HTTP test. Database-backed all-route aggregate remains NOT_YET_PROVEN.
-NEXT_ACTION = Commit the ledger sync, publish the reviewed fast-forward and verify exact-head CI; then expand the collector across route families.
+NEXT_ACTION = Keep the new collector checkpoint synchronized with exact-head CI; then expand coverage route by route.
+
+### 2026-09-28 06:18 UTC — exact-head CI and collector publication refreshed
+
+GIT = Collector commit `4565e1b9` and ledger sync `ad9f46da` were published as a fast-forward. Fresh fetch, local/tracking/server refs agree at `ad9f46da7988bea2774923e7c15fb3ee9bdc690f`; the collector, route test, crosswalk, and both master TODOs exist remotely. `.vscode/` and root `0` remain untracked and excluded.
+CI = Run `36384812687` completed SUCCESS 27/27 at exact head `5f17326a9f590b320444ce8686b90d689dcb45d9`. The current Quality Gates run `36385746422` is QUEUED at exact head `ad9f46da`; no result is claimed for it.
+TODO14 = The bounded collector remains one route/three scenarios with global aggregate NOT_YET_PROVEN. The preceding 5f CI result does not cover collector commit `4565e1b9`.
+NEXT_ACTION = Refresh run `36385746422`, sync its outcome, and continue route-by-route collector coverage while preserving all known authority/service/crypto and owner gates.
+
+### 2026-09-28 06:25 UTC — TODO-14 collector coverage expanded in working tree
+
+IMPLEMENTATION = Extended the opt-in status-only collector within the removal-decision route suite: 12 scenarios now cover 8/52 method/path declarations. The report separates five allows, three expected denials, protective-authority-not-applicable, two crypto/device gates and one validation result; unexpected 401/403/other remain zero for this bounded test-double slice.
+VALIDATION = Backend build PASS; focused removal-decision suite PASS 17/17; parsed collector JSON confirms 12/12 matched rows and `coverageComplete=false`, `globalAggregateStatus=NOT_YET_PROVEN`. This is not database-backed or global route proof.
+GIT = The expansion is local/uncommitted. Published HEAD remains `ad9f46da7988bea2774923e7c15fb3ee9bdc690f`; run `36385746422` is still IN_PROGRESS (26/27 jobs succeeded, iOS remains active at last poll).
+NEXT_ACTION = Complete the current exact-head CI and sync its final result before publishing the expanded collector slice with both master TODOs.
+
+### 2026-09-28 06:33 UTC — exact-head iOS simulator failure and failed-job rerun
+
+CI = Initial run `36385746422` completed with 26/27 jobs successful; only iOS failed. The app built and launched, but xcodebuild reported `Test runner never began executing tests after launching`; logs also reported connection failures to `com.apple.FamilyControlsAgent` and ManagedSettingsAgent. No Swift compile error or test assertion failure was reported. This is classified as an iOS simulator/test-runner failure, not a proven Parent source defect.
+RERUN = Requested `gh run rerun 36385746422 --failed` at unchanged SHA `ad9f46da7988bea2774923e7c15fb3ee9bdc690f`; only the iOS job is rerunning. Last check: 26/27 jobs remain successful and the iOS job is IN_PROGRESS.
+TODO14 = Local collector expansion remains commit `99de804e`; build and the focused 17/17 suite pass. It is not included in run `36385746422`.
+NEXT_ACTION = Wait for the failed iOS job rerun, record its result, then publish the reviewed collector expansion and synced ledgers.
 
 ### 2026-09-28 06:04 UTC — TODO-14 direct status-assertion checkpoint committed locally
 

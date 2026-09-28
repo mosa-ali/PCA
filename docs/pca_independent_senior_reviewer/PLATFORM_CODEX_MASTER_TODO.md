@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 06:15 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (backend build and removal-decision suite PASS 17/17; bounded collector recorded 3/3 scenarios; exact-head CI pending)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 5f17326a9f590b320444ce8686b90d689dcb45d9 (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (local validated collector commit; ledger sync and publication pending)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Both master ledgers record the committed bounded TODO-14 collector slice; aggregate coverage remains incomplete
+LAST_UPDATED_UTC = 2026-09-28 06:33 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 99de804ee27e7f000b9d0cba3e260a19bc690016 (backend build and removal-decision suite PASS 17/17; 12/12 collector scenarios matched; exact-head CI pending)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (initial run 36385746422 failed only iOS simulator test startup; failed-job rerun in progress)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Parent collector expansion records 12 classified scenarios across 8/52 declarations; global aggregate and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Local Parent collector commit `4565e1b9` passed build and focused suite 17/17; its exact-head CI is pending publication. The previous published run `36384812687` at `5f17326a` was last observed QUEUED. Parent TODO-17 remains PASS at its validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Initial exact-head run `36385746422` at `ad9f46da` had 26/27 jobs pass and an iOS simulator test-runner startup failure; the failed iOS job is rerunning at unchanged SHA. Parent TODO-17 remains PASS at its prior validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -31,7 +31,25 @@ NEXT_ACTION = Publish collector commit `4565e1b9` with both ledgers, then refres
 
 PARENT = Local commit `4565e1b9378fe29b22485d6837e13c51a9e72ccb` contains the bounded status-only collector slice. The focused suite passed 17/17 and the report matched 3/3 scenarios across one route; global counts remain NOT_YET_PROVEN. Exact-head CI is pending publication.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
-NEXT_ACTION = Publish the collector commit with master-ledger updates and verify exact-head CI; continue the dependent Platform hold.
+NEXT_ACTION = Sync run `36385746422` after completion; continue TODO-14 collector work and preserve the dependent Platform hold.
+
+### 2026-09-28 06:18 UTC — Parent checkpoint exact-head CI status
+
+PARENT = Quality Gates run `36384812687` passed 27/27 at exact head `5f17326a`. Current checkpoint is published at `ad9f46da`; exact-head run `36385746422` is queued and does not yet prove the collector changes.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Refresh current exact-head CI and continue the Parent collector expansion without activating Platform work.
+
+### 2026-09-28 06:25 UTC — bounded Parent collector expansion
+
+PARENT = Local collector expansion records 12 classified outcomes across 8/52 removal-decision declarations; backend build and focused suite passed 17/17. The report continues to mark global aggregates NOT_YET_PROVEN. Published run `36385746422` at `ad9f46da` is still IN_PROGRESS (26/27 jobs passed; iOS active at last poll); these additional collector rows are uncommitted and not covered by that run.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Sync the final result of run `36385746422`, then publish the reviewed collector expansion and preserve the Platform hold.
+
+### 2026-09-28 06:33 UTC — iOS exact-head failure and rerun
+
+PARENT = Initial run `36385746422` at `ad9f46da` completed 26/27. The sole failure was iOS test-runner startup after app launch, with simulator FamilyControlsAgent/ManagedSettings connection errors; no compile or assertion failure was reported. Only the failed iOS job is rerunning at the same SHA, currently IN_PROGRESS.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Record the iOS rerun outcome, then publish the locally validated collector expansion with both master TODOs.
 
 ### 2026-09-28 06:12 UTC — bounded Parent route collector slice
 
