@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 06:49 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS, 27/27; includes collector expansion)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS, 27/27)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Both master ledgers are syncing the verified checkpoint; aggregate coverage and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 06:59 UTC
+VALIDATED_PARENT_SOURCE_HEAD = ca064871a4ab452e09c64a4d5929d95e2baa5357 (backend build and combined Parent route suites PASS 34/34; collector report matched 20 scenarios across 13 declarations; exact-head publication CI still required)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = c43eb6f20bb34f35a9ab96005a6cf786e32f1113 (fresh fetch, local HEAD and git ls-remote agree; local source commit is a fast-forward descendant)
+CURRENT_CHECKPOINT_SHA = ca064871a4ab452e09c64a4d5929d95e2baa5357 (local validated collector expansion; run 36388515737 completed SUCCESS 27/27 at c43eb6f2)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Master ledgers sync the local collector commit; global aggregates and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Exact-head run `36387631829` passed 27/27 at `52fda09e`, including the collector expansion. Parent TODO-17 remains PASS at this validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Publish local Parent commit `ca064871` with both master ledgers as an authorized fast-forward, then require exact-head CI for the collector expansion. Run `36388515737` completed SUCCESS 27/27 at published c43; it does not include ca064871. Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -62,6 +62,18 @@ NEXT_ACTION = Publish the local collector expansion with both master TODOs, then
 PARENT = Published head `52fda09edff4db47e856185975688997952f69d3` passed exact-head Quality Gates run `36387631829` 27/27, including the TODO-14 collector expansion, full MySQL, real-backend browser, Android and iOS jobs.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = Continue TODO-14 across more route families while preserving the dependent Platform hold.
+
+### 2026-09-28 06:54 UTC — bounded route collector expansion
+
+PARENT = Local collector evidence now covers 20 matched scenarios across 13/52 method/path declarations in two route test suites; focused build and combined 34/34 tests passed. Exact-head run `36388515737` at `c43eb6f2` is in progress (23/27 passed, no failures); the expansion is not included in that run.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Sync run `36388515737` before publishing `ca064871` with the two master TODO files; preserve the Platform hold.
+
+### 2026-09-28 06:57 UTC — Parent collector expansion committed locally
+
+PARENT = Local source commit `ca064871a4ab452e09c64a4d5929d95e2baa5357` extends the classified collector to 20 scenarios across 13/52 method/path declarations. Build and combined route suites passed 34/34; global aggregates remain NOT_YET_PROVEN. The exact-head CI run `36388515737` remains in progress at `c43eb6f2` (24/27 passed, no failures at last poll); this expansion is not included.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Record current CI, publish local source commit `ca064871` with both master ledgers, then keep the Platform hold.
 
 ### 2026-09-28 06:12 UTC — bounded Parent route collector slice
 
@@ -663,6 +675,12 @@ PARENT_LIVE = Migrations 0051–0058 are applied and reconciled on `pca_pro`; 00
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform source, database, deployment, activation, or owner acceptance changed in this checkpoint.
 NEXT_ACTION = Source `fbba783d` and ledger sync `578dc0bb` are published; fresh fetch/local/GitHub heads match and required files are present remotely. Quality Gates run `36358762949` is PENDING at `578dc0bb`; wait for the final ledger-sync head’s result before Parent TODO-20 final live verification, keeping dependent Platform activation held.
 PRIOR_CI = Exact-head Quality Gates run `36356186069` completed SUCCESS at `399304c080e82c36719e4d5bf34953444181ecb8`; local, fetched tracking and live GitHub refs matched at this SHA. This prior CI pass does not cover the new 0059 checkpoint.
+
+### 2026-09-28 06:59 UTC — report and exact-head CI status reconciled
+
+PARENT = Run `36388515737` completed SUCCESS 27/27 at published SHA `c43eb6f20bb34f35a9ab96005a6cf786e32f1113`. Local `ca064871` has bounded route collector validation but still requires exact-head CI after publication.
+REPORT = The attached 0050 live database snapshot is superseded by current Parent ledger evidence through 0059. Keep `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment or owner UAT is implied.
+NEXT_ACTION = Publish the authorized fast-forward with the synchronized Parent and Platform ledgers, verify remote equality and required file presence, then inspect exact-head CI.
 
 ### 2026-09-27 23:43 UTC — Parent TODO-20 CI gate remains closed
 
