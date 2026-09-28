@@ -212,7 +212,7 @@ export async function writeParentRouteScenarioReport() {
 
   const report = {
     schemaVersion: 3,
-    scope: 'bounded test-file scenarios; not the all-route integrated aggregate',
+    scope: 'scenario evidence with explicit evidence tiers; not a global aggregate',
     globalAggregateStatus: 'NOT_YET_PROVEN',
     inventorySource:
       'docs/pre_production_assessment/pca_parent_platform/parent_route_action_test_crosswalk.md declaration table (52 declarations / 43 unique paths), mechanically re-verified against backend/src/http/routes on 2026-09-28',

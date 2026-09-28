@@ -5,15 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 20:50 UTC
-SOURCE_CHECKPOINT_SHA = 722f6710655f7054d53f71d2f4b17eae26578eaf (last independently verified remote head; exact-head Quality Gates run 36473982958 SUCCESS 27/27)
-CURRENT_REMOTE_HEAD_AT_WAVE_START = 722f6710655f7054d53f71d2f4b17eae26578eaf (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
-WAVE_CONTENT_SHA = reported to the owner with the Wave-2 report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
-EXACT_HEAD_CI_SHA = reported to the owner with the Wave-2 report (same reason)
-LOCAL_UNCOMMITTED_CHANGE = None; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 21:57 UTC
+WAVE_BASE_SHA = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (Wave-3 baseline; local HEAD, tracking ref and git ls-remote agree)
+LAST_CERTIFIED_PREVIOUS_SHA = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (exact-head Quality Gates run 36481310080 SUCCESS 27/27)
+CURRENT_WAVE_STATUS = Wave 3 executed locally to completion: all 12 required-but-missing declarations closed with database-backed HTTP evidence (40/52 integrated), collector scope string corrected, crosswalk and both master ledgers updated; one substantive commit pushed to pca-dev and its exact-head CI result reported to the owner with the Wave-3 report
+WAVE_CONTENT_SHA = reported to the owner with the Wave-3 report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
+EXACT_HEAD_CI_SHA = reported to the owner with the Wave-3 report (same reason); the previous certified exact-head run remains 36481310080 SUCCESS 27/27 at 24fe92e7
+LOCAL_UNCOMMITTED_CHANGE = None after the single Wave-3 commit; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-10 carries a coordinator PASS recommendation pending owner promotion; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = STOP for owner review of the Wave-2 integrated evidence. Do not begin TODO-12/15 or Platform work; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN, and preserve owner gates.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-10 = PASS per owner decision; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
+NEXT_ACTION = STOP for owner review of the Wave-3 integrated evidence closure. Do not begin TODO-12/15 or Platform work; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN (the 12 remaining declarations are intentionally gated), and preserve owner gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -406,12 +407,13 @@ DONE_WHEN = email OTP + TOTP-if-enrolled flow works and successful browser becom
 
 ### TODO-10 — Remove Genesis from Parent authentication/authorization
 
-STATUS = READY_FOR_INTEGRATION  
-OWNER = Coordinator  
+STATUS = PASS
+OWNER = Coordinator
 FILES = Parent auth, provisioning, authority, routes, UI and tests  
 EVIDENCE = Complete Wave-2 source audit + integrated route evidence: zero ordinary-Parent Genesis dependencies. `parent_genesis_challenges`/`parent_genesis_step_up_authorizations` are referenced only by `schema.ts` (retained real objects awaiting a separately-authorized cleanup migration; PCA-DEC-037 retired them and "nothing writes them any more"), and no `/api/parent/genesis/*` route declaration exists (the HTTP suite asserts 404 for all four former paths). `attemptFamilyGenesis` survives only as a comment in `familymembers/*`; former Genesis/device-signature gates on billing/commercial authority are documented as replaced by operation-scoped TOTP step-up; remaining `genesis` identifiers belong to the family-owner attestation chain (`family_authority_genesis_anchors`, `FamilyTrustSetEngine` genesis-epoch semantics) and are CHILD_DEVICE_SECURITY_LEGITIMATE, not Parent authority. The integrated campaign observed `GENESIS_BLOCKED_NORMAL_ACTIONS = 0` with no scenario requiring Genesis; provisioning creates no Genesis authority/device rows.
-BLOCKER = None for the audit itself; formal PASS promotion is the owner/reviewer decision, and a future cleanup migration for the two retired tables is separately authorized only.
+BLOCKER = None for the audit itself. A future cleanup migration for the two retired schema objects remains separately authorized only.
 RECOMMENDED_STATUS = PASS (coordinator recommendation: zero ordinary-Parent Genesis runtime dependency proven by complete source audit plus integrated route evidence)
+OWNER_DECISION = PASS — owner-approved during the Wave-3 directive (2026-09-28); formally promoted in the Wave-3 checkpoint entry above.
 DONE_WHEN = ordinary Parent runtime has zero Genesis dependency
 
 ### TODO-11 — Migrate Trusted Browser away from family authority
@@ -447,16 +449,16 @@ STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Parent backend routes/pages/actions and authority matrix  
 BOUNDED_ROUTE_DECLARATION_COVERAGE = 52/52 declarations (138 bounded scenarios; coverage proven by exact method+route inventory-key comparison, never row counts; zero unexpected 401/403/other in the bounded slice)
-DATABASE_BACKED_INTEGRATED_EVIDENCE = 28/52 declarations via the run-owned disposable-MySQL campaign (`npm run test:db:parent-route-audit`; 71 matched scenarios: 32 allow, 32 expected denial, 7 validation/protocol; zero unexpected 401/403/other; collector report schemaVersion 3 with per-tier counts and `declarationsWithoutIntegratedEvidence`)
-INTEGRATED_REQUIRED_AND_PROVEN = 28
-INTEGRATED_REQUIRED_BUT_MISSING = 12 (family-member invitations/revoke/role/remove/accept ×6; removal-decision list/detail/create/local-pin plus administration-pin GET/POST ×6 — production wiring is real MySQL-backed, but no integrated HTTP suite exists yet)
+DATABASE_BACKED_INTEGRATED_EVIDENCE = 40/52 declarations via the run-owned disposable-MySQL campaign (`npm run test:db:parent-route-audit`; 130 matched scenarios: 45 allow, 73 expected denial, 1 protective-authority-not-applicable, 11 validation/protocol; zero unexpected 401/403/other; collector report schemaVersion 3 with per-tier counts and `declarationsWithoutIntegratedEvidence`; report `scope` string corrected in Wave 3)
+INTEGRATED_REQUIRED_AND_PROVEN = 40
+INTEGRATED_REQUIRED_BUT_MISSING = 0 (all 12 previously missing declarations — family-member invitations/revoke/role/remove/accept ×6 and removal-decision list/detail/create/local-pin plus administration-pin GET/POST ×6 — now carry database-backed HTTP evidence from the two Wave-3 suites)
 AUTHORITY_GATED = 6 (schedule-policy; child-requests list/decide; bonus-time grant/revoke/active-grants — production `UnavailableTrustSetRoleResolver` / `UnavailableChildProfileMembershipResolver` fail closed)
 SERVICE_GATED = 3 (web-rules GET/POST/remove — production leaves `webRuleService` absent, 503 `not_configured`)
 CRYPTO_GATED = 2 (signed and authorized-recovery decisions)
 OPTIONAL = 1 (dashboard; no Parent Web caller, optional unconsumed read)
-UNREVIEWED = 0; ALL_DECLARATIONS_RECONCILE = YES (each declaration carries exactly one reviewed disposition in the crosswalk's Wave-2 dispositions table)
-EVIDENCE = Refreshed matrix: 35/35 Parent Web client paths map to handlers; 52 declarations / 43 unique paths; the crosswalk anchors all 52 to direct HTTP status assertions and records bounded + integrated tiers. Prior bounded history retained in the checkpoint entries below (154/154 route campaign; 52/52 collector coverage). Wave-2 local validation: integrated campaign PASS 38/38 against a run-owned disposable `pca_test_codex_<uuid>` database (created, migrated, environment verified as MySQL 8.4.11 utf8mb4/utf8mb4_bin with UTC time_zone, dropped afterward); parent-auth disposable campaign PASS 61/0 with 3 expected privileged-mode skips; authority-diagnostics campaign PASS 62/62; bounded collector regression PASS 144/144; full non-DB backend suite PASS 2674/2674.
-BLOCKER = `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN`: 12 required routes lack database-backed HTTP evidence, and 9 declarations are intentionally gated by TODO-12 (schedule-policy Trust Set path; Web Rules encrypted storage/delivery) and TODO-15 (crypto decision routes). Do not activate gated routes or fabricate signatures to raise the percentage; do not add plaintext policy persistence (PCA-DEC-028).
+UNREVIEWED = 0; ALL_DECLARATIONS_RECONCILE = YES (each declaration carries exactly one reviewed disposition in the crosswalk dispositions table, updated in Wave 3)
+EVIDENCE = Refreshed matrix: 35/35 Parent Web client paths map to handlers; 52 declarations / 43 unique paths; the crosswalk anchors all 52 to direct HTTP status assertions and records bounded + integrated tiers. Prior bounded history retained in the checkpoint entries below (154/154 route campaign; 52/52 collector coverage). Wave-3 local validation: audit lane PASS 50/50 against a run-owned disposable `pca_test_codex_<uuid>` database (created, migrated, environment verified as MySQL 8.4.11 utf8mb4/utf8mb4_bin with UTC time_zone, dropped afterward); integrated report 40/52 with 130 scenarios and zero unexpected; bounded collector regression PASS 144/144 with 52/52 declarations and 138 scenarios; parent-auth disposable campaign PASS 61/0 with 3 expected privileged-mode skips; authority-diagnostics campaign PASS 62/62; full non-DB backend suite PASS 2674/2674. Wave-2 validation remains recorded in the checkpoint entries below (integrated 38/38; bounded 144/144; parent-auth 61/0/3; authority-diagnostics 62/62; full non-DB 2674/2674).
+BLOCKER = `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` by design: the 12 remaining declarations are intentionally gated — 6 by TODO-12 (schedule-policy/child-request/bonus-time authority gates), 3 by TODO-12 (Web Rules encrypted storage/delivery) and 2 by TODO-15 (signed and authorized-recovery decision routes) — plus 1 optional unconsumed dashboard read. Do not activate gated routes or fabricate signatures to raise the percentage; do not add plaintext policy persistence (PCA-DEC-028).
 DONE_WHEN = every required route is audited with proven authority and no normal action blocked by Genesis or browser trust  
 GLOBAL_AGGREGATE_STATUS = NOT_YET_PROVEN
 UNEXPECTED_401 = 0 bounded / 0 integrated; aggregate NOT_YET_PROVEN
@@ -512,14 +514,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); report/CI ledger commits `9fc02b41`, `80e3ff47`, crosswalk checkpoint `0e275bf1`, and result sync `cc9fceb5` passed exact-head runs `36379266945`, `36379988964`, `36380843449`, and `36381752337` (27/27 each), with fetch/local/tracking/`git ls-remote` equality. The crosswalk is remote; unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Synchronize the latest result and verify its follow-on exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); report/CI ledger commits `9fc02b41`, `80e3ff47`, crosswalk checkpoint `0e275bf1`, and result sync `cc9fceb5` passed exact-head runs `36379266945`, `36379988964`, `36380843449`, and `36381752337` (27/27 each). Wave-1 sync commit `722f6710` passed `36473982958` (27/27). Wave-2 commit `24fe92e7` (database-backed route audit evidence) passed `36481310080` (27/27) and is the current certified baseline. The Wave-3 content commit and its exact-head CI are reported to the owner with the Wave-3 report. Unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Synchronize the Wave-3 result and verify its follow-on exact-head run (reported with the Wave-3 report; no post-CI ledger commit by directive). TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = cc9fceb59d7b07823c6c9833fd1ec898b5857445
-REMOTE_HEAD = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = None at last verified push; unrelated `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 at last verified push
-EXACT_HEAD_CI = PASS (`36381752337` at `cc9fceb5`, 27/27); source/test run `36376318648` and ledger-sync runs `36377167205`, `36378245540`, `36379266945`, `36379988964`, and `36380843449` also passed 27/27
+LOCAL_HEAD = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (last certified; the Wave-3 content commit SHA is reported with the Wave-3 report because a commit cannot contain its own final SHA)
+REMOTE_HEAD = 24fe92e7cfeb51a78e4f90825d15e4d5803d897e (fresh fetch and git ls-remote matched at the Wave-3 baseline; Wave-3 push equality is reported with the Wave-3 report)
+PARENT_LOCAL_ONLY_FILES_REMAINING = None at the last verified push; unrelated `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 at the last verified push (Wave-3 push equality reported with the Wave-3 report)
+EXACT_HEAD_CI = PASS (`36481310080` at `24fe92e7`, 27/27) is the last certified exact-head run; earlier runs `36377167205`, `36378245540`, `36379266945`, `36379988964`, `36380843449`, `36473982958` and `36381752337` all passed 27/27. The Wave-3 exact-head CI result is reported with the Wave-3 report.
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
@@ -1116,3 +1118,12 @@ TODO10 = Complete Genesis source audit: zero NORMAL_PARENT_AUTHORITY_DEPENDENCY.
 TODO14 = Coverage complete in the bounded tier (52/52 reviewed) and database-backed for 28; `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN` pending the 12 required-but-missing routes and the intentionally gated boundaries.
 GIT = Single Wave-2 checkpoint commit on `pca-dev` (base `722f6710`); the pushed SHA and its exact-head Quality Gates run are reported to the owner in the Wave-2 report and are deliberately not re-committed after CI.
 NEXT_ACTION = STOP for owner review. Candidate next wave: extend integrated evidence to the 12 required-but-missing declarations (family-member invitation/role/remove/accept; removal-decision and administration-pin flows) without touching TODO-12/15 architecture.
+
+### 2026-09-28 21:57 UTC — Wave 3 closed every required-but-missing Parent declaration
+
+IMPLEMENTATION = Two new database-backed HTTP suites: `backend/test/db/parentRouteAuditMembershipHttp.mysql.test.mjs` (33 collector scenarios: invitation list/create/revoke/role, member remove, member-invitation accept) and `backend/test/db/parentRouteAuditRemovalHttp.mysql.test.mjs` (20 collector scenarios: removal-decision list/detail/create/local-pin decide and administration-PIN status/configure), both composed from the real MySQL repositories and the real `FamilyMemberInvitationService` / `MySqlFamilyMemberAccountBinder` / `RemovalDecisionAuthority` / `RemovalTargetResolver` / `AdministrationPinService`. Registered in `test:db:parent-route-audit:inner` and `test:db:inner`. The collector report `scope` string was corrected to "scenario evidence with explicit evidence tiers; not a global aggregate" (schemaVersion 3 unchanged).
+VALIDATION = Audit lane PASS 50/50 with zero skipped; integrated collector report 40/52 declarations, 130 MYSQL_HTTP scenarios (45 ALLOW_PROVEN / 73 EXPECTED_DENIAL / 1 PROTECTIVE_AUTHORITY_NOT_APPLICABLE / 11 VALIDATION_OR_PROTOCOL), zero undeclared keys, zero unexpected 401/403/other; bounded collector regression PASS 144/144 with the bounded report intact (52/52 declarations, 138 scenarios, zero unexpected); parent-auth lane PASS 61/0 with 3 expected privileged-mode skips; authority-diagnostics lane PASS 62/62; full non-DB backend suite PASS 2674/2674.
+TODO14 = Dispositions are now 40 `MYSQL_INTEGRATED_REQUIRED_AND_PROVEN`, 0 `MYSQL_INTEGRATED_REQUIRED_BUT_MISSING`, 6 `KNOWN_FAIL_CLOSED_AUTHORITY_GATE`, 3 `KNOWN_FAIL_CLOSED_SERVICE_GATE`, 2 `KNOWN_CRYPTO_DEVICE_GATE`, 1 `OPTIONAL_ROUTE`; UNREVIEWED = 0. TODO-14 remains IN_PROGRESS: `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` because the remaining 12 declarations are intentionally gated by TODO-12/TODO-15, never by missing evidence.
+SUBAGENTS = The mandated seven specialist sub-agents were dispatched three times through the agent runner; every dispatch returned no usable output (two empty, one truncated fragment) and no files, so the coordinator executed the wave directly with the same bounded discipline. This tooling limitation and the resulting direct-execution model are recorded for the owner in the Wave-3 report.
+GIT = One substantive commit carries the two suites, package.json registration, collector scope fix, crosswalk and both master ledgers; pushed to `pca-dev` and its exact-head CI result is reported with the Wave-3 report. `.vscode/` and root `0` remain untracked and excluded.
+NEXT_ACTION = STOP for owner review of the Wave-3 evidence closure; do not begin TODO-12/15 or Platform work.
