@@ -7,12 +7,20 @@ BRANCH = pca-dev
 MISSION_STATUS = IN_PROGRESS  
 LAST_UPDATED_UTC = 2026-09-28 05:41 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = aa26c1bab9530d6b1e8532545c5c831f3c485d61 (fresh fetch and git ls-remote agree; latest verified remote)
-CURRENT_CHECKPOINT_SHA = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (CI result sync; exact-head Quality Gates run 36381752337 PASS, 27/27)
-LOCAL_UNVALIDATED_DOC_HEAD = df4302bbf389cea232627961edea9d1b5e9ded13 (representative TODO-14 assertion anchors; awaits publication and exact-head CI)
+VERIFIED_SOURCE_REMOTE_HEAD = 6bddaf11252041bcb23c9e92d148390ba76ca61c (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 6bddaf11252041bcb23c9e92d148390ba76ca61c (representative TODO-14 assertion anchors; exact-head Quality Gates run 36383174064 IN_PROGRESS)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the representative TODO-14 assertion-anchor checkpoint after updating the ledgers; then continue the remaining per-route mapping and scoped collector while retaining TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Continue remaining per-route TODO-14 assertion mapping and scoped collector while retaining TODO-12/15 protocol and owner/Platform gates; synchronize the exact-head run 36383174064 when complete.
+
+### 2026-09-28 05:46 UTC — assertion-anchor checkpoint published; exact-head CI running
+
+GIT = Commits `df4302bb` and `6bddaf11` were pushed fast-forward to `pca-dev`. Post-push fetch, local HEAD, `origin/pca-dev`, and `git ls-remote` all agree at `6bddaf11252041bcb23c9e92d148390ba76ca61c`; the Parent master TODO, Platform master TODO and route/action crosswalk exist in the remote tree. `.vscode/` and root `0` remain untracked and excluded.
+CI = Prior Quality Gates run `36382569294` completed SUCCESS at exact base `aa26c1ba`, 27/27. Current run `36383174064` is IN_PROGRESS at exact HEAD `6bddaf11`; no result is claimed yet.
+TODO14 = Published 12 representative entries covering 14 method/path declarations with direct test line anchors and expected outcome classes. Remaining declarations, the integrated disposable collector, and global `UNEXPECTED_401`, `UNEXPECTED_403`, `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust aggregates remain open/NOT_YET_PROVEN.
+VALIDATION = Documentation `git diff --check` passed; no source or test files changed and no tests were run in this docs-only checkpoint.
+GATES = TODO-12/14/15, literal TODO-18 localhost acceptance and Platform `HOLD_PARENT_DEPENDENCY` remain open. TODO-20 remains PASS through live migration 0059.
+NEXT_ACTION = Continue the per-route assertion map and collector design; then sync the outcome of exact-head run `36383174064`.
 
 ### 2026-09-28 05:41 UTC — TODO-14 representative assertion anchors added
 
