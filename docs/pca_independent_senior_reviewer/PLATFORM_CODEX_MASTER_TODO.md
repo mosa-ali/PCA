@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 03:25 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (fresh fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (Parent test-fixture checkpoint; Quality Gates run 36373007968 PASS, 27/27)
+LAST_UPDATED_UTC = 2026-09-28 03:40 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = baf3358f148bba17323c0ecbe4d79beb51a5c9f6 (fresh fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = baf3358f148bba17323c0ecbe4d79beb51a5c9f6 (documentation-only evidence sync; Quality Gates run 36374085095 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Parent TODO-17 now passes exact-head run 36373007968 (27/27); TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Parent TODO-17 passed 36373007968 and the full ledger checkpoint 36374085095 passed 27/27. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 00:56 UTC — status report reconciled with current checkpoint
 
@@ -82,15 +82,28 @@ NEXT_ACTION = Keep Platform queued while Parent closes TODO-12/14/15 and receive
 
 ### 2026-09-28 03:09 UTC — Parent real-backend E2E regressed at Settings; Platform remains held
 
-PARENT = Quality Gates run `36373007968` at `3ace68d9` passed 27/27; the owner-acceptance real-backend flow passed 2/2 with zero skips after isolated test-address correction. The prior 429 failure on `36371470989` is resolved in the test fixture. Parent TODO-12/14/15 and TODO-18 remain open.
+PARENT = The owner-acceptance flow still had the 429 failure from run `36371470989`; the isolated test-address correction awaited fresh exact-head validation. Parent TODO-12/14/15 and TODO-18 remained open.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, Azure deployment, production smoke, or owner UAT is claimed.
-NEXT_ACTION = Keep Enrollment queued behind Parent security, projection and owner localhost gates. The current matrix/ledger clarification is documentation-only and is pending publication.
+NEXT_ACTION = Require green exact-head CI after the Parent fixture correction; keep Enrollment queued behind Parent security, projection and owner localhost gates.
 
 ### 2026-09-28 03:25 UTC — Parent automated regression green; Platform remains held
 
 PARENT = Exact-head Quality Gates run `36373007968` at `3ace68d9` passed 27/27. Parent owner-acceptance real-backend E2E passed 2/2 with zero skips; full MySQL, Parent/Platform browser, Android/iOS, security, builds and unit jobs passed. TODO-17 is PASS for this integrated campaign.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains because TODO-12/14/15, Parent projection dependencies and literal TODO-18 `LOCALHOST ACCEPTED` remain open. Enrollment Name/Email/nullable Phone work remains incomplete; no activation, deployment, production smoke or owner UAT is claimed.
-NEXT_ACTION = Continue Parent authority/action and device-security work; keep Platform Enrollment queued and publish the current documentation clarification as a fast-forward.
+NEXT_ACTION = Continue Parent authority/action and device-security work; keep Platform Enrollment queued and inspect the exact-head run for `baf3358f`.
+
+### 2026-09-28 03:32 UTC — evidence sync published; follow-on CI queued
+
+GIT = Documentation-only checkpoint `baf3358f` is pushed and remote-equal after fresh fetch and `git ls-remote`.
+CI = Quality Gates run `36374085095` is queued at current HEAD; source/test parent `3ace68d9` passed run `36373007968` 27/27.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, deployment, production smoke, or owner UAT is claimed.
+NEXT_ACTION = Record the green run 36374085095, then continue Parent TODO-12/14/15 with Platform still held.
+
+### 2026-09-28 03:40 UTC — exact-head evidence-sync CI passed; Platform remains held
+
+PARENT = Quality Gates run `36374085095` completed SUCCESS at `baf3358f`, 27/27 jobs. Parent TODO-17 is PASS; TODO-12/14/15 and owner TODO-18 remain open.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Enrollment activation, deployment, production smoke, or owner UAT is claimed.
+NEXT_ACTION = Publish this result ledger sync, then continue from the earliest open Parent authority/device-security item.
 
 ### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
 

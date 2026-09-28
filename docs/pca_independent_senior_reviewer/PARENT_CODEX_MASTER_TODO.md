@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 03:25 UTC
+LAST_UPDATED_UTC = 2026-09-28 03:40 UTC
 VALIDATED_SOURCE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (Parent owner-flow test-fixture correction; Quality Gates run 36373007968 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (fresh fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (test fixture and route dispositions; exact-head Quality Gates run 36373007968 SUCCESS, 27/27)
+VERIFIED_SOURCE_REMOTE_HEAD = baf3358f148bba17323c0ecbe4d79beb51a5c9f6 (fresh post-push fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = baf3358f148bba17323c0ecbe4d79beb51a5c9f6 (documentation-only evidence sync; exact-head Quality Gates run 36374085095 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the PCA-DEC-028-consistent bonus-grant route disposition and this evidence sync; then continue TODO-12/14/15 and retain owner/Platform gates.
+NEXT_ACTION = Publish the exact-head pass/result sync, then continue TODO-12/14/15 and retain owner/Platform gates.
 
 ### 2026-09-28 03:25 UTC — owner-flow correction passed exact-head integrated CI
 
@@ -20,6 +20,19 @@ LOCAL_CAMPAIGN = Backend build PASS; TODO-14 route/action suite PASS 154/154, ze
 REPORT_RECONCILIATION = Attachment refs `0daf660`/`399304c`, CI runs `36350073129`/`36356186069`, and live 0050 claim are historical; the latest verified source HEAD is `3ace68d9`, and live `pca_pro` reconciliation is recorded through 0059. TODO-13 and TODO-17 are PASS. TODO-12/14/15, owner TODO-18 and dependent Platform gates remain open.
 ARCHITECTURE = PCA-DEC-028 intentionally keeps BonusGrantLedger process-local. Active-grants is optional/unconsumed; revoke browser exposure awaits reviewed encrypted FamilyAudit actor delivery. Plaintext grant persistence is not an acceptable fix.
 NEXT_ACTION = Publish the route-matrix clarification and this ledger sync; continue TODO-12/14/15 without lifting `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-28 03:32 UTC — evidence sync pushed; exact-head CI queued
+
+GIT = Documentation-only commit `baf3358f148bba17323c0ecbe4d79beb51a5c9f6` was pushed fast-forward to `origin/pca-dev`; fresh fetch, local HEAD, tracking ref, and `git ls-remote` match. No tracked mission files remain local-only; `.vscode/` and root `0` remain excluded.
+CI = Quality Gates run `36374085095` is queued at exact current HEAD `baf3358f`; source/test parent `3ace68d9` passed run `36373007968` 27/27.
+NEXT_ACTION = Inspect run `36374085095`; continue TODO-12/14/15 and keep TODO-19 active until current-head CI is complete.
+
+### 2026-09-28 03:40 UTC — ledger-sync exact-head CI passed
+
+CI = Quality Gates run `36374085095` completed SUCCESS at exact HEAD `baf3358f148bba17323c0ecbe4d79beb51a5c9f6`; 27/27 jobs passed.
+TODO17 = PASS remains current: source/test SHA `3ace68d9` passed the owner flow 2/2 and 27/27 overall; the full run at `baf3358f` passed 27/27 again.
+TODO19 = Current exact-head and remote equality are verified. This CI result is being added to the mission ledger for publication; keep TODO-19 active until that result-sync checkpoint is published and verified.
+NEXT_ACTION = Publish the result sync and continue TODO-12/14/15 without lifting owner or Platform gates.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -236,14 +249,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Remote alignment is verified at `3ace68d92792e25de169d3dcb7cf6f1fd9b7075a`; fresh `git fetch` and `git ls-remote` matched. Exact-head Quality Gates run `36373007968` passed 27/27 at that SHA. The test correction and all reviewed five paths were pushed as `3ace68d9`; a subsequent PCA-DEC-028 route-matrix wording clarification and this result-ledger sync are the only intended local changes. Unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Publish the current matrix/ledger clarification as a fast-forward, reverify remote file/head equality, and carry the following exact-head CI result forward. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `3ace68d92792e25de169d3dcb7cf6f1fd9b7075a` passed exact-head Quality Gates run `36373007968` (27/27). PCA-DEC-028 matrix clarification and evidence sync were pushed documentation-only as `baf3358f148bba17323c0ecbe4d79beb51a5c9f6`; fresh fetch, local HEAD, tracking ref and `git ls-remote` match. Exact-head Quality Gates run `36374085095` completed SUCCESS 27/27 at `baf3358f`. The completed run result is now being synced into the ledgers; unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Publish the CI-result ledger sync, verify fast-forward and remote equality, and inspect its follow-on exact-head run. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (last verified; matrix/ledger clarification currently unstaged)
-REMOTE_HEAD = 3ace68d92792e25de169d3dcb7cf6f1fd9b7075a (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = Updated Parent/Platform/mission ledgers and PCA-DEC-028 matrix clarification await publication; `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 at last verified remote; current changes are documentation-only
-EXACT_HEAD_CI = PASS (`36373007968` at `3ace68d9`, 27/27 jobs; owner acceptance 2/2)
+LOCAL_HEAD = baf3358f148bba17323c0ecbe4d79beb51a5c9f6
+REMOTE_HEAD = baf3358f148bba17323c0ecbe4d79beb51a5c9f6 (fresh fetch and git ls-remote match)
+PARENT_LOCAL_ONLY_FILES_REMAINING = Three tracked ledger refreshes after the verified push; `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; current uncommitted changes are documentation-only
+EXACT_HEAD_CI = PASS (`36374085095` at `baf3358f`, 27/27; owner acceptance 2/2 was also passed at source/test SHA `3ace68d9`)
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
