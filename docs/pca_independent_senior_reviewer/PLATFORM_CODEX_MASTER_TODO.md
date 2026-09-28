@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-27 23:27 UTC
-LOCAL_HEAD = 578dc0bbfcb050b8289adf7f10cbf1002c3082a2
-REMOTE_HEAD = 578dc0bbfcb050b8289adf7f10cbf1002c3082a2 (fresh fetch and GitHub ref match)
-CURRENT_CHECKPOINT_SHA = fbba783d5e5c3b2fe8c0f98ef02d3f8abc1eab29 (Parent source; verified ledger publication `578dc0bb`)
+LAST_UPDATED_UTC = 2026-09-28 00:20 UTC
+LOCAL_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
+REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match)
+CURRENT_CHECKPOINT_SHA = 35f6c022f017e04aecbf3573394bf20f90d12489 (Parent corrective checkpoint plus ledger sync; exact-head CI PASS; TODO-20 reconciled)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-18, TODO-20 final exact-head CI and live 0059 schema/grant verification, and literal localhost acceptance. Parent Quality Gates run `36358762949` is PENDING at `578dc0bb`; require a pass on the final ledger-sync head before live work.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12…TODO-18, Parent projection completion, and literal localhost acceptance. Parent TODO-20 is now PASS through live 0059; its exact-head CI and live schema/grant evidence are recorded in the Parent ledger.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 
@@ -449,3 +449,10 @@ NEXT_ACTION = Finish ledger publication and exact-head CI verification before re
 PARENT_CI = Quality Gates run `36359820131` at `a97de7545ca61b0ee662b0808f9b1f9c9773da63` remains in progress. The local Parent real-backend wrapper reached its MySQL 8.4.11/57-migration gate and cleaned up its run-owned DB, but the preview web server timed out before browser tests; this is not a pass and did not execute the changed acceptance-flow spec.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform change or live mutation occurred.
 NEXT_ACTION = Publish the factual Parent validation update, then require a passing exact-head CI result before TODO-20 live preflight/migration and dependent Platform work.
+
+### 2026-09-28 00:20 UTC — Parent TODO-20 reconciled; Platform remains held
+
+PARENT = Exact-head Quality Gates run `36360087042` passed on `35f6c022f017e04aecbf3573394bf20f90d12489`. Parent TODO-20 applied migration 0059 after fresh preflight; live journal=57, local/live schema snapshots EXACT_MATCH, runtime grants 92/92, and 90 readable application-table row counts unchanged. See Parent master ledger for full evidence and the intentionally INSERT-only event-table visibility limit.
+REPORT_RECONCILIATION = Attachment snapshots at `0daf660` and `399304c` predate the current branch checkpoint. Live database was at 0058 immediately before 0059, not 0050; current state now matches through 0059.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; TODO-20 completion does not close Parent TODO-12…TODO-18, projection and literal `LOCALHOST ACCEPTED=YES` gates. No Platform activation, deployment, or owner acceptance occurred.
+NEXT_ACTION = Continue dependent work only after its Parent gates close; preserve the Platform hold.
