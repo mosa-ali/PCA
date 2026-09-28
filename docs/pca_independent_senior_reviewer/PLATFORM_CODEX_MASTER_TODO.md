@@ -5,14 +5,14 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 02:21 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match before this ledger publication)
-CURRENT_CHECKPOINT_SHA = 35f6c022f017e04aecbf3573394bf20f90d12489 (Parent corrective checkpoint plus ledger sync; exact-head CI PASS; TODO-20 reconciled)
+LAST_UPDATED_UTC = 2026-09-28 02:34 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (fresh fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (Parent source + ledger sync; exact-head Quality Gates run 36369764525 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12…TODO-18, Parent projection completion, and literal localhost acceptance. Parent TODO-20 is now PASS through live 0059; its exact-head CI and live schema/grant evidence are recorded in the Parent ledger.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Parent TODO-20 is PASS through live 0059; the exact-head CI and live schema/grant evidence are recorded in the Parent ledger.
 
 ### 2026-09-28 00:56 UTC — status report reconciled with current checkpoint
 
@@ -66,6 +66,13 @@ PARENT = Source checkpoint `6b7bf8e12b67f349e38fa2271d564bf72dec975b` commits re
 GIT = The source checkpoint is two fast-forward commits ahead of fetched remote `35f6c022`; this ledger synchronization will be a third commit. Publication and new exact-head CI remain pending. GitHub Actions lookup currently fails because the configured localhost proxy refuses connections.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and literal TODO-18 acceptance remain open. No Enrollment implementation, activation, deployment, or production UAT is claimed.
 NEXT_ACTION = Publish the ledger sync and authorized fast-forward commits, then verify exact-head CI before resuming the dependency-gated Platform package.
+
+### 2026-09-28 02:34 UTC — Parent exact-head CI passed; Platform remains held
+
+PARENT = Source checkpoint `6b7bf8e` and ledger-sync HEAD `dfefe27c277c0e225ee1f1a50e38f00871dc8082` are remotely verified. Quality Gates run `36369764525` passed all 27 jobs at exact HEAD, including full Parent/Platform real-browser and DB certification.
+REPORT = The attached report's `399304c`/run `36356186069` and live-0050 database findings are superseded by current remote `dfefe27c`, run `36369764525`, and live `pca_pro` reconciliation through 0059. The required Parent Email resolver is implemented, but Enrollment's required Name/Email/nullable Phone directory/table package is still incomplete.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains: Parent TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. No Enrollment activation, Azure deployment, production smoke, or owner UAT is claimed.
+NEXT_ACTION = Continue the Parent dependencies; keep Enrollment queued until Parent authority/security and owner localhost acceptance are complete.
 
 ### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
 

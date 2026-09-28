@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 02:21 UTC
+LAST_UPDATED_UTC = 2026-09-28 02:34 UTC
 VALIDATED_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b (Parent session UI, E2E/harness and schema artifact checkpoint; local real-backend campaign PASS)
-VERIFIED_SOURCE_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch; local checkpoint is not yet published)
-CURRENT_CHECKPOINT_SHA = 6b7bf8e12b67f349e38fa2271d564bf72dec975b (Parent revoke-all Settings and real-backend acceptance evidence; exact-head CI pending)
+VERIFIED_SOURCE_REMOTE_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (fresh fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (Parent source checkpoint plus ledger sync; Quality Gates run 36369764525 exact-head SUCCESS, 27/27 jobs)
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12, TODO-14…TODO-16, and TODO-19; TODO-13/16/20 are PASS; TODO-17 has prior exact-head PASS at 35f6c022 plus current local real-backend PASS at 6b7bf8e
-NEXT_ACTION = Continue the same Parent TODO board at the earliest unfinished work, TODO-12. The current source checkpoint is committed locally but not pushed; publish the ledger sync and fast-forward range, then inspect exact-head CI for the new source.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, and owner-gated TODO-18; TODO-11/13/16/17/19/20 are PASS at current exact-head campaign or previously proven live/source evidence
+NEXT_ACTION = Continue TODO-12/14/15 from their documented evidence; keep TODO-18 awaiting literal owner `LOCALHOST ACCEPTED` and Platform on `HOLD_PARENT_DEPENDENCY`.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -778,3 +778,11 @@ VALIDATION = Local Parent Web focused campaign 42/42; Parent Web typecheck/ESLin
 GIT = Parent `pca-dev` local HEAD is `6b7bf8e`; prior local docs commit `1056546e` is also ahead of fetched `origin/pca-dev=35f6c022`. Fast-forward ancestry is preserved. Source publication and exact-head CI are pending; `.vscode/` and `0` remain untracked and excluded.
 GATES = This local browser campaign does not replace exact-head CI. TODO-12/14/15 and TODO-18 remain open; TODO-20 remains PASS through live 0059. Platform remains `HOLD_PARENT_DEPENDENCY`.
 NEXT_ACTION = Commit/publish this ledger synchronization, push the authorized three-commit fast-forward to `origin/pca-dev`, then verify refs/files and exact-head CI. Continue TODO-12/14/15 afterward.
+
+### 2026-09-28 02:34 UTC — Parent checkpoint publication and integrated CI verified
+
+GIT = The reviewed three-commit fast-forward (1056546e, 6b7bf8e, dfefe27c) is published. Fresh `git fetch`, `origin/pca-dev`, local HEAD, and `git ls-remote` all match `dfefe27c277c0e225ee1f1a50e38f00871dc8082`; both master TODO files are present in the remote tree. Unrelated `.vscode/` and root `0` remain untracked and excluded.
+CI = Quality Gates run `36369764525` completed SUCCESS on exact HEAD `dfefe27c277c0e225ee1f1a50e38f00871dc8082`: 27 jobs succeeded, zero failed. Real-backend browser E2E, full disposable-MySQL DB certification, Parent/Platform browser suites, Android, iOS, security, builds, and unit jobs passed.
+TODO17_19 = Integrated automated regression and exact-head publication gates are PASS for this checkpoint. TODO-12/14/15 authority/device gates and TODO-18 literal localhost owner acceptance remain open; TODO-20 stays PASS through live migration 0059 with exact schema/grant postflight and preserved readable-table counts.
+REPORT = The attachment's `0daf660` failure snapshot, `399304c` checkpoint, and live migration-0050 claim are older than verified current state. Current remote is `dfefe27c`; live `pca_pro` is already reconciled through 0059. The report's hold recommendation remains appropriate because owner/device/authority gates are still open.
+NEXT_ACTION = Continue the same mission at TODO-12/14/15; do not activate Platform Enrollment or deploy until the recorded Parent and owner gates close.
