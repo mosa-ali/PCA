@@ -5,14 +5,30 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 06:04 UTC
-VALIDATED_SOURCE_HEAD = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (backend build and focused TODO-14 HTTP suites PASS 24/24; exact-head CI not yet run)
-VERIFIED_SOURCE_REMOTE_HEAD = ce296483507d8a92a61c2b6cdd1179e1d880e1be (fresh fetch and git ls-remote agree; local source checkpoint is a fast-forward descendant)
-CURRENT_CHECKPOINT_SHA = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (local validated source commit; publication and exact-head CI pending)
-LOCAL_UNCOMMITTED_CHANGE = Two master TODO ledgers record the validated 52/52 status-anchor checkpoint and its bounded evidence
+LAST_UPDATED_UTC = 2026-09-28 06:15 UTC
+VALIDATED_SOURCE_HEAD = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (backend build and removal-decision suite PASS 17/17; bounded collector recorded 3/3 scenarios; exact-head CI pending)
+VERIFIED_SOURCE_REMOTE_HEAD = 5f17326a9f590b320444ce8686b90d689dcb45d9 (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (local validated collector commit; ledger sync and publication pending)
+LOCAL_UNCOMMITTED_CHANGE = Both master TODO ledgers record the committed bounded TODO-14 collector slice; exact-head CI pending
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the validated route-test checkpoint with its ledger sync, verify exact-head CI, then implement the disposable TODO-14 scenario collector; retain TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Publish collector commit `4565e1b9` with both master ledgers, verify remote equality and exact-head CI, then extend coverage; retain TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
+
+IMPLEMENTATION = Added an opt-in status-only collector for route test outcomes and instrumented the removal-decision detail GET scenarios. The JSON report classifies same-family allow, unknown-ID expected privacy denial and cross-family expected privacy denial; it stores no request bodies, headers, credentials or IDs. It declares its scope bounded, coverage incomplete (1/52 routes), and global aggregate `NOT_YET_PROVEN`.
+VALIDATION = Backend build PASS. The focused removal-decision suite passed 17/17; generated report recorded 3/3 matched scenarios (1 allow, 2 expected denials) and zero unexpected 401/403/other in this bounded slice. The Actions API call for run `36384812687` failed through the configured localhost proxy; its last observed status remains QUEUED at `5f17326a`.
+GIT = Collector implementation and crosswalk/ledger updates are local and uncommitted; last published HEAD remains `5f17326a9f590b320444ce8686b90d689dcb45d9`. `.vscode/` and root `0` remain untracked and excluded.
+TODO14 = One of 52 route declarations now has three structured scenario rows. This does not prove global route aggregates or database-backed behavior; TODO-14 remains IN_PROGRESS.
+NEXT_ACTION = Publish the bounded collector source commit with master-ledger updates; expand coverage route by route after exact-head CI. Preserve known authority/service/crypto gates and Platform hold.
+
+### 2026-09-28 06:15 UTC — TODO-14 bounded collector committed locally
+
+COMMIT = Local commit `4565e1b9378fe29b22485d6837e13c51a9e72ccb` adds an opt-in status-only collector and instruments three removal-detail GET scenarios. The report contains one route/three scenario rows, matched 200 allow plus two expected 404 privacy denials, zero unexpected 401/403/other for this slice, `coverageComplete=false`, and `globalAggregateStatus=NOT_YET_PROVEN`.
+VALIDATION = Backend build PASS; focused removal-decision suite PASS 17/17 with collector output enabled; `node --check` and `git diff --check` PASS. No exact-head CI has run for this local commit.
+GIT = Local source commit descends from verified remote `5f17326a`; both master ledger files remain the only intended tracked changes. The Actions API remains unreachable through the configured localhost proxy; run `36384812687` was last observed QUEUED at `5f17326a`.
+TODO14 = One of 52 method/path declarations is dynamically collected in a bounded HTTP test. Database-backed all-route aggregate remains NOT_YET_PROVEN.
+NEXT_ACTION = Commit the ledger sync, publish the reviewed fast-forward and verify exact-head CI; then expand the collector across route families.
 
 ### 2026-09-28 06:04 UTC — TODO-14 direct status-assertion checkpoint committed locally
 
@@ -20,7 +36,14 @@ SOURCE = Local commit `4efc4e44f662c922c7b44b759e1b923a2e59d4e7` adds an explici
 VALIDATION = Backend build PASS; focused MFA and removal-decision HTTP suites PASS 24/24 using in-process serial Node execution after the default Windows test isolation failed before execution with `spawn EPERM`; `git diff --check` PASS.
 GIT = The source commit is a fast-forward descendant of fetched/server `pca-dev=ce296483507d8a92a61c2b6cdd1179e1d880e1be`; it is not yet published. Exact-head CI has not run for `4efc4e44`. Unrelated `.vscode/` and root `0` remain untracked and excluded.
 TODO14 = Static status assertion anchors are 52/52. Global scenario-classified 401/403/authority-unavailable aggregates and the disposable collector remain NOT_YET_PROVEN.
-NEXT_ACTION = Publish this source checkpoint with both master ledgers, then verify remote equality and exact-head CI before continuing the collector implementation.
+NEXT_ACTION = Implement the disposable TODO-14 scenario collector after recording the published checkpoint and inspecting its exact-head CI.
+
+### 2026-09-28 06:05 UTC — TODO-14 assertion checkpoint published; exact-head CI queued
+
+GIT = Commits `4efc4e44` and `5f17326a` are published as a fast-forward. Fresh fetch, local HEAD, tracking ref and `git ls-remote` agree at `5f17326a9f590b320444ce8686b90d689dcb45d9`; the Parent and Platform master TODOs and route-action crosswalk exist in the remote tree. `.vscode/` and root `0` remain untracked and excluded.
+CI = Quality Gates run `36384812687` is QUEUED on exact HEAD `5f17326a`; no result is claimed. GitHub Actions API polling later failed through the configured localhost proxy, so preserve the last observed queued status until connectivity returns.
+TODO14 = Static direct status assertions now cover 52/52 declarations; global scenario-classified runtime aggregates and the disposable collector remain NOT_YET_PROVEN.
+NEXT_ACTION = Continue TODO-14 collector design/implementation while retaining TODO-12/15 and owner/Platform gates, then refresh exact-head CI when the Actions API is reachable.
 
 ### 2026-09-28 05:52 UTC — TODO-14 assertion mapping extended locally
 

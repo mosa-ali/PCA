@@ -5,21 +5,39 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 06:04 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (backend build and focused TODO-14 HTTP suites PASS 24/24; exact-head CI not yet run)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = ce296483507d8a92a61c2b6cdd1179e1d880e1be (fresh fetch and git ls-remote agree; local source checkpoint is a fast-forward descendant)
-CURRENT_CHECKPOINT_SHA = 4efc4e44f662c922c7b44b759e1b923a2e59d4e7 (local validated source commit; publication and exact-head CI pending)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Master ledger sync records the locally validated 52/52 Parent status-anchor checkpoint; aggregate counts and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 06:15 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (backend build and removal-decision suite PASS 17/17; bounded collector recorded 3/3 scenarios; exact-head CI pending)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 5f17326a9f590b320444ce8686b90d689dcb45d9 (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 4565e1b9378fe29b22485d6837e13c51a9e72ccb (local validated collector commit; ledger sync and publication pending)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Both master ledgers record the committed bounded TODO-14 collector slice; aggregate coverage remains incomplete
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. The latest published exact-head CI run `36383400891` at `ce296483` passed 27/27, but does not cover local source commit `4efc4e44`; its focused backend build/tests passed 24/24 locally. Parent TODO-17 is PASS at the published checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Local Parent collector commit `4565e1b9` passed build and focused suite 17/17; its exact-head CI is pending publication. The previous published run `36384812687` at `5f17326a` was last observed QUEUED. Parent TODO-17 remains PASS at its validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
 PARENT = Local source commit `4efc4e44f662c922c7b44b759e1b923a2e59d4e7` supplies direct HTTP status assertions for all 52/52 route declarations. Backend build and focused route suites passed 24/24; this source checkpoint is not yet published or covered by exact-head CI.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
-NEXT_ACTION = Publish the Parent route-test/crosswalk checkpoint with the ledger sync, verify exact-head CI, and keep the dependent Platform hold unchanged.
+NEXT_ACTION = Inspect exact-head run `36384812687` when Actions API connectivity returns; continue Parent TODO-14 collector work and keep the dependent Platform hold unchanged.
+
+### 2026-09-28 06:05 UTC — Parent TODO-14 checkpoint published; CI queued
+
+PARENT = The direct HTTP status-anchor checkpoint is published at `5f17326a9f590b320444ce8686b90d689dcb45d9`; focused local backend tests/build passed 24/24. Exact-head Quality Gates run `36384812687` is queued, not yet passed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Publish collector commit `4565e1b9` with both ledgers, then refresh exact-head CI and continue collector expansion.
+
+### 2026-09-28 06:15 UTC — bounded Parent collector committed locally
+
+PARENT = Local commit `4565e1b9378fe29b22485d6837e13c51a9e72ccb` contains the bounded status-only collector slice. The focused suite passed 17/17 and the report matched 3/3 scenarios across one route; global counts remain NOT_YET_PROVEN. Exact-head CI is pending publication.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Publish the collector commit with master-ledger updates and verify exact-head CI; continue the dependent Platform hold.
+
+### 2026-09-28 06:12 UTC — bounded Parent route collector slice
+
+PARENT = A local opt-in collector emitted three status-only removal-detail GET rows (same-family 200 allow; unknown and cross-family 404 expected privacy denials), all matching. It explicitly reports 1/52 route coverage and `globalAggregateStatus=NOT_YET_PROVEN`; backend build and the focused suite passed 17/17. No exact-head CI covers these uncommitted changes.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue expanding the collector and refresh the published exact-head CI result when GitHub Actions API connectivity returns.
 
 ### 2026-09-28 05:59 UTC — Parent route assertion evidence completed
 
