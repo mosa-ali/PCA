@@ -5,13 +5,20 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 04:28 UTC
+LAST_UPDATED_UTC = 2026-09-28 04:44 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 678b1d33937c62e7b47da65ef88919f0209b523c (fresh fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 678b1d33937c62e7b47da65ef88919f0209b523c (CI-result sync; exact-head Quality Gates run 36377167205 PASS, 27/27; source/test parent 4a1b372d passed run 36376318648)
+VERIFIED_SOURCE_REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (fresh fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 78ac5eacae15958ac5c575e90e9f76e058717732 (authority/device review sync; exact-head Quality Gates run 36378245540 PASS, 27/27; source/test parent 4a1b372d passed run 36376318648)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the authority/device specialist review evidence, then continue TODO-14 runtime matrix evidence and retain TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Record the completed 27/27 exact-head run and reconcile the supplied historical status report; continue TODO-14 runtime matrix evidence while retaining TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 04:44 UTC — historical status report reconciled against current mission state
+
+REPORT = The attachment's `399304c`/run `36356186069` and live migration-0050 snapshot predate the verified `78ac5eac` checkpoint. Live `pca_pro` reconciliation through migration 0059 and the exact schema/grant postflight are already recorded; no migration replay is needed from this report.
+CI = Quality Gates run `36378245540` completed SUCCESS at exact HEAD `78ac5eac`, 27/27. Runs `36376318648` and `36377167205` also passed 27/27. TODO-17 automated integration remains PASS; TODO-19 remains active for the current ledger publication and fresh remote verification.
+REMAINING = TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. DEC-035 prohibits plaintext policy and a temporary fail-closed flip without an Owner writer. Platform remains `HOLD_PARENT_DEPENDENCY`; no activation, deployment, production smoke or owner UAT is claimed.
+NEXT_ACTION = Resume TODO-14 runtime route/action evidence; keep historical report metrics separate from the later source, CI and live-database evidence.
 
 ### 2026-09-28 03:25 UTC — owner-flow correction passed exact-head integrated CI
 
@@ -67,6 +74,14 @@ TODO17 = PASS: source/test checkpoint `4a1b372d` passed `36376318648` 27/27; the
 TODO12_14 = Review confirmed no safe route-only removal of device/Trust Set checks, no production plaintext Web Rules path, and unresolved typed FamilyAudit actor attribution. Four configurable Administrator operations still have effective `ALLOW_WITH_STEP_UP` despite safe-default-off; DEC-034/035 require the signed E2EE writer/reader/audit/step-up/certification together. Global route/action aggregates remain NOT_YET_PROVEN.
 TODO15 = Mobile review found no additional safe code change: production crypto verifiers, durable Trust Set/key epochs, attestation, and signed first-policy receipt/activation remain gates; existing epoch/revocation checks remain fail-closed.
 NEXT_ACTION = Publish these specialist findings and continue TODO-14 route/action evidence; do not fabricate or bypass the required security protocols.
+
+### 2026-09-28 04:41 UTC — exact-head authority-review sync passed
+
+GIT = Ledger review sync `78ac5eacae15958ac5c575e90e9f76e058717732` is pushed fast-forward and matches fresh fetch/tracking/`git ls-remote`; exact-head Quality Gates run `36378245540` passed 27/27.
+TODO17 = PASS: source/test HEAD `4a1b372d` passed `36376318648`, 27/27; two subsequent documentation checkpoints `678b1d33` and `78ac5eac` passed `36377167205` and `36378245540`, 27/27 each.
+DEC035 = Owner ruling explicitly prohibits both plaintext policy configuration and a temporary fail-closed flip without an Owner writer. Safe-default-off remains unimplemented; only the full signed E2EE writer/reader/audit/step-up/certification path may close the decision.
+TODO12_14_15 = No safe route-only TODO-12 or crypto-bootstrap TODO-15 source change was identified. Aggregate route/action counts remain NOT_YET_PROVEN; the documented authority and device protocol gates remain open.
+NEXT_ACTION = Continue TODO-14 runtime route/action evidence, without bypassing the Owner ruling or device/E2EE gates.
 
 ### 2026-09-27 20:58 UTC — Parent corrective checkpoint pushed and verified
 
@@ -208,7 +223,7 @@ STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Parent route/action authority, authz, child requests, family membership, device binding, removal decisions, Parent Web action clients  
 EVIDENCE = Source/action matrix reviewed; bounded route/action campaign passed 154/154 after a successful backend build. Removal mutations use active Administrator and scoped TOTP step-up; Parent decision actor IDs persist through migration 0057 and are omitted from Parent DTOs. Local disposable MySQL 8.4.11 persistence coverage for migration 0057 passed (22/22); migrations 0001–0059 applied and the disposable DB was removed. Fresh source review confirms the bonus revoke route checks active Parent role, CSRF and child-family membership before mutating `BonusGrantLedger`; its actor/time attribution is process-local. `FamilyAuditRecord` currently exposes only `actorDeviceId`; source also stores target device IDs, Parent account IDs, or service sentinels in device-shaped actor fields. Production FamilyAudit uses an in-memory reference repository and a rejecting opaque composer pending crypto review. `childPolicyRoutes.ts` requires Parent Administrator session, CSRF, bound device bearer and Trust Set authorization for schedule-policy writes; production's `UnavailableTrustSetRoleResolver` returns `NO_TRUST_SET`. Web Rules return `503 not_configured` while production leaves `webRuleService` absent. Re-review of `familyrbac/policy.ts` confirms four configurable Administrator operations remain hard-coded `ALLOW_WITH_STEP_UP` while the documented safe default is off; the resolver discards config. PCA-DEC-034/035 require the signed E2EE policy-change envelope, audit event, Owner writer, actual reader, step-up, and populated-state certification together. PCA-DEC-028 makes process-local bonus grant bookkeeping intentional and does not authorize plaintext persistence.
-BLOCKER = Schedule-policy requires a reviewed server-reachable, signature-verified Trust Set path; Web Rules require reviewed encrypted policy storage/delivery. Correct Parent actor attribution and bonus revoke audit require an explicit actor model plus reviewed encrypted FamilyAudit delivery; replacing sentinels in the current device field is unsafe. The configurable Administrator policy cannot be safely activated or disabled piecemeal: implement the signed/audited E2EE writer and consumer together under PCA-DEC-034/035. Policy/request content is E2EE-only under PCA-SEC-023/PCA-DEC-028; do not add plaintext persistence or fabricate encrypted envelopes. TODO-15 device trust/attestation constraints remain authoritative.
+BLOCKER = Schedule-policy requires a reviewed server-reachable, signature-verified Trust Set path; Web Rules require reviewed encrypted policy storage/delivery. Correct Parent actor attribution and bonus revoke audit require an explicit actor model plus reviewed encrypted FamilyAudit delivery; replacing sentinels in the current device field is unsafe. PCA-DEC-035 explicitly rejects both plaintext policy and a temporary fail-closed flip without an Owner writer; implement the signed/audited E2EE writer and consumer together with step-up and certification. Policy/request content is E2EE-only under PCA-SEC-023/PCA-DEC-028; do not add plaintext persistence or fabricate encrypted envelopes. TODO-15 device trust/attestation constraints remain authoritative.
 DONE_WHEN = normal authority = session + same family + ACTIVE Administrator
 
 ### TODO-13 — Sensitive-action TOTP step-up
@@ -263,7 +278,7 @@ extra PII/commercial fields = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head Quality Gates run `36376318648` at `4a1b372dd959596938ce6477f6262c2d3afb2118` and result-sync run `36377167205` at `678b1d33937c62e7b47da65ef88919f0209b523c` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
+EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, and `36378245540` at `78ac5eac` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
 BLOCKER = None for this integrated automated campaign at validated HEAD `4a1b372d`. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
@@ -281,14 +296,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); its ledger result-sync `678b1d33` passed exact-head run `36377167205` (27/27), with fresh fetch/local/tracking/`git ls-remote` equality. Three additional local ledger changes record the authority/device specialist review; unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Publish the current reviewed ledger state as a fast-forward and classify the unrelated worktree. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
+EVIDENCE = Source/test commit `4a1b372dd959596938ce6477f6262c2d3afb2118` passed `36376318648` (27/27); ledger syncs `678b1d33` and `78ac5eac` passed `36377167205` and `36378245540` (27/27 each), with fresh fetch/local/tracking/`git ls-remote` equality. Two tracked ledger changes record the latest CI result and DEC-035 owner constraint; unrelated `.vscode/` and root `0` remain excluded.
+BLOCKER = Publish the current result/owner-ruling sync as a fast-forward and classify the unrelated worktree. TODO-18 and dependent Platform validation remain owner gates; TODO-20 through live 0059 is complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 678b1d33937c62e7b47da65ef88919f0209b523c
-REMOTE_HEAD = 678b1d33937c62e7b47da65ef88919f0209b523c (fresh fetch and git ls-remote match)
-PARENT_LOCAL_ONLY_FILES_REMAINING = Three tracked specialist-review ledger updates; `.vscode` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; three tracked mission-ledger updates are local
-EXACT_HEAD_CI = PASS (`36377167205` at `678b1d33`, 27/27); source/test parent `4a1b372d` also passed `36376318648`, 27/27
+LOCAL_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732
+REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (fresh fetch and git ls-remote match)
+PARENT_LOCAL_ONLY_FILES_REMAINING = Two tracked ledger updates; `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits; two tracked mission-ledger updates are local
+EXACT_HEAD_CI = PASS (`36378245540` at `78ac5eac`, 27/27); previous ledger sync `36377167205` at `678b1d33` also passed 27/27
 
 ### TODO-20 — Live schema / DB grants reconciliation
 

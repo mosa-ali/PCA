@@ -5,14 +5,20 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 04:28 UTC
+LAST_UPDATED_UTC = 2026-09-28 04:44 UTC
 VALIDATED_PARENT_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (source/test Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 678b1d33937c62e7b47da65ef88919f0209b523c (fresh fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = 678b1d33937c62e7b47da65ef88919f0209b523c (ledger-sync exact-head Quality Gates run 36377167205 PASS, 27/27)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (last verified by fresh fetch and git ls-remote)
+CURRENT_CHECKPOINT_SHA = 78ac5eacae15958ac5c575e90e9f76e058717732 (authority/device review ledger-sync exact-head Quality Gates run 36378245540 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and its ledger-sync run 36377167205 at `678b1d33` both passed all 27 jobs. Parent TODO-17 is PASS for this integrated campaign; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and ledger-sync runs 36377167205 at `678b1d33` and 36378245540 at `78ac5eac` passed all 27 jobs. Parent TODO-17 is PASS for this integrated campaign; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+
+### 2026-09-28 04:44 UTC — historical status report reconciled
+
+REPORT = The attached `399304c`/36356186069 and migration-0050 claims are superseded by Parent checkpoints through `78ac5eac` and live schema/grant reconciliation through 0059.
+PARENT_GATE = Exact-head Quality Gates run `36378245540` passed 27/27. TODO-17 remains PASS; TODO-12/14/15 and literal TODO-18 owner acceptance remain open. DEC-035 Owner restrictions remain binding.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment, production smoke or owner UAT is authorized or claimed.
 
 ### 2026-09-28 04:11 UTC — Parent integrated CI gate passed
 
