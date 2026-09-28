@@ -1,6 +1,6 @@
 # Parent route/action test evidence crosswalk (static first pass)
 
-Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json. An opt-in runtime outcome collector emits bounded reports across the removal-decision and child-request/bonus-time route test suites.
+Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json. An opt-in runtime outcome collector emits bounded reports across the Parent account identity/auth, removal-decision, and child-request/bonus-time route test suites.
 
 ## Scope and limits
 
@@ -8,7 +8,7 @@ Checkpoint: handler declarations remain unchanged from the source inventory in p
 - Six unique paths have no current Parent Web caller and retain explicit matrix dispositions.
 - The declaration table associates all 52 routes with route-family test suites. The assertion table below anchors every declaration to direct HTTP status assertions; response-body and side-effect assertions remain supplementary evidence.
 - Bounded 154/154 route/action campaign and green exact-head CI are suite evidence, not an all-route aggregate. The browser 401/403/429 monitor covers only its named authenticated owner journey.
-- The opt-in collector currently records 20 scenarios across 13/52 method/path declarations: 10 allows, four expected denials, two authority-unavailable results, one protective-authority-not-applicable result, two crypto/device gates and one validation result. It observed zero unexpected 401/403/other results in these test-double suites and explicitly marks full inventory coverage false. These HTTP fixtures do not prove database-backed or all-route behavior.
+- The opt-in collector currently records 28 scenarios across 18/52 method/path declarations: 15 allows, six expected denials, two authority-unavailable results, one protective-authority-not-applicable result, two crypto/device gates and two validation results. It observed zero unexpected 401/403/other results in these test-double suites and explicitly marks full inventory coverage false. These HTTP fixtures do not prove database-backed or all-route behavior.
 - Expected anonymous, CSRF, Viewer/role, cross-family, and step-up denials must remain distinct from unexpected results. Keep classifications separate: schedule-policy `NO_TRUST_SET` is a known authority gap; Web Rules is `SERVICE_NOT_CONFIGURED` (503); signed/recovery decisions are crypto-authority gated; and DEC-035 is a separate policy-configuration implementation gap where current Administrator behavior remains `ALLOW_WITH_STEP_UP`.
 - Do not infer aggregate unexpected 401/403 or AUTHORITY_UNAVAILABLE totals from these suite associations. TODO-14 remains IN_PROGRESS.
 

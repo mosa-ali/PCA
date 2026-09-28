@@ -6,10 +6,11 @@
 // `inject()` calls (no live network socket).
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
 import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
@@ -82,6 +83,10 @@ function registrationPayload(email, password = PASSWORD, extra = {}) {
   };
 }
 
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
+
 test('Parent identity registration persists protected email and canonical phone; own profile is private and names-only editable', async () => {
   const { app, emailSender } = buildApp();
   const email = 'identity-route@example.com';
@@ -95,23 +100,30 @@ test('Parent identity registration persists protected email and canonical phone;
     }),
   });
   assert.equal(registered.statusCode, 202);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/register', scenarioId: 'identity_register_allow', classification: 'ALLOW_PROVEN', expectedStatus: 202, response: registered });
 
   const code = emailSender.lastCodeFor(email);
   assert.ok(code);
-  assert.equal((await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } })).statusCode, 200);
+  const verified = await app.inject({ method: 'POST', url: '/api/parent/verify-email', payload: { email, code } });
+  assert.equal(verified.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/verify-email', scenarioId: 'identity_verify_email_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: verified });
   const login = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email, password: PASSWORD } });
   assert.equal(login.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/login', scenarioId: 'identity_login_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: login });
   const cookies = setCookieHeaders(login);
   const sessionToken = extractCookieValue(cookies, 'pca_family_session');
   const csrfToken = extractCookieValue(cookies, 'pca_family_csrf');
 
-  assert.equal((await app.inject({ method: 'GET', url: '/api/parent/identity' })).statusCode, 401);
+  const unauthenticatedRead = await app.inject({ method: 'GET', url: '/api/parent/identity' });
+  assert.equal(unauthenticatedRead.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/identity', scenarioId: 'identity_read_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: unauthenticatedRead });
   const read = await app.inject({
     method: 'GET',
     url: '/api/parent/identity',
     headers: { cookie: `pca_family_session=${sessionToken}` },
   });
   assert.equal(read.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/identity', scenarioId: 'identity_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: read });
   assert.equal(read.headers['cache-control'], 'no-store');
   assert.deepEqual(read.json(), {
     firstName: 'نجوى',
@@ -130,6 +142,7 @@ test('Parent identity registration persists protected email and canonical phone;
     payload: { firstName: 'N', lastName: 'H' },
   });
   assert.equal(denied.statusCode, 403, 'the session cookie alone cannot authorize an identity edit');
+  recordParentRouteScenario({ method: 'PATCH', route: '/api/parent/identity', scenarioId: 'identity_patch_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: denied });
 
   const contactMutation = await app.inject({
     method: 'PATCH',
@@ -138,6 +151,7 @@ test('Parent identity registration persists protected email and canonical phone;
     payload: { firstName: 'N', lastName: 'H', email: 'attacker@example.com' },
   });
   assert.equal(contactMutation.statusCode, 400, 'the endpoint rejects contact fields and extra keys');
+  recordParentRouteScenario({ method: 'PATCH', route: '/api/parent/identity', scenarioId: 'identity_patch_rejects_contact_mutation', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: contactMutation });
 
   const saved = await app.inject({
     method: 'PATCH',
@@ -146,6 +160,7 @@ test('Parent identity registration persists protected email and canonical phone;
     payload: { firstName: '  نجلاء ', lastName: ' حسن ' },
   });
   assert.equal(saved.statusCode, 200);
+  recordParentRouteScenario({ method: 'PATCH', route: '/api/parent/identity', scenarioId: 'identity_patch_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: saved });
   assert.equal(saved.headers['cache-control'], 'no-store');
   assert.equal(saved.json().firstName, 'نجلاء');
   assert.equal(saved.json().lastName, 'حسن');

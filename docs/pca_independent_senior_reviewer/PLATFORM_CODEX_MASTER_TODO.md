@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 07:12 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 7bea6996f421024b530ae7679704c78122f2642b (exact-head Quality Gates run 36389628059 SUCCESS 27/27; includes the child-request collector addition)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 7bea6996f421024b530ae7679704c78122f2642b (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 7bea6996f421024b530ae7679704c78122f2642b (exact-head run 36389628059 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Both master TODO ledgers are synchronizing the completed collector CI evidence; global aggregates and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 07:24 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (exact-head Quality Gates run 36390803278 SUCCESS 27/27; account-route collector edits are separately validated locally)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (exact-head run 36390803278 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Parent account route collector/crosswalk addition and both-ledger evidence sync are local; global aggregates and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the completed exact-head CI result in both master ledgers and verify the ledger-sync fast-forward. Continue TODO-14 collector coverage while dependent Platform activation stays `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Publish the validated Parent account collector and crosswalk with both master ledgers and require exact-head CI. Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -687,6 +687,18 @@ NEXT_ACTION = Publish the authorized fast-forward with the synchronized Parent a
 PARENT = Exact-head Quality Gates run `36389628059` passed 27/27 at published SHA `7bea6996f421024b530ae7679704c78122f2642b`, including full disposable MySQL, real-backend browser E2E, Android and iOS. The next result-sync must be verified independently.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal localhost acceptance remain open; TODO-20 is PASS through live 0059. No Enrollment activation, deployment or owner UAT is implied.
 NEXT_ACTION = Publish the result-sync ledger fast-forward, then resume Parent route collector work and preserve the Platform hold.
+
+### 2026-09-28 07:12 UTC — Parent account route collector slice validated locally
+
+PARENT = Existing Parent account identity/auth route tests now record eight additional bounded scenarios across registration, verification, login, identity read and identity update; combined route suites passed 55/55. The full report covers 28 scenarios across 18 declarations and does not prove global aggregates.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Platform changes or activation occurred.
+NEXT_ACTION = Publish the collector and crosswalk update after the current result-sync CI finishes, then retain the Platform hold.
+
+### 2026-09-28 07:24 UTC — exact-head ledger-sync CI passed
+
+PARENT = Run `36390803278` completed SUCCESS 27/27 at published SHA `6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5`; the local Parent account collector changes are not included yet.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Platform changes or activation occurred.
+NEXT_ACTION = Publish Parent account collector/crosswalk and ledger updates, then verify exact-head CI while retaining the Platform hold.
 
 ### 2026-09-27 23:43 UTC — Parent TODO-20 CI gate remains closed
 
