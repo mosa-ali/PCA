@@ -5,20 +5,27 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 04:11 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (fresh fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-head Quality Gates run 36376318648 PASS, 27/27)
+LAST_UPDATED_UTC = 2026-09-28 04:28 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (source/test Quality Gates run 36376318648 PASS, 27/27)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 678b1d33937c62e7b47da65ef88919f0209b523c (fresh fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = 678b1d33937c62e7b47da65ef88919f0209b523c (ledger-sync exact-head Quality Gates run 36377167205 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Run 36376318648 at exact HEAD `4a1b372d` passed all 27 jobs, including the corrected Parent real-backend browser flow and full disposable-MySQL certification. Parent TODO-17 is PASS for this integrated campaign; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Source/test run 36376318648 at `4a1b372d` and its ledger-sync run 36377167205 at `678b1d33` both passed all 27 jobs. Parent TODO-17 is PASS for this integrated campaign; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 04:11 UTC — Parent integrated CI gate passed
 
 PARENT = Quality Gates run `36376318648` passed 27/27 at exact HEAD `4a1b372d`, including real-backend E2E and full disposable-MySQL certification. The earlier run `36374962516` failure was the unscoped Settings status locator; its exact-text correction is now validated.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains because Parent TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = Continue the Parent authority and child-device security gates; preserve the Platform dependency hold.
+
+### 2026-09-28 04:28 UTC — follow-on ledger-sync CI passed
+
+PARENT = Quality Gates run `36377167205` passed 27/27 at exact ledger-sync HEAD `678b1d33`; source/test HEAD `4a1b372d` had already passed run `36376318648` 27/27.
+GATE_REVIEW = Parent authority/device reviews reconfirmed signed Trust Set, E2EE policy/audit, actor-typing, and PAIRED-to-ACTIVE activation gaps. No safe shortcut was identified.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains because Parent TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue Parent TODO-14 runtime route/action evidence and preserve the Platform hold.
 
 ### 2026-09-28 00:56 UTC — status report reconciled with current checkpoint
 
