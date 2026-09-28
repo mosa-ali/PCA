@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { registerChildRequestRoutes } from '../../dist/http/routes/childRequestRoutes.js';
 import { InMemoryChildRequestRepository } from '../../dist/childrequests/ChildRequestRepository.js';
 import { ChildRequestService } from '../../dist/childrequests/ChildRequestService.js';
@@ -109,6 +110,10 @@ const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_famil
 const viewerAuthHeaders = { cookie: 'pca_family_session=session-viewer; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
 const familyBAuthHeaders = { cookie: 'pca_family_session=session-owner-family-b; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
 
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
+
 test('child request submission still requires a same-family device-session bearer', async () => {
   const { app, childRequestService } = buildApp();
   try {
@@ -146,6 +151,14 @@ test('a child device can submit a BONUS_TIME request, and a same-family Parent A
     assert.equal(submit.json().request.decidedByAccountId, null);
 
     const list = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/child-requests`, headers: { cookie: parentAuthHeaders.cookie } });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/child-requests',
+      scenarioId: 'same_family_parent_request_list',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 200,
+      response: list,
+    });
     assert.equal(list.statusCode, 200);
     assert.equal(list.json().requests.length, 1);
 
@@ -154,6 +167,14 @@ test('a child device can submit a BONUS_TIME request, and a same-family Parent A
       url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
       headers: parentAuthHeaders,
       payload: { decision: 'APPROVED' },
+    });
+    recordParentRouteScenario({
+      method: 'POST',
+      route: '/api/parent/families/:familyId/child-requests/:requestId/decide',
+      scenarioId: 'administrator_approves_child_request',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 200,
+      response: decide,
     });
     assert.equal(decide.statusCode, 200);
     assert.equal(decide.json().request.state, 'APPROVED');
@@ -165,6 +186,14 @@ test('a child device can submit a BONUS_TIME request, and a same-family Parent A
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/bonus-time/active-grants?childProfileId=child-1`,
       headers: { cookie: parentAuthHeaders.cookie },
+    });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/bonus-time/active-grants',
+      scenarioId: 'same_family_active_grant_read',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 200,
+      response: active,
     });
     assert.equal(active.statusCode, 200);
     assert.equal(active.json().grants.length, 1);
@@ -185,6 +214,14 @@ test('a VIEWER cannot decide a request (403), even with a valid same-family sess
       url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
       headers: viewerAuthHeaders,
       payload: { decision: 'APPROVED' },
+    });
+    recordParentRouteScenario({
+      method: 'POST',
+      route: '/api/parent/families/:familyId/child-requests/:requestId/decide',
+      scenarioId: 'viewer_request_decision_denial',
+      classification: 'EXPECTED_DENIAL',
+      expectedStatus: 403,
+      response: decide,
     });
     assert.equal(decide.statusCode, 403);
   } finally {
@@ -251,6 +288,14 @@ test('a Parent Administrator can directly grant bonus time by session and revoke
       headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1', extraMinutes: 20, reasonNote: 'Finished chores early' },
     });
+    recordParentRouteScenario({
+      method: 'POST',
+      route: '/api/parent/families/:familyId/bonus-time/grant',
+      scenarioId: 'administrator_direct_bonus_grant',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 201,
+      response: grant,
+    });
     assert.equal(grant.statusCode, 201);
     const grantId = grant.json().request.requestId;
     assert.equal(grant.json().request.childDeviceId, null);
@@ -270,6 +315,14 @@ test('a Parent Administrator can directly grant bonus time by session and revoke
       url: `/api/parent/families/${FAMILY}/bonus-time/grants/${grantId}/revoke`,
       headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1' },
+    });
+    recordParentRouteScenario({
+      method: 'POST',
+      route: '/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke',
+      scenarioId: 'administrator_revokes_bonus_grant',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 200,
+      response: revoke,
     });
     assert.equal(revoke.statusCode, 200);
     assert.deepEqual(bonusGrantLedger.getRevocationMetadata('child-1', grantId), {
@@ -771,6 +824,14 @@ test('with no ChildProfileMembershipResolver wired (the production default), act
       url: `/api/parent/families/${FAMILY}/bonus-time/active-grants?childProfileId=child-1`,
       headers: { cookie: parentAuthHeaders.cookie },
     });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/bonus-time/active-grants',
+      scenarioId: 'active_grant_read_missing_child_membership_resolver',
+      classification: 'AUTHORITY_UNAVAILABLE',
+      expectedStatus: 403,
+      response: read,
+    });
     assert.equal(read.statusCode, 403);
     assert.equal(read.json().error, 'family_scope_forbidden');
 
@@ -779,6 +840,14 @@ test('with no ChildProfileMembershipResolver wired (the production default), act
       url: `/api/parent/families/${FAMILY}/bonus-time/grants/seed-grant/revoke`,
       headers: parentAuthHeaders,
       payload: { childProfileId: 'child-1' },
+    });
+    recordParentRouteScenario({
+      method: 'POST',
+      route: '/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke',
+      scenarioId: 'bonus_revoke_missing_child_membership_resolver',
+      classification: 'AUTHORITY_UNAVAILABLE',
+      expectedStatus: 403,
+      response: revoke,
     });
     assert.equal(revoke.statusCode, 403);
     assert.equal(revoke.json().error, 'family_scope_forbidden');
