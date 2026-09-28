@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 07:24 UTC
-VALIDATED_SOURCE_HEAD = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (exact-head Quality Gates run 36390803278 SUCCESS 27/27; account-route collector edits are separately validated locally)
-VERIFIED_SOURCE_REMOTE_HEAD = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5 (exact-head run 36390803278 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_CHANGE = Parent account route collector/crosswalk addition and both-ledger evidence sync are local; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 07:28 UTC
+VALIDATED_SOURCE_HEAD = dff134c40f4baa9cdb987fd8758fdb09de67d434 (local combined route tests PASS 55/55; report matches 28 scenarios across 18 declarations; exact-head CI queued)
+VERIFIED_SOURCE_REMOTE_HEAD = dff134c40f4baa9cdb987fd8758fdb09de67d434 (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = dff134c40f4baa9cdb987fd8758fdb09de67d434 (exact-head Quality Gates run 36391810357 queued)
+LOCAL_UNCOMMITTED_CHANGE = Master ledgers are synchronizing the published account-route checkpoint; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the validated Parent account identity/auth collector and crosswalk with both master ledgers as a fast-forward, then verify exact-head CI. Keep global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
+NEXT_ACTION = Publish this post-push head/run result to both master ledgers and verify its exact-head CI. Then continue TODO-14 route coverage with global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -51,14 +51,20 @@ NEXT_ACTION = Publish the CI result ledger sync, verify the resulting head and r
 
 IMPLEMENTATION = Instrumented existing Parent account route assertions for registration, email verification, login, anonymous/authorized identity read, CSRF denial, contact mutation validation, and authorized identity edit. The collector records only method, templated route, scenario classification and expected/actual status.
 VALIDATION = Combined account/removal-decision/child-request route suites passed 55/55 serially with `backend/test.env`. The bounded collector matched 28 scenarios across 18/52 declarations (15 allow, 6 expected denial, 2 authority unavailable, 1 protective-authority-not-applicable, 2 crypto/device-gated, 2 validation); unexpected 401/403/other=0. Report explicitly remains `coverageComplete=false`, `globalAggregateStatus=NOT_YET_PROVEN`.
-GIT = Parent account route test and crosswalk edits are local and uncommitted; published `pca-dev` is `6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5`. At that published head, exact-head run `36390803278` completed SUCCESS 27/27. Generated reports were removed; `.vscode/` and root `0` remain excluded.
-NEXT_ACTION = Publish the reviewed route instrumentation and both master TODO updates as a fast-forward and inspect resulting exact-head CI.
+GIT = The account-route test and crosswalk were published in `dff134c40f4baa9cdb987fd8758fdb09de67d434`; fresh fetch confirmed local/tracking/server equality and remote file presence. Exact-head run `36391810357` is queued. Generated reports were removed; `.vscode/` and root `0` remain excluded.
+NEXT_ACTION = Record the post-push SHA and queued run in the master ledgers, then inspect exact-head CI.
 
 ### 2026-09-28 07:24 UTC — ledger-sync CI passed; account collector ready for publication
 
 CI = Exact-head Quality Gates run `36390803278` completed SUCCESS 27/27 at `6f2a78fdd64a3eb04ca92728d6bd1c2ec49f74e5`, including full disposable MySQL, real-backend browser E2E, Android and iOS.
 TODO14 = The locally validated account slice adds eight matched scenarios across five declarations. Combined account/removal-decision/child-request tests passed 55/55 serially; report covers 28 matched scenarios across 18/52 declarations with zero unexpected 401/403/other. This is bounded test-double evidence; aggregate remains NOT_YET_PROVEN.
 NEXT_ACTION = Publish the account-route test, crosswalk and master-ledger sync; exact-head CI for those newly added files remains required.
+
+### 2026-09-28 07:28 UTC — Parent account-route checkpoint published
+
+GIT = Commit `dff134c40f4baa9cdb987fd8758fdb09de67d434` was pushed as a fast-forward. Fresh fetch confirmed local, tracking and server refs equal; account route test, crosswalk and both master ledgers are present remotely. Unrelated `.vscode/` and root `0` remain untracked and excluded.
+CI = Exact-head run `36391810357` is queued at dff134c4. Local combined route validation is 55/55; exact-head CI remains pending.
+NEXT_ACTION = Publish this post-push head/run sync, then inspect the run.
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
 IMPLEMENTATION = Added an opt-in status-only collector for route test outcomes and instrumented the removal-decision detail GET scenarios. The JSON report classifies same-family allow, unknown-ID expected privacy denial and cross-family expected privacy denial; it stores no request bodies, headers, credentials or IDs. It declares its scope bounded, coverage incomplete (1/52 routes), and global aggregate `NOT_YET_PROVEN`.
