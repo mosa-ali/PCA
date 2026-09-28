@@ -5,14 +5,96 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 00:20 UTC
-LOCAL_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
-REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match)
+LAST_UPDATED_UTC = 2026-09-28 02:18 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match before this ledger publication)
 CURRENT_CHECKPOINT_SHA = 35f6c022f017e04aecbf3573394bf20f90d12489 (Parent corrective checkpoint plus ledger sync; exact-head CI PASS; TODO-20 reconciled)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
 NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12…TODO-18, Parent projection completion, and literal localhost acceptance. Parent TODO-20 is now PASS through live 0059; its exact-head CI and live schema/grant evidence are recorded in the Parent ledger.
+
+### 2026-09-28 00:56 UTC — status report reconciled with current checkpoint
+
+REPORT = The attached report describes older snapshots (`0daf660`, then `399304c`) and its older live database state. Its 0daf660 owner-acceptance E2E failure was followed by source/fixture corrections; exact-head Quality Gates run `36360087042` at `35f6c022` passed all jobs. The current fetched `origin/pca-dev` ref is `35f6c022`; direct GitHub/Actions refresh is temporarily unavailable through the configured localhost proxy.
+PARENT = TODO-13 sensitive-action step-up and TODO-17 automated integration are PASS at validated source head `35f6c022`; TODO-20 remains PASS after locally validated 0059 was applied and postflight proved exact schema/grant match. The local ledger-only commit is ahead of fetched remote; no product-source divergence is indicated.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/15 and TODO-18/local owner acceptance gates remain open. No Platform activation or deployment is authorized by this status report.
+NEXT_ACTION = Continue Parent TODO-12; preserve the Platform hold and record the next verified checkpoint before publication.
+
+### 2026-09-28 01:51 UTC — Parent status report reconciled; Platform remains held
+
+PARENT = Attachment snapshots `0daf660`/`399304c` are superseded by exact-head Quality Gates PASS `36360087042` at `35f6c022`; Parent TODO-20 is already reconciled through live migration 0059 with exact schema/grant checks. The attachment does not authorize treating localhost acceptance, Platform activation, deployment, or production UAT as complete.
+PARENT_WEB = Session-wide revoke UI validation passed 42/42 focused tests; typecheck and touched-file ESLint passed. The source change is uncommitted and has no exact-head CI evidence.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15, Parent projection dependencies, and literal TODO-18 `LOCALHOST ACCEPTED` remain open. Enrollment Name/Email/nullable Phone columns remain unimplemented as the required package.
+GIT = Local `1056546e` remains ahead of fetched `origin/pca-dev=35f6c022`; source/ledger edits remain uncommitted. Unrelated dirty paths are excluded.
+NEXT_ACTION = Continue the Parent authority/action audit; do not activate Platform Enrollment before the recorded Parent and owner gates pass.
+
+### 2026-09-28 01:54 UTC — remote ref freshly verified; Platform remains held
+
+GIT = Fresh fetch and `git ls-remote` both report `pca-dev=35f6c022f017e04aecbf3573394bf20f90d12489`; local `1056546e` is a descendant with one docs-only commit, so exact local/remote equality is still pending.
+PARENT = Focused session-revocation work passed local 42/42 tests plus typecheck/lint; no exact-head CI has run for this uncommitted change. TODO-12/14/15 and TODO-18 remain open; TODO-20 is PASS through migration 0059.
+PLATFORM_GATE = Keep `HOLD_PARENT_DEPENDENCY`. Enrollment Name/Email/nullable Phone, Parent localhost acceptance, deployment, and owner UAT remain incomplete.
+NEXT_ACTION = Continue the Parent authority/action audit and keep Platform work queued behind its dependency gates.
+
+### 2026-09-28 01:57 UTC — Parent remote retry limitation; Platform remains held
+
+GIT = `git fetch` and one `git ls-remote` confirmed `pca-dev=35f6c022`; a later direct server-ref check failed through the configured localhost proxy. No remote mutation or push occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and TODO-18 acceptance remain open; TODO-20 remains PASS through 0059.
+NEXT_ACTION = Continue Parent authority/action evidence and retain the Enrollment dependency gate.
+
+### 2026-09-28 02:00 UTC — Parent revoke-all real-browser check queued in source
+
+PARENT_E2E = Certified real-backend acceptance flow now checks authenticated 401/403 accounting plus the Settings revoke-all action, 204 response, and sign-in redirect. Strict TypeScript compilation, Playwright collection and touched-file lint pass; browser body execution and exact-head CI remain pending for the uncommitted update.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no change to Parent TODO-12/14/15 or TODO-18 gates, no Enrollment activation, and no deployment.
+NEXT_ACTION = Continue Parent implementation and keep Platform Enrollment queued behind the Parent and owner gates.
+
+### 2026-09-28 02:01 UTC — Parent route-response accounting is pending execution
+
+PARENT = Real Parent acceptance spec now counts authenticated 401/403 responses for its covered route set; test collection and ESLint pass, but the real backend/browser body has not run on this uncommitted change.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; this test instrumentation does not close Parent TODO-14 or authorize Enrollment work.
+NEXT_ACTION = Maintain the dependency hold pending integrated Parent evidence and literal localhost acceptance.
+
+### 2026-09-28 02:16 UTC — Parent local real-backend acceptance passed; Platform remains held
+
+PARENT = Disposable MySQL 8.4.11 real-backend acceptance campaign passed 2/2 with zero skips; the measured authenticated journey had zero unexpected 401/403, revoke-all returned 204 and redirected to sign-in, and cross-family isolation passed. These are uncommitted local results, not exact-head CI.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; TODO-12/15 and global TODO-14 aggregate proof remain open, as does literal TODO-18 acceptance. Enrollment Name/Email/nullable Phone and deployment are still incomplete.
+NEXT_ACTION = Continue Parent authority/device security work and keep Platform Enrollment queued behind its dependency gates.
+
+### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
+
+PARENT = TODO-13 is PASS for ten implemented step-up operations; focused backend build and route regression passed 64/64. Transfer and recovery-material workflows remain non-issuable. TODO-17 automation and TODO-20 database reconciliation remain PASS at source checkpoint `35f6c022`.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15/16 and TODO-18 literal localhost acceptance remain open. No Platform activation or deployment occurred.
+NEXT_ACTION = Continue Parent TODO-12 and the aggregate TODO-14 audit; preserve all device/E2EE and owner-acceptance gates.
+
+### 2026-09-28 01:21 UTC — Parent schema snapshots regenerated
+
+PARENT = The two dirty generated schema snapshots are now regenerated from a fresh MySQL 8.4.11 database after all 57 repository migrations. An independent migration-from-zero verification and full structural comparison passed; see Parent TODO-20 for detail. These remain local mission artifacts pending publication.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15/16 and TODO-18 acceptance remain open. No Platform source, DB or deployment work occurred.
+NEXT_ACTION = Continue Parent TODO-12/14 and preserve the Platform hold.
+
+### 2026-09-28 01:27 UTC — status report rechecked; Parent DB state remains reconciled
+
+REPORT = The supplied report's older `0daf660` browser failure and live migration-0050 state are superseded by Parent exact-head run `36360087042` at `35f6c022` and the verified migration-0059 live postflight. The latest Parent schema snapshot regeneration and canonical drift suite are local mission evidence; no Platform source, activation, or deployment work occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and TODO-18 acceptance remain open. TODO-20 remains PASS.
+NEXT_ACTION = Continue Parent TODO-12/14; keep dependent Platform Enrollment held.
+
+### 2026-09-28 01:31 UTC — Parent policy-route boundaries confirmed
+
+PARENT = Schedule-policy remains fail-closed until verified Trust Set authority is available; Web Rules remain unconfigured until reviewed encrypted storage/delivery exists. Bonus-grant revocation actor attribution also has no safe durable audit path. No Parent policy or Platform source was changed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and TODO-18 acceptance remain open. TODO-20 remains PASS.
+NEXT_ACTION = Continue Parent TODO-14/15 evidence; do not activate dependent Platform Enrollment.
+
+### 2026-09-28 01:37 UTC — Parent route inventory refreshed
+
+PARENT = Current-source API mapping covers 34/34 Parent Web client paths and inventories 52 backend route declarations across 43 paths; seven Parent backend paths have no matching Parent Web call path. Aggregate runtime authorization status counts remain unproven under TODO-14.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and TODO-18 acceptance remain open. TODO-20 remains PASS.
+NEXT_ACTION = Continue Parent route/action runtime audit; keep Platform Enrollment held.
+
+### 2026-09-28 01:45 UTC — Parent session revocation UI wired
+
+PARENT = Parent Settings now exposes the backend revoke-all endpoint through explicit confirmation, localized EN/AR copy, failure handling, and sign-in redirect. Focused validation is pending. The current Parent route map has 35 client paths and six backend paths without a Parent Web caller.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and TODO-18 acceptance remain open. TODO-20 remains PASS.
+NEXT_ACTION = Validate the Parent change; keep dependent Platform Enrollment held.
 
 This base follows the pushed Parent/Platform source checkpoint `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`, canonical-ledger sync `114b784ea33112cb3bebd64b454866481d8b3ba3`, master TODO publication `27757ca77e0edec417516784dc3e59da6855896e`, publication-state sync `8f3f45b47d24cc7debd581230eda23c088d74f4e`, corrective checkpoint `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`, ledger sync `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`, corrective CI-fixture checkpoint `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`, ledger sync `0daf66008a801e5006c16130ae9f1adb052bd1f4`, daily browser-grant correction `a76aacae1710a7ff2fdc37788b0a291b3220decd`, prior ledger sync `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`, and local MFA step-up correction `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` failed only real-backend browser E2E; 26 jobs passed. The MFA step-up follow-up is committed locally and awaits exact-head CI.
 

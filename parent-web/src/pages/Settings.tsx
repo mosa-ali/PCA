@@ -6,6 +6,7 @@ import { reportDiagnostic } from '../security/diagnosticConsole';
 import { getApiClients } from '../api/client';
 import { validateParentIdentityNames } from '../identity/identityForm';
 import type { ParentIdentityProfile } from '../api/interfaces';
+import { clearMfaGraceReminderDismissal } from '../components/auth/mfaGraceDismissal';
 import './settingsIdentity.css';
 
 export default function Settings() {
@@ -20,6 +21,9 @@ export default function Settings() {
   const [identityError, setIdentityError] = useState<string | null>(null);
   const [identityFeedback, setIdentityFeedback] = useState<string | null>(null);
   const [invalidNameField, setInvalidNameField] = useState<'firstName' | 'lastName' | null>(null);
+  const [confirmRevokeAllSessions, setConfirmRevokeAllSessions] = useState(false);
+  const [revokingAllSessions, setRevokingAllSessions] = useState(false);
+  const [revokeAllSessionsError, setRevokeAllSessionsError] = useState(false);
   const identityLoadErrorText = useRef(t('settings.identityLoadFailed'));
 
   useEffect(() => {
@@ -112,6 +116,20 @@ export default function Settings() {
       // save-specific sentence rather than a raw `error.message`.
       const knownKey = userFacingErrorKey(error);
       setPreferencesError(knownKey ? t(knownKey) : t('settings.saveLanguageFailed'));
+    }
+  };
+
+  const revokeAllSessions = async () => {
+    setRevokeAllSessionsError(false);
+    setRevokingAllSessions(true);
+    try {
+      await clients.serviceAuth.revokeAllSessions();
+      clearMfaGraceReminderDismissal();
+      window.location.assign('/login');
+    } catch (error) {
+      reportDiagnostic('[pca] revoking all parent sessions failed:', errorDiagnosticDetail(error), error);
+      setRevokeAllSessionsError(true);
+      setRevokingAllSessions(false);
     }
   };
   return (
@@ -215,6 +233,48 @@ export default function Settings() {
             </form>
           </>
         ) : null}
+      </div>
+
+      <div className="card" aria-labelledby="settings-sessions-title">
+        <h2 id="settings-sessions-title">{t('settings.sessionsSectionTitle')}</h2>
+        <p>{t('settings.revokeAllSessionsDescription')}</p>
+        {revokeAllSessionsError && <p role="alert">{t('settings.revokeAllSessionsFailed')}</p>}
+        {!confirmRevokeAllSessions ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setRevokeAllSessionsError(false);
+              setConfirmRevokeAllSessions(true);
+            }}
+          >
+            {t('settings.revokeAllSessions')}
+          </button>
+        ) : (
+          <div className="field">
+            <p role="status">{t('settings.revokeAllSessionsConfirm')}</p>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void revokeAllSessions()}
+              disabled={revokingAllSessions}
+              aria-busy={revokingAllSessions}
+            >
+              {t('settings.confirmRevokeAllSessions')}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setConfirmRevokeAllSessions(false);
+                setRevokeAllSessionsError(false);
+              }}
+              disabled={revokingAllSessions}
+            >
+              {t('settings.cancelRevokeAllSessions')}
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );

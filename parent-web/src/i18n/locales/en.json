@@ -116,7 +116,14 @@
     "identityNameTooLong": "Each name must be 128 characters or fewer.",
     "identityNameInvalid": "Names cannot contain control characters.",
     "phoneInvalid": "Enter a phone number with its country code, such as +14155552671.",
-    "identityLoading": "Loading your identity details..."
+    "identityLoading": "Loading your identity details...",
+    "sessionsSectionTitle": "Active sessions",
+    "revokeAllSessionsDescription": "Sign out of this browser and every other browser signed in to your Parent account.",
+    "revokeAllSessions": "Sign out all sessions",
+    "revokeAllSessionsConfirm": "This will sign you out here and on every other browser. You will need to sign in again.",
+    "confirmRevokeAllSessions": "Sign out everywhere",
+    "cancelRevokeAllSessions": "Cancel",
+    "revokeAllSessionsFailed": "We could not sign out all sessions. Refresh the page and try again."
   },
   "roles": {
     "owner": "Owner",

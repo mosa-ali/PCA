@@ -12,8 +12,7 @@
 // browser attaches it automatically; this client never reads, stores, or
 // forwards the session cookie's value itself (it structurally cannot --
 // HttpOnly cookies are not exposed to `document.cookie`). State-changing
-// routes (`logout`, and this domain's `sessions/revoke-all`, not yet
-// exposed through this interface) additionally require a double-submit
+// routes (`logout` and `sessions/revoke-all`) additionally require a double-submit
 // CSRF token: the NON-HttpOnly `pca_family_csrf` companion cookie, echoed
 // in the `X-PCA-CSRF-Token` header -- `readCsrfCookie` below is the only
 // cookie value this client ever touches, and only to echo it back, never
@@ -480,6 +479,27 @@ export class RealServiceAuthClient implements ServiceAuthClient {
       // still authenticated; callers should still clear local UI state.
       throw networkError(err);
     }
+  }
+
+  /** Revokes all account sessions through the CSRF-protected Parent session endpoint. */
+  async revokeAllSessions(): Promise<void> {
+    const csrfToken = await this.getCsrfToken();
+    let response: Response;
+    try {
+      response = await fetch(this.url('/api/parent/sessions/revoke-all'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          ...(csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
+        },
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
+    if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
+    if (response.status === 403) throw new ServiceAuthError('CSRF_FAILED', 'The security check failed. Refresh and try again.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected session revocation status ${response.status}`);
   }
 
   /**

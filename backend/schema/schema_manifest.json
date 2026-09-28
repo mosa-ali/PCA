@@ -3575,6 +3575,14 @@
           "extra": ""
         },
         {
+          "name": "requested_by_parent_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
           "name": "child_id",
           "type": "varchar(200)",
           "nullable": false,
@@ -3671,6 +3679,14 @@
           "extra": ""
         },
         {
+          "name": "decided_by_parent_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
           "name": "decided_by_device_id",
           "type": "varchar(200)",
           "nullable": true,
@@ -3705,6 +3721,12 @@
       ],
       "indexes": [
         {
+          "name": "enrollment_protection_approval_decided_by_parent_idx",
+          "unique": false,
+          "column": "decided_by_parent_account_id",
+          "seq": 1
+        },
+        {
           "name": "enrollment_protection_approval_decision_action_uq",
           "unique": true,
           "column": "decision_action_id",
@@ -3729,13 +3751,32 @@
           "seq": 3
         },
         {
+          "name": "enrollment_protection_approval_requested_by_parent_idx",
+          "unique": false,
+          "column": "requested_by_parent_account_id",
+          "seq": 1
+        },
+        {
           "name": "PRIMARY",
           "unique": true,
           "column": "request_id",
           "seq": 1
         }
       ],
-      "foreignKeys": []
+      "foreignKeys": [
+        {
+          "constraint": "enrollment_protection_approval_decided_by_parent_fk",
+          "column": "decided_by_parent_account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "enrollment_protection_approval_requested_by_parent_fk",
+          "column": "requested_by_parent_account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
     },
     "entitlement_activation_idempotency": {
       "columns": [
@@ -4428,6 +4469,14 @@
           "extra": ""
         },
         {
+          "name": "device_session_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
           "name": "created_at",
           "type": "datetime(3)",
           "nullable": false,
@@ -5082,6 +5131,12 @@
           "unique": false,
           "column": "issued_at",
           "seq": 3
+        },
+        {
+          "name": "family_authority_request_challenges_service_fk",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 1
         },
         {
           "name": "PRIMARY",
@@ -5808,6 +5863,62 @@
           "nullable": false,
           "default": null,
           "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "first_name",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "last_name",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protected_display_email_ciphertext",
+          "type": "varbinary(1280)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protected_display_email_nonce",
+          "type": "binary(12)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protected_display_email_auth_tag",
+          "type": "binary(16)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "phone_number",
+          "type": "varchar(16)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "phone_verified_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
           "extra": ""
         },
         {

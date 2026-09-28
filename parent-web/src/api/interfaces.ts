@@ -193,6 +193,8 @@ export interface ServiceAuthClient {
   /** Completes unknown-browser email verification and, where enrolled, TOTP. */
   completeLoginStepUp(email: string, emailCode: string, totpCode?: string): Promise<LoginStepUpResult>;
   signOut(): Promise<void>;
+  /** Revokes every active Parent session, including this browser's session. */
+  revokeAllSessions(): Promise<void>;
   /** Re-authentication for a step-up-protected (non-commercial) family action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;
   /**

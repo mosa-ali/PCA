@@ -16,6 +16,7 @@
     "test:db:enrollment-binding": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs enrollment-binding",
     "test:db:parent-auth": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs parent-auth",
     "test:e2e:parent:real": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs parent-real-e2e",
+    "test:e2e:parent:acceptance:real": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs parent-owner-acceptance-real-e2e",
     "test:e2e:parent:mfa:real": "node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs parent-mfa-real-e2e",
     "test:db:authority-diagnostics:inner": "node scripts/require-owned-disposable-db.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/eyeProtectionSettingsHttp.mysql.test.mjs test/db/http.mysql.test.mjs",
     "test:db:enrollment-binding:inner": "node scripts/require-owned-disposable-db.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/enrollment.mysql.test.mjs",

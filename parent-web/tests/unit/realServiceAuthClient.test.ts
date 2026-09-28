@@ -331,6 +331,29 @@ describe('RealServiceAuthClient', () => {
     expect(JSON.stringify(init)).not.toMatch(/pca_family_session/);
   });
 
+  it('revokeAllSessions calls the CSRF-protected endpoint with the HttpOnly session cookie attached', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await client.revokeAllSessions();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${apiBaseUrl}/api/parent/sessions/revoke-all`,
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json', 'X-PCA-CSRF-Token': 'csrf-token-value' },
+      }),
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBeUndefined();
+    expect(JSON.stringify(init)).not.toMatch(/pca_family_session/);
+  });
+
+  it('revokeAllSessions reports expired sessions and CSRF rejection without claiming success', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
+    await expect(client.revokeAllSessions()).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+    fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'csrf_mismatch' }));
+    await expect(client.revokeAllSessions()).rejects.toMatchObject({ code: 'CSRF_FAILED' });
+  });
+
   // ---------------------------------------------------------------------
   // stepUp -- generic family-action step-up has no route
   // ---------------------------------------------------------------------

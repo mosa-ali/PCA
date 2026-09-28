@@ -1,27 +1,27 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
 This is the single live mission ledger. Continue the canonical TODO-01…TODO-23
-sequence here; do not reset it or create a disconnected mission. Updated at the
-2026-09-26 implementation start and maintained through the 2026-09-27 Parent,
-Platform, and integrated-validation checkpoints.
+sequence here; do not reset it or create a disconnected mission. This current
+checkpoint was refreshed on 2026-09-28 02:16 UTC; older dated entries below remain
+historical evidence and may describe superseded states.
 
 ## Current checkpoint
 
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
-CURRENT_TODO = TODO-12 through TODO-17 (integrated evidence)
+CURRENT_TODO = TODO-12, TODO-14…TODO-16, and TODO-19; TODO-13, TODO-17, and TODO-20 PASS at validated source head 35f6c022
 MISSION_STATUS = IN_PROGRESS
 
 BRANCH = pca-dev
-LOCAL_HEAD = e9c93a78497a5e536ceb23d56c5ac825640810b2
+LOCAL_HEAD = 1056546e6a43eaeb8886e79afe5d584af8154995 (local docs-only TODO-20 closure commit)
 REMOTE = origin
 TARGET_DEV_BRANCH = pca-dev
-FETCHED_REMOTE_HEAD = 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e (fresh post-push fetch)
-LOCAL_REMOTE_EQUAL = YES at the verified checkpoint head
-REMOTE_ADVANCED_DURING_WORK = NO; pre-push fetch found no remote-only commits
+FETCHED_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch; one successful ls-remote matched, a later retry failed through the configured proxy)
+LOCAL_REMOTE_EQUAL = NO; local HEAD is one docs-only TODO-20 closure commit ahead
+REMOTE_ADVANCED_DURING_WORK = NO during the latest successful fetch; fetched ref remains 35f6c022
 INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
 CHECKPOINT_WORKTREE_ENTRY_COUNT = 330 before the new classification file; 227 modified tracked and 103 untracked; no staged/deleted entries
-POST_CHECKPOINT_DIRTY_PATHS = 5 explicitly excluded paths: two generated schema snapshots, two .vscode local files, and root fragment 0
+POST_CHECKPOINT_DIRTY_PATHS = 17 tracked paths currently changed, including Parent Settings/API/tests, the real-backend acceptance spec, disposable E2E runner/package target, route matrix, ledgers and generated schema snapshots; unrelated .vscode and root fragment 0 remain excluded
 PEER_WORK_PRESERVED = YES (all 61 date-bound assessment files committed separately; unrelated/mobile source remained untouched)
 
 PARENT_IMPLEMENTATION_PATHS = coordinator owns authorized Parent + dependent Platform family-identity implementation; existing dirty changes retained
@@ -29,36 +29,38 @@ SHARED_PATHS = backend, database bootstrap, and cross-surface tests; one active 
 OUT_OF_SCOPE_DIRTY_PATHS = 39 API/mobile assessment files and 2 .vscode files; preserved
 MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md (new)
 CODE_CHANGES_BY_THIS_CHECKPOINT = backend/src/parentaccount/ParentAccountService.ts; backend/src/platformadmin/accounts/FamilyAccountStatusService.ts; backend/src/http/routes/platformadmin/accountsRoutes.ts; backend/test/parentaccount/optionalMfaLogin.test.mjs; backend/test/db/parentAccount.mysql.test.mjs; backend/src/familyrbac/RemovalDecisionAuthority.ts; backend/src/familyrbac/MySqlRemovalDecisionRepository.ts; backend/src/http/routes/removalDecisionRoutes.ts; backend/migrations/0057_parent_actor_provenance_for_removal_decisions.sql; backend/src/db/schema.ts; parent-web/src/rbac/useFamilyAction.ts; parent-web/tests/route/familyActions.test.tsx; this ledger
-FOCUSED_TESTS = backend build PASS; removal decision unit/route and canonical schema campaign 56/56 PASS; schema privacy 30/30 PASS; generated disposable bootstrap --check PASS; auth/email/route campaign 80/80 PASS; OTP/TOTP regression 3/3 PASS; focused HTTP/Parent authority campaign 213/213 PASS; current HTTP pairing/session campaign 19/19 before epoch change; focused device-session suite 13/13 after epoch change; backend identity/Platform route campaign 11/11 PASS; Parent identity UI 15/15 PASS; Parent/Platform typecheck PASS; Parent Web Vitest 151/151 files, 1065/1065 tests PASS on serial rerun; full disposable MySQL 612/612 on 54 migrations, zero skips, exact scratch DB removed; focused migration/artifact/iOS/Safe Zone/audit regressions 33/33 and final Safe Zone fixture cleanup 5/5; production-path certification test 8/8; full post-fix serial backend npm test 2648/2648 before latest route changes; current backend npm test passed 272/272 registered files with per-file isolation; canonicalSchemaDrift 5/5 PASS; eye-protection Parent membership route 8/8 PASS; Parent MFA step-up route 7/7 PASS
-BROWSER_EVIDENCE = 2 real-browser Parent MFA journeys passed 1/1 each with zero skips/flaky; broader Parent route journey remains pending
-BROADER_REGRESSION = TODO-17 integrated web/browser/API/mobile matrix incomplete; Parent Web serial suite 1065/1065 PASS; historical full disposable DB suite 612/612 after 54 migrations; latest full disposable DB rerun FAILED under low-memory/auth fixture conditions; focused enrollment DB suite 22/22 PASS; authority diagnostics 61/62 before final Viewer-fixture correction; full post-fix serial backend npm test 2648/2648, zero failures or skips; browser/mobile/owner integration remains pending
+FOCUSED_TESTS = Prior mission campaigns remain as recorded; Parent session-revocation real-client/Settings/RTL run passed 42/42; Parent Web typecheck, touched-file ESLint, strict E2E TypeScript compile, Playwright collection, backend build, and git diff --check passed.
+BROWSER_EVIDENCE = Exact-head Quality Gates run 36360087042 at 35f6c022 passed all jobs, including certified Parent/Platform real-backend browser E2E. New local owner-acceptance campaign on disposable MySQL 8.4.11 passed 2/2, 0 skipped/unexpected/flaky: journey 401/403 count zero, revoke-all returned 204 and redirected to sign-in, and cross-family isolation passed. The campaign used 57 migrations and a run-owned random database, which was removed. This is working-tree evidence, not exact-head CI.
+BROADER_REGRESSION = TODO-17 automated integration PASS at 35f6c022; full MySQL certification, Parent/Platform real-backend browser, Android, iOS, security, builds and unit jobs passed. TODO-13 local backend build and focused sensitive-action HTTP campaign passed 64/64. External device-crypto and owner localhost gates remain separately open.
 UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at 3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e
-PARENT_LOCAL_ONLY_FILES_REMAINING = 0
-PARENT_UNPUSHED_COMMITS_REMAINING = 0
+REMOTE_ALIGNMENT_COMPLETED = YES at 35f6c022f017e04aecbf3573394bf20f90d12489 (latest fetched remote source checkpoint)
+PARENT_LOCAL_ONLY_FILES_REMAINING = 17 tracked mission paths currently changed locally; .vscode and root fragment 0 remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 1 local docs-only commit (1056546e6a43eaeb8886e79afe5d584af8154995); current ledger and generated-schema artifact updates are uncommitted
 
-REPO_SCHEMA_HEAD = source-level 0057 parent actor provenance added; 55 migration files through 0057
-REPO_MIGRATION_HEAD = 0057 (55 migration files; 0009 and 0010 absent)
-LOCAL_SCHEMA_HEAD = pending TODO-20 read-only inspection
-LIVE_PCA_PRO_SCHEMA_HEAD = pending TODO-20 read-only inspection
-SOURCE_SCHEMA_MATCH = PARTIAL (schema.ts and migration 0057 aligned; disposable bootstrap SQL and live-bootstrap create-schema artifacts regenerated; bootstrap --check PASS; current_schema.sql and schema_manifest.json remain prior dirty snapshots and need real migrated-DB introspection; phone E.164 and token-hash CHECK charset expressions still need disposable-schema introspection)
-LOCAL_DB_SCHEMA_MATCH = pending
-LIVE_PCA_PRO_SCHEMA_MATCH = pending
-LIVE_GRANTS_MATCH = pending
-MIGRATION_REQUIRED = YES for the new durable Parent actor-provenance source requirement; live pca_pro schema mismatch remains uninspected
-MIGRATION_FILE = 0057_parent_actor_provenance_for_removal_decisions.sql (added; local MySQL persistence validation pending)
-LOCAL_MIGRATION_TEST = persistence test added; MySQL unavailable at 127.0.0.1:33061
-LIVE_MIGRATION_APPLIED = NO
-LIVE_MIGRATION_RESULT = PENDING (no live pca_pro schema inspection or migration application)
-NO_SEED_DATA = YES (no database mutation performed)
-DATA_LOSS = 0 (no database mutation performed)
+REPO_SCHEMA_HEAD = canonical source/migrations through 0059; 57 migrations applied from zero on local MySQL 8.4.11
+REPO_MIGRATION_HEAD = 0059 (57 migrations; 0009 and 0010 absent from repository history)
+LOCAL_SCHEMA_HEAD = 0059; 92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique and 141 non-unique indexes, 282 checks
+LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
+SOURCE_SCHEMA_MATCH = EXACT_MATCH by full local/live introspection after 0059; excluded dirty current_schema.sql and schema_manifest.json were not used to manufacture agreement
+LOCAL_DB_SCHEMA_MATCH = PASS; two fresh disposable local MySQL 8.4.11 migration databases (57 migrations / 92 tables) compare EXACT_MATCH; generated schema artifacts come from migrated database
+LIVE_PCA_PRO_SCHEMA_MATCH = PASS; full structural snapshot EXACT_MATCH and 90 readable application-table counts unchanged
+LIVE_GRANTS_MATCH = PASS; 92/92 exact plan; parent_account_security_events remains INSERT-only
+MIGRATION_REQUIRED = NO remaining proven source/live mismatch after 0059
+MIGRATION_FILE = 0059_parent_mfa_ascii_check_literal_charset.sql (locally validated, applied through official migration runner)
+LOCAL_MIGRATION_TEST = PASS; focused migration safety 3/3 and Parent persistence test 22/22 on disposable DB
+LIVE_MIGRATION_APPLIED = YES (0059 only after fresh immediate preflight)
+LIVE_MIGRATION_RESULT = PASS; journal 56→57, no seed/reference/business DML, row-count preservation verified
+NO_SEED_DATA = YES
+DATA_LOSS = 0
 
 CURRENT_P0 = pending re-review; prior assessment reported none
 CURRENT_P1 = no current local backend npm test failure; full serial run passes 2648/2648 with zero skips
-BLOCKERS = ordinary schedule-policy actions still depend on device bearer and unavailable Trust Set resolution; removal-target child/device/status resolution passes focused unit/route and enrollment MySQL tests, but real protection-status attestation remains open; removal-decision Parent actor columns/routes/repository are implemented locally and focused unit/route/schema tests pass, but migration 0057 persistence test awaits MySQL; successful Parent bonus-grant revocation attribution is process-local and not a durable audit record; first-policy PAIRED-to-ACTIVE lifecycle lacks production crypto/trust wiring; ownership-transfer/recovery-material step-up operations have no consumers; integrated browser/mobile/API matrix remains pending; phone E.164 and token-hash CHECK charset expressions still need disposable-schema introspection; local/live DB schema and grants remain uninspected; owner localhost journey has not been offered; TODO-18 literal LOCALHOST ACCEPTED precedes Platform activation, Git push, and release gates
-NEXT_ACTION = retry the migration-0057 Parent actor persistence case and disposable schema inspection when local MySQL is available; continue TODO-12/14 through remaining Parent policy-action surfaces and unused-operation disposition; finish TODO-20 read-only local/live schema and grant inspection when its gate permits; complete integrated regressions and TODO-18 owner localhost acceptance; keep Platform writes held until the activation gate
+BLOCKERS = ordinary schedule-policy actions still depend on device bearer and unavailable Trust Set resolution; Web Rules remain 503 not_configured; real protection-status attestation and PAIRED-to-ACTIVE crypto/trust wiring remain open; successful Parent bonus-grant revocation actor attribution is process-local; ownership-transfer/recovery-material step-up operations have no consumers; TODO-14 aggregate route/action counts and TODO-15 security gates remain open; TODO-18 literal LOCALHOST ACCEPTED has not been received; release/deployment gates remain open
+CURRENT_AUTHORITY_REVIEW = Schedule-policy writes require Parent Administrator session, CSRF, device bearer and Trust Set authorization; production resolver returns NO_TRUST_SET. Web Rules return 503 while production omits the service pending reviewed encrypted storage/delivery. Bonus-grant revocation actor attribution has no safe durable audit path. No plaintext shortcut or session-only bypass is authorized by the existing security contracts.
+PARENT_ROUTE_MATRIX = Current-source `parent_api_contract_matrix.json` maps 35/35 Parent Web call paths and inventories 52 route declarations across 43 unique paths; 6 server routes have no matching Parent Web path. Parent Settings now exposes backend-tested revoke-all with explicit confirmation and EN/AR copy; local validation is pending. This does not close TODO-14 aggregate runtime status counts.
+NEXT_ACTION = continue TODO-12/14 source/action audit and safe durable actor-attribution analysis; keep TODO-15 device-security gates and Platform hold intact; update the master TODOs after each evidence checkpoint; offer localhost acceptance only when Parent gates are ready
 ```
 
 ### 2026-09-27 — authorized checkpoint inventory and pre-commit evidence

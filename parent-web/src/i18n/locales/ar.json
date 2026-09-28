@@ -116,7 +116,14 @@
     "identityNameTooLong": "يجب ألا يتجاوز كل اسم 128 حرفاً.",
     "identityNameInvalid": "لا يمكن أن تحتوي الأسماء على محارف تحكم.",
     "phoneInvalid": "أدخل رقم الهاتف مع رمز الدولة، مثل ‎+14155552671‎.",
-    "identityLoading": "جارٍ تحميل بيانات هويتك..."
+    "identityLoading": "جارٍ تحميل بيانات هويتك...",
+    "sessionsSectionTitle": "الجلسات النشطة",
+    "revokeAllSessionsDescription": "سجّل الخروج من هذا المتصفح ومن كل متصفح آخر سجّل الدخول إلى حساب الوالد.",
+    "revokeAllSessions": "تسجيل الخروج من كل الجلسات",
+    "revokeAllSessionsConfirm": "سيتم تسجيل خروجك من هذا المتصفح ومن جميع المتصفحات الأخرى. ستحتاج إلى تسجيل الدخول مرة أخرى.",
+    "confirmRevokeAllSessions": "تسجيل الخروج من الجميع",
+    "cancelRevokeAllSessions": "إلغاء",
+    "revokeAllSessionsFailed": "تعذّر تسجيل الخروج من كل الجلسات. حدّث الصفحة ثم حاول مرة أخرى."
   },
   "roles": {
     "owner": "المالك",

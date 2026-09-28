@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 00:20 UTC
-LOCAL_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
-REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match)
+LAST_UPDATED_UTC = 2026-09-28 02:18 UTC
+VALIDATED_SOURCE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
+VERIFIED_SOURCE_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match before the ledger-only publication)
 CURRENT_CHECKPOINT_SHA = 35f6c022f017e04aecbf3573394bf20f90d12489 (corrective E2E/provenance checkpoint plus ledger sync; exact-head CI PASS; TODO-20 live migration 0059 verified)
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12 through TODO-17 and TODO-19; TODO-20 is PASS (repository/local/live schema and runtime grants reconciled through 0059)
-NEXT_ACTION = Continue the same Parent TODO board at the earliest unfinished work, TODO-12. Preserve the Platform dependency hold and external owner/localhost gates.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14…TODO-16, and TODO-19; TODO-13, TODO-17, and TODO-20 are PASS at validated source head 35f6c022
+NEXT_ACTION = Continue the same Parent TODO board at the earliest unfinished work, TODO-12. TODO-13/17/20 are PASS at validated source head `35f6c022`. Preserve the Platform dependency hold and external owner/localhost gates. Report snapshot `0daf660` is superseded by exact-head CI PASS; local ledger publication is currently one docs-only commit ahead of the fetched remote.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -52,7 +52,7 @@ Statuses are coordinator-assigned from repository evidence. Earlier real-MySQL, 
 
 ### TODO-01 — Preserve and reconcile current multi-session worktree
 
-STATUS = PASS  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Entire checkpoint inventory; `docs/PCA_CHECKPOINT_PATH_CLASSIFICATION_2026-09-27.md`  
 EVIDENCE = 330 initial dirty file paths were classified path by path. Eight logical commits were pushed; local and remote are equal at `114b784e`. All 61 peer assessment files were preserved in a separate snapshot commit. Five explicitly excluded paths remain: two stale schema snapshots, two machine-local `.vscode` files, and unrelated root `0`. No stash/reset/clean or force push.  
@@ -145,8 +145,8 @@ DONE_WHEN = ordinary Parent runtime has zero Genesis dependency
 STATUS = PASS  
 OWNER = Coordinator  
 FILES = Parent trust/session providers, repositories, routes/UI; family suspension  
-EVIDENCE = Historical MySQL test proves suspension revokes sessions, daily grants, pending login challenges and family-bound step-up grants; old browser grant requires fresh verification after reactivation. Browser trust is account-bound login assurance only.  
-BLOCKER = Cross-browser listing/individual-device management is a non-blocking follow-up; logout and revoke-all are available.  
+EVIDENCE = Historical MySQL test proves suspension revokes sessions, daily grants, pending login challenges and family-bound step-up grants; old browser grant requires fresh verification after reactivation. Browser trust is account-bound login assurance only. The backend `/api/parent/sessions/revoke-all` route has CSRF/session-invalidation tests. Parent Settings exposes explicit confirmation through `ServiceAuthClient.revokeAllSessions()` and redirects to sign-in after success. Focused real-client, Settings, and RTL validation passed 42/42; TypeScript and touched-file ESLint passed.
+BLOCKER = Cross-browser listing and individual-device management remain follow-ups. Current all-session revocation ends with the caller redirected to sign-in; no device-level controls are implied.
 DONE_WHEN = browser trust affects login assurance only
 
 ### TODO-12 — Complete normal Parent authority migration
@@ -154,17 +154,17 @@ DONE_WHEN = browser trust affects login assurance only
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Parent route/action authority, authz, child requests, family membership, device binding, removal decisions, Parent Web action clients  
-EVIDENCE = Source/action matrix reviewed; current focused service/HTTP campaign passed 188/188; build passed. Removal mutations use active Administrator and scoped TOTP step-up; Parent decision actor IDs are persisted by repository code and migration 0057, and omitted from Parent DTOs. Resolver/unit route checks and enrollment SQL source are committed.  
-BLOCKER = Schedule-policy remains tied to device bearer/unavailable Trust Set; web rules remain `503 not_configured`; some bonus-grant actor metadata is process-local; migration 0057 persistence awaits MySQL.  
+EVIDENCE = Source/action matrix reviewed; current focused service/HTTP campaign passed 188/188; build passed. Removal mutations use active Administrator and scoped TOTP step-up; Parent decision actor IDs are persisted by repository code and migration 0057, and omitted from Parent DTOs. Local disposable MySQL 8.4.11 persistence coverage for migration 0057 passed in `parentAccount.mysql.test.mjs` (22/22); migrations 0001–0059 applied and the disposable DB was removed. Resolver/unit route checks and enrollment SQL source are committed. Fresh source review confirms the bonus revoke route checks active Parent role, CSRF and child-family membership before mutating `BonusGrantLedger`; actor/time attribution there is process-local. The production FamilyAuditService is composed with an in-memory repository, and opaque event delivery rejects until the reviewed crypto composer exists, so this is not currently a durable audit path. `childPolicyRoutes.ts` requires a Parent Administrator session, CSRF, bound device bearer and Trust Set authorization for schedule-policy writes; production's `UnavailableTrustSetRoleResolver` returns `NO_TRUST_SET`. Web Rules return `503 not_configured` while production leaves `webRuleService` absent.
+BLOCKER = Schedule-policy requires a reviewed server-reachable, signature-verified Trust Set path; Web Rules require reviewed encrypted policy storage/delivery. Bonus-grant actor attribution lacks a safe durable audit path. Policy content is E2EE-only under PCA-SEC-023/PCA-DEC-028; do not add plaintext persistence or fabricate encrypted envelopes. TODO-15 device trust/attestation constraints remain authoritative.
 DONE_WHEN = normal authority = session + same family + ACTIVE Administrator
 
 ### TODO-13 — Sensitive-action TOTP step-up
 
-STATUS = IN_PROGRESS  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Step-up schema/service/routes/UI and classified Parent actions  
-EVIDENCE = Ten of twelve declared operations had consumers in the last audit; device invitation has operation-specific step-up. Removal create/PIN/local decisions require scoped fresh TOTP, and unused ownership-transfer/recovery-material issuance is rejected. Prior focused route/UI checks passed; current focused backend campaign passed.  
-BLOCKER = Explicit future authority policy is needed before ownership-transfer/recovery-material operations can be enabled; full Parent Web suite rerun pending.  
+EVIDENCE = Source map confirms all ten currently issuable high-risk operations have Parent route consumers and fresh, operation-scoped step-up: family member add/remove/role-change/invitation-revoke; device enrollment create/revoke; retention update; history export/delete; and security-settings change. Removal create and decisions consume operation-specific grants; invitation, retention/history, device enrollment, pairing and security-setting routes consume their matching grants. `family.ownership.transfer` and `family.recovery.material.reveal` remain in the schema vocabulary but are absent from the issuable-operation set; the step-up route rejects them, and no action consumer exists. Exact-head Quality Gates run `36360087042` at `35f6c022` passed all jobs, including Parent Web and backend regression. Local backend build passed, and focused step-up/consumer HTTP suites passed 64/64 with zero skips on 2026-09-28.
+BLOCKER = None for currently implemented sensitive actions. Ownership transfer and recovery-material workflows remain disabled until separately designed and authorized; this PASS does not enable them.
 DONE_WHEN = classified high-risk actions require fresh TOTP
 
 ### TODO-14 — Full Parent route/action audit
@@ -172,8 +172,8 @@ DONE_WHEN = classified high-risk actions require fresh TOTP
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Parent backend routes/pages/actions and authority matrix  
-EVIDENCE = Agent-2 source-mapped route/action matrix reviewed; eye-protection membership and removal route changes have focused tests. Current 188-test backend focus passed.  
-BLOCKER = Integrated route/action campaign, aggregate unexpected status counts and Trust Set/web-rule authority boundaries remain open.  
+EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to backend handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. Current source refs are present and handler declarations validate. Six route paths have no matching Parent Web call path: bonus active-grants/revoke, dashboard, removal-decision detail, and authorized-recovery/signed decision endpoints. Revoke-all now has a Parent Settings caller. This is transport/source mapping evidence, not aggregate runtime authorization proof. Existing eye-protection membership and removal route changes retain focused tests; prior 188-test backend focus passed.
+BLOCKER = Integrated route/action campaign and aggregate unexpected status counts remain open; separately recorded schedule-policy/Web Rules Trust Set and encrypted-storage authority boundaries remain fail-closed.
 DONE_WHEN = every required route is audited with proven authority and no normal action blocked by Genesis or browser trust  
 UNEXPECTED_401 = NOT_YET_PROVEN (aggregate)  
 UNEXPECTED_403 = NOT_YET_PROVEN (aggregate)  
@@ -192,7 +192,7 @@ DONE_WHEN = identity/pairing/signatures/replay/revocation/wrong-device protectio
 
 ### TODO-16 — Identity/profile integration + Platform family projection
 
-STATUS = PASS  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent identity API/UI/migrations; Platform family read model, route/UI, tests  
 EVIDENCE = Unicode-friendly nullable legacy names and optional phone; family-scoped four-field projection (first/last/email/nullable phone); prior Parent identity UI 15/15, backend identity/projection route tests 11/11 and disposable MySQL projection 61/61 (two-family isolation, zero-admin fail-closed, nullable phone, provisioning precedence). Projection and UI source are verified at the checkpoint remote.  
@@ -207,11 +207,11 @@ extra PII/commercial fields = 0
 
 ### TODO-17 — Full MySQL / security / browser regression
 
-STATUS = IN_PROGRESS  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head run `36348596733` at `47d564c4` completed with 24 jobs passing and three failing. Parent Web demo-mode Chromium E2E passed. The backend full MySQL suite passed on MySQL 8.4, but the following populated-path campaign ran against an empty `pca_test` after `test:db` had already dropped its owned random database. Real-backend E2E database setup issued a `CREATE DATABASE` statement with an empty identifier because shell quoting removed the dynamically joined name. Parent unit shard 6 failed only the Viewer pairing case: remounting the demo page lost its in-memory fixture, so lookup returned Not found instead of the pairing data. Corrective local changes make the E2E SQL shell-safe, run both DB campaigns inside one disposable DB lifetime, and change Viewer authority in place without remounting.  
-BLOCKER = The fixes above are not yet pushed or rerun. Parent Web lint/typecheck pass; the 14-test DB-free migration/production-path structural suite passes. Local Vitest cannot start esbuild in this Windows sandbox (`spawn EPERM`); GitHub CI must verify the changed component. MySQL 9.7 local migration 0050/0058 and schema evidence remain distinct from the CI MySQL 8.4 full DB suite. Mobile/device external crypto gates remain.  
+EVIDENCE = The supplied report's run `36350073129` at `0daf660` failed in the first Parent owner-acceptance browser flow, with later certified journeys skipped. That source/test checkpoint was corrected in `1949ead` and the exact-head Quality Gates run `36360087042` at `35f6c022` completed SUCCESS with no failed jobs, including Parent/Platform real-backend browser E2E, full disposable-MySQL certification, Android and iOS. A subsequent local wrapper timeout occurred before browser tests and is classified as harness/environment failure, not a regression PASS or failure.
+BLOCKER = None for the automated integrated regression at validated source head `35f6c022`. Device-crypto/Trust Set and owner-localhost/release gates remain separate under TODO-15 and TODO-18/21/22. Direct GitHub/Actions refresh is currently blocked by the configured localhost proxy.
 DONE_WHEN = integrated local regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
@@ -228,14 +228,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS  
 OWNER = COORDINATOR  
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Checkpoint `399304c080e82c36719e4d5bf34953444181ecb8` (Platform real-backend E2E correction plus both master TODO ledgers) is fast-forward pushed to `origin/pca-dev`; post-push fetch, tracking ref and `git ls-remote` agree. Exact-head Quality Gates run `36356186069` completed SUCCESS at this SHA with all jobs passing. Source correction `102192b3` and ledgers are published; unrelated dirty paths remain excluded.
-BLOCKER = Exact-head CI gate is PASS. Remaining TODO-19 release/acceptance sequence remains gated by TODO-18 and dependent Platform validation; this does not block the separately authorized TODO-20 schema reconciliation.
+EVIDENCE = Latest validated source checkpoint `35f6c022f017e04aecbf3573394bf20f90d12489` is fetched at `origin/pca-dev`; exact-head Quality Gates run `36360087042` completed SUCCESS with all jobs passing. Local HEAD `1056546e6a43eaeb8886e79afe5d584af8154995` is one docs-only TODO-20 closure commit ahead, with further mission-ledger updates uncommitted. Fresh fetch succeeded; direct GitHub ref/Actions API refresh failed because the configured localhost proxy refused connections. Unrelated dirty paths remain excluded.
+BLOCKER = TODO-19 publication/remote-equality gate remains open for the local ledger-only commit and current ledger edits. Automatic approval review previously rejected the commit attempt because review credits were exhausted; do not bypass. TODO-18 and dependent Platform validation remain release gates; TODO-20 live reconciliation is independently complete.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
-LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (current committed baseline; corrective changes are local)  
-REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb (fetch + GitHub ref verified)  
-PARENT_LOCAL_ONLY_FILES_REMAINING = 6 current mission correction/ledger paths; 2 stale snapshots, 2 machine-local .vscode paths, and root fragment `0` remain excluded  
-PARENT_UNPUSHED_COMMITS_REMAINING = 0  
-EXACT_HEAD_CI = FAILED (`36348596733` at `47d564c4`); previous run `36338197362` FAILED at `8f3f45b4`; its replacement run `36348261937` was cancelled by superseding push
+LOCAL_HEAD = 1056546e6a43eaeb8886e79afe5d584af8154995 (one local docs-only commit ahead; TODO ledgers and generated schema snapshots have uncommitted updates)
+REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (freshly fetched; direct server-ref check unavailable through proxy)
+PARENT_LOCAL_ONLY_FILES_REMAINING = 5 mission artifacts pending publication (three ledgers and two freshly generated schema snapshots); `.vscode` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 1 local docs-only commit plus current uncommitted mission artifacts
+EXACT_HEAD_CI = PASS (`36360087042` at `35f6c022`); direct GitHub refresh currently unavailable through configured proxy
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
@@ -245,7 +245,8 @@ FILES = Repository schema/migrations, local PCA DB, live `pca_pro`, runtime gran
 AUTHORIZATION = Owner reminder received 2026-09-27: full repository/local/live pca_pro/runtime-grant reconciliation is approved; ordinary additive/corrective migrations may proceed only after local test and fresh live preflight.  
 EVIDENCE = Canonical schema + migrations through 0059 declare 92 tables, 792 columns, 104 foreign keys, 92 primary keys, 38 unique non-primary indexes, 141 non-unique indexes, and 282 checks. Isolated MySQL 8.4.11 from-zero verification passed with 57 migrations; Parent DB target passed 61 tests with 3 expected privileged-mode skips; Platform Admin DB target passed 11/11; focused migration-upgrade safety passed 3/3. Exact-head Quality Gates run `36360087042` completed SUCCESS at `35f6c022f017e04aecbf3573394bf20f90d12489`, including full disposable-MySQL certification and Parent/Platform real-backend browser E2E. After immediate preflight, the official runner applied only 0059 to verified `pca_pro` (`pca-mysql.mysql.database.azure.com`, MySQL 8.4.9-azure). TLS verified as `TLS_AES_256_GCM_SHA384`; live journal is 57 through 0059; live introspection compared to local MySQL 8.4.11 with `EXACT_MATCH`. All 92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique indexes, 141 non-unique indexes, and 282 checks match. The two live CHECK clauses are now canonical (`purpose` `_ascii`, hash `_utf8mb4`) and remain enforced. Runtime grants match the explicit repository plan exactly (92/92; only expected global `USAGE` beyond table grants). Exact row counts for 90 readable application tables are unchanged; the migration journal increased exactly 56→57; `parent_account_security_events` remains intentionally unreadable through the runtime identity (INSERT-only). No application rows or reference data were seeded; migration 0059 contains only the two corrective CHECK DDL operations and its journal insert. The attached status report's `0daf660`/`399304c` checkpoints and claim that live was still at 0050 are historical; the current fetched head and fresh live preflight/postflight above supersede them.
 LOCAL_SERVICE_REPAIR = Downloaded official MySQL 8.4.11 Windows archive and verified its published MD5; extracted and initialized a loopback-only instance on 127.0.0.1:33361 under a fresh OS-temp datadir. No installed MySQL service or existing datadir was started or touched. Local DB harness uses only disposable databases and test-only credentials; no live credentials/data were used locally.  
-PCA_PRO_TARGET = Verified Azure MySQL Flexible Server `pca-mysql.mysql.database.azure.com` / database `pca_pro`, version `8.4.9-azure`; TLS cipher `TLS_AES_256_GCM_SHA384`. The authorized migration 0059 is applied and post-verified. The API CNAME points to a hostname absent from the listed App Services; API owner remains unidentified.  
+LOCAL_SNAPSHOT_REGENERATION = Reviewed dirty snapshot diffs and found `device_session_epoch` under `complimentary_entitlement_grants` despite migration 0056/schema.ts locating it on `families`. Preserved pre-refresh files in task temp storage. A fresh disposable MySQL 8.4.11 database applied migrations 0001–0059 through `npm run db:migrate`; `npm run db:schema:snapshot` regenerated both artifacts from that DB. An independent second database passed `verify-mysql.mjs` from zero (57 migrations, 92 tables); both databases' complete introspection snapshots compare `EXACT_MATCH`. Follow-up artifact check confirms 92 SQL table sections and 92 manifest tables; the epoch occurs on `families` only. No application rows or seeds were created.
+PCA_PRO_TARGET = Verified Azure MySQL Flexible Server `pca-mysql.mysql.database.azure.com` / database `pca_pro`, version `8.4.9-azure`; TLS cipher `TLS_AES_256_GCM_SHA384`. The authorized migration 0059 is applied and post-verified. The API CNAME points to a hostname absent from the listed App Services; API owner remains unidentified.
 BLOCKER = None for TODO-20. Parent authority/device gates and owner acceptance remain tracked under their existing TODOs.
 DONE_WHEN = repository schema matches local DB and pca_pro; required migration locally tested and live-applied if required; grants match; no seed data  
 NO_SEED_DATA = YES (no test fixtures or application rows; only migration-required reference data)  
@@ -392,16 +393,16 @@ EXACT_HEAD_CI = FAILED for `8f3f45b4` run `36338197362`; no replacement run has 
 
 ## Database
 
-REPO_SCHEMA_HEAD = source/schema.ts + migration 0058  
-REPO_MIGRATION_HEAD = 0058 (56 SQL migration files through 0058; no duplicate numbers)  
-LOCAL_SCHEMA_HEAD = 0058 on fresh disposable MySQL 9.7, loopback-only port 33061  
-LIVE_PCA_PRO_SCHEMA_HEAD = NOT_INSPECTED; no live DB access/mutation in checkpoint  
-LOCAL_DB_SCHEMA_MATCH = PARTIAL; 92 tables, 792 columns, 104 FKs and 282 checks; physical indexes match canonical bootstrap; CHECK text has 8 version-sensitive charset-introducer differences  
-LIVE_PCA_PRO_SCHEMA_MATCH = NOT_YET_PROVEN  
-LIVE_GRANTS_MATCH = NOT_YET_PROVEN  
-MIGRATION_REQUIRED = YES for migration 0057 actor provenance and migration 0058 service-account index reconciliation; live state not inspected  
-MIGRATION_APPLIED = 0058 applied and replay-verified on disposable MySQL 9.7 only; no live apply  
-LOCAL_RUNTIME_GRANTS = 92/92 exact table grants for disposable principal; production grants NOT_INSPECTED  
+REPO_SCHEMA_HEAD = source/schema.ts + migrations through 0059
+REPO_MIGRATION_HEAD = 0059 (57 SQL migration files; 0009 and 0010 are absent from repository history)
+LOCAL_SCHEMA_HEAD = 0059 on two fresh disposable MySQL 8.4.11 databases; each has 92 tables
+LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified `pca-mysql.mysql.database.azure.com/pca_pro` (MySQL 8.4.9-azure)
+LOCAL_DB_SCHEMA_MATCH = EXACT_MATCH; full structural introspection across both databases after 57 migrations
+LIVE_PCA_PRO_SCHEMA_MATCH = EXACT_MATCH with local MySQL 8.4.11; 90 readable application-table row counts unchanged after migration 0059
+LIVE_GRANTS_MATCH = PASS; 92/92 grants match the repository plan; `parent_account_security_events` remains INSERT-only
+MIGRATION_REQUIRED = NO remaining proven repository/live mismatch after migration 0059
+MIGRATION_APPLIED = 0059 locally tested and applied to verified live `pca_pro`; journal 56→57
+LOCAL_RUNTIME_GRANTS = 92/92 exact table grants for disposable principal; live runtime grants independently match 92/92
 NO_SEED_DATA = YES
 
 ## Release
@@ -423,11 +424,11 @@ CURRENT_P2 = Schedule-policy Trust Set authority; web-rule `503 not_configured`;
 
 ## Blockers
 
-BLOCKERS = Exact-head CI for the new 0059 checkpoint and final live 0059 schema/grant comparison remain open; integrated browser/mobile/owner tests remain open; schedule-policy and web-rule production authority remain fail-closed; device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by the checkpoint.
+BLOCKERS = TODO-20 is PASS through migration 0059, exact-head CI run `36360087042`, live schema/grant equality, and row-count preservation. TODO-12 schedule-policy and Web Rules authority remain fail-closed; TODO-15 device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by the checkpoint.
 
 ## Next Action
 
-NEXT_ACTION = Publish and obtain exact-head CI for 0059; after CI PASS, repeat live preflight, apply 0059, and verify exact schema/data/grants. Then resume the earliest unfinished Parent TODO and keep Platform Enrollment held until Parent TODO-01…17, TODO-16 projection and TODO-18 literal acceptance pass.
+NEXT_ACTION = Continue the earliest unfinished Parent work at TODO-12 and TODO-14; retain fail-closed Trust Set, E2EE/Web Rules and device-security boundaries. TODO-20 through 0059 is complete. Keep Platform Enrollment held until its Parent dependencies and literal TODO-18 localhost acceptance pass.
 
 ## Checkpoint History
 
@@ -678,3 +679,94 @@ MUTATION = Official `backend/scripts/migrate.mjs` applied only locally validated
 POSTFLIGHT = Live journal=57 through 0059; local MySQL 8.4.11/live full introspection comparison `EXACT_MATCH`; canonical purpose CHECK uses `_ascii`, hash CHECK uses `_utf8mb4`; both remain enforced. Runtime grants still exactly match plan 92/92. Exact row counts for all 90 readable application tables are unchanged; journal is the expected 56→57; event table remains intentionally unreadable with runtime INSERT-only grant. Structural totals remain 92/792/104/92/38/141/282. NO_SEED_DATA=YES; DATA_LOSS=0.
 ATTACHMENT_RECONCILIATION = The supplied status report combined historical snapshots (`0daf660`, `399304c`) and an older claim that `pca_pro` ended at 0050. Current GitHub and live checks were refreshed; the current branch is `35f6c022`, its exact-head run is green, and live state was through 0058 immediately before this authorized migration.
 NEXT_ACTION = Continue the same Parent board at earliest unfinished TODO-12; retain unresolved device/authority/localhost/deployment gates. Sync and publish both master ledgers, then inspect the exact-head run for that ledger publication.
+
+### 2026-09-28 00:56 UTC — status report reconciled; TODO-17 promoted
+
+REPORT = The attached report's `0daf660` owner-acceptance browser failure was corrected by the later source/fixture checkpoint; exact-head run `36360087042` at `35f6c022` is green. Its older live migration-0050/0058 claim is superseded by the completed migration-0059 postflight above.
+TODO17 = PASS for integrated automated regression at `35f6c022` (Parent/Platform real-backend browser journeys, MySQL, security, Android/iOS and build/unit jobs passed). A later local wrapper timed out before browser specs and does not change that exact-head CI evidence. Device trust/crypto is tracked separately under TODO-15; owner localhost acceptance remains TODO-18.
+TODO12 = Migration-0057 actor persistence is no longer awaiting MySQL: disposable MySQL 8.4.11 test passed 22/22 after migrations 0001–0059; disposable DB cleanup passed. Remaining blockers are Trust Set/device authority for schedule policy, unconfigured Web Rules, and non-durable bonus-revocation actor attribution. Do not bypass E2EE/device-trust constraints with plaintext persistence or self-reported authority.
+GIT = Fresh fetch returned `origin/pca-dev=35f6c022`. Local HEAD `1056546e` is docs-only and ahead; subsequent ledger edits remain uncommitted. Direct server-ref/Actions API checks failed because the configured localhost proxy refused connections. A prior commit attempt was rejected by automatic approval review for exhausted credits; no bypass or publication is attempted here.
+NEXT_ACTION = Continue TODO-12/14 source/action audit within the E2EE/device-trust constraints. Resume TODO-19 publication when approved commit review is available; keep Platform held.
+
+### 2026-09-28 01:04 UTC — TODO-13 sensitive-action matrix validated
+
+TODO13 = PASS for implemented sensitive actions. Source mapping confirms ten issuable operations have consuming Parent routes and matching fresh operation-scoped TOTP grants; focused local step-up/consumer HTTP campaign passed 64/64 and backend build passed. Ownership transfer and recovery-material reveal remain non-issuable and have no consumers; this closure does not enable them.
+PLATFORM = `HOLD_PARENT_DEPENDENCY` remains because TODO-12/14/15/16, Parent projection gate and TODO-18 literal localhost acceptance are incomplete.
+NEXT_ACTION = Continue TODO-12; retain TODO-14 aggregate audit and TODO-15 child-device trust/cryptographic security gates.
+
+### 2026-09-28 01:21 UTC — generated schema snapshots reconciled
+
+TODO20 = The previously dirty `backend/schema/current_schema.sql` and `schema_manifest.json` had an incorrect `device_session_epoch` placement. Their pre-refresh copies are preserved under task temp storage. On a fresh loopback-only MySQL 8.4.11 instance, the official migration runner applied 0001–0059 (57 migrations) to one disposable database; `verify-mysql.mjs` applied and certified all 57 from zero in a second. Full structural introspections of both databases were `EXACT_MATCH`. The official `npm run db:schema:snapshot` regenerated the two artifacts from the first migrated database. Artifact checks confirm 92 SQL tables and 92 manifest tables; the epoch appears on `families` only.
+SAFETY = Only local disposable databases were used; no production credentials, live DB, seed data or application rows were used. MySQL was shut down and the task-owned data directory removed; original snapshots and both structural introspections remain in task temp storage.
+NEXT_ACTION = Continue TODO-12/14; publish the five mission artifacts only when approved commit review is available, without touching excluded `.vscode` or root `0` paths.
+
+### 2026-09-28 01:27 UTC — status report rechecked; canonical TODO-20 summary corrected
+
+REPORT = The supplied report's detailed checkpoint is older than the already-recorded `35f6c022`/run `36360087042` result. The reported Parent owner-acceptance failure at `0daf660` was corrected and the later exact-head run passed. Its claim that live `pca_pro` remained through 0050 is superseded: fresh preflight, migration 0059, exact schema/grant postflight, and 90 readable-table row-count preservation are recorded above. Treat the supplied percentage table and 0050 live state as historical; do not reopen completed gates based on that snapshot.
+LOCAL_SNAPSHOT_VALIDATION = The official schema-drift suite passed 5/5 in serial Windows mode after the default worker launch returned `spawn EPERM`; both generated snapshots were rebuilt from migrated MySQL 8.4.11, and the two independent disposable database introspections matched exactly.
+CURRENT_GIT = Local HEAD is `1056546e6a43eaeb8886e79afe5d584af8154995`, parent `35f6c022f017e04aecbf3573394bf20f90d12489`; the available `origin/pca-dev` tracking ref remains `35f6c022`. No fresh remote update could be established through the configured proxy this turn. One local docs-only commit and current mission artifacts remain unpublished; `.vscode/` and root `0` remain untouched.
+NEXT_ACTION = Continue TODO-12 and TODO-14 from current source evidence. Keep TODO-20 PASS and Platform on `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-28 01:31 UTC — TODO-12 policy-route boundary reconfirmed
+
+SOURCE_REVIEW = `childPolicyRoutes.ts` checks Parent session/family role, CSRF, actor-device bearer and `ParentActionAuthorizationService`; the production resolver is `UnavailableTrustSetRoleResolver`, which returns `NO_TRUST_SET`. `webRuleRoutes.ts` checks for its optional service and returns `503 not_configured`; `main.ts` deliberately omits readable rule storage pending reviewed encrypted storage/delivery. These are real crypto/authority gates, not routes to unblock with a session-role shortcut.
+NEXT_ACTION = Continue TODO-14 route/action evidence and TODO-15 device-security review while retaining the TODO-12 gates. No source or test files changed in this review.
+
+### 2026-09-28 01:37 UTC — Parent route contract map refreshed
+
+TODO14_SOURCE_MAP = Rebuilt backend handler locations from current `backend/src/http/routes/**/*.ts`; verified all 34 mapped Parent Web client source references point to live non-comment source and all handler line references to `app.<method>` declarations. The inventory contains 52 Parent handler declarations and 43 unique paths. Seven route paths lack a matching Parent Web call path; these include dormant/unavailable surfaces and remain explicitly listed in the JSON artifact.
+LIMIT = The source map does not establish whether a given 401/403 is expected during integrated use. `UNEXPECTED_401`, `UNEXPECTED_403`, aggregate `AUTHORITY_UNAVAILABLE`, and Genesis/browser-trust aggregate counts remain NOT_YET_PROVEN. No test was run and no product source was changed.
+NEXT_ACTION = Continue the runtime Parent route/action audit and keep TODO-14 IN_PROGRESS until those aggregate counts have direct integrated evidence.
+
+### 2026-09-28 01:40 UTC — session revocation exposure clarified
+
+TODO11 = Current-session logout and backend revoke-all are implemented; `routes.test.mjs` covers CSRF and post-revocation invalidation. Current Parent Web `ServiceAuthClient` and profile menu expose only current-session sign-out. Therefore cross-browser session revocation is not a Parent UI capability at this checkpoint; the `sessions/revoke-all` route stays in the unmapped route inventory. TODO-11's browser-trust/login-assurance criterion remains PASS.
+NEXT_ACTION = Keep the client exposure gap visible in the route inventory; continue TODO-14 runtime authorization evidence.
+
+### 2026-09-28 01:45 UTC — Parent all-session revocation exposed in Settings
+
+IMPLEMENTATION = Added `ServiceAuthClient.revokeAllSessions()` to real/dev clients. The real client posts with HttpOnly session cookies and double-submit CSRF, maps 401/403/network failures honestly, and accepts the backend's 204 only as success. Parent Settings now explains scope, requires a second confirmation, reports failures, clears the local MFA reminder dismissal, and navigates to `/login` after success. English and Arabic copy were added.
+VALIDATION = Added focused real-client request/error tests and Settings confirmation/success/failure tests. They are not yet run. `parent_api_contract_matrix.json` now maps 35 current Parent Web paths; the seven unmapped routes from the prior snapshot are reduced to six.
+NEXT_ACTION = Run focused Parent Web tests, typecheck and lint; update evidence from the actual result before considering this follow-up complete.
+
+### 2026-09-28 01:51 UTC — Status report reconciled; session revocation validation passed
+
+REPORT = The attachment's `0daf660` owner-acceptance failure and live migration-0050 snapshot are superseded by the later exact-head CI PASS `36360087042` at `35f6c022` and verified `pca_pro` migration 0059 postflight already recorded above. Its later `399304c`/`36356186069` claims describe an earlier successful checkpoint; the current fetched remote ref is `35f6c022`. No localhost owner acceptance, Platform activation, deployment, or production UAT is claimed.
+LOCAL_VALIDATION = Focused Parent Web tests for real session client, Settings confirmation/failure/success, and Settings RTL passed 42/42. Parent Web typecheck and touched-file ESLint passed. Initial sandbox Vitest startup returned Windows `spawn EPERM`; the bounded elevated retry completed successfully. `git diff --check` and route-matrix JSON parsing passed.
+IMPLEMENTATION = Parent Settings now exposes the existing CSRF-protected revoke-all endpoint with a second confirmation, accurate error handling, and sign-in redirect. This working-tree change is not committed, has no exact-head CI evidence yet, and does not change TODO-12 authority boundaries or TODO-14 aggregate runtime counts.
+GIT = Local HEAD remains `1056546e6a43eaeb8886e79afe5d584af8154995`; fetched `origin/pca-dev` remains `35f6c022f017e04aecbf3573394bf20f90d12489`. Mission source and ledger changes remain uncommitted; unrelated schema snapshots, `.vscode/`, and root `0` remain excluded from publication.
+NEXT_ACTION = Continue TODO-12/14 from source/runtime evidence, keep TODO-15 crypto/trust and TODO-18 owner acceptance open, and preserve Platform `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-28 01:54 UTC — fresh remote and TODO board verification
+
+GIT = `git fetch origin pca-dev` succeeded. `origin/pca-dev` and `git ls-remote origin refs/heads/pca-dev` both resolve to `35f6c022f017e04aecbf3573394bf20f90d12489`; local HEAD `1056546e6a43eaeb8886e79afe5d584af8154995` is a descendant with one docs-only commit. Local and remote heads do not match yet. Mission implementation/ledger changes remain uncommitted; unrelated dirty schema snapshots, `.vscode/`, and root `0` remain excluded.
+ROUTE_MAP = Corrected the revoke-all source reference to the live fetch call at `realServiceAuthClient.ts:489`; route matrix JSON parses and reports 35 mapped Parent Web call paths. Aggregate TODO-14 runtime counts remain NOT_YET_PROVEN.
+BOARD = Canonical TODO-01…TODO-23 statuses now match the current Parent master ledger for the reconciled rows. TODO-17 remains PASS only for the integrated `35f6c022` checkpoint; local Settings changes remain subject to their focused evidence and a future exact-head CI run.
+NEXT_ACTION = Continue TODO-12/14 on the existing authority boundaries. Maintain `HOLD_PARENT_DEPENDENCY`; do not infer owner localhost acceptance or release readiness from the supplied report.
+
+### 2026-09-28 01:57 UTC — remote verification retry limitation
+
+REMOTE = `git fetch origin pca-dev` succeeded and updated the tracking ref to `35f6c022f017e04aecbf3573394bf20f90d12489`. A `git ls-remote` call also succeeded at 01:53 UTC with the same SHA; a later repeat failed through the configured localhost proxy. Treat the fetched ref and successful earlier server-ref result as the current verified remote evidence; no push was attempted.
+WORKTREE = `git diff --check` passes; route matrix JSON parses and maps the revoke-all call to `realServiceAuthClient.ts:489`. Parent Web tests remain 42/42, typecheck/lint PASS. Exact-head CI remains only proven at the prior `35f6c022` checkpoint.
+NEXT_ACTION = Continue TODO-12/14; retry remote verification when needed before publication and preserve the existing review boundary.
+
+### 2026-09-28 02:00 UTC — revoke-all added to certified browser journey
+
+E2E_CHANGE = Extended `parent-web/e2e-real/acceptance-flow.spec.ts` to visit Settings at the end of the real Parent journey, confirm sign-out-everywhere, require the real `POST /api/parent/sessions/revoke-all` response to be 204, and verify redirect to `/login`. This uses the disposable MFA Parent and validates the actual UI-to-API contract.
+LOCAL_VALIDATION = Playwright test collection found both real-backend specs; touched-file ESLint passed. The certified real-backend test body was not run locally because its disposable MySQL/backend and provisioned account requirements are not available in this checkout. Exact-head CI for this uncommitted change is pending.
+TODO17 = Prior exact-head run `36360087042` remains PASS for source head `35f6c022`; do not extend that result to this later uncommitted browser assertion.
+NEXT_ACTION = Continue TODO-12/14 implementation/evidence while preserving the Platform hold; include this E2E assertion in the next authorized published checkpoint and inspect its exact-head CI result.
+
+### 2026-09-28 02:01 UTC — authenticated journey status accounting added
+
+TODO14_CHANGE = The real Parent owner-acceptance journey now records authenticated `/api/parent/*` and `/v1/families/*` 401/403 responses after sign-in and asserts zero before intentional session revocation. This measures only the named journey; it does not prove route-wide/global aggregate counts or authority-unavailable totals.
+VALIDATION = Playwright collected both real-backend specs, ESLint passed, and standalone strict TypeScript compilation passed on `acceptance-flow.spec.ts`. The test body was not run locally. The new counter/assertion therefore remains unproven until real-backend execution on an integrated checkpoint.
+NEXT_ACTION = Continue TODO-12 and the wider TODO-14 source/action work; keep the aggregate acceptance fields NOT_YET_PROVEN until an executed integrated campaign produces evidence.
+
+### 2026-09-28 02:16 UTC — Parent acceptance and revoke-all passed on disposable MySQL
+
+LOCAL_RUN = Added a guarded `parent-owner-acceptance-real-e2e` runner target using only a loopback MySQL URL, `NODE_ENV=test`, a random run-owned database, private fixture credentials, and a separate disposable backend. MySQL 8.4.11 applied all 57 migrations. Playwright certified result PASS: 2 expected tests, 0 skipped, 0 unexpected, 0 flaky. The owner flow's authenticated `/api/parent/*` and `/v1/families/*` 401/403 counter was zero; revoke-all returned 204 and redirected to `/login`; the separate cross-family isolation assertions also passed. Runner cleanup removed the random database; the separate loopback MySQL instance and task-owned OS-temp datadir were stopped and removed.
+HARNESS_CORRECTION = First real attempt exposed the existing 60/minute per-IP budget at the additional revoke request and in the cross-family second flow. The E2E-only backend now trusts only the loopback Vite proxy and uses a separate TEST-NET client address for the revoke request. Production rate-limit settings and trust configuration are unchanged. The corrected real-backend campaign then passed.
+VALIDATION = Backend build and campaign PASS; Parent Web typecheck, touched-file ESLint, strict standalone E2E TypeScript compilation, Playwright collection, route-matrix JSON and `git diff --check` PASS. Backend workspace has no ESLint binary; the disposable runner executed and `node --check` passed. TODO-14's zero 401/403 is proven for this campaign only; global all-routes counts and authority-unavailable totals remain NOT_YET_PROVEN.
+GIT = Local HEAD remains `1056546e`; fresh `origin/pca-dev` remains `35f6c022`. These source/harness changes are uncommitted, so the earlier exact-head run `36360087042` does not cover them. No publication or production mutation occurred.
+NEXT_ACTION = Continue TODO-12/14 and TODO-15 source/security gates; then publish the reviewed exact paths and require exact-head CI. Keep TODO-18 owner acceptance and Platform `HOLD_PARENT_DEPENDENCY` unchanged.

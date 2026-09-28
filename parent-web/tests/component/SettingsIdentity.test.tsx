@@ -5,7 +5,7 @@ import i18n, { applyDocumentDirection } from '../../src/i18n';
 import Settings from '../../src/pages/Settings';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
-const { profile, mockGetIdentity, mockUpdateNames, mockClients } = vi.hoisted(() => {
+const { profile, mockGetIdentity, mockUpdateNames, mockRevokeAllSessions, mockClients } = vi.hoisted(() => {
   const currentProfile = {
     firstName: null as string | null,
     lastName: null as string | null,
@@ -20,10 +20,12 @@ const { profile, mockGetIdentity, mockUpdateNames, mockClients } = vi.hoisted(()
     firstName,
     lastName,
   }));
+  const revokeAllSessions = vi.fn().mockResolvedValue(undefined);
   const clients = {
     serviceAuth: {
       getSession: vi.fn().mockResolvedValue(null),
       stepUp: vi.fn(),
+      revokeAllSessions,
     },
     parentPreferences: {
       get: vi.fn().mockResolvedValue({ language: 'en' }),
@@ -32,7 +34,7 @@ const { profile, mockGetIdentity, mockUpdateNames, mockClients } = vi.hoisted(()
     parentIdentity: { get: getIdentity, updateNames },
     isFixtureBacked: true,
   };
-  return { profile: currentProfile, mockGetIdentity: getIdentity, mockUpdateNames: updateNames, mockClients: clients };
+  return { profile: currentProfile, mockGetIdentity: getIdentity, mockUpdateNames: updateNames, mockRevokeAllSessions: revokeAllSessions, mockClients: clients };
 });
 
 vi.mock('../../src/api/client', () => ({ getApiClients: () => mockClients }));
@@ -41,6 +43,7 @@ afterEach(async () => {
   cleanup();
   mockGetIdentity.mockClear();
   mockUpdateNames.mockClear();
+  mockRevokeAllSessions.mockReset().mockResolvedValue(undefined);
   await i18n.changeLanguage('en');
   applyDocumentDirection('en');
 });
@@ -92,5 +95,46 @@ describe('Settings identity profile', () => {
     expect(await screen.findByLabelText('الاسم الأول')).toHaveAttribute('dir', 'auto');
     expect(screen.getByLabelText('اسم العائلة')).toHaveAttribute('dir', 'auto');
     expect(screen.getByText(profile.email).closest('bdi')).toHaveAttribute('dir', 'auto');
+  });
+});
+
+describe('Parent session management', () => {
+  const assignMock = vi.fn();
+  const originalLocation = window.location;
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+  });
+
+  it('requires explicit confirmation before revoking all sessions, then navigates to sign-in', async () => {
+    const user = userEvent.setup();
+    assignMock.mockReset();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, assign: assignMock } });
+    renderWithProviders(<Settings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out all sessions' }));
+    expect(screen.getByRole('status')).toHaveTextContent('This will sign you out here and on every other browser.');
+    expect(mockRevokeAllSessions).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/This will sign you out here/)).not.toBeInTheDocument();
+    expect(mockRevokeAllSessions).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Sign out all sessions' }));
+    await user.click(screen.getByRole('button', { name: 'Sign out everywhere' }));
+    expect(mockRevokeAllSessions).toHaveBeenCalledOnce();
+    expect(assignMock).toHaveBeenCalledWith('/login');
+  });
+
+  it('keeps the confirmation visible and reports failure when revoke-all is rejected', async () => {
+    const user = userEvent.setup();
+    mockRevokeAllSessions.mockRejectedValueOnce(new Error('SESSION_EXPIRED'));
+    renderWithProviders(<Settings />);
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out all sessions' }));
+    await user.click(screen.getByRole('button', { name: 'Sign out everywhere' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('We could not sign out all sessions.');
+    expect(screen.getByRole('button', { name: 'Sign out everywhere' })).toBeEnabled();
   });
 });

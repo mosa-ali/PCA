@@ -27,6 +27,7 @@ if (endpoint(runtimeBaseUrl) !== endpoint(migrationBaseUrl)) {
 const databaseName = `pca_test_codex_${randomUUID().replaceAll('-', '')}`;
 const requestedTarget = process.argv[2] ?? 'all';
 const isParentMfaTarget = requestedTarget === 'parent-mfa-real-e2e';
+const isParentAcceptanceTarget = requestedTarget === 'parent-owner-acceptance-real-e2e';
 const isFullCertifiedTarget = requestedTarget === 'all-certified';
 const targetScript = requestedTarget === 'all'
   ? 'test:db:inner'
@@ -42,10 +43,12 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:platform-admin-auth:inner'
     : requestedTarget === 'parent-real-e2e'
       ? null
+    : isParentAcceptanceTarget
+      ? null
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-real-e2e', 'parent-mfa-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-real-e2e, parent-mfa-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
 const runtimeDatabaseUrl = new URL(runtimeBaseUrl);
 runtimeDatabaseUrl.pathname = `/${databaseName}`;
 const migrationDatabaseUrl = new URL(migrationBaseUrl);
@@ -375,7 +378,7 @@ async function reportSafePlaywrightFailures(reportPath, redactions) {
   }
 }
 
-async function runParentMfaRealE2e(e2eEnv) {
+async function runParentMfaRealE2e(e2eEnv, { onlyAcceptanceFlow = false } = {}) {
   const manifestPath = join(tempDirectory, 'qa-e2e-manifest.json');
   await run(process.execPath, ['--env-file=test.env', '--env-file=test.db.env', 'scripts/provision-e2e-accounts.mjs'], {
     ...e2eEnv,
@@ -463,9 +466,19 @@ async function runParentMfaRealE2e(e2eEnv) {
         E2E_REAL_MFA_SETUP_PARENT_DAILY_GRANT: setupParent.dailyLoginGrant,
       },
     },
+    {
+      spec: 'acceptance-flow.spec.ts',
+      label: 'parent-web real-backend owner acceptance flow',
+      report: 'acceptanceFlow.playwright.json',
+      evidence: 'acceptanceFlow.evidence.json',
+      fixture: {},
+    },
   ];
 
-  for (const suite of suites) {
+  const selectedSuites = onlyAcceptanceFlow
+    ? suites.filter((suite) => suite.spec === 'acceptance-flow.spec.ts')
+    : suites.filter((suite) => suite.spec !== 'acceptance-flow.spec.ts');
+  for (const suite of selectedSuites) {
     throwIfInterrupted();
     await assertParentWebPortClosed();
     const port = await getFreeLoopbackPort();
@@ -538,8 +551,9 @@ async function runParentMfaRealE2e(e2eEnv) {
 }
 
 try {
-  if (isParentMfaTarget) {
-    assertLocalComposeMfaDatabase();
+  if (isParentMfaTarget || isParentAcceptanceTarget) {
+    if (isParentMfaTarget) assertLocalComposeMfaDatabase();
+    if (process.env.NODE_ENV !== 'test') throw new Error('Certified Parent browser E2E requires NODE_ENV=test; refusing any production or ambiguous runtime.');
     // This Playwright config uses reuseExistingServer on fixed port 4002.
     // Refuse before building or touching MySQL if an owner server is present.
     await assertParentWebPortClosed();
@@ -575,14 +589,15 @@ try {
   const childEnv = { ...migrationEnv };
   delete childEnv.PCA_MIGRATION_DATABASE_URL;
   throwIfInterrupted();
-  if (isParentMfaTarget) {
+  if (isParentMfaTarget || isParentAcceptanceTarget) {
     await runParentMfaRealE2e({
       ...childEnv,
       NODE_ENV: 'test',
       PCA_PARENT_MFA_ENC_KEY: randomBytes(32).toString('hex'),
       PLATFORM_ADMIN_MFA_ENC_KEY: randomBytes(32).toString('hex'),
+      ...(isParentAcceptanceTarget ? { PCA_TRUSTED_PROXY_CIDRS: '127.0.0.1' } : {}),
       HOST: '127.0.0.1',
-    });
+    }, { onlyAcceptanceFlow: isParentAcceptanceTarget });
   } else if (isFullCertifiedTarget) {
     await run('npm', ['run', targetScript], childEnv);
     await run(process.execPath, ['--env-file=test.env', '--env-file=test.db.env', 'scripts/run-certified-production-paths.mjs'], migrationEnv);

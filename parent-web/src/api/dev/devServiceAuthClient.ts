@@ -78,6 +78,11 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     setServiceAuthenticated(false);
   }
 
+  async revokeAllSessions(): Promise<void> {
+    await delay();
+    setServiceAuthenticated(false);
+  }
+
   async stepUp(_actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }> {
     await delay(200);
     // Dev stub: always grants after a simulated re-auth prompt handled by the UI.

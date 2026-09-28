@@ -137,7 +137,17 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     // for the next 30-second authenticator window on a slower CI runner.
     test.setTimeout(120_000);
     // 1. login
+    const unexpectedAuthResponses: string[] = [];
+    let monitorAuthenticatedRequests = false;
+    page.on('response', (response) => {
+      if (!monitorAuthenticatedRequests || (response.status() !== 401 && response.status() !== 403)) return;
+      const pathname = new URL(response.url()).pathname;
+      if (pathname.startsWith('/api/parent/') || pathname.startsWith('/v1/families/')) {
+        unexpectedAuthResponses.push(`${response.status()} ${pathname}`);
+      }
+    });
     let usedTotpCounter = await loginWithMfa(page, MFA_EMAIL!, MFA_PASSWORD!, MFA_TOTP_SECRET!);
+    monitorAuthenticatedRequests = true;
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -243,6 +253,28 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Not available yet' })).toBeVisible();
     await expect(page.getByText(/Your children's protected data cannot be opened on this browser yet\./)).toBeVisible();
+    monitorAuthenticatedRequests = false;
+    expect(unexpectedAuthResponses, 'authenticated Parent journey must not hit unexpected 401/403 responses').toEqual([]);
+
+    // Revoke the disposable account's browser sessions through the real
+    // Settings UI. This proves the user-facing confirmation, CSRF-protected
+    // backend request, and sign-in redirect together on the real session.
+    await page.goto('/settings');
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out all sessions' }).click();
+    await expect(page.getByRole('status')).toContainText('This will sign you out here and on every other browser.');
+    // Isolate the final auth request from the journey's per-IP test budget.
+    // The backend trusts this forwarded address only from the loopback Vite
+    // proxy in the disposable E2E server configuration.
+    await page.route('**/api/parent/sessions/revoke-all', (route) => route.continue({
+      headers: { ...route.request().headers(), 'x-forwarded-for': '198.51.100.43' },
+    }));
+    const revokeResponse = page.waitForResponse(
+      (response) => response.url().includes('/api/parent/sessions/revoke-all') && response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Sign out everywhere' }).click();
+    expect((await revokeResponse).status()).toBe(204);
+    await expect(page).toHaveURL(/\/login$/);
   });
 });
 

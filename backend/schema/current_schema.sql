@@ -667,6 +667,7 @@ CREATE TABLE `enrollment_invitations` (
 CREATE TABLE `enrollment_protection_approval_requests` (
   `request_id` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `requested_by_parent_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `child_id` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `device_id` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `operation` varchar(32) COLLATE utf8mb4_bin NOT NULL,
@@ -679,6 +680,7 @@ CREATE TABLE `enrollment_protection_approval_requests` (
   `decided_at` datetime(3) DEFAULT NULL,
   `decision_method` varchar(32) COLLATE utf8mb4_bin DEFAULT NULL,
   `temporary_disable_until` datetime(3) DEFAULT NULL,
+  `decided_by_parent_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `decided_by_device_id` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `decision_action_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `idempotency_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
@@ -686,6 +688,10 @@ CREATE TABLE `enrollment_protection_approval_requests` (
   PRIMARY KEY (`request_id`),
   UNIQUE KEY `enrollment_protection_approval_decision_action_uq` (`decision_action_id`),
   KEY `enrollment_protection_approval_family_state_idx` (`family_id`,`state`,`expires_at`),
+  KEY `enrollment_protection_approval_requested_by_parent_idx` (`requested_by_parent_account_id`),
+  KEY `enrollment_protection_approval_decided_by_parent_idx` (`decided_by_parent_account_id`),
+  CONSTRAINT `enrollment_protection_approval_decided_by_parent_fk` FOREIGN KEY (`decided_by_parent_account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `enrollment_protection_approval_requested_by_parent_fk` FOREIGN KEY (`requested_by_parent_account_id`) REFERENCES `parent_accounts` (`account_id`),
   CONSTRAINT `enrollment_protection_approval_authority_check` CHECK ((`protective_authority_applies` = 1)),
   CONSTRAINT `enrollment_protection_approval_child_id_check` CHECK ((char_length(`child_id`) between 1 and 200)),
   CONSTRAINT `enrollment_protection_approval_decided_device_check` CHECK (((`decided_by_device_id` is null) or (char_length(`decided_by_device_id`) between 1 and 200))),
@@ -843,6 +849,7 @@ CREATE TABLE `families` (
   `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_reference_hash` varbinary(255) NOT NULL,
   `status` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'ACTIVE',
+  `device_session_epoch` int unsigned NOT NULL DEFAULT '1',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `deleted_at` datetime(3) DEFAULT NULL,
   `suspended_at` datetime(3) DEFAULT NULL,
@@ -952,11 +959,12 @@ CREATE TABLE `family_authority_request_challenges` (
   `consumed_at` datetime(3) DEFAULT NULL,
   PRIMARY KEY (`challenge_id`),
   KEY `family_authority_request_challenges_scope_idx` (`service_account_id`,`family_id`,`issued_at`),
+  KEY `family_authority_request_challenges_service_fk` (`service_account_id`),
   CONSTRAINT `family_authority_request_challenges_service_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
   CONSTRAINT `family_authority_request_challenges_digest_check` CHECK ((char_length(`request_digest`) = 43)),
   CONSTRAINT `family_authority_request_challenges_expiry_check` CHECK ((`expires_at` > `issued_at`)),
   CONSTRAINT `family_authority_request_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
-  CONSTRAINT `family_authority_request_challenges_operation_check` CHECK (regexp_like(`operation`,_utf8mb4'^[A-Z][A-Z0-9_]{0,63}$')),
+  CONSTRAINT `family_authority_request_challenges_operation_check` CHECK (regexp_like(`operation`,_ascii'^[A-Z][A-Z0-9_]{0,63}$')),
   CONSTRAINT `family_authority_request_challenges_protocol_check` CHECK ((`protocol_version` = 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -1086,13 +1094,20 @@ CREATE TABLE `parent_account_security_events` (
   PRIMARY KEY (`event_id`),
   KEY `parent_account_security_events_account_idx` (`account_id`,`occurred_at`),
   CONSTRAINT `parent_account_security_events_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
-  CONSTRAINT `parent_account_security_events_type_check` CHECK ((`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED')))
+  CONSTRAINT `parent_account_security_events_type_check` CHECK ((`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'PARENT_LOGIN_SUCCESS',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_accounts
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `email_hash` binary(32) NOT NULL,
+  `first_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `last_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `protected_display_email_ciphertext` varbinary(1280) DEFAULT NULL,
+  `protected_display_email_nonce` binary(12) DEFAULT NULL,
+  `protected_display_email_auth_tag` binary(16) DEFAULT NULL,
+  `phone_number` varchar(16) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `phone_verified_at` datetime(3) DEFAULT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_bin NOT NULL,
   `status` varchar(24) COLLATE utf8mb4_bin NOT NULL DEFAULT 'PENDING_VERIFICATION',
   `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
@@ -1113,8 +1128,12 @@ CREATE TABLE `parent_accounts` (
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
   UNIQUE KEY `parent_accounts_service_account_id_key` (`service_account_id`),
   CONSTRAINT `parent_accounts_account_type_check` CHECK (((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))),
+  CONSTRAINT `parent_accounts_display_email_cipher_pair_check` CHECK ((((`protected_display_email_ciphertext` is null) and (`protected_display_email_nonce` is null) and (`protected_display_email_auth_tag` is null)) or ((`protected_display_email_ciphertext` is not null) and (length(`protected_display_email_ciphertext`) between 1 and 1280) and (`protected_display_email_nonce` is not null) and (`protected_display_email_auth_tag` is not null)))),
   CONSTRAINT `parent_accounts_estimated_child_count_check` CHECK (((`estimated_child_count` is null) or (`estimated_child_count` <= 50))),
   CONSTRAINT `parent_accounts_free_access_mode_check` CHECK (((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))),
+  CONSTRAINT `parent_accounts_identity_names_check` CHECK ((((`first_name` is null) and (`last_name` is null)) or ((`first_name` is not null) and (`last_name` is not null) and (char_length(trim(`first_name`)) between 1 and 128) and (char_length(trim(`last_name`)) between 1 and 128)))),
+  CONSTRAINT `parent_accounts_phone_e164_check` CHECK (((`phone_number` is null) or regexp_like(`phone_number`,_ascii'^[+][1-9][0-9]{7,14}$'))),
+  CONSTRAINT `parent_accounts_phone_verified_pair_check` CHECK (((`phone_number` is not null) or (`phone_verified_at` is null))),
   CONSTRAINT `parent_accounts_status_check` CHECK ((`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))),
   CONSTRAINT `parent_accounts_time_limited_has_duration_check` CHECK (((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))),
   CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null))))
@@ -1239,7 +1258,7 @@ CREATE TABLE `parent_mfa_enrollment_tickets` (
   CONSTRAINT `parent_mfa_enrollment_tickets_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
   CONSTRAINT `parent_mfa_enrollment_tickets_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_mfa_enrollment_tickets_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
-  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_utf8mb4'MFA_SETUP_REQUIRED',_utf8mb4'MFA_RECOVERY')))
+  CONSTRAINT `parent_mfa_enrollment_tickets_purpose_check` CHECK ((`purpose` in (_ascii'MFA_SETUP_REQUIRED',_ascii'MFA_RECOVERY')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_mfa_recovery_codes
@@ -1303,8 +1322,8 @@ CREATE TABLE `parent_mfa_step_up_grants` (
   CONSTRAINT `parent_mfa_step_up_grants_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
   CONSTRAINT `parent_mfa_step_up_grants_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
   CONSTRAINT `parent_mfa_step_up_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
-  CONSTRAINT `parent_mfa_step_up_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
-  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME')))
+  CONSTRAINT `parent_mfa_step_up_grants_hash_check` CHECK (regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes

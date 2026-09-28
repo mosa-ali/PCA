@@ -1,7 +1,7 @@
 {
   "register": "parent_api_contract_matrix",
-  "baseline": "worktree 2026-09-26; local 6a2cc073; origin/pca-dev 9496fb19; read-only assessment",
-  "summary": "30/30 real client paths matched to backend routes; 4 exclusions are comments / declared-unavailable declarations; zero drift",
+  "baseline": "worktree 2026-09-28; local 1056546e; origin/pca-dev tracking ref 35f6c022; generated route declarations from current source",
+  "summary": "35/35 current Parent Web client paths mapped to backend routes; 52 Parent route declarations across 43 unique Parent routes inventoried; 6 declared Parent route paths have no current Parent Web client mapping",
   "rows": [
     {
       "client_call_path": "/api/auth/*",
@@ -33,7 +33,7 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:443"
+          "backend/src/http/routes/parentAccountRoutes.ts:475"
         ]
       ],
       "status": "MATCH"
@@ -49,7 +49,7 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/familyAuditEventRoutes.ts:54"
+          "backend/src/http/routes/familyAuditEventRoutes.ts:45"
         ]
       ],
       "status": "MATCH"
@@ -65,7 +65,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/childRequestRoutes.ts:386"
+          "backend/src/http/routes/childRequestRoutes.ts:364"
         ]
       ],
       "status": "MATCH"
@@ -82,11 +82,11 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/childRequestRoutes.ts:336"
+          "backend/src/http/routes/childRequestRoutes.ts:315"
         ],
         [
           "POST",
-          "backend/src/http/routes/childRequestRoutes.ts:344"
+          "backend/src/http/routes/childRequestRoutes.ts:324"
         ]
       ],
       "status": "MATCH"
@@ -104,15 +104,15 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/webRuleRoutes.ts:154"
+          "backend/src/http/routes/webRuleRoutes.ts:160"
         ],
         [
           "POST",
-          "backend/src/http/routes/webRuleRoutes.ts:176"
+          "backend/src/http/routes/webRuleRoutes.ts:183"
         ],
         [
           "POST",
-          "backend/src/http/routes/webRuleRoutes.ts:219"
+          "backend/src/http/routes/webRuleRoutes.ts:227"
         ]
       ],
       "status": "MATCH"
@@ -129,15 +129,15 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/webRuleRoutes.ts:154"
+          "backend/src/http/routes/webRuleRoutes.ts:160"
         ],
         [
           "POST",
-          "backend/src/http/routes/webRuleRoutes.ts:176"
+          "backend/src/http/routes/webRuleRoutes.ts:183"
         ],
         [
           "POST",
-          "backend/src/http/routes/webRuleRoutes.ts:219"
+          "backend/src/http/routes/webRuleRoutes.ts:227"
         ]
       ],
       "status": "MATCH"
@@ -266,7 +266,7 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/protectionAlertRoutes.ts:59"
+          "backend/src/http/routes/protectionAlertRoutes.ts:48"
         ]
       ],
       "status": "MATCH"
@@ -283,19 +283,19 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:831"
+          "backend/src/http/routes/parentAccountRoutes.ts:827"
         ],
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:839"
+          "backend/src/http/routes/parentAccountRoutes.ts:835"
         ],
         [
           "PATCH",
-          "backend/src/http/routes/parentAccountRoutes.ts:851"
+          "backend/src/http/routes/parentAccountRoutes.ts:847"
         ],
         [
           "DELETE",
-          "backend/src/http/routes/parentAccountRoutes.ts:878"
+          "backend/src/http/routes/parentAccountRoutes.ts:874"
         ]
       ],
       "status": "MATCH"
@@ -321,19 +321,19 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:831"
+          "backend/src/http/routes/parentAccountRoutes.ts:827"
         ],
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:839"
+          "backend/src/http/routes/parentAccountRoutes.ts:835"
         ],
         [
           "PATCH",
-          "backend/src/http/routes/parentAccountRoutes.ts:851"
+          "backend/src/http/routes/parentAccountRoutes.ts:847"
         ],
         [
           "DELETE",
-          "backend/src/http/routes/parentAccountRoutes.ts:878"
+          "backend/src/http/routes/parentAccountRoutes.ts:874"
         ]
       ],
       "status": "MATCH"
@@ -349,7 +349,7 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:626"
+          "backend/src/http/routes/parentAccountRoutes.ts:663"
         ]
       ],
       "status": "MATCH"
@@ -366,11 +366,11 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:399"
+          "backend/src/http/routes/parentAccountRoutes.ts:431"
         ],
         [
           "PATCH",
-          "backend/src/http/routes/parentAccountRoutes.ts:414"
+          "backend/src/http/routes/parentAccountRoutes.ts:446"
         ]
       ],
       "status": "MATCH"
@@ -378,7 +378,8 @@
     {
       "client_call_path": "/api/parent/login",
       "client_sites": [
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:290"
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:294",
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:337"
       ],
       "backend_routes": [
         "/api/parent/login",
@@ -387,11 +388,11 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:342"
+          "backend/src/http/routes/parentAccountRoutes.ts:345"
         ],
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:381"
+          "backend/src/http/routes/parentAccountRoutes.ts:393"
         ]
       ],
       "status": "MATCH"
@@ -407,7 +408,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:602"
+          "backend/src/http/routes/parentAccountRoutes.ts:639"
         ]
       ],
       "status": "MATCH"
@@ -439,7 +440,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:518"
+          "backend/src/http/routes/parentAccountRoutes.ts:550"
         ]
       ],
       "status": "MATCH"
@@ -447,7 +448,7 @@
     {
       "client_call_path": "/api/parent/mfa/enrollment/start",
       "client_sites": [
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:335"
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:365"
       ],
       "backend_routes": [
         "/api/parent/mfa/enrollment/start"
@@ -455,7 +456,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:500"
+          "backend/src/http/routes/parentAccountRoutes.ts:532"
         ]
       ],
       "status": "MATCH"
@@ -471,7 +472,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:556"
+          "backend/src/http/routes/parentAccountRoutes.ts:593"
         ]
       ],
       "status": "MATCH"
@@ -487,7 +488,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:541"
+          "backend/src/http/routes/parentAccountRoutes.ts:578"
         ]
       ],
       "status": "MATCH"
@@ -495,9 +496,8 @@
     {
       "client_call_path": "/api/parent/mfa/step-up",
       "client_sites": [
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:26",
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:399",
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:420"
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:429",
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:450"
       ],
       "backend_routes": [
         "/api/parent/mfa/step-up"
@@ -505,7 +505,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:580"
+          "backend/src/http/routes/parentAccountRoutes.ts:617"
         ]
       ],
       "status": "MATCH"
@@ -522,11 +522,11 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:677"
+          "backend/src/http/routes/parentAccountRoutes.ts:714"
         ],
         [
           "PATCH",
-          "backend/src/http/routes/parentAccountRoutes.ts:690"
+          "backend/src/http/routes/parentAccountRoutes.ts:727"
         ]
       ],
       "status": "MATCH"
@@ -542,7 +542,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:216"
+          "backend/src/http/routes/parentAccountRoutes.ts:219"
         ]
       ],
       "status": "MATCH"
@@ -558,7 +558,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:289"
+          "backend/src/http/routes/parentAccountRoutes.ts:292"
         ]
       ],
       "status": "MATCH"
@@ -574,7 +574,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:315"
+          "backend/src/http/routes/parentAccountRoutes.ts:318"
         ]
       ],
       "status": "MATCH"
@@ -582,11 +582,8 @@
     {
       "client_call_path": "/api/parent/session",
       "client_sites": [
-        "parent-web\\src\\api\\client.ts:289",
-        "parent-web\\src\\api\\real\\realFamilyAuthorityGateway.ts:55",
-        "parent-web\\src\\api\\real\\realParentRuntimeSyncClient.ts:126",
-        "parent-web\\src\\api\\real\\realParentRuntimeSyncClient.ts:19",
-        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:228"
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:232",
+        "parent-web\\src\\api\\real\\realBillingClient.ts:97"
       ],
       "backend_routes": [
         "/api/parent/session"
@@ -594,7 +591,7 @@
       "backend_handlers": [
         [
           "GET",
-          "backend/src/http/routes/parentAccountRoutes.ts:385"
+          "backend/src/http/routes/parentAccountRoutes.ts:417"
         ]
       ],
       "status": "MATCH"
@@ -610,7 +607,7 @@
       "backend_handlers": [
         [
           "POST",
-          "backend/src/http/routes/parentAccountRoutes.ts:261"
+          "backend/src/http/routes/parentAccountRoutes.ts:264"
         ]
       ],
       "status": "MATCH"
@@ -624,6 +621,367 @@
       "backend_routes": [],
       "backend_handlers": [],
       "status": "EXCLUDED_COMMENT_OR_DECLARED_UNAVAILABLE"
+    },
+    {
+      "client_call_path": "/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/eye-protection",
+      "client_sites": [
+        "parent-web\\src\\api\\real\\realParentFamilyDataGateway.ts:188"
+      ],
+      "backend_routes": [
+        "/api/parent/families/:familyId/children/:childProfileId/eye-protection"
+      ],
+      "backend_handlers": [
+        [
+          "POST",
+          "backend/src/http/routes/eyeProtectionRoutes.ts:134"
+        ]
+      ],
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/api/parent/families/${encodeURIComponent(familyId)}/administration-pin",
+      "client_sites": [
+        "parent-web\\src\\api\\real\\realProtectionAdministrationActions.ts:122",
+        "parent-web\\src\\api\\real\\realProtectionAdministrationActions.ts:129"
+      ],
+      "backend_routes": [
+        "/api/parent/families/:familyId/administration-pin"
+      ],
+      "backend_handlers": [
+        [
+          "GET",
+          "backend/src/http/routes/removalDecisionRoutes.ts:437"
+        ],
+        [
+          "POST",
+          "backend/src/http/routes/removalDecisionRoutes.ts:450"
+        ]
+      ],
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/api/parent/families/${encodeURIComponent(familyId)}/removal-decisions",
+      "client_sites": [
+        "parent-web\\src\\api\\real\\realProtectionAdministrationActions.ts:139",
+        "parent-web\\src\\api\\real\\realProtectionAdministrationActions.ts:154"
+      ],
+      "backend_routes": [
+        "/api/parent/families/:familyId/removal-decisions"
+      ],
+      "backend_handlers": [
+        [
+          "GET",
+          "backend/src/http/routes/removalDecisionRoutes.ts:228"
+        ],
+        [
+          "POST",
+          "backend/src/http/routes/removalDecisionRoutes.ts:252"
+        ]
+      ],
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/api/parent/families/${encodeURIComponent(familyId)}/removal-decisions/${encodeURIComponent(requestId)}/decide/local-pin",
+      "client_sites": [
+        "parent-web\\src\\api\\real\\realProtectionAdministrationActions.ts:189"
+      ],
+      "backend_routes": [
+        "/api/parent/families/:familyId/removal-decisions/:requestId/decide/local-pin"
+      ],
+      "backend_handlers": [
+        [
+          "POST",
+          "backend/src/http/routes/removalDecisionRoutes.ts:307"
+        ]
+      ],
+      "status": "MATCH"
+    },
+    {
+      "client_call_path": "/api/parent/sessions/revoke-all",
+      "client_sites": [
+        "parent-web\\src\\api\\real\\realServiceAuthClient.ts:489"
+      ],
+      "backend_routes": [
+        "/api/parent/sessions/revoke-all"
+      ],
+      "backend_handlers": [
+        [
+          "POST",
+          "backend/src/http/routes/parentAccountRoutes.ts:691"
+        ]
+      ],
+      "status": "MATCH"
     }
-  ]
+  ],
+  "source_route_inventory": [
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/schedule-policy",
+      "handler": "backend/src/http/routes/childPolicyRoutes.ts:137"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/child-requests",
+      "handler": "backend/src/http/routes/childRequestRoutes.ts:315"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/child-requests/:requestId/decide",
+      "handler": "backend/src/http/routes/childRequestRoutes.ts:324"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/bonus-time/grant",
+      "handler": "backend/src/http/routes/childRequestRoutes.ts:364"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke",
+      "handler": "backend/src/http/routes/childRequestRoutes.ts:402"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/bonus-time/active-grants",
+      "handler": "backend/src/http/routes/childRequestRoutes.ts:425"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/dashboard",
+      "handler": "backend/src/http/routes/dashboardRoutes.ts:46"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/eye-protection",
+      "handler": "backend/src/http/routes/eyeProtectionRoutes.ts:114"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/eye-protection",
+      "handler": "backend/src/http/routes/eyeProtectionRoutes.ts:134"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/audit-events",
+      "handler": "backend/src/http/routes/familyAuditEventRoutes.ts:45"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/members/invitations",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:171"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/members/invitations",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:180"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/members/invitations/:invitationId/revoke",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:210"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/members/invitations/:invitationId/role",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:232"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/members/:accountId/remove",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:257"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/member-invitations/:invitationId/accept",
+      "handler": "backend/src/http/routes/familyMemberRoutes.ts:282"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/register",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:219"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/verify-email",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:264"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/request-password-reset",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:292"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/reset-password",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:318"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/login",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:345"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/login/step-up",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:393"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/session",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:417"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/identity",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:431"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/parent/identity",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:446"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/csrf",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:475"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/mfa/enrollment/start",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:532"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/mfa/enrollment/confirm",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:550"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/mfa/recovery/request",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:578"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/mfa/recovery/complete",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:593"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/mfa/step-up",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:617"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/logout",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:639"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/free-access-status",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:663"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/sessions/revoke-all",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:691"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/preferences",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:714"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/parent/preferences",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:727"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/safe-zones",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:827"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/safe-zones",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:835"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/parent/families/:familyId/safe-zones/:zoneId",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:847"
+    },
+    {
+      "method": "DELETE",
+      "route": "/api/parent/families/:familyId/safe-zones/:zoneId",
+      "handler": "backend/src/http/routes/parentAccountRoutes.ts:874"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/protection-alerts",
+      "handler": "backend/src/http/routes/protectionAlertRoutes.ts:48"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/removal-decisions",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:228"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:239"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/removal-decisions",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:252"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId/decide/local-pin",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:307"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:336"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:371"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/administration-pin",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:437"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/administration-pin",
+      "handler": "backend/src/http/routes/removalDecisionRoutes.ts:450"
+    },
+    {
+      "method": "GET",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/web-rules",
+      "handler": "backend/src/http/routes/webRuleRoutes.ts:160"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/web-rules",
+      "handler": "backend/src/http/routes/webRuleRoutes.ts:183"
+    },
+    {
+      "method": "POST",
+      "route": "/api/parent/families/:familyId/children/:childProfileId/web-rules/remove",
+      "handler": "backend/src/http/routes/webRuleRoutes.ts:227"
+    }
+  ],
+  "unmapped_parent_route_paths": [
+    "/api/parent/families/:familyId/bonus-time/active-grants",
+    "/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke",
+    "/api/parent/families/:familyId/dashboard",
+    "/api/parent/families/:familyId/removal-decisions/:requestId",
+    "/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery",
+    "/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed"
+  ],
+  "authority_scope": "Route mapping only. This inventory does not claim runtime authorization acceptance or aggregate unexpected 401/403/authority-unavailable counts."
 }
