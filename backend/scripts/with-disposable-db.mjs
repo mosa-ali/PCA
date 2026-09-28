@@ -41,6 +41,8 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:parent-auth:inner'
     : requestedTarget === 'platform-admin-auth'
       ? 'test:db:platform-admin-auth:inner'
+    : requestedTarget === 'parent-route-audit'
+      ? 'test:db:parent-route-audit:inner'
     : requestedTarget === 'parent-real-e2e'
       ? null
     : isParentAcceptanceTarget
@@ -48,7 +50,10 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'parent-route-audit', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, parent-route-audit, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (requestedTarget === 'parent-route-audit' && !process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) {
+  throw new Error('parent-route-audit requires PCA_PARENT_ROUTE_SCENARIO_OUT so the campaign always produces its evidence report.');
+}
 const runtimeDatabaseUrl = new URL(runtimeBaseUrl);
 runtimeDatabaseUrl.pathname = `/${databaseName}`;
 const migrationDatabaseUrl = new URL(migrationBaseUrl);

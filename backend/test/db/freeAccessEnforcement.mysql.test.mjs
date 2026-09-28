@@ -12,7 +12,7 @@ if (!process.env.PLATFORM_ADMIN_MFA_ENC_KEY) process.env.PLATFORM_ADMIN_MFA_ENC_
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
@@ -33,8 +33,15 @@ import { hashAdminEmail } from '../../dist/platformadmin/auth/emailHash.js';
 import { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../../dist/platformadmin/auth/totp.js';
 import { LoggingAlertAdapter } from '../../dist/platformadmin/auth/alertPort.js';
 import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
+
+const FREE_ACCESS_ROUTE = '/api/parent/free-access-status';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 const authRepository = new MySqlPlatformAdminAuthRepository();
 const accountService = new PlatformAdminAccountService(authRepository);
@@ -237,6 +244,7 @@ test('HTTP: GET /api/parent/free-access-status returns the derived status for a 
     const cookieHeader = `pca_family_session=${account.rawSessionToken}`;
     const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status', headers: { cookie: cookieHeader } });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'mysql_free_access_status_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response, evidenceTier: 'MYSQL_HTTP' });
     const body = response.json();
     assert.ok(['ACTIVE', 'PERPETUAL', 'EXPIRED'].includes(body.status));
   } finally {
@@ -250,6 +258,7 @@ test('HTTP: GET /api/parent/free-access-status without a session cookie is 401',
   try {
     const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status' });
     assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'mysql_free_access_status_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response, evidenceTier: 'MYSQL_HTTP' });
   } finally {
     await app.close();
   }

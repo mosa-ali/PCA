@@ -5,14 +5,15 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 19:45 UTC
-VALIDATED_SOURCE_HEAD = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (exact-head Quality Gates run 36472978551 SUCCESS 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 6b0ea0f446c45b7db9ce6b310b35641987c1620d (exact-head run 36472978551 SUCCESS 27/27)
+LAST_UPDATED_UTC = 2026-09-28 20:50 UTC
+SOURCE_CHECKPOINT_SHA = 722f6710655f7054d53f71d2f4b17eae26578eaf (last independently verified remote head; exact-head Quality Gates run 36473982958 SUCCESS 27/27)
+CURRENT_REMOTE_HEAD_AT_WAVE_START = 722f6710655f7054d53f71d2f4b17eae26578eaf (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
+WAVE_CONTENT_SHA = reported to the owner with the Wave-2 report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
+EXACT_HEAD_CI_SHA = reported to the owner with the Wave-2 report (same reason)
 LOCAL_UNCOMMITTED_CHANGE = None; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = STOP for owner review. Keep global route/action aggregates NOT_YET_PROVEN; do not begin TODO-10/12/15 until the owner authorizes the next wave, and preserve owner/Platform gates.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-10 carries a coordinator PASS recommendation pending owner promotion; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
+NEXT_ACTION = STOP for owner review of the Wave-2 integrated evidence. Do not begin TODO-12/15 or Platform work; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN, and preserve owner gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -408,8 +409,9 @@ DONE_WHEN = email OTP + TOTP-if-enrolled flow works and successful browser becom
 STATUS = READY_FOR_INTEGRATION  
 OWNER = Coordinator  
 FILES = Parent auth, provisioning, authority, routes, UI and tests  
-EVIDENCE = Prior source review found no ordinary Parent Genesis runtime dependency; provisioning creates no Genesis authority/device rows.  
-BLOCKER = Complete route/action audit remains in TODO-14.  
+EVIDENCE = Complete Wave-2 source audit + integrated route evidence: zero ordinary-Parent Genesis dependencies. `parent_genesis_challenges`/`parent_genesis_step_up_authorizations` are referenced only by `schema.ts` (retained real objects awaiting a separately-authorized cleanup migration; PCA-DEC-037 retired them and "nothing writes them any more"), and no `/api/parent/genesis/*` route declaration exists (the HTTP suite asserts 404 for all four former paths). `attemptFamilyGenesis` survives only as a comment in `familymembers/*`; former Genesis/device-signature gates on billing/commercial authority are documented as replaced by operation-scoped TOTP step-up; remaining `genesis` identifiers belong to the family-owner attestation chain (`family_authority_genesis_anchors`, `FamilyTrustSetEngine` genesis-epoch semantics) and are CHILD_DEVICE_SECURITY_LEGITIMATE, not Parent authority. The integrated campaign observed `GENESIS_BLOCKED_NORMAL_ACTIONS = 0` with no scenario requiring Genesis; provisioning creates no Genesis authority/device rows.
+BLOCKER = None for the audit itself; formal PASS promotion is the owner/reviewer decision, and a future cleanup migration for the two retired tables is separately authorized only.
+RECOMMENDED_STATUS = PASS (coordinator recommendation: zero ordinary-Parent Genesis runtime dependency proven by complete source audit plus integrated route evidence)
 DONE_WHEN = ordinary Parent runtime has zero Genesis dependency
 
 ### TODO-11 — Migrate Trusted Browser away from family authority
@@ -444,14 +446,24 @@ DONE_WHEN = classified high-risk actions require fresh TOTP
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Parent backend routes/pages/actions and authority matrix  
-EVIDENCE = Refreshed `docs/pre_production_assessment/pca_parent_platform/parent_api_contract_matrix.json` against current source: 35/35 Parent Web client paths map to handlers, with 52 Parent route declarations across 43 unique Parent paths inventoried. All six unmapped paths have explicit dispositions. The crosswalk maps all declarations to handlers, route-family suites and direct HTTP status assertions (52/52). The removal-decision detail route now has same-family success plus indistinguishable unknown/cross-family 404 coverage; enrollment confirm has an explicit 200 assertion. Bounded route/action campaign passed 154/154. The owner real-backend journey counts zero unexpected 401/403/429 only within that measured journey. These are not global aggregates. Local build and focused HTTP tests passed 24/24. Exact-head run 36383400891 passed 27/27 at `ce296483`, but does not cover these working-tree edits.
-BLOCKER = Global unexpected status counts and authority-unavailable totals remain NOT_YET_PROVEN. Define a disposable collector that separates expected denials, unexpected 401/403/other errors, and known authority/service/crypto outcomes. Schedule-policy/Web Rules Trust Set/encrypted-storage boundaries, typed actor attribution, and signed E2EE configurable-policy implementation remain gated; PCA-DEC-028 forbids plaintext ledger durability.
+BOUNDED_ROUTE_DECLARATION_COVERAGE = 52/52 declarations (138 bounded scenarios; coverage proven by exact method+route inventory-key comparison, never row counts; zero unexpected 401/403/other in the bounded slice)
+DATABASE_BACKED_INTEGRATED_EVIDENCE = 28/52 declarations via the run-owned disposable-MySQL campaign (`npm run test:db:parent-route-audit`; 71 matched scenarios: 32 allow, 32 expected denial, 7 validation/protocol; zero unexpected 401/403/other; collector report schemaVersion 3 with per-tier counts and `declarationsWithoutIntegratedEvidence`)
+INTEGRATED_REQUIRED_AND_PROVEN = 28
+INTEGRATED_REQUIRED_BUT_MISSING = 12 (family-member invitations/revoke/role/remove/accept ×6; removal-decision list/detail/create/local-pin plus administration-pin GET/POST ×6 — production wiring is real MySQL-backed, but no integrated HTTP suite exists yet)
+AUTHORITY_GATED = 6 (schedule-policy; child-requests list/decide; bonus-time grant/revoke/active-grants — production `UnavailableTrustSetRoleResolver` / `UnavailableChildProfileMembershipResolver` fail closed)
+SERVICE_GATED = 3 (web-rules GET/POST/remove — production leaves `webRuleService` absent, 503 `not_configured`)
+CRYPTO_GATED = 2 (signed and authorized-recovery decisions)
+OPTIONAL = 1 (dashboard; no Parent Web caller, optional unconsumed read)
+UNREVIEWED = 0; ALL_DECLARATIONS_RECONCILE = YES (each declaration carries exactly one reviewed disposition in the crosswalk's Wave-2 dispositions table)
+EVIDENCE = Refreshed matrix: 35/35 Parent Web client paths map to handlers; 52 declarations / 43 unique paths; the crosswalk anchors all 52 to direct HTTP status assertions and records bounded + integrated tiers. Prior bounded history retained in the checkpoint entries below (154/154 route campaign; 52/52 collector coverage). Wave-2 local validation: integrated campaign PASS 38/38 against a run-owned disposable `pca_test_codex_<uuid>` database (created, migrated, environment verified as MySQL 8.4.11 utf8mb4/utf8mb4_bin with UTC time_zone, dropped afterward); parent-auth disposable campaign PASS 61/0 with 3 expected privileged-mode skips; authority-diagnostics campaign PASS 62/62; bounded collector regression PASS 144/144; full non-DB backend suite PASS 2674/2674.
+BLOCKER = `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN`: 12 required routes lack database-backed HTTP evidence, and 9 declarations are intentionally gated by TODO-12 (schedule-policy Trust Set path; Web Rules encrypted storage/delivery) and TODO-15 (crypto decision routes). Do not activate gated routes or fabricate signatures to raise the percentage; do not add plaintext policy persistence (PCA-DEC-028).
 DONE_WHEN = every required route is audited with proven authority and no normal action blocked by Genesis or browser trust  
-UNEXPECTED_401 = NOT_YET_PROVEN (aggregate)  
-UNEXPECTED_403 = NOT_YET_PROVEN (aggregate)  
-AUTHORITY_UNAVAILABLE = known schedule-policy/web-rule boundaries remain; aggregate count NOT_YET_PROVEN  
-GENESIS_BLOCKED_NORMAL_ACTIONS = 0 in reviewed ordinary Parent source; integrated count NOT_YET_PROVEN  
-TRUSTED_BROWSER_BLOCKED_NORMAL_ACTIONS = 0 in reviewed ordinary Parent source; integrated count NOT_YET_PROVEN
+GLOBAL_AGGREGATE_STATUS = NOT_YET_PROVEN
+UNEXPECTED_401 = 0 bounded / 0 integrated; aggregate NOT_YET_PROVEN
+UNEXPECTED_403 = 0 bounded / 0 integrated; aggregate NOT_YET_PROVEN
+AUTHORITY_UNAVAILABLE = bounded 5 (known schedule-policy and membership boundaries); integrated 0 observed; aggregate count NOT_YET_PROVEN
+GENESIS_BLOCKED_NORMAL_ACTIONS = 0 bounded + integrated; source audit shows 0 normal-authority dependencies (see TODO-10)
+TRUSTED_BROWSER_BLOCKED_NORMAL_ACTIONS = 0 bounded + integrated; source audit shows 0 authority dependencies
 
 ### TODO-15 — Preserve child-device cryptographic security
 
@@ -1094,3 +1106,13 @@ GIT = Commit `6b0ea0f446c45b7db9ce6b310b35641987c1620d` was pushed as a fast-for
 CI = Exact-head Quality Gates run `36472978551` completed SUCCESS 27/27 (zero failed jobs) at `6b0ea0f446c45b7db9ce6b310b35641987c1620d`, including the full disposable-MySQL certification, real-backend browser E2E, Android and iOS jobs.
 TODO14 = The published head validates the 52/52 declaration coverage code and both ledger updates. Coverage is complete in the bounded test-double slice; `globalAggregateStatus` remains NOT_YET_PROVEN and no authority boundary (schedule-policy Trust Set path, Web Rules storage/delivery, crypto-gated signed/recovery decisions) was resolved or bypassed.
 NEXT_ACTION = STOP for owner review. Candidate next waves: (a) run the collector under the guarded disposable-DB integration campaign; (b) TODO-10 Genesis proof closure. Do not begin TODO-12/15 without authorization.
+
+### 2026-09-28 20:50 UTC — Wave 2: database-backed integrated Parent route evidence
+
+IMPLEMENTATION = The status-only collector gained an orthogonal `evidenceTier` dimension (`BOUNDED_HTTP` default / `MYSQL_HTTP` / `REAL_BACKEND`; report schemaVersion 3 with per-tier counts, per-tier declaration sets, unexpected totals, and `declarationsWithoutIntegratedEvidence`), so bounded and integrated totals are never mixed. A new narrow disposable-DB mode `parent-route-audit` (`npm run test:db:parent-route-audit`; inner lane uses `--experimental-test-isolation=none`; refuses to run without the collector output path) reuses `with-disposable-db.mjs` and the `require-owned-disposable-db` ownership guard. New integrated HTTP suite `backend/test/db/parentRouteAuditHttp.mysql.test.mjs` covers the real register→verify→login lifecycle, identity/preferences with GET readback, session/logout/revoke-all, CSRF bootstrap, password reset, MFA enrollment/login-step-up/recovery/step-up, safe zones (role/CSRF/validation/recipient boundaries + durable create-patch-delete), family-audit reads, and protection-alert reads over real MySQL repositories; the existing eye-protection, free-access, and commercial-notification session suites were instrumented with `MYSQL_HTTP` rows. No production source changed; no migration; no plaintext policy persistence; no gated route activated. Platform ledger untouched except the hold entry below in its own file.
+VALIDATION = Integrated campaign PASS 38/38 with a run-owned disposable `pca_test_codex_<uuid>` database (created, migrations applied, environment verified as MySQL 8.4.11 utf8mb4/utf8mb4_bin with UTC, dropped afterward): 28/52 declarations, 71 matched scenarios (32 allow, 32 expected denial, 7 validation/protocol), unexpected 401/403/other = 0, `GENESIS_BLOCKED_NORMAL_ACTIONS` = 0, `TRUSTED_BROWSER_BLOCKED_NORMAL_ACTIONS` = 0. Bounded regression PASS 144/144 (52/52 declarations, 138 scenarios, zero unexpected). Full non-DB backend suite PASS 2674/2674. Parent-auth disposable campaign PASS 61/0 (3 expected privileged-mode skips); authority-diagnostics campaign PASS 62/62. `git diff --check` clean. Temporary reports removed after SHA-256 capture (integrated report `4107A3D8…`, bounded report `AA65181E…`).
+DISPOSITIONS = 28 `MYSQL_INTEGRATED_REQUIRED_AND_PROVEN`; 12 `MYSQL_INTEGRATED_REQUIRED_BUT_MISSING` (family-member ×6, removal-decision/administration-pin ×6); 6 `KNOWN_FAIL_CLOSED_AUTHORITY_GATE` (schedule-policy; child-request routes; bonus-time routes); 3 `KNOWN_FAIL_CLOSED_SERVICE_GATE` (web-rules); 2 `KNOWN_CRYPTO_DEVICE_GATE` (signed / authorized-recovery); 1 `OPTIONAL_ROUTE` (dashboard); UNREVIEWED = 0. Full 52-row table in the crosswalk.
+TODO10 = Complete Genesis source audit: zero NORMAL_PARENT_AUTHORITY_DEPENDENCY. `parent_genesis_*` tables are schema-only (no writers; PCA-DEC-037), no genesis routes exist, and remaining identifiers are the family-owner attestation chain (child-device security) or historical comments. Trusted-Browser audit: daily-login grants are login assurance only with no authority consumer; `TRUSTED_BROWSER_NORMAL_AUTHORITY_DEPENDENCY` = 0. Coordinator recommendation recorded in the TODO-10 body: PASS (owner decides).
+TODO14 = Coverage complete in the bounded tier (52/52 reviewed) and database-backed for 28; `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN` pending the 12 required-but-missing routes and the intentionally gated boundaries.
+GIT = Single Wave-2 checkpoint commit on `pca-dev` (base `722f6710`); the pushed SHA and its exact-head Quality Gates run are reported to the owner in the Wave-2 report and are deliberately not re-committed after CI.
+NEXT_ACTION = STOP for owner review. Candidate next wave: extend integrated evidence to the 12 required-but-missing declarations (family-member invitation/role/remove/accept; removal-decision and administration-pin flows) without touching TODO-12/15 architecture.

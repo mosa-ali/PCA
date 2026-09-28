@@ -12,6 +12,7 @@ const scenarioClasses = new Set([
   'OPTIONAL_ROUTE_ABSENT',
 ]);
 const blockedByValues = new Set(['GENESIS', 'TRUSTED_BROWSER']);
+const evidenceTierValues = new Set(['BOUNDED_HTTP', 'MYSQL_HTTP', 'REAL_BACKEND']);
 
 /**
  * Canonical TODO-14 declaration inventory: every `METHOD /templated/route`
@@ -89,6 +90,7 @@ export function recordParentRouteScenario({
   expectedStatus,
   response,
   blockedBy,
+  evidenceTier = 'BOUNDED_HTTP',
 }) {
   if (!process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) return;
 
@@ -98,6 +100,7 @@ export function recordParentRouteScenario({
   if (!scenarioClasses.has(classification)) throw new Error(`Unsupported Parent route scenario classification: ${classification}`);
   if (!Number.isInteger(expectedStatus) || !Number.isInteger(response?.statusCode)) throw new Error('Collector requires integer expected and observed HTTP statuses.');
   if (blockedBy !== undefined && !blockedByValues.has(blockedBy)) throw new Error(`Unsupported Parent route block marker: ${blockedBy}`);
+  if (!evidenceTierValues.has(evidenceTier)) throw new Error(`Unsupported Parent route evidence tier: ${evidenceTier}`);
 
   scenarioRows.push({
     method,
@@ -107,6 +110,7 @@ export function recordParentRouteScenario({
     expectedStatus,
     actualStatus: response.statusCode,
     matched: response.statusCode === expectedStatus,
+    evidenceTier,
     ...(blockedBy === undefined ? {} : { blockedBy }),
   });
 }
@@ -157,20 +161,76 @@ export async function writeParentRouteScenarioReport() {
   const declarationsCollected = PARENT_ROUTE_DECLARATION_INVENTORY.length - declarationsMissing.length;
   const coverageComplete = declarationsMissing.length === 0 && undeclaredCollectedKeys.length === 0;
 
+  // Evidence tier is orthogonal to classification: the same outcome meaning
+  // (e.g. EXPECTED_DENIAL) may be observed through bounded HTTP fixtures, a
+  // database-backed HTTP composition, or the real backend. Tier counts and
+  // declaration sets are computed per tier so an integrated campaign report
+  // never mixes bounded-only rows into its own numbers.
+  const tierSummary = {};
+  for (const tier of evidenceTierValues) {
+    const rows = scenarioRows.filter((row) => row.evidenceTier === tier);
+    const tierCounts = {
+      scenarios: rows.length,
+      declarations: new Set(rows.map(({ method, route }) => `${method} ${route}`)).size,
+      allowProven: 0,
+      expectedDenials: 0,
+      protectiveAuthorityNotApplicable: 0,
+      authorityUnavailable: 0,
+      cryptoDeviceGated: 0,
+      serviceNotConfigured: 0,
+      optionalRouteAbsent: 0,
+      validationOrProtocol: 0,
+      unexpected401: 0,
+      unexpected403: 0,
+      unexpectedOther: 0,
+    };
+    for (const row of rows) {
+      if (row.matched) {
+        if (row.classification === 'ALLOW_PROVEN') tierCounts.allowProven += 1;
+        else if (row.classification === 'EXPECTED_DENIAL') tierCounts.expectedDenials += 1;
+        else if (row.classification === 'PROTECTIVE_AUTHORITY_NOT_APPLICABLE') tierCounts.protectiveAuthorityNotApplicable += 1;
+        else if (row.classification === 'AUTHORITY_UNAVAILABLE') tierCounts.authorityUnavailable += 1;
+        else if (row.classification === 'CRYPTO_DEVICE_GATED') tierCounts.cryptoDeviceGated += 1;
+        else if (row.classification === 'SERVICE_NOT_CONFIGURED') tierCounts.serviceNotConfigured += 1;
+        else if (row.classification === 'OPTIONAL_ROUTE_ABSENT') tierCounts.optionalRouteAbsent += 1;
+        else if (row.classification === 'VALIDATION_OR_PROTOCOL') tierCounts.validationOrProtocol += 1;
+        continue;
+      }
+      if (row.actualStatus === 401) tierCounts.unexpected401 += 1;
+      else if (row.actualStatus === 403) tierCounts.unexpected403 += 1;
+      else tierCounts.unexpectedOther += 1;
+    }
+    tierSummary[tier] = tierCounts;
+  }
+  const tierDeclarationKeys = (tier) => new Set(scenarioRows.filter((row) => row.evidenceTier === tier).map(({ method, route }) => `${method} ${route}`));
+  const boundedKeys = tierDeclarationKeys('BOUNDED_HTTP');
+  const mysqlKeys = tierDeclarationKeys('MYSQL_HTTP');
+  const realBackendKeys = tierDeclarationKeys('REAL_BACKEND');
+  const integratedKeys = new Set([...mysqlKeys, ...realBackendKeys]);
+  const declarationsWithoutIntegratedEvidence = PARENT_ROUTE_DECLARATION_INVENTORY.filter((key) => !integratedKeys.has(key));
+  const integratedCoverageComplete = declarationsWithoutIntegratedEvidence.length === 0;
+
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     scope: 'bounded test-file scenarios; not the all-route integrated aggregate',
     globalAggregateStatus: 'NOT_YET_PROVEN',
     inventorySource:
       'docs/pre_production_assessment/pca_parent_platform/parent_route_action_test_crosswalk.md declaration table (52 declarations / 43 unique paths), mechanically re-verified against backend/src/http/routes on 2026-09-28',
     inventoryDeclarationCount: PARENT_ROUTE_DECLARATION_INVENTORY.length,
+    declarationsReviewed: declarationsCollected,
     declarationsCollected,
     declarationsMissing,
     undeclaredCollectedKeys,
     coverageComplete,
+    boundedDeclarations: boundedKeys.size,
+    mysqlIntegratedDeclarations: mysqlKeys.size,
+    realBackendDeclarations: realBackendKeys.size,
+    declarationsWithoutIntegratedEvidence,
+    integratedCoverageComplete,
     genesisBlockedNormalActions: scenarioRows.filter((row) => row.blockedBy === 'GENESIS').length,
     trustedBrowserBlockedNormalActions: scenarioRows.filter((row) => row.blockedBy === 'TRUSTED_BROWSER').length,
     counts,
+    tierSummary,
     scenarios: scenarioRows,
   };
 

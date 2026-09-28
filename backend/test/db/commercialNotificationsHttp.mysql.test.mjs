@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { randomBytes, randomUUID } from 'node:crypto';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { registerCommercialNotificationRoutes } from '../../dist/http/routes/commercialNotificationRoutes.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
@@ -26,8 +26,13 @@ import { CommercialNotificationRepository } from '../../dist/commercialnotificat
 import { CommercialNotificationService, CommercialNotificationSupportService } from '../../dist/commercialnotifications/CommercialNotificationService.js';
 import { MySqlCommercialNotificationPublisher, DEFAULT_MESSAGE_KEYS } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 const authRepository = new MySqlAuthRepository();
 const authService = new AuthService(authRepository);
@@ -222,7 +227,12 @@ test('MySQL HTTP: the real parent session cookie reaches /api/parent/session and
   try {
     const session = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie } });
     assert.equal(session.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'mysql_commercial_session_read_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: session, evidenceTier: 'MYSQL_HTTP' });
     assert.equal(session.json().familyId, familyId);
+
+    const anonymousSession = await app.inject({ method: 'GET', url: '/api/parent/session' });
+    assert.equal(anonymousSession.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'mysql_commercial_session_read_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: anonymousSession, evidenceTier: 'MYSQL_HTTP' });
 
     const list = await app.inject({
       method: 'GET',

@@ -12,7 +12,7 @@
 // unaffected by that change.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerEyeProtectionRoutes } from '../../dist/http/routes/eyeProtectionRoutes.js';
 import { EyeProtectionSettingsService } from '../../dist/eyeprotection/EyeProtectionSettingsService.js';
@@ -24,8 +24,15 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { closePool } from '../../dist/db/pool.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
+
+const EYE_PROTECTION_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/eye-protection';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 
@@ -133,6 +140,7 @@ test('MySQL HTTP: GET returns the parent\'s own existing (non-default) setting f
       headers: ownerAuthHeaders,
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_read_existing_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response, evidenceTier: 'MYSQL_HTTP' });
     const body = response.json().eyeProtection;
     assert.equal(body.remindersEnabled, true);
     assert.equal(body.childProfileId, childProfileId);
@@ -153,6 +161,7 @@ test('MySQL HTTP: GET for the parent\'s own child with no explicit setting yet r
       headers: ownerAuthHeaders,
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_read_default_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response, evidenceTier: 'MYSQL_HTTP' });
     assert.equal(response.json().eyeProtection.remindersEnabled, false);
   } finally {
     await app.close();
@@ -182,6 +191,7 @@ test('MySQL HTTP: a foreign-family child WITH a real saved setting is denied bef
       headers: ownerAuthHeaders,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_read_foreign_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response, evidenceTier: 'MYSQL_HTTP' });
     assert.deepEqual(response.json(), { error: 'family_scope_forbidden' });
 
     // The real owner is unaffected and still sees their own real setting.
@@ -215,6 +225,7 @@ test('MySQL HTTP: a nonexistent childProfileId returns the identical 200/safe-de
     });
 
     assert.equal(foreignResponse.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_read_nonexistent_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: nonexistentResponse, evidenceTier: 'MYSQL_HTTP' });
     assert.equal(nonexistentResponse.statusCode, foreignResponse.statusCode);
     assert.deepEqual(foreignResponse.json(), nonexistentResponse.json());
     assert.deepEqual(foreignResponse.json(), { error: 'family_scope_forbidden' });
@@ -266,6 +277,7 @@ test('MySQL HTTP (no regression): an Owner can enable reminders through the REAL
       payload: { remindersEnabled: true },
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_update_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response, evidenceTier: 'MYSQL_HTTP' });
     assert.equal(response.json().eyeProtection.remindersEnabled, true);
 
     const stored = await repository.get(ownerFamilyId, childProfileId);
@@ -294,6 +306,7 @@ test('MySQL HTTP (no regression): a VIEWER still cannot edit the eye-protection 
       payload: { remindersEnabled: true },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_update_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response, evidenceTier: 'MYSQL_HTTP' });
     const stored = await repository.get(ownerFamilyId, childProfileId);
     assert.equal(stored.remindersEnabled, false, 'no write should have happened');
   } finally {
@@ -316,6 +329,7 @@ test('MySQL HTTP (no regression): a childProfileId belonging to another family i
       payload: { remindersEnabled: true },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: EYE_PROTECTION_ROUTE, scenarioId: 'mysql_eye_protection_update_foreign_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response, evidenceTier: 'MYSQL_HTTP' });
     const stored = await repository.get(ownerFamilyId, foreignChildProfileId);
     assert.equal(stored.remindersEnabled, false);
   } finally {
