@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 06:59 UTC
-VALIDATED_SOURCE_HEAD = ca064871a4ab452e09c64a4d5929d95e2baa5357 (backend build and combined Parent route suites PASS 34/34; collector report matched 20 scenarios across 13 declarations; exact-head publication CI still required)
-VERIFIED_SOURCE_REMOTE_HEAD = c43eb6f20bb34f35a9ab96005a6cf786e32f1113 (fresh fetch, local HEAD and git ls-remote agree; local source commit is a fast-forward descendant)
-CURRENT_CHECKPOINT_SHA = ca064871a4ab452e09c64a4d5929d95e2baa5357 (local validated collector expansion; run 36388515737 completed SUCCESS 27/27 at c43eb6f2)
-LOCAL_UNCOMMITTED_CHANGE = Master ledgers sync local collector commit and completed CI evidence; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 07:12 UTC
+VALIDATED_SOURCE_HEAD = 7bea6996f421024b530ae7679704c78122f2642b (exact-head Quality Gates run 36389628059 SUCCESS 27/27; includes the child-request collector addition)
+VERIFIED_SOURCE_REMOTE_HEAD = 7bea6996f421024b530ae7679704c78122f2642b (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 7bea6996f421024b530ae7679704c78122f2642b (exact-head run 36389628059 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_CHANGE = Both master TODO ledgers are being synchronized with run 36389628059; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish local commit `ca064871` and both master ledgers as an authorized fast-forward; verify remote refs and required paths, then require exact-head CI for the collector expansion. Continue TODO-12/14/15 and preserve owner and Platform gates.
+NEXT_ACTION = Publish this exact-head CI result in both master ledgers, verify the ledger-sync fast-forward and CI, then extend the TODO-14 collector to Parent account identity/auth routes. Keep global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -40,6 +40,12 @@ CI = Run `36388515737` completed SUCCESS with 27/27 jobs and zero failures at `c
 REPORT = The supplied report's `0daf660`/`399304c` Git and CI snapshots and live migration-0050/0058 claims predate the current ledger evidence. The canonical mission ledger records live `pca_pro` through 0059, exact repository/local/live schema agreement, runtime grants 92/92, and preserved readable-table counts. Do not replay migrations from the report. Its `HOLD_PARENT_DEPENDENCY` recommendation remains aligned with open TODO-12/14/15 and literal localhost acceptance.
 GIT = Fresh `git fetch` and `git ls-remote` confirm published `pca-dev` remains c43; local `ca064871` is a fast-forward descendant. Only the two master TODO files are modified for this sync; unrelated `.vscode/` and root `0` remain excluded.
 NEXT_ACTION = Publish `ca064871` with the two master ledgers, verify post-push local/tracking/server equality and remote path presence, then inspect CI for the resulting exact head.
+
+### 2026-09-28 07:12 UTC — TODO-14 collector exact-head CI passed
+
+GIT = Commit `7bea6996f421024b530ae7679704c78122f2642b` was pushed as a fast-forward. Fresh fetch and server comparison confirmed local HEAD, `origin/pca-dev`, and `git ls-remote` equality; the collector helper, child-request test, and both master ledgers exist remotely. `.vscode/` and root `0` remain untracked and excluded.
+CI = Exact-head Quality Gates run `36389628059` completed SUCCESS 27/27 at `7bea6996f421024b530ae7679704c78122f2642b`, including disposable-MySQL certification, real-backend browser E2E, Android and iOS. This validates the published 20-scenario/13-declaration collector addition; global route/action aggregates remain NOT_YET_PROVEN.
+NEXT_ACTION = Publish the CI result ledger sync, verify the resulting head and run, then extend TODO-14 coverage to Parent account identity/auth routes while preserving distinct outcome classifications.
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
 IMPLEMENTATION = Added an opt-in status-only collector for route test outcomes and instrumented the removal-decision detail GET scenarios. The JSON report classifies same-family allow, unknown-ID expected privacy denial and cross-family expected privacy denial; it stores no request bodies, headers, credentials or IDs. It declares its scope bounded, coverage incomplete (1/52 routes), and global aggregate `NOT_YET_PROVEN`.
