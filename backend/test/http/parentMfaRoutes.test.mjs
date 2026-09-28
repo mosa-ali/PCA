@@ -6,18 +6,23 @@
 // the session path, error codes map as the client expects, and Genesis
 // routes and fields are gone.
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { TestSandboxEmailSender } from '../../dist/parentaccount/TestSandboxEmailSender.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
 import { createParentAccountTestKit, createTestClock, totpFor } from '../support/parentMfaTestKit.mjs';
 
 const PASSWORD = 'correct horse battery staple';
 const STEP = 30 * 1000;
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 function buildApp() {
   const clock = createTestClock();
@@ -122,14 +127,18 @@ test('optional enrollment: session CSRF is required, no-store responses, and enr
   await registerAndVerify(app, emailSender, email);
   const { b } = await firstSignIn(app, email);
 
-  assert.equal((await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD })).statusCode, 403, 'session path needs CSRF');
+  const startCsrfDenied = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD });
+  assert.equal(startCsrfDenied.statusCode, 403, 'session path needs CSRF');
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/enrollment/start', scenarioId: 'mfa_enrollment_start_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: startCsrfDenied });
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
   assert.equal(start.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/enrollment/start', scenarioId: 'mfa_enrollment_start_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: start });
   assert.equal(start.headers['cache-control'], 'no-store');
   const { otpauthUri, secret } = start.json();
   assert.ok(otpauthUri.startsWith('otpauth://totp/'));
   const confirm = await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(secret, clock.ms()) }, { csrf: true });
   assert.equal(confirm.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/enrollment/confirm', scenarioId: 'mfa_enrollment_confirm_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: confirm });
   assert.deepEqual(confirm.json(), { enrolled: true, sessionEstablished: false });
 
   await b.request('POST', '/api/parent/logout', {}, { csrf: true });
@@ -140,13 +149,16 @@ test('optional enrollment: session CSRF is required, no-store responses, and enr
   assert.ok(stepUpCode);
   const emailOnly = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode });
   assert.equal(emailOnly.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/login/step-up', scenarioId: 'mfa_login_step_up_email_only_pending', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 200, response: emailOnly });
   assert.deepEqual(emailOnly.json(), { sessionEstablished: false, mfaRequired: true });
   assert.equal(fresh.jar.has('pca_parent_session'), false, 'email OTP alone does not establish an enrolled account session');
   const wrong = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode, totpCode: '000000' === totpFor(secret, clock.ms()) ? '111111' : '000000' });
   assert.equal(wrong.statusCode, 401);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/login/step-up', scenarioId: 'mfa_login_step_up_wrong_totp', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: wrong });
   assert.deepEqual(wrong.json(), { error: 'invalid_code' });
   const ok = await fresh.request('POST', '/api/parent/login/step-up', { email, code: stepUpCode, totpCode: totpFor(secret, clock.ms()) });
   assert.equal(ok.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/login/step-up', scenarioId: 'mfa_login_step_up_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: ok });
   assert.deepEqual(ok.json().mfa, { status: 'ACTIVE' });
   assert.equal((await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: 12 })).statusCode, 400, 'a non-string code is malformed');
 });
@@ -182,9 +194,16 @@ test('recovery over HTTP: code starts 24-hour hold, revokes sessions, and fresh 
     const requested = await r.request('POST', '/api/parent/mfa/recovery/request', { email, password });
     assert.equal(requested.statusCode, 202);
     assert.deepEqual(requested.json(), { status: 'RECOVERY_CODE_SENT_IF_ELIGIBLE' });
+    if (password === 'wrong password!!') {
+      recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/recovery/request', scenarioId: 'mfa_recovery_request_generic_acceptance', classification: 'ALLOW_PROVEN', expectedStatus: 202, response: requested });
+    }
   }
-  assert.equal((await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: 'abcdef' })).statusCode, 400);
+  const malformed = await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: 'abcdef' });
+  assert.equal(malformed.statusCode, 400);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/recovery/complete', scenarioId: 'mfa_recovery_complete_malformed_code', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: malformed });
   const completed = await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: emailSender.lastCodeFor(email, 'MFA_RECOVERY') });
+  assert.equal(completed.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/recovery/complete', scenarioId: 'mfa_recovery_complete_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: completed });
   assert.equal(completed.json().status, 'MFA_RECOVERY_PENDING');
   assert.ok(Date.parse(completed.json().recoveryAvailableAt) > clock.ms());
   assert.equal(r.jar.has('pca_parent_mfa_enrollment'), false, 'hold does not issue an enrollment ticket');
@@ -205,12 +224,18 @@ test('Parent step-up route: session + CSRF, closed operation vocabulary, FORBIDD
   const email = 'http-stepup@example.com';
   await registerAndVerify(app, emailSender, email);
   const { b } = await firstSignIn(app, email);
-  assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' })).statusCode, 403, 'CSRF');
-  assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'DELETE_EVERYTHING', code: '123456' }, { csrf: true })).statusCode, 400);
+  const csrfDenied = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' });
+  assert.equal(csrfDenied.statusCode, 403, 'CSRF');
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/step-up', scenarioId: 'mfa_step_up_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: csrfDenied });
+  const unsupported = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'DELETE_EVERYTHING', code: '123456' }, { csrf: true });
+  assert.equal(unsupported.statusCode, 400);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/step-up', scenarioId: 'mfa_step_up_rejects_unknown_operation', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: unsupported });
   for (const operation of ['family.ownership.transfer', 'family.recovery.material.reveal']) {
     assert.equal((await b.request('POST', '/api/parent/mfa/step-up', { operation, code: '123456' }, { csrf: true })).statusCode, 400, `${operation} remains unavailable until its Owner-bound consumer exists`);
   }
-  assert.deepEqual((await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' }, { csrf: true })).json(), { error: 'forbidden' });
+  const beforeEnrollment = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: '123456' }, { csrf: true });
+  assert.deepEqual(beforeEnrollment.json(), { error: 'forbidden' });
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/step-up', scenarioId: 'mfa_step_up_before_enrollment_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: beforeEnrollment });
 
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
   const secret = start.json().secret;
@@ -218,11 +243,14 @@ test('Parent step-up route: session + CSRF, closed operation vocabulary, FORBIDD
   clock.advance(STEP);
   const granted = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: totpFor(secret, clock.ms()) }, { csrf: true });
   assert.equal(granted.statusCode, 201);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/step-up', scenarioId: 'mfa_step_up_allow', classification: 'ALLOW_PROVEN', expectedStatus: 201, response: granted });
   assert.equal(granted.headers['cache-control'], 'no-store');
   assert.match(granted.json().stepUpToken, /^[A-Za-z0-9_-]{43}$/);
   assert.equal(granted.json().operation, 'BILLING_CHECKOUT_CREATE');
   const replay = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'BILLING_CHECKOUT_CREATE', code: totpFor(secret, clock.ms()) }, { csrf: true });
+  assert.equal(replay.statusCode, 401);
   assert.deepEqual(replay.json(), { error: 'invalid_mfa_code' }, 'the same TOTP step cannot mint a second grant');
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/step-up', scenarioId: 'mfa_step_up_totp_replay_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: replay });
 
   clock.advance(30_000);
   const sensitive = await b.request('POST', '/api/parent/mfa/step-up', { operation: 'family.retention.update', code: totpFor(secret, clock.ms()) }, { csrf: true });
