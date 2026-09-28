@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { registerFamilyMemberRoutes } from '../../dist/http/routes/familyMemberRoutes.js';
 import { FamilyMemberInvitationService, NoopFamilyMemberAccountBinder } from '../../dist/familymembers/FamilyMemberInvitationService.js';
 import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
@@ -116,6 +117,10 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
 const ownerHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
 const viewerHeaders = { cookie: 'pca_family_session=session-viewer; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
 
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
+
 test('an Owner can invite a Viewer, list it, and revoke it -- the full real HTTP lifecycle', async () => {
   const { app } = buildApp();
   try {
@@ -126,11 +131,13 @@ test('an Owner can invite a Viewer, list it, and revoke it -- the full real HTTP
       payload: { invitedEmail: 'newmember@example.test', role: 'VIEWER' },
     });
     assert.equal(invite.statusCode, 201);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations', scenarioId: 'family_invitation_create_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 201, response: invite });
     const invitationId = invite.json().invitation.invitationId;
     assert.equal(invite.json().invitation.status, 'PENDING');
 
     const list = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/members/invitations`, headers: { cookie: ownerHeaders.cookie } });
     assert.equal(list.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/members/invitations', scenarioId: 'family_invitation_list_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: list });
     assert.equal(list.json().invitations.length, 1);
 
     const revoke = await app.inject({
@@ -139,6 +146,7 @@ test('an Owner can invite a Viewer, list it, and revoke it -- the full real HTTP
       headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(revoke.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations/:invitationId/revoke', scenarioId: 'family_invitation_revoke_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: revoke });
     assert.equal(revoke.json().invitation.status, 'REVOKED');
   } finally {
     await app.close();
@@ -155,6 +163,7 @@ test('a VIEWER cannot invite an Administrator (ROLE_NOT_PERMITTED collapses to t
       payload: { invitedEmail: 'newadmin@example.test', role: 'ADMINISTRATOR' },
     });
     assert.equal(invite.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations', scenarioId: 'family_invitation_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: invite });
     assert.equal(invite.json().error, 'forbidden');
   } finally {
     await app.close();
@@ -183,6 +192,7 @@ test('a session cookie for a different family cannot list or invite into this fa
     const otherOwnerHeaders = { cookie: 'pca_family_session=session-other-owner; pca_family_csrf=csrf-c', 'x-pca-csrf-token': 'csrf-c' };
     const list = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/members/invitations`, headers: { cookie: otherOwnerHeaders.cookie } });
     assert.equal(list.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/members/invitations', scenarioId: 'family_invitation_list_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: list });
     assert.equal(list.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
@@ -207,6 +217,7 @@ test('an active family Administrator can change a pending invitation role with f
       payload: { role: 'ADMINISTRATOR', stepUpToken: 'wrong-grant' },
     });
     assert.equal(rejected.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations/:invitationId/role', scenarioId: 'family_invitation_role_requires_step_up', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: rejected });
     const changeRole = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
@@ -214,6 +225,7 @@ test('an active family Administrator can change a pending invitation role with f
       payload: { role: 'ADMINISTRATOR', stepUpToken: 'test-sensitive-step-up' },
     });
     assert.equal(changeRole.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations/:invitationId/role', scenarioId: 'family_invitation_role_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: changeRole });
     assert.equal(changeRole.json().invitation.role, 'ADMINISTRATOR');
   } finally {
     await app.close();
@@ -237,6 +249,7 @@ test('any authenticated parent account (even one in no family yet) can accept an
       headers: { cookie: 'pca_family_session=session-no-family; pca_family_csrf=csrf-d', 'x-pca-csrf-token': 'csrf-d' },
     });
     assert.equal(accept.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/member-invitations/:invitationId/accept', scenarioId: 'family_invitation_accept_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: accept });
     assert.equal(accept.json().invitation.status, 'ACCEPTED');
     assert.equal(accept.json().invitation.acceptedByAccountId, 'acct-no-family');
 
@@ -247,6 +260,7 @@ test('any authenticated parent account (even one in no family yet) can accept an
       headers: { cookie: 'pca_family_session=session-no-family; pca_family_csrf=csrf-d', 'x-pca-csrf-token': 'csrf-d' },
     });
     assert.equal(acceptAgain.statusCode, 409);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/member-invitations/:invitationId/accept', scenarioId: 'family_invitation_accept_duplicate_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 409, response: acceptAgain });
     assert.equal(acceptAgain.json().error, 'already_accepted');
   } finally {
     await app.close();
@@ -426,6 +440,7 @@ test('an Owner can remove an already-accepted, non-owner member via the real HTT
       headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(remove.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/:accountId/remove', scenarioId: 'family_member_remove_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: remove });
     assert.equal(remove.json().removed, true);
     assert.equal(typeof remove.json().auditEventId, 'string');
     assert.ok(remove.json().auditEventId.length > 0);
@@ -456,6 +471,7 @@ test('a VIEWER cannot remove another member (ROLE_NOT_PERMITTED collapses to the
       headers: { ...viewerHeaders, authorization: 'Bearer dev-token-viewer' },
     });
     assert.equal(remove.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/:accountId/remove', scenarioId: 'family_member_remove_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: remove });
     assert.equal(remove.json().error, 'forbidden');
   } finally {
     await app.close();
@@ -511,6 +527,7 @@ test('a cross-family Parent session cannot remove a member in this family', asyn
       headers: { cookie: 'pca_family_session=session-other-owner; pca_family_csrf=csrf-c', 'x-pca-csrf-token': 'csrf-c' },
     });
     assert.equal(remove.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/:accountId/remove', scenarioId: 'family_member_remove_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: remove });
     assert.equal(remove.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
