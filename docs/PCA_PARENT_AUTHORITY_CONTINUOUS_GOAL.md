@@ -9,14 +9,14 @@ historical evidence and may describe superseded states.
 
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
-CURRENT_TODO = TODO-12, TODO-14, TODO-15, and owner-gated TODO-18; TODO-11/13/16/17/19/20 PASS at the current pushed checkpoint or prior verified live/source evidence
+CURRENT_TODO = TODO-10, TODO-12, TODO-14, TODO-15, and owner-gated TODO-18; TODO-02…09/11/13/16/17/19/20 PASS at the current integrated checkpoint or prior verified live/source evidence
 MISSION_STATUS = IN_PROGRESS
 
 BRANCH = pca-dev
 LOCAL_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (Parent implementation plus master-ledger synchronization)
 REMOTE = origin
 TARGET_DEV_BRANCH = pca-dev
-FETCHED_REMOTE_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (fresh fetch and git ls-remote agree)
+FETCHED_REMOTE_HEAD = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (fresh fetch and git ls-remote agree)
 LOCAL_REMOTE_EQUAL = YES
 REMOTE_ADVANCED_DURING_WORK = NO after the verified fast-forward push
 INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
@@ -30,12 +30,12 @@ OUT_OF_SCOPE_DIRTY_PATHS = 39 API/mobile assessment files and 2 .vscode files; p
 MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md (new)
 CODE_CHANGES_BY_THIS_CHECKPOINT = backend/src/parentaccount/ParentAccountService.ts; backend/src/platformadmin/accounts/FamilyAccountStatusService.ts; backend/src/http/routes/platformadmin/accountsRoutes.ts; backend/test/parentaccount/optionalMfaLogin.test.mjs; backend/test/db/parentAccount.mysql.test.mjs; backend/src/familyrbac/RemovalDecisionAuthority.ts; backend/src/familyrbac/MySqlRemovalDecisionRepository.ts; backend/src/http/routes/removalDecisionRoutes.ts; backend/migrations/0057_parent_actor_provenance_for_removal_decisions.sql; backend/src/db/schema.ts; parent-web/src/rbac/useFamilyAction.ts; parent-web/tests/route/familyActions.test.tsx; this ledger
 FOCUSED_TESTS = Prior mission campaigns remain as recorded; Parent session-revocation real-client/Settings/RTL run passed 42/42; Parent Web typecheck, touched-file ESLint, strict E2E TypeScript compile, Playwright collection, backend build, and git diff --check passed.
-BROWSER_EVIDENCE = Quality Gates run 36369764525 passed all 27 jobs at exact pushed HEAD dfefe27c, including Parent/Platform real-browser E2E and real-backend disposable-MySQL acceptance. The local owner-acceptance campaign at 6b7bf8e passed 2/2 with no unexpected 401/403 in that journey, revoke-all 204/redirect, and cross-family isolation; its random disposable DB was removed. Global route/action aggregates remain NOT_YET_PROVEN.
-BROADER_REGRESSION = TODO-17 PASS at dfefe27c; full MySQL certification, Parent/Platform real-backend browser, Android, iOS, security, builds and unit jobs passed. TODO-13 focused sensitive-action HTTP campaign passed 64/64. External device-crypto and literal owner localhost gates remain separately open.
+BROWSER_EVIDENCE = Quality Gates run 36370514236 passed all 27 jobs at exact pushed HEAD 739133e9, including Parent/Platform real-browser E2E and real-backend disposable-MySQL acceptance. The local owner-acceptance campaign at 6b7bf8e passed 2/2 with no unexpected 401/403 in that journey, revoke-all 204/redirect, and cross-family isolation; its random disposable DB was removed. Global route/action aggregates remain NOT_YET_PROVEN.
+BROADER_REGRESSION = TODO-17 PASS at 739133e9; full MySQL certification, Parent/Platform real-backend browser, Android, iOS, security, builds and unit jobs passed. TODO-13 focused sensitive-action HTTP campaign passed 64/64. External device-crypto and literal owner localhost gates remain separately open.
 UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at dfefe27c277c0e225ee1f1a50e38f00871dc8082; three reviewed commits fast-forwarded, fetched, and independently matched by git ls-remote
+REMOTE_ALIGNMENT_COMPLETED = YES at 739133e9fe7b8240f4f104b1ba8d4879efc3e234; four reviewed commits fast-forwarded, fetched, and independently matched by git ls-remote
 PARENT_LOCAL_ONLY_FILES_REMAINING = Exact-head CI ledger synchronization is being prepared; unrelated .vscode and root fragment 0 remain excluded
 PARENT_UNPUSHED_COMMITS_REMAINING = 0 source commits; current documentation synchronization is uncommitted; unrelated .vscode and root fragment 0 remain untracked and excluded
 
@@ -70,6 +70,13 @@ GIT = Three reviewed fast-forward commits (1056546e, 6b7bf8e, dfefe27c) are push
 CI = Quality Gates run `36369764525` completed SUCCESS at exact HEAD `dfefe27c`: 27 jobs passed, none failed, including integrated real-backend browser, disposable-MySQL full DB, Parent/Platform browser, Android, iOS, security, builds and unit tests.
 GATES = TODO-17/19 are PASS for this checkpoint; TODO-12/14/15 and TODO-18 literal owner localhost acceptance remain open. TODO-20 remains PASS. Platform stays `HOLD_PARENT_DEPENDENCY`; no activation, deployment, production smoke or owner UAT occurred.
 NEXT_ACTION = Continue the same mission from TODO-12/14/15; retain fail-closed crypto/policy boundaries and the owner acceptance gate.
+
+### 2026-09-28 02:47 UTC — authentication TODO-02…09 re-evaluated
+
+CI = Quality Gates run `36370514236` completed SUCCESS at exact HEAD `739133e9fe7b8240f4f104b1ba8d4879efc3e234`; all 27 jobs passed, including Parent auth/migration DB, first-owner bootstrap, full MySQL, MFA/browser, Parent Web, Platform and integrated real-browser jobs.
+TODO02_09 = Promoted to PASS in both master and canonical boards because their stated login, verification, provisioning, browser assurance, 72-hour MFA, TOTP setup, known-browser and unknown-browser criteria are covered by the exact-head integrated suites.
+REMAINING = TODO-10 still depends on TODO-14 route/action closure. TODO-12/14/15 and TODO-18 literal owner acceptance remain open. TODO-20 remains PASS through live migration 0059. Platform remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Continue from TODO-10's TODO-14 dependency and the active TODO-12/14/15 authority and device-security work.
 
 ### 2026-09-27 — authorized checkpoint inventory and pre-commit evidence
 

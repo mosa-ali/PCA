@@ -5,10 +5,10 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 02:34 UTC
+LAST_UPDATED_UTC = 2026-09-28 02:47 UTC
 VALIDATED_PARENT_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (fresh fetch and git ls-remote match)
-CURRENT_CHECKPOINT_SHA = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (Parent source + ledger sync; exact-head Quality Gates run 36369764525 PASS, 27/27)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (fresh fetch and git ls-remote match)
+CURRENT_CHECKPOINT_SHA = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (Parent source + evidence ledger sync; exact-head Quality Gates run 36370514236 PASS, 27/27)
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -73,6 +73,12 @@ PARENT = Source checkpoint `6b7bf8e` and ledger-sync HEAD `dfefe27c277c0e225ee1f
 REPORT = The attached report's `399304c`/run `36356186069` and live-0050 database findings are superseded by current remote `dfefe27c`, run `36369764525`, and live `pca_pro` reconciliation through 0059. The required Parent Email resolver is implemented, but Enrollment's required Name/Email/nullable Phone directory/table package is still incomplete.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains: Parent TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. No Enrollment activation, Azure deployment, production smoke, or owner UAT is claimed.
 NEXT_ACTION = Continue the Parent dependencies; keep Enrollment queued until Parent authority/security and owner localhost acceptance are complete.
+
+### 2026-09-28 02:47 UTC — Parent authentication integration promoted; Platform remains held
+
+PARENT = Parent TODO-02…09 are now PASS based on auth/migration DB, first-owner bootstrap, full MySQL, Parent MFA browser, unit, and real-browser jobs in run `36370514236` at exact HEAD `739133e9` (27/27 success). Parent TODO-10 still depends on TODO-14; TODO-12/14/15 and TODO-18 remain open.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` is unchanged. Enrollment Name/Email/nullable Phone columns remain incomplete; no activation, deployment, production smoke, or owner UAT is claimed.
+NEXT_ACTION = Keep Platform queued while Parent closes TODO-12/14/15 and receives literal localhost acceptance.
 
 ### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
 

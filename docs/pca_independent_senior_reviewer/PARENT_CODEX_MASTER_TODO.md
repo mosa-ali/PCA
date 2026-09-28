@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 02:34 UTC
+LAST_UPDATED_UTC = 2026-09-28 02:47 UTC
 VALIDATED_SOURCE_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b (Parent session UI, E2E/harness and schema artifact checkpoint; local real-backend campaign PASS)
-VERIFIED_SOURCE_REMOTE_HEAD = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (fresh fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = dfefe27c277c0e225ee1f1a50e38f00871dc8082 (Parent source checkpoint plus ledger sync; Quality Gates run 36369764525 exact-head SUCCESS, 27/27 jobs)
+VERIFIED_SOURCE_REMOTE_HEAD = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (fresh fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 739133e9fe7b8240f4f104b1ba8d4879efc3e234 (Parent source plus evidence ledger sync; Quality Gates run 36370514236 exact-head SUCCESS, 27/27 jobs)
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, and owner-gated TODO-18; TODO-11/13/16/17/19/20 are PASS at current exact-head campaign or previously proven live/source evidence
-NEXT_ACTION = Continue TODO-12/14/15 from their documented evidence; keep TODO-18 awaiting literal owner `LOCALHOST ACCEPTED` and Platform on `HOLD_PARENT_DEPENDENCY`.
+CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, and owner-gated TODO-18; TODO-02…09/11/13/16/17/19/20 are PASS at current integrated checkpoint or prior verified live evidence
+NEXT_ACTION = Continue TODO-12/14/15; TODO-10 remains dependent on TODO-14; keep TODO-18 awaiting literal owner `LOCALHOST ACCEPTED` and Platform on `HOLD_PARENT_DEPENDENCY`.
 
 The implementation checkpoint payload is at `3d31cb5b00aea7a4c2ed2b2f66660c05e217bd4e`; canonical-ledger sync is `114b784ea33112cb3bebd64b454866481d8b3ba3`; master TODO publication is `27757ca77e0edec417516784dc3e59da6855896e`; publication-state sync is `8f3f45b47d24cc7debd581230eda23c088d74f4e`; corrective checkpoint is `0ba4c0d8c5631283267c0af2a8dc6046bd4c0552`; ledger sync is `47d564c4af1fd6535dd1c9211cbf9c06a46970fb`; corrective CI-fixture checkpoint is `1949ead054ae93b30fbd7c69dd4e41649b50bdbc`; ledger sync is `0daf66008a801e5006c16130ae9f1adb052bd1f4`; daily browser-grant fixture correction is `a76aacae1710a7ff2fdc37788b0a291b3220decd`; latest prior ledger sync is `9c50e8efd7f18c18d7e16ec0ef6697fb88026064`; MFA step-up correction is `f51fe3dff3da62c045d1f8fd9d9a81be02efb2a7`. Exact-head run `36351171969` at `9c50e8ef` failed only the real-backend browser E2E job, with 26 jobs passing; its grant-based cross-family API check passed; the MFA-gated invitation correction is committed locally and awaits exact-head CI.
 
@@ -61,74 +61,74 @@ DONE_WHEN = no legitimate PCA/peer work is lost
 
 ### TODO-02 — Reconcile d3759d89 Parent authentication baseline
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = `backend/src/parentaccount/**`, `backend/src/http/routes/parentAccountRoutes.ts`, `parent-web/src/pages/auth/**`  
-EVIDENCE = Reference source compared; backend build passed; prior auth/email/route campaign 80/80, OTP/TOTP regression 3/3 and disposable MySQL campaign 43/43. Current focused auth/authority campaign passed 188/188.  
-BLOCKER = Consolidated TODO-17 regression remains open; exact-head CI run `36338197362` failed.  
+EVIDENCE = Approved login/email/session behavior reconciled; exact-head Quality Gates run `36370514236` passed 27/27 jobs at `739133e9`, including Parent auth/backend, Parent Web unit and real-browser coverage.
+BLOCKER = None for the approved login baseline.
 DONE_WHEN = approved login/email/session behavior is preserved or restored
 
 ### TODO-03 — Verified-email activation
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent account service/repository/routes and Parent auth UI/tests  
-EVIDENCE = Prior in-memory and disposable MySQL checks cover activation-only verification, pending-account denial, invalid/replayed/expired codes, attempt limits, and no session at verification. Current build passed.  
-BLOCKER = Consolidated TODO-17 regression remains open; exact-head CI run `36338197362` failed.  
+EVIDENCE = Activation-only verification and denial/expiry/replay boundaries passed auth/migration DB certification and full DB certification in exact-head run `36370514236` at `739133e9`; all 27 jobs passed.
+BLOCKER = None for the verified-email lifecycle.
 DONE_WHEN = unverified Parents restricted and verified Parents proceed safely
 
 ### TODO-04 — Atomic Parent family provisioning
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent provisioning service/repository, `backend/src/db/schema.ts`, migrations 0049/0051+, MySQL tests  
-EVIDENCE = Historical disposable MySQL first-login run proved one family/administrator/scope, 16-way concurrent provision calls, uniqueness, retry safety and cross-account refusal. Current migration 0057 test remains unrun.  
-BLOCKER = Repeat integrated disposable MySQL suite when local MySQL is available.  
+EVIDENCE = First-owner bootstrap certification and full disposable-MySQL DB certification passed in exact-head run `36370514236` at `739133e9`; repository migrations through 0059 applied and Parent persistence coverage passed.
+BLOCKER = None for atomic first-family provisioning in the integrated checkpoint.
 DONE_WHEN = exactly one family + one initial ACTIVE Administrator; retry and concurrency safe
 
 ### TODO-05 — First-login trusted-browser creation
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent login/MFA repositories and service; `parent-web/e2e-real/parentMfa.spec.ts`  
-EVIDENCE = Historical MySQL and in-memory flows prove automatic account-bound hashed browser assurance; cookie assertions check HttpOnly session and daily-login cookies.  
-BLOCKER = Consolidated current browser regression is pending; local disposable runner is blocked by stopped Docker/MySQL.  
+EVIDENCE = Exact-head real-browser and disposable-MySQL campaigns passed; first successful login establishes account-bound HttpOnly session and daily-login cookies, covered by Parent MFA browser and backend persistence suites.
+BLOCKER = None for first-login automatic browser assurance.
 DONE_WHEN = successful first login automatically establishes account-bound browser trust
 
 ### TODO-06 — Three-day TOTP enrollment policy
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent MFA service/repository/routes/UI and migrations  
-EVIDENCE = Server-side grace is 72 hours; prior MySQL checks proved concurrent starts preserve one deadline and browser/logout/cookie operations cannot reset it.  
-BLOCKER = Consolidated TODO-17 regression remains open; exact-head CI run `36338197362` failed.  
+EVIDENCE = Fixed server-side 72-hour deadline and non-reset behavior passed auth/migration DB certification and Parent backend/browser jobs in run `36370514236` at `739133e9`; 27/27 jobs passed.
+BLOCKER = None for the server-side TOTP enrollment deadline.
 DONE_WHEN = one server-side 72-hour deadline starts once and cannot be reset by browser tricks
 
 ### TODO-07 — TOTP setup and activation
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = `backend/src/parentaccount/mfa/**`, Parent MFA routes/UI and tests  
-EVIDENCE = Prior disposable MySQL checks cover encrypted sealed secret, single-use enrollment ticket, recovery hold/session revocation and migration replay; current backend build and MFA-focused campaign passed.  
-BLOCKER = Full Parent browser regression and current MySQL rerun are pending.  
+EVIDENCE = Parent MFA browser, backend authentication/migration DB, and full disposable-MySQL certification passed in exact-head run `36370514236` at `739133e9`, covering setup, activation, secret handling and session gates.
+BLOCKER = None for tested TOTP setup/activation behavior.
 DONE_WHEN = secure secret + local QR + confirmation + encrypted ACTIVE state proven
 
 ### TODO-08 — Known-browser login
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent login service, MFA/trust repository, email templates and browser specs  
-EVIDENCE = Historical real-MySQL checks show known browser does not need routine TOTP after activation; successful-login notices are covered.  
-BLOCKER = Current integrated browser campaign remains open; exact-head CI run `36338197362` failed.  
+EVIDENCE = Backend known-browser login and account-bound grant tests passed; exact-head run `36370514236` passed Parent browser/authentication and DB jobs at `739133e9`.
+BLOCKER = None for the tested known-browser password-only flow.
 DONE_WHEN = known browser uses email + password without unnecessary login TOTP
 
 ### TODO-09 — New/unknown-browser login
 
-STATUS = READY_FOR_INTEGRATION  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent login/OTP/TOTP flows, browser assurance repository, `parent-web/e2e-real/parentMfa.spec.ts`  
-EVIDENCE = Historical MySQL campaign covers email OTP + active TOTP, account-bound browser trust and concurrent single-winner completion. OTP-before-TOTP ordering regression passed 3/3.  
-BLOCKER = Real browser flow was not rerun in this checkpoint; Docker/MySQL fixture backend unavailable.  
+EVIDENCE = Exact-head run `36370514236` passed the real-browser unknown-browser email OTP + active TOTP journey, real-backend disposable MySQL, and authentication/migration DB certification at `739133e9`; 27/27 jobs passed.
+BLOCKER = None for the tested unknown-browser login path.
 DONE_WHEN = email OTP + TOTP-if-enrolled flow works and successful browser becomes trusted
 
 ### TODO-10 — Remove Genesis from Parent authentication/authorization
@@ -786,3 +786,9 @@ CI = Quality Gates run `36369764525` completed SUCCESS on exact HEAD `dfefe27c27
 TODO17_19 = Integrated automated regression and exact-head publication gates are PASS for this checkpoint. TODO-12/14/15 authority/device gates and TODO-18 literal localhost owner acceptance remain open; TODO-20 stays PASS through live migration 0059 with exact schema/grant postflight and preserved readable-table counts.
 REPORT = The attachment's `0daf660` failure snapshot, `399304c` checkpoint, and live migration-0050 claim are older than verified current state. Current remote is `dfefe27c`; live `pca_pro` is already reconciled through 0059. The report's hold recommendation remains appropriate because owner/device/authority gates are still open.
 NEXT_ACTION = Continue the same mission at TODO-12/14/15; do not activate Platform Enrollment or deploy until the recorded Parent and owner gates close.
+
+### 2026-09-28 02:47 UTC — earlier authentication TODOs re-evaluated against exact-head CI
+
+TODO02_09 = Promoted to PASS after reviewing their completion criteria against auth/migration DB certification, first-owner bootstrap certification, full disposable-MySQL certification, Parent MFA browser flow, Parent Web unit shards, and real-browser jobs in exact-head Quality Gates run `36370514236` at `739133e9`; all 27 jobs passed.
+REMAINING = TODO-10 still depends on TODO-14 route/action closure. TODO-12/14/15 remain open; TODO-18 still requires literal owner `LOCALHOST ACCEPTED`. TODO-20 remains PASS through live 0059. Platform remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Continue TODO-12/14/15 and retain the TODO-10/TODO-14 dependency and owner localhost gate.
