@@ -273,7 +273,10 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     await page.goto('/settings');
     await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out all sessions' }).click();
-    await expect(page.getByRole('status')).toContainText('This will sign you out here and on every other browser.');
+    await expect(page.getByText(
+      'This will sign you out here and on every other browser. You will need to sign in again.',
+      { exact: true },
+    )).toBeVisible();
     // Isolate the final auth request from the journey's per-IP test budget.
     // The backend trusts this forwarded address only from the loopback Vite
     // proxy in the disposable E2E server configuration.
