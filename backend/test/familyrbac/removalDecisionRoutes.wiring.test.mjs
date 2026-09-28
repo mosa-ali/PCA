@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { registerRemovalDecisionRoutes } from '../../dist/http/routes/removalDecisionRoutes.js';
 import { RemovalDecisionAuthority, InMemoryRemovalDecisionRepository } from '../../dist/familyrbac/RemovalDecisionAuthority.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from '../../dist/familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
@@ -87,6 +88,10 @@ function buildApp({ parentRole = 'ADMINISTRATOR', roleLookupError = false, remov
 }
 
 const authHeaders = { cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 function grantStepUp(app, token, operation) {
   app.__stepUpGrants.set(token, {
@@ -521,6 +526,14 @@ test('removal-decision detail GET returns same-family records and hides unknown 
       url: '/api/parent/families/family-a/removal-decisions/req-detail-own',
       headers: authHeaders,
     });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/removal-decisions/:requestId',
+      scenarioId: 'same_family_detail_read',
+      classification: 'ALLOW_PROVEN',
+      expectedStatus: 200,
+      response: own,
+    });
     assert.equal(own.statusCode, 200);
     assert.equal(own.json().removalDecision.requestId, 'req-detail-own');
 
@@ -529,12 +542,28 @@ test('removal-decision detail GET returns same-family records and hides unknown 
       url: '/api/parent/families/family-a/removal-decisions/req-detail-unknown',
       headers: authHeaders,
     });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/removal-decisions/:requestId',
+      scenarioId: 'unknown_request_privacy_denial',
+      classification: 'EXPECTED_DENIAL',
+      expectedStatus: 404,
+      response: unknown,
+    });
     assert.equal(unknown.statusCode, 404);
 
     const otherFamily = await app.inject({
       method: 'GET',
       url: '/api/parent/families/family-a/removal-decisions/req-detail-other-family',
       headers: authHeaders,
+    });
+    recordParentRouteScenario({
+      method: 'GET',
+      route: '/api/parent/families/:familyId/removal-decisions/:requestId',
+      scenarioId: 'cross_family_request_privacy_denial',
+      classification: 'EXPECTED_DENIAL',
+      expectedStatus: 404,
+      response: otherFamily,
     });
     assert.equal(otherFamily.statusCode, 404);
     assert.deepEqual(otherFamily.json(), unknown.json());
