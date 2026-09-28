@@ -2,7 +2,7 @@
 
 This is the single live mission ledger. Continue the canonical TODO-01…TODO-23
 sequence here; do not reset it or create a disconnected mission. This current
-checkpoint was refreshed on 2026-09-28 02:16 UTC; older dated entries below remain
+checkpoint was refreshed on 2026-09-28 02:21 UTC; older dated entries below remain
 historical evidence and may describe superseded states.
 
 ## Current checkpoint
@@ -13,15 +13,15 @@ CURRENT_TODO = TODO-12, TODO-14…TODO-16, and TODO-19; TODO-13, TODO-17, and TO
 MISSION_STATUS = IN_PROGRESS
 
 BRANCH = pca-dev
-LOCAL_HEAD = 1056546e6a43eaeb8886e79afe5d584af8154995 (local docs-only TODO-20 closure commit)
+LOCAL_HEAD = 6b7bf8e12b67f349e38fa2271d564bf72dec975b (Parent implementation checkpoint; one prior local docs-only commit is also ahead)
 REMOTE = origin
 TARGET_DEV_BRANCH = pca-dev
 FETCHED_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch; one successful ls-remote matched, a later retry failed through the configured proxy)
-LOCAL_REMOTE_EQUAL = NO; local HEAD is one docs-only TODO-20 closure commit ahead
+LOCAL_REMOTE_EQUAL = NO; two local commits are ahead, preserving fast-forward ancestry
 REMOTE_ADVANCED_DURING_WORK = NO during the latest successful fetch; fetched ref remains 35f6c022
 INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
 CHECKPOINT_WORKTREE_ENTRY_COUNT = 330 before the new classification file; 227 modified tracked and 103 untracked; no staged/deleted entries
-POST_CHECKPOINT_DIRTY_PATHS = 17 tracked paths currently changed, including Parent Settings/API/tests, the real-backend acceptance spec, disposable E2E runner/package target, route matrix, ledgers and generated schema snapshots; unrelated .vscode and root fragment 0 remain excluded
+POST_CHECKPOINT_DIRTY_PATHS = Current source checkpoint committed; the three mission ledgers now need a follow-up synchronization commit. Unrelated .vscode and root fragment 0 remain excluded.
 PEER_WORK_PRESERVED = YES (all 61 date-bound assessment files committed separately; unrelated/mobile source remained untouched)
 
 PARENT_IMPLEMENTATION_PATHS = coordinator owns authorized Parent + dependent Platform family-identity implementation; existing dirty changes retained
@@ -30,14 +30,14 @@ OUT_OF_SCOPE_DIRTY_PATHS = 39 API/mobile assessment files and 2 .vscode files; p
 MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md (new)
 CODE_CHANGES_BY_THIS_CHECKPOINT = backend/src/parentaccount/ParentAccountService.ts; backend/src/platformadmin/accounts/FamilyAccountStatusService.ts; backend/src/http/routes/platformadmin/accountsRoutes.ts; backend/test/parentaccount/optionalMfaLogin.test.mjs; backend/test/db/parentAccount.mysql.test.mjs; backend/src/familyrbac/RemovalDecisionAuthority.ts; backend/src/familyrbac/MySqlRemovalDecisionRepository.ts; backend/src/http/routes/removalDecisionRoutes.ts; backend/migrations/0057_parent_actor_provenance_for_removal_decisions.sql; backend/src/db/schema.ts; parent-web/src/rbac/useFamilyAction.ts; parent-web/tests/route/familyActions.test.tsx; this ledger
 FOCUSED_TESTS = Prior mission campaigns remain as recorded; Parent session-revocation real-client/Settings/RTL run passed 42/42; Parent Web typecheck, touched-file ESLint, strict E2E TypeScript compile, Playwright collection, backend build, and git diff --check passed.
-BROWSER_EVIDENCE = Exact-head Quality Gates run 36360087042 at 35f6c022 passed all jobs, including certified Parent/Platform real-backend browser E2E. New local owner-acceptance campaign on disposable MySQL 8.4.11 passed 2/2, 0 skipped/unexpected/flaky: journey 401/403 count zero, revoke-all returned 204 and redirected to sign-in, and cross-family isolation passed. The campaign used 57 migrations and a run-owned random database, which was removed. This is working-tree evidence, not exact-head CI.
+BROWSER_EVIDENCE = Exact-head Quality Gates run 36360087042 at 35f6c022 passed all jobs, including certified Parent/Platform real-backend browser E2E. Local owner-acceptance campaign at `6b7bf8e` passed 2/2, 0 skipped/unexpected/flaky: journey 401/403 count zero, revoke-all returned 204 and redirected to sign-in, and cross-family isolation passed. It used 57 migrations and a run-owned random database, which was removed. This is local source evidence, not exact-head CI.
 BROADER_REGRESSION = TODO-17 automated integration PASS at 35f6c022; full MySQL certification, Parent/Platform real-backend browser, Android, iOS, security, builds and unit jobs passed. TODO-13 local backend build and focused sensitive-action HTTP campaign passed 64/64. External device-crypto and owner localhost gates remain separately open.
 UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at 35f6c022f017e04aecbf3573394bf20f90d12489 (latest fetched remote source checkpoint)
-PARENT_LOCAL_ONLY_FILES_REMAINING = 17 tracked mission paths currently changed locally; .vscode and root fragment 0 remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 1 local docs-only commit (1056546e6a43eaeb8886e79afe5d584af8154995); current ledger and generated-schema artifact updates are uncommitted
+REMOTE_ALIGNMENT_COMPLETED = NO for current local checkpoint; latest fetched remote remains 35f6c022f017e04aecbf3573394bf20f90d12489 and is an ancestor; authorized fast-forward publication is pending
+PARENT_LOCAL_ONLY_FILES_REMAINING = Three updated mission ledgers pending their ledger-sync commit; .vscode and root fragment 0 remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = Two local fast-forward commits (1056546e and 6b7bf8e), plus this ledger-sync commit after it is created; unrelated .vscode and root fragment 0 remain untracked and excluded
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0059; 57 migrations applied from zero on local MySQL 8.4.11
 REPO_MIGRATION_HEAD = 0059 (57 migrations; 0009 and 0010 absent from repository history)

@@ -5,7 +5,7 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 02:18 UTC
+LAST_UPDATED_UTC = 2026-09-28 02:21 UTC
 VALIDATED_PARENT_SOURCE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 35f6c022f017e04aecbf3573394bf20f90d12489 (fresh fetch and GitHub ref match before this ledger publication)
 CURRENT_CHECKPOINT_SHA = 35f6c022f017e04aecbf3573394bf20f90d12489 (Parent corrective checkpoint plus ledger sync; exact-head CI PASS; TODO-20 reconciled)
@@ -59,6 +59,13 @@ NEXT_ACTION = Maintain the dependency hold pending integrated Parent evidence an
 PARENT = Disposable MySQL 8.4.11 real-backend acceptance campaign passed 2/2 with zero skips; the measured authenticated journey had zero unexpected 401/403, revoke-all returned 204 and redirected to sign-in, and cross-family isolation passed. These are uncommitted local results, not exact-head CI.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; TODO-12/15 and global TODO-14 aggregate proof remain open, as does literal TODO-18 acceptance. Enrollment Name/Email/nullable Phone and deployment are still incomplete.
 NEXT_ACTION = Continue Parent authority/device security work and keep Platform Enrollment queued behind its dependency gates.
+
+### 2026-09-28 02:21 UTC — Parent source committed locally; Platform remains held
+
+PARENT = Source checkpoint `6b7bf8e12b67f349e38fa2271d564bf72dec975b` commits revoke-all Settings, focused tests, real-backend acceptance coverage/runner, route map and schema artifact updates. The disposable MySQL 8.4.11 owner acceptance campaign passed 2/2; exact-head CI has not run for this commit.
+GIT = The source checkpoint is two fast-forward commits ahead of fetched remote `35f6c022`; this ledger synchronization will be a third commit. Publication and new exact-head CI remain pending. GitHub Actions lookup currently fails because the configured localhost proxy refuses connections.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15 and literal TODO-18 acceptance remain open. No Enrollment implementation, activation, deployment, or production UAT is claimed.
+NEXT_ACTION = Publish the ledger sync and authorized fast-forward commits, then verify exact-head CI before resuming the dependency-gated Platform package.
 
 ### 2026-09-28 01:04 UTC — Parent TODO-13 closed; Platform remains held
 
