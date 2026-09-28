@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerWebRuleRoutes } from '../../dist/http/routes/webRuleRoutes.js';
 import { InMemoryWebRuleRepository, WebRuleService } from '../../dist/web/WebRuleStore.js';
@@ -10,6 +10,14 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
+
+const WEB_RULES_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/web-rules';
+const WEB_RULES_REMOVE_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/web-rules/remove';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 const FAMILY = 'family-web-rule-http-1';
 const OTHER_FAMILY = 'family-web-rule-other-1';
@@ -100,6 +108,7 @@ test('GET returns an empty rule list for a family with no rules yet', async () =
       headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     assert.deepEqual(response.json().rules, []);
   } finally {
     await app.close();
@@ -134,6 +143,8 @@ test('GET rejects cross-family and unknown child profiles indistinguishably with
       assert.equal(response.statusCode, 403);
       assert.deepEqual(response.json(), { error: 'forbidden' });
     }
+    recordParentRouteScenario({ method: 'GET', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_read_cross_family_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: responses[0] });
+    recordParentRouteScenario({ method: 'GET', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_read_unknown_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: responses[1] });
     assert.deepEqual(listCalls, []);
   } finally {
     await app.close();
@@ -150,6 +161,7 @@ test('GET remains fail-closed with 503 when the readable rule service is not con
       headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 503);
+    recordParentRouteScenario({ method: 'GET', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_read_not_configured', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
     assert.deepEqual(response.json(), { error: 'not_configured' });
     assert.deepEqual(sideEffectCalls, []);
   } finally {
@@ -172,6 +184,7 @@ test('an Owner can add a denylist rule: authorized, canonicalized, and durably w
     assert.equal(response.statusCode, 200);
     const body = response.json();
     assert.deepEqual(body.rules, [{ domain: 'example.com', listType: 'DENY', createdAtUtc: T0.toISOString() }]);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_add_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
 
     const stored = await repo.listByFamily(FAMILY);
     assert.equal(stored.length, 1);
@@ -201,6 +214,7 @@ test('an Owner can remove a previously added rule', async () => {
       payload: { domain: 'example.com', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_REMOVE_ROUTE, scenarioId: 'web_rules_remove_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     assert.deepEqual(response.json().rules, []);
     assert.deepEqual(await repo.listByFamily(FAMILY), []);
   } finally {
@@ -221,6 +235,7 @@ test('an invalid domain is rejected with 400 and never stored', async () => {
       payload: { domain: '192.168.1.1', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 400);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_add_invalid_domain', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
     assert.deepEqual(await repo.listByFamily(FAMILY), []);
   } finally {
     await app.close();
@@ -240,6 +255,7 @@ test('a VIEWER cannot add a rule: DENY from the real OPERATION_MATRIX, no write'
       payload: { domain: 'example.com', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_add_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.deepEqual(await repo.listByFamily(FAMILY), []);
   } finally {
     await app.close();
@@ -278,6 +294,7 @@ test('cross-family target denial: a childProfileId belonging to another family i
       payload: { domain: 'example.com', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_add_cross_family_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
   } finally {
     await app.close();
   }
@@ -357,6 +374,7 @@ test('the mutation route fails closed with 503 when not configured, rather than 
       payload: { domain: 'example.com', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 503);
+    recordParentRouteScenario({ method: 'POST', route: WEB_RULES_ROUTE, scenarioId: 'web_rules_add_not_configured', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
   } finally {
     await app.close();
   }

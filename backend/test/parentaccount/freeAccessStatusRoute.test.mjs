@@ -4,13 +4,20 @@
 // FreeAccessAccountRepository fake stands in, mirroring
 // test/parentaccount/routes.test.mjs's own in-memory-repository discipline.
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
 import { createParentAccountTestKit } from '../support/parentMfaTestKit.mjs';
+
+const FREE_ACCESS_ROUTE = '/api/parent/free-access-status';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 class RecordingEmailSender {
   constructor() {
@@ -89,12 +96,14 @@ test('GET /api/parent/free-access-status: 401 with no session cookie at all', as
   const { app } = buildApp();
   const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status' });
   assert.equal(response.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
 });
 
 test('GET /api/parent/free-access-status: 401 with a garbage/unrecognized session cookie', async () => {
   const { app } = buildApp();
   const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status', headers: { cookie: 'pca_family_session=not-a-real-token' } });
   assert.equal(response.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_garbage_cookie_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
 });
 
 test('GET /api/parent/free-access-status: 200 with the derived FreeAccessStatus for a verified account', async () => {
@@ -104,6 +113,7 @@ test('GET /api/parent/free-access-status: 200 with the derived FreeAccessStatus 
 
   const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status', headers: { cookie } });
   assert.equal(response.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_verified_account_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
   const body = response.json();
   assert.ok(['TIME_LIMITED', 'PERPETUAL'].includes(body.mode));
   assert.ok(['ACTIVE', 'PERPETUAL', 'EXPIRED'].includes(body.status));
@@ -132,4 +142,5 @@ test('GET /api/parent/free-access-status: fails closed (503, never a crash or a 
 
   const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status', headers: { cookie } });
   assert.equal(response.statusCode, 503);
+  recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_repository_unwired', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
 });

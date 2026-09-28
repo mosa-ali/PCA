@@ -754,3 +754,16 @@ PARENT = Exact-head Quality Gates run `36360087042` passed on `35f6c022f017e04ae
 REPORT_RECONCILIATION = Attachment snapshots at `0daf660` and `399304c` predate the current branch checkpoint. Live database was at 0058 immediately before 0059, not 0050; current state now matches through 0059.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; TODO-20 completion does not close Parent TODO-12…TODO-18, projection and literal `LOCALHOST ACCEPTED=YES` gates. No Platform activation, deployment, or owner acceptance occurred.
 NEXT_ACTION = Continue dependent work only after its Parent gates close; preserve the Platform hold.
+
+### 2026-09-28 08:19 UTC — Parent TODO-14 collector expanded; Platform remains held
+
+PARENT = Eye-protection tests add eight status-only outcomes across GET/POST; focused suite passed 8/8. Cumulative bounded collector count is 74 scenarios across 34/52 declarations, with zero unexpected results in the instrumented fixture set; coverage and global aggregates remain explicitly unproven.
+CI = Exact-head Quality Gates run `36396015633` remains in progress at `c460144aab45a0a91ce2fe52ca05b80a81636ce5`; this local eye-protection instrumentation is not included.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform implementation, activation, deployment, or owner acceptance occurred.
+NEXT_ACTION = Complete the current exact-head run, then publish the collector/crosswalk/ledger checkpoint and continue Parent TODO-14. Preserve the Parent dependency and localhost acceptance gates.
+
+### 2026-09-28 19:45 UTC — Parent TODO-14 declaration coverage complete; Platform remains held
+
+PARENT = The bounded status-only collector now classifies all 52/52 Parent route declarations by exact inventory-key comparison: 138 matched scenarios (52 allow, 59 expected denial, 5 authority unavailable, 1 protective-authority-not-applicable, 3 optional-route absent, 4 service-not-configured, 2 crypto/device-gated, 12 validation/protocol), zero unexpected 401/403/other, and Genesis/browser-trust blocked counters at 0. Combined thirteen-suite campaign PASS 144/144; full backend unit regression PASS 2674/2674. Parent TODO-14 remains IN_PROGRESS: database-backed integrated campaign evidence and the known authority boundaries remain open, and no Parent boundary was resolved or bypassed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform implementation, activation, deployment, or owner acceptance occurred.
+NEXT_ACTION = Preserve the Platform hold and wait for owner review of the Parent checkpoint; do not begin dependent Platform work.

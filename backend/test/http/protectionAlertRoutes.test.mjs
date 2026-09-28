@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerProtectionAlertRoutes } from '../../dist/http/routes/protectionAlertRoutes.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
+
+const PROTECTION_ALERTS_ROUTE = '/api/parent/families/:familyId/protection-alerts';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -78,6 +85,7 @@ test('an active Parent session receives family-scoped opaque protection-alert en
       headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
     assert.equal(body.alerts.length, 2);
     assert.deepEqual(body.alerts.map((alert) => alert.alertId), ['alert-owner-1', 'alert-someone-else-1']);
@@ -116,6 +124,7 @@ test('a device from a different family cannot read this family’s protection-al
     });
     // session-other-owner's own familyId (OTHER_FAMILY) never matches the :familyId path param (FAMILY).
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
@@ -153,6 +162,7 @@ test('no session cookie -> 401', async () => {
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts` });
     assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
     assert.equal(response.json().error, 'unauthorized');
   } finally {
     await app.close();
@@ -168,6 +178,7 @@ test('an account with no family scope yet is rejected honestly, not treated as a
       headers: { cookie: 'pca_family_session=session-no-family', authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_no_family_scope_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_required');
   } finally {
     await app.close();
@@ -182,6 +193,7 @@ test('when protectionAlertLedger is not supplied, the route registers nothing (m
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts` });
     assert.equal(response.statusCode, 404);
+    recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_optional_route_absent', classification: 'OPTIONAL_ROUTE_ABSENT', expectedStatus: 404, response });
   } finally {
     await app.close();
   }

@@ -319,6 +319,7 @@ test('GET /api/parent/session returns the session when the cookie is present, 40
 
   const ok = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: `pca_family_session=${sessionToken}` } });
   assert.equal(ok.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'session_read_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: ok });
   const session = ok.json();
   assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'mfa', 'role'], 'no genesisAvailable or other client-trusted flag');
   assert.equal(session.emailVerified, true);
@@ -327,20 +328,31 @@ test('GET /api/parent/session returns the session when the cookie is present, 40
 
   const none = await app.inject({ method: 'GET', url: '/api/parent/session' });
   assert.equal(none.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'session_read_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: none });
 });
 
 test('SECURITY: an expired/revoked/garbage session cookie collapses to the SAME 401 as no cookie at all', async () => {
   const { app } = buildApp();
   const garbage = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: 'pca_family_session=not-a-real-token' } });
   assert.equal(garbage.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'session_read_garbage_cookie_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: garbage });
   assert.deepEqual(garbage.json(), { error: 'unauthorized' });
 });
 
 test('SECURITY (CSRF): logout without the X-PCA-CSRF-Token header is rejected even with a valid session cookie', async () => {
   const { app, emailSender } = buildApp();
-  const { sessionToken } = await registerVerifyAndCookies(app, emailSender);
+  const { sessionToken, csrfToken } = await registerVerifyAndCookies(app, emailSender);
   const response = await app.inject({ method: 'POST', url: '/api/parent/logout', headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=whatever` } });
   assert.equal(response.statusCode, 403);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/logout', scenarioId: 'logout_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
+
+  const signedOut = await app.inject({
+    method: 'POST',
+    url: '/api/parent/logout',
+    headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}`, 'x-pca-csrf-token': csrfToken },
+  });
+  assert.equal(signedOut.statusCode, 204);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/logout', scenarioId: 'logout_allow', classification: 'ALLOW_PROVEN', expectedStatus: 204, response: signedOut });
 });
 
 test('SECURITY (CSRF): the CSRF cookie alone (mismatched header) never authorizes a mutation', async () => {
@@ -352,6 +364,7 @@ test('SECURITY (CSRF): the CSRF cookie alone (mismatched header) never authorize
     headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}`, 'x-pca-csrf-token': 'wrong-value' },
   });
   assert.equal(response.statusCode, 403);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/sessions/revoke-all', scenarioId: 'revoke_all_mismatched_csrf_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
 });
 
 test('a matching CSRF cookie+header succeeds on revoke-all, and the session is unusable afterward', async () => {
@@ -363,9 +376,11 @@ test('a matching CSRF cookie+header succeeds on revoke-all, and the session is u
     headers: { cookie: `pca_family_session=${sessionToken}; pca_family_csrf=${csrfToken}`, 'x-pca-csrf-token': csrfToken },
   });
   assert.equal(response.statusCode, 204);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/sessions/revoke-all', scenarioId: 'revoke_all_allow', classification: 'ALLOW_PROVEN', expectedStatus: 204, response });
 
   const after = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: `pca_family_session=${sessionToken}` } });
   assert.equal(after.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'session_read_after_revoke_all_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: after });
 });
 
 test('POST /api/parent/login keeps generic credential errors and automatically trusts the first successful browser', async () => {
@@ -439,6 +454,8 @@ test('POST /api/parent/request-password-reset returns 202 identically for a real
 
   assert.equal(real.statusCode, 202);
   assert.equal(unknown.statusCode, 202);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/request-password-reset', scenarioId: 'password_reset_request_known_email', classification: 'ALLOW_PROVEN', expectedStatus: 202, response: real });
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/request-password-reset', scenarioId: 'password_reset_request_unknown_email', classification: 'ALLOW_PROVEN', expectedStatus: 202, response: unknown });
   assert.deepEqual(real.json(), unknown.json());
   assert.equal(setCookieHeaders(real).length, 0);
   assert.ok(emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET'), 'a real code must have been sent for the known account');
@@ -459,6 +476,7 @@ test('POST /api/parent/reset-password: full request -> reset -> old password rej
     payload: { email: EMAIL, code, newPassword: NEW_PASSWORD, newPasswordConfirmation: NEW_PASSWORD },
   });
   assert.equal(reset.statusCode, 200);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/reset-password', scenarioId: 'password_reset_complete_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: reset });
   assert.deepEqual(reset.json(), { status: 'PASSWORD_RESET' });
   assert.equal(setCookieHeaders(reset).length, 0, 'reset-password must not itself establish a session');
 
@@ -483,6 +501,7 @@ test('POST /api/parent/reset-password rejects an invalid/expired code with 401 i
     payload: { email: EMAIL, code: '000000', newPassword: 'a brand new correct horse battery', newPasswordConfirmation: 'a brand new correct horse battery' },
   });
   assert.equal(response.statusCode, 401);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/reset-password', scenarioId: 'password_reset_invalid_code_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
   assert.deepEqual(response.json(), { error: 'invalid_code' });
 });
 
@@ -497,6 +516,7 @@ test('POST /api/parent/reset-password rejects a mismatched confirmation with 400
     payload: { email: EMAIL, code, newPassword: 'one valid password here', newPasswordConfirmation: 'a totally different one' },
   });
   assert.equal(response.statusCode, 400);
+  recordParentRouteScenario({ method: 'POST', route: '/api/parent/reset-password', scenarioId: 'password_reset_mismatched_confirmation', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
   assert.deepEqual(response.json(), { error: 'invalid_request' });
 });
 

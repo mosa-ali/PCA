@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 08:10 UTC
-VALIDATED_SOURCE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head Quality Gates run 36394990145 SUCCESS 27/27; dashboard/audit collector edits are separately validated locally)
-VERIFIED_SOURCE_REMOTE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head run 36394990145 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_CHANGE = Dashboard/audit route collector/crosswalk addition and both-ledger evidence sync are local; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 19:45 UTC
+VALIDATED_SOURCE_HEAD = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (exact-head Quality Gates run 36396015633 SUCCESS 27/27)
+VERIFIED_SOURCE_REMOTE_HEAD = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = c460144aab45a0a91ce2fe52ca05b80a81636ce5 (exact-head run 36396015633 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_CHANGE = Full TODO-14 collector coverage (52/52 declarations by inventory-key comparison), the crosswalk update and both master ledgers are local; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the dashboard/audit collector slice and both master ledgers as a fast-forward, then verify exact-head CI. Keep global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
+NEXT_ACTION = Publish the 52/52 collector coverage, crosswalk and both master ledgers as a fast-forward, then verify exact-head CI. Keep global route/action aggregates NOT_YET_PROVEN, do not begin TODO-10/12/15 without owner review, and preserve owner/Platform gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -1070,3 +1070,20 @@ NEXT_ACTION = Continue TODO-12/14/15 and retain the TODO-10/TODO-14 dependency a
 TODO14_SOURCE_REVIEW = Re-read each of the six server paths without a Parent Web call site and added explicit machine-readable dispositions to `parent_api_contract_matrix.json`: two bonus-grant endpoints stay unexposed pending durable lifecycle/audit; dashboard and removal-detail remain optional unconsumed reads; authorized-recovery and signed decision routes remain crypto/device gated. The matrix still maps 35/35 Parent Web calls to backend handlers and inventories 52 declarations/43 unique paths.
 LIMIT = Classification closes the source-inventory ambiguity only. `UNEXPECTED_401`, `UNEXPECTED_403`, aggregate `AUTHORITY_UNAVAILABLE`, Genesis/browser aggregate counts remain NOT_YET_PROVEN; TODO-14 stays IN_PROGRESS and TODO-10 remains dependent on it.
 NEXT_ACTION = Continue integrated runtime/action evidence without adding browser callers for the deferred or cryptographic paths.
+
+### 2026-09-28 08:19 UTC — eye-protection route outcomes added to TODO-14 collector
+
+TODO14_LOCAL = Existing eye-protection GET/POST assertions now emit eight status-only scenarios across both method/path declarations. The combined bounded collector inventory is 74 scenarios across 34/52 declarations: 32 allows, 29 expected denials, three authority-unavailable outcomes, one protective-authority-not-applicable outcome, two optional-route absences, two crypto/device gates, and five validation/protocol outcomes. The focused eye-protection suite passed 8/8; that run observed zero unexpected 401/403/other responses. Its report explicitly remains `coverageComplete=false` and `globalAggregateStatus=NOT_YET_PROVEN`.
+CI = Exact-head Quality Gates run `36396015633` completed SUCCESS 27/27 at `c460144aab45a0a91ce2fe52ca05b80a81636ce5`; it does not include this new local test instrumentation.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Platform activation, deployment, or owner acceptance occurred.
+NEXT_ACTION = Publish the eye-protection collector/crosswalk and ledger update as the next exact-head checkpoint; continue TODO-14 and keep all-route aggregates unproven.
+
+### 2026-09-28 19:45 UTC — TODO-14 collector reaches full 52/52 declaration coverage
+
+IMPLEMENTATION = The status-only collector now covers every current Parent route declaration. The helper compares collected method+route keys against a canonical 52-declaration inventory (mechanically re-verified against `backend/src/http/routes` on 2026-09-28: 52 declarations / 43 unique paths) and reports `declarationsCollected`, `declarationsMissing`, `undeclaredCollectedKeys`, computed `coverageComplete`, and explicit `GENESIS_BLOCKED_NORMAL_ACTIONS` / `TRUSTED_BROWSER_BLOCKED_NORMAL_ACTIONS` counters (report schema version 2). Eighteen previously uncollected declarations were instrumented across seven route suites: schedule-policy; account session/logout/revoke-all/password-reset; CSRF bootstrap; free-access-status; preferences and safe-zones (with new positive PATCH/DELETE assertions); protection-alerts; and web-rules. The eye-protection slice from the prior local checkpoint is included. Schedule-policy's production-default `NO_TRUST_SET` fail-closed 403 stays classified `AUTHORITY_UNAVAILABLE`; web-rules `not_configured` stays `SERVICE_NOT_CONFIGURED`; signed/recovery decisions stay `CRYPTO_DEVICE_GATED`; no gated route was activated and no plaintext policy persistence was introduced.
+VALIDATION = Backend build PASS; the combined thirteen-suite collector campaign PASS 144/144 in one serial process with the collector enabled; full backend unit regression PASS 2674/2674. Combined report: 138 matched scenarios across 52/52 declarations (52 allow, 59 expected denial, 5 authority unavailable, 1 protective-authority-not-applicable, 3 optional-route absent, 4 service-not-configured, 2 crypto/device-gated, 12 validation/protocol); unexpected 401/403/other = 0; GENESIS_BLOCKED_NORMAL_ACTIONS = 0; TRUSTED_BROWSER_BLOCKED_NORMAL_ACTIONS = 0; `coverageComplete = true` by inventory-key comparison; `globalAggregateStatus = NOT_YET_PROVEN`. `git diff --check` clean; no generated report residue committed.
+TODO14 = Declaration coverage complete in the bounded test-double slice. TODO-14 remains IN_PROGRESS: database-backed integrated campaign evidence is not yet produced, and the known authority boundaries (schedule-policy Trust Set path, Web Rules encrypted policy storage/delivery, crypto-gated signed/recovery decisions) are classified honestly rather than resolved.
+FILES = `backend/test/helpers/parentRouteOutcomeCollector.mjs`; `backend/test/http/{childPolicyRoutes,childRequestRoutes,dashboardRoutes,eyeProtectionRoutes,familyAuditEventRoutes,familyMemberRoutes,parentMfaRoutes,protectionAlertRoutes,webRuleRoutes}.test.mjs`; `backend/test/parentaccount/{routes,freeAccessStatusRoute,preferencesSafeZonesRoute}.test.mjs`; `backend/test/familyrbac/removalDecisionRoutes.wiring.test.mjs`; `docs/pre_production_assessment/pca_parent_platform/parent_route_action_test_crosswalk.md`; both master ledgers.
+GIT = This slice is local for the checkpoint entry; last verified published head remains `c460144aab45a0a91ce2fe52ca05b80a81636ce5` (exact-head run `36396015633` SUCCESS 27/27). `.vscode/` and root `0` remain excluded.
+CI = Exact-head CI for this new commit has not run yet; no result is claimed.
+NEXT_ACTION = Publish this slice as a fast-forward, record its exact-head run, then stop for owner review before any next wave. Candidate next waves: extend the collector into the guarded disposable-DB integration campaign, or begin TODO-10 Genesis proof closure (its recorded blocker is this route/action audit); TODO-12/15 remain unstarted.

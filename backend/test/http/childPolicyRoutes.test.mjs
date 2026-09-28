@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerChildPolicyRoutes } from '../../dist/http/routes/childPolicyRoutes.js';
 import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
@@ -9,6 +9,7 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 const FAMILY = 'family-schedule-http-1';
 const OTHER_FAMILY = 'family-other-http-1';
@@ -18,6 +19,11 @@ const CHILD_PROFILE_FAMILY_MAP = new Map([
 ]);
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 const VALID_ENVELOPE = { recipientDeviceId: 'dev-child', ciphertextB64: 'YWJjZGVmZ2g', nonceB64: 'MDEyMzQ1Njc4OTAxMjM0NQ', keyEpoch: 3 };
+const SCHEDULE_POLICY_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/schedule-policy';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 function buildAuthorization({ nowFn = () => T0, roleResolver } = {}) {
   const childProfileResolver = new StaticChildProfileMembershipResolver(CHILD_PROFILE_FAMILY_MAP);
@@ -106,6 +112,7 @@ test('an Owner can submit a schedule-policy envelope: authorized, relayed, and P
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 202);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 202, response });
     const body = response.json();
     assert.equal(body.status, 'PENDING');
     assert.equal(typeof body.messageId, 'string');
@@ -133,6 +140,7 @@ test('a VIEWER cannot edit child policy: DENY from the real OPERATION_MATRIX, no
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_viewer_device_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -150,6 +158,7 @@ test('a Viewer Parent account is denied even when its browser device appears as 
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_viewer_account_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -167,6 +176,7 @@ test('cross-family target denial: a childProfileId belonging to another family i
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_cross_family_child_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -184,6 +194,7 @@ test('while UnavailableTrustSetRoleResolver is wired (production default), every
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_unavailable_trust_set', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 403, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -207,6 +218,7 @@ test('a foreign/spoofed recipientDeviceId is rejected by the relay even after au
       payload: { ...VALID_ENVELOPE, recipientDeviceId: 'dev-not-in-this-family' },
     });
     assert.equal(response.statusCode, 400);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_foreign_recipient_rejected', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
     assert.equal(submittedBatches.length, 1); // the relay WAS called (and correctly rejected it) -- authorization alone is not the whole defense
   } finally {
     await app.close();
@@ -224,6 +236,7 @@ test('missing CSRF header is rejected before any authorization or relay call', a
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -241,6 +254,7 @@ test('missing actor-device-session bearer token is rejected with 401, never trea
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_requires_device_bearer', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -258,6 +272,7 @@ test('the route fails closed with 503 when not configured, rather than a silent 
       payload: VALID_ENVELOPE,
     });
     assert.equal(response.statusCode, 503);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_not_configured', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
@@ -276,6 +291,7 @@ test('a malformed envelope body (missing keyEpoch) is rejected with 400 before a
       payload: malformed,
     });
     assert.equal(response.statusCode, 400);
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_malformed_envelope', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();

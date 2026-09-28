@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { SafeZoneError } from '../../dist/location/SafeZoneRepository.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
+
+const PREFERENCES_ROUTE = '/api/parent/preferences';
+const SAFE_ZONES_ROUTE = '/api/parent/families/:familyId/safe-zones';
+const SAFE_ZONE_DETAIL_ROUTE = '/api/parent/families/:familyId/safe-zones/:zoneId';
+
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
 
 function buildApp(role = 'OWNER') {
   const sessions = new Map([
@@ -72,13 +81,16 @@ test('preferences are account-scoped and mutations require matching CSRF', async
   const app = buildApp();
   const initial = await app.inject({ method: 'GET', url: '/api/parent/preferences', headers: authHeaders });
   assert.equal(initial.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: PREFERENCES_ROUTE, scenarioId: 'preferences_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: initial });
   assert.equal(initial.json().preferences.language, 'en');
 
   const blocked = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: authHeaders, payload: { language: 'ar' } });
   assert.equal(blocked.statusCode, 403);
+  recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_patch_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: blocked });
 
   const changed = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { language: 'ar', emailAlertsEnabled: false } });
   assert.equal(changed.statusCode, 200);
+  recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_patch_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: changed });
   assert.equal(changed.json().preferences.language, 'ar');
 
   const other = await app.inject({ method: 'GET', url: '/api/parent/preferences', headers: { cookie: 'pca_family_session=session-b; pca_family_csrf=csrf-b' } });
@@ -88,6 +100,7 @@ test('preferences are account-scoped and mutations require matching CSRF', async
 
   const invalidDestination = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { emailDestination: 'not-an-email' } });
   assert.equal(invalidDestination.statusCode, 400);
+  recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_patch_invalid_destination', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: invalidDestination });
 
   const destination = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { emailDestination: 'parent@example.test' } });
   assert.equal(destination.statusCode, 200);
@@ -99,21 +112,26 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   const app = buildApp();
   const wrongFamily = await app.inject({ method: 'GET', url: '/api/parent/families/family-b/safe-zones', headers: authHeaders });
   assert.equal(wrongFamily.statusCode, 403);
+  recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: wrongFamily });
 
   const opaquePayload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const noCsrf = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders, payload: opaquePayload });
   assert.equal(noCsrf.statusCode, 403);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: noCsrf });
 
   const plaintext = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { childProfileId: 'child-a', label: 'Home', latitude: 1, longitude: 2, radiusMeters: 100 } });
   assert.equal(plaintext.statusCode, 400);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_plaintext_rejected', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: plaintext });
 
   const created = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: opaquePayload });
   assert.equal(created.statusCode, 201);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 201, response: created });
   assert.equal(created.json().safeZone.deliveryState, 'PENDING_OFFLINE');
   assert.equal(created.json().safeZone.ciphertextB64, 'AQID');
 
   const list = await app.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(list.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: list });
   assert.equal(list.json().safeZones.length, 1);
 });
 
@@ -123,9 +141,20 @@ test('safe-zone update and delete re-authorize the stored recipient endpoint', a
 
   const update = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG' } });
   assert.equal(update.statusCode, 404);
+  recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_update_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: update });
 
   const remove = await app.inject({ method: 'DELETE', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' } });
   assert.equal(remove.statusCode, 404);
+  recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_delete_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: remove });
+
+  app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'device-a' });
+  const allowedUpdate = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG' } });
+  assert.equal(allowedUpdate.statusCode, 200);
+  recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_update_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: allowedUpdate });
+
+  const allowedRemove = await app.inject({ method: 'DELETE', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' } });
+  assert.equal(allowedRemove.statusCode, 204);
+  recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_delete_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 204, response: allowedRemove });
 });
 
 test('safe-zone Parent membership allows reads for Viewer and mutations only for Administrator', async () => {
@@ -137,17 +166,22 @@ test('safe-zone Parent membership allows reads for Viewer and mutations only for
 
   const viewerRead = await buildApp('VIEWER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(viewerRead.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_viewer_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: viewerRead });
   const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(viewerMutation.statusCode, 403);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: viewerMutation });
 
   const crossFamilyRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-b', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(crossFamilyRecipient.statusCode, 404);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_cross_family_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: crossFamilyRecipient });
 
   const unknownRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'unknown-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(unknownRecipient.statusCode, 404);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_unknown_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: unknownRecipient });
 
   const malformedRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'not valid', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(malformedRecipient.statusCode, 400);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_malformed_recipient', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response: malformedRecipient });
 
   const noAuthority = Fastify();
   const noAuthorityService = { async readSession() { return { accountId: 'account-a', familyId: 'family-a', emailVerified: true }; } };
@@ -155,6 +189,7 @@ test('safe-zone Parent membership allows reads for Viewer and mutations only for
   registerParentAccountRoutes(noAuthority, { parentAccountService: noAuthorityService, safeZoneRepository: noAuthorityRepository });
   const unavailable = await noAuthority.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(unavailable.statusCode, 503);
+  recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: unavailable });
 });
 
 test('client-supplied device identity cannot grant Parent membership authority', async () => {
@@ -167,4 +202,5 @@ test('client-supplied device identity cannot grant Parent membership authority',
     payload: opaquePayload,
   });
   assert.equal(legitimate.statusCode, 403);
+  recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_client_device_identity_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: legitimate });
 });

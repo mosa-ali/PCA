@@ -107,6 +107,7 @@ test('CSRF bootstrap only returns a token to a live Parent session and never cac
   const { app, emailSender } = buildApp();
   const anonymous = await browser(app).request('GET', '/api/parent/csrf');
   assert.equal(anonymous.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/csrf', scenarioId: 'csrf_bootstrap_anonymous_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: anonymous });
   assert.equal(anonymous.headers['cache-control'], undefined);
 
   const email = 'http-csrf-reissue@example.com';
@@ -115,6 +116,7 @@ test('CSRF bootstrap only returns a token to a live Parent session and never cac
   b.jar.delete('pca_family_csrf');
   const reissued = await b.request('GET', '/api/parent/csrf');
   assert.equal(reissued.statusCode, 200);
+  recordParentRouteScenario({ method: 'GET', route: '/api/parent/csrf', scenarioId: 'csrf_bootstrap_session_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: reissued });
   assert.equal(reissued.headers['cache-control'], 'no-store');
   assert.match(reissued.json().csrfToken, /^[A-Za-z0-9_-]{43}$/);
   assert.equal(b.jar.get('pca_family_csrf'), reissued.json().csrfToken);
