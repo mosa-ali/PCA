@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerDashboardRoutes } from '../../dist/http/routes/dashboardRoutes.js';
 import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 const FAMILY = 'family-dashboard-http-1';
 const OTHER_FAMILY = 'family-dashboard-http-other';
@@ -29,6 +30,10 @@ function buildApp({ dashboardAggregatorService } = {}) {
 
 const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
 
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
+
 test('a parent reads only its own family\'s dashboard cards, requested as a FULL_FAMILY scope', async () => {
   let calledWith = null;
   const dashboardAggregatorService = {
@@ -48,6 +53,7 @@ test('a parent reads only its own family\'s dashboard cards, requested as a FULL
       headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
     assert.equal(body.cards.length, 2);
     assert.equal(body.cards[0].kind, 'WEB_FILTERING');
@@ -65,6 +71,7 @@ test('no session cookie -> 401, never a silent empty dashboard', async () => {
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/dashboard` });
     assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
     assert.equal(response.json().error, 'unauthorized');
   } finally {
     await app.close();
@@ -81,6 +88,7 @@ test('a parent session scoped to a different family cannot read this family\'s d
     });
     // session-other-owner's own familyId (OTHER_FAMILY) never matches the :familyId path param (FAMILY).
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
@@ -96,6 +104,7 @@ test('an account with no family scope yet is rejected honestly, not treated as a
       headers: { cookie: 'pca_family_session=session-no-family' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_no_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_required');
   } finally {
     await app.close();
@@ -111,6 +120,7 @@ test('a child-only family role cannot read the Parent dashboard', async () => {
       headers: { cookie: 'pca_family_session=session-child' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_child_role_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'forbidden');
   } finally {
     await app.close();
@@ -140,6 +150,7 @@ test('when dashboardAggregatorService is not supplied, the route registers nothi
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/dashboard` });
     assert.equal(response.statusCode, 404);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/dashboard', scenarioId: 'dashboard_optional_route_absent', classification: 'OPTIONAL_ROUTE_ABSENT', expectedStatus: 404, response });
   } finally {
     await app.close();
   }

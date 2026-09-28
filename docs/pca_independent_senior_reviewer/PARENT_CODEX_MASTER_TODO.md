@@ -5,14 +5,14 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 07:59 UTC
-VALIDATED_SOURCE_HEAD = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (exact-head Quality Gates run 36393911487 SUCCESS 27/27; family-membership collector edits are separately validated locally)
-VERIFIED_SOURCE_REMOTE_HEAD = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (exact-head run 36393911487 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_CHANGE = Family-membership route collector/crosswalk addition and both-ledger evidence sync are local; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 08:10 UTC
+VALIDATED_SOURCE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head Quality Gates run 36394990145 SUCCESS 27/27; dashboard/audit collector edits are separately validated locally)
+VERIFIED_SOURCE_REMOTE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head run 36394990145 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_CHANGE = Dashboard/audit route collector/crosswalk addition and both-ledger evidence sync are local; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish the family-membership collector slice and both master ledgers as a fast-forward, then verify exact-head CI. Keep global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
+NEXT_ACTION = Publish the dashboard/audit collector slice and both master ledgers as a fast-forward, then verify exact-head CI. Keep global aggregates NOT_YET_PROVEN and preserve TODO-12/15 plus owner/Platform gates.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -85,6 +85,13 @@ CI = Exact-head Quality Gates run `36393911487` completed SUCCESS 27/27 at `1d84
 TODO14 = Family-membership tests now add 12 status-only outcomes across invitation create/list/revoke/role/accept and member remove declarations. Combined five-suite route campaign passed 79/79; report matches 54 scenarios across 30/52 declarations (27 allow, 17 expected denial, 2 authority unavailable, 1 protective-authority-not-applicable, 2 crypto/device-gated, 5 validation/protocol), with zero unexpected 401/403/other. Coverage is incomplete and global aggregate remains NOT_YET_PROVEN.
 GIT = Family-membership test and crosswalk edits are local; latest published SHA is `1d8490aeb5da8104302c4badcc8ab82271d4b06b`. Require exact-head CI after publication; `.vscode/` and root `0` remain excluded.
 NEXT_ACTION = Publish the family-membership collector and both master-ledger updates, then verify exact-head CI.
+
+### 2026-09-28 08:10 UTC — membership collector exact-head CI passed; dashboard/audit slice validated locally
+
+CI = Exact-head Quality Gates run `36394990145` completed SUCCESS 27/27 at `da21a66d0bae8e1b600b65e5e8c50339b8402cad`, including the family-membership collector and ledger sync.
+TODO14 = Dashboard and audit-event route tests add 12 matched scenarios across two method/path declarations, including explicit optional-route absence. Combined seven-suite route campaign passed 92/92. Bounded report matches 66 scenarios across 32/52 declarations (30 allow, 24 expected denial, 2 authority unavailable, 1 protective-authority-not-applicable, 2 optional-route-absent, 2 crypto/device-gated, 5 validation/protocol); zero unexpected 401/403/other. Global aggregates remain NOT_YET_PROVEN.
+GIT = Dashboard/audit test and crosswalk edits are local; latest published SHA `da21a66d0bae8e1b600b65e5e8c50339b8402cad` is green. Require exact-head CI after publication; `.vscode/` and root `0` remain excluded.
+NEXT_ACTION = Publish the dashboard/audit collector and both master TODO updates; then inspect exact-head CI.
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
 IMPLEMENTATION = Added an opt-in status-only collector for route test outcomes and instrumented the removal-decision detail GET scenarios. The JSON report classifies same-family allow, unknown-ID expected privacy denial and cross-family expected privacy denial; it stores no request bodies, headers, credentials or IDs. It declares its scope bounded, coverage incomplete (1/52 routes), and global aggregate `NOT_YET_PROVEN`.

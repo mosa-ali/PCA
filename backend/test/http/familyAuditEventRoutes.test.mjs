@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerFamilyAuditEventRoutes } from '../../dist/http/routes/familyAuditEventRoutes.js';
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
+import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -35,6 +36,10 @@ function buildApp({ ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW
 
 const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
 
+after(async () => {
+  await writeParentRouteScenarioReport();
+});
+
 test('an active Parent session receives family-scoped opaque envelopes -- never plaintext', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   await ledger.record({
@@ -63,6 +68,7 @@ test('an active Parent session receives family-scoped opaque envelopes -- never 
       headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
     assert.equal(body.envelopes.length, 2);
     assert.deepEqual(body.envelopes.map((entry) => entry.envelopeId), ['env-owner-1', 'env-someone-else-1']);
@@ -82,6 +88,7 @@ test('Parent session reads do not require an actor-device-session bearer token',
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerHeaders });
     assert.equal(response.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_session_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
   } finally {
     await app.close();
   }
@@ -97,6 +104,7 @@ test('a device from a different family cannot read this family’s queue', async
     });
     // session-other-owner's own familyId (OTHER_FAMILY) never matches the :familyId path param (FAMILY).
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_forbidden');
   } finally {
     await app.close();
@@ -108,6 +116,7 @@ test('no session cookie -> 401', async () => {
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/audit-events` });
     assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
     assert.equal(response.json().error, 'unauthorized');
   } finally {
     await app.close();
@@ -123,6 +132,7 @@ test('an account with no family scope yet is rejected honestly, not treated as a
       headers: { cookie: 'pca_family_session=session-no-family', authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_no_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
     assert.equal(response.json().error, 'family_scope_required');
   } finally {
     await app.close();
@@ -137,6 +147,7 @@ test('when familyAuditEventLedger is not supplied, the route registers nothing (
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/audit-events` });
     assert.equal(response.statusCode, 404);
+    recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_optional_route_absent', classification: 'OPTIONAL_ROUTE_ABSENT', expectedStatus: 404, response });
   } finally {
     await app.close();
   }

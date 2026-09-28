@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 07:59 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (exact-head Quality Gates run 36393911487 SUCCESS 27/27; family-membership collector edits are separately validated locally)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 1d8490aeb5da8104302c4badcc8ab82271d4b06b (exact-head run 36393911487 SUCCESS 27/27)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Family-membership route collector/crosswalk addition and both-ledger evidence sync are local; global aggregates and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 08:10 UTC
+VALIDATED_PARENT_SOURCE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head Quality Gates run 36394990145 SUCCESS 27/27; dashboard/audit collector edits are separately validated locally)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = da21a66d0bae8e1b600b65e5e8c50339b8402cad (post-push fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = da21a66d0bae8e1b600b65e5e8c50339b8402cad (exact-head run 36394990145 SUCCESS 27/27)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Dashboard/audit route collector/crosswalk addition and both-ledger evidence sync are local; global aggregates and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the family-membership collector slice and both master-ledger updates, then require exact-head CI. Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Publish the dashboard/audit collector slice and both master-ledger updates, then require exact-head CI. Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -723,6 +723,12 @@ NEXT_ACTION = Publish the Parent MFA collector/crosswalk and ledger sync, then i
 PARENT = Run `36393911487` passed 27/27 at published `1d8490aeb5da8104302c4badcc8ab82271d4b06b`. Local family-membership tests add 12 outcomes; combined five-suite tests passed 79/79 and global TODO-14 aggregates remain unproven.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Platform changes or activation occurred.
 NEXT_ACTION = Publish the family-membership collector/crosswalk and both ledger updates, then verify exact-head CI while retaining the hold.
+
+### 2026-09-28 08:10 UTC — membership checkpoint CI passed; dashboard/audit slice validated
+
+PARENT = Run `36394990145` passed 27/27 at published `da21a66d0bae8e1b600b65e5e8c50339b8402cad`. Local dashboard/audit collector additions passed in the 92/92 combined route campaign; exact-head CI for those additions is pending publication.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Platform changes or activation occurred.
+NEXT_ACTION = Publish the dashboard/audit collector and ledger sync; preserve the dependent Platform hold.
 
 ### 2026-09-27 23:43 UTC — Parent TODO-20 CI gate remains closed
 
