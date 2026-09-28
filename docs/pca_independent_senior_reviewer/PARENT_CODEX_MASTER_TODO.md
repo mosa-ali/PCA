@@ -5,13 +5,21 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 04:44 UTC
+LAST_UPDATED_UTC = 2026-09-28 04:57 UTC
 VALIDATED_SOURCE_HEAD = 4a1b372dd959596938ce6477f6262c2d3afb2118 (exact-text Parent revoke-all confirmation locator; Quality Gates run 36376318648 PASS, 27/27)
-VERIFIED_SOURCE_REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (fresh fetch and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 78ac5eacae15958ac5c575e90e9f76e058717732 (authority/device review sync; exact-head Quality Gates run 36378245540 PASS, 27/27; source/test parent 4a1b372d passed run 36376318648)
+VERIFIED_SOURCE_REMOTE_HEAD = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (fresh post-push fetch and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (report/CI ledger sync; exact-head Quality Gates run 36379266945 PASS, 27/27; source/test parent 4a1b372d passed run 36376318648)
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Record the completed 27/27 exact-head run and reconcile the supplied historical status report; continue TODO-14 runtime matrix evidence while retaining TODO-12/15 protocol and owner/Platform gates.
+NEXT_ACTION = Record run 36379266945 and continue TODO-14 runtime matrix evidence while retaining TODO-12/15 protocol and owner/Platform gates.
+
+### 2026-09-28 04:57 UTC — report reconciliation checkpoint passed exact-head CI
+
+GIT = `9fc02b41e77fc7a0423033b74b7fcf6fc221aa42` containing the three ledger updates was pushed fast-forward. Fresh fetch, local HEAD, `origin/pca-dev`, and `git ls-remote` all agree; remote master TODO files are present. `.vscode/` and root `0` remain excluded.
+CI = Quality Gates run `36379266945` completed SUCCESS at exact HEAD `9fc02b41`, 27/27. Real-backend E2E, full disposable-MySQL certification, Parent/Platform browser suites, Android, iOS, builds, security and unit jobs passed.
+REPORT = Attachment snapshot `399304c`/run `36356186069` and its migration-0050 claim are historical. Live schema/grants were already reconciled through 0059; no migration replay is needed.
+REMAINING = TODO-12/14/15 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. DEC-035 still forbids plaintext policy and a temporary fail-closed flip without an Owner writer. Platform remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Resume TODO-14 runtime route/action evidence; do not expand the bounded journey's zero unauthorized-status result into global proof.
 
 ### 2026-09-28 04:44 UTC — historical status report reconciled against current mission state
 

@@ -14,10 +14,10 @@ CURRENT_TODO = TODO-10, TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO
 MISSION_STATUS = IN_PROGRESS
 
 BRANCH = pca-dev
-LOCAL_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (authority/device review sync; exact-head run 36378245540 passed 27/27)
+LOCAL_HEAD = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (report/CI ledger sync; exact-head run 36379266945 passed 27/27)
 REMOTE = origin
 TARGET_DEV_BRANCH = pca-dev
-FETCHED_REMOTE_HEAD = 78ac5eacae15958ac5c575e90e9f76e058717732 (fresh fetch and git ls-remote agree; direct sandbox attempt failed, approved elevated read-only refresh succeeded)
+FETCHED_REMOTE_HEAD = 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42 (fresh post-push fetch and git ls-remote agree)
 LOCAL_REMOTE_EQUAL = YES
 REMOTE_ADVANCED_DURING_WORK = NO after the verified fast-forward push
 INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
@@ -30,14 +30,14 @@ SHARED_PATHS = backend, database bootstrap, and cross-surface tests; one active 
 OUT_OF_SCOPE_DIRTY_PATHS = 39 API/mobile assessment files and 2 .vscode files; preserved
 MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md (new)
 CODE_CHANGES_BY_THIS_CHECKPOINT = backend/src/parentaccount/ParentAccountService.ts; backend/src/platformadmin/accounts/FamilyAccountStatusService.ts; backend/src/http/routes/platformadmin/accountsRoutes.ts; backend/test/parentaccount/optionalMfaLogin.test.mjs; backend/test/db/parentAccount.mysql.test.mjs; backend/src/familyrbac/RemovalDecisionAuthority.ts; backend/src/familyrbac/MySqlRemovalDecisionRepository.ts; backend/src/http/routes/removalDecisionRoutes.ts; backend/migrations/0057_parent_actor_provenance_for_removal_decisions.sql; backend/src/db/schema.ts; parent-web/src/rbac/useFamilyAction.ts; parent-web/tests/route/familyActions.test.tsx; parent-web/e2e-real/acceptance-flow.spec.ts; this ledger
-BROWSER_EVIDENCE = Quality Gates source/test run 36376318648 passed 27/27 at `4a1b372d`; real-backend browser E2E passed after the exact confirmation-text locator fix. Ledger-sync runs 36377167205 (`678b1d33`) and 36378245540 (`78ac5eac`) also passed 27/27. Prior run 36374962516 at `55c9067b` failed only because its unscoped status locator matched both identity-loading and revoke-confirmation regions. Global route/action aggregates remain NOT_YET_PROVEN.
-BROADER_REGRESSION = Run 36376318648 completed SUCCESS at `4a1b372d`, all 27/27 jobs, including real-backend E2E and full disposable-MySQL; ledger-only runs 36377167205 at `678b1d33` and 36378245540 at `78ac5eac` passed 27/27. TODO-17 is PASS; TODO-19 remains IN_PROGRESS while the current report/CI ledger sync is published and remote equality rechecked. External device-crypto and literal owner localhost gates remain separately open.
+BROWSER_EVIDENCE = Quality Gates source/test run 36376318648 passed 27/27 at `4a1b372d`; real-backend browser E2E passed after the exact confirmation-text locator fix. Ledger-sync runs 36377167205 (`678b1d33`), 36378245540 (`78ac5eac`), and 36379266945 (`9fc02b41`) also passed 27/27. Prior run 36374962516 at `55c9067b` failed only because its unscoped status locator matched both identity-loading and revoke-confirmation regions. Global route/action aggregates remain NOT_YET_PROVEN.
+BROADER_REGRESSION = Run 36376318648 completed SUCCESS at `4a1b372d`, all 27/27 jobs, including real-backend E2E and full disposable-MySQL; ledger-only runs 36377167205, 36378245540 and 36379266945 also passed 27/27. TODO-17 is PASS; TODO-19 remains IN_PROGRESS while this CI result is synchronized and the following exact-head run is checked. External device-crypto and literal owner localhost gates remain separately open.
 UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at 78ac5eacae15958ac5c575e90e9f76e058717732; fetched tracking ref and git ls-remote agreed at last successful refresh
-PARENT_LOCAL_ONLY_FILES_REMAINING = 3 tracked mission ledgers with report-reconciliation/checkpoint updates; unrelated `.vscode/` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits at the last verified checkpoint; current three tracked ledger updates remain local
+REMOTE_ALIGNMENT_COMPLETED = YES at 9fc02b41e77fc7a0423033b74b7fcf6fc221aa42; fresh fetched ref and git ls-remote agree
+PARENT_LOCAL_ONLY_FILES_REMAINING = 3 tracked mission ledgers with exact-head CI-result updates; unrelated `.vscode/` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 commits at the last verified checkpoint; current CI-result ledger edits are local
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0059; 57 migrations applied from zero on local MySQL 8.4.11
 REPO_MIGRATION_HEAD = 0059 (57 migrations; 0009 and 0010 absent from repository history)
@@ -56,11 +56,11 @@ NO_SEED_DATA = YES
 DATA_LOSS = 0
 
 CURRENT_P0 = pending re-review; prior assessment reported none
-CURRENT_P1 = no production-code regression is proven; latest verified exact-head Quality Gates run 36378245540 passed 27/27; authority/device/owner gates remain open, including unimplemented DEC-035 whose safe-default-off model is not currently enforced
+CURRENT_P1 = no production-code regression is proven; latest verified exact-head Quality Gates run 36379266945 passed 27/27; authority/device/owner gates remain open, including unimplemented DEC-035 whose safe-default-off model is not currently enforced
 BLOCKERS = ordinary schedule-policy actions still depend on device bearer and unavailable Trust Set resolution; Web Rules remain 503 not_configured; device attestation and PAIRED-to-ACTIVE crypto/trust wiring remain open; FamilyAudit actor kinds are conflated in actorDeviceId without reviewed encrypted delivery; four Administrator-configurable policy operations have an effective ALLOW_WITH_STEP_UP default despite safe-default-off requirements and require the signed E2EE DEC-034/035 implementation; ownership-transfer/recovery-material operations have no consumers; TODO-14 aggregate counts remain NOT_YET_PROVEN; TODO-18 literal LOCALHOST ACCEPTED has not been received
 CURRENT_AUTHORITY_REVIEW = Schedule-policy writes require Parent Administrator session, CSRF, device bearer and Trust Set authorization; production resolver returns NO_TRUST_SET. Web Rules return 503 while production omits the service pending reviewed encrypted storage/delivery. `FamilyAuditRecord` has only actorDeviceId, while Parent account IDs, service sentinels, and target devices are written into it; typed Parent actor provenance requires a reviewed encrypted audit contract. `familyrbac/policy.ts` discards configuration and keeps four configurable Administrator operations at ALLOW_WITH_STEP_UP; DEC-034/035 require signed E2EE policy writer, consumer, audit, step-up, and certification together. DEC-035 expressly disallows plaintext policy and a temporary fail-closed flip without an Owner writer; the safe-default-off model is therefore not currently enforced. PCA-DEC-028 keeps policy/request content E2EE-only and BonusGrantLedger process-local; do not add plaintext persistence or a session-only bypass.
 PARENT_ROUTE_MATRIX = Current-source `parent_api_contract_matrix.json` maps 35/35 Parent Web call paths and inventories 52 route declarations across 43 unique paths; all six routes without a Parent Web caller have explicit dispositions. Under PCA-DEC-028 the BonusGrantLedger remains process-local; its optional active-grants read is unconsumed, while revoke exposure awaits reviewed actor-provenance/audit delivery. Aggregate route/action counts remain NOT_YET_PROVEN.
-NEXT_ACTION = Publish the report/CI checkpoint sync after a fresh remote check, then continue TODO-14 runtime matrix work while preserving TODO-12/15 protocol gates and the Platform hold
+NEXT_ACTION = Publish the CI-result ledger sync, verify its exact-head run, then continue TODO-14 runtime matrix work while preserving TODO-12/15 protocol gates and the Platform hold
 ```
 
 ### 2026-09-28 02:34 UTC — status report reconciled; publication and exact-head CI passed
