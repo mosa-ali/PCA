@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 06:38 UTC
-VALIDATED_PARENT_SOURCE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (exact-head Quality Gates run 36385746422 PASS 27/27 after iOS failed-job rerun; local expansion `99de804e` has build and focused 17/17 evidence)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 97d49cfe3873d066d6757a7cae70ce1075c40d91 (local ledger sync records the green ad9f46da run; collector expansion `99de804e` awaits publication)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Parent collector expansion records 12 classified scenarios across 8/52 declarations; global aggregate and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-28 06:49 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS, 27/27; includes collector expansion)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS, 27/27)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Both master ledgers are syncing the verified checkpoint; aggregate coverage and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Exact-head run `36385746422` passed 27/27 at `ad9f46da` after its iOS failed-job rerun; collector expansion `99de804e` is locally validated but not included in that CI run. Parent TODO-17 remains PASS at its validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Keep dependent Platform activation held through Parent TODO-12/14/15, Parent projection completion, and literal localhost acceptance. Exact-head run `36387631829` passed 27/27 at `52fda09e`, including the collector expansion. Parent TODO-17 remains PASS at this validated checkpoint; TODO-12/14/15 and TODO-18 remain open. TODO-20 is PASS through live 0059. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -56,6 +56,12 @@ NEXT_ACTION = Publish the locally validated collector expansion with both master
 PARENT = Quality Gates run `36385746422` passed 27/27 at exact head `ad9f46da` after rerunning the sole iOS failure. The first iOS attempt had a test-runner startup failure with simulator service connection errors; the unchanged-head rerun succeeded. Local commit `99de804e` expands the collector but is not covered by this CI result.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = Publish the local collector expansion with both master TODOs, then inspect exact-head CI and continue preserving the Platform hold.
+
+### 2026-09-28 06:49 UTC — collector checkpoint exact-head CI passed
+
+PARENT = Published head `52fda09edff4db47e856185975688997952f69d3` passed exact-head Quality Gates run `36387631829` 27/27, including the TODO-14 collector expansion, full MySQL, real-backend browser, Android and iOS jobs.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue TODO-14 across more route families while preserving the dependent Platform hold.
 
 ### 2026-09-28 06:12 UTC — bounded Parent route collector slice
 

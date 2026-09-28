@@ -5,14 +5,21 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 06:38 UTC
-VALIDATED_SOURCE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (exact-head Quality Gates run 36385746422 PASS 27/27 after iOS failed-job rerun; local expansion `99de804e` has build and focused 17/17 evidence)
-VERIFIED_SOURCE_REMOTE_HEAD = ad9f46da7988bea2774923e7c15fb3ee9bdc690f (fresh fetch, local HEAD and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 97d49cfe3873d066d6757a7cae70ce1075c40d91 (local ledger sync records the green ad9f46da run; collector expansion `99de804e` and ledger sync await publication)
-LOCAL_UNCOMMITTED_CHANGE = No tracked worktree edits; two local commits `99de804e` and `97d49cfe` await publication, while `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-28 06:49 UTC
+VALIDATED_SOURCE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS 27/27; includes collector expansion)
+VERIFIED_SOURCE_REMOTE_HEAD = 52fda09edff4db47e856185975688997952f69d3 (fresh fetch, local HEAD and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 52fda09edff4db47e856185975688997952f69d3 (exact-head Quality Gates run 36387631829 PASS, 27/27)
+LOCAL_UNCOMMITTED_CHANGE = Both master TODO ledgers are being updated with the verified 52fda09e exact-head result; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-10 (dependent on route/action audit), TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = Publish local commits `99de804e` and `97d49cfe` as an authorized fast-forward, verify exact refs/files, and inspect the resulting exact-head CI; preserve TODO-12/15 and owner/Platform gates.
+NEXT_ACTION = Extend the TODO-14 collector beyond the removal-decision route family; keep global aggregates NOT_YET_PROVEN and retain TODO-12/15 and owner/Platform gates.
+
+### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
+
+GIT = Commits `99de804e`, `97d49cfe` and the result-sync are published as a fast-forward. Fresh fetch, local HEAD, tracking ref and `git ls-remote` agree at `52fda09edff4db47e856185975688997952f69d3`; the collector helper, route test, crosswalk and both master TODOs are present remotely. `.vscode/` and root `0` remain excluded.
+CI = Exact-head Quality Gates run `36387631829` completed SUCCESS 27/27 at `52fda09edff4db47e856185975688997952f69d3`, including full disposable-MySQL, real-backend browser, Android and iOS jobs.
+TODO14 = The status-only collector covers 8/52 declarations with 12/12 matched rows in its bounded test-double slice. Global route/action aggregates remain NOT_YET_PROVEN.
+NEXT_ACTION = Continue collector coverage across route families; preserve separate expected-denial, authority/service/crypto-gate classifications and keep Parent TODO-12/15 and owner/Platform gates open.
 
 ### 2026-09-28 06:12 UTC — bounded TODO-14 runtime outcome collector slice
 
