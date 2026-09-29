@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-29 03:51 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 6cefdf1ee7d999c390bfe2100db67fa61b36e32f (exact-head Quality Gates run 36505757047 SUCCESS 27/27 at that head; the Wave-5B verification foundation is repository-side only and validated locally)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 6cefdf1ee7d999c390bfe2100db67fa61b36e32f (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 6cefdf1ee7d999c390bfe2100db67fa61b36e32f (last certified exact-head run 36505757047 SUCCESS 27/27; the Wave-5B commit SHA and CI are reported with the Wave-5B report)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = None after the single Wave-5B commit (backend verification foundation + wiring + tooling + both master ledgers); global aggregates and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-30 00:30 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (exact-head Quality Gates run 36519047489 SUCCESS 27/27 at that head; Wave-5B certified; Wave 5C halted before implementation with zero files changed)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (last certified exact-head run 36519047489 SUCCESS 27/27; the handover reconciliation commit is reported with the handover report)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = None; worktree clean apart from `.vscode/` and root `0` (excluded); the handover documentation commit is the only change on top of 91f7f6d4
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = STOP for owner review of the Wave-5B Parent verification foundation (repository-side; live remains 0059). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = CODEX RESTART per the Parent continuous-goal `## CODEX RESTART CHECKPOINT`. DeepSeek development is stopped; Codex resumes Parent work at Wave 5C (child-profile membership resolver). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and the owner's literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -800,3 +800,9 @@ NEXT_ACTION = STOP for owner review of the Wave-5A storage closure; keep the dep
 PARENT = Wave 5B delivered the verified Family Trust Set acceptance foundation repository-side only: strict canonical decoder, P-256/R1-design signature verifier (source-only; not production-activated), full acceptance pipeline (durable floor/chain/replay checks; append strictly last), genesis-anchor read source, and the approved fail-closed store-backed role-resolver activation with a CI-pinned atomic-set composition guard. Evidence: backend unit suite 2734/2734; disposable MySQL 8.4.11 full lane inner 666 pass / 0 fail + certified production paths 273/273 (0 skipped, 0 failed); both declared PCA-SEC020 mutation negative controls KILLED behaviorally (focused temp-copy kill-runs, control 40/40). Live `pca_pro` remains at 0059; LIVE_APPLICATION_AUTHORIZED = NO; production trust-set resolution fails closed (NO_TRUST_SET only); WAVE_5B_STOPPED_FOR_OWNER_REVIEW = YES.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = STOP for owner review of the Wave-5B verification foundation; keep the dependent Platform hold unchanged.
+
+### 2026-09-30 00:30 UTC — DeepSeek controlled stop; Codex handover (Platform unchanged and held)
+
+PARENT = DeepSeek development stopped by owner; Codex resumes. Certified state remains `91f7f6d4` (run 36519047489, 27/27). Wave 5C (real child-profile membership resolver) was started, contract-reviewed (CONTRACT_CONFLICT = NO) and halted before implementation with zero files changed. A local disposable owner UAT environment exists (database `pca_local_owner_uat` @ 0060 + local services; local-only, never committed; handoff `.agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md`). Live `pca_pro` remains 0059; LIVE_APPLICATION_AUTHORIZED = NO.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Preserve the hold; Codex restarts Parent work per the continuous-goal restart checkpoint.

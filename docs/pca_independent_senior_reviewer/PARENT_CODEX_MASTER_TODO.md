@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-29 03:51 UTC
-WAVE_BASE_SHA = 6cefdf1ee7d999c390bfe2100db67fa61b36e32f (Wave-5B base; local HEAD, tracking ref and git ls-remote agree)
-LAST_CERTIFIED_PREVIOUS_SHA = 6cefdf1ee7d999c390bfe2100db67fa61b36e32f (exact-head Quality Gates run 36505757047 SUCCESS 27/27)
-CURRENT_WAVE_STATUS = Wave 5B (verified Family Trust Set acceptance / cryptographic verifier foundation) implemented and locally validated: strict canonical decoder + P256/E2EE design-baseline verifier, full acceptance pipeline with durable floor/chain/replay checks, and the approved fail-closed store-backed role-resolver activation with a CI-pinned atomic-set composition guard; production acceptance writer stays unwired; stopped for owner review
-WAVE_CONTENT_SHA = reported to the owner with the Wave-5B report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
-EXACT_HEAD_CI_SHA = reported to the owner with the Wave-5B report (same reason); the most recent certified exact-head run remains 36505757047 SUCCESS 27/27 at 6cefdf1e
-LOCAL_UNCOMMITTED_CHANGE = None after the single Wave-5B commit; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-30 00:30 UTC
+WAVE_BASE_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (handover base; local HEAD, tracking ref and git ls-remote agree)
+LAST_CERTIFIED_PREVIOUS_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (exact-head Quality Gates run 36519047489 SUCCESS 27/27)
+CURRENT_WAVE_STATUS = DeepSeek controlled stop; Codex handover. Wave 5B remains certified (91f7f6d4). Wave 5C (real child-profile membership resolver) was started, contract-reviewed (CONTRACT_CONFLICT = NO) and halted before implementation with zero files changed; a local disposable owner UAT environment was prepared (local-only, never committed). Codex resumes the mission from this checkpoint.
+WAVE_CONTENT_SHA = N/A (Wave 5C made no implementation commit); the handover reconciliation commit updates this ledger, the Platform ledger and the continuous goal, and its SHA is reported to the owner with the handover report.
+EXACT_HEAD_CI_SHA = 36519047489 SUCCESS 27/27 at 91f7f6d4; the handover reconciliation commit's exact-head run is reported with the handover report (no post-CI ledger commit by directive).
+LOCAL_UNCOMMITTED_CHANGE = None; worktree clean apart from `.vscode/` and root `0` (excluded). Mission code state = 91f7f6d4 plus the handover documentation commit.
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; Wave 5B implemented the Task-12 trust-set verification foundation but did NOT close TODO-12 (membership resolver + route activation remain later waves); TODO-10 = PASS per owner decision; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = STOP for owner review of the Wave-5B verification foundation. Wave 5C (child-profile membership resolver) and any wiring of acceptance ingestion, envelope floors or verifiers are NOT authorized; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN, keep SCHEDULE_POLICY_ACTIVATED = NO, and preserve all owner/Platform gates; live application of 0060 remains not authorized.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; next approved engineering step = Wave 5C real child-profile membership resolver (contract reviewed; CONTRACT_CONFLICT = NO) as TODO-12's second authority gate after the certified Waves 5A/5B; route activation and ingestion wiring remain NOT authorized; TODO-01…11/13/16/17/20 PASS at current evidence
+NEXT_ACTION = CODEX RESTART per docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md `## CODEX RESTART CHECKPOINT`: fresh fetch and verify 91f7f6d4; reconcile this board against source; resume the first genuinely incomplete dependency (Wave 5C child-profile membership resolver); do not deploy; preserve Platform `HOLD_PARENT_DEPENDENCY`; keep SCHEDULE_POLICY_ACTIVATED = NO and live application of 0060 not authorized; TODO-18 literal owner acceptance remains open and the prepared local UAT environment is described in the continuous-goal document.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -1159,3 +1159,12 @@ REVIEWS = Independent specialist closure reviews by Agents 1–6 (backend, crypt
 GIT = One substantive commit on `pca-dev` over `6cefdf1e`; the commit SHA and its exact-head CI result are reported to the owner with the Wave-5B report and deliberately not re-committed.
 FLAGS = SCHEDULE_POLICY_ACTIVATED = NO; CURRENT_REPO_LIVE_PARITY = NO; LIVE_APPLICATION_AUTHORIZED = NO; production trust-set resolution fails closed (empty durable state only).
 NEXT_ACTION = STOP for owner review; do not begin Wave 5C, store/route ingestion wiring, or further waves without explicit owner authorization.
+
+### 2026-09-30 00:30 UTC — DeepSeek controlled stop; Codex handover (no new implementation)
+
+STOP = Owner stopped DeepSeek development and assigned the next workflow to Codex. This entry records current truth only; no wave was started or continued.
+WAVE5C = Real child-profile membership resolver for the second TODO-12 authority gate. Baseline verified (`91f7f6d4`, local = origin = server). §4 contract review: CONTRACT_CONFLICT = NO — doc 39 §3/§10 anticipate the real resolver as a later async trusted-source binding; the registry comment's "frozen/no-registry" wording is superseded; privacy/oracle constraints (opaque registry only; NOT_MEMBER_OR_NOT_FOUND collapse; single public deny) remain binding. Design prepared (async resolver contract, shared adapter over MyChildProfileRegistryRepository, exactly-once resolution, fail-closed negatives); Android specialist smoke review ANDROID_IMPACT = NONE. No implementation files changed, no tests run, no commits made by Wave 5C.
+STATE_AT_HANDOVER = Waves 5A/5B certified at `91f7f6d4` (runs 36505757047 / 36519047489, 27/27 each); production Trust Set population EMPTY (accepted-epoch writer unwired; resolver fail-closed NO_TRUST_SET); child-profile membership resolver still Unavailable in production; schedule-policy dual gate therefore still closed; Web Rules 503; device crypto gates unchanged.
+LOCAL_UAT = Prepared locally on 2026-09-29 (untracked, never committed): database `pca_local_owner_uat` (head 0060; 94 tables) + backend :4001, Parent Web :4000, Platform Admin :4100 + synthetic accounts; handoff `.agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md` (credentials only there). Live `pca_pro` read-only verified at 0059; zero mutations; parity intentionally NO.
+GIT = Clean worktree apart from the two exclusions; handover documentation commit pushed and reported with the handover report.
+NEXT_ACTION = CODEX RESTART per the continuous-goal `## CODEX RESTART CHECKPOINT`; do not begin deployment/Platform/mobile work; TODO-18 remains the owner's gate.

@@ -3,64 +3,76 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed on 2026-09-28 05:32 UTC; older dated entries below remain
-historical evidence and may describe superseded states.
+checkpoint was refreshed on 2026-09-30 (DeepSeek → Codex controlled handover); older dated entries
+below remain historical evidence and may describe superseded states.
 
 ## Current checkpoint
 
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
-CURRENT_TODO = TODO-10, TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-02…09/11/13/16/17/20 PASS at verified exact-head or live evidence
-MISSION_STATUS = IN_PROGRESS
+OWNER = Codex resumes coordination after the DeepSeek controlled stop (owner decision 2026-09-30)
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-19 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16/17/20 PASS at verified evidence
+MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex handover checkpoint)
 
 BRANCH = pca-dev
-LOCAL_HEAD = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (CI result sync; exact-head run 36381752337 passed 27/27)
-REMOTE = origin
-TARGET_DEV_BRANCH = pca-dev
-FETCHED_REMOTE_HEAD = cc9fceb59d7b07823c6c9833fd1ec898b5857445 (fresh post-push fetch and git ls-remote agree)
-LOCAL_REMOTE_EQUAL = YES
-REMOTE_ADVANCED_DURING_WORK = NO after the verified fast-forward push
-INITIAL_WORKTREE_ENTRY_COUNT = 256 (historical mission start: 166 tracked modified; 90 untracked; none staged)
-CHECKPOINT_WORKTREE_ENTRY_COUNT = 330 before the new classification file; 227 modified tracked and 103 untracked; no staged/deleted entries
-POST_CHECKPOINT_DIRTY_PATHS = The last published checkpoint contains the TODO-14 crosswalk and three synchronized mission ledgers; unrelated `.vscode/` and root fragment `0` remain excluded.
-PEER_WORK_PRESERVED = YES (all 61 date-bound assessment files committed separately; unrelated/mobile source remained untouched)
+REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
+LAST_VERIFIED_REMOTE_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (local HEAD, origin/pca-dev and git ls-remote agree; Wave-5B certified)
+LAST_EXACT_HEAD_CI = 36519047489 SUCCESS 27/27 at 91f7f6d4 (the handover reconciliation commit's exact-head run is reported with the handover report)
+CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
+LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
+CURRENT_REPO_LIVE_PARITY = NO (repository intentionally ahead of live; LIVE_APPLICATION_AUTHORIZED = NO; do not apply 0060 live)
+PARENT_FORMAL_STATUS = IN_PROGRESS (TODO-12/14/15/19 open; TODO-18 owner gate)
+PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
+LOCALHOST_UAT_STATUS = local disposable environment READY (prepared 2026-09-29); owner acceptance NOT YET GIVEN
+AZURE_STATUS = HOLD
+CURRENT_ACTIVE_TODOS = TODO-12 (next work: Wave 5C real child-profile membership resolver — designed, not implemented), TODO-14, TODO-15, TODO-19, TODO-18 (owner)
+CURRENT_ENGINEERING_CRITICAL_PATH = TODO-12 dependency order: trust-set durable store + cryptographic acceptance foundation DONE (Waves 5A/5B certified); child-profile membership resolver NEXT (Wave 5C, CONTRACT_CONFLICT = NO, halted before implementation); then route activation; then reviewed encrypted policy/audit/Web-Rules storage; then TODO-15 mobile activation; then TODO-14 aggregate closure
+CURRENT_OWNER_GATES = TODO-18 literal `LOCALHOST ACCEPTED` (local UAT environment is ready for the owner); TODO-21/22 deployment + production acceptance; release authorization
+CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
+CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; store-backed resolver answers NO_TRUST_SET only); child-profile membership resolver still Unavailable in production; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
+CURRENT_LOCAL_UAT_ENVIRONMENT = database `pca_local_owner_uat` (local Docker MySQL 127.0.0.1:33061; all 58 migrations; head 0060; 94 tables); services backend http://127.0.0.1:4001, Parent Web http://localhost:4000, Platform Admin http://localhost:4100; synthetic Platform Owner + Parent accounts; local handoff `.agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md` (credentials live ONLY there; never commit)
+NEXT_CODEX_ACTION = Re-establish this goal per the `## CODEX RESTART CHECKPOINT` section at the end of this document: fresh fetch and verify 91f7f6d4; preserve all legitimate changes; reconcile the master TODO against source; resume the first genuinely incomplete dependency (Wave 5C child-profile membership resolver); do not deploy; keep Platform `HOLD_PARENT_DEPENDENCY`; literal localhost acceptance remains the owner's decision
+APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
+PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
+LOCAL_REMOTE_EQUAL = YES (fresh fetch, tracking ref and git ls-remote agree at 91f7f6d4)
+PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
-PARENT_IMPLEMENTATION_PATHS = coordinator owns authorized Parent + dependent Platform family-identity implementation; existing dirty changes retained
+PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
 SHARED_PATHS = backend, database bootstrap, and cross-surface tests; one active writer per file, shared edits serialized
-OUT_OF_SCOPE_DIRTY_PATHS = 39 API/mobile assessment files and 2 .vscode files; preserved
-MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md (new)
-CODE_CHANGES_BY_THIS_CHECKPOINT = backend/src/parentaccount/ParentAccountService.ts; backend/src/platformadmin/accounts/FamilyAccountStatusService.ts; backend/src/http/routes/platformadmin/accountsRoutes.ts; backend/test/parentaccount/optionalMfaLogin.test.mjs; backend/test/db/parentAccount.mysql.test.mjs; backend/src/familyrbac/RemovalDecisionAuthority.ts; backend/src/familyrbac/MySqlRemovalDecisionRepository.ts; backend/src/http/routes/removalDecisionRoutes.ts; backend/migrations/0057_parent_actor_provenance_for_removal_decisions.sql; backend/src/db/schema.ts; parent-web/src/rbac/useFamilyAction.ts; parent-web/tests/route/familyActions.test.tsx; parent-web/e2e-real/acceptance-flow.spec.ts; this ledger
-BROWSER_EVIDENCE = Quality Gates source/test run 36376318648 passed 27/27 at `4a1b372d`; real-backend browser E2E passed after the exact confirmation-text locator fix. Ledger-sync runs 36377167205 (`678b1d33`), 36378245540 (`78ac5eac`), 36379266945 (`9fc02b41`), 36379988964 (`80e3ff47`), and 36380843449 (`0e275bf1`) also passed 27/27. Prior run 36374962516 at `55c9067b` failed only because its unscoped status locator matched both identity-loading and revoke-confirmation regions. Global route/action aggregates remain NOT_YET_PROVEN.
-BROADER_REGRESSION = Run 36376318648 completed SUCCESS at `4a1b372d`, all 27/27 jobs, including real-backend E2E and full disposable-MySQL; ledger-only runs 36377167205, 36378245540, 36379266945, 36379988964, 36380843449, and 36381752337 also passed 27/27. TODO-17 is PASS; TODO-19 remains IN_PROGRESS while this CI result is synchronized and its following exact-head run is checked. External device-crypto and literal owner localhost gates remain separately open.
+OUT_OF_SCOPE_DIRTY_PATHS = `.vscode/` and root fragment `0` only; preserved and excluded
+MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md
+CODE_CHANGES_BY_LATEST_WAVES = Wave 5A `6cefdf1e` (migration 0060 + durable trust-set stores; 13 modified + 9 new files); Wave 5B `91f7f6d4` (verified trust-set acceptance + fail-closed store-backed role-resolver activation; 23 files). Both certified: runs 36505757047 and 36519047489 SUCCESS 27/27.
+BROWSER_EVIDENCE = Latest verified exact-head run 36519047489 at `91f7f6d4` passed 27/27, including real-backend browser E2E, full disposable-MySQL certification, Android and iOS. Global route/action aggregates remain NOT_YET_PROVEN.
+BROADER_REGRESSION = Wave-5B local evidence: backend unit suite 2734/2734; disposable MySQL full lane inner 666 pass / 0 fail / 8 pre-existing skips; certified production paths 273/273; both PCA-SEC020 mutation negative controls KILLED. TODO-17 = PASS; TODO-19 remains IN_PROGRESS across this handover.
 UNRELATED_FILES_TOUCHED = 0
 
-REMOTE_ALIGNMENT_AUTHORIZED = YES (checkpoint synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at cc9fceb59d7b07823c6c9833fd1ec898b5857445; fresh fetched ref and git ls-remote agree
-PARENT_LOCAL_ONLY_FILES_REMAINING = Three CI-result ledger edits; unrelated `.vscode/` and root fragment `0` remain excluded
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 at last verified push; current ledger update remains local
+REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
+REMOTE_ALIGNMENT_COMPLETED = YES at 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc; fresh fetched ref and git ls-remote agree
+PARENT_LOCAL_ONLY_FILES_REMAINING = None; `.vscode/` and root fragment `0` remain excluded
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 at the last verified push; the handover reconciliation commit is reported with the handover report
 
-REPO_SCHEMA_HEAD = canonical source/migrations through 0059; 57 migrations applied from zero on local MySQL 8.4.11
-REPO_MIGRATION_HEAD = 0059 (57 migrations; 0009 and 0010 absent from repository history)
-LOCAL_SCHEMA_HEAD = 0059; 92 tables, 792 columns, 104 FKs, 92 PKs, 38 unique and 141 non-unique indexes, 282 checks
-LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
-SOURCE_SCHEMA_MATCH = EXACT_MATCH by full local/live introspection after 0059; excluded dirty current_schema.sql and schema_manifest.json were not used to manufacture agreement
-LOCAL_DB_SCHEMA_MATCH = PASS; two fresh disposable local MySQL 8.4.11 migration databases (57 migrations / 92 tables) compare EXACT_MATCH; generated schema artifacts come from migrated database
-LIVE_PCA_PRO_SCHEMA_MATCH = PASS; full structural snapshot EXACT_MATCH and 90 readable application-table counts unchanged
-LIVE_GRANTS_MATCH = PASS; 92/92 exact plan; parent_account_security_events remains INSERT-only
-MIGRATION_REQUIRED = NO remaining proven source/live mismatch after 0059
-MIGRATION_FILE = 0059_parent_mfa_ascii_check_literal_charset.sql (locally validated, applied through official migration runner)
-LOCAL_MIGRATION_TEST = PASS; focused migration safety 3/3 and Parent persistence test 22/22 on disposable DB
-LIVE_MIGRATION_APPLIED = YES (0059 only after fresh immediate preflight)
-LIVE_MIGRATION_RESULT = PASS; journal 56→57, no seed/reference/business DML, row-count preservation verified
+REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
+REPO_MIGRATION_HEAD = 0060 (58 SQL migration files)
+LOCAL_SCHEMA_HEAD = 0060 on the local owner-UAT database `pca_local_owner_uat` (all 58 migrations applied from empty; 94 tables / 806 columns)
+LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure; 92 tables / 792 columns)
+SOURCE_SCHEMA_MATCH = EXACT_MATCH on all 92 shared tables by full introspection comparison (local 0060 vs live 0059); the only difference is the two additive 0060 tables, intentionally local-only
+LOCAL_DB_SCHEMA_MATCH = PASS; local UAT database verified by `verify-mysql.mjs` (environment + 94-table schema + collations)
+LIVE_PCA_PRO_SCHEMA_MATCH = PASS through 0059; zero column differences on shared tables (type/nullability/default/extra/charset/collation)
+LIVE_GRANTS_MATCH = PASS through 0059 (92/92 at that schema level); live regrant for 0060 is an owner action once application is authorized
+MIGRATION_REQUIRED = YES for live when authorized: repository head 0060 vs live 0059; 0060 is additive and touches no existing table
+MIGRATION_FILE = 0060_family_trust_set_epoch_persistence.sql (repository/local only; NOT applied to any live database)
+LOCAL_MIGRATION_TEST = PASS; all 58 migrations applied from zero on the local UAT database; repository disposable lanes through 0060 validated
+LIVE_MIGRATION_APPLIED = 0059 is the last live application (journal 56→57); 0060 remains repository/local only
+LIVE_MIGRATION_RESULT = PASS for 0059 (historical); no live mutation since; LIVE_APPLICATION_AUTHORIZED = NO
 NO_SEED_DATA = YES
 DATA_LOSS = 0
 
 CURRENT_P0 = pending re-review; prior assessment reported none
-CURRENT_P1 = no production-code regression is proven; latest verified exact-head Quality Gates run 36381752337 passed 27/27; authority/device/owner gates remain open, including unimplemented DEC-035 whose safe-default-off model is not currently enforced
-BLOCKERS = ordinary schedule-policy actions still depend on device bearer and unavailable Trust Set resolution; Web Rules remain 503 not_configured; device attestation and PAIRED-to-ACTIVE crypto/trust wiring remain open; FamilyAudit actor kinds are conflated in actorDeviceId without reviewed encrypted delivery; four Administrator-configurable policy operations have an effective ALLOW_WITH_STEP_UP default despite safe-default-off requirements and require the signed E2EE DEC-034/035 implementation; ownership-transfer/recovery-material operations have no consumers; TODO-14 aggregate counts remain NOT_YET_PROVEN; TODO-18 literal LOCALHOST ACCEPTED has not been received
-CURRENT_AUTHORITY_REVIEW = Schedule-policy writes require Parent Administrator session, CSRF, device bearer and Trust Set authorization; production resolver returns NO_TRUST_SET. Web Rules return 503 while production omits the service pending reviewed encrypted storage/delivery. `FamilyAuditRecord` has only actorDeviceId, while Parent account IDs, service sentinels, and target devices are written into it; typed Parent actor provenance requires a reviewed encrypted audit contract. `familyrbac/policy.ts` discards configuration and keeps four configurable Administrator operations at ALLOW_WITH_STEP_UP; DEC-034/035 require signed E2EE policy writer, consumer, audit, step-up, and certification together. DEC-035 expressly disallows plaintext policy and a temporary fail-closed flip without an Owner writer; the safe-default-off model is therefore not currently enforced. PCA-DEC-028 keeps policy/request content E2EE-only and BonusGrantLedger process-local; do not add plaintext persistence or a session-only bypass.
-PARENT_ROUTE_MATRIX = Current-source `parent_api_contract_matrix.json` maps 35/35 Parent Web call paths and inventories 52 method/path declarations across 43 unique paths; all six routes without a Parent Web caller have explicit dispositions. Published `parent_route_action_test_crosswalk.md` maps declarations to handler/test-family associations but leaves exact assertion anchors pending. Under PCA-DEC-028 the BonusGrantLedger remains process-local; its optional active-grants read is unconsumed, while revoke exposure awaits reviewed actor-provenance/audit delivery. Aggregate route/action counts remain NOT_YET_PROVEN.
-NEXT_ACTION = Synchronize run 36381752337, then map exact status assertions and design the scoped disposable runtime collector while preserving TODO-12/15 protocol gates and the Platform hold
+CURRENT_P1 = no production-code regression is proven; latest verified exact-head run 36519047489 passed 27/27; authority/device/owner gates remain open (DEC-035 safe-default-off model not currently enforced)
+BLOCKERS = child-profile membership resolver still Unavailable in production (Wave 5C designed, not implemented); schedule-policy dual gate therefore still closed; production Trust Set population EMPTY (acceptance writer unwired — no ingestion path); Web Rules remain 503 not_configured pending reviewed encrypted storage/delivery; device attestation and PAIRED-to-ACTIVE crypto/trust wiring remain open; FamilyAudit actor kinds conflated in actorDeviceId without reviewed encrypted delivery; four Administrator-configurable policy operations remain ALLOW_WITH_STEP_UP pending signed E2EE DEC-034/035; ownership-transfer/recovery-material operations have no consumers; TODO-14 aggregate counts remain NOT_YET_PROVEN; TODO-18 literal LOCALHOST ACCEPTED not received (local UAT environment is ready)
+CURRENT_AUTHORITY_REVIEW = Trust-set lane: durable signed-epoch store + cryptographic acceptance foundation DONE (Waves 5A/5B) but production accepted-epoch population is EMPTY and the store-backed resolver answers NO_TRUST_SET only. Membership lane: ParentActionAuthorizationService still consumes the UnavailableChildProfileMembershipResolver; the real registry-backed async resolver is the next approved dependency (Wave 5C). Web Rules return 503 while production omits the service pending reviewed encrypted storage/delivery. FamilyAudit actor provenance and DEC-034/035 policy writer remain unimplemented; PCA-DEC-028 keeps policy/request content E2EE-only and BonusGrantLedger process-local.
+PARENT_ROUTE_MATRIX = Current-source matrix maps 35/35 Parent Web call paths; 52 method/path declarations across 43 unique paths; 40/52 declarations carry database-backed integrated evidence; the remaining 12 are intentionally gated (6 authority, 3 service, 2 crypto, 1 optional). Aggregate route/action counts remain NOT_YET_PROVEN.
+NEXT_ACTION = Codex handover restart per the `## CODEX RESTART CHECKPOINT` section below: fresh fetch and verify `91f7f6d4`; preserve all legitimate changes; reconcile the TODO board; resume TODO-12 Wave 5C (child-profile membership resolver) from the reviewed contract; do not deploy; keep Platform `HOLD_PARENT_DEPENDENCY`; literal localhost acceptance remains the owner's decision
 ```
 
 ### 2026-09-28 02:34 UTC — status report reconciled; publication and exact-head CI passed
@@ -284,6 +296,17 @@ The repository's prior Parent/Platform assessment reported no P0 and recorded
 pre-production findings PP-F01, API-F01/R-PP-05, PP-F03, R-PP-01, R-PP-07,
 PP-F02/R-PP-04, R-PP-03/R-PP-06, and PP-F04/PP-F05. Those are inherited
 assessment evidence, not yet revalidated as current implementation findings.
+
+### 2026-09-30 00:30 UTC — DeepSeek controlled stop; Codex handover checkpoint
+
+STOP = The owner stopped DeepSeek development on 2026-09-30 and assigned the next workflow to Codex. No new wave may be started by DeepSeek; this entry is the handover reconciliation only.
+CURRENT_WORK_AT_STOP = Wave 5C (real child-profile membership resolver for the second TODO-12 authority gate). Baseline verified PASS (local = origin = server = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc; only `.vscode/` and root `0` untracked). §4 contract review complete: CONTRACT_CONFLICT = NO (doc 39 §3/§10 anticipate the later resolver binding as an async trusted-source implementation; the registry comment's "frozen/no-registry" reading is superseded; privacy/oracle constraints remain binding). Implementation design prepared; Android specialist smoke review returned ANDROID_IMPACT = NONE. NO implementation files were changed; NO tests were run; NO commits were created by Wave 5C.
+COMPLETED_BEFORE_STOP = Waves 5A (`6cefdf1e`) and 5B (`91f7f6d4`) are committed, pushed and certified (runs 36505757047 and 36519047489 SUCCESS 27/27). Wave 5B local evidence: unit suite 2734/2734; disposable MySQL lane inner 666 pass / 0 fail / 8 pre-existing skips + certified production paths 273/273; both PCA-SEC020 mutation negative controls KILLED; closure gate 7/7 APPROVE.
+LOCAL_UAT = A local disposable owner UAT environment was prepared on 2026-09-29 (isolated auxiliary mission; zero repository changes): database `pca_local_owner_uat` (local Docker MySQL 127.0.0.1:33061; all 58 migrations; head 0060; 94 tables); services backend `http://127.0.0.1:4001`, Parent Web `http://localhost:4000`, Platform Admin `http://localhost:4100`; synthetic Platform Owner and Parent accounts (credentials live ONLY in `.agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md`, which is untracked and must never be committed). Live `pca_pro` was inspected read-only (0 mutations): head 0059, 92 tables, zero column differences on shared tables; the only delta is the two additive 0060 tables.
+DATABASE = REPOSITORY_SCHEMA_HEAD = 0060; LOCAL_UAT_SCHEMA_HEAD = 0060; LIVE_SCHEMA_HEAD = 0059; CURRENT_REPO_LIVE_PARITY = NO (intentional hold; LIVE_APPLICATION_AUTHORIZED = NO).
+GIT = Worktree clean apart from the two excluded untracked items; no uncommitted mission files. This handover checkpoint updates the three canonical documents (continuous goal + both master TODOs); its commit SHA and exact-head CI are reported to the owner with the handover report.
+OWNER_GATES = TODO-18 literal `LOCALHOST ACCEPTED` has NOT been given; the local UAT environment is ready for the owner; TODO-21/22/23 remain pending.
+NEXT_WORKFLOW = CODEX. Re-establish the continuous goal per the `## CODEX RESTART CHECKPOINT` section at the end of this document.
 
 ## Historical TODO implementation snapshot
 
@@ -1170,3 +1193,29 @@ PLATFORM_WORK_PACKAGE_STATUS = HOLD_PARENT_DEPENDENCY
   `git diff --check` for the file pass. The live disposable-MySQL test remains
   unrun because `127.0.0.1:33061` is still unreachable; this is syntax and diff
   hygiene evidence only, not MySQL evidence.
+
+## CODEX RESTART CHECKPOINT
+
+RESTART_BRANCH = pca-dev
+RESTART_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (last certified exact-head; the handover reconciliation commit supersedes it and is reported to the owner with the handover report)
+LAST_CERTIFIED_CI = 36519047489 SUCCESS 27/27 at `91f7f6d4`
+READ_FIRST =
+1. docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md
+2. docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md
+3. docs/pca_independent_senior_reviewer/PLATFORM_CODEX_MASTER_TODO.md
+4. .agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md (local only; contains credentials; never commit)
+REESTABLISH_GOAL = PCA Parent Authentication + Authority — Continuous Completion
+FIRST_CODEX_ACTIONS =
+1. fresh fetch pca-dev;
+2. verify local/origin/server SHA;
+3. inspect worktree and preserve all legitimate changes;
+4. reconcile current master TODO statuses against source;
+5. independently verify latest CI;
+6. determine current open Parent critical path;
+7. do NOT deploy;
+8. preserve Platform HOLD_PARENT_DEPENDENCY;
+9. continue only from the first genuinely incomplete dependency;
+10. run exhaustive local browser UAT only after the current Parent engineering checkpoint is accepted.
+OWNER_ACCEPTANCE_REQUIRED = YES
+AZURE = HOLD
+PLATFORM = HOLD_PARENT_DEPENDENCY
