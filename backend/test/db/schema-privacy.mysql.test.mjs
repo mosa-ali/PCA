@@ -117,6 +117,17 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // because schema-privacy.mysql.test.mjs is one of the ~53 DB suites no
   // workflow ever ran. It surfaced the first time the full suite was executed.
   'required_key_epoch',
+  // WAVE 5A (migration 0060, family_trust_set_epochs + family_epoch_floors):
+  // minimum_accepted_key_epoch is the SAME FamilyTrustSetEpoch.keyEpoch
+  // counter as `key_epoch`/`required_key_epoch` above -- the floor of
+  // accepted keyEpoch for a family's durably accepted signed epochs
+  // (schema.ts: OPERATIONAL_METADATA, int unsigned, CHECK >= 1) -- never key
+  // material. signer_key_id is the signer's DSK identifier under the plain
+  // name this package's epoch columns use: the same server-minted opaque
+  // `key_id`-class identifier as signer_dsk_key_id above (schema.ts:
+  // OPAQUE_IDENTIFIER / SECURITY_METADATA public reference), never a
+  // private key.
+  'minimum_accepted_key_epoch', 'signer_key_id',
   // parent_genesis_challenges.candidate_key_id / candidate_public_key
   // (migration 0044, PCA-DEC-020-R1 genesis challenges) are the candidate
   // genesis device's DSK identifier and its PUBLIC signing key -- the two

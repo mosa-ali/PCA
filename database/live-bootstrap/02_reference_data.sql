@@ -69,7 +69,8 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0056_family_device_session_epoch.sql', CURRENT_TIMESTAMP(3)),
   ('0057_parent_actor_provenance_for_removal_decisions.sql', CURRENT_TIMESTAMP(3)),
   ('0058_family_authority_request_challenges_service_index.sql', CURRENT_TIMESTAMP(3)),
-  ('0059_parent_mfa_ascii_check_literal_charset.sql', CURRENT_TIMESTAMP(3));
+  ('0059_parent_mfa_ascii_check_literal_charset.sql', CURRENT_TIMESTAMP(3)),
+  ('0060_family_trust_set_epoch_persistence.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

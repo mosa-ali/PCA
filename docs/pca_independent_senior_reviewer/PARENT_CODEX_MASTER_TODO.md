@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-28 23:21 UTC
-WAVE_BASE_SHA = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (Wave-4 baseline; local HEAD, tracking ref and git ls-remote agree)
-LAST_CERTIFIED_PREVIOUS_SHA = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (exact-head Quality Gates run 36489764549 SUCCESS 27/27)
-CURRENT_WAVE_STATUS = Wave 4 (REV-2 amended) architecture/security qualification executed read-only to completion: seven specialist sub-agents delivered usable independent findings (preflight gate PASSED on attempt 1; bounded retries used for four full-review dispatches), TODO-12/TODO-15 dependency decomposition verified against source, schema qualification through 0059 completed, dependency graph + 22 source-of-truth answers assembled, and an evidence-only docs checkpoint committed/pushed with its exact-head CI reported to the owner
-WAVE_CONTENT_SHA = reported to the owner with the Wave-4 report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
-EXACT_HEAD_CI_SHA = reported to the owner with the Wave-4 report (same reason); the previous certified exact-head run remains 36489764549 SUCCESS 27/27 at 89570c6d
-LOCAL_UNCOMMITTED_CHANGE = None after the single Wave-4 docs commit; `.vscode/` and root `0` remain excluded
+LAST_UPDATED_UTC = 2026-09-29 00:59 UTC
+WAVE_BASE_SHA = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b (Wave-5A base; local HEAD, tracking ref and git ls-remote agree)
+LAST_CERTIFIED_PREVIOUS_SHA = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b (exact-head Quality Gates run 36497702302 SUCCESS 27/27)
+CURRENT_WAVE_STATUS = Wave 5A (storage-only durable Family Trust Set epoch persistence) implemented and locally validated; stopped for owner review with zero production wiring
+WAVE_CONTENT_SHA = reported to the owner with the Wave-5A report (a commit cannot contain its own final SHA; no post-CI ledger commit by directive)
+EXACT_HEAD_CI_SHA = reported to the owner with the Wave-5A report (same reason); the most recent certified exact-head run remains 36497702302 SUCCESS 27/27 at 7a3b2830
+LOCAL_UNCOMMITTED_CHANGE = None after the single Wave-5A storage commit; `.vscode/` and root `0` remain excluded
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; TODO-10 = PASS per owner decision; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
-NEXT_ACTION = STOP for owner review of the Wave-4 qualification and the proposed Wave 5A–8 sequence. Do not implement TODO-12/15 without explicit owner authorization of the proposed waves; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN and preserve all owner/Platform gates.
+CURRENT_ACTIVE_TODO = TODO-12, TODO-14, TODO-15, TODO-19, and owner-gated TODO-18; Wave 5A was storage-only and unwired; TODO-10 = PASS per owner decision; TODO-02…09/11/13/16/17/20 PASS at current exact-head or live evidence
+NEXT_ACTION = STOP for owner review of the Wave-5A storage closure. Do not implement TODO-12/15, wire the new stores, or start further waves without explicit owner authorization; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN and preserve all owner/Platform gates; live application of 0060 is not authorized.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -653,43 +653,45 @@ WRONG_DEVICE_REJECTION = Partial focused coverage; end-to-end cryptographic proo
 
 ## Test Evidence
 
-BACKEND_BUILD = PASS (current checkpoint)  
-PARENT_WEB_TYPECHECK = PASS (current checkpoint)  
-PLATFORM_WEB_TYPECHECK = PASS (current checkpoint)  
-MYSQL = Local disposable MySQL 9.7: migrations 0001…0058, focused migration replays and local runtime grants PASS; required MySQL 8.4 lane and live DB remain unverified  
-FAMILY_CONCURRENCY = PASS historically; not rerun now  
-PARENT_WEB = PASS historically (151 files / 1065 tests); not rerun now  
-AUTHORITY_MATRIX = IN_PROGRESS; current focused backend 188/188  
-IDENTITY_PROFILE = PASS historically (Parent UI 15/15; backend routes 11/11; DB 61/61)  
-LOGIN_NOTIFICATION = PASS historically  
-TOTP = PASS historically in focused/DB/browser lanes  
-BROWSER_TRUST = PASS historically; current real browser not run  
-CHILD_DEVICE_SECURITY = PARTIAL; crypto activation remains blocked  
-REAL_BACKEND_E2E = NOT RUN in this checkpoint  
+BACKEND_BUILD = PASS (current checkpoint)
+PARENT_WEB_TYPECHECK = PASS (current checkpoint)
+PLATFORM_WEB_TYPECHECK = PASS (current checkpoint)
+MYSQL = Disposable MySQL 8.4.11 lanes validated through migration 0060 repository-side: inner 664 tests / 656 pass / 0 fail / 8 pre-existing skips; certified production paths 273/273. Live `pca_pro` remains at 0059
+FAMILY_CONCURRENCY = PASS historically; not rerun now
+PARENT_WEB = PASS historically (151 files / 1065 tests); not rerun now
+AUTHORITY_MATRIX = IN_PROGRESS; current focused backend 188/188
+IDENTITY_PROFILE = PASS historically (Parent UI 15/15; backend routes 11/11; DB 61/61)
+LOGIN_NOTIFICATION = PASS historically
+TOTP = PASS historically in focused/DB/browser lanes
+BROWSER_TRUST = PASS historically; current real browser not run
+CHILD_DEVICE_SECURITY = PARTIAL; crypto activation remains blocked
+REAL_BACKEND_E2E = NOT RUN in this checkpoint
 REAL_BROWSER_E2E = NOT RUN in this checkpoint; historical Parent MFA flows 1/1 each
 
 ## Git Status
 
-LOCAL_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
-REMOTE_HEAD = 8f3f45b47d24cc7debd581230eda23c088d74f4e  
-LOCAL_REMOTE_EQUAL = YES (fresh fetch)  
-FILES_LEFT_DIRTY = 5 explicitly excluded: generated stale schema snapshots (2), `.vscode` local files (2), unrelated root `0` (1)  
-PARENT_LOCAL_ONLY_FILES_REMAINING = 0  
-PARENT_UNPUSHED_COMMITS_REMAINING = 0  
-EXACT_HEAD_CI = FAILED for `8f3f45b4` run `36338197362`; no replacement run has been queued
+LOCAL_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b
+REMOTE_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b
+LOCAL_REMOTE_EQUAL = YES (fresh fetch)
+FILES_LEFT_DIRTY = 2 untracked exclusions preserved: `.vscode/` local files and the unrelated root `0`
+PARENT_LOCAL_ONLY_FILES_REMAINING = 0
+PARENT_UNPUSHED_COMMITS_REMAINING = 0
+EXACT_HEAD_CI = SUCCESS for `7a3b2830` run `36497702302` (27/27 jobs, zero failures); the Wave-5A commit's exact-head run is reported to the owner with the Wave-5A report
 
 ## Database
 
-REPO_SCHEMA_HEAD = source/schema.ts + migrations through 0059
-REPO_MIGRATION_HEAD = 0059 (57 SQL migration files; 0009 and 0010 are absent from repository history)
-LOCAL_SCHEMA_HEAD = 0059 on two fresh disposable MySQL 8.4.11 databases; each has 92 tables
+REPO_SCHEMA_HEAD = source/schema.ts + migrations through 0060 (94 tables)
+REPO_MIGRATION_HEAD = 0060 (58 SQL migration files; 0009 and 0010 are absent from repository history)
+LOCAL_SCHEMA_HEAD = 0060 on run-owned disposable MySQL 8.4.11 lanes (94 tables; the Wave-5A persistence suites exercised the new tables end-to-end)
 LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified `pca-mysql.mysql.database.azure.com/pca_pro` (MySQL 8.4.9-azure)
-LOCAL_DB_SCHEMA_MATCH = EXACT_MATCH; full structural introspection across both databases after 57 migrations
-LIVE_PCA_PRO_SCHEMA_MATCH = EXACT_MATCH with local MySQL 8.4.11; 90 readable application-table row counts unchanged after migration 0059
-LIVE_GRANTS_MATCH = PASS; 92/92 grants match the repository plan; `parent_account_security_events` remains INSERT-only
-MIGRATION_REQUIRED = NO remaining proven repository/live mismatch after migration 0059
-MIGRATION_APPLIED = 0059 locally tested and applied to verified live `pca_pro`; journal 56→57
-LOCAL_RUNTIME_GRANTS = 92/92 exact table grants for disposable principal; live runtime grants independently match 92/92
+LOCAL_DB_SCHEMA_MATCH = PASS through 0060 in the disposable lane (regenerated counts: 94 tables / 806 columns / 94 primary keys / 142 indexes / 293 checks / 58 migrations)
+LIVE_PCA_PRO_SCHEMA_MATCH = EXACT_MATCH with local MySQL 8.4.11 through 0059; live has not been advanced to 0060
+LIVE_GRANTS_MATCH = PASS through 0059 (92/92 at that schema level); the repository plan now declares 94 tables — 0060 adds `family_trust_set_epochs` (SELECT,INSERT) and `family_epoch_floors` (SELECT,INSERT,UPDATE); live regrant is an owner action once 0060 application is authorized
+MIGRATION_REQUIRED = YES for live when authorized: repository/source head is 0060 while live remains 0059; 0060 is additive and touches no existing table
+MIGRATION_APPLIED = 0059 is the last live application (journal 56→57); migration 0060 is repository-side only and was NOT applied to any live database
+LIVE_APPLICATION_AUTHORIZED = NO (Wave 5A made zero live database changes)
+REPO_SCHEMA_AHEAD_OF_LIVE_FOR_WAVE5A = YES (0060 repository-side only)
+LOCAL_RUNTIME_GRANTS = plan regenerated to 94 table declarations; disposable-DB lanes passed with the regenerated plan; live runtime grants remain the 0059-verified 92-table set
 NO_SEED_DATA = YES
 
 ## Release
@@ -711,12 +713,11 @@ CURRENT_P2 = Schedule-policy Trust Set authority; web-rule `503 not_configured`;
 
 ## Blockers
 
-BLOCKERS = TODO-20 is PASS through migration 0059, exact-head CI run `36360087042`, live schema/grant equality, and row-count preservation. TODO-12 schedule-policy and Web Rules authority remain fail-closed; TODO-15 device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by the checkpoint.
+BLOCKERS = TODO-20 is PASS through migration 0059, exact-head CI run `36360087042`, live schema/grant equality, and row-count preservation. Wave 5A durable epoch storage is complete and stopped for owner review; live application of 0060 is NOT authorized (repository-side only). TODO-12 schedule-policy and Web Rules authority remain fail-closed; TODO-15 device crypto/trust/policy bootstrap remains unavailable; TODO-18 literal owner acceptance has not been offered; Platform work package remains on HOLD_PARENT_DEPENDENCY; no Azure deployment or production acceptance is authorized by this checkpoint.
 
 ## Next Action
 
-NEXT_ACTION = Continue the earliest unfinished Parent work at TODO-12 and TODO-14; retain fail-closed Trust Set, E2EE/Web Rules and device-security boundaries. TODO-20 through 0059 is complete. Keep Platform Enrollment held until its Parent dependencies and literal TODO-18 localhost acceptance pass.
-
+NEXT_ACTION = STOP for owner review of the Wave-5A storage closure (repository-side 0060; live remains 0059; LIVE_APPLICATION_AUTHORIZED = NO). Do not begin TODO-12/15 implementation, wiring of the new stores into authority paths, or further waves without explicit owner authorization; retain fail-closed Trust Set, E2EE/Web Rules and device-security boundaries; keep GLOBAL_AGGREGATE_STATUS NOT_YET_PROVEN; keep Platform Enrollment held at HOLD_PARENT_DEPENDENCY until its Parent dependencies and literal TODO-18 localhost acceptance pass.
 ## Checkpoint History
 
 ### 2026-09-27 17:37 UTC — synchronized Parent/Platform implementation checkpoint
@@ -1141,3 +1142,11 @@ CRITICAL_SCAN = No CRITICAL_FINDING (no secret exposure, no signature/Trust-Set 
 PLUGINS = Qualification performed non-mutating (metadata/help only; MUTATING_PLUGIN_AUTHORIZED = NO); all /mobile-app-family plugins classified TECHNOLOGY_MISMATCH (Expo/React Native/Power Apps/Dataverse versus native Kotlin/Swift); no plugin invoked; PLUGIN_FILES_CHANGED = NONE.
 GIT = One evidence-only docs checkpoint updates both master ledgers; pushed to `pca-dev` with exact-head CI reported with the Wave-4 report. `.vscode/` and root `0` remain untracked and excluded. No production source, schema, migration, live DB, Azure or Platform change was made.
 NEXT_ACTION = STOP for owner review of the Wave-4 qualification and the proposed implementation-wave sequence; do not begin TODO-12/15 implementation without explicit owner authorization.
+### 2026-09-29 00:59 UTC — Wave 5A: durable Family Trust Set epoch persistence (storage only, repository-side)
+
+IMPLEMENTATION = Migration `0060_family_trust_set_epoch_persistence.sql` adds two additive tables: `family_trust_set_epochs` (append-only signed epochs; PK (family_id, trust_set_epoch); CHECKs for epoch >= 1, superseded < current, bounded bytes/signature; no key material) and `family_epoch_floors` (per-family monotonic acceptance floors). Six new files under `backend/src/familytrustset/` (store interfaces + MySQL implementations; the single writer `appendAcceptedEpoch` serializes per family on the floors `SELECT ... FOR UPDATE`, checks duplicates before staleness, applies a strict-< trust-set floor with the virgin-genesis-1 rationale, and advances the key floor with GREATEST). Two new DB suites: `familyTrustSetEpochPersistence.mysql.test.mjs` (14 tests: 13 scenario sections including CONCURRENT_HIGHER_HIGHER, CONCURRENT_HIGHER_LOWER and SAME_VALUE_RETRY, plus a machine-readable outcomes emission) and `familyTrustSetEpochMigrationSafety.mysql.test.mjs` (4 upgrade/replay tests). Regenerated artifacts: schema.ts 94 tables / 58 migrations; verify-mysql 94 expected tables; runtimeGrantPlan 94 declarations (+`family_trust_set_epochs` SELECT,INSERT; +`family_epoch_floors` SELECT,INSERT,UPDATE); live-bootstrap 01/02 incl. journal row 0060; disposable bootstrap pair (94 tables / 806 columns / 94 primary keys / 142 indexes / 293 checks / 58 migrations); privacy CSV +14 rows; `backend/schema` snapshot regenerated (94 tables); `test:db:inner` 73/73 parity. `main.ts`, engines, routes, `android/`, `ios/`, `parent-web/` and `platform-admin-web/` are unchanged; the new stores have no production callers.
+VALIDATION = Backend unit suite PASS 2674/2674. Disposable MySQL 8.4.11 full-DB lane all-certified: inner 664 tests / 656 pass / 0 fail / 8 pre-existing skips; certified production paths 273/273. Local migration-from-zero through 0060 PASS (58/58 applied; verify-mysql gate passed). Observed concurrency outcomes: CONCURRENT_HIGHER_HIGHER=[APPENDED,APPENDED]; CONCURRENT_HIGHER_LOWER=[APPENDED,REJECTED_STALE/STALE_TRUST_SET_EPOCH]; SAME_VALUE_RETRY=[APPENDED,IDEMPOTENT_MATCH]. `git diff --check` clean after LF normalization of all new/modified working-copy files.
+REVIEWS = Independent specialist closure reviews by Agents 1–6 (backend, crypto/epoch, Android, iOS, schema, web) plus the Agent 7 QA/security/Git/CI/evidence closure; full outcomes are in the Wave-5A report. No CRITICAL_FINDING.
+GIT = One storage-only commit on `pca-dev` over `7a3b2830` (13 modified + 9 new files; `.vscode/` and root `0` remain excluded); the commit SHA and its exact-head CI result are reported to the owner with the Wave-5A report and deliberately not re-committed.
+FLAGS = WAVE_5A_STOPPED_FOR_OWNER_REVIEW = YES; LIVE_APPLICATION_AUTHORIZED = NO; REPO_SCHEMA_AHEAD_OF_LIVE_FOR_WAVE5A = YES.
+NEXT_ACTION = STOP for owner review; do not begin TODO-12/15, store wiring, or further waves without explicit owner authorization.

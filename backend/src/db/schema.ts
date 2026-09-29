@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 92 tables, including schema_migrations itself),
+// central MySQL schema (all 94 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0059; 57 files, 0009/0010 never existed) from an empty database
+// through 0060; 58 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -2044,6 +2044,39 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "family_epoch_floors",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0060_family_trust_set_epoch_persistence.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familytrustset",
+    columns: [
+      { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "minimum_accepted_trust_set_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "minimum_accepted_key_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["family_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "family_epoch_floors_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
+      { name: "family_epoch_floors_min_key_epoch_check", clause: "(`minimum_accepted_key_epoch` >= 1)" },
+      { name: "family_epoch_floors_min_trust_set_epoch_check", clause: "(`minimum_accepted_trust_set_epoch` >= 1)" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
+    ],
+  },
+  {
     name: "family_member_invitations",
     engine: 'InnoDB',
     charset: "utf8mb4",
@@ -2152,6 +2185,50 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     checkConstraints: [
 
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
+    ],
+  },
+  {
+    name: "family_trust_set_epochs",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0060_family_trust_set_epoch_persistence.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familytrustset",
+    columns: [
+      { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "trust_set_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "key_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "supersedes_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "signed_epoch_bytes", columnType: "mediumblob", dataType: "mediumblob", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Signed Family Trust Set epoch certification material (signed, not encrypted), opaque to the schema." },
+      { name: "signature", columnType: "varchar(512)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Cryptographic signature, opaque to the schema." },
+      { name: "signer_key_id", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "signer_device_id", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "issued_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "received_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["family_id", "trust_set_epoch"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "family_trust_set_epochs_key_epoch_idx", columns: ["family_id", "key_epoch"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "family_trust_set_epochs_bytes_check", clause: "(octet_length(`signed_epoch_bytes`) between 1 and 262144)" },
+      { name: "family_trust_set_epochs_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
+      { name: "family_trust_set_epochs_key_epoch_check", clause: "(`key_epoch` >= 1)" },
+      { name: "family_trust_set_epochs_signature_check", clause: "(char_length(`signature`) between 1 and 512)" },
+      { name: "family_trust_set_epochs_signer_device_check", clause: "(char_length(`signer_device_id`) between 1 and 64)" },
+      { name: "family_trust_set_epochs_signer_key_check", clause: "(char_length(`signer_key_id`) between 1 and 64)" },
+      { name: "family_trust_set_epochs_supersedes_check", clause: "((`supersedes_epoch` is null) or ((`supersedes_epoch` >= 1) and (`supersedes_epoch` < `trust_set_epoch`)))" },
+      { name: "family_trust_set_epochs_trust_set_epoch_check", clause: "(`trust_set_epoch` >= 1)" },
     ],
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },

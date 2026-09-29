@@ -117,6 +117,15 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   // runtime principal can neither read back nor rewrite the ledger.
   parent_account_security_events: Object.freeze(['INSERT']),
 
+  // --- migration 0060 (Family Trust Set signed-epoch persistence + epoch
+  // floors), derived from the familytrustset repository statements.
+  // family_trust_set_epochs is append-only signed-epoch storage: the runtime
+  // reads epochs back (SELECT, which also satisfies the READ-COLUMN RULE for
+  // those reads) and appends new ones -- it never rewrites or deletes one.
+  // family_epoch_floors is read and upserted in place, never deleted. ---
+  family_trust_set_epochs: Object.freeze(['SELECT', 'INSERT']),
+  family_epoch_floors: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+
   // --- ordinary runtime DML tables (explicit declaration each) ---
   account_entitlements: DML,
   billing_commercial_markets: DML,

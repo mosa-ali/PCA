@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    92 tables
---   792 columns
---    92 primary keys
+--    94 tables
+--   806 columns
+--    94 primary keys
 --   104 foreign keys
 --    38 unique non-primary-key indexes
---   141 non-unique indexes
---   282 CHECK constraints
+--   142 non-unique indexes
+--   293 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    57 schema_migrations journal rows
+--    58 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1024,6 +1024,18 @@ CREATE TABLE `family_child_memberships` (
   CONSTRAINT `family_child_memberships_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- family_epoch_floors (defined by backend/migrations/0060_family_trust_set_epoch_persistence.sql)
+CREATE TABLE `family_epoch_floors` (
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `minimum_accepted_trust_set_epoch` int unsigned NOT NULL,
+  `minimum_accepted_key_epoch` int unsigned NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`family_id`),
+  CONSTRAINT `family_epoch_floors_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `family_epoch_floors_min_key_epoch_check` CHECK ((`minimum_accepted_key_epoch` >= 1)),
+  CONSTRAINT `family_epoch_floors_min_trust_set_epoch_check` CHECK ((`minimum_accepted_trust_set_epoch` >= 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- family_member_invitations (defined by backend/migrations/0027_family_member_invitations.sql, altered by 0035_family_member_invitation_pending_uniqueness.sql)
 CREATE TABLE `family_member_invitations` (
   `invitation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1075,6 +1087,30 @@ CREATE TABLE `family_rbac_policy_config` (
   `administrator_can_revoke_device_or_disable_protection` tinyint(1) NOT NULL DEFAULT 0,
   `updated_at` datetime(3) NOT NULL,
   PRIMARY KEY (`family_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- family_trust_set_epochs (defined by backend/migrations/0060_family_trust_set_epoch_persistence.sql)
+CREATE TABLE `family_trust_set_epochs` (
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `trust_set_epoch` int unsigned NOT NULL,
+  `key_epoch` int unsigned NOT NULL,
+  `supersedes_epoch` int unsigned NULL,
+  `signed_epoch_bytes` mediumblob NOT NULL,
+  `signature` varchar(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `signer_key_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `signer_device_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `issued_at` datetime(3) NOT NULL,
+  `received_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`family_id`, `trust_set_epoch`),
+  KEY `family_trust_set_epochs_key_epoch_idx` (`family_id`, `key_epoch`),
+  CONSTRAINT `family_trust_set_epochs_bytes_check` CHECK ((octet_length(`signed_epoch_bytes`) between 1 and 262144)),
+  CONSTRAINT `family_trust_set_epochs_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `family_trust_set_epochs_key_epoch_check` CHECK ((`key_epoch` >= 1)),
+  CONSTRAINT `family_trust_set_epochs_signature_check` CHECK ((char_length(`signature`) between 1 and 512)),
+  CONSTRAINT `family_trust_set_epochs_signer_device_check` CHECK ((char_length(`signer_device_id`) between 1 and 64)),
+  CONSTRAINT `family_trust_set_epochs_signer_key_check` CHECK ((char_length(`signer_key_id`) between 1 and 64)),
+  CONSTRAINT `family_trust_set_epochs_supersedes_check` CHECK (((`supersedes_epoch` is null) or ((`supersedes_epoch` >= 1) and (`supersedes_epoch` < `trust_set_epoch`)))),
+  CONSTRAINT `family_trust_set_epochs_trust_set_epoch_check` CHECK ((`trust_set_epoch` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- licenses (defined by backend/migrations/0001_mysql_baseline.sql)
@@ -1955,4 +1991,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0056_family_device_session_epoch.sql'),
   ('0057_parent_actor_provenance_for_removal_decisions.sql'),
   ('0058_family_authority_request_challenges_service_index.sql'),
-  ('0059_parent_mfa_ascii_check_literal_charset.sql');
+  ('0059_parent_mfa_ascii_check_literal_charset.sql'),
+  ('0060_family_trust_set_epoch_persistence.sql');

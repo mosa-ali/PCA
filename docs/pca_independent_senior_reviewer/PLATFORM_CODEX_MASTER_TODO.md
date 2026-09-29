@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-28 23:21 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (Wave-3 certified exact-head Quality Gates run 36489764549 SUCCESS 27/27; the Wave-4 evidence-only docs checkpoint is validated locally — git equality + diff checks — with exact-head CI reported to the owner with the Wave-4 report)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (fresh fetch, local HEAD, tracking ref and git ls-remote agree at the Wave-4 baseline)
-CURRENT_CHECKPOINT_SHA = 89570c6dc85d29e03f5d2c7120195cfcfa9a8b60 (last certified exact-head run 36489764549 SUCCESS 27/27; the Wave-4 docs checkpoint SHA and CI are reported with the Wave-4 report)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = None after the single Wave-4 docs commit (both master ledgers only); global aggregates and Platform gates remain open
+LAST_UPDATED_UTC = 2026-09-29 00:59 UTC
+VALIDATED_PARENT_SOURCE_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b (exact-head Quality Gates run 36497702302 SUCCESS 27/27 at that head; the Wave-5A storage change is repository-side only and validated locally)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b (last certified exact-head run 36497702302 SUCCESS 27/27; the Wave-5A commit SHA and CI are reported with the Wave-5A report)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = None after the single Wave-5A storage commit (backend + regenerated artifacts + both master ledgers); global aggregates and Platform gates remain open
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = STOP for owner review of the Wave-4 Parent architecture/security qualification (TODO-12/TODO-15 decomposed with verified source facts; proposed Wave 5A–8 sequence awaiting owner authorization). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = STOP for owner review of the Wave-5A Parent storage closure (repository-side 0060; live remains 0059). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -454,14 +454,14 @@ CLEAN_SNAPSHOT = NOT RUN
 
 ## Git
 
-LOCAL_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-REMOTE_HEAD = 47d564c4af1fd6535dd1c9211cbf9c06a46970fb  
-LOCAL_REMOTE_EQUAL = YES (fresh fetch)  
-PLATFORM_FILES_CHANGED = 0 uncommitted Platform paths; the two current Platform commits are pushed  
-PLATFORM_LOCAL_ONLY_FILES_REMAINING = 0 for existing scope  
-PLATFORM_UNPUSHED_COMMITS_REMAINING = 0  
-PLATFORM_COMMIT = `24603231`, `2fde86de` in checkpoint; additional backend projection is included in the integrated Parent backend commit  
-EXACT_HEAD_CI = FAILED (`36348596733` at `47d564c4`); previous run `36338197362` FAILED at `8f3f45b4`; run `36348261937` was cancelled by superseding push
+LOCAL_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b
+REMOTE_HEAD = 7a3b28307acd5ae8f16d511cdb00b8811e56d52b
+LOCAL_REMOTE_EQUAL = YES (fresh fetch)
+PLATFORM_FILES_CHANGED = 0 uncommitted Platform paths; the two current Platform commits are pushed
+PLATFORM_LOCAL_ONLY_FILES_REMAINING = 0 for existing scope
+PLATFORM_UNPUSHED_COMMITS_REMAINING = 0
+PLATFORM_COMMIT = `24603231`, `2fde86de` in checkpoint; additional backend projection is included in the integrated Parent backend commit
+EXACT_HEAD_CI = SUCCESS: run `36497702302` at `7a3b2830` (27/27 jobs, zero failures); the Wave-5A storage commit SHA and its exact-head run are reported to the owner with the Wave-5A report
 
 ## Rollback Baseline
 
@@ -488,12 +488,11 @@ PLATFORM_WORK_PACKAGE_STATUS = HOLD_PARENT_DEPENDENCY
 
 ## Risks and Next Action
 
-CURRENT_P0 = NOT_YET_PROVEN (fresh severity re-review not complete)  
-CURRENT_P1 = NOT_YET_PROVEN (revalidate pre-production reports before release)  
-CURRENT_P2 = Enrollment Name/Email/Phone remains unimplemented; exact-head CI pending; MySQL 8.4 validation unavailable (local MySQL 9.7 only); dependent Platform work remains held.  
-BLOCKERS = Parent TODO-17 integration; TODO-18 literal owner localhost acceptance; current exact-head CI; MySQL 8.4 and live database target; schema/grant reconciliation; existing device crypto/trust gates.  
-NEXT_ACTION = Monitor run 36348261937 for SHA 0ba4c0d8. Do not activate Agents 6/7 until the Parent gate is satisfied. Once activated, implement Enrollment projection consumption and columns, then focused/full tests, lint/build, clean snapshot and exact-head CI.
-
+CURRENT_P0 = NOT_YET_PROVEN (fresh severity re-review not complete)
+CURRENT_P1 = NOT_YET_PROVEN (revalidate pre-production reports before release)
+CURRENT_P2 = Enrollment Name/Email/Phone remains unimplemented; dependent Platform work remains held; Parent repository schema is ahead of live for Wave 5A (repo 0060 storage-only vs live 0059; live application not authorized); MySQL 8.4.11 is validated repository-side in disposable lanes (correction to the earlier "MySQL 8.4 validation unavailable" text)
+BLOCKERS = Parent TODO-12/14/15 and literal TODO-18 acceptance; Wave 5A live application not authorized (0060 repository-side only); existing device crypto/trust gates; Platform activation held at HOLD_PARENT_DEPENDENCY
+NEXT_ACTION = STOP for owner review of the Wave-5A Parent storage closure. Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and literal localhost acceptance; do not begin Platform Enrollment work and do not apply 0060 to live. No Enrollment activation/deployment/UAT is implied.
 ## Checkpoint History
 
 ### 2026-09-27 17:37 UTC — Parent/Platform remote checkpoint
@@ -791,3 +790,8 @@ NEXT_ACTION = STOP for owner review of the Wave-3 closure; keep the dependent Pl
 PARENT = Read-only Wave 4 (REV-2 amended) completed with the seven-sub-agent gate PASSED (7/7 usable smoke reports; bounded retries used for full reviews — Agent 1/4/5 full reports delivered, Agents 2/3/6 smoke-only, limitation recorded). Verified: dual Trust-Set + child-profile-membership gate; Web Rules 503; FamilyAudit actor-field overload; PCA-DEC-034/035 discard + zero writers; no PAIRED-to-ACTIVE writer on any layer; device sessions un-mintable; no durable Trust Set/key-epoch store; schema changes for the safe architecture are additive with zero data loss (migration order: floors + store, then membership resolver, then activation, then encrypted storage, then mobile). No CRITICAL_FINDING; no implementation performed. The proposed Wave 5A–5F / 6A–6C / 7 / 8 sequence and owner policy decisions are in the Wave-4 report; the parent ledger carries the decomposition fields.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; TODO-20 remains PASS through live 0059. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = STOP for owner review of the Wave-4 qualification; keep the dependent Platform hold unchanged.
+### 2026-09-29 00:59 UTC — Wave 5A Parent storage-only closure recorded; Platform remains held
+
+PARENT = Wave 5A delivered durable Family Trust Set epoch persistence repository-side only: migration 0060 adds `family_trust_set_epochs` (append-only signed epochs) and `family_epoch_floors` (monotonic acceptance floors); six new store files with zero production callers; two new DB suites; schema.ts 94 tables / 58 migrations; regenerated bootstrap artifacts, 94-declaration grant plan, verify-mysql expected list, `backend/schema` snapshot and privacy CSV. Evidence: backend unit suite 2674/2674; disposable MySQL 8.4.11 full lane 656/664 pass (0 fail, 8 pre-existing skips); certified production paths 273/273; local migration-from-zero through 0060 PASS; concurrency outcomes APPENDED/APPENDED, APPENDED/REJECTED_STALE(STALE_TRUST_SET_EPOCH), APPENDED/IDEMPOTENT_MATCH. Live `pca_pro` remains at 0059; LIVE_APPLICATION_AUTHORIZED = NO; WAVE_5A_STOPPED_FOR_OWNER_REVIEW = YES.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = STOP for owner review of the Wave-5A storage closure; keep the dependent Platform hold unchanged.

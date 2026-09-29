@@ -378,6 +378,10 @@ family_child_memberships,child_profile_id,varchar(128),OPAQUE_IDENTIFIER,"Server
 family_child_memberships,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_child_memberships,creation_request_key,varchar(191),OPAQUE_IDENTIFIER,"Caller-supplied idempotency key, never used as row identity."
 family_child_memberships,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_epoch_floors,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_epoch_floors,minimum_accepted_trust_set_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+family_epoch_floors,minimum_accepted_key_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+family_epoch_floors,updated_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 family_member_invitations,invitation_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_member_invitations,family_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_member_invitations,invited_email_hash,binary(32),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."
@@ -395,6 +399,16 @@ family_rbac_policy_config,family_id,char(36),OPAQUE_IDENTIFIER,Opaque applicatio
 family_rbac_policy_config,administrator_can_manage_viewers,tinyint(1),OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 family_rbac_policy_config,administrator_can_revoke_device_or_disable_protection,tinyint(1),OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 family_rbac_policy_config,updated_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_trust_set_epochs,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_trust_set_epochs,trust_set_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+family_trust_set_epochs,key_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+family_trust_set_epochs,supersedes_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+family_trust_set_epochs,signed_epoch_bytes,mediumblob,SECURITY_METADATA,"Signed Family Trust Set epoch certification material (signed, not encrypted), opaque to the schema."
+family_trust_set_epochs,signature,varchar(512),SECURITY_METADATA,"Cryptographic signature, opaque to the schema."
+family_trust_set_epochs,signer_key_id,varchar(64),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_trust_set_epochs,signer_device_id,varchar(64),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_trust_set_epochs,issued_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_trust_set_epochs,received_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 licenses,license_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 licenses,account_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 licenses,license_reference_hash,varbinary(255),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."
