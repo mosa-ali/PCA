@@ -16,8 +16,20 @@ export type ActorResolutionFailure =
   | 'DEVICE_NOT_IN_TRUST_SET'
   | 'DEVICE_NOT_ACTIVE';
 
+/**
+ * WAVE 5B: resolution MAY be asynchronous -- the server-reachable,
+ * durable resolution path reads the accepted-epoch store (migration 0060)
+ * per call, while device-local implementations
+ * (FamilyTrustSetRoleResolver, the Unavailable* fail-closed stubs) remain
+ * synchronous. Consumers inside async flows MUST `await` the result
+ * before narrow-checking it with `isActorResolutionFailure`, so both
+ * shapes are handled identically.
+ */
 export interface TrustSetRoleResolver {
-  resolveActor(familyId: OpaqueFamilyId, deviceId: OpaqueDeviceId): ResolvedActor | ActorResolutionFailure;
+  resolveActor(
+    familyId: OpaqueFamilyId,
+    deviceId: OpaqueDeviceId,
+  ): ResolvedActor | ActorResolutionFailure | Promise<ResolvedActor | ActorResolutionFailure>;
 }
 
 /**

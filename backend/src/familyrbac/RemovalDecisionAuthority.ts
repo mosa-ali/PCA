@@ -556,7 +556,7 @@ export class RemovalDecisionAuthority {
     // below. The device is a separate exact binding and must also be resolved
     // from the same verified trust-set authority; a signed request containing
     // a foreign or revoked device identifier is never enough to authorize it.
-    const targetDevice = this.targetDeviceRoleResolver.resolveActor(request.familyId, request.deviceId);
+    const targetDevice = await this.targetDeviceRoleResolver.resolveActor(request.familyId, request.deviceId);
     if (isActorResolutionFailure(targetDevice) || targetDevice.trustSetEpoch !== signedDecision.trustSetEpoch) {
       await this.recordDenied(request, signedDecision, 'NOT_AUTHORIZED');
       throw new RemovalDecisionError('NOT_AUTHORIZED');

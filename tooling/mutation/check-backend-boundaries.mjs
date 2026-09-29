@@ -45,7 +45,7 @@ forbidText(diagnostics, 'ciphertext: record.ciphertext,', 'ciphertext field in d
 requireText(diagnosticMethod, 'try {', 'best-effort diagnostic guard');
 requireText(diagnosticMethod, 'this.diagnosticSink', 'diagnostic sink');
 requireText(diagnosticMethod, 'catch {', 'diagnostic failure catch');
-requireText(server, 'Fastify({ logger: false,', 'disabled Fastify logger');
+if (!/Fastify\(\{\s*logger: false,/.test(server)) failures.push('missing disabled Fastify logger: Fastify({ logger: false,');
 forbidText(server, 'logger: true', 'enabled Fastify logger');
 requireText(safeZone, 'assertOpaqueToken(input.familyId);', 'Safe Zone family identifier validation');
 requireText(safeZone, 'assertOpaqueToken(input.recipientEndpointId);', 'Safe Zone recipient identifier validation');

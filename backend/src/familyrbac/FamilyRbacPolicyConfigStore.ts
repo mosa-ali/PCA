@@ -59,10 +59,9 @@ export class MySqlFamilyRbacPolicyConfigRepository implements FamilyRbacPolicyCo
  * own doc comment: true authority is the receiving device's own
  * signed-envelope verification, never this service or any server ACL) --
  * reading a possibly-stale cached snapshot here is an acceptable,
- * deliberate tradeoff for that reason, exactly like
- * TrustSetRoleResolver.resolveActor's own synchronous contract already
- * assumes a pre-loaded, in-memory-backed source rather than a live
- * per-call DB round trip. A caller that needs a guaranteed-fresh read
+ * deliberate tradeoff for that reason; TrustSetRoleResolver.resolveActor
+ * is instead a per-call durable read in its Wave 5B store-backed form
+ * (awaited by async consumers). A caller that needs a guaranteed-fresh read
  * (e.g. immediately after an Owner changes this setting) should call
  * loadFamily()/setForFamily() directly rather than relying on
  * snapshotFor() alone.

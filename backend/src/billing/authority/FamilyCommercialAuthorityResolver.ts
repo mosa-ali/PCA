@@ -39,7 +39,7 @@
  * anchor of its own. `AttestationChainFamilyCommercialAuthorityResolver` is
  * the real, server-reachable production candidate.
  */
-import type { ActorResolutionFailure, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
+import type { ActorResolutionFailure, ResolvedActor, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import { isActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from '../../familytrustset/types.js';
 import type { FamilyOwnerAttestationChainEngine } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
@@ -95,7 +95,7 @@ export class TrustSetFamilyCommercialAuthorityResolver implements FamilyCommerci
   constructor(private readonly roleResolver: TrustSetRoleResolver) {}
 
   async resolveOwnerAuthority(familyId: OpaqueFamilyId, actorDeviceId: OpaqueDeviceId): Promise<FamilyCommercialAuthorityResult> {
-    const result: ReturnType<TrustSetRoleResolver['resolveActor']> = this.roleResolver.resolveActor(familyId, actorDeviceId);
+    const result: ResolvedActor | ActorResolutionFailure = await this.roleResolver.resolveActor(familyId, actorDeviceId);
     if (isActorResolutionFailure(result)) {
       const failure: ActorResolutionFailure = result;
       // Every resolution failure (NO_TRUST_SET / FAMILY_MISMATCH /

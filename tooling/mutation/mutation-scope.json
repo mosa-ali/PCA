@@ -52,6 +52,12 @@
         "backend/test/mutation/privacyBoundaries.test.mjs",
         "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt"
       ]
+    },
+    "PCA-SEC-020": {
+      "boundedClaim": "The Wave-5B server-side Trust Set epoch acceptance flow keeps its chain-path signature-invalid and stale-epoch rejection behavior test-enforced (negative controls in backend/test/familytrustset/trustSetEpochAcceptance.test.mjs); production crypto remains fail-closed/not activated and device-side verification is not certified.",
+      "tests": [
+        "tooling/mutation/run-mutation.mjs"
+      ]
     }
   },
   "mutants": [
@@ -84,8 +90,8 @@
       "requirement": "PCA-FR-137",
       "surface": "backend",
       "source": "src/http/buildServer.ts",
-      "from": "Fastify({ logger: false,",
-      "to": "Fastify({ logger: true,"
+      "from": "const app = Fastify({\n    logger: false,",
+      "to": "const app = Fastify({\n    logger: true,"
     },
     {
       "id": "B-FR137-005",
@@ -290,6 +296,24 @@
       "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
       "from": "envelope.trustSetEpoch,\n                envelope.keyEpoch,",
       "to": "envelope.trustSetEpoch,"
+    },
+    {
+      "id": "B-SEC020-001",
+      "requirement": "PCA-SEC-020",
+      "surface": "backend",
+      "source": "src/familytrustset/TrustSetEpochAcceptance.ts",
+      "from": "      if (!signatureValid) return rejected('SIGNATURE_INVALID');\n      resolvedSigner = storedOwner;",
+      "to": "      void signatureValid;\n      resolvedSigner = storedOwner;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC020-002",
+      "requirement": "PCA-SEC-020",
+      "surface": "backend",
+      "source": "src/familytrustset/TrustSetEpochAcceptance.ts",
+      "from": "      if (epoch.trustSetEpoch < latest.trustSetEpoch) return rejected('STALE_TRUST_SET_EPOCH');\n",
+      "to": "",
+      "expectedClassification": "KILLED"
     }
   ]
 }

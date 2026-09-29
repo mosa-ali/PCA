@@ -106,8 +106,9 @@ export class ParentActionAuthorizationService {
    * recorded authorization outcome must survive a restart and be visible to
    * every instance, which is impossible to honour from a synchronous method
    * (see ActionIdempotencyLedger.ts's own doc comment). The verdict logic
-   * itself is unchanged and still pure -- evaluate() performs no I/O, so the
-   * only awaited work here is reading and recording the idempotency entry.
+   * itself is unchanged and still pure -- evaluate() performs no I/O (both
+   * trust-set resolutions are awaited here and passed in), so the only
+   * awaited work is those resolver reads and the idempotency entry.
    *
    * The ledger is keyed by this request's familyId: an idempotency key is
    * scoped to the family that issued it and must never be able to collide
@@ -127,8 +128,16 @@ export class ParentActionAuthorizationService {
     // time inside recordAudit() would run after that await, so a trust-set
     // rotation in the window would let the audit attribute the decision to a
     // role and epoch the decision was never actually made with.
-    const resolvedActor = this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
-    const decision = this.evaluate(request, resolvedActor);
+    const resolvedActor = await this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
+    // WAVE 5B: DEVICE/MEMBER target resolution is awaited HERE, before
+    // evaluate(), so evaluate() stays I/O-free (see its doc note). The
+    // target is resolved from the SAME durable trust-set authority as the
+    // actor, exactly once, in the same pre-audit window.
+    const resolvedTarget =
+      request.targetScope.kind === 'DEVICE' || request.targetScope.kind === 'MEMBER'
+        ? await this.roleResolver.resolveActor(request.familyId, request.targetScope.id)
+        : null;
+    const decision = this.evaluate(request, resolvedActor, resolvedTarget);
     const effective = await this.idempotency.record(request.familyId, request.idempotencyKey, {
       actionId: request.actionId,
       requestFingerprint: fingerprint,
@@ -242,7 +251,11 @@ export class ParentActionAuthorizationService {
     }
   }
 
-  private evaluate(request: AuthorizeRequest, resolved: ActorResolution): AuthorizationDecision {
+  private evaluate(
+    request: AuthorizeRequest,
+    resolved: ActorResolution,
+    resolvedTarget: ActorResolution | null,
+  ): AuthorizationDecision {
     const now = this.now();
 
     if (now.getTime() > request.expiresAt.getTime()) {
@@ -262,8 +275,7 @@ export class ParentActionAuthorizationService {
     // reachable just because the actor themself is a legitimately resolved Owner/Administrator of THEIR
     // OWN family.
     if (request.targetScope.kind === 'DEVICE' || request.targetScope.kind === 'MEMBER') {
-      const targetResolution = this.roleResolver.resolveActor(request.familyId, request.targetScope.id);
-      if (isActorResolutionFailure(targetResolution)) {
+      if (resolvedTarget === null || isActorResolutionFailure(resolvedTarget)) {
         return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
       }
     }

@@ -1,0 +1,164 @@
+// WAVE 5B — FTS production-wiring ATOMIC-SET guard.
+//
+// The approved Wave-4 sequence (Wave 5B) activated the store-backed
+// trust-set ROLE RESOLVER in production composition (main.ts) while the
+// cryptographic ACCEPTANCE writer stays UNWIRED and the envelope-context
+// epoch floors stay REJECTING (unattainable). Those three facts are one
+// atomic set: a resolution swap is safe ONLY while no accepted epoch can
+// ever be created and no non-rejecting envelope floor/verifier exists, so
+// the resolver can only ever answer NO_TRUST_SET. If a future wave wires
+// ingestion -- the acceptance service into any production path, a
+// non-rejecting envelope verifier, or attainable envelope floors --
+// WITHOUT replacing the whole set together, this gate fails loudly instead
+// of letting production drift into a partially-wired authority state.
+//
+// This file intentionally checks SOURCE TEXT (like
+// productionInMemoryStores.test.mjs / productionPathCertification.test.mjs
+// already do for their own composition invariants) and includes a GATE
+// SELF-TEST proving the checks can actually fail (the permanent principle:
+// a gate must be demonstrably able to fail).
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+const backendRoot = fileURLToPath(new URL('../..', import.meta.url));
+
+function read(relativePath) {
+  return readFileSync(path.join(backendRoot, relativePath), 'utf8');
+}
+
+function listSourceFiles(dir) {
+  return readdirSync(path.join(backendRoot, dir), { recursive: true })
+    .filter((entry) => typeof entry === 'string' && entry.endsWith('.ts'))
+    .map((entry) => `${dir}/${entry}`.replace(/\\/g, '/'));
+}
+
+/**
+ * Pure checker: returns the list of violations for a given main.ts text and
+ * a map of source-file-path -> text for the rest of backend/src.
+ */
+export function findFtsWiringViolations(mainText, sourceFiles) {
+  const violations = [];
+
+  // 1. The store-backed resolver is the ONE production resolver, wired with
+  //    the durable accepted-epoch store; the Unavailable construction must
+  //    be gone from production composition.
+  if (!mainText.includes('new StoreBackedTrustSetRoleResolver({ epochStore: new MySqlTrustSetEpochStore() })')) {
+    violations.push('main.ts must construct the store-backed trust-set role resolver over MySqlTrustSetEpochStore');
+  }
+  if (mainText.includes('new UnavailableTrustSetRoleResolver(')) {
+    violations.push('main.ts must not still construct the Unavailable trust-set role resolver');
+  }
+
+  // 2. The envelope-context floor/verifier set stays rejecting.
+  for (const needle of [
+    'rejectingResolveEnvelopeContext',
+    'RejectingEnvelopeSignatureVerifier',
+    'RejectingDeviceSignatureVerifier',
+  ]) {
+    if (!mainText.includes(needle)) {
+      violations.push(`main.ts must keep the rejecting composition member: ${needle}`);
+    }
+  }
+
+  // 2b. The production root itself must never construct the acceptance
+  //     service/verifier or call the append writer: activation requires the
+  //     owner-authorized coordinate set swap, not a drive-by wiring.
+  for (const needle of [
+    'new TrustSetEpochAcceptanceService(',
+    '.appendAcceptedEpoch(',
+    'P256TrustSetSignatureVerifier',
+    'decodeCanonicalTrustSetEpoch',
+  ]) {
+    if (mainText.includes(needle)) {
+      violations.push(`main.ts must not reference ${needle} (the acceptance writer/verifier stay unwired)`);
+    }
+  }
+
+  // 3. The acceptance writer/verifier/decoder stay out of production paths:
+  //    never in http routes, and (outside the familytrustset module itself)
+  //    referenced by main.ts's resolver swap only as allowed below.
+  for (const [file, text] of Object.entries(sourceFiles)) {
+    const normalized = file.replace(/\\/g, '/');
+    const inFamilytrustsetModule = normalized.startsWith('src/familytrustset/');
+    const isMain = normalized === 'src/main.ts';
+
+    if (normalized.startsWith('src/http/')) {
+      for (const needle of [
+        'familytrustset',
+        'TrustSetEpochStore',
+        'StoreBackedTrustSetRoleResolver',
+        'appendAcceptedEpoch',
+        'TrustSetEpochAcceptance',
+        'P256TrustSetSignatureVerifier',
+        'decodeCanonicalTrustSetEpoch',
+      ]) {
+        if (text.includes(needle)) {
+          violations.push(`${file} must not reference ${needle} (no route activation in Wave 5B)`);
+        }
+      }
+    }
+
+    if (!inFamilytrustsetModule && !isMain) {
+      for (const needle of [
+        'TrustSetEpochAcceptance',
+        'appendAcceptedEpoch',
+        'P256TrustSetSignatureVerifier',
+        'decodeCanonicalTrustSetEpoch',
+        'StoreBackedTrustSetRoleResolver',
+      ]) {
+        if (text.includes(needle)) {
+          violations.push(`${file} must not reference ${needle} outside the familytrustset module and main.ts's resolver swap`);
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+test('GATE SELF-TEST: the checker detects a partially-wired composition and accepts the frozen one', () => {
+  const goodMain = [
+    'const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: new MySqlTrustSetEpochStore() });',
+    'resolveEnvelopeContext: rejectingResolveEnvelopeContext,',
+    'RejectingEnvelopeSignatureVerifier',
+    'RejectingDeviceSignatureVerifier',
+  ].join('\n');
+  assert.deepEqual(findFtsWiringViolations(goodMain, {}), []);
+
+  // Each mutation of the frozen set must be reported.
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain.replace('new StoreBackedTrustSetRoleResolver({ epochStore: new MySqlTrustSetEpochStore() })', 'new UnavailableTrustSetRoleResolver()'), {}),
+    [],
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain.replace('rejectingResolveEnvelopeContext', 'realResolveEnvelopeContext'), {}),
+    [],
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain, { 'src/http/routes/evil.ts': 'import { TrustSetEpochAcceptance } from ...' }),
+    [],
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain, { 'src/schedulerRunner.ts': 'const x = new TrustSetEpochAcceptance();' }),
+    [],
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\nconst x = new TrustSetEpochAcceptanceService(deps);`, {}),
+    [],
+  );
+  assert.notDeepEqual(findFtsWiringViolations(`${goodMain}\nawait store.appendAcceptedEpoch(record);`, {}), []);
+});
+
+test('WAVE 5B ATOMIC SET: main.ts wires the store-backed resolver, keeps the rejecting floor/verifier set, and no production path references the acceptance writer', () => {
+  const mainText = read('src/main.ts');
+  const sourceFiles = {};
+  for (const file of listSourceFiles('src')) {
+    if (file === 'src/main.ts') continue;
+    sourceFiles[file] = readFileSync(path.join(backendRoot, file), 'utf8');
+  }
+  const violations = findFtsWiringViolations(mainText, sourceFiles);
+  assert.deepEqual(violations, [], violations.join('; '));
+});

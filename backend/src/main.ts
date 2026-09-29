@@ -45,7 +45,8 @@ import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/
 import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
-import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
+import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStore.js';
+import { StoreBackedTrustSetRoleResolver } from './familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { UnavailableChildProfileMembershipResolver } from './childprofiles/ChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
 // authority -- see RemovalDecisionAuthority.ts's own header for the full
@@ -53,8 +54,8 @@ import { UnavailableChildProfileMembershipResolver } from './childprofiles/Child
 // implementation yet (signed-remote-parent signing-key resolution,
 // authorized-recovery verification, and the device-authority binding that
 // gates request creation); each gets an honestly-named fail-closed stub
-// below, exactly like UnavailableTrustSetRoleResolver above, rather than an
-// invented "always allow".
+// below, exactly like every other fail-closed composition boundary in
+// this file, rather than an invented "always allow".
 import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.js';
 // PCA-FR-130 (Bonus Time): see the wiring block below (near
 // deviceDirectoryService) for the full rationale on why the repository/
@@ -573,16 +574,23 @@ async function start(): Promise<void> {
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
   // Safe Zone routes are composed through the shared family-action matrix.
-  // The current production trust-set source is intentionally unavailable
-  // while the reviewed crypto suite remains fail-closed, so this explicit
-  // resolver returns NO_TRUST_SET rather than silently treating a session as
-  // Owner. The wiring is complete and the unavailable authority is visible.
+  // WAVE 5B (approved Wave-4 sequence: "server trust-set verification +
+  // role resolver activation"): the resolver is now backed by the durable,
+  // signature-gated accepted-epoch store (migration 0060). The store can
+  // only ever gain rows through the verified acceptance service
+  // (TrustSetEpochAcceptance), which has NO production caller -- so this
+  // resolver returns NO_TRUST_SET for every family today, and on any read
+  // failure, exactly as the previous Unavailable resolver did. Swapping
+  // this resolver is safe only while the acceptance writer stays unwired
+  // and the envelope-context floors stay rejecting; that atomic-set
+  // invariant is pinned by test/tooling/ftsProductionWiring.test.mjs and
+  // must be honored together if a future wave wires ingestion.
   // Shared across every consumer of the family-action authorization matrix
   // (Safe Zone below, and RemovalDecisionAuthority further down) -- one
-  // resolver instance, not a second independently-constructed one, per
-  // UnavailableTrustSetRoleResolver's own "one production composition
-  // boundary" doc comment.
-  const trustSetRoleResolver = new UnavailableTrustSetRoleResolver();
+  // resolver instance, not a second independently-constructed one, per the
+  // one-production-composition-boundary rule the Unavailable stub's doc
+  // comment established.
+  const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: new MySqlTrustSetEpochStore() });
   // PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: ONE shared instance -- both
   // safeZoneParentActionAuthorization below (covering decide()/grantDirectly()'s own
   // targetScope check) AND registerChildRequestRoutes' childProfileMembership dep (covering the
@@ -921,9 +929,10 @@ async function start(): Promise<void> {
     statusTracker: new DeviceSyncStatusTracker(),
     deleteNowLedger,
     familyAuditService,
-    // FTS/key-epoch resolution (src/familytrustset) has no durable
-    // production store yet. Until a real FTS-backed resolver is wired here,
-    // production uses rejectingResolveEnvelopeContext, whose epoch floors are
+    // FTS/key-epoch resolution now has a durable accepted-epoch store
+    // (migration 0060), consumed by the store-backed role resolver above;
+    // envelope acceptance intentionally still uses
+    // rejectingResolveEnvelopeContext, whose epoch floors are
     // unattainable, so envelope acceptance fails closed on its own -- it no
     // longer depends on RejectingEnvelopeSignatureVerifier being the verifier
     // next to it (the previous inline placeholder returned an empty key with
