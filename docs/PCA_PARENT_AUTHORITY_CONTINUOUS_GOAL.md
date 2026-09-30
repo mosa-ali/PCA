@@ -17,9 +17,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = 4eee477b0c77e2022596be16970bb86e3d010ad2 (local, tracking, and server refs matched after post-push fetch and ls-remote)
-CURRENT_LOCAL_CHECKPOINT_SHA = 4eee477b0c77e2022596be16970bb86e3d010ad2
-LAST_EXACT_HEAD_CI = Quality Gates run 36768593806 at exact SHA 4eee477b0c77e2022596be16970bb86e3d010ad2 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
+LAST_VERIFIED_REMOTE_SHA = 7f4531fe207c5f09b60f6b87c994028c782cc5e3 (local, tracking, and server refs matched after post-push fetch and ls-remote)
+CURRENT_LOCAL_CHECKPOINT_SHA = 7f4531fe207c5f09b60f6b87c994028c782cc5e3
+LAST_EXACT_HEAD_CI = Quality Gates run 36769567273 at exact SHA 7f4531fe207c5f09b60f6b87c994028c782cc5e3 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository and previously validated disposable schema at 0060; live pca_pro last verified at 0059. Fresh DNS resolves to 4.161.89.178, but TCP/3306 is unreachable; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
@@ -1330,6 +1330,12 @@ PUBLICATION = Ledger sync `4eee477b0c77e2022596be16970bb86e3d010ad2` was pushed 
 EXACT_HEAD_CI = Quality Gates run `36768593806` completed SUCCESS 27/27 at exact SHA `4eee477b0c77e2022596be16970bb86e3d010ad2`.
 LIVE_PREFLIGHT = DNS resolves to `4.161.89.178`; TCP/3306 returned false. Live `pca_pro` remains last verified at 0059; no live SQL session or mutation occurred.
 GATES = TODO-12/14/15/20 remain IN_PROGRESS; TODO-18/21/22/23 remain owner/release gated. Platform stays `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — Published ledger CI closure
+
+PUBLICATION = Ledger sync `7f4531fe207c5f09b60f6b87c994028c782cc5e3` was pushed to `origin/pca-dev` by ordinary fast-forward. Post-push fetch and `git ls-remote` verified local/tracking/server equality and the three remote ledger paths.
+EXACT_HEAD_CI = Quality Gates run `36769567273` completed SUCCESS 27/27 at exact SHA `7f4531fe207c5f09b60f6b87c994028c782cc5e3`.
+GATES = Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO; TODO-14 aggregate remains NOT_YET_PROVEN. Live `pca_pro` remains last verified at 0059; TCP/3306 remains unreachable and no live query/mutation occurred. Owner acceptance is absent; Platform remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — DeepSeek re-entry assessment and exact-head CI
 
