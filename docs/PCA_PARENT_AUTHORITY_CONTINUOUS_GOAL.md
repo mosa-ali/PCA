@@ -17,9 +17,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = d7d67a3f05e0f05f3d918868ed107e66842de88a (push and fetch succeeded; GitHub pca-dev branch page confirms this head; direct ls-remote is blocked by the configured proxy)
-CURRENT_LOCAL_CHECKPOINT_SHA = d7d67a3f05e0f05f3d918868ed107e66842de88a
-LAST_EXACT_HEAD_CI = Source checkpoint a7e8a8a1064755950738a1b03b7e3e537a5e649d passed run 36775428822, 27/27. Ledger sync d7d67a3f is under exact-head Quality Gates run 36776746742.
+LAST_VERIFIED_REMOTE_SHA = 83e4b8757341b8521e4f9df49c7eaa58b2741156 (push and fetch succeeded; current tracking ref matches; exact-head run 36777108468 passed; direct ls-remote remains blocked by the configured proxy)
+CURRENT_LOCAL_CHECKPOINT_SHA = 83e4b8757341b8521e4f9df49c7eaa58b2741156
+LAST_EXACT_HEAD_CI = Quality Gates run 36777108468 at exact SHA 83e4b8757341b8521e4f9df49c7eaa58b2741156 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation remain PASS.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository and previously validated disposable schema at 0060; live pca_pro last verified at 0059. Fresh DNS resolves to 4.161.89.178, but TCP/3306 is unreachable; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
@@ -1344,6 +1344,13 @@ GIT_AND_GATES = Checkpoint `a7e8a8a1` is on `pca-dev`; local and tracking refs m
 PUBLICATION = Three-ledger evidence commit `d7d67a3f05e0f05f3d918868ed107e66842de88a` was pushed to `origin/pca-dev` as an ordinary fast-forward. `git fetch origin` succeeded and matched local/tracking refs; GitHub's `pca-dev` commit page confirms d7d67a3f is the branch head. `git ls-remote` remains blocked by the configured proxy.
 EXACT_HEAD_CI = Quality Gates run `36776746742` started for exact SHA `d7d67a3f05e0f05f3d918868ed107e66842de88a`; result is pending.
 WORKTREE = Only unrelated untracked `.vscode/` and root `0` remain; neither was staged.
+
+### 2026-10-01 — 83e4b875 exact-head CI and live-preflight refresh
+
+PUBLICATION_CI = Higher-priority run `36776746742` for predecessor ledger commit `d7d67a3f` was cancelled by GitHub after the next same-branch push; this was workflow concurrency, not a test failure. Exact-head run `36777108468` for `83e4b8757341b8521e4f9df49c7eaa58b2741156` completed SUCCESS 27/27, including full disposable MySQL, real-backend E2E, Parent/Platform web, Android/iOS, security, and release-control jobs.
+LIVE_PREFLIGHT = DNS resolves `pca-mysql.mysql.database.azure.com` to `4.161.89.178`; TCP/3306 is still unreachable. No live SQL read or mutation occurred. Repository/local schema is 0060; live `pca_pro` is last verified at 0059; current parity remains NO.
+GIT = `83e4b875` is the local and fetched `origin/pca-dev` head after ordinary fast-forward push. Direct `git ls-remote` is blocked by the configured proxy. `.vscode/` and root `0` remain excluded.
+GATES = Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO / 0 BLOCKED. TODO-14 stays 45/52 with `NOT_YET_PROVEN`; Platform remains `HOLD_PARENT_DEPENDENCY`; owner localhost acceptance remains pending.
 
 ### 2026-09-30 — Published ledger CI closure
 

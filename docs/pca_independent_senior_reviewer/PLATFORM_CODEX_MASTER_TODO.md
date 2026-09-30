@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36775428822 SUCCESS 27/27 at exact source head a7e8a8a1)
+LAST_UPDATED_UTC = 2026-10-01 (run 36777108468 SUCCESS 27/27 at exact head 83e4b875)
 VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36775428822` at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` (27/27).
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `a7e8a8a1064755950738a1b03b7e3e537a5e649d` is the pushed Parent checkpoint and exact Quality Gates run `36775428822` passed 27/27; a fresh `git ls-remote` is currently blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `d7d67a3f05e0f05f3d918868ed107e66842de88a`; Parent source checkpoint `a7e8a8a1` passed 27/27, while this ledger-only sync commit is in exact-head CI run `36776746742`. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36775428822` at source head `a7e8a8a1`, fresh local 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+CURRENT_CHECKPOINT_SHA = `83e4b8757341b8521e4f9df49c7eaa58b2741156`; exact-head Quality Gates run `36777108468` passed 27/27. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36777108468` at `83e4b875`, fresh local 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1065,5 +1065,11 @@ PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15/20 and owne
 ### 2026-10-01 — Parent ledger publication
 
 PUBLICATION = Parent/Platform ledger commit `d7d67a3f05e0f05f3d918868ed107e66842de88a` was pushed and fetched; GitHub's pca-dev branch page confirms the server head. Direct `git ls-remote` is blocked by the configured proxy.
-PARENT_CI = Source SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` passed run `36775428822` 27/27. Exact-head CI for this ledger commit is run `36776746742`, still in progress.
+PARENT_CI = Source SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` passed run `36775428822` 27/27. Ledger run `36776746742` was superseded by same-branch workflow concurrency; replacement run `36777108468` passed 27/27 at `83e4b875`.
 PLATFORM_GATE = Remains `HOLD_PARENT_DEPENDENCY`; no Parent-dependent Enrollment activation, live DB mutation, owner acceptance, deployment, or production acceptance occurred.
+
+### 2026-10-01 — Parent ledger CI and live DB preflight
+
+PARENT_CI = Quality Gates run `36777108468` passed 27/27 at exact Parent/ledger head `83e4b8757341b8521e4f9df49c7eaa58b2741156`.
+LIVE_PREFLIGHT = DNS resolves the live DB host to `4.161.89.178`, but TCP/3306 is unreachable; no live SQL read or mutation occurred. Repository/local remain at 0060 and live `pca_pro` last verified 0059.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, live mutation, owner acceptance, deployment, or production acceptance occurred.
