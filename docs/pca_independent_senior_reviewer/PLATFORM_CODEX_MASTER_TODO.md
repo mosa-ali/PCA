@@ -5,20 +5,25 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36738374071 triaged; Parent MFA and Platform Admin audit follow-up underway)
-VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77` failed run `36738374071` (25/27); the cross-family correction passed its segment, but the enrolled-MFA browser journey and Platform Admin dependency audit remained red.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77` was verified at local, tracking, and server refs after push; current follow-up is uncommitted.
-CURRENT_CHECKPOINT_SHA = `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77`; local changes update Platform Admin's semver-compatible dependency lock and align Parent MFA/E2E cookie origins with the configured loopback host, with safe failure-code diagnostics. Platform product source and activation remain unchanged.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = `platform-admin-web/package-lock.json`, `parent-web/e2e-real/parentMfa.spec.ts`, `parent-web/e2e-real/optionalMfaSetup.spec.ts`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36740111414 triaged; enrolled-MFA real-backend test follow-up underway)
+VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `551d423f8cd01a079574e54fccf441f73f2a1878` was verified at local, tracking, and server refs after push; focused diagnostic refinement is local.
+CURRENT_CHECKPOINT_SHA = `551d423f8cd01a079574e54fccf441f73f2a1878`; the Platform Admin lockfile audit fix and Parent cookie-origin fixes passed exact-head CI. Current local change uses backend canonical TOTP generation plus a safe email-OTP-only probe to isolate the remaining Parent step-up rejection. Platform product source and activation remain unchanged.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/e2e-real/parentMfa.spec.ts` and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the focused Parent E2E and Platform Admin lockfile corrections by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the enrolled-MFA diagnostic refinement by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
-### 2026-09-30 — exact-head run 36738374071 follow-up
+### 2026-09-30 — Parent re-entry assessment refreshed
 
-CI = Run `36738374071` failed 2/27 at `3b0fea64`; backend build/unit passed. Parent acceptance/cross-family scenarios proceeded, while the enrolled-MFA browser test remained on `/login` after OTP+TOTP. Parent Admin audit failed on HIGH brace-expansion in the then-pushed Platform Admin lockfile.
-CORRECTION = Platform Admin's lockfile-only semver-compatible update now passes `npm audit --audit-level=high`, leaving two moderate Vitest findings. Parent MFA and MFA-setup specs now use `127.0.0.1:4002` consistently; the enrolled-MFA test reports only HTTP status and safe API error code on failure. Playwright discovers four tests. Exact-head rerun is pending; the MFA outcome remains unproven.
+PARENT_REENTRY = Local, tracking, and server `pca-dev` heads agree at `551d423f`. Exact-head Quality Gates run `36740111414` failed only real-backend Parent MFA E2E (26/27 passed); a safe OTP-validity diagnostic is pending publication. Canonical Parent board is 13 PASS / 6 IN_PROGRESS / 4 TODO, with TODO-14 at 45/52 integrated and global aggregate NOT_YET_PROVEN.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. The reviewed post-DeepSeek Parent source introduces no Trust Set acceptance or child-device activation shortcut. Owner-UAT services are stopped, literal `LOCALHOST ACCEPTED` remains pending, and no Enrollment activation, deployment, live DB mutation, or production acceptance is authorized by this checkpoint.
+
+### 2026-09-30 — exact-head run 36740111414 follow-up
+
+CI = Run `36740111414` failed 1/27 at `551d423f`; backend build/unit, full database, platform audit and mobile gates passed. The only failure was enrolled-MFA real-browser E2E returning 401 `invalid_code` after the email-only step returned `mfaRequired`.
+CORRECTION = Platform Admin's lockfile-only semver-compatible update cleared HIGH advisories; only two moderate Vitest findings remain. Parent real-E2E host alignment and diagnostics passed all other E2E segments. Current follow-up uses backend canonical TOTP generation and probes whether the OTP remains valid, logging no sensitive data. Playwright discovers the test; exact-head rerun is pending.
 PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`. No Platform enrollment/source activation, owner acceptance, live database mutation, deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent exact-head CI triage

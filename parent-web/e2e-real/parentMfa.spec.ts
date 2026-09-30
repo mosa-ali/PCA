@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { createHmac } from 'node:crypto';
 import { test, expect } from '@playwright/test';
+import { base32Decode, computeTotp } from '../../backend/dist/platformadmin/auth/totp.js';
 
 const EMAIL = process.env.E2E_REAL_MFA_PARENT_EMAIL;
 const PASSWORD = process.env.E2E_REAL_MFA_PARENT_PASSWORD;
@@ -11,36 +11,14 @@ const ENROLLMENT_COUNTER = Number(process.env.E2E_REAL_MFA_PARENT_TOTP_ENROLLMEN
 test.skip(!EMAIL || !PASSWORD || !SECRET || !Number.isSafeInteger(ENROLLMENT_COUNTER), 'real Parent MFA E2E requires the disposable enrolled Parent fixture and its enrollment counter.');
 test.use({ serviceWorkers: 'block' });
 
-function decodeBase32(value: string): Buffer {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = '';
-  for (const char of value.replace(/=+$/g, '').toUpperCase()) {
-    const digit = alphabet.indexOf(char);
-    if (digit < 0) throw new Error('The E2E authenticator secret is not valid base32.');
-    bits += digit.toString(2).padStart(5, '0');
-  }
-  const bytes: number[] = [];
-  for (let offset = 0; offset + 8 <= bits.length; offset += 8) bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
-  return Buffer.from(bytes);
-}
-
-function totp(secret: string, at = Date.now()): { code: string; counter: number } {
-  const counter = Math.floor(at / 30_000);
-  const message = Buffer.alloc(8);
-  message.writeBigUInt64BE(BigInt(counter));
-  const digest = createHmac('sha1', decodeBase32(secret)).update(message).digest();
-  const offset = digest[digest.length - 1]! & 0x0f;
-  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
-  return { code: String(binary % 1_000_000).padStart(6, '0'), counter };
-}
-
 async function currentTotp(secret: string): Promise<{ code: string; counter: number }> {
   // Leave a small margin at a 30-second boundary so the request cannot arrive
   // after this code has rolled out of the accepted TOTP window.
   while (30_000 - (Date.now() % 30_000) <= 3_000) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  return totp(secret);
+  const nowMs = Date.now();
+  return { code: computeTotp(base32Decode(secret), nowMs), counter: Math.floor(nowMs / 30_000) };
 }
 
 async function waitForNextTotpCounter(usedCounter: number): Promise<void> {
@@ -93,6 +71,11 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   await page.locator('form button[type="submit"]').click();
   const firstTotpLogin = await firstTotpLoginResponse;
   const firstTotpOutcome = await firstTotpLogin.json().catch(() => ({})) as { error?: unknown; sessionEstablished?: unknown };
+  if (firstTotpLogin.status() !== 200) {
+    const otpProbe = await page.request.post('/api/parent/login/step-up', { data: { email: EMAIL!, code: firstEmailCode } });
+    const otpProbeOutcome = await otpProbe.json().catch(() => ({})) as { mfaRequired?: unknown };
+    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
+  }
   expect(firstTotpLogin.status(), `email-plus-TOTP login response code: ${String(firstTotpOutcome.error ?? 'none')}`).toBe(200);
   expect(firstTotpOutcome.sessionEstablished, 'valid email-plus-TOTP login establishes the browser session').toBe(true);
   await expect(page).toHaveURL(/\/dashboard$/);
