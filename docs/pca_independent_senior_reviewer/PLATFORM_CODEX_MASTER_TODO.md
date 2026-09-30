@@ -8,7 +8,7 @@ MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)
 LAST_UPDATED_UTC = 2026-10-01 (run 36775428822 SUCCESS 27/27 at exact source head a7e8a8a1)
 VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36775428822` at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` (27/27).
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `a7e8a8a1064755950738a1b03b7e3e537a5e649d` is the pushed Parent checkpoint and exact Quality Gates run `36775428822` passed 27/27; a fresh `git ls-remote` is currently blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `a7e8a8a1064755950738a1b03b7e3e537a5e649d`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+CURRENT_CHECKPOINT_SHA = `d7d67a3f05e0f05f3d918868ed107e66842de88a`; Parent source checkpoint `a7e8a8a1` passed 27/27, while this ledger-only sync commit is in exact-head CI run `36776746742`. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
 LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36775428822` at source head `a7e8a8a1`, fresh local 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
@@ -1061,3 +1061,9 @@ GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open. Platform stays `H
 PARENT_CI = Quality Gates run `36775428822` passed 27/27 at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d`.
 PARENT_TODO20_LOCAL = Task-owned disposable MySQL 8.4.11 passed all 58 migrations and the six-case runtime privilege suite. Audit update/delete were denied by MySQL; migration-0060 Trust Set append-only/floor constraints and production grant-plan paths passed. Test schema and temporary DB principal were removed.
 PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15/20 and owner localhost acceptance remain open. No Enrollment activation, live DB access/mutation, deployment, or production acceptance occurred.
+
+### 2026-10-01 — Parent ledger publication
+
+PUBLICATION = Parent/Platform ledger commit `d7d67a3f05e0f05f3d918868ed107e66842de88a` was pushed and fetched; GitHub's pca-dev branch page confirms the server head. Direct `git ls-remote` is blocked by the configured proxy.
+PARENT_CI = Source SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` passed run `36775428822` 27/27. Exact-head CI for this ledger commit is run `36776746742`, still in progress.
+PLATFORM_GATE = Remains `HOLD_PARENT_DEPENDENCY`; no Parent-dependent Enrollment activation, live DB mutation, owner acceptance, deployment, or production acceptance occurred.

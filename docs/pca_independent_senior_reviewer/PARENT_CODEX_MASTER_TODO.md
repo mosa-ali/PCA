@@ -8,10 +8,10 @@ MISSION_STATUS = IN_PROGRESS
 LAST_UPDATED_UTC = 2026-10-01 (run 36775428822 SUCCESS 27/27 at exact source head a7e8a8a1)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
 LAST_GREEN_REMOTE_SHA = `a7e8a8a1064755950738a1b03b7e3e537a5e649d` (Quality Gates run `36775428822` SUCCESS, 27/27)
-CURRENT_WAVE_STATUS = Exact-head run `36775428822` at `a7e8a8a1064755950738a1b03b7e3e537a5e649d` completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-head reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository and local disposable schema are 0060; live `pca_pro` was last verified at 0059. Fresh live TCP/3306 is unreachable; no live session/query/mutation occurred. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; task-owned MySQL 8.4.11 is loopback-only at 33062 after UUID cleanup. TODO-12/14/15/20 and owner/release gates remain open.
+CURRENT_WAVE_STATUS = Exact-head source run `36775428822` at `a7e8a8a1064755950738a1b03b7e3e537a5e649d` completed SUCCESS, 27/27. Ledger-only commit `d7d67a3f05e0f05f3d918868ed107e66842de88a` was pushed and fetched; GitHub confirms it is the current pca-dev head. Its exact-head CI run `36776746742` is in progress. TODO-14 remains 45/52 database-integrated; repository and local disposable schema are 0060; live `pca_pro` was last verified at 0059. Live TCP/3306 is unreachable; no live query/mutation occurred. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; task-owned MySQL 8.4.11 is loopback-only at 33062 after UUID cleanup. TODO-12/14/15/20 and owner/release gates remain open.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
 EXACT_HEAD_CI_SHA = Run `36775428822` at `a7e8a8a1064755950738a1b03b7e3e537a5e649d` completed SUCCESS, 27/27.
-LOCAL_STATE = Local and tracking refs matched at source checkpoint `a7e8a8a1064755950738a1b03b7e3e537a5e649d`; the remote accepted this pushed SHA and launched exact-head run `36775428822`, which passed 27/27. A new `git ls-remote` attempt is blocked by the configured proxy. `.vscode/` and root `0` remain untracked and excluded.
+LOCAL_STATE = Local and tracking refs now match ledger commit `d7d67a3f05e0f05f3d918868ed107e66842de88a`; `git fetch origin` succeeded and GitHub's `pca-dev` branch page confirms this SHA at server head. Direct `git ls-remote` is blocked by the configured proxy. `.vscode/` and root `0` remain untracked and excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
 NEXT_ACTION = Continue the same board at TODO-12/14/15 and retry the authorized live read-only TODO-20 preflight when connectivity is available. Repository and local disposable schema are 0060; live `pca_pro` remains last verified at 0059. Fresh TCP/3306 fails, so no current live schema/grant comparison exists. Do not mutate live schema/grants without a fresh successful comparison. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; task-owned MySQL 8.4.11 at 33062 is loopback-only and contains zero `pca_test_codex_%` schemas after cleanup. Keep all crypto/device and owner gates open.
@@ -23,6 +23,11 @@ LOCAL_GRANT_CERTIFICATION = On task-owned loopback MySQL 8.4.11, all 58 reposito
 WRAPPER_NOTE = The npm wrapper failed before test execution with Windows `spawn EPERM`; the guarded serial Node invocation passed. This was a runner/process-launch issue, not a product test failure.
 LIVE_DB = TCP/3306 to live `pca_pro` remains unreachable; no live query or mutation occurred. Repo/local schema is 0060; live is last verified 0059.
 GATES = Parent remains 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23) / 0 BLOCKED. TODO-14 remains 45/52 with aggregate NOT_YET_PROVEN; Platform remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-10-01 — ledger evidence publication
+
+PUBLICATION = Three-ledger checkpoint `d7d67a3f05e0f05f3d918868ed107e66842de88a` was pushed by ordinary fast-forward and fetched from `origin`; GitHub's pca-dev branch page confirms the server head. Direct `git ls-remote` is blocked by the configured proxy.
+LEDGER_CI = Quality Gates run `36776746742` is in progress at the exact ledger SHA; do not report a result until it closes.
 
 ### 2026-09-30 — DeepSeek re-entry review and exact-head CI completion
 
