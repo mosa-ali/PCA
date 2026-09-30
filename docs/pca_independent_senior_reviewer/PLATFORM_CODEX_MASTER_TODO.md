@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36759356800 SUCCESS 27/27 at exact head c7c652db)
+LAST_UPDATED_UTC = 2026-09-30 (run 36761102745 SUCCESS 27/27 at exact head c3c8c587)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `c7c652db0f45d52e2f672e2d31e90e632c310e6c` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36759356800` passed 27/27.
-CURRENT_CHECKPOINT_SHA = `c7c652db0f45d52e2f672e2d31e90e632c310e6c`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Three mission ledgers record exact-head CI run `36759356800`, local TODO-20 migration/schema/grant validation, and current service availability. No Parent or Platform source files changed. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `c3c8c5874679e0286d8872e04c23941b7e330c5a` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36761102745` passed 27/27.
+CURRENT_CHECKPOINT_SHA = `c3c8c5874679e0286d8872e04c23941b7e330c5a`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36761102745`, local TODO-20 migration/schema/grant validation, and current live-DB preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Parent's local TODO-20 schema and grant checks have passed, but live `pca_pro` remains unreconciled while TCP/3306 is unreachable. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; current exact-head CI is green. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
+NEXT_ACTION = Parent's local TODO-20 schema and grant checks have passed, but live `pca_pro` remains unreconciled: a fresh TCP check accepted 3306, while the authenticated read-only MySQL session timed out before SQL. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; exact-head CI is green. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
