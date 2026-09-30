@@ -48,13 +48,13 @@ export default defineConfig({
   // this file's own 180s overall `timeout` above, applied per-assertion.
   expect: { timeout: 15_000 },
   use: {
-    baseURL: 'http://localhost:4102',
+    baseURL: 'http://127.0.0.1:4102',
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev -- --port 4102',
-    url: 'http://localhost:4102',
+    command: 'npm run dev -- --host 127.0.0.1 --port 4102',
+    url: 'http://127.0.0.1:4102',
     reuseExistingServer: true,
     timeout: 60_000,
   },

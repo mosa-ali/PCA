@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (local Parent/Platform browser precheck and published current-state ledger refresh)
+LAST_UPDATED_UTC = 2026-09-30 (Platform real-backend E2E result refreshed)
 VALIDATED_PARENT_SOURCE_HEAD = 785323d2e471d1fa35a27d93935b0451f1a58210 (exact-head Quality Gates PASS 36648259414, 27/27; includes the Parent membership resolver and authorizer)
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Current published ledger-refresh commit; post-push fetch and `git ls-remote` agree with local `pca-dev` (latest Parent source and ledger updates are published)
-CURRENT_CHECKPOINT_SHA = `965479051b547cb659946c0c4a6fb8f237a5883c`; exact-head Quality Gates run `36657492055` completed SUCCESS 27/27.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked Parent/Platform mission files remain uncommitted; `.vscode/` and root `0` remain unrelated untracked exclusions. Parent/Platform browser campaigns and full current-head CI passed; the CI result synchronization is pending publication.
+CURRENT_CHECKPOINT_SHA = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; current exact-head CI is UNVERIFIED. Latest certified predecessor is Quality Gates run `36657492055`, SUCCESS 27/27 at `965479051b547cb659946c0c4a6fb8f237a5883c`.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/playwright.real.config.ts` and `platform-admin-web/playwright.real.config.ts` are tracked local E2E config changes under review. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -898,3 +898,19 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; this ledger publication, mocke
 PARENT_CI = Quality Gates run `36657492055` completed SUCCESS 27/27 at exact SHA `965479051b547cb659946c0c4a6fb8f237a5883c`, including full disposable MySQL, real-backend browser E2E, Android/iOS and web suites.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner TODO-18, first-device security protocol and TODO-14 gated declarations remain open; this CI pass does not authorize Enrollment activation, deployment, or owner acceptance.
 LIVE_DB = Fresh read-only TODO-20 preflight resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178`, but TCP/3306 was unreachable. No live DB read/mutation occurred; repository/local schema 0060 remains ahead of live's last verified 0059.
+
+### 2026-09-30 — Parent re-entry and Platform real-backend QA update
+
+GIT = Local/tracking/server `pca-dev` heads agree at `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`. Exact-head CI at this SHA remains UNVERIFIED; `36657492055` is the latest verified 27/27 run at ancestor `96547905`.
+PLATFORM_REAL_BACKEND = No PASS is claimed. One run used a local Parent whose family already had an entitlement and correctly received the existing-entitlement response. A later isolated run failed before DB health, and the latest attempt timed out during the MySQL connection before creating its UUID test DB. The separate step-up UI hang remains undiagnosed. Platform's 21/21 HTTP-mock browser suite is not live-backend evidence.
+LOCAL_DB = MySQL TCP 127.0.0.1:33061 accepts a socket but the handshake times out; Docker service is stopped and cannot be started by the current Windows account. No owner-UAT or live DB was changed.
+PARENT_GATE = TODO-12/14/15/19/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`. Parent TODO-15 source review found no safe activation path without the first-device root and crypto/key-custody decisions.
+NEXT_ACTION = Continue the Parent mission at TODO-12/14; retain the Platform dependency hold until Parent gates and owner acceptance close.
+
+### 2026-09-30 — Platform real-backend E2E completed
+
+PLATFORM_REAL_BACKEND = PASS 1/1 on Chromium. Playwright result `platform-admin-web/test-results/real-e2e-results.json` started `2026-09-30T14:30:12.964Z`, duration 113,754 ms, expected 1, unexpected 0. The real Fastify + MySQL journey passed login/MFA, dashboard, entitlements, admin-user step-up/create, audit, settings, and billing.
+LOCAL_TEST_TOPOLOGY = MySQL 8.4.11 at loopback port 33062; all 58 migrations and the privacy/environment gate passed. Only a generated UUID-owned test DB and synthetic fixtures were used; the runner dropped the schema and a post-run INFORMATION_SCHEMA query found no `pca_test_codex_%` schemas. No owner-UAT DB, live `pca_pro`, production, or deployment was touched.
+LOCAL_STORAGE = One directory for an earlier interrupted UUID database `pca_test_codex_049c1d8cb70343d5b8c36a84d25f988d` remains under the task-owned temporary MySQL datadir with no matching live schema; it has not been manually deleted while MySQL is running.
+DIAGNOSTIC = The earlier pending admin-create request did not reproduce in this fresh complete run. A preceding webServer timeout was an environment/startup issue; executing the configured npm/Vite command from `cmd.exe` made Vite available on `127.0.0.1:4102`, and the complete browser run passed.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; this E2E result proves the local real-backend workflow only. Parent TODO-12/14/15, Parent projection acceptance, exact-head CI, owner `LOCALHOST ACCEPTED`, and release gates remain open. No Enrollment activation, deployment, or production acceptance is implied.

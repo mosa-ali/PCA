@@ -5,12 +5,13 @@ import { defineConfig, devices } from '@playwright/test';
 // pattern. Separate from playwright.config.ts (which drives the
 // dev-fixture-backed suite in e2e/*.spec.ts under VITE_PCA_DEMO_MODE=true)
 // so the two never share a dev-server port or environment. This config's
-// webServer builds and previews the bundle pointed at a REAL Fastify backend
-// process (see e2e-real/realBackend.spec.ts's header for the exact setup this expects)
-// via VITE_PCA_DEMO_MODE=false + VITE_E2E_REAL_PROXY_TARGET, both supplied
-// by the caller's environment -- never hardcoded here. Each invocation builds
-// with its own environment before preview starts, so separately provisioned
-// backend ports cannot inherit a stale bundle or proxy target.
+// webServer runs Vite in development mode with its same-origin proxy pointed
+// at a REAL Fastify backend process (see e2e-real/realBackend.spec.ts's header
+// for the exact setup this expects) via VITE_PCA_DEMO_MODE=false,
+// VITE_PCA_API_BASE_URL=/, and VITE_E2E_REAL_PROXY_TARGET, all supplied by
+// the caller's environment -- never hardcoded here. Development mode is
+// required because the production API URL guard correctly rejects a relative
+// `/` URL; the separate production-preview browser suite covers the built app.
 export default defineConfig({
   testDir: './e2e-real',
   fullyParallel: false,
@@ -34,17 +35,17 @@ export default defineConfig({
   // load, not a product defect.
   expect: { timeout: 15_000 },
   use: {
-    baseURL: 'http://localhost:4002',
+    baseURL: 'http://127.0.0.1:4002',
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // VITE_PCA_DEMO_MODE=false/VITE_PCA_API_BASE_URL/VITE_E2E_REAL_PROXY_TARGET
-    // are supplied by the caller's environment (never hardcoded here or in
-    // an .env file -- see vite.config.ts's own header), overriding the
-    // base .env's VITE_PCA_DEMO_MODE=true for this run only.
-    command: 'npm run build && npm run preview -- --host localhost --port 4002',
-    url: 'http://localhost:4002',
+    // VITE_PCA_DEMO_MODE=false/VITE_PCA_API_BASE_URL=/ and
+    // VITE_E2E_REAL_PROXY_TARGET are supplied by the caller's environment
+    // (never hardcoded here or in an .env file), overriding the base .env's
+    // demo setting for this run only.
+    command: 'npm run dev -- --host 127.0.0.1 --port 4002',
+    url: 'http://127.0.0.1:4002',
     reuseExistingServer: false,
     timeout: 60_000,
   },
