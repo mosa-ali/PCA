@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36781742335 SUCCESS 27/27 at exact head dd7a97ae)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36781742335` at exact SHA `dd7a97ae283e6c6c162a979e8966d3c303a79e31` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `dd7a97ae283e6c6c162a979e8966d3c303a79e31` is the pushed Parent/ledger checkpoint; fetch matched the tracking ref and exact Quality Gates run `36781742335` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `dd7a97ae283e6c6c162a979e8966d3c303a79e31`; exact-head run `36781742335` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Local services are up for browser precheck; Parent is at `/login`, so authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36781742335` at `dd7a97ae`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (run 36783029602 SUCCESS 27/27 at exact head 8631ed61)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36783029602` at exact SHA `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8` is the pushed Parent/ledger checkpoint; fresh fetch matched local and tracking refs, both master TODO files exist remotely, and exact Quality Gates run `36783029602` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
+CURRENT_CHECKPOINT_SHA = `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8`; exact-head run `36783029602` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Local services are up for browser precheck; Parent is at `/login`, so authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36783029602` at `8631ed61`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1086,4 +1086,12 @@ PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; no Platform Enrollment activatio
 PARENT_CI = Quality Gates run `36781742335` completed SUCCESS 27/27 at exact Parent/ledger SHA `dd7a97ae283e6c6c162a979e8966d3c303a79e31`.
 LOCAL_BROWSER = Task-owned backend health returned HTTP 200; Parent and Platform local web servers are listening on 4000/4100, with local backend on 4001. The Parent browser reached `/login`; authenticated screens and owner localhost acceptance remain pending. Generated credentials were not exposed or entered through the browser tool.
 LOCAL_FIXTURES = Synthetic Parent/Family and pending synthetic Platform owner remain isolated to task-owned local MySQL 33062. Owner-UAT MySQL 33061 remains stopped; no live DB access or mutation occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, or production acceptance occurred.
+
+### 2026-10-01 — 8631ed61 Parent ledger CI closure
+
+PARENT_CI = Quality Gates run `36783029602` completed SUCCESS 27/27 at exact Parent/ledger SHA `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8`.
+PUBLICATION = The two tracked master TODO files were pushed and verified present on fetched `origin/pca-dev`; local/tracking refs matched. Unrelated `.vscode/` and root `0` remain excluded.
+LIVE_PREFLIGHT = DNS resolved the live MySQL host to `4.161.89.178`, but TCP/3306 returned false; no live SQL access or mutation occurred.
+LOCAL_BROWSER = Parent remains at `/login`; authenticated screen coverage and owner acceptance remain pending. Generated credential data was not exposed or entered through the browser tool.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, or production acceptance occurred.
