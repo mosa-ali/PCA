@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-30 (re-entry source/Git/CI review; Platform real-backend E2E PASS recorded)
+LAST_UPDATED_UTC = 2026-09-30 (exact-head CI failure reviewed; E2E and dependency-audit corrections underway)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
-LAST_CERTIFIED_REMOTE_SHA = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad` (Quality Gates run `36658212487` SUCCESS 27/27; exact remote head)
-CURRENT_WAVE_STATUS = Wave 5C source at `59bfc331` and the subsequent remote ledger/source history are covered by Quality Gates run `36658212487` at remote SHA `8e63d473`. Parent/Platform mocked browser campaigns passed 101/101 and 21/21; Platform real-backend E2E passed 1/1 against loopback Fastify + disposable MySQL. Local `8e833493` adds the Playwright real-run config and E2E ledger evidence but is one authorized fast-forward commit ahead of remote; it has no exact-head CI yet. TODO-14 remains 45/52 database-integrated with seven intentionally gated/optional declarations. TODO-15 has no approved first-device root, production verifier, signed policy receipt/application path, or independent attestation. Repository and last recorded local schema are 0060; live `pca_pro` was last verified at 0059 and current reachability is unavailable.
+LAST_GREEN_REMOTE_SHA = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad` (Quality Gates run `36658212487` SUCCESS 27/27)
+CURRENT_WAVE_STATUS = The published re-entry checkpoint `e1f8b218` failed Quality Gates run `36732009370` in the real-backend E2E and dependency audit; 25/27 jobs passed. The owner-flow E2E passed, then its cross-family test reused a daily-login grant revoked by the preceding sign-out-everywhere step. The backend audit found HIGH Nodemailer and moderate `fast-uri` advisories. Current local corrections use the independent second Parent against the primary fixture family ID and update Nodemailer to 10.0.13 plus semver-compatible `fast-uri` lock versions; backend `npm audit fix --package-lock-only --ignore-scripts` reports 0 vulnerabilities. These corrections are uncommitted and await exact-head CI. Platform local real-backend E2E passed 1/1. TODO-14 remains 45/52 database-integrated with seven intentionally gated/optional declarations. Repository/local schema remains 0060; live `pca_pro` last verified 0059.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run `36658212487` completed SUCCESS 27/27 at remote SHA `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; current local `8e833493` still needs publication/CI.
-LOCAL_STATE = No tracked unstaged changes. Local `HEAD=8e83349343eae45586d6ffb1249caad3b17b2b4f` is one fast-forward commit ahead of `origin/pca-dev=server pca-dev=8e63d4738f3d4c0d06afd25b58adf383ca2352ad`. The commit contains only the two real-E2E Playwright configs and three mission-ledger updates. Untracked `.vscode/` and root `0` remain excluded.
+EXACT_HEAD_CI_SHA = Run `36732009370` FAILED at `e1f8b218` (25/27; dependency audit and real-backend browser E2E failed). The previous remote head `8e63d473` passed run `36658212487` 27/27. Remediation awaits CI.
+LOCAL_STATE = Branch `pca-dev` HEAD and remote are equal at `e1f8b218c16c336c070409bb4b4f88c1d791ecd0`. Tracked worktree has local changes to `backend/package.json`, `backend/package-lock.json`, and `parent-web/e2e-real/acceptance-flow.spec.ts`, plus this ledger update; `.vscode/` and root `0` remain excluded.
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 now has 45/52 database-integrated declarations and seven gated/optional; TODO-15, TODO-19, owner-gated TODO-18, and TODO-20 live reconciliation remain open. The shared resolver maps all non-member/unknown/unavailable outcomes to denial. Platform stays held; schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
-NEXT_ACTION = Continue TODO-12/14 only within the documented security protocol and integrated-evidence boundaries; TODO-15 source review is complete and waits on owner/security protocol inputs. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, live 0060 unapplied, and TODO-18 owner acceptance pending.
+CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15, TODO-17 regression remediation, TODO-19 publication/CI, TODO-20 live reconciliation, and owner-gated TODO-18 remain open. Platform stays held; schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
+NEXT_ACTION = Commit and publish only the corrected disposable cross-family E2E plus semver-compatible dependency-security lock update and matching ledger changes; inspect the resulting exact-head CI. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, live 0060 unapplied, and TODO-18 owner acceptance pending.
 
 ### 2026-09-30 — PCA Codex re-entry assessment (refreshed)
 
@@ -30,6 +30,16 @@ TRUE_NEXT_DEPENDENCY = Publish local checkpoint `8e833493` and run exact-head CI
 FILES_EXPECTED = For the immediate publication: the five files in commit `8e833493`; for next engineering work, no product-source file is selected until the owner/security protocol or a separately proven safe TODO-12/14 correction is identified.
 SCHEMA_CHANGE_EXPECTED = No migration required by the re-entry-reviewed resolver, Android, or iOS changes; no new migration beyond 0060 was found.
 SUPERVISOR_RECOMMENDATION = PROCEED with the authorized fast-forward publication and exact-head verification; keep Platform, live DB, owner acceptance, crypto, deployment and production gates on HOLD.
+
+### 2026-09-30 — Exact-head CI failure and focused remediation
+
+CI = Run `36732009370` at `e1f8b218c16c336c070409bb4b4f88c1d791ecd0` completed FAILURE: 25/27 jobs passed; failed jobs were `Real-backend browser E2E (disposable MySQL + live Fastify)` and `Dependency vulnerability audit`.
+E2E_ROOT_CAUSE = The acceptance-flow test signed out everywhere, revoking the primary fixture's daily login grant; a later cross-family test attempted to reuse that grant and got `sessionEstablished=false`. The owner journey itself passed. The test now authenticates the untouched second Parent once and targets `E2E_REAL_TEST_FAMILY_ID`, the primary Parent family, retaining the cross-family LIST/CREATE 403 assertions.
+DEPENDENCY_REMEDIATION = Backend Nodemailer 10.0.0 triggered the HIGH advisory; lockfile-only update to 10.0.13 and semver-compatible `fast-uri` 3.1.8/4.2.1 resolved the backend audit. `npm audit fix --package-lock-only --ignore-scripts` reports 0 vulnerabilities. No force update or runtime source change was made.
+CURRENT_LOCAL_CHANGE = `backend/package.json`, `backend/package-lock.json`, `parent-web/e2e-real/acceptance-flow.spec.ts`, and the mission ledgers. `git diff --check` passes; exact-head CI is pending publication.
+TODO_STATUS = 13 PASS / 6 IN_PROGRESS (TODO-12,14,15,17,19,20) / 4 TODO or owner/release gated (TODO-18,21,22,23) / 0 BLOCKED. TODO-17 remains IN_PROGRESS until the corrected exact-head campaign passes.
+OWNER_AND_PLATFORM_GATES = No owner acceptance, Platform activation, live DB read/mutation, Azure deployment or production acceptance occurred. Local owner API/web ports were stopped at the latest readiness check; do not offer TODO-18 before restoring services and completing technical browser precheck.
+NEXT_ACTION = Review the three-file code diff plus ledgers, commit the scoped fix, publish by ordinary fast-forward, and inspect the resulting Quality Gates run.
 
 ### 2026-09-28 06:49 UTC — TODO-14 collector checkpoint published and CI passed
 
@@ -509,11 +519,11 @@ extra PII/commercial fields = 0
 
 ### TODO-17 — Full MySQL / security / browser regression
 
-STATUS = PASS
+STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Exact-head Quality Gates runs `36376318648` at `4a1b372d`, `36377167205` at `678b1d33`, `36378245540` at `78ac5eac`, `36379266945` at `9fc02b41`, `36379988964` at `80e3ff47`, `36380843449` at `0e275bf1`, and `36381752337` at `cc9fceb5` each completed SUCCESS, all 27/27 jobs. The corrected real-backend browser job and full disposable-MySQL certification passed. The test now locates the exact revoke-all confirmation copy; the selector correction changed no product behavior. Earlier run `36374962516` at `55c9067b` had 26/27 jobs pass and failed only on the ambiguous status locator.
-BLOCKER = None for this integrated automated campaign at validated HEAD `4a1b372d`. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
+EVIDENCE = Historical green integrated campaigns remain recorded. Latest exact-head run `36732009370` at `e1f8b218` failed 25/27: the Parent owner journey passed, but the follow-on cross-family E2E reused the primary account's one-time daily login grant after sign-out-everywhere revoked it; the backend dependency audit also found a HIGH Nodemailer and moderate `fast-uri` advisory. Current local fix uses the untouched second Parent account and the fixture-supplied primary family ID; backend Nodemailer is updated to 10.0.13, compatible `fast-uri` lock versions were resolved, and backend npm audit reports 0 vulnerabilities. Exact-head rerun is pending.
+BLOCKER = Exact-head CI must pass after the E2E fixture correction and dependency-lock update. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance

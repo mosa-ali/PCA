@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (Platform real-backend E2E result refreshed)
-VALIDATED_PARENT_SOURCE_HEAD = Remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; Quality Gates run `36658212487` passed 27/27 and includes the Parent membership resolver/authorizer. Local implementation checkpoint `8e83349343eae45586d6ffb1249caad3b17b2b4f` adds the two Playwright real-run configs and E2E ledger evidence; it remains one authorized fast-forward commit ahead and needs its own CI result.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`, confirmed by fresh fetch, tracking ref, and `git ls-remote`.
-CURRENT_CHECKPOINT_SHA = Local `8e83349343eae45586d6ffb1249caad3b17b2b4f`; remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; one fast-forward commit pending publication and exact-head CI.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked unstaged changes. The pending commit contains `parent-web/playwright.real.config.ts`, `platform-admin-web/playwright.real.config.ts`, and the three mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (exact-head CI failure reviewed; Parent E2E and dependency-audit fixes underway)
+VALIDATED_PARENT_SOURCE_HEAD = Remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; Quality Gates run `36658212487` passed 27/27 and includes the Parent membership resolver/authorizer. Published `e1f8b218c16c336c070409bb4b4f88c1d791ecd0` then failed 25/27 in E2E and dependency audit; the local corrected checkpoint awaits CI.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e1f8b218c16c336c070409bb4b4f88c1d791ecd0`, confirmed by the latest push; current local edits remain uncommitted.
+CURRENT_CHECKPOINT_SHA = `e1f8b218c16c336c070409bb4b4f88c1d791ecd0`; tracked worktree has local remediation to the Parent real-backend isolation test and backend dependency lock/spec. Platform code and activation remain unchanged.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `backend/package.json`, `backend/package-lock.json`, `parent-web/e2e-real/acceptance-flow.spec.ts`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -21,6 +21,12 @@ DEEPSEEK_REVIEW = No DeepSeek-attributed commit follows `91f7f6d4`; the reviewed
 CI = Quality Gates run `36658212487` passed 27/27 at remote `8e63d473`; this validates the Parent membership/authorizer source. Local `8e833493` is pending publication and exact-head CI.
 PLATFORM_REAL_BACKEND = PASS 1/1 on local disposable MySQL/Fastify; the run covered Platform login/MFA, dashboard, entitlements, administrator step-up/create, audit, settings, and billing. It proves the local backend journey only.
 PLATFORM_GATE = Remains `HOLD_PARENT_DEPENDENCY`; Owner `LOCALHOST ACCEPTED`, Parent authority/device gates, projection acceptance, live schema/grants, Azure deployment and production acceptance are not promoted.
+
+### 2026-09-30 — Exact-head CI failure and Parent-only correction
+
+CI = Run `36732009370` failed at `e1f8b218`; its 25/27 successful jobs include Platform unit/build coverage. The real-backend job stopped after a cross-family test reused a revoked primary fixture login grant; the dependency audit found backend Nodemailer/fast-uri advisories. The Platform real-backend standalone local journey remains PASS 1/1.
+CORRECTION = Parent cross-family E2E now uses the separate untouched Parent and fixture-provided primary family ID. Backend Nodemailer is updated to 10.0.13 and lockfile fast-uri versions were refreshed; backend npm audit reports 0 vulnerabilities. Exact-head rerun is pending.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`. No Platform source/enrollment activation, owner acceptance, live database mutation, deployment or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry dependency confirmed
 

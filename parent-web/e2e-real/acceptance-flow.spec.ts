@@ -25,6 +25,7 @@ test.use({ serviceWorkers: 'block' });
 const PRIMARY_EMAIL = process.env.E2E_REAL_PARENT_EMAIL;
 const PRIMARY_PASSWORD = process.env.E2E_REAL_PARENT_PASSWORD;
 const PRIMARY_DAILY_LOGIN_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
+const PRIMARY_FAMILY_ID = process.env.E2E_REAL_TEST_FAMILY_ID;
 const SECOND_EMAIL = process.env.E2E_REAL_SECOND_PARENT_EMAIL;
 const SECOND_PASSWORD = process.env.E2E_REAL_SECOND_PARENT_PASSWORD;
 const SECOND_DAILY_LOGIN_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
@@ -35,7 +36,7 @@ const MFA_ENROLLMENT_COUNTER_RAW = process.env.E2E_REAL_MFA_PARENT_TOTP_ENROLLME
 const MFA_ENROLLMENT_COUNTER = /^\d+$/.test(MFA_ENROLLMENT_COUNTER_RAW ?? '') ? Number(MFA_ENROLLMENT_COUNTER_RAW) : Number.NaN;
 test.skip(
   !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !PRIMARY_DAILY_LOGIN_GRANT
-    || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_DAILY_LOGIN_GRANT
+    || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_DAILY_LOGIN_GRANT || !PRIMARY_FAMILY_ID
     || !MFA_EMAIL || !MFA_PASSWORD || !MFA_TOTP_SECRET || !Number.isSafeInteger(MFA_ENROLLMENT_COUNTER),
   'real-backend acceptance flow requires the disposable primary, second, and enrolled-MFA Parent fixtures.',
 );
@@ -309,16 +310,19 @@ test.describe('PPR-2 cross-family isolation -- real backend', () => {
     // full dashboard navigation. The owner flow and realBackend.spec.ts cover
     // the UI login; this test must reserve the backend's shared authenticated
     // request budget for the two cross-family authorization decisions.
-    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_DAILY_LOGIN_GRANT!, isolationClientHeaders);
+    // The preceding owner journey signs out everywhere and invalidates the
+    // primary fixture's daily login grant. Authenticate with the separate,
+    // untouched Parent and target the primary family's fixture-provided ID.
+    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_DAILY_LOGIN_GRANT!, isolationClientHeaders);
     const meRes = await page.request.get('/api/parent/session', { headers: isolationClientHeaders });
     expect(meRes.status()).toBe(200);
-    const ownFamilyId = (await meRes.json()).familyId as string;
+    const secondFamilyId = (await meRes.json()).familyId as string;
+    expect(secondFamilyId).not.toBe(PRIMARY_FAMILY_ID);
 
-    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_DAILY_LOGIN_GRANT!, isolationClientHeaders);
-    const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`, { headers: isolationClientHeaders });
+    const crossList = await page.request.get(`/v1/families/${PRIMARY_FAMILY_ID}/children`, { headers: isolationClientHeaders });
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 
-    const crossCreate = await page.request.post(`/v1/families/${ownFamilyId}/children`, { data: {}, headers: isolationClientHeaders });
+    const crossCreate = await page.request.post(`/v1/families/${PRIMARY_FAMILY_ID}/children`, { data: {}, headers: isolationClientHeaders });
     expect(crossCreate.status(), 'cross-family CREATE must be 403').toBe(403);
   });
 });
