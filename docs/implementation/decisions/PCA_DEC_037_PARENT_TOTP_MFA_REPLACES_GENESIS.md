@@ -74,7 +74,7 @@ enrollment. Lockout: 5 failed codes / 15 min → locked 15 min (row-locked
 counter), plus per-IP/per-email route rate limits. Secret is never logged,
 never persisted in clear, never stored in browser storage.
 
-## Recovery policy (owner decision: 24-hour security hold)
+## Historical recovery policy (24-hour hold; superseded 2026-10-01)
 
 On 2026-09-25 the owner selected a 24-hour hold after password and verified-
 email code verification. Recovery codes are 6 digits, account-bound, hash-only,
@@ -94,6 +94,35 @@ local-QR enrollment. The new factor becomes active only after a valid 6-digit
 TOTP. No recovery cancellation mechanism is available in the existing
 architecture; safe cancellation and an owner recovery contact path remain a
 follow-up, without an emailed cancellation link.
+
+## Owner policy amendment — immediate recovery and password failure lock (2026-10-01)
+
+The owner superseded the 24-hour hold above. The historical decision remains
+here to explain migration 0050 and legacy event/column names; it is no longer
+the active Parent recovery behavior.
+
+After the current password and a fresh, single-use recovery email code are
+verified, recovery immediately clears the old TOTP, invalidates recovery and
+pending login/setup/reset challenges, revokes all Parent sessions, daily-login
+grants and step-up grants, sends the `MFA_RESET` security notice, and issues
+only the short-lived enrollment ticket. The replacement authenticator remains
+inactive until the canonical enrollment flow confirms a valid TOTP from its
+new secret. The old TOTP is no longer accepted.
+
+Password failures use a separate durable account budget: five incorrect
+password authentications in a rolling 15-minute window lock password sign-in
+for one hour. Email OTP, TOTP and recovery-code failures do not spend that
+budget. The lock detail is shown only after the correct password is proven;
+otherwise denial stays generic. Forgot-password remains independently
+rate-limited and available during a lock. A successful password reset clears
+the lock, revokes sessions and browser/step-up grants, invalidates pending
+reset/login challenges, sends `PASSWORD_CHANGED`, and preserves the active
+TOTP.
+
+Migration `0061_parent_password_login_lock.sql` adds only the account-level
+failure state because no existing durable Parent password-failure fields
+existed. The change does not alter Trust Set, child-device authority,
+Platform Enrollment, Azure, production, or live database state.
 
 ## Billing / commercial owner authority
 

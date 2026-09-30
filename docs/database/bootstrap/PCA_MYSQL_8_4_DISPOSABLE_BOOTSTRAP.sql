@@ -16,15 +16,15 @@
 --
 -- CONTENTS
 --    94 tables
---   806 columns
+--   809 columns
 --    94 primary keys
 --   104 foreign keys
 --    38 unique non-primary-key indexes
 --   142 non-unique indexes
---   293 CHECK constraints
+--   294 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    58 schema_migrations journal rows
+--    59 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1176,7 +1176,7 @@ CREATE TABLE `parent_account_security_events` (
   CONSTRAINT `parent_account_security_events_type_check` CHECK ((`event_type` in (_utf8mb4'FAMILY_PROVISIONED',_utf8mb4'FIRST_LOGIN',_utf8mb4'PARENT_LOGIN_SUCCESS',_utf8mb4'MFA_GRACE_STARTED',_utf8mb4'MFA_ENROLLED',_utf8mb4'MFA_LOGIN_FAILED',_utf8mb4'MFA_LOCKED',_utf8mb4'MFA_RECOVERY_REQUESTED',_utf8mb4'MFA_RECOVERY_PENDING',_utf8mb4'MFA_RECOVERY_COMPLETED',_utf8mb4'MFA_RESET',_utf8mb4'STEP_UP_GRANTED',_utf8mb4'STEP_UP_FAILED',_utf8mb4'STEP_UP_CONSUMED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql, 0043_parent_family_memberships_and_profile.sql, 0052_parent_identity_names.sql, 0053_parent_identity_contacts.sql)
+-- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql, 0043_parent_family_memberships_and_profile.sql, 0052_parent_identity_names.sql, 0053_parent_identity_contacts.sql, 0061_parent_password_login_lock.sql)
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `email_hash` binary(32) NOT NULL,
@@ -1203,6 +1203,9 @@ CREATE TABLE `parent_accounts` (
   `disabled_at` datetime(3) NULL,
   `account_type` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
   `estimated_child_count` int unsigned NULL,
+  `password_failed_attempt_count` tinyint unsigned NOT NULL DEFAULT 0,
+  `password_failure_window_started_at` datetime(3) NULL,
+  `password_login_locked_until` datetime(3) NULL,
   PRIMARY KEY (`account_id`),
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
   UNIQUE KEY `parent_accounts_service_account_id_key` (`service_account_id`),
@@ -1215,7 +1218,8 @@ CREATE TABLE `parent_accounts` (
   CONSTRAINT `parent_accounts_account_type_check` CHECK (((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))),
   CONSTRAINT `parent_accounts_estimated_child_count_check` CHECK (((`estimated_child_count` is null) or (`estimated_child_count` <= 50))),
   CONSTRAINT `parent_accounts_time_limited_has_duration_check` CHECK (((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))),
-  CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null))))
+  CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null)))),
+  CONSTRAINT `parent_accounts_password_failure_state_check` CHECK ((((`password_failed_attempt_count` = 0) and (`password_failure_window_started_at` is null) and (`password_login_locked_until` is null)) or ((`password_failed_attempt_count` between 1 and 4) and (`password_failure_window_started_at` is not null) and (`password_login_locked_until` is null)) or ((`password_failed_attempt_count` = 5) and (`password_failure_window_started_at` is not null) and (`password_login_locked_until` is not null))))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_email_verification_codes (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0030_verification_code_credential_binding.sql)
@@ -1992,4 +1996,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0057_parent_actor_provenance_for_removal_decisions.sql'),
   ('0058_family_authority_request_challenges_service_index.sql'),
   ('0059_parent_mfa_ascii_check_literal_charset.sql'),
-  ('0060_family_trust_set_epoch_persistence.sql');
+  ('0060_family_trust_set_epoch_persistence.sql'),
+  ('0061_parent_password_login_lock.sql');

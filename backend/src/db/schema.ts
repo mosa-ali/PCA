@@ -3,7 +3,7 @@
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 94 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0060; 58 files, 0009/0010 never existed) from an empty database
+// through 0061; 59 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -2379,7 +2379,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0013_parent_account_identity.sql",
-    alteredByMigrations: ["0042_parent_login_step_up_codes.sql", "0043_parent_family_memberships_and_profile.sql", "0052_parent_identity_names.sql", "0053_parent_identity_contacts.sql"],
+    alteredByMigrations: ["0042_parent_login_step_up_codes.sql", "0043_parent_family_memberships_and_profile.sql", "0052_parent_identity_names.sql", "0053_parent_identity_contacts.sql", "0061_parent_password_login_lock.sql"],
     ownerModule: "backend/src/familymembers",
     columns: [
       { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2407,6 +2407,9 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "disabled_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "account_type", columnType: "varchar(24)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded signup profile category; never an authority or authentication input." },
       { name: "estimated_child_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded signup profile estimate, not a child record or authority input." },
+      { name: "password_failed_attempt_count", columnType: "tinyint unsigned", dataType: "tinyint", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Account-level failed password authentication counter; independent from MFA code failure state." },
+      { name: "password_failure_window_started_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Start of the rolling account-level password authentication failure window." },
+      { name: "password_login_locked_until", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "End of a temporary account-level password login lock." },
     ],
     primaryKey: ["account_id"],
     uniqueIndexes: [
@@ -2430,6 +2433,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "parent_accounts_estimated_child_count_check", clause: "((`estimated_child_count` is null) or (`estimated_child_count` <= 50))" },
       { name: "parent_accounts_time_limited_has_duration_check", clause: "((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))" },
       { name: "parent_accounts_verified_has_free_access_check", clause: "(((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null)))" },
+      { name: "parent_accounts_password_failure_state_check", clause: "(((`password_failed_attempt_count` = 0) and (`password_failure_window_started_at` is null) and (`password_login_locked_until` is null)) or ((`password_failed_attempt_count` between 1 and 4) and (`password_failure_window_started_at` is not null) and (`password_login_locked_until` is null)) or ((`password_failed_attempt_count` = 5) and (`password_failure_window_started_at` is not null) and (`password_login_locked_until` is not null)))" },
     ],
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },

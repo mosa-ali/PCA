@@ -8,7 +8,8 @@ import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
 import { TestSandboxEmailSender } from '../../dist/parentaccount/TestSandboxEmailSender.js';
-import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
+import { PARENT_MFA_GRACE_MS, PARENT_MFA_RECOVERY_HOLD_MS, PARENT_PASSWORD_FAILURE_POLICY } from '../../dist/parentaccount/policy.js';
+import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
 import { createParentAccountTestKit, createTestClock, totpFor } from '../support/parentMfaTestKit.mjs';
@@ -199,7 +200,7 @@ test('TOTP lockout: 5 wrong codes lock the factor for 15 minutes, even against a
   assert.ok(types.includes('MFA_LOCKED'));
 });
 
-test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after deadline, new factor only', async () => {
+test('recovery: valid password and email code immediately revoke old authority and permit replacement TOTP enrollment', async () => {
   const h = harness();
   const email = 'recover@example.com';
   const { secret, session } = await enrolledAccount(h, email);
@@ -218,10 +219,10 @@ test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after
   await assert.rejects(h.service.completeMfaRecovery(email, 'wrong password!!', code), (error) => error.code === 'UNAUTHORIZED');
   const wrongCode = code === '000000' ? '111111' : '000000';
   await assert.rejects(h.service.completeMfaRecovery(email, PASSWORD, wrongCode), (error) => error.code === 'UNAUTHORIZED');
-  const pending = await h.service.completeMfaRecovery(email, PASSWORD, code);
-  assert.equal(pending.status, 'MFA_RECOVERY_PENDING');
-  const holdDeadline = pending.recoveryAvailableAt.getTime();
-  assert.equal(holdDeadline, h.clock.ms() + 24 * HOUR);
+  assert.equal(PARENT_MFA_RECOVERY_HOLD_MS, 0, 'owner policy removes the waiting period');
+  const completed = await h.service.completeMfaRecovery(email, PASSWORD, code);
+  assert.equal(completed.status, 'MFA_SETUP_REQUIRED');
+  assert.equal('recoveryAvailableAt' in completed, false, 'recovery no longer exposes a hold deadline');
   await assert.rejects(h.service.completeMfaRecovery(email, PASSWORD, code), (error) => error.code === 'UNAUTHORIZED', 'a recovery code is single-use');
 
   for (const token of [session.rawSessionToken, otherBrowser.rawSessionToken]) {
@@ -229,28 +230,9 @@ test('recovery: 24-hour hold, no browser bypass or timer reset, fresh code after
   }
   assert.equal((await h.commercialOwnerAuthority.authorize((await h.repository.findById(session.accountId)).serviceAccountId, session.familyId, 'BILLING_CHECKOUT_CREATE', commercialGrant.stepUpToken)), 'STEP_UP_REQUIRED', 'sensitive commercial operations are denied during recovery');
   const otherDeviceLogin = await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken);
-  assert.equal(otherDeviceLogin.status, 'MFA_RECOVERY_PENDING', 'a new browser cannot bypass the server-side hold');
-  assert.equal(otherDeviceLogin.recoveryAvailableAt.getTime(), holdDeadline);
-  await h.service.requestMfaRecovery(email, PASSWORD);
-  const duringHoldCode = h.emailSender.lastCodeFor(email, 'MFA_RECOVERY');
-  const early = await h.service.completeMfaRecovery(email, PASSWORD, duringHoldCode);
-  assert.equal(early.status, 'MFA_RECOVERY_PENDING');
-  assert.equal(early.recoveryAvailableAt.getTime(), holdDeadline, 'a second request and code cannot reset the timer');
-  await assert.rejects(h.service.beginMfaEnrollment({ kind: 'SESSION', rawSessionToken: session.rawSessionToken }, email, PASSWORD), (error) => error.code === 'UNAUTHORIZED', 'an old browser cannot enroll early');
-  await h.service.requestPasswordReset(email);
-  await assert.rejects(h.service.resetPassword(email, h.emailSender.lastCodeFor(email, 'PASSWORD_RESET'), 'Another secure password 8!', 'Another secure password 8!'), (error) => error.code === 'UNAUTHORIZED', 'account security settings remain unavailable during hold');
-  assert.ok(h.emailSender.sent.some((message) => message.kind === 'MFA_RECOVERY_PENDING'));
-  assert.ok(!h.emailSender.kindsFor(email).includes('MFA_RESET'), 'old factor is not removed at hold start');
-
-  h.clock.advance(24 * HOUR - STEP);
-  assert.equal((await h.service.login(email, PASSWORD)).status, 'MFA_RECOVERY_PENDING', 'hold is still active one step before the deadline');
-  h.clock.advance(STEP);
-  assert.equal((await h.service.login(email, PASSWORD)).status, 'MFA_RECOVERY_PENDING', 'passing the deadline alone does not bypass recovery verification');
-  await h.service.requestMfaRecovery(email, PASSWORD);
-  const afterHoldCode = h.emailSender.lastCodeFor(email, 'MFA_RECOVERY');
-  const completed = await h.service.completeMfaRecovery(email, PASSWORD, afterHoldCode);
-  assert.equal(completed.status, 'MFA_SETUP_REQUIRED', 'fresh password and email code at the exact deadline unlock new enrollment');
-  assert.ok(h.emailSender.kindsFor(email).includes('MFA_RESET'));
+  assert.equal(otherDeviceLogin.status, 'STEP_UP_REQUIRED', 'the old trusted-browser grant no longer authorizes login');
+  assert.ok(h.emailSender.kindsFor(email).includes('MFA_RESET'), 'a recovery security notice is sent immediately');
+  assert.equal((await h.mfaRepository.findState(session.accountId)).status, 'NOT_ENROLLED', 'the old factor is disabled before replacement setup');
 
   const { secret: newSecret, outcome } = await enroll(h, email, { kind: 'TICKET', rawTicket: completed.rawEnrollmentTicket });
   assert.equal(outcome.status, 'ENROLLED_SESSION_ESTABLISHED', 'the recovering browser keeps a session');
@@ -279,6 +261,102 @@ test('recovery code is short-lived, single-use and attempt-limited', async () =>
   const wrong = validCode === '000000' ? '111111' : '000000';
   for (let attempt = 0; attempt < 8; attempt += 1) await assert.rejects(attempts.service.completeMfaRecovery(attemptsEmail, PASSWORD, wrong), (error) => error.code === 'UNAUTHORIZED');
   await assert.rejects(attempts.service.completeMfaRecovery(attemptsEmail, PASSWORD, validCode), (error) => error.code === 'UNAUTHORIZED', 'the eighth wrong attempt exhausts this code');
+});
+
+test('password login locks on five account failures in 15 minutes and expires after one hour', async () => {
+  const h = harness();
+  const email = 'password-lock@example.com';
+  await registerAndVerify(h, email);
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    await assert.rejects(h.service.login(email, `wrong password ${attempt}`), (error) => error.code === 'UNAUTHORIZED');
+  }
+  await assert.rejects(h.service.login(email, 'wrong password fifth'), (error) => error.code === 'UNAUTHORIZED', 'fifth failure stays a generic denial');
+  await assert.rejects(h.service.login(email, PASSWORD), (error) => error.code === 'PASSWORD_LOGIN_LOCKED', 'correct password cannot bypass an active lock');
+  await assert.rejects(h.service.login(email, 'still wrong'), (error) => error.code === 'UNAUTHORIZED', 'wrong password stays generic during the lock');
+  const account = await h.repository.findByEmailHash(hashParentEmail(email));
+  assert.equal(account.passwordFailedAttemptCount, 5);
+  assert.equal(account.passwordLoginLockedUntil.getTime(), h.clock.ms() + PARENT_PASSWORD_FAILURE_POLICY.lockMs);
+  h.clock.advance(PARENT_PASSWORD_FAILURE_POLICY.lockMs);
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'AUTHENTICATED', 'login is available after the one-hour lock expires');
+});
+
+test('password failures use a rolling window and a successful password auth clears the sequence', async () => {
+  const h = harness();
+  const email = 'password-window@example.com';
+  await registerAndVerify(h, email);
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(h.service.login(email, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'AUTHENTICATED', 'correct password before threshold is accepted');
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(h.service.login(email, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await h.service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED', 'correct password clears the four-failure sequence');
+
+  const other = harness();
+  const otherEmail = 'password-rolling-window@example.com';
+  await registerAndVerify(other, otherEmail);
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(other.service.login(otherEmail, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  other.clock.advance(PARENT_PASSWORD_FAILURE_POLICY.windowMs);
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(other.service.login(otherEmail, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await other.service.login(otherEmail, PASSWORD)).status, 'AUTHENTICATED', 'failures outside the rolling window do not accumulate');
+});
+
+test('password locks are account-scoped; wrong email OTP, TOTP, and recovery code do not add password failures', async () => {
+  const h = harness();
+  const emailA = 'password-scope-a@example.com';
+  const emailB = 'password-scope-b@example.com';
+  await registerAndVerify(h, emailA);
+  await registerAndVerify(h, emailB);
+  for (let attempt = 0; attempt < 5; attempt += 1) await assert.rejects(h.service.login(emailA, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await h.service.login(emailB, PASSWORD)).status, 'AUTHENTICATED', 'account A cannot lock account B');
+  await assert.rejects(h.service.login(emailA, PASSWORD), (error) => error.code === 'PASSWORD_LOGIN_LOCKED');
+
+  const mfa = harness();
+  const mfaEmail = 'password-mfa-separation@example.com';
+  const { secret } = await enrolledAccount(mfa, mfaEmail);
+  assert.equal((await mfa.service.login(mfaEmail, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  const emailOtp = mfa.emailSender.lastCodeFor(mfaEmail, 'LOGIN_STEP_UP');
+  const wrongEmailOtp = emailOtp === '000000' ? '111111' : '000000';
+  await assert.rejects(mfa.service.completeLoginStepUp(mfaEmail, wrongEmailOtp, totpFor(secret, mfa.clock.ms())), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await mfa.repository.findByEmailHash(hashParentEmail(mfaEmail))).passwordFailedAttemptCount, 0, 'email OTP failures do not spend the password budget');
+  const activeTotp = totpFor(secret, mfa.clock.ms());
+  const wrongTotp = String((Number(activeTotp) + 1) % 1000000).padStart(6, '0');
+  await assert.rejects(mfa.service.completeLoginStepUp(mfaEmail, emailOtp, wrongTotp), (error) => error.code === 'MFA_INVALID');
+  assert.equal((await mfa.repository.findByEmailHash(hashParentEmail(mfaEmail))).passwordFailedAttemptCount, 0, 'wrong TOTP does not spend the password budget');
+
+  await mfa.service.requestMfaRecovery(mfaEmail, PASSWORD);
+  const recoveryCode = mfa.emailSender.lastCodeFor(mfaEmail, 'MFA_RECOVERY');
+  const wrongRecoveryCode = recoveryCode === '000000' ? '111111' : '000000';
+  await assert.rejects(mfa.service.completeMfaRecovery(mfaEmail, PASSWORD, wrongRecoveryCode), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await mfa.repository.findByEmailHash(hashParentEmail(mfaEmail))).passwordFailedAttemptCount, 0, 'recovery-code failures stay separate from password failures');
+});
+
+test('password reset remains available during lock, clears it, revokes old authority, and preserves TOTP', async () => {
+  const h = harness();
+  const email = 'locked-password-reset@example.com';
+  const { secret, session } = await enrolledAccount(h, email);
+  const secondSession = await h.service.login(email, PASSWORD, session.rawDailyLoginGrantToken);
+  h.clock.advance(STEP);
+  const stepUp = await h.service.issueCommercialStepUp(session.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms()));
+  h.clock.advance(STEP);
+  for (let attempt = 0; attempt < 5; attempt += 1) await assert.rejects(h.service.login(email, 'wrong password'), (error) => error.code === 'UNAUTHORIZED');
+  await assert.rejects(h.service.login(email, PASSWORD), (error) => error.code === 'PASSWORD_LOGIN_LOCKED');
+
+  await h.service.requestPasswordReset(email);
+  const resetCode = h.emailSender.lastCodeFor(email, 'PASSWORD_RESET');
+  const newPassword = 'Another secure password 8!';
+  assert.equal((await h.service.resetPassword(email, resetCode, newPassword, newPassword)).status, 'PASSWORD_RESET');
+  assert.ok(h.emailSender.kindsFor(email).includes('PASSWORD_CHANGED'));
+  const account = await h.repository.findByEmailHash(hashParentEmail(email));
+  assert.equal(account.passwordFailedAttemptCount, 0);
+  assert.equal(account.passwordFailureWindowStartedAt, null);
+  assert.equal(account.passwordLoginLockedUntil, null);
+  assert.equal((await h.mfaService.posture(account.accountId)).status, 'ACTIVE', 'password reset preserves the TOTP factor');
+  for (const rawSessionToken of [session.rawSessionToken, secondSession.rawSessionToken]) {
+    await assert.rejects(h.service.readSession(rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
+  }
+  await assert.rejects(h.service.login(email, PASSWORD), (error) => error.code === 'UNAUTHORIZED', 'old password is rejected');
+  assert.equal((await h.service.login(email, newPassword, session.rawDailyLoginGrantToken)).status, 'STEP_UP_REQUIRED', 'old trusted-browser grant was revoked');
+  assert.equal(await h.commercialOwnerAuthority.authorize(account.serviceAccountId, session.familyId, 'BILLING_CHECKOUT_CREATE', stepUp.stepUpToken), 'STEP_UP_REQUIRED', 'old sensitive step-up grant was revoked');
+  const loginStepUp = h.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.equal((await h.service.completeLoginStepUp(email, loginStepUp, totpFor(secret, h.clock.ms()))).status, 'AUTHENTICATED', 'new password and existing TOTP work after reset');
 });
 
 test('account isolation: one account\'s ticket, code or session never enrolls or authenticates another', async () => {

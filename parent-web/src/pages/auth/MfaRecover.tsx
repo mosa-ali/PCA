@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
-import { formatDateTime } from '../../i18n/formatters';
 
 /**
  * PCA-DEC-037 lost-authenticator recovery.
@@ -12,12 +11,12 @@ import { formatDateTime } from '../../i18n/formatters';
  *     match an account with an authenticator app. The page shows the same
  *     generic confirmation whatever happened (never an account/password
  *     oracle).
- *  2. the emailed code starts a database-backed 24-hour hold and revokes all
- *     sessions. After the deadline, a fresh code is required before the old
- *     factor is removed and a new-enrollment ticket is issued.
+ *  2. the emailed code immediately revokes existing sessions and trusted
+ *     browsers, disables the old factor, and issues a narrow new-enrollment
+ *     ticket. The new factor activates only after valid TOTP confirmation.
  */
 export default function MfaRecover() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const clients = getApiClients();
   const location = useLocation();
   const navigate = useNavigate();
@@ -30,7 +29,6 @@ export default function MfaRecover() {
   const [codeInvalid, setCodeInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recoveryAvailableAt, setRecoveryAvailableAt] = useState<string | null>(null);
 
   async function handleRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,15 +52,9 @@ export default function MfaRecover() {
     setCodeInvalid(false);
     setSubmitting(true);
     try {
-      const result = await clients.serviceAuth.completeMfaRecovery(email, password, code);
+      await clients.serviceAuth.completeMfaRecovery(email, password, code);
       setPassword('');
       setCode('');
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        setRecoveryAvailableAt(result.recoveryAvailableAt);
-        setCodeSent(false);
-        setSubmitting(false);
-        return;
-      }
       navigate('/mfa/setup', { replace: true, state: { email } });
     } catch (err) {
       if (err instanceof ServiceAuthError) {
@@ -83,20 +75,6 @@ export default function MfaRecover() {
       <p>{t('mfa.recover.consequences')}</p>
     </div>
   );
-
-  if (recoveryAvailableAt) {
-    return (
-      <section aria-labelledby="mfa-recover-title" className="auth-page">
-        <h1 id="mfa-recover-title">{t('mfa.recover.title')}</h1>
-        <p role="status">{t('mfa.recover.pending', { date: formatDateTime(recoveryAvailableAt, i18n.language) })}</p>
-        <p>{t('mfa.recover.pendingNextStep')}</p>
-        <button type="button" className="btn" onClick={() => setRecoveryAvailableAt(null)}>
-          {t('mfa.recover.continueAfterHold')}
-        </button>
-        <p><Link to="/login">{t('auth.backToLogin')}</Link></p>
-      </section>
-    );
-  }
 
   if (codeSent) {
     return (

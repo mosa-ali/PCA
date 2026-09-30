@@ -161,6 +161,14 @@ describe('RealServiceAuthClient', () => {
     } satisfies Partial<ServiceAuthError>);
   });
 
+  it('signIn maps the server-confirmed password lock to its safe recovery message', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'password_login_locked' }));
+    await expect(client.signIn('parent@example.test', 'correct-password')).rejects.toMatchObject({
+      code: 'PASSWORD_LOGIN_LOCKED',
+      message: expect.stringContaining('reset your password now'),
+    });
+  });
+
   it('signIn distinguishes an authenticator lockout (429 mfa_locked) from ordinary rate limiting', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'mfa_locked' }));
     await expect(client.signIn('parent@example.test', 'pw', '123456')).rejects.toMatchObject({ code: 'MFA_LOCKED' });
@@ -258,8 +266,8 @@ describe('RealServiceAuthClient', () => {
   });
 
   it('completeMfaRecovery posts email/password/code and maps a wrong code to INVALID_CREDENTIALS', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: '2026-09-26T12:00:00.000Z', sessionEstablished: false }));
-    await expect(client.completeMfaRecovery('parent@example.test', 'pw', '123456')).resolves.toEqual({ status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: '2026-09-26T12:00:00.000Z' });
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { status: 'MFA_SETUP_REQUIRED', mfaSetupRequired: true, sessionEstablished: false }));
+    await expect(client.completeMfaRecovery('parent@example.test', 'pw', '123456')).resolves.toEqual({ status: 'MFA_SETUP_REQUIRED' });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`${apiBaseUrl}/api/parent/mfa/recovery/complete`);
     expect(JSON.parse(init.body as string)).toEqual({ email: 'parent@example.test', password: 'pw', code: '123456' });

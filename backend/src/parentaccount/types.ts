@@ -79,8 +79,7 @@ export interface VerifyEmailOutcome {
 export type ParentMfaSummary =
   | { status: 'ACTIVE' }
   | { status: 'GRACE'; graceExpiresAt: Date }
-  | { status: 'SETUP_REQUIRED'; graceExpiresAt: Date }
-  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: Date };
+  | { status: 'SETUP_REQUIRED'; graceExpiresAt: Date };
 
 interface EstablishedSession {
   accountId: ParentAccountId;
@@ -100,8 +99,7 @@ export type LoginOutcome =
   | ({ status: 'AUTHENTICATED'; rawDailyLoginGrantToken?: string } & EstablishedSession)
   | { status: 'STEP_UP_REQUIRED' }
   | { status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string }
-  | { status: 'MFA_REQUIRED' }
-  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: Date };
+  | { status: 'MFA_REQUIRED' };
 
 export type CompleteLoginStepUpOutcome =
   | ({ status: 'AUTHENTICATED'; rawDailyLoginGrantToken: string } & EstablishedSession)

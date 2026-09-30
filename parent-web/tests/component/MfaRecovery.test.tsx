@@ -36,33 +36,31 @@ function Destination() {
   return <p data-testid="destination">{location.pathname}</p>;
 }
 
-describe('Parent MFA recovery hold UI', () => {
+describe('Parent MFA recovery UI', () => {
   beforeEach(async () => {
     requestMfaRecovery.mockReset();
     completeMfaRecovery.mockReset();
     await i18n.changeLanguage('en');
   });
 
-  it('shows the server hold deadline and does not navigate to setup while recovery is pending', async () => {
+  it('explains immediate sign-out before code confirmation and then goes straight to authenticator setup', async () => {
     requestMfaRecovery.mockResolvedValue(undefined);
-    completeMfaRecovery.mockResolvedValue({
-      status: 'MFA_RECOVERY_PENDING',
-      recoveryAvailableAt: '2026-09-26T12:00:00.000Z',
-    });
+    completeMfaRecovery.mockResolvedValue({ status: 'MFA_SETUP_REQUIRED' });
     const user = userEvent.setup();
     renderRecovery();
 
     await user.type(screen.getByLabelText('Email address'), 'parent@example.test');
     await user.type(screen.getByLabelText('Password'), 'correct horse battery staple');
+    expect(screen.getByRole('note')).toHaveTextContent(/all Parent sessions and trusted browsers/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/immediately/i);
+    expect(screen.queryByText(/24.hour|security hold|continue after hold/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Email me a recovery code' }));
     expect(await screen.findByText(/we've emailed a recovery code/i)).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Recovery code'), '123456');
     await user.click(screen.getByRole('button', { name: 'Confirm recovery code' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/security hold until/i);
-    expect(screen.getByRole('button', { name: 'Continue to recovery' })).toBeInTheDocument();
-    expect(screen.queryByTestId('destination')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('destination')).toHaveTextContent('/mfa/setup');
     expect(completeMfaRecovery).toHaveBeenCalledWith('parent@example.test', 'correct horse battery staple', '123456');
   });
 

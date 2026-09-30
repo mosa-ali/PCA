@@ -150,12 +150,13 @@ export interface ParentMfaRepository {
   findLatestRecoveryCode(accountId: ParentAccountId): Promise<ParentMfaRecoveryCode | null>;
   incrementRecoveryAttempt(codeId: string): Promise<void>;
   consumeRecoveryCode(codeId: string, now: Date): Promise<boolean>;
-  /** Consumes the verified code and atomically starts (without extending) or completes the database hold. */
-  applyRecoveryCode(input: { codeId: string; accountId: ParentAccountId; serviceAccountId: string | null; now: Date; holdExpiresAt: Date }): Promise<{ status: 'PENDING'; recoveryAvailableAt: Date; started: boolean } | { status: 'READY' }>;
+  /** Consumes the verified code and atomically destroys old authentication material for immediate replacement enrollment. */
+  applyRecoveryCode(input: { codeId: string; accountId: ParentAccountId; serviceAccountId: string | null; now: Date }): Promise<{ status: 'READY' }>;
 
   insertStepUpGrant(record: { grantId: string; accountId: ParentAccountId; familyId: string; operation: ParentStepUpOperation; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void>;
   /** Single-use: succeeds once for the exact account, family and operation, before expiry. */
   consumeStepUpGrant(input: { tokenHash: string; accountId: ParentAccountId; familyId: string; operation: ParentStepUpOperation; now: Date }): Promise<boolean>;
+  revokeAllStepUpGrants(accountId: ParentAccountId, revokedAt: Date): Promise<number>;
 
   recordSecurityEvent(accountId: ParentAccountId, eventType: ParentSecurityEventType, detail: string | null, occurredAt: Date): Promise<void>;
 }

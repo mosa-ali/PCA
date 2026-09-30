@@ -233,7 +233,7 @@ export class MySqlParentMfaRepository implements ParentMfaRepository {
     return rowCount === 1;
   }
 
-  async applyRecoveryCode(input: { codeId: string; accountId: string; serviceAccountId: string | null; now: Date; holdExpiresAt: Date }): Promise<{ status: 'PENDING'; recoveryAvailableAt: Date; started: boolean } | { status: 'READY' }> {
+  async applyRecoveryCode(input: { codeId: string; accountId: string; serviceAccountId: string | null; now: Date }): Promise<{ status: 'READY' }> {
     return runInTransaction(async (conn) => {
       const { rows: states } = await execute<StateRow>(conn, `SELECT * FROM parent_mfa_state WHERE account_id = ? FOR UPDATE`, [input.accountId]);
       const state = states[0];
@@ -248,32 +248,24 @@ export class MySqlParentMfaRepository implements ParentMfaRepository {
       const { rowCount } = await execute(conn, `UPDATE parent_mfa_recovery_codes SET consumed_at = ? WHERE code_id = ? AND consumed_at IS NULL`, [input.now, input.codeId]);
       if (rowCount !== 1) throw new Error('MFA recovery code already consumed');
 
-      const activeHold = state.recovery_hold_expires_at !== null && state.recovery_hold_expires_at.getTime() > input.now.getTime();
-      const pendingUntil = activeHold ? state.recovery_hold_expires_at as Date : input.holdExpiresAt;
-      const started = !activeHold && state.recovery_hold_expires_at === null;
-      if (started) {
-        await execute(conn, `UPDATE parent_mfa_state SET recovery_hold_started_at = ?, recovery_hold_expires_at = ?, updated_at = ? WHERE account_id = ?`, [input.now, input.holdExpiresAt, input.now, input.accountId]);
-        await execute(conn, `INSERT INTO parent_account_security_events (event_id, account_id, event_type, detail, occurred_at) VALUES (?, ?, 'MFA_RECOVERY_PENDING', NULL, ?)`, [randomUUID(), input.accountId, input.now]);
-      } else if (!activeHold) {
-        // Deadline has arrived: only this fresh code can complete recovery.
-        await execute(conn, `UPDATE parent_mfa_state
-          SET status = 'NOT_ENROLLED', totp_secret_ciphertext = NULL, totp_secret_nonce = NULL,
-              pending_secret_ciphertext = NULL, pending_secret_nonce = NULL, pending_created_at = NULL,
-              enrolled_at = NULL, recovery_hold_started_at = NULL, recovery_hold_expires_at = NULL,
-              grace_expires_at = GREATEST(grace_started_at, LEAST(grace_expires_at, ?)),
-              failed_attempt_count = 0, failure_window_started_at = NULL, locked_until = NULL,
-              reset_count = reset_count + 1, updated_at = ? WHERE account_id = ? AND status = 'ACTIVE'`, [input.now, input.now, input.accountId]);
-        await execute(conn, `INSERT INTO parent_account_security_events (event_id, account_id, event_type, detail, occurred_at) VALUES (?, ?, 'MFA_RESET', NULL, ?), (?, ?, 'MFA_RECOVERY_COMPLETED', NULL, ?)`, [randomUUID(), input.accountId, input.now, randomUUID(), input.accountId, input.now]);
-      }
+      const { rowCount: resetCount } = await execute(conn, `UPDATE parent_mfa_state
+        SET status = 'NOT_ENROLLED', totp_secret_ciphertext = NULL, totp_secret_nonce = NULL,
+            pending_secret_ciphertext = NULL, pending_secret_nonce = NULL, pending_created_at = NULL,
+            enrolled_at = NULL, recovery_hold_started_at = NULL, recovery_hold_expires_at = NULL,
+            grace_expires_at = GREATEST(grace_started_at, LEAST(grace_expires_at, ?)),
+            failed_attempt_count = 0, failure_window_started_at = NULL, locked_until = NULL,
+            reset_count = reset_count + 1, updated_at = ? WHERE account_id = ? AND status = 'ACTIVE'`, [input.now, input.now, input.accountId]);
+      if (resetCount !== 1) throw new Error('MFA recovery transition lost its active-factor guard');
+      await execute(conn, `INSERT INTO parent_account_security_events (event_id, account_id, event_type, detail, occurred_at) VALUES (?, ?, 'MFA_RESET', NULL, ?), (?, ?, 'MFA_RECOVERY_COMPLETED', NULL, ?)`, [randomUUID(), input.accountId, input.now, randomUUID(), input.accountId, input.now]);
 
       // Every recovery checkpoint kills all existing authentication material.
       await execute(conn, `UPDATE parent_mfa_recovery_codes SET consumed_at = COALESCE(consumed_at, ?) WHERE account_id = ?`, [input.now, input.accountId]);
       await execute(conn, `UPDATE parent_daily_login_grants SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL`, [input.now, input.accountId]);
       await execute(conn, `UPDATE parent_login_step_up_codes SET consumed_at = COALESCE(consumed_at, ?) WHERE account_id = ?`, [input.now, input.accountId]);
       await execute(conn, `UPDATE parent_mfa_step_up_grants SET consumed_at = COALESCE(consumed_at, ?) WHERE account_id = ?`, [input.now, input.accountId]);
+      await execute(conn, `UPDATE parent_mfa_enrollment_tickets SET consumed_at = COALESCE(consumed_at, ?) WHERE account_id = ?`, [input.now, input.accountId]);
+      await execute(conn, `UPDATE parent_password_reset_codes SET consumed_at = COALESCE(consumed_at, ?) WHERE account_id = ?`, [input.now, input.accountId]);
       if (input.serviceAccountId !== null) await execute(conn, `UPDATE service_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL`, [input.now, input.serviceAccountId]);
-
-      if (activeHold || started) return { status: 'PENDING' as const, recoveryAvailableAt: pendingUntil, started };
       return { status: 'READY' as const };
     });
   }
@@ -298,6 +290,14 @@ export class MySqlParentMfaRepository implements ParentMfaRepository {
       ),
     );
     return rowCount === 1;
+  }
+
+  async revokeAllStepUpGrants(accountId: string, revokedAt: Date): Promise<number> {
+    const { rowCount } = await runInTransaction((conn) => execute(conn,
+      `UPDATE parent_mfa_step_up_grants SET consumed_at = ? WHERE account_id = ? AND consumed_at IS NULL`,
+      [revokedAt, accountId],
+    ));
+    return rowCount;
   }
 
   async recordSecurityEvent(accountId: string, eventType: ParentSecurityEventType, detail: string | null, occurredAt: Date): Promise<void> {

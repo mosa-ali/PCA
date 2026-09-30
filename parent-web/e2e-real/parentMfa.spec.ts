@@ -6,6 +6,7 @@ import { base32Decode, computeTotp } from '../../backend/dist/platformadmin/auth
 const EMAIL = process.env.E2E_REAL_MFA_PARENT_EMAIL;
 const PASSWORD = process.env.E2E_REAL_MFA_PARENT_PASSWORD;
 const SECRET = process.env.E2E_REAL_MFA_PARENT_TOTP_SECRET;
+let replacementSecretForPasswordReset: string | null = null;
 
 test.skip(!EMAIL || !PASSWORD || !SECRET, 'real Parent MFA E2E requires the disposable enrolled Parent fixture.');
 test.use({ serviceWorkers: 'block' });
@@ -28,6 +29,24 @@ function setLoginStepUpCode(email: string, code: string): string {
   execFileSync(
     process.execPath,
     ['scripts/e2e-support/parentE2eSupport.mjs', 'set-login-step-up-code', email, code],
+    { cwd: resolve(process.cwd(), '../backend'), env: process.env },
+  );
+  return code;
+}
+
+function setMfaRecoveryCode(email: string, code: string): string {
+  execFileSync(
+    process.execPath,
+    ['scripts/e2e-support/parentE2eSupport.mjs', 'set-mfa-recovery-code', email, code],
+    { cwd: resolve(process.cwd(), '../backend'), env: process.env },
+  );
+  return code;
+}
+
+function setPasswordResetCode(email: string, code: string): string {
+  execFileSync(
+    process.execPath,
+    ['scripts/e2e-support/parentE2eSupport.mjs', 'set-password-reset-code', email, code],
     { cwd: resolve(process.cwd(), '../backend'), env: process.env },
   );
   return code;
@@ -93,7 +112,7 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   }
   const firstTotpBodyType = firstTotpResponseValue === null ? 'null' : Array.isArray(firstTotpResponseValue) ? 'array' : typeof firstTotpResponseValue;
   const firstTotpOutcome = typeof firstTotpResponseValue === 'object' && firstTotpResponseValue !== null && !Array.isArray(firstTotpResponseValue)
-    ? firstTotpResponseValue as { error?: unknown; sessionEstablished?: unknown; mfaRequired?: unknown; mfaSetupRequired?: unknown; recoveryPending?: unknown; stepUpRequired?: unknown }
+    ? firstTotpResponseValue as { error?: unknown; sessionEstablished?: unknown; mfaRequired?: unknown; mfaSetupRequired?: unknown; stepUpRequired?: unknown }
     : {};
   await page.waitForURL(/\/dashboard$/, { timeout: 10_000 }).catch(() => undefined);
   const cookiesAfterTotp = await context.cookies('http://127.0.0.1:4002');
@@ -109,7 +128,7 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
     const otpProbe = await page.request.post('/api/parent/login/step-up', { data: { email: EMAIL!, code: firstEmailCode } });
     const otpProbeOutcome = await otpProbe.json().catch(() => ({})) as { mfaRequired?: unknown };
     const responseCookieNames = (await firstTotpLogin.headersArray()).filter((header) => header.name === 'set-cookie').map((header) => header.value.split('=', 1)[0]).filter(Boolean);
-    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')} responseKeys=${Object.keys(firstTotpOutcome).sort().join(',') || 'none'} bodyType=${firstTotpBodyType} jsonParsed=${String(firstTotpJsonParsed)} bodyLength=${firstTotpResponseText.length} sessionEstablished=${String(firstTotpOutcome.sessionEstablished === true)} mfaRequired=${String(firstTotpOutcome.mfaRequired === true)} mfaSetupRequired=${String(firstTotpOutcome.mfaSetupRequired === true)} recoveryPending=${String(firstTotpOutcome.recoveryPending === true)} stepUpRequired=${String(firstTotpOutcome.stepUpRequired === true)} contentType=${firstTotpLogin.headers()['content-type'] ?? 'none'} totpFieldPresent=${String(typeof firstTotpRequestBody?.totpCode === 'string' && firstTotpRequestBody.totpCode.length === 6)} responseCookieNames=${responseCookieNames.join(',') || 'none'} sessionCookiePresent=${String(sessionCookiePresent)} dailyLoginGrantCookiePresent=${String(dailyLoginGrantCookiePresent)} sessionProbeStatus=${sessionProbe.status()} pagePath=${new URL(page.url()).pathname}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
+    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')} responseKeys=${Object.keys(firstTotpOutcome).sort().join(',') || 'none'} bodyType=${firstTotpBodyType} jsonParsed=${String(firstTotpJsonParsed)} bodyLength=${firstTotpResponseText.length} sessionEstablished=${String(firstTotpOutcome.sessionEstablished === true)} mfaRequired=${String(firstTotpOutcome.mfaRequired === true)} mfaSetupRequired=${String(firstTotpOutcome.mfaSetupRequired === true)} stepUpRequired=${String(firstTotpOutcome.stepUpRequired === true)} contentType=${firstTotpLogin.headers()['content-type'] ?? 'none'} totpFieldPresent=${String(typeof firstTotpRequestBody?.totpCode === 'string' && firstTotpRequestBody.totpCode.length === 6)} responseCookieNames=${responseCookieNames.join(',') || 'none'} sessionCookiePresent=${String(sessionCookiePresent)} dailyLoginGrantCookiePresent=${String(dailyLoginGrantCookiePresent)} sessionProbeStatus=${sessionProbe.status()} pagePath=${new URL(page.url()).pathname}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
   }
   expect(firstTotpLogin.status(), `email-plus-TOTP login response code: ${String(firstTotpOutcome.error ?? 'none')}`).toBe(200);
   expect(successfulSessionObserved, 'valid email-plus-TOTP login establishes a cookie-backed session and dashboard navigation').toBe(true);
@@ -161,4 +180,112 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
 
   expect(microsoftRequests, 'Parent authentication must not contact Microsoft identity endpoints').toEqual([]);
   expect(popups, 'Parent authentication must not open an identity popup').toEqual([]);
+});
+
+test('real browser: immediate lost-authenticator recovery, replacement enrollment, old-factor rejection, and new-factor login', async ({ page, browser }) => {
+  // Exercise the owner-approved immediate recovery transition in a real
+  // browser after the ordinary unknown-browser flow has been proven.
+  await page.goto('/mfa/recover');
+  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByRole('button', { name: /email me a recovery code/i }).click();
+  await expect(page.getByRole('status')).toBeVisible();
+  await expect(page.getByText(/set up a replacement immediately/i)).toBeVisible();
+  const recoveryCode = setMfaRecoveryCode(EMAIL!, '741852');
+  await page.locator('input[name="code"]').fill(recoveryCode);
+  await page.getByRole('button', { name: /confirm recovery code/i }).click();
+  await expect(page).toHaveURL(/\/mfa\/setup$/);
+  const revokedSession = await page.request.get('/api/parent/session');
+  expect(revokedSession.status(), 'MFA recovery revokes the current browser session immediately').toBe(401);
+  await expect(page.getByText(/24.hour|security hold|continue after the hold/i)).toHaveCount(0);
+  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByRole('button', { name: /^continue$/i }).click();
+  await page.locator('[data-testid="mfa-manual-key"] summary').click();
+  const replacementSecret = (await page.locator('[data-testid="mfa-manual-secret"]').textContent())!.replace(/\s+/g, '');
+  replacementSecretForPasswordReset = replacementSecret;
+  await expect(page.locator('input[name="totp"]')).toBeVisible();
+  const replacementCode = await currentTotp(replacementSecret);
+  await page.locator('input[name="totp"]').fill(replacementCode.code);
+  await page.getByRole('button', { name: /confirm and finish/i }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  const replacementContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4002', serviceWorkers: 'block' });
+  const replacementPage = await replacementContext.newPage();
+  try {
+    await replacementPage.goto('/login');
+    await replacementPage.getByLabel(/email/i).fill(EMAIL!);
+    await replacementPage.getByLabel(/password/i).fill(PASSWORD!);
+    await replacementPage.getByRole('button', { name: /sign in/i }).click();
+    await expect(replacementPage.locator('input[name="emailCode"]')).toBeVisible();
+    const replacementLoginCode = setLoginStepUpCode(EMAIL!, '518274');
+    await replacementPage.locator('input[name="emailCode"]').fill(replacementLoginCode);
+    await replacementPage.locator('form button[type="submit"]').click();
+    await expect(replacementPage.locator('input[name="totpCode"]')).toBeVisible();
+    await waitForNextTotpCounter(replacementCode.counter);
+    await replacementPage.locator('input[name="totpCode"]').fill((await currentTotp(SECRET!)).code);
+    await replacementPage.locator('form button[type="submit"]').click();
+    await expect(replacementPage.getByRole('alert')).toBeVisible();
+    await expect(replacementPage).not.toHaveURL(/\/dashboard$/);
+
+    await replacementPage.goto('/login');
+    await replacementPage.getByLabel(/email/i).fill(EMAIL!);
+    await replacementPage.getByLabel(/password/i).fill(PASSWORD!);
+    await replacementPage.getByRole('button', { name: /sign in/i }).click();
+    await expect(replacementPage.locator('input[name="emailCode"]')).toBeVisible();
+    const nextLoginCode = setLoginStepUpCode(EMAIL!, '284715');
+    await replacementPage.locator('input[name="emailCode"]').fill(nextLoginCode);
+    await replacementPage.locator('form button[type="submit"]').click();
+    await expect(replacementPage.locator('input[name="totpCode"]')).toBeVisible();
+    await waitForNextTotpCounter(replacementCode.counter);
+    await replacementPage.locator('input[name="totpCode"]').fill((await currentTotp(replacementSecret)).code);
+    await replacementPage.locator('form button[type="submit"]').click();
+    await expect(replacementPage).toHaveURL(/\/dashboard$/);
+  } finally {
+    await replacementContext.close();
+  }
+});
+
+test('real browser: five wrong passwords lock sign-in, Forgot password stays available, reset clears lock and preserves replacement TOTP', async ({ page }) => {
+  const replacementSecret = replacementSecretForPasswordReset;
+  if (!replacementSecret) throw new Error('The prior real-browser recovery journey did not create a replacement authenticator.');
+
+  await page.goto('/login');
+  await page.getByLabel(/email/i).fill(EMAIL!);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.getByLabel(/password/i).fill('incorrect password');
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+  }
+  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page.getByRole('alert')).toContainText(/too many unsuccessful sign-in attempts/i);
+  await expect(page.getByRole('link', { name: /forgot password/i })).toBeVisible();
+  await page.getByRole('link', { name: /forgot password/i }).click();
+  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByRole('button', { name: /send reset code/i }).click();
+  await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible();
+  const resetCode = setPasswordResetCode(EMAIL!, '693184');
+  await page.getByRole('link', { name: /enter it here/i }).click();
+  await page.locator('input[name="code"]').fill(resetCode);
+  const newPassword = 'A fresh browser test password 7!';
+  await page.locator('input[name="newPassword"]').fill(newPassword);
+  await page.locator('input[name="newPasswordConfirmation"]').fill(newPassword);
+  await page.getByRole('button', { name: /reset password/i }).click();
+  await expect(page.getByRole('heading', { name: /password reset/i })).toBeVisible();
+  const oldSession = await page.request.get('/api/parent/session');
+  expect(oldSession.status(), 'password reset revokes the existing browser session').toBe(401);
+  await page.getByRole('link', { name: /back to sign in/i }).click();
+  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByLabel(/password/i).fill(newPassword);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page.locator('input[name="emailCode"]')).toBeVisible();
+  const postResetLoginCode = setLoginStepUpCode(EMAIL!, '703159');
+  await page.locator('input[name="emailCode"]').fill(postResetLoginCode);
+  await page.locator('form button[type="submit"]').click();
+  await expect(page.locator('input[name="totpCode"]')).toBeVisible();
+  await waitForNextTotpCounter(latestAcceptedTotpCounter(EMAIL!));
+  await page.locator('input[name="totpCode"]').fill((await currentTotp(replacementSecret)).code);
+  await page.locator('form button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });

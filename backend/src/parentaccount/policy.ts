@@ -54,7 +54,10 @@ export const PARENT_MFA_FAILURE_POLICY = { threshold: 5, windowMs: 15 * 60 * 100
 export const PARENT_MFA_ENROLLMENT_TICKET_TTL_MS = 15 * 60 * 1000;
 export const PARENT_MFA_RECOVERY_CODE_TTL_MS = 15 * 60 * 1000;
 export const MAX_PARENT_MFA_RECOVERY_ATTEMPTS_PER_CODE = 8;
-export const PARENT_MFA_RECOVERY_HOLD_MS = 24 * 60 * 60 * 1000;
+/** Owner policy (2026-10-01): password failures are an account-level budget, distinct from MFA code budgets. */
+export const PARENT_PASSWORD_FAILURE_POLICY = { threshold: 5, windowMs: 15 * 60 * 1000, lockMs: 60 * 60 * 1000 } as const;
+/** Owner policy (2026-10-01): a verified email OTP permits immediate authenticator replacement. */
+export const PARENT_MFA_RECOVERY_HOLD_MS = 0;
 /** Fresh TOTP step-up for a sensitive commercial mutation: single use, single operation, single family. */
 export const PARENT_COMMERCIAL_STEP_UP_TTL_MS = 5 * 60 * 1000;
 export const PARENT_MFA_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };

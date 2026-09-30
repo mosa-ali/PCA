@@ -173,7 +173,6 @@ function setEnrollmentTicketCookie(reply: FastifyReply, rawTicket: string): void
 
 function mfaToJson(mfa: ParentMfaSummary): Record<string, string> {
   if (mfa.status === 'ACTIVE') return { status: 'ACTIVE' };
-  if (mfa.status === 'RECOVERY_PENDING') return { status: mfa.status, recoveryAvailableAt: mfa.recoveryAvailableAt.toISOString() };
   return { status: mfa.status, graceExpiresAt: mfa.graceExpiresAt.toISOString() };
 }
 
@@ -371,18 +370,13 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         await reply.code(200).send({ sessionEstablished: false, mfaSetupRequired: true });
         return;
       }
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        reply.header('Cache-Control', 'no-store');
-        clearSessionCookies(reply);
-        await reply.code(200).send({ sessionEstablished: false, recoveryPending: true, recoveryAvailableAt: result.recoveryAvailableAt.toISOString() });
-        return;
-      }
       setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken);
       await reply.code(200).send(sessionBody(result));
     } catch (error) {
       if (error instanceof ParentAccountError) {
         if (error.code === 'MFA_INVALID') return reply.code(401).send({ error: 'invalid_mfa_code' });
         if (error.code === 'MFA_LOCKED') return reply.code(429).send({ error: 'mfa_locked' });
+        if (error.code === 'PASSWORD_LOGIN_LOCKED') return reply.code(401).send({ error: 'password_login_locked' });
         await reply.code(401).send({ error: 'invalid_credentials' });
         return;
       }
@@ -598,10 +592,6 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     try {
       const result = await parentAccountService.completeMfaRecovery(email, password, code);
       reply.header('Cache-Control', 'no-store');
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        clearSessionCookies(reply);
-        return reply.code(200).send({ status: result.status, recoveryAvailableAt: result.recoveryAvailableAt.toISOString(), sessionEstablished: false });
-      }
       setEnrollmentTicketCookie(reply, result.rawEnrollmentTicket);
       return reply.code(200).send({ status: result.status, mfaSetupRequired: true, sessionEstablished: false });
     } catch (error) {

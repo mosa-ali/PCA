@@ -12,7 +12,7 @@
  * (registration/verification/session issuance are otherwise fully
  * functional; only actual mailbox delivery is EXTERNAL_GATE'd).
  */
-export type ParentSecurityNotice = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'LOGIN_SUCCESSFUL' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING';
+export type ParentSecurityNotice = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'LOGIN_SUCCESSFUL' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING' | 'PASSWORD_CHANGED';
 
 export interface EmailSenderPort {
   sendVerificationCode(email: string, code: string): Promise<void>;

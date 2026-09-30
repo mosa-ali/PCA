@@ -20,7 +20,8 @@ export type EmailTemplateKind =
   | 'LOGIN_SUCCESSFUL'
   | 'MFA_ENROLLED'
   | 'MFA_RESET'
-  | 'MFA_RECOVERY_PENDING';
+  | 'MFA_RECOVERY_PENDING'
+  | 'PASSWORD_CHANGED';
 
 export interface RenderedTemplateContent {
   readonly subject: string;
@@ -80,12 +81,12 @@ export function renderMfaRecoveryCodeTemplate(code: string): RenderedTemplateCon
   const safeCode = escapeHtml(code);
   return {
     subject: 'Your PCA authenticator recovery code',
-    text: `Someone asked to recover access to a PCA Parent account because the authenticator app is unavailable. Your recovery code is: ${code}\n\nThis code expires soon and can only be used once. Entering it starts a 24-hour security hold and signs out every Parent session. If you did not ask for this, do not share the code -- contact PCA support immediately to secure your account.`,
-    html: `<p>Someone asked to recover access to a PCA Parent account because the authenticator app is unavailable. Your recovery code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${safeCode}</p><p>This code expires soon and can only be used once. Entering it starts a 24-hour security hold and signs out every Parent session.</p><p>If you did not ask for this, do not share the code -- contact PCA support immediately to secure your account.</p>`,
+    text: `Someone asked to recover access to a PCA Parent account because the authenticator app is unavailable. Your recovery code is: ${code}\n\nThis code expires soon and can only be used once. If you submit it, all Parent sessions and trusted-browser access will be signed out. You can immediately set up a replacement authenticator. If you did not ask for this, do not share the code -- contact PCA support immediately to secure your account.`,
+    html: `<p>Someone asked to recover access to a PCA Parent account because the authenticator app is unavailable. Your recovery code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${safeCode}</p><p>This code expires soon and can only be used once. If you submit it, all Parent sessions and trusted-browser access will be signed out. You can immediately set up a replacement authenticator.</p><p>If you did not ask for this, do not share the code -- contact PCA support immediately to secure your account.</p>`,
   };
 }
 
-export type SecurityNoticeKind = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'LOGIN_SUCCESSFUL' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING';
+export type SecurityNoticeKind = 'ACCOUNT_ACTIVATED' | 'FIRST_LOGIN' | 'LOGIN_SUCCESSFUL' | 'MFA_ENROLLED' | 'MFA_RESET' | 'MFA_RECOVERY_PENDING' | 'PASSWORD_CHANGED';
 
 /** Formats the event instant; anything that is not a plain ISO-8601 UTC instant renders as "recently" rather than being echoed. */
 function formatNoticeInstant(occurredAtIso: string): string {
@@ -105,9 +106,9 @@ function renderNotice(subject: string, lines: readonly string[], occurredAtIso: 
 
 export function renderSecurityNoticeTemplate(kind: SecurityNoticeKind, occurredAtIso: string): RenderedTemplateContent {
   if (kind === 'MFA_RECOVERY_PENDING') {
-    return renderNotice('A request was made to reset your authenticator', [
-      'A request was made to reset your authenticator. Your Parent sessions were signed out and the request is on a 24-hour security hold. You must verify again after the hold before setting up a new authenticator.',
-      'If you did not request this, contact PCA support immediately to secure your account. The authenticator cannot be reset during the security hold.',
+    return renderNotice('A request was made to recover your authenticator', [
+      'A request was made to recover your authenticator. All Parent sessions were signed out. Verify the recovery code and set up a replacement authenticator as soon as verification succeeds.',
+      'If you did not request this, contact PCA support immediately to secure your account.',
     ], occurredAtIso);
   }
   if (kind === 'ACCOUNT_ACTIVATED') {
@@ -127,8 +128,13 @@ export function renderSecurityNoticeTemplate(kind: SecurityNoticeKind, occurredA
       'An authenticator app now protects your PCA Parent account. Every sign-in will ask for a 6-digit code from that app.',
     ], occurredAtIso);
   }
+  if (kind === 'PASSWORD_CHANGED') {
+    return renderNotice('Your PCA Parent password was reset', [
+      'Your PCA Parent password was reset. All existing sessions and trusted-browser access were signed out. Sign in again with your new password and authenticator.',
+    ], occurredAtIso);
+  }
   return renderNotice('Authenticator removed from your PCA Parent account', [
-    'The authenticator app on your PCA Parent account was removed using an emailed recovery code. Every other signed-in session was signed out, and a new authenticator must be set up before the account can be used.',
+    'Your previous authenticator was removed after an emailed recovery code was confirmed. All existing Parent sessions and trusted-browser access were signed out. You can set up a replacement authenticator immediately.',
   ], occurredAtIso);
 }
 
@@ -137,6 +143,6 @@ export function renderEmailTemplate(kind: EmailTemplateKind, code: string): Rend
   if (kind === 'PASSWORD_RESET') return renderPasswordResetCodeTemplate(code);
   if (kind === 'LOGIN_STEP_UP') return renderLoginStepUpCodeTemplate(code);
   if (kind === 'MFA_RECOVERY') return renderMfaRecoveryCodeTemplate(code);
-  if (kind === 'ACCOUNT_ACTIVATED' || kind === 'FIRST_LOGIN' || kind === 'LOGIN_SUCCESSFUL' || kind === 'MFA_ENROLLED' || kind === 'MFA_RESET' || kind === 'MFA_RECOVERY_PENDING') return renderSecurityNoticeTemplate(kind, code);
+  if (kind === 'ACCOUNT_ACTIVATED' || kind === 'FIRST_LOGIN' || kind === 'LOGIN_SUCCESSFUL' || kind === 'MFA_ENROLLED' || kind === 'MFA_RESET' || kind === 'MFA_RECOVERY_PENDING' || kind === 'PASSWORD_CHANGED') return renderSecurityNoticeTemplate(kind, code);
   return renderPlatformAdminActivationTemplate(code);
 }

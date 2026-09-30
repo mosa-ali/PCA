@@ -379,16 +379,12 @@
     "recover": {
       "title": "Lost your authenticator?",
       "body": "If you can no longer use your authenticator app, you can replace it. Confirm your email and password and we'll email you a recovery code.",
-      "consequences": "After the emailed code is confirmed, all Parent sessions are signed out and a 24-hour security hold begins. Your current authenticator cannot be replaced until the hold ends. Then you must verify again and set up a new authenticator.",
+      "consequences": "Confirming the emailed code signs out all Parent sessions and trusted browsers and disables your current authenticator. You can set up a replacement immediately. It will protect your account after you confirm a valid code from the new authenticator.",
       "requestSubmit": "Email me a recovery code",
       "sentBody": "If the details you entered match an account with an authenticator app, we've emailed a recovery code. Enter it below.",
       "codeLabel": "Recovery code",
       "completeSubmit": "Confirm recovery code",
-      "invalidCode": "That recovery code is incorrect or has expired.",
-      "pending": "Your recovery request is on a security hold until {{date}}. All Parent sessions have been signed out. You must request and verify a new email code after this time to replace your authenticator.",
-      "pendingLogin": "Authenticator recovery is pending until {{date}}. Sign in is unavailable during this security hold.",
-      "pendingNextStep": "After the hold ends, return here, enter your email and password, request a new code, and verify it to set up a new authenticator. Requesting another code does not change the hold deadline.",
-      "continueAfterHold": "Continue to recovery"
+      "invalidCode": "That recovery code is incorrect or has expired."
     }
   },
   "trustedBrowser": {
@@ -1368,6 +1364,7 @@
     "registerLink": "Create one",
     "genericError": "We could not complete that. Please try again.",
     "invalidCredentials": "Email or password is incorrect.",
+    "passwordLoginLocked": "Too many unsuccessful sign-in attempts. Sign-in is temporarily locked. You can try again later or reset your password now.",
     "invalidCode": "That verification code is incorrect or has expired.",
     "rateLimited": "Too many attempts. Please wait a moment and try again.",
     "forgotPasswordLink": "Forgot password?",

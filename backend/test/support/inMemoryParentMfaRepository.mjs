@@ -143,34 +143,24 @@ export function createInMemoryParentMfaRepository() {
       code.consumedAt = now;
       return true;
     },
-    async applyRecoveryCode({ codeId, accountId, serviceAccountId: _serviceAccountId, now, holdExpiresAt }) {
+    async applyRecoveryCode({ codeId, accountId, serviceAccountId: _serviceAccountId, now }) {
       const state = states.get(accountId);
       const code = recoveryCodes.find((entry) => entry.codeId === codeId && entry.accountId === accountId);
-      if (!state || !code || code.consumedAt !== null || code.expiresAt.getTime() <= now.getTime() || code.attemptCount >= 8) throw new Error('MFA recovery code unavailable');
+      if (!state || state.status !== 'ACTIVE' || !code || code.consumedAt !== null || code.expiresAt.getTime() <= now.getTime() || code.attemptCount >= 8) throw new Error('MFA recovery code unavailable');
       code.consumedAt = now;
-      const activeHold = state.recoveryHoldExpiresAt && state.recoveryHoldExpiresAt.getTime() > now.getTime();
-      let started = false;
-      if (!activeHold && state.recoveryHoldExpiresAt === null) {
-        state.recoveryHoldStartedAt = now;
-        state.recoveryHoldExpiresAt = holdExpiresAt;
-        started = true;
-        events.push({ accountId, eventType: 'MFA_RECOVERY_PENDING', detail: null, occurredAt: now });
-      } else if (!activeHold) {
-        Object.assign(state, {
-          status: 'NOT_ENROLLED', totpSecretCiphertext: null, totpSecretNonce: null,
-          pendingSecretCiphertext: null, pendingSecretNonce: null, pendingCreatedAt: null,
-          enrolledAt: null, recoveryHoldStartedAt: null, recoveryHoldExpiresAt: null,
-          graceExpiresAt: new Date(Math.max(state.graceStartedAt.getTime(), Math.min(state.graceExpiresAt.getTime(), now.getTime()))),
-          failedAttemptCount: 0, failureWindowStartedAt: null, lockedUntil: null, resetCount: state.resetCount + 1,
-        });
-        events.push({ accountId, eventType: 'MFA_RESET', detail: null, occurredAt: now });
-        events.push({ accountId, eventType: 'MFA_RECOVERY_COMPLETED', detail: null, occurredAt: now });
-      }
+      Object.assign(state, {
+        status: 'NOT_ENROLLED', totpSecretCiphertext: null, totpSecretNonce: null,
+        pendingSecretCiphertext: null, pendingSecretNonce: null, pendingCreatedAt: null,
+        enrolledAt: null, recoveryHoldStartedAt: null, recoveryHoldExpiresAt: null,
+        graceExpiresAt: new Date(Math.max(state.graceStartedAt.getTime(), Math.min(state.graceExpiresAt.getTime(), now.getTime()))),
+        failedAttemptCount: 0, failureWindowStartedAt: null, lockedUntil: null, resetCount: state.resetCount + 1,
+      });
+      events.push({ accountId, eventType: 'MFA_RESET', detail: null, occurredAt: now });
+      events.push({ accountId, eventType: 'MFA_RECOVERY_COMPLETED', detail: null, occurredAt: now });
       for (const item of recoveryCodes) if (item.accountId === accountId && item.consumedAt === null) item.consumedAt = now;
       for (const grant of stepUps.values()) if (grant.accountId === accountId && grant.consumedAt === null) grant.consumedAt = now;
-      return activeHold || started
-        ? { status: 'PENDING', recoveryAvailableAt: activeHold ? state.recoveryHoldExpiresAt : holdExpiresAt, started }
-        : { status: 'READY' };
+      for (const ticket of tickets.values()) if (ticket.accountId === accountId && ticket.consumedAt === null) ticket.consumedAt = now;
+      return { status: 'READY' };
     },
     async insertStepUpGrant(record) {
       stepUps.set(record.tokenHash, { ...record, consumedAt: null });
@@ -181,6 +171,16 @@ export function createInMemoryParentMfaRepository() {
       if (grant.consumedAt !== null || grant.expiresAt.getTime() <= now.getTime()) return false;
       grant.consumedAt = now;
       return true;
+    },
+    async revokeAllStepUpGrants(accountId, revokedAt) {
+      let count = 0;
+      for (const grant of stepUps.values()) {
+        if (grant.accountId === accountId && grant.consumedAt === null) {
+          grant.consumedAt = revokedAt;
+          count += 1;
+        }
+      }
+      return count;
     },
     async recordSecurityEvent(accountId, eventType, detail, occurredAt) {
       events.push({ accountId, eventType, detail, occurredAt });

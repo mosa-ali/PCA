@@ -57,6 +57,7 @@ export type ServiceAuthErrorCode =
   | 'INVALID_MFA_CODE'
   /** Too many wrong authenticator codes: the server has locked authenticator checks for a while (15 minutes). */
   | 'MFA_LOCKED'
+  | 'PASSWORD_LOGIN_LOCKED'
   /** The account may not perform this (e.g. a commercial step-up by a non-administrator, or without an authenticator). */
   | 'FORBIDDEN'
   | 'CSRF_FAILED'
@@ -83,7 +84,6 @@ type WireRole = 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
 
 interface WireMfa {
   status?: unknown;
-  recoveryAvailableAt?: unknown;
   graceExpiresAt?: unknown;
 }
 
@@ -103,8 +103,6 @@ interface SignInResponseBody {
   sessionEstablished?: boolean;
   stepUpRequired?: boolean;
   mfaRequired?: boolean;
-  recoveryPending?: boolean;
-  recoveryAvailableAt?: string;
   mfaSetupRequired?: boolean;
 }
 
@@ -150,7 +148,6 @@ function toMfaStatus(wire: WireMfa | undefined): ParentMfaStatus {
   if (wire && (wire.status === 'GRACE' || wire.status === 'SETUP_REQUIRED') && typeof wire.graceExpiresAt === 'string' && !Number.isNaN(Date.parse(wire.graceExpiresAt))) {
     return { status: wire.status, graceExpiresAt: wire.graceExpiresAt };
   }
-  if (wire && wire.status === 'RECOVERY_PENDING' && typeof wire.recoveryAvailableAt === 'string' && !Number.isNaN(Date.parse(wire.recoveryAvailableAt))) return { status: 'RECOVERY_PENDING', recoveryAvailableAt: wire.recoveryAvailableAt };
   throw new ServiceAuthError('UNKNOWN', 'The session response did not include a valid authenticator status.');
 }
 
@@ -299,9 +296,11 @@ export class RealServiceAuthClient implements ServiceAuthClient {
       throw new ServiceAuthError('RATE_LIMITED', 'Too many sign-in attempts. Please try again later.');
     }
     if (response.status === 401) {
-      if ((await errorCodeOf(response)) === 'invalid_mfa_code') {
+      const code = await errorCodeOf(response);
+      if (code === 'invalid_mfa_code') {
         throw new ServiceAuthError('INVALID_MFA_CODE', 'That authenticator code is incorrect.');
       }
+      if (code === 'password_login_locked') throw new ServiceAuthError('PASSWORD_LOGIN_LOCKED', 'Password sign-in is temporarily locked. You can reset your password now.');
       throw new ServiceAuthError('INVALID_CREDENTIALS', 'Email or password is incorrect.');
     }
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Sign-in request was invalid.');
@@ -324,10 +323,6 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (body.mfaRequired === true) {
       reportDiagnostic('PARENT_LOGIN_STAGE', 'MFA_REQUIRED');
       return { status: 'MFA_REQUIRED' };
-    }
-    if (body.recoveryPending === true && typeof body.recoveryAvailableAt === 'string') {
-      reportDiagnostic('PARENT_LOGIN_STAGE', 'MFA_RECOVERY_PENDING');
-      return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: body.recoveryAvailableAt };
     }
     throw new ServiceAuthError('UNKNOWN', 'Sign-in returned an unrecognised response.');
   }
@@ -414,11 +409,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That recovery code is incorrect or has expired.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Recovery request was invalid.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected recovery completion status ${response.status}`);
-    const body = await parseJsonSafe<{ status?: unknown; recoveryAvailableAt?: unknown; mfaSetupRequired?: unknown }>(response);
-    if (body?.status === 'MFA_RECOVERY_PENDING' && typeof body.recoveryAvailableAt === 'string') {
-      reportDiagnostic('PARENT_MFA_RECOVERY_STAGE', 'RECOVERY_PENDING');
-      return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: body.recoveryAvailableAt };
-    }
+    const body = await parseJsonSafe<{ status?: unknown; mfaSetupRequired?: unknown }>(response);
     if (body?.status !== 'MFA_SETUP_REQUIRED' || body.mfaSetupRequired !== true) throw new ServiceAuthError('UNKNOWN', 'Recovery response was incomplete.');
     reportDiagnostic('PARENT_MFA_RECOVERY_STAGE', 'SETUP_REQUIRED');
     return { status: 'MFA_SETUP_REQUIRED' };

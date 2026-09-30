@@ -41,7 +41,7 @@ import { MySqlProtectionAlertLedger } from '../../dist/alerts/MySqlProtectionAle
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { registerFamilyAuditEventRoutes } from '../../dist/http/routes/familyAuditEventRoutes.js';
 import { registerProtectionAlertRoutes } from '../../dist/http/routes/protectionAlertRoutes.js';
-import { sessionCookieName, csrfCookieName } from '../../dist/parentaccount/cookies.js';
+import { sessionCookieName, csrfCookieName, mfaEnrollmentTicketCookieName } from '../../dist/parentaccount/cookies.js';
 import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 import { createParentAccountTestKit, createTestClock, totpFor } from '../support/parentMfaTestKit.mjs';
@@ -549,7 +549,7 @@ test('MYSQL HTTP login step-up: email OTP alone is pending, wrong TOTP 401, corr
   }
 });
 
-test('MYSQL HTTP MFA recovery: generic 202, malformed 400, completion 200, and the durable hold blocks a fresh browser', async () => {
+test('MYSQL HTTP MFA recovery: generic 202, malformed 400, immediate setup ticket, and confirmed replacement TOTP', async () => {
   const app = buildApp();
   try {
     const session = await registerVerifyLogin(app, uniqueEmail('audit-recovery'));
@@ -568,11 +568,25 @@ test('MYSQL HTTP MFA recovery: generic 202, malformed 400, completion 200, and t
     const completed = await app.inject({ method: 'POST', url: MFA_RECOVERY_COMPLETE_ROUTE, payload: { email: session.email, password: session.password, code: emailSender.lastCodeFor(session.email, 'MFA_RECOVERY') } });
     assert.equal(completed.statusCode, 200);
     recordParentRouteScenario({ method: 'POST', route: MFA_RECOVERY_COMPLETE_ROUTE, scenarioId: 'mysql_mfa_recovery_complete_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: completed, evidenceTier: 'MYSQL_HTTP' });
-    assert.equal(completed.json().status, 'MFA_RECOVERY_PENDING');
+    assert.equal(completed.json().status, 'MFA_SETUP_REQUIRED');
+    assert.equal(completed.json().mfaSetupRequired, true);
+    assert.equal((await app.inject({ method: 'GET', url: SESSION_ROUTE, headers: sessionHeaders(session) })).statusCode, 401, 'recovery revokes the old Parent session');
+    const [state] = await getPool().query(`SELECT status, totp_secret_ciphertext, recovery_hold_started_at, recovery_hold_expires_at
+      FROM parent_mfa_state WHERE account_id = ?`, [session.accountId]);
+    assert.equal(state.status, 'NOT_ENROLLED');
+    assert.equal(state.totp_secret_ciphertext, null);
+    assert.equal(state.recovery_hold_started_at, null);
+    assert.equal(state.recovery_hold_expires_at, null);
 
-    // Durable proof: the recovery hold is persisted and visible to a fresh sign-in.
-    const freshLogin = await app.inject({ method: 'POST', url: LOGIN_ROUTE, payload: { email: session.email, password: session.password, totpCode: '123456' } });
-    assert.equal(freshLogin.json().recoveryPending, true);
+    const rawSetCookie = completed.headers['set-cookie'];
+    const ticketSetCookie = (Array.isArray(rawSetCookie) ? rawSetCookie : [rawSetCookie]).find((cookie) => cookie?.startsWith(`${mfaEnrollmentTicketCookieName()}=`));
+    assert.ok(ticketSetCookie, 'recovery immediately issues the narrow enrollment ticket');
+    const ticketHeaders = { cookie: ticketSetCookie.split(';', 1)[0] };
+    const replacementStart = await app.inject({ method: 'POST', url: MFA_START_ROUTE, headers: ticketHeaders, payload: { email: session.email, password: session.password } });
+    assert.equal(replacementStart.statusCode, 200, 'the replacement setup can start immediately');
+    const replacementConfirm = await app.inject({ method: 'POST', url: MFA_CONFIRM_ROUTE, headers: ticketHeaders, payload: { email: session.email, code: totpFor(replacementStart.json().secret, clock.ms()) } });
+    assert.equal(replacementConfirm.statusCode, 200);
+    assert.equal(replacementConfirm.json().mfa.status, 'ACTIVE', 'replacement MFA becomes active only after valid confirmation');
   } finally {
     await app.close();
   }

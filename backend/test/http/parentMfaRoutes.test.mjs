@@ -183,13 +183,51 @@ test('legacy three-day deadline requires setup after unknown-browser email OTP',
   assert.ok(first.jar.has('pca_parent_mfa_enrollment'));
 });
 
-test('recovery over HTTP: code starts 24-hour hold, revokes sessions, and fresh post-hold code yields ticket', async () => {
+test('password login lock is enumeration-safe and password recovery remains available during lock', async () => {
+  const { app, emailSender } = buildApp();
+  const email = 'http-password-lock@example.com';
+  await registerAndVerify(app, emailSender, email);
+  const b = browser(app);
+  const denied = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await b.request('POST', '/api/parent/login', { email, password: `incorrect ${attempt}` });
+    denied.push({ statusCode: response.statusCode, body: response.json() });
+  }
+  assert.ok(denied.every((outcome) => outcome.statusCode === 401 && JSON.stringify(outcome.body) === JSON.stringify({ error: 'invalid_credentials' })));
+  const unknown = await b.request('POST', '/api/parent/login', { email: 'unknown@example.test', password: 'incorrect' });
+  assert.deepEqual(unknown.json(), { error: 'invalid_credentials' }, 'unknown account and wrong password remain generic');
+  const locked = await b.request('POST', '/api/parent/login', { email, password: PASSWORD });
+  assert.equal(locked.statusCode, 401);
+  assert.deepEqual(locked.json(), { error: 'password_login_locked' }, 'the lock message appears only after correct password proof');
+
+  const resetRequested = await b.request('POST', '/api/parent/request-password-reset', { email });
+  assert.equal(resetRequested.statusCode, 202, 'forgot-password remains available during lock');
+  assert.deepEqual(resetRequested.json(), { status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS' });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    assert.equal((await b.request('POST', '/api/parent/request-password-reset', { email })).statusCode, 202);
+  }
+  assert.equal((await b.request('POST', '/api/parent/request-password-reset', { email })).statusCode, 429, 'password-reset request rate limiting stays independent of the password-login lock');
+  const nextPassword = 'A new long password 2026!';
+  const reset = await b.request('POST', '/api/parent/reset-password', {
+    email,
+    code: emailSender.lastCodeFor(email, 'PASSWORD_RESET'),
+    newPassword: nextPassword,
+    newPasswordConfirmation: nextPassword,
+  });
+  assert.equal(reset.statusCode, 200);
+  assert.deepEqual(reset.json(), { status: 'PASSWORD_RESET' });
+  assert.equal((await b.request('POST', '/api/parent/login', { email, password: PASSWORD })).statusCode, 401);
+  assert.equal((await b.request('POST', '/api/parent/login', { email, password: nextPassword })).statusCode, 200);
+});
+
+test('recovery over HTTP: verified code immediately revokes sessions and issues a replacement-enrollment ticket', async () => {
   const { app, emailSender, clock } = buildApp();
   const email = 'http-recover@example.com';
   await registerAndVerify(app, emailSender, email);
   const { b } = await firstSignIn(app, email);
   const start = await b.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD }, { csrf: true });
-  await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(start.json().secret, clock.ms()) }, { csrf: true });
+  const oldSecret = start.json().secret;
+  await b.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(oldSecret, clock.ms()) }, { csrf: true });
 
   const r = browser(app);
   for (const password of ['wrong password!!', PASSWORD]) {
@@ -206,19 +244,28 @@ test('recovery over HTTP: code starts 24-hour hold, revokes sessions, and fresh 
   const completed = await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: emailSender.lastCodeFor(email, 'MFA_RECOVERY') });
   assert.equal(completed.statusCode, 200);
   recordParentRouteScenario({ method: 'POST', route: '/api/parent/mfa/recovery/complete', scenarioId: 'mfa_recovery_complete_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: completed });
-  assert.equal(completed.json().status, 'MFA_RECOVERY_PENDING');
-  assert.ok(Date.parse(completed.json().recoveryAvailableAt) > clock.ms());
-  assert.equal(r.jar.has('pca_parent_mfa_enrollment'), false, 'hold does not issue an enrollment ticket');
+  assert.deepEqual(completed.json(), { status: 'MFA_SETUP_REQUIRED', mfaSetupRequired: true, sessionEstablished: false });
+  assert.equal(r.jar.has('pca_parent_mfa_enrollment'), true, 'verified recovery issues an immediate enrollment ticket');
   assert.equal((await b.request('GET', '/api/parent/session')).statusCode, 401, 'the other browser was signed out');
-  assert.equal((await r.request('POST', '/api/parent/login', { email, password: PASSWORD, totpCode: '123456' })).json().recoveryPending, true, 'new browser cannot bypass hold');
-  await r.request('POST', '/api/parent/mfa/recovery/request', { email, password: PASSWORD });
-  const renewed = await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: emailSender.lastCodeFor(email, 'MFA_RECOVERY') });
-  assert.equal(renewed.json().recoveryAvailableAt, completed.json().recoveryAvailableAt, 'second request preserves deadline');
-  clock.advance(24 * 60 * 60 * 1000);
-  await r.request('POST', '/api/parent/mfa/recovery/request', { email, password: PASSWORD });
-  const afterHold = await r.request('POST', '/api/parent/mfa/recovery/complete', { email, password: PASSWORD, code: emailSender.lastCodeFor(email, 'MFA_RECOVERY') });
-  assert.deepEqual(afterHold.json(), { status: 'MFA_SETUP_REQUIRED', mfaSetupRequired: true, sessionEstablished: false });
-  assert.ok(r.jar.has('pca_parent_mfa_enrollment'));
+  const setup = await r.request('POST', '/api/parent/mfa/enrollment/start', { email, password: PASSWORD });
+  assert.equal(setup.statusCode, 200, 'the recovery ticket permits immediate setup');
+  const confirmed = await r.request('POST', '/api/parent/mfa/enrollment/confirm', { email, code: totpFor(setup.json().secret, clock.ms()) });
+  assert.equal(confirmed.json().enrolled, true);
+  assert.equal(confirmed.json().sessionEstablished, true);
+  assert.equal(confirmed.json().mfa.status, 'ACTIVE');
+  assert.ok(emailSender.kindsFor(email).includes('MFA_RESET'), 'recovery sends the security notice');
+  clock.advance(STEP);
+  const fresh = browser(app);
+  assert.deepEqual((await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD })).json(), { sessionEstablished: false, stepUpRequired: true });
+  const loginCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  const oldTotp = await fresh.request('POST', '/api/parent/login/step-up', { email, code: loginCode, totpCode: totpFor(oldSecret, clock.ms()) });
+  assert.equal(oldTotp.statusCode, 401);
+  assert.deepEqual(oldTotp.json(), { error: 'invalid_code' }, 'the old authenticator is rejected through the generic login-step-up denial');
+  clock.advance(STEP);
+  await fresh.request('POST', '/api/parent/login', { email, password: PASSWORD });
+  const replacementLoginCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  const newTotp = await fresh.request('POST', '/api/parent/login/step-up', { email, code: replacementLoginCode, totpCode: totpFor(setup.json().secret, clock.ms()) });
+  assert.equal(newTotp.statusCode, 200, 'the confirmed replacement authenticator authorizes login');
 });
 
 test('Parent step-up route: session + CSRF, closed operation vocabulary, FORBIDDEN before enrollment, 201 no-store for commercial and sensitive operations', async () => {

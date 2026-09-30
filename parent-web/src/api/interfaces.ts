@@ -64,8 +64,7 @@ import type { ActivityTimelineEntry } from '../domain/activityTimeline';
 export type ParentMfaStatus =
   | { status: 'ACTIVE' }
   | { status: 'GRACE'; graceExpiresAt: string }
-  | { status: 'SETUP_REQUIRED'; graceExpiresAt: string }
-  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: string };
+  | { status: 'SETUP_REQUIRED'; graceExpiresAt: string };
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -120,8 +119,7 @@ export type SignInResult =
   | { status: 'AUTHENTICATED'; session: AuthenticatedSession }
   | { status: 'EMAIL_OTP_REQUIRED' }
   | { status: 'MFA_SETUP_REQUIRED' }
-  | { status: 'MFA_REQUIRED' }
-  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: string };
+  | { status: 'MFA_REQUIRED' };
 
 export type LoginStepUpResult = Extract<SignInResult, { status: 'AUTHENTICATED' | 'MFA_REQUIRED' | 'MFA_SETUP_REQUIRED' }>;
 
@@ -144,9 +142,7 @@ export interface MfaEnrollmentConfirmResult {
   sessionEstablished: boolean;
 }
 
-export type MfaRecoveryCompletionResult =
-  | { status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: string }
-  | { status: 'MFA_SETUP_REQUIRED' };
+export type MfaRecoveryCompletionResult = { status: 'MFA_SETUP_REQUIRED' };
 
 /** The sensitive commercial operations a fresh authenticator step-up can be minted for (backend: isCommercialStepUpOperation). */
 export type CommercialStepUpOperation =
@@ -234,9 +230,8 @@ export interface ServiceAuthClient {
   /** Lost-authenticator recovery, step 1. Always resolves identically (never an account/password oracle). */
   requestMfaRecovery(email: string, password: string): Promise<void>;
   /**
-   * Step 2: the first verified code starts a database-backed 24-hour hold;
-   * a fresh code after the hold clears the old factor and sets an enrollment
-   * ticket. Pending responses carry the server deadline.
+   * Step 2: the verified code clears the old factor and immediately sets an
+   * enrollment ticket. The replacement becomes active only after TOTP proof.
    */
   completeMfaRecovery(email: string, password: string, code: string): Promise<MfaRecoveryCompletionResult>;
   /** Mints a single-use grant for one sensitive commercial operation from a fresh authenticator code. ADMINISTRATOR with an active authenticator only. */

@@ -109,6 +109,11 @@ export interface ActivePasswordResetCode {
   attemptCount: number;
 }
 
+export interface PasswordLoginFailureResult {
+  locked: boolean;
+  lockedUntil: Date | null;
+}
+
 /**
  * Persistence port for the parentaccount domain. `MySqlParentAccountRepository`
  * is the production implementation; a deterministic in-memory
@@ -179,6 +184,10 @@ export interface ParentAccountRepository {
   consumePasswordResetCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
   /** Only valid against a VERIFIED account -- resetPassword's own guard enforces this before calling. */
   updatePasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void>;
+  /** Account-level password lock state. This budget is intentionally separate from all MFA code budgets. */
+  findPasswordLoginLock(accountId: ParentAccountId, now: Date): Promise<Date | null>;
+  recordPasswordLoginFailure(accountId: ParentAccountId, now: Date, policy: { threshold: number; windowMs: number; lockMs: number }): Promise<PasswordLoginFailureResult>;
+  clearPasswordLoginFailures(accountId: ParentAccountId, now: Date): Promise<void>;
   /** Idempotent: only writes if the column is currently NULL (the deterministic accountReferenceHash lookup means every subsequent call resolves to the same service account anyway). */
   setServiceAccountIdIfAbsent(accountId: ParentAccountId, serviceAccountId: string): Promise<void>;
 

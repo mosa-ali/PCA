@@ -64,6 +64,9 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
         protectedDisplayEmail: cloneProtectedEmail(record.protectedDisplayEmail),
         phoneNumber: record.phoneNumber ?? null,
         phoneVerifiedAt: null,
+        passwordFailedAttemptCount: 0,
+        passwordFailureWindowStartedAt: null,
+        passwordLoginLockedUntil: null,
       };
       accountsById.set(account.accountId, account);
       accountsByEmailHashHex.set(key, account.accountId);
@@ -265,7 +268,44 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
 
     async updatePasswordHash(accountId, passwordHash) {
       const account = accountsById.get(accountId);
-      if (account && account.status === 'VERIFIED') account.passwordHash = passwordHash;
+      if (account && account.status === 'VERIFIED') {
+        account.passwordHash = passwordHash;
+        account.passwordFailedAttemptCount = 0;
+        account.passwordFailureWindowStartedAt = null;
+        account.passwordLoginLockedUntil = null;
+        for (const code of resetCodesById.values()) if (code.accountId === accountId && code.consumedAt === null) code.consumedAt = new Date();
+        for (const code of stepUpCodesById.values()) if (code.accountId === accountId && code.consumedAt === null) code.consumedAt = new Date();
+      }
+    },
+
+    async findPasswordLoginLock(accountId, now) {
+      const until = accountsById.get(accountId)?.passwordLoginLockedUntil ?? null;
+      return until !== null && until.getTime() > now.getTime() ? until : null;
+    },
+
+    async recordPasswordLoginFailure(accountId, now, policy) {
+      const account = accountsById.get(accountId);
+      if (!account) return { locked: false, lockedUntil: null };
+      if (account.passwordLoginLockedUntil && account.passwordLoginLockedUntil.getTime() > now.getTime()) {
+        return { locked: true, lockedUntil: account.passwordLoginLockedUntil };
+      }
+      const elapsed = account.passwordFailureWindowStartedAt === null
+        ? Number.POSITIVE_INFINITY
+        : now.getTime() - account.passwordFailureWindowStartedAt.getTime();
+      const inWindow = elapsed >= 0 && elapsed < policy.windowMs;
+      const count = inWindow ? account.passwordFailedAttemptCount + 1 : 1;
+      account.passwordFailedAttemptCount = count;
+      account.passwordFailureWindowStartedAt = inWindow ? account.passwordFailureWindowStartedAt : now;
+      account.passwordLoginLockedUntil = count >= policy.threshold ? new Date(now.getTime() + policy.lockMs) : null;
+      return { locked: account.passwordLoginLockedUntil !== null, lockedUntil: account.passwordLoginLockedUntil };
+    },
+
+    async clearPasswordLoginFailures(accountId) {
+      const account = accountsById.get(accountId);
+      if (!account) return;
+      account.passwordFailedAttemptCount = 0;
+      account.passwordFailureWindowStartedAt = null;
+      account.passwordLoginLockedUntil = null;
     },
 
     async setServiceAccountIdIfAbsent(accountId, serviceAccountId) {

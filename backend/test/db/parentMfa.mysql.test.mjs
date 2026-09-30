@@ -151,7 +151,7 @@ test('a commercial step-up grant is consumed exactly once under 8 concurrent mut
   }
 });
 
-test('the TOTP secret is sealed at rest; recovery holds and revokes sessions before a new factor is enrolled', async () => {
+test('the TOTP secret is sealed at rest; recovery immediately revokes all auth material before replacement enrollment', async () => {
   const h = build();
   const address = email('recovery');
   const { secret, session } = await enrolled(h, address);
@@ -161,29 +161,43 @@ test('the TOTP secret is sealed at rest; recovery holds and revokes sessions bef
   const { base32Decode } = await import('../../dist/platformadmin/auth/totp.js');
   assert.ok(!state.totp_secret_ciphertext.includes(base32Decode(secret)));
 
-  await h.service.requestMfaRecovery(address, PASSWORD);
-  const pending = await h.service.completeMfaRecovery(address, PASSWORD, h.emailSender.lastCodeFor(address, 'MFA_RECOVERY'));
-  assert.equal(pending.status, 'MFA_RECOVERY_PENDING');
-  assert.equal(pending.recoveryAvailableAt.getTime(), h.clock.ms() + 24 * 60 * 60 * 1000);
-  const [held] = await query('SELECT status, totp_secret_ciphertext, recovery_hold_started_at, recovery_hold_expires_at, reset_count FROM parent_mfa_state WHERE account_id = ?', [session.accountId]);
-  assert.equal(held.status, 'ACTIVE', 'old factor remains installed during hold');
-  assert.ok(held.totp_secret_ciphertext);
-  assert.equal(new Date(held.recovery_hold_expires_at).getTime(), pending.recoveryAvailableAt.getTime());
-  const account = await h.repository.findById(session.accountId);
-  assert.equal((await query('SELECT COUNT(*) AS n FROM service_sessions WHERE account_id = ? AND revoked_at IS NULL', [account.serviceAccountId]))[0].n, 0);
-
-  h.clock.advance(24 * 60 * 60 * 1000);
+  const accountBefore = await h.repository.findById(session.accountId);
+  const secondSession = await h.service.login(address, PASSWORD, session.rawDailyLoginGrantToken);
+  h.clock.advance(STEP);
+  const stepUp = await h.service.issueCommercialStepUp(session.rawSessionToken, 'BILLING_CHECKOUT_CREATE', totpFor(secret, h.clock.ms()));
   await h.service.requestMfaRecovery(address, PASSWORD);
   const completed = await h.service.completeMfaRecovery(address, PASSWORD, h.emailSender.lastCodeFor(address, 'MFA_RECOVERY'));
   assert.equal(completed.status, 'MFA_SETUP_REQUIRED');
-  const [reset] = await query('SELECT status, totp_secret_ciphertext, recovery_hold_expires_at, reset_count FROM parent_mfa_state WHERE account_id = ?', [session.accountId]);
-  assert.deepEqual({ status: reset.status, secret: reset.totp_secret_ciphertext, hold: reset.recovery_hold_expires_at, count: reset.reset_count }, { status: 'NOT_ENROLLED', secret: null, hold: null, count: 1 });
+  assert.equal('recoveryAvailableAt' in completed, false, 'no 24-hour recovery state is returned');
+  const [reset] = await query('SELECT status, totp_secret_ciphertext, recovery_hold_started_at, recovery_hold_expires_at, reset_count FROM parent_mfa_state WHERE account_id = ?', [session.accountId]);
+  assert.equal(reset.status, 'NOT_ENROLLED', 'the old factor is immediately disabled');
+  assert.equal(reset.totp_secret_ciphertext, null);
+  assert.equal(reset.recovery_hold_started_at, null);
+  assert.equal(reset.recovery_hold_expires_at, null);
+  assert.equal(Number(reset.reset_count), 1);
+  assert.ok(h.emailSender.kindsFor(address).includes('MFA_RESET'));
+  const account = await h.repository.findById(session.accountId);
+  assert.equal((await query('SELECT COUNT(*) AS n FROM service_sessions WHERE account_id = ? AND revoked_at IS NULL', [account.serviceAccountId]))[0].n, 0);
+  assert.equal((await query('SELECT COUNT(*) AS n FROM parent_daily_login_grants WHERE account_id = ? AND revoked_at IS NULL', [session.accountId]))[0].n, 0);
+  assert.equal((await query('SELECT COUNT(*) AS n FROM parent_mfa_step_up_grants WHERE account_id = ? AND consumed_at IS NULL', [session.accountId]))[0].n, 0);
+  assert.equal((await query('SELECT COUNT(*) AS n FROM parent_mfa_enrollment_tickets WHERE account_id = ? AND consumed_at IS NULL', [session.accountId]))[0].n, 1, 'only the new recovery ticket remains live');
+  await assert.rejects(h.service.readSession(session.rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
+  await assert.rejects(h.service.readSession(secondSession.rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await h.service.login(address, PASSWORD, session.rawDailyLoginGrantToken)).status, 'STEP_UP_REQUIRED', 'the old browser grant cannot restore the old session');
+  assert.equal(await h.commercialOwnerAuthority.authorize(accountBefore.serviceAccountId, session.familyId, 'BILLING_CHECKOUT_CREATE', stepUp.stepUpToken), 'STEP_UP_REQUIRED');
 
   const credential = { kind: 'TICKET', rawTicket: completed.rawEnrollmentTicket };
   const started = await h.service.beginMfaEnrollment(credential, address, PASSWORD);
   const code = totpFor(started.secretBase32, h.clock.ms());
   const confirmations = await Promise.allSettled(Array.from({ length: 6 }, () => h.service.confirmMfaEnrollment(credential, address, code)));
   assert.equal(confirmations.filter((o) => o.status === 'fulfilled' && o.value.status === 'ENROLLED_SESSION_ESTABLISHED').length, 1, 'one browser session from one ticket');
+  h.clock.advance(STEP);
+  assert.equal((await h.service.login(address, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  const loginCode = h.emailSender.lastCodeFor(address, 'LOGIN_STEP_UP');
+  const oldFactor = totpFor(secret, h.clock.ms());
+  await assert.rejects(h.service.completeLoginStepUp(address, loginCode, oldFactor), (error) => error.code === 'MFA_INVALID', 'old authenticator no longer authorizes login');
+  h.clock.advance(STEP);
+  assert.equal((await h.service.completeLoginStepUp(address, loginCode, totpFor(started.secretBase32, h.clock.ms()))).status, 'AUTHENTICATED', 'the confirmed replacement factor works');
 });
 
 test('migration 0049 is idempotent: re-running it against the migrated schema changes nothing', async () => {

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
-import { formatDateTime } from '../../i18n/formatters';
 
 /**
  * Same-origin absolute path: exactly ONE leading slash. The negative
@@ -83,7 +82,7 @@ interface LoginLocationState {
  * getSession() call picks up the freshly issued pca_family_session cookie.
  */
 export default function Login() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const clients = getApiClients();
   const location = useLocation();
   const navigate = useNavigate();
@@ -94,7 +93,6 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recoveryPendingAt, setRecoveryPendingAt] = useState<string | null>(null);
   // Switches the form between stages without a route change: the flow is one
   // continuous login attempt, not a separately-bookmarkable page -- entering a
   // code stage with no prior password step would have nothing to check against.
@@ -112,6 +110,7 @@ export default function Login() {
   function showSignInError(err: unknown) {
     if (err instanceof ServiceAuthError) {
       if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
+      else if (err.code === 'PASSWORD_LOGIN_LOCKED') setError(t('auth.passwordLoginLocked'));
       else if (err.code === 'MFA_LOCKED') setError(t('mfa.locked'));
       else if (err.code === 'INVALID_MFA_CODE') {
         setError(t('mfa.invalidCode'));
@@ -129,12 +128,6 @@ export default function Login() {
     setSubmitting(true);
     try {
       const result = await clients.serviceAuth.signIn(email, password);
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        setRecoveryPendingAt(result.recoveryAvailableAt);
-        setPassword('');
-        setSubmitting(false);
-        return;
-      }
       if (result.status === 'MFA_REQUIRED') {
         setCode('');
         setCodeInvalid(false);
@@ -202,13 +195,6 @@ export default function Login() {
     setSubmitting(true);
     try {
       const result = await clients.serviceAuth.signIn(email, password, code);
-      if (result.status === 'MFA_RECOVERY_PENDING') {
-        setRecoveryPendingAt(result.recoveryAvailableAt);
-        setPassword('');
-        setCode('');
-        setSubmitting(false);
-        return;
-      }
       if (result.status === 'AUTHENTICATED') {
         proceedToReturnPath();
         return;
@@ -240,16 +226,6 @@ export default function Login() {
       </Link>
     </p>
   );
-
-  if (recoveryPendingAt) {
-    return (
-      <section aria-labelledby="login-recovery-pending-title" className="auth-page">
-        <h1 id="login-recovery-pending-title">{t('mfa.recover.title')}</h1>
-        <p role="status">{t('mfa.recover.pendingLogin', { date: formatDateTime(recoveryPendingAt, i18n.language) })}</p>
-        <p><Link to="/mfa/recover" state={{ email }}>{t('mfa.recover.title')}</Link></p>
-      </section>
-    );
-  }
 
   if (stage === 'AUTHENTICATOR_CODE') {
     return (

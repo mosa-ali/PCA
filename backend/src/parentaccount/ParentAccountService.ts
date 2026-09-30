@@ -16,7 +16,7 @@ import {
   DAILY_LOGIN_GRANT_PURPOSE,
   DAILY_LOGIN_GRANT_TTL_MS,
   PARENT_MFA_RECOVERY_CODE_TTL_MS,
-  PARENT_MFA_RECOVERY_HOLD_MS,
+  PARENT_PASSWORD_FAILURE_POLICY,
   PASSWORD_RESET_CODE_TTL_MS,
   VERIFICATION_CODE_TTL_MS,
   computeFreeAccessExpiry,
@@ -43,7 +43,7 @@ import { generateDailyLoginGrant, hashDailyLoginGrant, isPlausibleDailyLoginGran
 import { ParentMfaError, ParentMfaService, type ParentMfaPosture } from './mfa/ParentMfaService.js';
 import type { CommercialStepUpOperation, SensitiveParentStepUpOperation } from './mfa/ParentMfaRepository.js';
 
-export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED' | 'MFA_INVALID' | 'MFA_LOCKED' | 'FORBIDDEN';
+export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED' | 'MFA_INVALID' | 'MFA_LOCKED' | 'PASSWORD_LOGIN_LOCKED' | 'FORBIDDEN';
 
 /**
  * Deliberately ONE generic code/message per failure category -- mirrors
@@ -338,7 +338,7 @@ export class ParentAccountService {
     if (!isPlausibleEmail(email) || typeof password !== 'string' || password.length === 0) {
       throw new ParentAccountError('INVALID_INPUT');
     }
-    const account = await this.findVerifiedAccountWithPassword(email, password);
+    const account = await this.findVerifiedAccountWithPassword(email, password, true);
 
     // PCA-ADD-PA-017: a Platform Admin-suspended family cannot sign in.
     // Identical generic UNAUTHORIZED, so suspension is indistinguishable
@@ -349,7 +349,6 @@ export class ParentAccountService {
     }
 
     const posture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'RECOVERY_PENDING') return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: posture.recoveryAvailableAt };
 
     const trusted = isPlausibleDailyLoginGrant(dailyLoginGrantToken) &&
       await this.repository.validateAndTouchDailyLoginGrant(account.accountId, hashDailyLoginGrant(dailyLoginGrantToken), this.now());
@@ -386,7 +385,6 @@ export class ParentAccountService {
       throw new ParentAccountError('UNAUTHORIZED');
     }
     const posture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'RECOVERY_PENDING') throw new ParentAccountError('UNAUTHORIZED');
     await this.repository.incrementLoginStepUpAttempt(activeCode.codeId);
     if (!verificationCodeHashesMatch(hashVerificationCode(code), activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
     if (posture.status === 'ACTIVE') {
@@ -447,7 +445,7 @@ export class ParentAccountService {
     }
     const grace = await this.mfa.startGraceIfAbsent(account.accountId);
     const posture: ParentMfaPosture = grace.posture;
-    if (posture.status === 'RECOVERY_PENDING' || posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') {
+    if (posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') {
       await this.authService.revokeSession(issued.rawToken).catch(() => undefined);
       throw new ParentAccountError('UNAUTHORIZED');
     }
@@ -545,7 +543,7 @@ export class ParentAccountService {
       return;
     }
     const recoveryPosture = await this.mfa.posture(account.accountId);
-    if (recoveryPosture.status !== 'ACTIVE' && recoveryPosture.status !== 'RECOVERY_PENDING') return;
+    if (recoveryPosture.status !== 'ACTIVE') return;
     const now = this.now();
     const { code, codeHash } = generateVerificationCode();
     await this.mfa.recordRecoveryCode(account.accountId, codeHash, now, new Date(now.getTime() + PARENT_MFA_RECOVERY_CODE_TTL_MS));
@@ -558,12 +556,11 @@ export class ParentAccountService {
   }
 
   /**
-   * Lost authenticator, step 2. The first verified code starts an immutable
-   * 24-hour server hold and revokes every session. A fresh code after the
-   * deadline clears the old factor and yields a ticket for a newly generated
-   * authenticator. Codes received during the hold cannot shorten or extend it.
+   * Lost authenticator, step 2. A fresh email code immediately clears the old
+   * factor and all existing Parent authentication grants, then issues a
+   * narrowly-scoped ticket for a newly generated authenticator.
    */
-  async completeMfaRecovery(email: string, password: string, code: string): Promise<{ status: 'MFA_RECOVERY_PENDING'; recoveryAvailableAt: Date } | { status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string }> {
+  async completeMfaRecovery(email: string, password: string, code: string): Promise<{ status: 'MFA_SETUP_REQUIRED'; rawEnrollmentTicket: string }> {
     if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code) || typeof password !== 'string' || password.length === 0) {
       throw new ParentAccountError('INVALID_INPUT');
     }
@@ -584,19 +581,14 @@ export class ParentAccountService {
         accountId: account.accountId,
         serviceAccountId: account.serviceAccountId,
         now,
-        holdExpiresAt: new Date(now.getTime() + PARENT_MFA_RECOVERY_HOLD_MS),
       });
     } catch {
       throw new ParentAccountError('UNAUTHORIZED');
     }
     // Keep the test repository and the historical repository contract aligned;
-    // MySQL repeats these idempotent revocations inside the hold transaction.
+    // MySQL repeats these idempotent revocations inside the recovery transaction.
     await this.repository.revokeAllDailyLoginGrants(account.accountId, now);
     if (account.serviceAccountId !== null) await this.repository.revokeAllServiceSessionsFor(account.serviceAccountId, now);
-    if (result.status === 'PENDING') {
-      if (result.started) await this.notify(email, 'MFA_RECOVERY_PENDING', `mfa-recovery-pending:${account.accountId}:${now.getTime()}`);
-      return { status: 'MFA_RECOVERY_PENDING', recoveryAvailableAt: result.recoveryAvailableAt };
-    }
     await this.notify(email, 'MFA_RESET', `mfa-reset:${account.accountId}:${now.getTime()}`);
     return { status: 'MFA_SETUP_REQUIRED', rawEnrollmentTicket: await this.mfa.issueTicket(account.accountId, 'MFA_RECOVERY') };
   }
@@ -682,7 +674,7 @@ export class ParentAccountService {
       throw new ParentAccountError('UNAUTHORIZED');
     }
     const posture = await this.mfa.posture(account.accountId);
-    if (posture.status === 'RECOVERY_PENDING' || posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') throw new ParentAccountError('UNAUTHORIZED');
+    if (posture.status === 'SETUP_REQUIRED' || posture.status === 'NOT_STARTED') throw new ParentAccountError('UNAUTHORIZED');
     return { account, serviceAccountId, posture };
   }
 
@@ -709,18 +701,37 @@ export class ParentAccountService {
 
   private async assertEmailAndPassword(account: ParentAccountRecord, email: string, password: string): Promise<void> {
     this.assertEmail(account, email);
-    if (typeof password !== 'string' || !(await verifyPassword(password, account.passwordHash))) throw new ParentAccountError('UNAUTHORIZED');
+    await this.verifyAccountPassword(account, password);
   }
 
-  private async findVerifiedAccountWithPassword(email: string, password: string): Promise<ParentAccountRecord> {
+  private async findVerifiedAccountWithPassword(email: string, password: string, enforcePasswordLoginLock = false): Promise<ParentAccountRecord> {
     const account = await this.repository.findByEmailHash(hashParentEmail(email));
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) {
       // Hash against a dummy value so unknown-email and wrong-password take roughly the same time.
       await verifyPassword(password, DUMMY_PASSWORD_HASH);
       throw new ParentAccountError('UNAUTHORIZED');
     }
-    if (!(await verifyPassword(password, account.passwordHash))) throw new ParentAccountError('UNAUTHORIZED');
+    await this.verifyAccountPassword(account, password, enforcePasswordLoginLock);
     return account;
+  }
+
+  private async verifyAccountPassword(account: ParentAccountRecord, password: string, enforcePasswordLoginLock = false): Promise<void> {
+    const now = this.now();
+    const lockedUntil = await this.repository.findPasswordLoginLock(account.accountId, now);
+    if (lockedUntil !== null && enforcePasswordLoginLock) {
+      // The lock detail is revealed only after the caller supplies the correct
+      // password. A wrong password remains indistinguishable from every other
+      // denial and cannot extend an already-active lock.
+      if (typeof password !== 'string' || !(await verifyPassword(password, account.passwordHash))) {
+        throw new ParentAccountError('UNAUTHORIZED');
+      }
+      throw new ParentAccountError('PASSWORD_LOGIN_LOCKED');
+    }
+    if (typeof password !== 'string' || !(await verifyPassword(password, account.passwordHash))) {
+      if (lockedUntil === null) await this.repository.recordPasswordLoginFailure(account.accountId, now, PARENT_PASSWORD_FAILURE_POLICY);
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    if (lockedUntil === null) await this.repository.clearPasswordLoginFailures(account.accountId, now);
   }
 
   private async verifyTotpOrThrow(accountId: ParentAccountId, code: string): Promise<void> {
@@ -843,7 +854,6 @@ export class ParentAccountService {
     }
     const account = await this.repository.findByEmailHash(hashParentEmail(email));
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    if ((await this.mfa.posture(account.accountId)).status === 'RECOVERY_PENDING') throw new ParentAccountError('UNAUTHORIZED');
 
     const activeCode = await this.repository.findLatestPasswordResetCode(account.accountId);
     if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
@@ -859,10 +869,12 @@ export class ParentAccountService {
     // Revoke browser grants before changing the credential; fail closed if that cannot be persisted.
     const revokedAt = this.now();
     await this.repository.revokeAllDailyLoginGrants(account.accountId, revokedAt);
-    await this.repository.updatePasswordHash(account.accountId, await hashPassword(newPassword));
+    await this.mfa.revokeAllStepUpGrants(account.accountId, revokedAt);
     if (account.serviceAccountId !== null) {
       await this.repository.revokeAllServiceSessionsFor(account.serviceAccountId, revokedAt);
     }
+    await this.repository.updatePasswordHash(account.accountId, await hashPassword(newPassword));
+    await this.notify(email, 'PASSWORD_CHANGED', `password-reset:${account.accountId}:${revokedAt.getTime()}`);
     return { status: 'PASSWORD_RESET' };
   }
 }
@@ -871,7 +883,6 @@ function summarize(posture: ParentMfaPosture): ParentMfaSummary {
   if (posture.status === 'ACTIVE') return { status: 'ACTIVE' };
   if (posture.status === 'GRACE') return { status: 'GRACE', graceExpiresAt: posture.graceExpiresAt };
   if (posture.status === 'SETUP_REQUIRED') return { status: 'SETUP_REQUIRED', graceExpiresAt: posture.graceExpiresAt };
-  if (posture.status === 'RECOVERY_PENDING') return { status: 'RECOVERY_PENDING', recoveryAvailableAt: posture.recoveryAvailableAt };
   throw new ParentAccountError('UNAUTHORIZED');
 }
 

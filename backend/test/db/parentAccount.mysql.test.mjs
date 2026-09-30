@@ -79,6 +79,55 @@ test('MySQL: registration persists a PENDING_VERIFICATION row, findable by email
   assert.equal(account.freeAccess, null);
 });
 
+test('MySQL: password failure lock is durable and password reset clears it while revoking sessions and browser grants', async () => {
+  const { service, emailSender } = buildService();
+  const email = uniqueEmail();
+  const password = 'a genuinely long password';
+  const account = await registerAndVerifyRealAccount(service, emailSender, email, password);
+  const session = await loginWithOtp(service, emailSender, email, password);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await assert.rejects(service.login(email, 'incorrect password'), (error) => error.code === 'UNAUTHORIZED');
+  }
+  let [state] = await getPool().query(
+    `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
+       FROM parent_accounts WHERE account_id = ?`,
+    [account.accountId],
+  );
+  assert.equal(Number(state.password_failed_attempt_count), 4, 'four failures remain below the lock threshold');
+  assert.ok(state.password_failure_window_started_at instanceof Date);
+  assert.equal(state.password_login_locked_until, null);
+
+  await assert.rejects(service.login(email, 'incorrect password'), (error) => error.code === 'UNAUTHORIZED');
+  [state] = await getPool().query(
+    `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
+       FROM parent_accounts WHERE account_id = ?`,
+    [account.accountId],
+  );
+  assert.equal(Number(state.password_failed_attempt_count), 5);
+  assert.ok(state.password_login_locked_until instanceof Date);
+  assert.ok(state.password_login_locked_until.getTime() > Date.now());
+  await assert.rejects(service.login(email, password), (error) => error.code === 'PASSWORD_LOGIN_LOCKED');
+
+  await service.requestPasswordReset(email);
+  const resetCode = emailSender.lastCodeFor(email, 'PASSWORD_RESET');
+  const newPassword = 'A different secure password 9!';
+  assert.deepEqual(await service.resetPassword(email, resetCode, newPassword, newPassword), { status: 'PASSWORD_RESET' });
+  [state] = await getPool().query(
+    `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
+       FROM parent_accounts WHERE account_id = ?`,
+    [account.accountId],
+  );
+  assert.equal(Number(state.password_failed_attempt_count), 0);
+  assert.equal(state.password_failure_window_started_at, null);
+  assert.equal(state.password_login_locked_until, null);
+  await assert.rejects(service.readSession(session.rawSessionToken), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal(await countRows('SELECT COUNT(*) AS n FROM parent_daily_login_grants WHERE account_id = ? AND revoked_at IS NULL', [account.accountId]), 0);
+  await assert.rejects(service.login(email, password), (error) => error.code === 'UNAUTHORIZED');
+  assert.equal((await service.login(email, newPassword)).status, 'STEP_UP_REQUIRED');
+  assert.ok(emailSender.kindsFor(email).includes('PASSWORD_CHANGED'));
+});
+
 test('MySQL: removal decision request and Parent decision actor IDs persist independently', async () => {
   const { service, emailSender } = buildService();
   const email = uniqueEmail();

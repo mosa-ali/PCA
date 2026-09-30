@@ -21,7 +21,7 @@ function initialDevRole(): FamilyRole {
   return 'OWNER';
 }
 
-type DevMfaState = 'ACTIVE' | 'GRACE' | 'SETUP_REQUIRED' | 'RECOVERY_PENDING';
+type DevMfaState = 'ACTIVE' | 'GRACE' | 'SETUP_REQUIRED';
 
 function initialDevMfa(): DevMfaState {
   // Test-only convenience, same rationale as `demoRole`: `?demoMfa=NOT_ENROLLED`
@@ -29,7 +29,7 @@ function initialDevMfa(): DevMfaState {
   if (typeof window !== 'undefined') {
     const requested = new URLSearchParams(window.location.search).get('demoMfa');
     if (requested === 'NOT_ENROLLED' || requested === 'GRACE') return 'GRACE';
-    if (requested === 'SETUP_REQUIRED' || requested === 'RECOVERY_PENDING') return requested;
+    if (requested === 'SETUP_REQUIRED') return requested;
   }
   return 'ACTIVE';
 }
@@ -92,8 +92,6 @@ export function buildDevSession(): AuthenticatedSession {
         ? { status: 'ACTIVE' }
         : devMfa === 'GRACE'
           ? { status: 'GRACE', graceExpiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString() }
-          : devMfa === 'SETUP_REQUIRED'
-            ? { status: 'SETUP_REQUIRED', graceExpiresAt: new Date(0).toISOString() }
-            : { status: 'RECOVERY_PENDING', recoveryAvailableAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
+          : { status: 'SETUP_REQUIRED', graceExpiresAt: new Date(0).toISOString() },
   };
 }

@@ -366,12 +366,65 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
   }
 
   async updatePasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void> {
-    await runInTransaction((conn) =>
-      execute(conn, `UPDATE parent_accounts SET password_hash = ? WHERE account_id = ? AND status = 'VERIFIED'`, [
+    await runInTransaction(async (conn) => {
+      await execute(conn, `UPDATE parent_accounts
+        SET password_hash = ?, password_failed_attempt_count = 0,
+            password_failure_window_started_at = NULL, password_login_locked_until = NULL
+        WHERE account_id = ? AND status = 'VERIFIED'`, [
         passwordHash,
         accountId,
-      ]),
-    );
+      ]);
+      await execute(conn, `UPDATE parent_password_reset_codes SET consumed_at = COALESCE(consumed_at, CURRENT_TIMESTAMP(3)) WHERE account_id = ?`, [accountId]);
+      await execute(conn, `UPDATE parent_login_step_up_codes SET consumed_at = COALESCE(consumed_at, CURRENT_TIMESTAMP(3)) WHERE account_id = ?`, [accountId]);
+    });
+  }
+
+  async findPasswordLoginLock(accountId: ParentAccountId, now: Date): Promise<Date | null> {
+    const { rows } = await runInTransaction((conn) => execute<{ password_login_locked_until: Date | null }>(
+      conn,
+      `SELECT password_login_locked_until FROM parent_accounts WHERE account_id = ?`,
+      [accountId],
+    ));
+    const lockedUntil = rows[0]?.password_login_locked_until ?? null;
+    return lockedUntil !== null && lockedUntil.getTime() > now.getTime() ? lockedUntil : null;
+  }
+
+  async recordPasswordLoginFailure(
+    accountId: ParentAccountId,
+    now: Date,
+    policy: { threshold: number; windowMs: number; lockMs: number },
+  ): Promise<{ locked: boolean; lockedUntil: Date | null }> {
+    return runInTransaction(async (conn) => {
+      const { rows } = await execute<{
+        password_failed_attempt_count: number;
+        password_failure_window_started_at: Date | null;
+        password_login_locked_until: Date | null;
+      }>(conn, `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
+        FROM parent_accounts WHERE account_id = ? FOR UPDATE`, [accountId]);
+      const row = rows[0];
+      if (!row) return { locked: false, lockedUntil: null };
+      if (row.password_login_locked_until && row.password_login_locked_until.getTime() > now.getTime()) {
+        return { locked: true, lockedUntil: row.password_login_locked_until };
+      }
+      const elapsed = row.password_failure_window_started_at === null
+        ? Number.POSITIVE_INFINITY
+        : now.getTime() - row.password_failure_window_started_at.getTime();
+      const inWindow = elapsed >= 0 && elapsed < policy.windowMs;
+      const count = inWindow ? Number(row.password_failed_attempt_count) + 1 : 1;
+      const windowStartedAt = inWindow ? row.password_failure_window_started_at as Date : now;
+      const locked = count >= policy.threshold;
+      const lockedUntil = locked ? new Date(now.getTime() + policy.lockMs) : null;
+      await execute(conn, `UPDATE parent_accounts
+        SET password_failed_attempt_count = ?, password_failure_window_started_at = ?, password_login_locked_until = ?
+        WHERE account_id = ?`, [count, windowStartedAt, lockedUntil, accountId]);
+      return { locked, lockedUntil };
+    });
+  }
+
+  async clearPasswordLoginFailures(accountId: ParentAccountId, _now: Date): Promise<void> {
+    await runInTransaction((conn) => execute(conn, `UPDATE parent_accounts
+      SET password_failed_attempt_count = 0, password_failure_window_started_at = NULL, password_login_locked_until = NULL
+      WHERE account_id = ? AND (password_failed_attempt_count <> 0 OR password_failure_window_started_at IS NOT NULL OR password_login_locked_until IS NOT NULL)`, [accountId]));
   }
 
   async setServiceAccountIdIfAbsent(accountId: ParentAccountId, serviceAccountId: string): Promise<void> {

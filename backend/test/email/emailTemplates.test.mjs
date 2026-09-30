@@ -42,3 +42,15 @@ test('successful-login notice names the event and UTC time without factor, secre
   assert.match(rendered.text, /reset your PCA password/i);
   assert.doesNotMatch(`${rendered.subject}\n${rendered.text}\n${rendered.html}`, /@|123456|totp|device|location/i);
 });
+
+test('MFA recovery and password reset notices describe immediate revocation without advertising a hold or removing TOTP on password reset', () => {
+  const recovery = renderSecurityNoticeTemplate('MFA_RESET', '2026-10-01T12:34:56.000Z');
+  assert.match(recovery.text, /previous authenticator was removed/i);
+  assert.match(recovery.text, /all existing Parent sessions.*signed out/i);
+  assert.match(recovery.text, /set up a replacement authenticator immediately/i);
+  assert.doesNotMatch(recovery.text, /24.hour|wait until|hold ends/i);
+
+  const password = renderSecurityNoticeTemplate('PASSWORD_CHANGED', '2026-10-01T12:34:56.000Z');
+  assert.match(password.text, /all existing sessions.*signed out/i);
+  assert.match(password.text, /new password and authenticator/i);
+});

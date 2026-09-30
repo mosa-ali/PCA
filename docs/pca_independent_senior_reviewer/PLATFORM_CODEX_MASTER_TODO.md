@@ -1102,3 +1102,9 @@ PARENT_CI = Quality Gates run `36784297610` completed SUCCESS 27/27 at exact SHA
 LOCAL_BROWSER = Read-only Parent registration and forgot-password pages were inspected. No account was created, password/OTP entered, or recovery request submitted. Browser navigation to `/mfa/recover` timed out before its content could be verified. Authenticated manual screens and literal owner localhost acceptance remain open.
 LIVE_PREFLIGHT = DNS resolved live MySQL to `4.161.89.178`, but TCP/3306 was unreachable; no live SQL occurred.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, live DB mutation, or production acceptance occurred.
+
+### 2026-10-01 — Parent recovery/password-lock owner policy amendment
+
+PARENT_POLICY = Owner removed the 24-hour MFA recovery hold and set a separate five-failures/15-minute/one-hour Parent password-login lock. Password reset remains available during lock, clears it, revokes existing Parent auth material, and preserves TOTP.
+PLATFORM_SCOPE = No Platform source, Enrollment, projection, or database work was changed. Parent master TODO records the additive local migration and outstanding evidence.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent unit/web evidence is updated, and the 0061 migration-resumability gate passes 5/5 after correction. Parent exact-head CI, disposable-MySQL migration/integration, actual real-browser execution, local owner acceptance, and live TODO-20 reconciliation are still pending. No live DB/Azure/Platform mutation or owner acceptance occurred.

@@ -13,6 +13,7 @@
 //   set-verification-code <email> <6 digits>   (latest registration code)
 //   set-login-step-up-code <email> <6 digits>  (latest emailed login code)
 //   set-mfa-recovery-code <email> <6 digits>   (latest lost-authenticator code)
+//   set-password-reset-code <email> <6 digits> (latest forgot-password code)
 //   mfa-state <email>  -> { status, graceExpiresAt, enrolled, lastAcceptedTotpCounter }
 //   expire-grace <email>  -> moves this account's grace deadline into the past
 import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
@@ -52,6 +53,7 @@ const TABLES = {
   'set-verification-code': 'parent_email_verification_codes',
   'set-login-step-up-code': 'parent_login_step_up_codes',
   'set-mfa-recovery-code': 'parent_mfa_recovery_codes',
+  'set-password-reset-code': 'parent_password_reset_codes',
 };
 
 const [command, email, code] = process.argv.slice(2);

@@ -30,14 +30,13 @@ export class ParentMfaError extends Error {
 
 /**
  * Server-derived MFA posture. An inactive authenticator is optional; only an
- * active authenticator adds a required login factor. Recovery hold remains a
- * separate enforced state.
+ * active authenticator adds a required login factor. Lost-authenticator
+ * recovery is completed immediately after password and email OTP proof.
  */
 export type ParentMfaPosture =
   | { status: 'NOT_STARTED' }
   | { status: 'GRACE'; graceExpiresAt: Date }
   | { status: 'SETUP_REQUIRED'; graceExpiresAt: Date }
-  | { status: 'RECOVERY_PENDING'; recoveryAvailableAt: Date }
   | { status: 'ACTIVE'; enrolledAt: Date };
 
 export interface ParentMfaServiceDeps {
@@ -72,7 +71,6 @@ export class ParentMfaService {
 
   static postureOf(state: ParentMfaStateRecord | null, now: Date): ParentMfaPosture {
     if (!state) return { status: 'NOT_STARTED' };
-    if (state.recoveryHoldExpiresAt) return { status: 'RECOVERY_PENDING', recoveryAvailableAt: state.recoveryHoldExpiresAt };
     if (state.status === 'ACTIVE' && state.enrolledAt) return { status: 'ACTIVE', enrolledAt: state.enrolledAt };
     if (state.graceExpiresAt.getTime() > now.getTime()) return { status: 'GRACE', graceExpiresAt: state.graceExpiresAt };
     return { status: 'SETUP_REQUIRED', graceExpiresAt: state.graceExpiresAt };
@@ -155,7 +153,7 @@ export class ParentMfaService {
     return this.repository.consumeRecoveryCode(codeId, this.now());
   }
 
-  applyRecoveryCode(input: { codeId: string; accountId: ParentAccountId; serviceAccountId: string | null; now: Date; holdExpiresAt: Date }) {
+  applyRecoveryCode(input: { codeId: string; accountId: ParentAccountId; serviceAccountId: string | null; now: Date }) {
     return this.repository.applyRecoveryCode(input);
   }
 
@@ -198,6 +196,10 @@ export class ParentMfaService {
     const consumed = await this.repository.consumeStepUpGrant({ tokenHash: hashOpaque(STEP_UP_DOMAIN, raw), accountId, familyId, operation, now: this.now() });
     if (consumed) await this.event(accountId, 'STEP_UP_CONSUMED', operation);
     return consumed;
+  }
+
+  revokeAllStepUpGrants(accountId: ParentAccountId, revokedAt: Date): Promise<number> {
+    return this.repository.revokeAllStepUpGrants(accountId, revokedAt);
   }
 
   async event(accountId: ParentAccountId, type: ParentSecurityEventType, detail: string | null): Promise<void> {
