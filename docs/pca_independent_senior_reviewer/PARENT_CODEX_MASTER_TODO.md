@@ -1243,3 +1243,19 @@ EVIDENCE = Backend build PASS; focused seven-file Parent suite 145/145 (`NODE_EN
 GIT = Local HEAD is now `59bfc331`, one local checkpoint beyond tracking ref `a8c37162`. A fresh `git ls-remote` remains unable to connect through the configured proxy; server equality, publication, and exact-head CI are not proven. Last certified CI remains run `36634164993` (27/27 at `a8c37162`) and does not cover this commit.
 GATES = TODO-12/14/15/19/20 remain IN_PROGRESS; TODO-14 global aggregate remains unproven; live `pca_pro` last verified at 0059; TODO-18 owner acceptance remains pending. Platform stays `HOLD_PARENT_DEPENDENCY`; no activation, deployment, or live DB mutation occurred.
 NEXT_ACTION = Publish this local fast-forward only after remote access is available and ancestry is freshly verified; then inspect exact-head CI and resume the earliest unfinished Parent dependency.
+
+### 2026-09-30 — checkpoint `785323d2` published and CI running
+
+PUBLICATION = Implementation commit `59bfc331` and ledger sync `785323d2e471d1fa35a27d93935b0451f1a58210` were pushed as an ordinary fast-forward from `a8c37162` to `origin/pca-dev`. Post-push fetch and fresh `git ls-remote` prove LOCAL_HEAD = TRACKING_HEAD = SERVER_HEAD = `785323d2e471d1fa35a27d93935b0451f1a58210`; the Parent/Platform master TODO files and new resolver, session-authorizer, and MySQL audit test are present in the remote tree.
+CI = GitHub Quality gates run `36648259414` targets exact SHA `785323d2e471d1fa35a27d93935b0451f1a58210` and is currently IN_PROGRESS. No pass/fail conclusion yet.
+NEXT_ACTION = Wait for run `36648259414`, record its final result, and continue the same Parent mission with TODO-12/14/15/20 and release gates open.
+TODO20_REFRESH = A fresh bounded TCP probe to `pca-mysql.mysql.database.azure.com:3306` timed out. No live `pca_pro` read or mutation was performed; migration 0059 remains the last verified live head and repository/local remain 0060. This confirms TODO-20 cannot advance from this network context.
+
+### 2026-09-30 — Codex re-entry assessment and exact-head CI result
+
+REENTRY = No DeepSeek commits follow the accepted `91f7f6d4` checkpoint. The committed `a8c37162` handover, `59bfc331` 31-path implementation, and `785323d2` ledger sync are Codex-owned. No new DeepSeek migration exists; repository schema head remains 0060. Waves 5A/5B retain prior exact-head certification (runs `36505757047` and `36519047489`, 27/27 each).
+REVIEW = Examined the production membership resolver, shared Parent-session authorizer and composition, Android lifecycle status guards, iOS trusted-floor guard, and associated authority/route changes. No security regression found in these reviewed deltas. Current exact-head Quality Gates run `36648259414` completed SUCCESS, 27/27, at SHA `785323d2e471d1fa35a27d93935b0451f1a58210`.
+GIT = Fresh fetch and server ref agree with local and tracking refs at `785323d2e471d1fa35a27d93935b0451f1a58210`. This ledger-result sync is the only mission change currently local; `.vscode/` and root `0` remain excluded.
+TODO_STATUS = 14 PASS / 5 IN_PROGRESS (12,14,15,19,20) / 4 TODO or owner-release gated (18,21,22,23) / 0 marked BLOCKED. TODO-14 remains 45/52 integrated and global aggregate NOT_YET_PROVEN. Platform remains `HOLD_PARENT_DEPENDENCY`.
+DATABASE = Repository and recorded local owner-UAT schema head 0060; live `pca_pro` last verified at 0059; fresh TCP/3306 preflight timed out. Parity remains NO and no live DB read or mutation occurred. Local MySQL/backend ports are open; Parent/Platform web ports are closed. TODO-18 owner acceptance remains pending.
+NEXT_ACTION = Continue TODO-15 independent source/device-security review without activating the first-device Trust Set, E2EE, attestation, or production gates.

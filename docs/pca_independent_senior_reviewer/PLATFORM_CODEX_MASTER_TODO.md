@@ -866,3 +866,15 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner acceptance, proje
 PARENT_CHECKPOINT = Local commit `59bfc331` contains the reviewed Parent membership/authorizer, route audit and mobile safety changes across 31 exact mission files. `.vscode/` and root `0` remain untracked and excluded. Backend build and focused tests pass; corrected disposable-MySQL route campaign passes 51/51 with 45/52 declarations integrated and global aggregate NOT_YET_PROVEN. No exact-head CI covers this checkpoint.
 GIT = Local branch is one commit ahead of `origin/pca-dev` tracking ref `a8c37162`; a fresh `git ls-remote` could not connect through the configured proxy, so publication/server equality remains unverified.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, deployment, production mutation, or owner acceptance occurred.
+
+### 2026-09-30 — Parent checkpoint published; exact-head CI running
+
+PARENT_PUBLICATION = Implementation checkpoint `59bfc331` plus ledger sync `785323d2e471d1fa35a27d93935b0451f1a58210` published by fast-forward. Fresh fetch and server ref verify local/tracking/server equality at `785323d2e471d1fa35a27d93935b0451f1a58210`, and both master TODOs plus the membership implementation/test files exist remotely.
+PARENT_CI = Quality Gates run `36648259414` is IN_PROGRESS on the exact published SHA; no result is claimed yet.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Enrollment activation, deployment, production mutation, or owner acceptance occurred.
+
+### 2026-09-30 — Parent re-entry review and exact-head CI result
+
+PARENT_REENTRY = No new DeepSeek commits follow the accepted `91f7f6d4` checkpoint. The Codex-owned membership/mobile safety checkpoint is published at `785323d2` and exact-head Quality Gates run `36648259414` passed 27/27.
+PARENT_STATUS = TODO-12/14/15/19/20 remain IN_PROGRESS; TODO-14 has 45/52 integrated declarations and global aggregate NOT_YET_PROVEN. Owner TODO-18 is pending; TODO-21/22/23 remain release gates.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment, production mutation, or owner acceptance. Current Parent profile projection remains dependent on closure of Parent authority and owner gates.
