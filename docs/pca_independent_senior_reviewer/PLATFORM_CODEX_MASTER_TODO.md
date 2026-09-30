@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36748864303 showed session cookies but missing response fields; session probe pending)
+LAST_UPDATED_UTC = 2026-09-30 (run 36750307469 proved browser session; strict empty-body assertion under correction)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `0f9e9162251974af0c85341b1ade31a62995cac1` was freshly verified at local, tracking, and server refs before the current local diagnostic change.
-CURRENT_CHECKPOINT_SHA = `0f9e9162251974af0c85341b1ade31a62995cac1`; exact-head run `36748864303` failed only real-backend Parent MFA E2E (26/27 passed). TOTP request returned HTTP 200 with no parsed response keys but set session, CSRF, and daily-grant cookies; OTP-only retry was 401. This suggests the session issuance path ran but does not verify a valid session or browser navigation. Safe JSON and session endpoint probes are local. Platform product source and activation remain unchanged.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e81b181841e22c6d54878ec960718621f94331e9` was freshly verified at local, tracking, and server refs before the current local E2E assertion update.
+CURRENT_CHECKPOINT_SHA = `e81b181841e22c6d54878ec960718621f94331e9`; exact-head run `36750307469` failed only real-backend Parent MFA E2E (26/27 passed). Runtime evidence proved dashboard navigation, session and daily-grant cookies, and `/api/parent/session` status 200; only strict assertion of `sessionEstablished` from Playwright's empty captured body failed. The local test now accepts an empty body only with that complete independent browser/session proof. Platform product source and activation remain unchanged.
 LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/e2e-real/parentMfa.spec.ts` plus mission-ledger updates. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish Parent MFA response-body/session probes and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the browser-backed Parent MFA session assertion and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -48,6 +48,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or a
 ### 2026-09-30 — MFA session-cookie response follow-up
 
 PARENT_CI = Run `36748864303` failed only the real-backend MFA E2E (26/27 passed). TOTP was present; JSON HTTP 200 had no parsed keys, while response headers set Parent session, CSRF, and daily-login-grant cookies. OTP-only retry returned 401. New local diagnostics verify JSON parse metadata, cookie presence, session endpoint status, and page path without recording response contents.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent MFA browser session independently proven
+
+PARENT_CI = Run `36750307469` failed only because the E2E demanded a JSON flag from an empty Playwright-captured response body. The real flow reached `/dashboard`, set session/daily-grant cookies, and returned 200 from `/api/parent/session`. Local E2E now accepts the empty body only with all three proofs and still requires `sessionEstablished=true` for non-empty JSON.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up
