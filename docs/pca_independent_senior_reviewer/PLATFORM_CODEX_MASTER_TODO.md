@@ -8,12 +8,12 @@ MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)
 LAST_UPDATED_UTC = 2026-09-30 (local Parent/Platform browser precheck and published current-state ledger refresh)
 VALIDATED_PARENT_SOURCE_HEAD = 785323d2e471d1fa35a27d93935b0451f1a58210 (exact-head Quality Gates PASS 36648259414, 27/27; includes the Parent membership resolver and authorizer)
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Current published ledger-refresh commit; post-push fetch and `git ls-remote` agree with local `pca-dev` (latest Parent source and ledger updates are published)
-CURRENT_CHECKPOINT_SHA = Current published ledger-refresh commit (exact SHA is repository HEAD; current exact-head CI query is unavailable through the configured proxy)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked Parent/Platform mission files remain uncommitted; `.vscode/` and root `0` remain unrelated untracked exclusions. Latest verified CI run `36649336733` is 27/27 at predecessor `235c9c65`; CI for the current ledger-only checkpoint is unverified.
+CURRENT_CHECKPOINT_SHA = `ba23431526bf2336ac71b3a4f90d357bbd56c824`; exact-head Quality Gates run `36653464549` completed SUCCESS 27/27.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked Parent/Platform mission files remain uncommitted; `.vscode/` and root `0` remain unrelated untracked exclusions. Parent/Platform browser campaigns and full current-head CI passed; the result-sync ledger update is pending publication.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Continue the same Parent mission after refreshing exact-head CI when GitHub API access is available. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`; no activation/deployment/UAT is implied.
+NEXT_ACTION = Continue the Parent mission at TODO-12/14 within current security and integrated-evidence boundaries. TODO-15 source review awaits owner/security protocol input; Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry dependency confirmed
 
@@ -892,3 +892,8 @@ NEXT_ACTION = Continue only after Parent-dependent identity/projection and relea
 PARENT_CHECKPOINT = Ledger-only Parent/Platform browser-precheck commit `6acaf7e0b79b9ce0681d938092ff4b744311d71e` is verified at local, tracking, and remote `pca-dev` heads; both TODO ledgers exist remotely. `.vscode/` and root `0` remain excluded.
 CI = Latest previously verified Quality Gates run `36649336733` passed 27/27 at predecessor `235c9c65`. A fresh Actions query for `6acaf7e0` could not connect because proxy `127.0.0.1:9` refused connection; exact-head CI for this checkpoint remains UNVERIFIED.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; this ledger publication, mocked UI campaign, and local health check do not establish Parent acceptance, Enrollment readiness, production acceptance, or deployment authorization.
+
+### 2026-09-30 — Parent exact-head CI result
+
+PARENT_CI = Quality Gates run `36653464549` completed SUCCESS 27/27 at exact SHA `ba23431526bf2336ac71b3a4f90d357bbd56c824`, including full disposable MySQL, real-backend browser E2E, Android/iOS and web suites.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner TODO-18, first-device security protocol and TODO-14 gated declarations remain open; this CI pass does not authorize Enrollment activation, deployment, or owner acceptance.

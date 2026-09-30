@@ -6,15 +6,15 @@ PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
 LAST_UPDATED_UTC = 2026-09-30 (local browser precheck and published current-state ledger refresh)
-WAVE_BASE_SHA = a8c37162ed6ec135b618a3942c4766bac3b8f508 (Codex controlled-stop handover after DeepSeek Wave 5B; refreshed local HEAD, origin tracking ref and authenticated GitHub API ref all agree now; Wave 5C source changes are uncommitted)
-LAST_CERTIFIED_PREVIOUS_SHA = 235c9c654f40fe40362cb0dfc1864af09a0e2d3e (Quality Gates run 36649336733 SUCCESS 27/27; latest verified CI before later ledger-only commits)
-CURRENT_WAVE_STATUS = Wave 5C Parent membership/authorizer source is committed at `59bfc331` and covered by exact-head Quality Gates run `36648259414` (27/27 at `785323d2`). Later commits `235c9c65`, `6acaf7e0`, and `0a6cdcc2` contain ledger updates only. Current Parent and Platform browser campaigns passed 101/101 and 21/21; the Platform browser campaign uses HTTP mocks. TODO-14 remains 45/52 integrated with seven gated/optional declarations. TODO-15 has no approved first-device root, production verifier, signed policy receipt/application path, or independent attestation. Repository/local schema is 0060; live was last verified at 0059. Current head CI query failed because configured proxy `127.0.0.1:9` refused GitHub API access. TODO-18 and Platform hold remain open.
+WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
+LAST_CERTIFIED_PREVIOUS_SHA = `ba23431526bf2336ac71b3a4f90d357bbd56c824` (Quality Gates run `36653464549` SUCCESS 27/27; latest exact-head CI result)
+CURRENT_WAVE_STATUS = Wave 5C Parent membership/authorizer source is committed at `59bfc331` and covered by exact-head Quality Gates run `36648259414` (27/27 at `785323d2`). Current Parent and Platform browser campaigns passed 101/101 and 21/21; the Platform browser campaign uses HTTP mocks. TODO-14 remains 45/52 integrated with seven gated/optional declarations. TODO-15 has no approved first-device root, production verifier, signed policy receipt/application path, or independent attestation. Repository/local schema is 0060; live was last verified at 0059. Exact-head Quality Gates run `36653464549` passed 27/27 at `ba234315`; source and security gates are covered, owner TODO-18 and the Platform hold remain open.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Latest verified PASS run `36649336733` is 27/27 at `235c9c654f40fe40362cb0dfc1864af09a0e2d3e`. The current published ledger-refresh commit is verified aligned locally/tracking/remotely; its CI status is UNVERIFIED because the GitHub API proxy refused connection.
+EXACT_HEAD_CI_SHA = Run `36653464549` completed SUCCESS 27/27 at `ba23431526bf2336ac71b3a4f90d357bbd56c824`; it includes all source changes and the then-current ledger state.
 LOCAL_UNCOMMITTED_CHANGE = No tracked Parent/Platform mission files remain uncommitted. `.vscode/` and root `0` remain unrelated untracked exclusions. Post-push fetch and `git ls-remote` confirmed the current published ledger refresh is aligned.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 now has 45/52 database-integrated declarations and seven gated/optional; TODO-15, TODO-19, owner-gated TODO-18, and TODO-20 live reconciliation remain open. The shared resolver maps all non-member/unknown/unavailable outcomes to denial. Platform stays held; schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
-NEXT_ACTION = Continue TODO-15 independent source/device-security review while preserving the first-device root gate. Keep reviewed source, current 45/52 TODO-14 evidence and both ledgers synchronized; publish only after Git metadata writes are available, then obtain exact-head CI. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, live 0060 unapplied, and TODO-18 owner acceptance pending.
+NEXT_ACTION = Continue TODO-12/14 only within the documented security protocol and integrated-evidence boundaries; TODO-15 source review is complete and waits on owner/security protocol inputs. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, live 0060 unapplied, and TODO-18 owner acceptance pending.
 
 ### 2026-09-30 — Independent Codex re-entry assessment
 
@@ -530,9 +530,14 @@ LOCAL_HEAD = Current published ledger-refresh commit (see repository HEAD; post-
 REMOTE_HEAD = Same as local HEAD and `origin/pca-dev` at post-push fetch plus fresh `git ls-remote`
 PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked mission files; `.vscode/` and root `0` remain excluded
 PARENT_UNPUSHED_COMMITS_REMAINING = 0
-EXACT_HEAD_CI = Latest verified exact-head PASS is run `36649336733` at `235c9c654f40fe40362cb0dfc1864af09a0e2d3e`, 27/27. The current ledger-only head CI could not be queried because the configured proxy refused the GitHub API connection.
+EXACT_HEAD_CI = Run `36653464549` completed SUCCESS 27/27 at `ba23431526bf2336ac71b3a4f90d357bbd56c824`; it covered the source checkpoint and current ledger contents.
 
-CURRENT_REENTRY_CHECK = 2026-09-30: post-push fetch and fresh server ref verify the current published ledger-refresh commit matches local/tracking/server `pca-dev`; both ledgers exist remotely. GitHub Actions query failed through proxy `127.0.0.1:9`; latest verified CI remains run `36649336733` at predecessor `235c9c65`. Parent production-preview browser suite passed 101/101 with demo fixtures; Platform production-preview suite passed 21/21 with HTTP mocks. Backend and DB health returned 200; both web apps were restored to real-backend local development mode. Use `127.0.0.1` because `localhost` reaches an unrelated IPv6 listener. No live database read or mutation occurred; TODO-20 and owner TODO-18 remain open.
+CURRENT_REENTRY_CHECK = 2026-09-30: exact-head Quality Gates run `36653464549` passed 27/27 at SHA `ba23431526bf2336ac71b3a4f90d357bbd56c824`. Full disposable-MySQL certification, real-backend browser E2E, Android, iOS, backend, Parent/Platform, release-control and security jobs passed. Parent production-preview browser suite passed 101/101 with demo fixtures; Platform production-preview suite passed 21/21 with HTTP mocks. Backend and DB health returned 200; both web apps were restored to real-backend local development mode. Use `127.0.0.1` because `localhost` reaches an unrelated IPv6 listener. No live database read or mutation occurred; TODO-20 and owner TODO-18 remain open.
+
+### 2026-09-30 — Exact-head Quality Gates passed
+
+CI = Run `36653464549` completed SUCCESS 27/27 at SHA `ba23431526bf2336ac71b3a4f90d357bbd56c824`. Backend build/unit tests, full disposable MySQL, real-backend browser E2E, Parent and Platform suites, Android, iOS, security, release controls, repository quality, and all required jobs passed.
+GATES = TODO-14 remains 45/52 with gated/optional declarations; TODO-15 awaits the owner-approved device-root/crypto protocol; TODO-20 remains repository/local 0060 versus live last verified 0059. Owner TODO-18 is pending and Platform remains `HOLD_PARENT_DEPENDENCY`.
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
