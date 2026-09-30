@@ -878,3 +878,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; no Enrollment activation, depl
 PARENT_REENTRY = No new DeepSeek commits follow the accepted `91f7f6d4` checkpoint. The Codex-owned membership/mobile safety checkpoint is published at `785323d2` and exact-head Quality Gates run `36648259414` passed 27/27.
 PARENT_STATUS = TODO-12/14/15/19/20 remain IN_PROGRESS; TODO-14 has 45/52 integrated declarations and global aggregate NOT_YET_PROVEN. Owner TODO-18 is pending; TODO-21/22/23 remain release gates.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment, production mutation, or owner acceptance. Current Parent profile projection remains dependent on closure of Parent authority and owner gates.
+
+### 2026-09-30 — Platform local browser precheck
+
+PLATFORM_BROWSER = Local production build PASS; the production-preview Chromium suite PASS 21/21 using HTTP-boundary mocks. Coverage includes login/MFA error and success contracts, role boundaries, session expiry/logout, Arabic/RTL, contrast, and forced-colors. This is UI/mock evidence, not live backend acceptance or Enrollment validation.
+PARENT_BROWSER = Parent production-preview Chromium suite PASS 101/101 using demo fixtures; responsive device pages at 320px and 375px passed, as did PWA, accessibility, RTL, billing, and route coverage.
+LOCAL_UAT = Backend health and database health each returned HTTP 200 JSON; both local login routes returned HTTP 200 HTML, and disposable MySQL is reachable. Apps restored to real-backend development configuration. Use explicit `127.0.0.1` URLs because an unrelated IPv6 listener intercepts `localhost` on ports 4000/4100.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Owner `LOCALHOST ACCEPTED`, Parent authority/device gates, Platform Enrollment, deployment, and production acceptance remain incomplete; mocked browser passes do not lift these holds.
+NEXT_ACTION = Continue only after Parent-dependent identity/projection and release prerequisites are closed; keep Platform Enrollment and activation held.
