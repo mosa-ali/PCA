@@ -82,13 +82,29 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   );
   await page.locator('form button[type="submit"]').click();
   const firstTotpLogin = await firstTotpLoginResponse;
-  const firstTotpOutcome = await firstTotpLogin.json().catch(() => ({})) as { error?: unknown; sessionEstablished?: unknown; mfaRequired?: unknown; mfaSetupRequired?: unknown; recoveryPending?: unknown; stepUpRequired?: unknown };
+  const firstTotpResponseText = await firstTotpLogin.text().catch(() => '');
+  let firstTotpResponseValue: unknown = {};
+  let firstTotpJsonParsed = false;
+  try {
+    firstTotpResponseValue = JSON.parse(firstTotpResponseText) as unknown;
+    firstTotpJsonParsed = true;
+  } catch {
+    // The diagnostic below records only parse status and metadata, never body text.
+  }
+  const firstTotpBodyType = firstTotpResponseValue === null ? 'null' : Array.isArray(firstTotpResponseValue) ? 'array' : typeof firstTotpResponseValue;
+  const firstTotpOutcome = typeof firstTotpResponseValue === 'object' && firstTotpResponseValue !== null && !Array.isArray(firstTotpResponseValue)
+    ? firstTotpResponseValue as { error?: unknown; sessionEstablished?: unknown; mfaRequired?: unknown; mfaSetupRequired?: unknown; recoveryPending?: unknown; stepUpRequired?: unknown }
+    : {};
   if (firstTotpLogin.status() !== 200 || firstTotpOutcome.sessionEstablished !== true) {
     const firstTotpRequestBody = firstTotpLogin.request().postDataJSON() as { totpCode?: unknown } | null;
+    const cookiesAfterTotp = await context.cookies('http://127.0.0.1:4002');
+    const sessionCookiePresent = cookiesAfterTotp.some((cookie) => cookie.name === 'pca_family_session');
+    const dailyLoginGrantCookiePresent = cookiesAfterTotp.some((cookie) => cookie.name === 'pca_parent_daily_login_grant');
+    const sessionProbe = await page.request.get('/api/parent/session');
     const otpProbe = await page.request.post('/api/parent/login/step-up', { data: { email: EMAIL!, code: firstEmailCode } });
     const otpProbeOutcome = await otpProbe.json().catch(() => ({})) as { mfaRequired?: unknown };
     const responseCookieNames = (await firstTotpLogin.headersArray()).filter((header) => header.name === 'set-cookie').map((header) => header.value.split('=', 1)[0]).filter(Boolean);
-    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')} responseKeys=${Object.keys(firstTotpOutcome).sort().join(',') || 'none'} sessionEstablished=${String(firstTotpOutcome.sessionEstablished === true)} mfaRequired=${String(firstTotpOutcome.mfaRequired === true)} mfaSetupRequired=${String(firstTotpOutcome.mfaSetupRequired === true)} recoveryPending=${String(firstTotpOutcome.recoveryPending === true)} stepUpRequired=${String(firstTotpOutcome.stepUpRequired === true)} contentType=${firstTotpLogin.headers()['content-type'] ?? 'none'} totpFieldPresent=${String(typeof firstTotpRequestBody?.totpCode === 'string' && firstTotpRequestBody.totpCode.length === 6)} responseCookieNames=${responseCookieNames.join(',') || 'none'}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
+    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')} responseKeys=${Object.keys(firstTotpOutcome).sort().join(',') || 'none'} bodyType=${firstTotpBodyType} jsonParsed=${String(firstTotpJsonParsed)} bodyLength=${firstTotpResponseText.length} sessionEstablished=${String(firstTotpOutcome.sessionEstablished === true)} mfaRequired=${String(firstTotpOutcome.mfaRequired === true)} mfaSetupRequired=${String(firstTotpOutcome.mfaSetupRequired === true)} recoveryPending=${String(firstTotpOutcome.recoveryPending === true)} stepUpRequired=${String(firstTotpOutcome.stepUpRequired === true)} contentType=${firstTotpLogin.headers()['content-type'] ?? 'none'} totpFieldPresent=${String(typeof firstTotpRequestBody?.totpCode === 'string' && firstTotpRequestBody.totpCode.length === 6)} responseCookieNames=${responseCookieNames.join(',') || 'none'} sessionCookiePresent=${String(sessionCookiePresent)} dailyLoginGrantCookiePresent=${String(dailyLoginGrantCookiePresent)} sessionProbeStatus=${sessionProbe.status()} pagePath=${new URL(page.url()).pathname}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
   }
   expect(firstTotpLogin.status(), `email-plus-TOTP login response code: ${String(firstTotpOutcome.error ?? 'none')}`).toBe(200);
   expect(firstTotpOutcome.sessionEstablished, 'valid email-plus-TOTP login establishes the browser session').toBe(true);
