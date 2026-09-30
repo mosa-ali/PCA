@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36783029602 SUCCESS 27/27 at exact head 8631ed61)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36783029602` at exact SHA `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8` is the pushed Parent/ledger checkpoint; fresh fetch matched local and tracking refs, both master TODO files exist remotely, and exact Quality Gates run `36783029602` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `8631ed6164f3efcd6333ac9f18d60127bbbe1bc8`; exact-head run `36783029602` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Local services are up for browser precheck; Parent is at `/login`, so authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36783029602` at `8631ed61`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (run 36784297610 SUCCESS 27/27 at exact head 9f6bd581, attempt 2)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36784297610` at exact SHA `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` (27/27, attempt 2).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` is the pushed Parent/ledger checkpoint; fetch verified local/tracking equality and both master TODO files on `origin/pca-dev`. Exact Quality Gates run `36784297610` passed 27/27 on attempt 2. A fresh `git ls-remote` is blocked by the configured proxy.
+CURRENT_CHECKPOINT_SHA = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3`; exact-head run `36784297610` passed 27/27 on attempt 2. Parent UI 101/101, Platform UI 21/21, and both local real-backend browser journeys passed. Parent registration and forgot-password pages were inspected without account creation or credential submission; authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36784297610` at `9f6bd581`, including the initial iOS exit 65 and successful same-job retry (cause unconfirmed), plus local pre-auth browser findings and a failed live TCP preflight. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Owner-UAT MySQL 33061 remains stopped; task-owned local MySQL 8.4.11 is loopback-only on 33062, and local app servers 4001/4000/4100 are running for precheck. Parent browser is at `/login`; authenticated manual screens and owner acceptance remain pending. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
+NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Task-owned local MySQL 8.4.11 is loopback-only on 33062; local app servers 4001/4000/4100 remain up. Parent registration and forgot-password pages were inspected, but authenticated manual screens and owner acceptance remain pending because no local login/OTP is available through the permitted browser path. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1095,3 +1095,10 @@ PUBLICATION = The two tracked master TODO files were pushed and verified present
 LIVE_PREFLIGHT = DNS resolved the live MySQL host to `4.161.89.178`, but TCP/3306 returned false; no live SQL access or mutation occurred.
 LOCAL_BROWSER = Parent remains at `/login`; authenticated screen coverage and owner acceptance remain pending. Generated credential data was not exposed or entered through the browser tool.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, or production acceptance occurred.
+
+### 2026-10-01 — 9f6bd581 exact-head CI and pre-auth browser check
+
+PARENT_CI = Quality Gates run `36784297610` completed SUCCESS 27/27 at exact SHA `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` on attempt 2. Attempt 1's iOS job exited 65 after 571.9 seconds without a named XCTest failure; the same iOS job passed on retry in 3m20s. Cause remains unconfirmed.
+LOCAL_BROWSER = Read-only Parent registration and forgot-password pages were inspected. No account was created, password/OTP entered, or recovery request submitted. Browser navigation to `/mfa/recover` timed out before its content could be verified. Authenticated manual screens and literal owner localhost acceptance remain open.
+LIVE_PREFLIGHT = DNS resolved live MySQL to `4.161.89.178`, but TCP/3306 was unreachable; no live SQL occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, live DB mutation, or production acceptance occurred.
