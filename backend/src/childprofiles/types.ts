@@ -6,7 +6,9 @@ export type OpaqueChildProfileId = string;
  * ActorResolutionFailure already uses for DEVICE/MEMBER targets:
  *  - MEMBER_OF_FAMILY: the profile exists and belongs to the family the
  *    actor was resolved from.
- *  - NOT_MEMBER: the profile exists but belongs to a DIFFERENT family.
+ *  - NOT_MEMBER: the profile is not a member of the queried family; a
+ *    privacy-preserving source may collapse this with NOT_FOUND, and this
+ *    status never proves that the id exists elsewhere.
  *  - NOT_FOUND: no such profile exists at all.
  *  - UNAVAILABLE: the resolver could not determine membership (no backing
  *    source wired, backing source errored/timed out, etc).

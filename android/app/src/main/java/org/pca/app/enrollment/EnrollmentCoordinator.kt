@@ -239,6 +239,15 @@ class EnrollmentCoordinator(
             return
         }
 
+        if (result.status != PairingState.PAIRING_PENDING.name) {
+            // The server contract permits bootstrap to establish only
+            // PAIRING_PENDING. A different status means the response cannot
+            // safely be committed; keep the token and durable attempt so an
+            // explicit retry/recovery can resolve the server-side outcome.
+            _state.value = EnrollmentState.BootstrapResultUnknown
+            return
+        }
+
         rawInvitationToken = null
         pendingProfileConfirmation = result
         _state.value = EnrollmentState.ProfileConfirmation(
@@ -297,6 +306,15 @@ class EnrollmentCoordinator(
             return
         }
 
+        if (result.status != PairingState.PAIRING_PENDING.name) {
+            // The recovery endpoint returns the original bootstrap result,
+            // whose only valid status is PAIRING_PENDING. Preserve the
+            // durable recovery capability if the response violates that
+            // contract.
+            _state.value = EnrollmentState.RecoveryPending(pending.serverBaseUrl)
+            return
+        }
+
         pendingProfileConfirmation = result
         _state.value = EnrollmentState.ProfileConfirmation(
             deviceId = result.deviceId,
@@ -348,8 +366,8 @@ class EnrollmentCoordinator(
      * NO save) if the auditor's fail-closed guard rejects the transition.
      */
     private fun persistSuccess(result: DeviceBootstrapResult): Boolean {
-        val serverPairingState = runCatching { PairingState.valueOf(result.status) }
-            .getOrDefault(PairingState.PAIRING_PENDING)
+        if (result.status != PairingState.PAIRING_PENDING.name) return false
+        val serverPairingState = PairingState.PAIRING_PENDING
         val previousPairingState = familyStateStore.currentState()?.pairingState
         val auditor = EnrollmentLifecycleAuditor(
             // KNOWN_GAP (same one documented on LocalFamilyState.familyId below): the bootstrap

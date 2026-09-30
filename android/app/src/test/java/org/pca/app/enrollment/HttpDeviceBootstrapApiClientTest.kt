@@ -138,6 +138,21 @@ class HttpDeviceBootstrapApiClientTest {
     }
 
     @Test
+    fun `a 201 claiming a lifecycle state beyond PAIRING_PENDING is ambiguous`() = runBlocking {
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start {
+            201 to JSONObject().put("deviceId", "device-123").put("status", "ACTIVE").toString().toByteArray()
+        }
+
+        try {
+            withTimeout(5_000) { client(fake.baseUrl).bootstrap("t", "ANDROID", "s", "e", "attempt", "recovery") }
+            fail("expected BootstrapError.AmbiguousOutcome")
+        } catch (e: BootstrapError.AmbiguousOutcome) {
+            // The server may have committed; retain the durable attempt and recover explicitly.
+        }
+    }
+
+    @Test
     fun `a 201 missing deviceId is treated as ambiguous, never returned with a blank id`() = runBlocking {
         val fake = FakeHttpServer.start().also { server = it }
         fake.start { 201 to JSONObject().put("status", "PAIRING_PENDING").toString().toByteArray() }
@@ -274,6 +289,21 @@ class HttpDeviceBootstrapApiClientTest {
             fail("expected RecoveryError.AmbiguousOutcome")
         } catch (e: RecoveryError.AmbiguousOutcome) {
             // expected
+        }
+    }
+
+    @Test
+    fun `recoverAttempt rejects a lifecycle state beyond PAIRING_PENDING as ambiguous`() = runBlocking {
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start {
+            200 to JSONObject().put("deviceId", "device-123").put("status", "ACTIVE").toString().toByteArray()
+        }
+
+        try {
+            withTimeout(5_000) { client(fake.baseUrl).recoverAttempt("attempt", "recovery") }
+            fail("expected RecoveryError.AmbiguousOutcome")
+        } catch (e: RecoveryError.AmbiguousOutcome) {
+            // The original attempt remains unresolved and can be recovered later.
         }
     }
 }

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { MySqlChildProfileRegistryRepository } from '../../dist/childprofiles/MySqlChildProfileRegistryRepository.js';
+import { RegistryBackedChildProfileMembershipResolver } from '../../dist/childprofiles/RegistryBackedChildProfileMembershipResolver.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
@@ -75,6 +76,21 @@ test('MySQL: resolveMembership -- MEMBER for own child, NOT_MEMBER_OR_NOT_FOUND 
   assert.equal(crossFamily, 'NOT_MEMBER_OR_NOT_FOUND');
   assert.equal(nonexistent, 'NOT_MEMBER_OR_NOT_FOUND');
   assert.equal(crossFamily, nonexistent);
+});
+
+test('MySQL: production membership adapter maps the opaque registry without distinguishing cross-family from unknown', async () => {
+  const repository = new MySqlChildProfileRegistryRepository();
+  const resolver = new RegistryBackedChildProfileMembershipResolver({ registry: repository });
+  const familyA = await createFamily();
+  const familyB = await createFamily();
+  const { row } = await repository.create(familyB, null, new Date());
+
+  assert.deepEqual(await resolver.resolveMembership(familyB, row.childProfileId), { status: 'MEMBER_OF_FAMILY' });
+  const crossFamily = await resolver.resolveMembership(familyA, row.childProfileId);
+  const nonexistent = await resolver.resolveMembership(familyA, randomUUID());
+  assert.deepEqual(crossFamily, { status: 'NOT_MEMBER' });
+  assert.deepEqual(nonexistent, crossFamily);
+  assert.deepEqual(Object.keys(crossFamily), ['status']);
 });
 
 test('MySQL: replaying the same (family, idempotencyKey) via a REAL duplicate-key error returns the ORIGINAL row', async () => {

@@ -11,15 +11,14 @@ import type { ChildProfileMembershipResult } from './types.js';
  * a familyId supplied by an untrusted caller is not proof of anything and
  * must never be threaded into this resolver as if it were.
  *
- * Lane brief Section 4: this module deliberately does NOT ship a readable
- * central child-profile directory just to make the pre-check convenient.
- * Implementations backed by a trusted endpoint or verified local family
- * state are a later, separate Coordinator binding (Section 13) -- until one
- * is wired in, `resolveMembership` MUST return UNAVAILABLE rather than
- * inventing a directory or defaulting to ALLOW-shaped behavior.
+ * Doc 39 Sections 3 and 10: this module does NOT expose a readable central
+ * child-profile directory. A production composition may bind an asynchronous
+ * trusted source that answers only the opaque family-membership question;
+ * callers that omit it use the UNAVAILABLE default below rather than an
+ * invented directory or ALLOW-shaped behavior.
  */
 export interface ChildProfileMembershipResolver {
-  resolveMembership(familyId: string, childProfileId: string): ChildProfileMembershipResult;
+  resolveMembership(familyId: string, childProfileId: string): Promise<ChildProfileMembershipResult>;
 }
 
 /**
@@ -32,7 +31,7 @@ export interface ChildProfileMembershipResolver {
  * IDOR this lane closes.
  */
 export class UnavailableChildProfileMembershipResolver implements ChildProfileMembershipResolver {
-  resolveMembership(_familyId: string, _childProfileId: string): ChildProfileMembershipResult {
+  async resolveMembership(_familyId: string, _childProfileId: string): Promise<ChildProfileMembershipResult> {
     return { status: 'UNAVAILABLE' };
   }
 }
@@ -53,7 +52,7 @@ export class StaticChildProfileMembershipResolver implements ChildProfileMembers
     this.familyIdByChildProfileId = familyIdByChildProfileId;
   }
 
-  resolveMembership(familyId: string, childProfileId: string): ChildProfileMembershipResult {
+  async resolveMembership(familyId: string, childProfileId: string): Promise<ChildProfileMembershipResult> {
     if (!isPlausibleChildProfileId(childProfileId)) return { status: 'NOT_FOUND' };
     const owningFamilyId = this.familyIdByChildProfileId.get(childProfileId);
     if (owningFamilyId === undefined) return { status: 'NOT_FOUND' };

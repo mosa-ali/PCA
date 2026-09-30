@@ -54,7 +54,7 @@ function buildApp({ nowFn = () => T0 } = {}) {
   const parentSessionAuthorizer = {
     async authorize({ parentAccountId, familyId, targetScope }) {
       if (parentRoles.get(`${parentAccountId}\u0000${familyId}`) !== 'ADMINISTRATOR') return { verdict: 'DENY' };
-      if (targetScope?.kind === 'CHILD_PROFILE' && childProfileResolver.resolveMembership(familyId, targetScope.id).status !== 'MEMBER_OF_FAMILY') {
+      if (targetScope?.kind === 'CHILD_PROFILE' && (await childProfileResolver.resolveMembership(familyId, targetScope.id)).status !== 'MEMBER_OF_FAMILY') {
         return { verdict: 'DENY' };
       }
       return { verdict: 'ALLOW' };

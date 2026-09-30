@@ -270,7 +270,7 @@ export interface ServerDependencies {
    * the SAME fail-closed UnavailableChildProfileMembershipResolver when this is omitted.
    */
   childProfileMembership?: ChildProfileMembershipResolver;
-  /** Durable async membership proof used by Parent-session child-request actions. */
+  /** Durable async membership proof used by other registry-backed routes such as eye protection. */
   childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   /**
    * PCA product-completion Writer P0-B: see registerChildPolicyRoutes' own
@@ -651,7 +651,6 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     bonusGrantLedger: deps.bonusGrantLedger,
     deviceSessionService: deps.deviceSessionService,
     childProfileMembership: deps.childProfileMembership,
-    childProfileRegistryRepository: deps.childProfileRegistryRepository,
   });
   registerChildPolicyRoutes(app, {
     parentAccountService: deps.parentAccountService,

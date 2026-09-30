@@ -230,7 +230,12 @@ class HttpDeviceBootstrapApiClient(
         }
         val deviceId = json.optString("deviceId", "")
         val status = json.optString("status", "")
-        if (deviceId.isBlank() || status.isBlank()) throw onAmbiguous()
+        // Bootstrap and recovery DTOs are intentionally narrower than the
+        // general device lifecycle: this endpoint may establish only the
+        // server-issued identity in PAIRING_PENDING. Treat every other status
+        // as an ambiguous success, preserve the attempt, and require recovery
+        // rather than persisting a higher lifecycle state from this response.
+        if (deviceId.isBlank() || status != PAIRING_PENDING_STATUS) throw onAmbiguous()
         val ageUxTier = runCatching { AgeUxTier.valueOf(json.optString("ageUxTier", AgeUxTier.YOUNG_CHILD.name)) }
             .getOrElse { throw onAmbiguous() }
         val initialPolicyProfile = runCatching {
@@ -291,6 +296,7 @@ class HttpDeviceBootstrapApiClient(
     private companion object {
         const val BOOTSTRAP_PATH = "/v1/enrollment/bootstrap"
         const val RECOVER_PATH = "/v1/enrollment/bootstrap/recover"
+        const val PAIRING_PENDING_STATUS = "PAIRING_PENDING"
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000
     }

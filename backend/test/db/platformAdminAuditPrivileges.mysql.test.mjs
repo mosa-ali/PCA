@@ -82,6 +82,11 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
     { skip: SKIP_REASON },
     () => {},
   );
+  test(
+    'MySQL PRIVILEGE BOUNDARY: migration 0060 Trust Set epochs are append-only and epoch floors have no DELETE grant',
+    { skip: SKIP_REASON },
+    () => {},
+  );
   test(PRODUCTION_PATH_TEST_NAME, { skip: SKIP_REASON }, () => {});
 } else {
   // PRIVILEGE ACCEPTANCE GATE mode: PCA_MIGRATION_DATABASE_URL is set --
@@ -195,6 +200,61 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
     await assert.doesNotReject(() =>
       runtimeConnection.query(`DELETE FROM platform_admin_login_attempts WHERE attempt_id = ?`, [attemptId]),
     );
+  });
+
+  test('MySQL PRIVILEGE BOUNDARY: migration 0060 Trust Set epochs are append-only and epoch floors have no DELETE grant', async () => {
+    const familyId = `privilege-probe-${randomUUID()}`;
+    const now = new Date();
+    try {
+      await runtimeConnection.query(
+        `INSERT INTO family_trust_set_epochs
+           (family_id, trust_set_epoch, key_epoch, supersedes_epoch, signed_epoch_bytes, signature,
+            signer_key_id, signer_device_id, issued_at, received_at)
+         VALUES (?, 1, 1, NULL, ?, 'probe-signature', 'probe-key', 'probe-device', ?, ?)`,
+        [familyId, Buffer.from('disposable-grant-probe'), now, now],
+      );
+      const [epochRows] = await runtimeConnection.query(
+        `SELECT trust_set_epoch FROM family_trust_set_epochs WHERE family_id = ?`,
+        [familyId],
+      );
+      assert.equal(epochRows.length, 1, 'runtime principal must retain SELECT and INSERT on accepted epochs');
+      assert.equal(Number(epochRows[0].trust_set_epoch), 1);
+      await assert.rejects(
+        () => runtimeConnection.query(`UPDATE family_trust_set_epochs SET signature = 'changed' WHERE family_id = ?`, [familyId]),
+        isTableAccessDenied,
+      );
+      await assert.rejects(
+        () => runtimeConnection.query(`DELETE FROM family_trust_set_epochs WHERE family_id = ?`, [familyId]),
+        isTableAccessDenied,
+      );
+
+      await runtimeConnection.query(
+        `INSERT INTO family_epoch_floors
+           (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+         VALUES (?, 1, 1, ?)`,
+        [familyId, now],
+      );
+      await runtimeConnection.query(
+        `UPDATE family_epoch_floors
+         SET minimum_accepted_trust_set_epoch = 2, updated_at = ?
+         WHERE family_id = ?`,
+        [new Date(now.getTime() + 1), familyId],
+      );
+      const [floorRows] = await runtimeConnection.query(
+        `SELECT minimum_accepted_trust_set_epoch FROM family_epoch_floors WHERE family_id = ?`,
+        [familyId],
+      );
+      assert.equal(Number(floorRows[0]?.minimum_accepted_trust_set_epoch), 2, 'runtime principal must be able to advance and read the floor');
+      await assert.rejects(
+        () => runtimeConnection.query(`DELETE FROM family_epoch_floors WHERE family_id = ?`, [familyId]),
+        isTableAccessDenied,
+      );
+    } finally {
+      // Only this test's UUID-owned rows are removed, using the privileged
+      // connection. The containing database is also a disposable grant-test DB.
+      await adminConnection.query(`DELETE FROM family_trust_set_epochs WHERE family_id = ?`, [familyId]).catch(() => {});
+      await adminConnection.query(`DELETE FROM family_epoch_floors WHERE family_id = ?`, [familyId]).catch(() => {});
+    }
   });
 
   test(PRODUCTION_PATH_TEST_NAME, async () => {

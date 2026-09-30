@@ -23,7 +23,6 @@ import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } fro
 import { ChildRequestError, type ChildRequestService } from '../../childrequests/ChildRequestService.js';
 import type { ChildRequest, ChildRequestType, ParentDecisionOutcome } from '../../childrequests/types.js';
 import type { BonusGrantLedger } from '../../childrequests/BonusGrantLedger.js';
-import type { ChildProfileRegistryRepository } from '../../childprofiles/ChildProfileRegistryRepository.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { AppScope } from '../../schedule/types.js';
 import {
@@ -43,18 +42,15 @@ export interface ChildRequestRoutesDeps {
   /**
    * PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: the `bonus-time/active-grants` (read) and
    * `bonus-time/grants/:grantId/revoke` (write) routes below read/mutate `bonusGrantLedger` directly
-   * by a client-supplied `childProfileId`, WITHOUT going through ChildRequestService/
-   * ParentActionAuthorizationService's own CHILD_PROFILE membership check (decide()/grantDirectly()
-   * already get that check for free via their targetScope, so this is the ONLY place these two
-   * ledger-touching routes independently need it). Defaults to the SAME fail-closed
-   * UnavailableChildProfileMembershipResolver default ParentActionAuthorizationService itself uses --
-   * forgetting to wire a real resolver denies these routes rather than silently reopening the
-   * cross-family IDOR this closes. Production wires the SAME instance passed to the shared
-   * ParentActionAuthorizationService (see main.ts), never a second independently-constructed one.
+   * by a client-supplied `childProfileId`. Parent decisions and direct grants
+   * use the separate Parent-session authorizer in ChildRequestService; these
+   * ledger routes therefore need their own membership check. Defaults to the
+   * fail-closed UnavailableChildProfileMembershipResolver -- forgetting to
+   * wire a real resolver denies these routes rather than reopening the
+   * cross-family IDOR. Production passes the same resolver instance used by
+   * ParentActionAuthorizationService and Parent-session child-request actions.
    */
   childProfileMembership?: ChildProfileMembershipResolver;
-  /** Durable async membership proof for Parent-session targets and ledger reads/writes. */
-  childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   /** Same deterministic-clock convention as every other service in this codebase -- never read `Date.now()` inline, so revoke/active-grants stay as testable as decide() itself. */
   now?: () => Date;
 }
@@ -138,16 +134,12 @@ function errorStatus(code: ChildRequestError['code']): number {
 export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequestRoutesDeps): void {
   const { parentAccountService, childRequestService, bonusGrantLedger, deviceSessionService } = deps;
   const childProfileMembership = deps.childProfileMembership ?? new UnavailableChildProfileMembershipResolver();
-  const childProfileRegistryRepository = deps.childProfileRegistryRepository;
   const now = deps.now ?? (() => new Date());
 
   /** Every non-member/not-found/unavailable outcome maps to the same public denial. */
   async function childProfileInFamily(familyId: string, childProfileId: string): Promise<boolean> {
     try {
-      if (childProfileRegistryRepository) {
-        return (await childProfileRegistryRepository.resolveMembership(familyId, childProfileId)) === 'MEMBER';
-      }
-      return childProfileMembership.resolveMembership(familyId, childProfileId).status === 'MEMBER_OF_FAMILY';
+      return (await childProfileMembership.resolveMembership(familyId, childProfileId)).status === 'MEMBER_OF_FAMILY';
     } catch {
       return false;
     }

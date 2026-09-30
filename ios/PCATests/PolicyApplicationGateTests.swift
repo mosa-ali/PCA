@@ -2,9 +2,9 @@ import XCTest
 @testable import PCA
 
 final class PolicyApplicationGateTests: XCTestCase {
-    func testGenesisFloorAcceptsAnyStamp() {
+    func testMissingTrustedFloorFailsClosed() {
         let candidate = PolicyEpochStamp(trustSetEpoch: 5, keyEpoch: 3)
-        XCTAssertEqual(PolicyApplicationGate.evaluate(candidate: candidate, currentFloor: nil), .apply)
+        XCTAssertEqual(PolicyApplicationGate.evaluate(candidate: candidate, currentFloor: nil), .rejectMissingTrustedEpochFloor)
     }
 
     func testEqualEpochsAreAccepted() {

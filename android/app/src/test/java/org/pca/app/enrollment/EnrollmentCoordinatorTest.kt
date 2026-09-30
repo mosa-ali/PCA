@@ -223,6 +223,22 @@ class EnrollmentCoordinatorTest {
         assertNull(pendingAttemptStore.current())
     }
 
+    @Test
+    fun `bootstrap response cannot claim ACTIVE and pending recovery state is preserved`() = runTest {
+        val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult(deviceId = "server-issued-device-id", status = "ACTIVE") }
+        val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator(), familyStateStore, pendingAttemptStore)
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertNull(familyStateStore.currentState())
+        assertNotNull(pendingAttemptStore.current())
+        assertEquals(1, apiClient.callCount)
+    }
+
     /**
      * The bootstrap response never carries a real familyId (DeviceBootstrapResult is
      * {deviceId, status, ...} only -- see EnrollmentCoordinator.persistSuccess's own doc

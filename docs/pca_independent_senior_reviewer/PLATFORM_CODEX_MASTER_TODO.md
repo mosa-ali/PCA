@@ -5,15 +5,40 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 00:30 UTC
-VALIDATED_PARENT_SOURCE_HEAD = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (exact-head Quality Gates run 36519047489 SUCCESS 27/27 at that head; Wave-5B certified; Wave 5C halted before implementation with zero files changed)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = 91f7f6d4dc9b7d141f09da1f73906a295fd31cfc (last certified exact-head run 36519047489 SUCCESS 27/27; the handover reconciliation commit is reported with the handover report)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = None; worktree clean apart from `.vscode/` and root `0` (excluded); the handover documentation commit is the only change on top of 91f7f6d4
+LAST_UPDATED_UTC = 2026-09-30 (Codex re-entry review)
+VALIDATED_PARENT_SOURCE_HEAD = a8c37162ed6ec135b618a3942c4766bac3b8f508 (exact-head Quality Gates PASS 36634164993, 27/27; predates current resolver work)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = a8c37162ed6ec135b618a3942c4766bac3b8f508 (fresh authenticated GitHub API ref, local HEAD and origin/pca-dev agree now; Wave 5C edits remain uncommitted)
+CURRENT_CHECKPOINT_SHA = a8c37162ed6ec135b618a3942c4766bac3b8f508 (current shared branch base; current source changes have no exact-head CI yet)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Wave 5C shared membership resolver and Parent-session authorizer, raw-registry bypass correction, 45/52 TODO-14 integrated route evidence, migration-0060 grant tests, iOS missing-trusted-floor fail-closed correction, Android exact-PAIRING_PENDING enrollment response guard, and synchronized architecture/mission/crosswalk/TODO artifacts are local; backend build and focused/disposable-MySQL tests pass; standalone Swift gate probe and focused Android enrollment tests (50/50) pass; exact-head CI is pending. `.vscode/` and root `0` remain excluded.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = CODEX RESTART per the Parent continuous-goal `## CODEX RESTART CHECKPOINT`. DeepSeek development is stopped; Codex resumes Parent work at Wave 5C (child-profile membership resolver). Keep dependent Platform activation `HOLD_PARENT_DEPENDENCY` through Parent TODO-12/14/15 and the owner's literal localhost acceptance. No Enrollment activation/deployment/UAT is implied.
+NEXT_ACTION = Continue TODO-15 independent source/device-security review and the same Parent mission; publication/exact-head CI, Parent TODO-12/15 and owner-only TODO-18 acceptance remain open. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`; no activation/deployment/UAT is implied.
+
+### 2026-09-30 — Parent re-entry dependency confirmed
+
+PARENT_REVIEW = Wave 5A/5B history is accepted with follow-up for the unresolved first-device Trust Set root/bootstrap and external crypto review. The Wave 5C opaque membership resolver is local and has no exact-head CI yet. Fresh authenticated GitHub API ref and Actions query confirm pca-dev remains at a8c37162 and run 36634164993 is the latest 27/27 PASS; this predates Wave 5C.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Platform consumes the Parent-owned family projection and may not activate Enrollment while Parent authority, route/device gates, exact-head CI and the literal `LOCALHOST ACCEPTED` owner decision remain outstanding. No deployment or production acceptance is implied.
+
+### 2026-09-30 — Parent iOS device-security gate tightened
+
+PARENT_REVIEW = The iOS policy epoch gate now rejects a missing trusted floor rather than accepting a first epoch by trust-on-first-use. A standalone Swift compile and behavior probe passed; Xcode XCTest/simulator and exact-head CI remain unavailable/pending. No device activation, Parent authority gate, or owner acceptance was promoted.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains unchanged. Enrollment work, Azure deployment, and production acceptance remain held.
+
+### 2026-09-30 — Parent Android bootstrap status constrained
+
+PARENT_REVIEW = The Android bootstrap and recovery paths now accept only the backend's `PAIRING_PENDING` result; unexpected higher lifecycle states are classified as ambiguous, attempts remain recoverable, and persistence independently rejects other statuses. Focused Android unit suites passed 50/50. Exact-head CI remains pending.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains unchanged; no dependent Enrollment work, deployment, or production acceptance was promoted.
+
+### 2026-09-29 22:44 UTC — Parent Wave 5C route wiring corrected
+
+PARENT_REVIEW = Focused source review found and corrected a raw-registry bypass in the child-request route composition. `buildServer.ts` now forwards only the shared resolver, and focused backend build/tests pass locally; no exact-head CI covers this uncommitted change yet.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15, Parent projection acceptance, exact-head CI and literal `LOCALHOST ACCEPTED` remain gates; no Enrollment activation, deployment or production acceptance is implied.
+
+### 2026-09-29 22:58 UTC — Parent TODO-14 integrated audit advanced
+
+PARENT_REVIEW = The production Parent-session child-request authorizer now shares the registry-backed membership resolver. The serial disposable-MySQL route campaign passes 51/51 and proves 45/52 declarations across 137 scenarios with zero unexpected 401/403/other; seven remain intentionally gated or optional. Current source remains uncommitted without exact-head CI.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15, Parent projection acceptance and literal `LOCALHOST ACCEPTED` remain gates; no Enrollment activation, deployment or production acceptance is implied.
 
 ### 2026-09-28 06:04 UTC — Parent TODO-14 assertion checkpoint committed locally
 
@@ -806,3 +831,32 @@ NEXT_ACTION = STOP for owner review of the Wave-5B verification foundation; keep
 PARENT = DeepSeek development stopped by owner; Codex resumes. Certified state remains `91f7f6d4` (run 36519047489, 27/27). Wave 5C (real child-profile membership resolver) was started, contract-reviewed (CONTRACT_CONFLICT = NO) and halted before implementation with zero files changed. A local disposable owner UAT environment exists (database `pca_local_owner_uat` @ 0060 + local services; local-only, never committed; handoff `.agent-local-artifacts/local-uat-mission/PCA_LOCAL_UAT_HANDOFF.md`). Live `pca_pro` remains 0059; LIVE_APPLICATION_AUTHORIZED = NO.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = Preserve the hold; Codex restarts Parent work per the continuous-goal restart checkpoint.
+
+### 2026-09-29 21:49 UTC — Parent Wave 5C local implementation status
+
+PARENT = Current remote/source base is `a8c37162ed6ec135b618a3942c4766bac3b8f508`; the Wave 5C async registry-backed membership resolver is implemented locally and passes backend build, focused tests 81/81, adjacent child-request/policy/Web Rules regressions 70/70, and guarded UUID-named disposable MySQL 8.4.11 validation (58 migrations + registry suite 10/10, database removed). Full non-DB suite passes 274/279; five subprocess-dependent files fail under sandbox `spawn EPERM`/missing child-process output. The registration omission is fixed and its gate passes 6/6. Current Wave 5C source has no exact-head CI.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 localhost acceptance remain open. No dependent Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue Parent TODO-12 validation/review. Git metadata writes are currently denied by the workspace (`.git/FETCH_HEAD` and `.git/index.lock` permission errors), so no source checkpoint is committed/published and no exact-head CI covers it. Preserve the Platform hold.
+
+### 2026-09-29 22:03 UTC — Parent Trust Set bootstrap dependency confirmed
+
+PARENT = PCA-DEC-037 family provisioning creates no device or Trust Set genesis anchor, while the acceptance service requires the exact genesis Owner DSK anchor for epoch 1. The missing first-device/root ceremony is an owner/security protocol dependency; no trust writer or device route is activated.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue Parent work only within approved security boundaries; preserve the Platform hold.
+
+### 2026-09-29 21:55 UTC — Parent Wave 5C MySQL validation completed
+
+PARENT = Local disposable MySQL migration/privacy/environment gate PASS (58/58 migrations) and `childProfileRegistry.mysql.test.mjs` PASS 10/10 against a UUID-named run-owned database; cleanup PASS and database removed. This does not certify current code in GitHub CI.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Continue Parent exact-head review/CI and preserve the Platform hold.
+
+### 2026-09-30 — Codex handover re-entry refreshed
+
+PARENT_REVIEW = Local HEAD and `origin/pca-dev` tracking ref are `a8c37162`; the current `git ls-remote` attempt could not connect through the configured proxy, so server equality is not freshly established in this re-entry. Latest recorded exact-head CI is `36634164993`, 27/27 at `a8c37162`, before current uncommitted resolver/mobile changes. FamilyAudit actor attribution still lacks an approved typed schema and reviewed encrypted composer; no source or release gate was changed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment implementation/activation, deployment, production mutation, or owner acceptance occurred.
+PARENT_BUILD = The current uncommitted Parent source passes `npm run build` (`tsc`) locally; no exact-head CI or Platform release gate is inferred.
+
+### 2026-09-30 — Parent membership and route-audit validation refreshed
+
+PARENT_CI_LOCAL = Backend build PASS; the serial focused Parent membership/authorization/child-request/runtime-grant suite passes 145/145 with `NODE_ENV=test`. Corrected disposable MySQL 8.4.11 route-audit campaign passes 51/51 after 58 migrations; owned database cleanup passed. Integrated report is 45/52 declarations and 137 scenarios, zero unexpected 401/403/other, with global aggregate still `NOT_YET_PROVEN`. Android Gradle task exited successfully as UP-TO-DATE; existing XMLs report 30/30 coordinator and 20/20 HTTP tests. No current exact-head CI covers these uncommitted changes.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner acceptance, projection/release prerequisites, and exact-head CI remain outstanding; no Enrollment activation, deployment, production mutation, or acceptance occurred.

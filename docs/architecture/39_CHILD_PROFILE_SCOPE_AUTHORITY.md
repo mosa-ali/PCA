@@ -17,7 +17,9 @@ resolveMembership(familyId, childProfileId) -> MEMBER_OF_FAMILY | NOT_MEMBER | N
 Four honestly distinct outcomes, mirroring `ActorResolutionFailure`'s existing shape:
 
 - **MEMBER_OF_FAMILY** — the profile exists and belongs to the queried family. The only outcome that lets evaluation proceed to the ordinary role/step-up matrix.
-- **NOT_MEMBER** — the profile exists but belongs to a different family.
+- **NOT_MEMBER** — the profile is not a member of the queried family. A
+  privacy-preserving source may deliberately collapse this with NOT_FOUND;
+  this outcome never proves that the identifier exists in another family.
 - **NOT_FOUND** — no such profile exists.
 - **UNAVAILABLE** — the resolver could not determine membership (no backing source wired, backing source errored or timed out).
 
@@ -25,17 +27,17 @@ Four honestly distinct outcomes, mirroring `ActorResolutionFailure`'s existing s
 
 Section 4 of the PCA10 lane brief is explicit: this module does not ship a readable central child-profile directory merely to make the pre-check convenient. `ParentActionAuthorizationService`'s default constructor argument is `UnavailableChildProfileMembershipResolver`, which returns `UNAVAILABLE` unconditionally. Every non-`MEMBER_OF_FAMILY` outcome — `NOT_MEMBER`, `NOT_FOUND`, `UNAVAILABLE`, and a malformed profile id caught before the resolver is even consulted — denies the action. A production deployment that forgets to inject a real, trustworthy resolver denies `CHILD_PROFILE`-targeted operations; it does not silently reopen the IDOR by defaulting to allow.
 
-Wiring a real resolver backed by a trusted endpoint or verified local family state (an async source, a Coordinator-owned adapter over local storage, etc.) is explicitly left as a separate, later Coordinator binding (lane brief Section 13). `StaticChildProfileMembershipResolver` in this module is a reference/test-only implementation — an explicit static map a caller populates from whatever trustworthy source it has, never a queryable directory this module exposes on its own.
+The production composition binds the asynchronous `RegistryBackedChildProfileMembershipResolver` over the owner-approved opaque `family_child_memberships` registry; details and limits are in Sections 4 and 11. `StaticChildProfileMembershipResolver` remains a reference/test-only implementation — an explicit static map a caller populates from a trustworthy source, never a queryable directory this module exposes on its own.
 
 ## 4. Integration point
 
-`ParentActionAuthorizationService.evaluate()` gained one branch, positioned identically to the existing DEVICE/MEMBER cross-check and running before the role/step-up matrix:
+`ParentActionAuthorizationService.authorize()` awaits the asynchronous membership resolver once after the actor has resolved, then passes its result into the I/O-free `evaluate()` branch before the role/step-up matrix:
 
 1. Reject a malformed `targetScope.id` (empty or over length) without ever calling the resolver.
-2. Call `resolveMembership(request.familyId, request.targetScope.id)`.
+2. Call `resolveMembership(request.familyId, request.targetScope.id)` against the trusted exact-id backing source; on backing failure, treat the result as `UNAVAILABLE`.
 3. Anything other than `MEMBER_OF_FAMILY` denies with the SAME public reason (`CROSS_FAMILY_TARGET`) as every other target-resolution failure shape.
 
-The resolver is consulted fresh on every `authorize()` call — this service holds no membership cache of its own, so a family reassignment or profile removal on the backing source is reflected on the very next call, not served stale.
+The resolver is consulted for every fresh `authorize()` evaluation — this service holds no membership cache of its own. Exact idempotent replays retain the already-recorded outcome; a changed request fingerprint falls through to a fresh actor and membership evaluation.
 
 ## 5. Error oracle
 
@@ -63,7 +65,9 @@ Membership is checked before the role/step-up matrix runs. A wrong-family `CHILD
 
 ## 10. Residual scope
 
-Runtime wiring of a real, trustworthy `ChildProfileMembershipResolver` backed by verified local family state or a trusted endpoint remains a separate Coordinator-owned binding (lane brief Section 13) — this document defines the contract and the fail-closed default a production deployment falls back to until that binding lands, not the binding itself.
+Runtime wiring is implemented at the production composition boundary in `backend/src/main.ts`: one MySQL opaque-registry repository backs one async adapter shared by `ParentActionAuthorizationService`, the Parent-session child-request authorizer, and the child-request routes. `buildServer.ts` passes only that adapter to child-request routes; it does not pass the raw registry as an alternate authority path. The resolver proves only exact family membership; it does not establish Parent actor identity, role, Trust Set acceptance, child-device activation, or route eligibility. The fail-closed default remains in force for any caller that omits the adapter. Schedule-policy and cryptographic device gates therefore remain closed independently of this membership binding.
+
+The first local Wave 5C review found that `childRequestRoutes.ts` preferred an optional raw repository dependency over the shared adapter. That bypass contradicted the one-adapter composition claim above. The alternate dependency and forwarding were removed; the production wiring test now pins both the shared adapter forwarding and the absence of a raw repository dependency on this route.
 
 ## 11. The central child-profile membership registry, and why Section 3's prohibition survives it
 
@@ -101,9 +105,12 @@ precise failure Section 5 already prohibits.
 family" must remain indistinguishable from "this identifier does not exist". A lookup may confirm
 existence and ownership to an authorized caller and must reveal nothing to anyone else.
 
-**`ChildProfileMembershipResolver` is unaffected.** Its interface and its synchronous, actor-derived
-contract are unchanged by this section; the registry does not become its backing store, and no
-resolver behaviour is altered by `CHG-2026-09-04-01`.
+**The resolver remains a membership-only authority.** Its family input must still come from the
+successfully resolved actor, and it may return only the contract's membership outcomes. The
+coordinator-owned asynchronous adapter may use this registry for an exact `(familyId,
+childProfileId)` check; the repository's `NOT_MEMBER_OR_NOT_FOUND` result remains collapsed and is
+never widened into an existence query, listing surface, or readable child-profile directory. This
+binding changes neither the approved registry fields nor the public denial behavior.
 
 **This is not precedent.** The approval permits an edge, not a directory. Adding a readable child
 field, a lookup returning more than existence and ownership, or a distinguishable other-family

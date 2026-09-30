@@ -10,9 +10,10 @@
  * Section 3.2) remains the authoritative readable child entity; this is a
  * membership/existence edge only, never a ChildProfile record.
  *
- * Distinct from ChildProfileMembershipResolver.ts, which this change does
- * not touch: that resolver's synchronous, actor-derived contract is
- * frozen (doc 39 Section 10) and is not backed by this table.
+ * The repository can answer membership only as MEMBER or the deliberately
+ * collapsed NOT_MEMBER_OR_NOT_FOUND. RegistryBackedChildProfileMembershipResolver
+ * adapts that result to the actor-derived authorization contract without
+ * revealing whether a negative identifier exists in another family.
  */
 export interface ChildProfileMembershipRow {
   childProfileId: string;

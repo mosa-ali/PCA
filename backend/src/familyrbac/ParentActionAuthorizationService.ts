@@ -7,6 +7,7 @@ import {
   UnavailableChildProfileMembershipResolver,
   type ChildProfileMembershipResolver,
 } from '../childprofiles/ChildProfileMembershipResolver.js';
+import type { ChildProfileMembershipResult } from '../childprofiles/types.js';
 import { isPlausibleChildProfileId } from '../childprofiles/policy.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './FamilyAuditStore.js';
 
@@ -107,8 +108,9 @@ export class ParentActionAuthorizationService {
    * every instance, which is impossible to honour from a synchronous method
    * (see ActionIdempotencyLedger.ts's own doc comment). The verdict logic
    * itself is unchanged and still pure -- evaluate() performs no I/O (both
-   * trust-set resolutions are awaited here and passed in), so the only
-   * awaited work is those resolver reads and the idempotency entry.
+   * trust-set and child-membership resolutions are awaited here and passed
+   * in), so `evaluate()` remains I/O-free and the only awaited work is the
+   * resolver reads and idempotency entry.
    *
    * The ledger is keyed by this request's familyId: an idempotency key is
    * scoped to the family that issued it and must never be able to collide
@@ -137,7 +139,23 @@ export class ParentActionAuthorizationService {
       request.targetScope.kind === 'DEVICE' || request.targetScope.kind === 'MEMBER'
         ? await this.roleResolver.resolveActor(request.familyId, request.targetScope.id)
         : null;
-    const decision = this.evaluate(request, resolvedActor, resolvedTarget);
+    // The family key is trusted only after actor resolution succeeds. The
+    // opaque registry is queried once, by exact profile id, for a plausible
+    // CHILD_PROFILE target. Any backing-source exception becomes the same
+    // unavailable result that evaluate() maps to CROSS_FAMILY_TARGET.
+    let resolvedMembership: ChildProfileMembershipResult | null = null;
+    if (
+      !isActorResolutionFailure(resolvedActor)
+      && request.targetScope.kind === 'CHILD_PROFILE'
+      && isPlausibleChildProfileId(request.targetScope.id)
+    ) {
+      try {
+        resolvedMembership = await this.childProfileMembership.resolveMembership(request.familyId, request.targetScope.id);
+      } catch {
+        resolvedMembership = { status: 'UNAVAILABLE' };
+      }
+    }
+    const decision = this.evaluate(request, resolvedActor, resolvedTarget, resolvedMembership);
     const effective = await this.idempotency.record(request.familyId, request.idempotencyKey, {
       actionId: request.actionId,
       requestFingerprint: fingerprint,
@@ -255,6 +273,7 @@ export class ParentActionAuthorizationService {
     request: AuthorizeRequest,
     resolved: ActorResolution,
     resolvedTarget: ActorResolution | null,
+    resolvedMembership: ChildProfileMembershipResult | null,
   ): AuthorizationDecision {
     const now = this.now();
 
@@ -290,8 +309,7 @@ export class ParentActionAuthorizationService {
       if (!isPlausibleChildProfileId(request.targetScope.id)) {
         return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
       }
-      const membership = this.childProfileMembership.resolveMembership(request.familyId, request.targetScope.id);
-      if (membership.status !== 'MEMBER_OF_FAMILY') {
+      if (resolvedMembership?.status !== 'MEMBER_OF_FAMILY') {
         return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
       }
     }

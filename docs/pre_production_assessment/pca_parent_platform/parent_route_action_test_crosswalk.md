@@ -1,6 +1,6 @@
 # Parent route/action test evidence crosswalk (static first pass)
 
-Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json (re-verified mechanically against `backend/src/http/routes` on 2026-09-28: 52 declarations / 43 unique paths). An opt-in runtime outcome collector emits bounded reports across Parent account identity/auth, MFA enrollment/recovery/step-up, family membership, dashboard, audit-events, removal-decision, child-request/bonus-time, eye-protection, schedule-policy, preferences/safe-zones, free-access-status, protection-alerts, and web-rules route test suites, now covering all 52/52 declarations by exact inventory-key comparison. A second, orthogonal `evidenceTier` dimension separates `BOUNDED_HTTP` rows from `MYSQL_HTTP` (database-backed) and `REAL_BACKEND` rows; the Wave-2 and Wave-3 integrated disposable-MySQL campaigns are recorded in their own sections below.
+Checkpoint: handler declarations remain unchanged from the source inventory in parent_api_contract_matrix.json (re-verified mechanically against `backend/src/http/routes` on 2026-09-28: 52 declarations / 43 unique paths). An opt-in runtime outcome collector emits bounded reports across Parent account identity/auth, MFA enrollment/recovery/step-up, family membership, dashboard, audit-events, removal-decision, child-request/bonus-time, eye-protection, schedule-policy, preferences/safe-zones, free-access-status, protection-alerts, and web-rules route test suites, now covering all 52/52 declarations by exact inventory-key comparison. A second, orthogonal `evidenceTier` dimension separates `BOUNDED_HTTP` rows from `MYSQL_HTTP` (database-backed) and `REAL_BACKEND` rows; Wave-2 and Wave-3 history and the current Wave-4 integrated campaign are recorded below.
 
 ## Scope and limits
 
@@ -34,16 +34,20 @@ Checkpoint: handler declarations remain unchanged from the source inventory in p
 - The remaining 12 declarations each carry exactly one reviewed disposition: 6 `KNOWN_FAIL_CLOSED_AUTHORITY_GATE`, 3 `KNOWN_FAIL_CLOSED_SERVICE_GATE`, 2 `KNOWN_CRYPTO_DEVICE_GATE`, 1 `OPTIONAL_ROUTE`. UNREVIEWED = 0; all 52 declarations reconcile.
 - `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN` by design: the 12 remaining declarations are intentionally gated by TODO-12/TODO-15 decisions rather than missing evidence.
 
-### Declaration dispositions (current, after Wave 3)
+## Integrated evidence — Wave 4 (current)
+
+The refreshed run-owned disposable-MySQL campaign passes all 51 tests across its seven suites. Its status-only report proves 45/52 declarations across 137 scenarios: 50 allow, 75 expected denial, 1 protective-authority-not-applicable, and 11 validation/protocol; unexpected 401/403/other = 0. The five Parent-session child-request/bonus-time routes are integrated through real DB-backed Parent session/role rows and the opaque MySQL membership registry. Their request repository and grant ledger remain the documented process-local production stores; the test adds no plaintext persistence. The shared production membership resolver and Parent-session authorizer are pinned by the source-wiring test. Seven declarations remain without integrated success evidence: schedule-policy (Trust Set gate), three Web Rules service gates, two crypto-gated removal decisions, and the optional dashboard read. `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN`.
+
+### Declaration dispositions (current, after Wave 4)
 
 | # | Declaration | Disposition | Integrated evidence / reason |
 |---:|---|---|---|
 | 1 | POST schedule-policy | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Production wires `UnavailableTrustSetRoleResolver` (NO_TRUST_SET, fail-closed); TODO-12 Trust Set path required before success evidence exists |
-| 2 | GET child-requests | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Production wires `UnavailableChildProfileMembershipResolver` / unavailable trust-set resolver |
-| 3 | POST child-requests/:requestId/decide | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Same production wiring |
-| 4 | POST bonus-time/grant | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Same production wiring |
-| 5 | POST bonus-time/grants/:grantId/revoke | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Same production wiring |
-| 6 | GET bonus-time/active-grants | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Same production wiring |
+| 2 | GET child-requests | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | `parentRouteAuditChildRequestHttp.mysql.test.mjs` — real Parent session and active-role lookup with a DB-backed family/child registry fixture |
+| 3 | POST child-requests/:requestId/decide | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — session Administrator, CSRF, and the shared registry-backed Parent-session authorizer |
+| 4 | POST bonus-time/grant | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — member grant succeeds; cross-family child and database-backed Viewer role are denied |
+| 5 | POST bonus-time/grants/:grantId/revoke | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — registry member grant is revoked by an active Administrator session |
+| 6 | GET bonus-time/active-grants | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — active-grant read is scoped through the shared membership resolver |
 | 7 | GET dashboard | OPTIONAL_ROUTE | No Parent Web caller (optional unconsumed read); bounded optional-absence evidence |
 | 8 | GET eye-protection | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | `eyeProtectionSettingsHttp.mysql.test.mjs` — 4 scenarios |
 | 9 | POST eye-protection | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | `eyeProtectionSettingsHttp.mysql.test.mjs` — 3 scenarios |
@@ -193,4 +197,4 @@ The assertion table now anchors direct HTTP status assertions for all 52 method/
 
 ## Next evidence step
 
-Declaration coverage is complete (52/52 by inventory-key comparison) in the bounded test-double collector slice, and 40 declarations now also carry database-backed integrated evidence after Wave 3 closed every previously required-but-missing declaration (family-member invitation list/create/revoke/role, member remove, member-invitation accept; removal-decision list/detail/create/local-pin decide; administration-pin status/configure). The remaining 12 declarations are the intentionally gated set (6 schedule-policy/child-request/bonus-time authority gates; 3 web-rules service gates; 2 signed/authorized-recovery crypto gates; 1 optional dashboard read) and must not be activated to increase coverage. Keep expected denials, unexpected 401/403, other failures, and named authority/service/crypto gates separate. `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` until the TODO-12/TODO-15 gates are separately resolved.
+Declaration coverage remains 52/52 in the bounded test-double collector slice; 45 declarations now also carry database-backed integrated evidence. The remaining seven are one schedule-policy authority gate, three Web Rules service gates, two signed/authorized-recovery crypto gates, and one optional dashboard read. Do not activate gated routes to increase coverage. Keep expected denials, unexpected 401/403, other failures, and named authority/service/crypto gates separate. `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` until the TODO-12/TODO-15 gates are separately resolved.

@@ -47,7 +47,7 @@ import { ParentActionAuthorizationService } from './familyrbac/ParentActionAutho
 import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
 import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStore.js';
 import { StoreBackedTrustSetRoleResolver } from './familytrustset/StoreBackedTrustSetRoleResolver.js';
-import { UnavailableChildProfileMembershipResolver } from './childprofiles/ChildProfileMembershipResolver.js';
+import { RegistryBackedChildProfileMembershipResolver } from './childprofiles/RegistryBackedChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
 // authority -- see RemovalDecisionAuthority.ts's own header for the full
 // design note. Three of its dependencies genuinely have no production
@@ -61,7 +61,8 @@ import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.
 // deviceDirectoryService) for the full rationale on why the repository/
 // ledger are in-memory reference implementations.
 import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepository.js';
-import { ChildRequestService, type ParentSessionChildRequestAuthorizer } from './childrequests/ChildRequestService.js';
+import { ChildRequestService } from './childrequests/ChildRequestService.js';
+import { createParentSessionChildRequestAuthorizer } from './childrequests/ParentSessionChildRequestAuthorizer.js';
 import { MySqlEyeProtectionSettingsRepository } from './eyeprotection/MySqlEyeProtectionSettingsRepository.js';
 import { EyeProtectionSettingsService } from './eyeprotection/EyeProtectionSettingsService.js';
 import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
@@ -599,8 +600,10 @@ async function start(): Promise<void> {
   // resolver, never two independently-constructed ones -- exactly the "one production composition
   // boundary" posture trustSetRoleResolver above already established, so a future real resolver
   // swapped in at ONE site is never silently missing at the other.
-  const childProfileMembershipResolver = new UnavailableChildProfileMembershipResolver();
   const childProfileRegistryRepository = new MySqlChildProfileRegistryRepository();
+  const childProfileMembershipResolver = new RegistryBackedChildProfileMembershipResolver({
+    registry: childProfileRegistryRepository,
+  });
   // Real, durable, per-family persistence (PCA product-completion
   // programme, Writer P0-A) replacing the previous hardcoded closure
   // default shared across every family regardless of familyId -- see
@@ -681,27 +684,10 @@ async function start(): Promise<void> {
   // NOTE that ActionIdempotencyLedger is no longer in that list: it holds no
   // family content or personal data at all (an opaque verdict plus identifiers),
   // so it is durable as of migration 0047 -- see its own comment above.
-  const parentSessionChildRequestAuthorizer: ParentSessionChildRequestAuthorizer = {
-    async authorize({ parentAccountId, familyId, targetScope }) {
-      try {
-        if ((await parentAccountService.activeFamilyRole(parentAccountId as never, familyId)) !== 'ADMINISTRATOR') {
-          return { verdict: 'DENY' };
-        }
-        if (targetScope.kind === 'FAMILY') {
-          return { verdict: targetScope.id === familyId ? 'ALLOW' : 'DENY' };
-        }
-        if (targetScope.kind === 'CHILD_PROFILE') {
-          const membership = await childProfileRegistryRepository.resolveMembership(familyId, targetScope.id);
-          return { verdict: membership === 'MEMBER' ? 'ALLOW' : 'DENY' };
-        }
-        // Device and accepted-member target lookup is not yet available through
-        // a family-scoped production resolver. Keep those Parent actions closed.
-        return { verdict: 'DENY' };
-      } catch {
-        return { verdict: 'DENY' };
-      }
-    },
-  };
+  const parentSessionChildRequestAuthorizer = createParentSessionChildRequestAuthorizer({
+    parentAccountService,
+    childProfileMembershipResolver,
+  });
   const childRequestRepository = new InMemoryChildRequestRepository();
   const childRequestService = new ChildRequestService(
     childRequestRepository,
@@ -1024,7 +1010,6 @@ async function start(): Promise<void> {
     childRequestService,
     bonusGrantLedger,
     childProfileMembership: childProfileMembershipResolver,
-    childProfileRegistryRepository,
     familyMemberInvitationService,
     familyAuditEventLedger,
     protectionAlertLedger,

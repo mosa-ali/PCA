@@ -385,6 +385,45 @@ test('CHILD_PROFILE: the DEFAULT resolver (none injected) fails closed for every
   assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
 });
 
+test('CHILD_PROFILE: async membership is resolved exactly once after actor resolution', async () => {
+  let calls = 0;
+  const resolver = {
+    async resolveMembership(familyId, childProfileId) {
+      calls += 1;
+      assert.equal(familyId, 'fam-1');
+      assert.equal(childProfileId, 'child-A');
+      await Promise.resolve();
+      return { status: 'MEMBER_OF_FAMILY' };
+    },
+  };
+  const { service } = makeService(() => T0, resolver);
+  const decision = await service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-async', actionId: 'act-cp-async' }));
+  assert.deepEqual(decision, { verdict: 'ALLOW' });
+  assert.equal(calls, 1);
+});
+
+test('CHILD_PROFILE: membership source failures collapse to the same public denial and do not escape', async () => {
+  const resolver = { async resolveMembership() { throw new Error('private database diagnostic'); } };
+  const { service } = makeService(() => T0, resolver);
+  const decision = await service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-error', actionId: 'act-cp-error' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: unresolved actors cannot query the membership registry', async () => {
+  let calls = 0;
+  const resolver = { async resolveMembership() { calls += 1; return { status: 'MEMBER_OF_FAMILY' }; } };
+  const service = new ParentActionAuthorizationService(
+    new UnavailableTrustSetRoleResolver(),
+    defaultFamilyRbacPolicyConfig,
+    new InMemoryActionIdempotencyLedger(),
+    () => T0,
+    resolver,
+  );
+  const decision = await service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-no-actor', actionId: 'act-cp-no-actor' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTOR_NOT_RESOLVABLE' });
+  assert.equal(calls, 0);
+});
+
 test('CHILD_PROFILE: a malformed (empty) profile id is denied without ever reaching the resolver', async () => {
   let resolverCalled = false;
   const resolver = { resolveMembership: () => { resolverCalled = true; return { status: 'MEMBER_OF_FAMILY' }; } };

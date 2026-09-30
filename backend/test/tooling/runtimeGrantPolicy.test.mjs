@@ -93,6 +93,19 @@ test('append-only and read-only special cases stay explicit', () => {
   assert.deepEqual(privilegesForTable(MIGRATIONS_TABLE_NAME), ['SELECT']);
 });
 
+test('migration 0060 Trust Set storage keeps accepted epochs append-only and floors monotonic', () => {
+  assert.deepEqual(
+    sorted(privilegesForTable('family_trust_set_epochs')),
+    ['INSERT', 'SELECT'],
+    'accepted signed epochs must never be UPDATEd or DELETEd by the runtime principal',
+  );
+  assert.deepEqual(
+    sorted(privilegesForTable('family_epoch_floors')),
+    ['INSERT', 'SELECT', 'UPDATE'],
+    'the runtime may advance a floor but must not DELETE its row',
+  );
+});
+
 test('no declaration contains a forbidden verb, and none is a table-level ALL', () => {
   for (const [table, verbs] of Object.entries(RUNTIME_TABLE_PRIVILEGES)) {
     for (const verb of verbs) {

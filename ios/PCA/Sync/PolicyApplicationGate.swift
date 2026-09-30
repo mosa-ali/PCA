@@ -23,19 +23,20 @@ public struct PolicyEpochStamp: Equatable {
 
 public enum PolicyApplicationDecision: Equatable {
     case apply
+    case rejectMissingTrustedEpochFloor
     case rejectStaleTrustSetEpoch
     case rejectStaleKeyEpoch
 }
 
 public enum PolicyApplicationGate {
-    /// `currentFloor` is `nil` only before this device has ever accepted
-    /// any policy (genesis) -- any stamp is accepted then, matching the
-    /// same trust-on-first-use posture as the backend's own genesis
-    /// handling. Once a floor exists, both epochs must be >= the floor;
-    /// EITHER one regressing is rejected independently, mirroring
-    /// FamilyEnvelopeVerifier's own "every check is independent" rule.
+    /// `currentFloor` must come from a previously verified and durably
+    /// accepted Trust Set/policy receipt. An absent floor is not authority
+    /// to trust an arbitrary first epoch: the approved first-device root
+    /// ceremony and receipt-verification path must establish it before local
+    /// policy application is possible. Once a floor exists, both epochs
+    /// must be >= the floor; EITHER one regressing is rejected independently.
     public static func evaluate(candidate: PolicyEpochStamp, currentFloor: PolicyEpochStamp?) -> PolicyApplicationDecision {
-        guard let floor = currentFloor else { return .apply }
+        guard let floor = currentFloor else { return .rejectMissingTrustedEpochFloor }
         if candidate.trustSetEpoch < floor.trustSetEpoch { return .rejectStaleTrustSetEpoch }
         if candidate.keyEpoch < floor.keyEpoch { return .rejectStaleKeyEpoch }
         return .apply
