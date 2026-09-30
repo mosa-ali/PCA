@@ -5,10 +5,10 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (local Parent/Platform browser precheck; current head 0a6cdcc2)
+LAST_UPDATED_UTC = 2026-09-30 (local Parent/Platform browser precheck and published current-state ledger refresh)
 VALIDATED_PARENT_SOURCE_HEAD = 785323d2e471d1fa35a27d93935b0451f1a58210 (exact-head Quality Gates PASS 36648259414, 27/27; includes the Parent membership resolver and authorizer)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 0a6cdcc20f59cbd0684a6e0f775d23007183a7f3 (fresh fetch and `git ls-remote` agree; latest Parent source and ledger updates are published)
-CURRENT_CHECKPOINT_SHA = 0a6cdcc20f59cbd0684a6e0f775d23007183a7f3 (published; current exact-head CI query is unavailable through the configured proxy)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Current published ledger-refresh commit; post-push fetch and `git ls-remote` agree with local `pca-dev` (latest Parent source and ledger updates are published)
+CURRENT_CHECKPOINT_SHA = Current published ledger-refresh commit (exact SHA is repository HEAD; current exact-head CI query is unavailable through the configured proxy)
 LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked Parent/Platform mission files remain uncommitted; `.vscode/` and root `0` remain unrelated untracked exclusions. Latest verified CI run `36649336733` is 27/27 at predecessor `235c9c65`; CI for the current ledger-only checkpoint is unverified.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
