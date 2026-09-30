@@ -886,3 +886,9 @@ PARENT_BROWSER = Parent production-preview Chromium suite PASS 101/101 using dem
 LOCAL_UAT = Backend health and database health each returned HTTP 200 JSON; both local login routes returned HTTP 200 HTML, and disposable MySQL is reachable. Apps restored to real-backend development configuration. Use explicit `127.0.0.1` URLs because an unrelated IPv6 listener intercepts `localhost` on ports 4000/4100.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Owner `LOCALHOST ACCEPTED`, Parent authority/device gates, Platform Enrollment, deployment, and production acceptance remain incomplete; mocked browser passes do not lift these holds.
 NEXT_ACTION = Continue only after Parent-dependent identity/projection and release prerequisites are closed; keep Platform Enrollment and activation held.
+
+### 2026-09-30 — Parent browser-precheck checkpoint publication
+
+PARENT_CHECKPOINT = Ledger-only Parent/Platform browser-precheck commit `6acaf7e0b79b9ce0681d938092ff4b744311d71e` is verified at local, tracking, and remote `pca-dev` heads; both TODO ledgers exist remotely. `.vscode/` and root `0` remain excluded.
+CI = Latest previously verified Quality Gates run `36649336733` passed 27/27 at predecessor `235c9c65`. A fresh Actions query for `6acaf7e0` could not connect because proxy `127.0.0.1:9` refused connection; exact-head CI for this checkpoint remains UNVERIFIED.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains; this ledger publication, mocked UI campaign, and local health check do not establish Parent acceptance, Enrollment readiness, production acceptance, or deployment authorization.

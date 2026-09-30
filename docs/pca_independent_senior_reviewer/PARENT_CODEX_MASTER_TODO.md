@@ -1267,3 +1267,9 @@ PLATFORM_BROWSER = Production build PASS; separate Platform real-browser suite P
 LOCAL_UAT_PRECHECK = Backend `/health` and `/health/db` returned HTTP 200 JSON. Parent `/login` and Platform `/login` returned HTTP 200 HTML on `127.0.0.1:4000` and `127.0.0.1:4100`; local disposable MySQL TCP port 33061 is reachable. Both web apps have been restored to the documented real-backend development configuration. `localhost` resolves to an unrelated IPv6 listener on the same web ports in this environment; use `127.0.0.1` URLs for owner testing.
 OWNER_GATE = Technical precheck only. No owner `LOCALHOST ACCEPTED`, Trust Set/device ACTIVE state, production/live DB mutation, Platform activation, or deployment is claimed. Parent TODO-18 and Platform `HOLD_PARENT_DEPENDENCY` remain unchanged.
 NEXT_ACTION = Continue the earliest unfinished Parent work with TODO-12/14/15/19/20 and owner/release gates open; preserve the first-device root/crypto gate and the Platform dependency hold.
+
+### 2026-09-30 — Browser-precheck ledger checkpoint published
+
+GIT = Ledger-only checkpoint `6acaf7e0b79b9ce0681d938092ff4b744311d71e` was pushed to `origin/pca-dev` by ordinary fast-forward. Fresh fetch, tracking ref, and `git ls-remote` agree at that SHA; both master TODO files exist in the remote tree. `.vscode/` and root `0` remain excluded.
+CI = Latest previously verified exact-head result is Quality Gates run `36649336733` SUCCESS 27/27 at `235c9c65`. A fresh GitHub Actions query for `6acaf7e0` failed because the configured proxy endpoint `127.0.0.1:9` refused connection; CI for the new checkpoint is UNVERIFIED, not PASS.
+NEXT_ACTION = Refresh exact-head CI when GitHub API access is available, then continue Parent TODO-12/14/15/19/20 without changing the owner, crypto, live DB, Platform, or deployment gates.
