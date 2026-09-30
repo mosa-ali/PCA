@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36772627678 SUCCESS 27/27 at exact head c0023645)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36772627678` at exact SHA `c0023645b08dc4313cfe8dbf51df5e6604f5eec5` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `c0023645b08dc4313cfe8dbf51df5e6604f5eec5` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36772627678` passed 27/27.
-CURRENT_CHECKPOINT_SHA = `c0023645b08dc4313cfe8dbf51df5e6604f5eec5`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36772627678`, the independent DeepSeek re-entry assessment, local TODO-20 validation, and the fresh live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36774031399 SUCCESS 27/27 at exact head 0541efe3)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36774031399` at exact SHA `0541efe35a0af955005c492f801ecc5c79fd5c46` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `0541efe35a0af955005c492f801ecc5c79fd5c46` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36774031399` passed 27/27.
+CURRENT_CHECKPOINT_SHA = `0541efe35a0af955005c492f801ecc5c79fd5c46`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36774031399`, the independent DeepSeek re-entry assessment, a fresh local 58-migration/Parent route-audit campaign, and the live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: the authenticated read-only MySQL session timed out before SQL. Owner-UAT MySQL 33061, task-owned disposable MySQL 33062, and app ports 4001/4000/4100 are stopped; exact-head CI is green. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
+NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; task-owned disposable MySQL 8.4.11 is loopback-only on 33062 with zero leftover test schemas; exact-head CI is green. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1049,3 +1049,9 @@ GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform remains 
 PUBLICATION = Parent/Platform ledger checkpoint `c0023645b08dc4313cfe8dbf51df5e6604f5eec5` is present on `origin/pca-dev`; post-push fetch and server-ref verification matched local/tracking/server heads.
 CI = Quality Gates run `36772627678` completed SUCCESS 27/27 at exact SHA `c0023645b08dc4313cfe8dbf51df5e6604f5eec5`.
 GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`; no Platform source activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent route-audit recheck and 0541efe3 CI closure
+
+PARENT_VALIDATION = Fresh loopback MySQL 8.4.11 validation applied 58 repository migrations; the serial Parent route-audit suite passed 51/51 with zero leftover UUID test schemas. It reconfirmed the 45/52 integrated disposition and zero unexpected 401/403/other; the seven known security-gated/optional declarations remain open.
+CI = Quality Gates run `36774031399` passed 27/27 at exact SHA `0541efe35a0af955005c492f801ecc5c79fd5c46`.
+GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open. Platform stays `HOLD_PARENT_DEPENDENCY`; no Platform enrollment activation, live DB mutation, deployment, or owner acceptance occurred.
