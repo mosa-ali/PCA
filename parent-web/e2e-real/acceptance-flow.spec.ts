@@ -125,7 +125,9 @@ async function addDailyLoginGrant(context: import('@playwright/test').BrowserCon
   await context.addCookies([{
     name: 'pca_parent_daily_login_grant',
     value: grant,
-    url: 'http://localhost:4002',
+    // Playwright's real-backend config runs at 127.0.0.1:4002. A cookie
+    // scoped to localhost is not sent with the API request to that origin.
+    url: 'http://127.0.0.1:4002',
     httpOnly: true,
     sameSite: 'Strict',
   }]);

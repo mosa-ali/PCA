@@ -5,15 +5,21 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (exact-head CI failure reviewed; Parent E2E and dependency-audit fixes underway)
-VALIDATED_PARENT_SOURCE_HEAD = Remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; Quality Gates run `36658212487` passed 27/27 and includes the Parent membership resolver/authorizer. Published `e1f8b218c16c336c070409bb4b4f88c1d791ecd0` then failed 25/27 in E2E and dependency audit; the local corrected checkpoint awaits CI.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e1f8b218c16c336c070409bb4b4f88c1d791ecd0`, confirmed by the latest push; current local edits remain uncommitted.
-CURRENT_CHECKPOINT_SHA = `e1f8b218c16c336c070409bb4b4f88c1d791ecd0`; tracked worktree has local remediation to the Parent real-backend isolation test and backend dependency lock/spec. Platform code and activation remain unchanged.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = `backend/package.json`, `backend/package-lock.json`, `parent-web/e2e-real/acceptance-flow.spec.ts`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36735353255 triaged; focused Parent corrections await publication and exact-head CI)
+VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `bfe2005f1b717a452f1f1e09161e533e62cacc50` failed run `36735353255` (24/27); focused Parent corrections are locally validated and await exact-head CI.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `bfe2005f1b717a452f1f1e09161e533e62cacc50` is the local tracking ref; server ref has not been freshly queried this turn.
+CURRENT_CHECKPOINT_SHA = `bfe2005f1b717a452f1f1e09161e533e62cacc50`; local changes correct Parent cross-family cookie origin, regenerate the SDK disclosure after the Nodemailer update, and refresh Parent Web lockfile advisories. Platform code and activation remain unchanged.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `backend/src/sdkDisclosure/thirdPartySdks.generated.ts`, `parent-web/e2e-real/acceptance-flow.spec.ts`, `parent-web/package-lock.json`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Continue the Parent mission at TODO-12/14 within current security and integrated-evidence boundaries. TODO-15 source review awaits owner/security protocol input; Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the focused Parent CI corrections by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — Parent exact-head CI triage
+
+CI = Run `36735353255` failed 3/27 jobs at `bfe2005f`: backend SDK disclosure drift after the Nodemailer update, Parent Web HIGH `brace-expansion`, and a cross-family E2E cookie-origin mismatch. The owner acceptance flow passed; Platform local real-backend E2E remains local-only evidence.
+CORRECTION = Regenerated the SDK disclosure, aligned the cross-family grant cookie with the configured `127.0.0.1:4002` origin, and refreshed Parent Web semver-compatible lockfile versions. Focused disclosure validation passes 3/3; both dependency audits exit 0 at high severity; Playwright discovers the two E2E tests. Exact-head remote CI remains pending.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`. No Platform source/enrollment activation, owner acceptance, live database mutation, deployment or production acceptance occurred.
 
 ### 2026-09-30 — Re-entry source and CI review
 

@@ -40,7 +40,7 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
       },
       {
         "name": "nodemailer",
-        "version": "10.0.0",
+        "version": "10.0.13",
         "category": "uncategorized"
       }
     ],
