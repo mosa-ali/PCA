@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36751605072 SUCCESS 27/27 at exact Parent checkpoint)
+LAST_UPDATED_UTC = 2026-09-30 (run 36753042327 SUCCESS 27/27 at exact ledger-sync checkpoint)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `cb9d9e1bd4f25913757a787d8ed02464bfabc006` was freshly verified at local, tracking, and server refs after exact-head CI.
-CURRENT_CHECKPOINT_SHA = `cb9d9e1bd4f25913757a787d8ed02464bfabc006`; Quality Gates run `36751605072` passed 27/27. Parent MFA browser flow passed using the issued cookie, authenticated session endpoint, and dashboard navigation as independent evidence. TODO-17 is PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Three mission ledgers are being synchronized to exact-head run `36751605072`; the Parent E2E source is already published in `cb9d9e1b`. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8d6fb0b458b69d70438a6492d65d33dac2b3a016` was freshly verified at local, tracking, and server refs after exact-head CI.
+CURRENT_CHECKPOINT_SHA = `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; Quality Gates run `36753042327` passed 27/27. Parent MFA browser flow passed using the issued cookie, authenticated session endpoint, and dashboard navigation as independent evidence. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Three mission ledgers are being synchronized to exact-head run `36753042327`; the Parent E2E source is already published in `cb9d9e1b`. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the green exact-head CI result into both master ledgers, then resume Parent TODO-12/14 within current security and integrated-evidence boundaries. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the latest exact-head CI result and board counts, then resume TODO-20's local schema reconciliation. Keep Parent TODO-12/14/15 boundaries and Platform Enrollment `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -58,6 +58,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or a
 ### 2026-09-30 — Parent integrated regression passed
 
 PARENT_CI = Quality Gates run `36751605072` SUCCESS 27/27 at exact SHA `cb9d9e1bd4f25913757a787d8ed02464bfabc006`. The corrected real-browser MFA assertion passed using session cookie + `/api/parent/session` 200 + dashboard navigation. TODO-17 is PASS; TODO-19 ledger synchronization remains in progress.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent Git/CI reconciliation passed
+
+PARENT_CI = Quality Gates run `36753042327` SUCCESS 27/27 at exact SHA `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; this result-ledger checkpoint is aligned across local/tracking/server refs. Parent TODO-17 and TODO-19 are PASS; board is 15 PASS / 4 IN_PROGRESS / 4 owner or release gated.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up

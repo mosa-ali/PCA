@@ -5,23 +5,23 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-30 (run 36751605072 SUCCESS 27/27; TODO-17 promoted)
+LAST_UPDATED_UTC = 2026-09-30 (run 36753042327 SUCCESS 27/27; TODO-17 and TODO-19 promoted)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
-LAST_GREEN_REMOTE_SHA = `cb9d9e1bd4f25913757a787d8ed02464bfabc006` (Quality Gates run `36751605072` SUCCESS 27/27)
-CURRENT_WAVE_STATUS = Exact-head run `36751605072` at `cb9d9e1bd4f25913757a787d8ed02464bfabc006` completed SUCCESS 27/27. Parent enrolled-MFA browser journey passed with cookie-backed session, authenticated `/api/parent/session` response, and dashboard navigation. TODO-17 full integrated regression is PASS. TODO-14 remains 45/52 database-integrated; repository/local schema 0060 and live `pca_pro` last verified 0059. TODO-12/14/15/19/20 and owner/release gates remain open.
+LAST_GREEN_REMOTE_SHA = `8d6fb0b458b69d70438a6492d65d33dac2b3a016` (Quality Gates run `36753042327` SUCCESS 27/27)
+CURRENT_WAVE_STATUS = Exact-head run `36753042327` at `8d6fb0b458b69d70438a6492d65d33dac2b3a016` completed SUCCESS 27/27. Parent enrolled-MFA browser journey passed with cookie-backed session, authenticated `/api/parent/session` response, and dashboard navigation. TODO-17 integrated regression and TODO-19 Git/remote/exact-head CI reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository/local schema 0060 and live `pca_pro` last verified 0059. TODO-12/14/15/20 and owner/release gates remain open.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run `36751605072` SUCCESS 27/27 at `cb9d9e1bd4f25913757a787d8ed02464bfabc006`; browser MFA and all other required quality gates passed.
-LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `cb9d9e1bd4f25913757a787d8ed02464bfabc006` before current CI-result ledger sync. Three mission ledgers are modified locally; unrelated `.vscode/` and root `0` remain excluded.
+EXACT_HEAD_CI_SHA = Run `36753042327` SUCCESS 27/27 at `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; all required quality gates passed.
+LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `8d6fb0b458b69d70438a6492d65d33dac2b3a016` before current exact-run result sync. Three mission ledgers are modified locally; unrelated `.vscode/` and root `0` remain excluded.
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-19 CI/publication ledger sync; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 14 PASS / 5 IN_PROGRESS (TODO-12/14/15/19/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
-NEXT_ACTION = Publish this green exact-head CI result in the synchronized ledgers, then resume the earliest unfinished Parent dependency at TODO-12/14. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, live 0060 unapplied, and TODO-18 owner acceptance pending.
+CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
+NEXT_ACTION = Publish this exact-head result and updated statuses; then resume TODO-20 by re-establishing the disposable/local MySQL environment, comparing repository schema 0060 to local truth, and retrying read-only live `pca_pro` preflight. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, and TODO-18 owner acceptance pending.
 
 ### 2026-09-30 — Codex re-entry assessment after DeepSeek handover
 
 CURRENT_GIT = Branch `pca-dev`; local HEAD, `origin/pca-dev`, and `git ls-remote origin refs/heads/pca-dev` all equal `551d423f8cd01a079574e54fccf441f73f2a1878`. Worktree has four intended tracked changes (the MFA diagnostic refinement and three mission ledgers), plus unrelated untracked `.vscode/` and root `0`; those untracked paths remain excluded.
 DEEPSEEK_REVIEW = No DeepSeek-attributed commit follows accepted checkpoint `91f7f6d4`. The post-checkpoint source commit `59bfc331` is coordinator-owned; reviewed its 28 changed backend/Android/iOS source and test files, along with migration history (no migration after 0060), related tests, both master TODOs, the continuous-goal ledger, the local-UAT handoff without copying credentials, and the DeepSeek handover. Disposition: `ACCEPT_WITH_FOLLOWUP` for registry-backed child-profile membership and fail-closed mobile hardening. The resolver uses the actor-derived family and exact opaque profile ID, collapses negative outcomes, and fails closed on registry errors; Parent session authorization reuses it and requires an active Administrator. Android accepts only `PAIRING_PENDING`; iOS rejects a missing trusted epoch floor. No Trust Set writer, genesis/root inference, signature bypass, fake ACTIVE state, plaintext policy path, or route-success shortcut was introduced. No security regression found in reviewed source deltas.
 EXACT_HEAD_CI = GitHub Quality Gates run `36740111414` is confirmed at exact SHA `551d423f`, FAILURE with 26/27 jobs successful. The sole failed job is real-backend browser E2E: enrolled-MFA `/api/parent/login/step-up` returned 401 `invalid_code` after the email-only request returned `mfaRequired`. The endpoint intentionally uses the same error for invalid email code and invalid TOTP, so the rejected factor remains unproven. The safe diagnostic refinement is uncommitted and awaits exact-head CI.
-TODO_STATUS = 14 PASS (01-11, 13, 16, 17) / 5 IN_PROGRESS (12, 14, 15, 19, 20) / 4 TODO (18, 21, 22, 23) / 0 BLOCKED. TODO-14 remains 45/52 database-integrated with seven gated/optional declarations and `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`.
+TODO_STATUS = 15 PASS (01-11, 13, 16, 17, 19) / 4 IN_PROGRESS (12, 14, 15, 20) / 4 TODO (18, 21, 22, 23) / 0 BLOCKED. TODO-14 remains 45/52 database-integrated with seven gated/optional declarations and `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`.
 DATABASE = Repository schema has 58 migration files through 0060; last verified local owner-UAT schema was 0060; live `pca_pro` was last verified at 0059. Local ports 33061/33062 and app ports 4001/4000/4100 are stopped in this re-entry. A fresh live-DNS lookup did not yield an address, so no live DB read or mutation occurred and parity remains NO.
 PLATFORM_AND_UAT = Platform remains `HOLD_PARENT_DEPENDENCY`. Owner-UAT services are currently not ready; literal owner `LOCALHOST ACCEPTED` remains pending. Azure deployment and production acceptance remain on hold.
 TRUE_NEXT_ENGINEERING_DEPENDENCY = Publish the narrowly scoped MFA diagnostic refinement and rerun exact-head CI to determine whether the failed second factor is TOTP or OTP validity. Resolve any proven product defect without changing authentication security. Then resume TODO-12/14/15 only within approved boundaries; the first-device Trust Set root/key-custody protocol is still an owner/security gate and no safe implementation is selected absent it.
@@ -591,12 +591,12 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 
 ### TODO-19 — Git reconciliation + remote alignment + exact-head CI
 
-STATUS = IN_PROGRESS  
-OWNER = COORDINATOR  
+STATUS = PASS
+OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006` passed exact-head Quality Gates run `36751605072` (27/27); local/tracking/server refs matched after publication. Current post-result ledger synchronization is in progress. Unrelated `.vscode/` and root `0` remain excluded.
-BLOCKER = Complete the ledger sync for run `36751605072` and verify the resulting remote refs. TODO-18 and dependent Platform validation remain owner gates; TODO-20 remains open because repository/local schema is 0060 while live `pca_pro` was last verified at 0059.
-DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified  
+EVIDENCE = Source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006` passed run `36751605072` (27/27). CI-result ledger commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` was pushed by ordinary fast-forward, then fresh fetch + local/tracking/server refs matched and exact-head run `36753042327` passed 27/27. `.vscode/` and root `0` remain excluded.
+BLOCKER = None for Git reconciliation and exact-head CI at the recorded checkpoint. TODO-18 and dependent Platform validation remain owner gates; TODO-20 remains open because repository/local schema is 0060 while live `pca_pro` was last verified at 0059.
+DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
 LOCAL_HEAD = Current published ledger-refresh commit (see repository HEAD; post-push verification passed)
 REMOTE_HEAD = Same as local HEAD and `origin/pca-dev` at post-push fetch plus fresh `git ls-remote`
 PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked mission files; `.vscode/` and root `0` remain excluded
@@ -1376,3 +1376,10 @@ CI = Run `36744571850` failed 1/27 at `fb901859`; 26 jobs passed. The MFA step-u
 DIAGNOSIS = Persisted replay-watermark use was added after the preceding E2E flow consumed TOTP counters. This run no longer produced the prior HTTP 401, but its 200 body is unexplained. Do not mark replay resolved or infer a successful session.
 FOLLOWUP = The local test captures response content type, safe session/MFA flags, boolean TOTP-field presence, and email-OTP-only probe result. Test-discovery and syntax checks pass; exact-head CI is pending.
 GATES = TODO-17/19 remain IN_PROGRESS. Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — Parent MFA regression and remote checkpoint closed
+
+CI = Quality Gates run `36751605072` passed 27/27 at source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006`. The MFA browser journey passed with cookie-backed session, `/api/parent/session` 200, and dashboard navigation.
+LEDGER_SYNC = Commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` records the CI result and TODO-17/TODO-19 PASS statuses. Fresh fetch and `git ls-remote` matched local/tracking/server refs; exact-head run `36753042327` passed 27/27.
+TODO_STATUS = 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23) / 0 BLOCKED. TODO-14 remains 45/52 integrated, with seven gated/optional declarations. Platform remains `HOLD_PARENT_DEPENDENCY`; TODO-20 live schema/grants and owner/release gates remain open.
+NEXT_ACTION = Resume TODO-20 by restoring/re-establishing only the disposable/local MySQL environment, reconciling repository schema 0060 against local truth, and retrying read-only live `pca_pro` preflight before any mutation.
