@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36742456952 isolated stale TOTP replay; test correction pending exact-head CI)
+LAST_UPDATED_UTC = 2026-09-30 (run 36744571850 returned HTTP 200 without expected session flag; safe diagnostics pending)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `3aff4047ca48c91a25dfd331f231e6b66e4c00fa` was freshly verified at local, tracking, and server refs.
-CURRENT_CHECKPOINT_SHA = `b8b6908e8f86ae332723cd9651e99d1ef6ccf300`; exact-head Quality Gates run `36742456952` failed only the real-backend Parent MFA E2E. The email-only probe confirmed the TOTP code was rejected while the email code remained valid. The Parent MFA test now reads the disposable DB replay watermark to avoid reusing counters consumed by the earlier owner-acceptance E2E. Platform product source and activation remain unchanged.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = None. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `fb9018598973eb493127da6c2704bb13f3b202ee` was freshly verified at local, tracking, and server refs before the current local diagnostic change.
+CURRENT_CHECKPOINT_SHA = `fb9018598973eb493127da6c2704bb13f3b202ee`; exact-head run `36744571850` failed only real-backend Parent MFA E2E (26/27 passed). The step-up response was HTTP 200 but lacked `sessionEstablished`; a safe response/request-shape diagnostic is local. Platform product source and activation remain unchanged.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/e2e-real/parentMfa.spec.ts` plus mission-ledger updates. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the Parent MFA replay-watermark test correction and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the safe Parent MFA response-shape diagnostic and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -27,7 +27,12 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change, Enr
 
 ### 2026-09-30 — Parent MFA replay diagnosis
 
-PARENT_CI = Run `36742456952` failed only the real-backend Parent MFA E2E; its safe probe showed a valid, unconsumed email OTP and rejected TOTP. The cause was stale test replay baseline after an earlier E2E consumed TOTP counters. Parent test code now reads the disposable DB's durable counter before requesting a fresh one; local syntax/discovery passed and exact-head CI is pending.
+PARENT_CI = Run `36742456952` failed only the real-backend Parent MFA E2E; its safe probe showed a valid, unconsumed email OTP and rejected TOTP. The result was consistent with a stale test replay baseline after an earlier E2E consumed TOTP counters, but that hypothesis is not confirmed as the full cause: the next run returned HTTP 200 without the expected session flag. Parent test code reads the disposable DB's durable counter before requesting a fresh one; local syntax/discovery passed and exact-head CI is pending.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent MFA response-shape update
+
+PARENT_CI = Run `36744571850` failed only real-backend MFA E2E (26/27 passed). The changed replay baseline advanced the request from 401 to HTTP 200, but no `sessionEstablished` field was returned. A safe local diagnostic now records request-shape and response flags before choosing a correction.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up

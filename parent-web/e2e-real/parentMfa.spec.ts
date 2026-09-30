@@ -83,10 +83,11 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   await page.locator('form button[type="submit"]').click();
   const firstTotpLogin = await firstTotpLoginResponse;
   const firstTotpOutcome = await firstTotpLogin.json().catch(() => ({})) as { error?: unknown; sessionEstablished?: unknown };
-  if (firstTotpLogin.status() !== 200) {
+  if (firstTotpLogin.status() !== 200 || firstTotpOutcome.sessionEstablished !== true) {
+    const firstTotpRequestBody = firstTotpLogin.request().postDataJSON() as { totpCode?: unknown } | null;
     const otpProbe = await page.request.post('/api/parent/login/step-up', { data: { email: EMAIL!, code: firstEmailCode } });
     const otpProbeOutcome = await otpProbe.json().catch(() => ({})) as { mfaRequired?: unknown };
-    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
+    throw new Error(`email-plus-TOTP login status=${firstTotpLogin.status()} error=${String(firstTotpOutcome.error ?? 'none')} sessionEstablished=${String(firstTotpOutcome.sessionEstablished === true)} mfaRequired=${String((firstTotpOutcome as { mfaRequired?: unknown }).mfaRequired === true)} contentType=${firstTotpLogin.headers()['content-type'] ?? 'none'} totpFieldPresent=${String(typeof firstTotpRequestBody?.totpCode === 'string' && firstTotpRequestBody.totpCode.length === 6)}; email-OTP-only probe status=${otpProbe.status()} mfaRequired=${String(otpProbeOutcome.mfaRequired === true)}`);
   }
   expect(firstTotpLogin.status(), `email-plus-TOTP login response code: ${String(firstTotpOutcome.error ?? 'none')}`).toBe(200);
   expect(firstTotpOutcome.sessionEstablished, 'valid email-plus-TOTP login establishes the browser session').toBe(true);
