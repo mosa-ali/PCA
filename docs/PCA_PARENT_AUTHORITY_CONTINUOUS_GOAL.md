@@ -16,9 +16,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = fb9018598973eb493127da6c2704bb13f3b202ee (local, tracking, and server refs matched after fetch)
-CURRENT_LOCAL_CHECKPOINT_SHA = fb9018598973eb493127da6c2704bb13f3b202ee (durable replay-watermark correction published; safe response-shape diagnostic is now local)
-LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36744571850 FAILED 1/27 jobs at exact SHA fb901859. The other 26 jobs passed. The MFA request returned HTTP 200 but the parsed body lacked `sessionEstablished`; successful authentication is not proven. The TOTP test reads the durable replay watermark after the earlier owner-acceptance E2E and waits for a newer counter. A local diagnostic now records only response content type, MFA booleans, TOTP-field presence, and OTP-only probe outcome without logging codes or secrets.
+LAST_VERIFIED_REMOTE_SHA = 6953836e98c55336432f6b464553d1c3f6360874 (local, tracking, and server refs matched after fetch)
+CURRENT_LOCAL_CHECKPOINT_SHA = 6953836e98c55336432f6b464553d1c3f6360874 (safe response-shape diagnostic published; additional safe response-key/cookie-name diagnostic is now local)
+LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36746224554 FAILED 1/27 jobs at exact SHA 6953836e. The other 26 jobs passed. The MFA step-up request included a six-digit TOTP field and returned JSON HTTP 200, but `sessionEstablished`, `mfaRequired`, and `error` were all absent; the subsequent OTP-only probe returned 401, showing the OTP was consumed. This does not prove session establishment or identify which other response state was returned. A local diagnostic now records response keys, known state booleans, cookie names, content type, and TOTP-field presence without values/secrets.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository/local at 0060; live pca_pro last verified at 0059. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; current TCP/3306 preflight is unreachable, so no live mutation without a fresh reachable preflight)
@@ -32,10 +32,10 @@ CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36658212487; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = The owner-UAT database `pca_local_owner_uat` was last verified at schema 0060. The current re-entry probe found MySQL ports 33061/33062 and backend/Parent/Platform ports 4001/4000/4100 stopped; do not offer owner UAT until services are restored and exhaustive browser technical precheck passes. Task-owned MySQL 8.4.11 on 33062 previously passed the Platform real-backend E2E; its UUID schema was dropped, though one orphan directory from an earlier interrupted UUID attempt remains under the task-owned datadir. Owner-UAT data and live `pca_pro` were not mutated.
-NEXT_CODEX_ACTION = Publish the safe response-shape diagnostic with synchronized ledgers and rerun exact-head CI. Use the TOTP-field/content-type/MFA flags to determine whether the request reached the expected API contract. Keep all authority, live-DB, Platform and release gates open.
+NEXT_CODEX_ACTION = Publish the expanded safe response-state diagnostic with synchronized ledgers and rerun exact-head CI. Determine which documented outcome and cookie state followed consumed OTP/TOTP; do not infer a valid session from HTTP 200. Keep all authority, live-DB, Platform and release gates open.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = YES before current local edits; local HEAD, tracking ref, and server all equal `fb9018598973eb493127da6c2704bb13f3b202ee`
+LOCAL_REMOTE_EQUAL = YES before current local edits; local HEAD, tracking ref, and server all equal `6953836e98c55336432f6b464553d1c3f6360874`
 PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
 PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
@@ -49,8 +49,8 @@ UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
 REMOTE_ALIGNMENT_COMPLETED = YES at `e1f8b218`; fetch and `git ls-remote` agree with local and tracking refs.
-PARENT_LOCAL_ONLY_FILES_REMAINING = One Parent MFA E2E spec and three mission ledgers are modified locally for the safe response-shape diagnostic; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
-PARENT_UNPUSHED_COMMITS_REMAINING = 0; the diagnostic file is not yet committed. Only unrelated `.vscode/` and root `0` are untracked.
+PARENT_LOCAL_ONLY_FILES_REMAINING = One Parent MFA E2E spec and three mission ledgers have expanded response-state diagnostics after exact-head run 36746224554; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 before the new diagnostic update. Only unrelated `.vscode/` and root `0` are untracked.
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
 REPO_MIGRATION_HEAD = 0060 (58 SQL migration files)
