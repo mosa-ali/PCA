@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (Codex re-entry review)
-VALIDATED_PARENT_SOURCE_HEAD = a8c37162ed6ec135b618a3942c4766bac3b8f508 (exact-head Quality Gates PASS 36634164993, 27/27; predates current resolver work)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = a8c37162ed6ec135b618a3942c4766bac3b8f508 (fresh authenticated GitHub API ref, local HEAD and origin/pca-dev agree now; Wave 5C edits remain uncommitted)
-CURRENT_CHECKPOINT_SHA = a8c37162ed6ec135b618a3942c4766bac3b8f508 (current shared branch base; current source changes have no exact-head CI yet)
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Wave 5C shared membership resolver and Parent-session authorizer, raw-registry bypass correction, 45/52 TODO-14 integrated route evidence, migration-0060 grant tests, iOS missing-trusted-floor fail-closed correction, Android exact-PAIRING_PENDING enrollment response guard, and synchronized architecture/mission/crosswalk/TODO artifacts are local; backend build and focused/disposable-MySQL tests pass; standalone Swift gate probe and focused Android enrollment tests (50/50) pass; exact-head CI is pending. `.vscode/` and root `0` remain excluded.
+LAST_UPDATED_UTC = 2026-09-30 (local Parent/Platform browser precheck; current head 0a6cdcc2)
+VALIDATED_PARENT_SOURCE_HEAD = 785323d2e471d1fa35a27d93935b0451f1a58210 (exact-head Quality Gates PASS 36648259414, 27/27; includes the Parent membership resolver and authorizer)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 0a6cdcc20f59cbd0684a6e0f775d23007183a7f3 (fresh fetch and `git ls-remote` agree; latest Parent source and ledger updates are published)
+CURRENT_CHECKPOINT_SHA = 0a6cdcc20f59cbd0684a6e0f775d23007183a7f3 (published; current exact-head CI query is unavailable through the configured proxy)
+LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked Parent/Platform mission files remain uncommitted; `.vscode/` and root `0` remain unrelated untracked exclusions. Latest verified CI run `36649336733` is 27/27 at predecessor `235c9c65`; CI for the current ledger-only checkpoint is unverified.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Continue TODO-15 independent source/device-security review and the same Parent mission; publication/exact-head CI, Parent TODO-12/15 and owner-only TODO-18 acceptance remain open. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`; no activation/deployment/UAT is implied.
+NEXT_ACTION = Continue the same Parent mission after refreshing exact-head CI when GitHub API access is available. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`; no activation/deployment/UAT is implied.
 
 ### 2026-09-30 — Parent re-entry dependency confirmed
 
