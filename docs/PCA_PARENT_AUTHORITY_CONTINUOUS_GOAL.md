@@ -17,9 +17,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = 0541efe35a0af955005c492f801ecc5c79fd5c46 (local, tracking, and server refs matched after post-push fetch and ls-remote)
-CURRENT_LOCAL_CHECKPOINT_SHA = 0541efe35a0af955005c492f801ecc5c79fd5c46
-LAST_EXACT_HEAD_CI = Quality Gates run 36774031399 at exact SHA 0541efe35a0af955005c492f801ecc5c79fd5c46 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
+LAST_VERIFIED_REMOTE_SHA = a7e8a8a1064755950738a1b03b7e3e537a5e649d (published by push; local and tracking refs match; fresh ls-remote is currently blocked by the configured proxy)
+CURRENT_LOCAL_CHECKPOINT_SHA = a7e8a8a1064755950738a1b03b7e3e537a5e649d
+LAST_EXACT_HEAD_CI = Quality Gates run 36775428822 at exact SHA a7e8a8a1064755950738a1b03b7e3e537a5e649d completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository and previously validated disposable schema at 0060; live pca_pro last verified at 0059. Fresh DNS resolves to 4.161.89.178, but TCP/3306 is unreachable; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
@@ -1330,6 +1330,14 @@ PUBLICATION = Ledger sync `4eee477b0c77e2022596be16970bb86e3d010ad2` was pushed 
 EXACT_HEAD_CI = Quality Gates run `36768593806` completed SUCCESS 27/27 at exact SHA `4eee477b0c77e2022596be16970bb86e3d010ad2`.
 LIVE_PREFLIGHT = DNS resolves to `4.161.89.178`; TCP/3306 returned false. Live `pca_pro` remains last verified at 0059; no live SQL session or mutation occurred.
 GATES = TODO-12/14/15/20 remain IN_PROGRESS; TODO-18/21/22/23 remain owner/release gated. Platform stays `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-10-01 — a7e8a8a1 exact-head CI and local runtime-grant certification
+
+EXACT_HEAD_CI = Quality Gates run `36775428822` completed SUCCESS 27/27 at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d`, including full disposable-MySQL DB certification, real-backend E2E, Parent/Platform web, Android/iOS, security, and release-control jobs.
+TODO20_LOCAL_GRANTS = On task-owned loopback MySQL 8.4.11 at `127.0.0.1:33062`, all 58 repository migrations and the runtime privilege suite passed; direct serial Node test mode passed 6/6. The suite verified audit insert/read, DB-denied audit UPDATE/DELETE, ordinary-table write control, Trust Set epoch append-only/floor-delete constraints, and the production writer/query-reader grant plan. UUID schema and temporary principal cleanup completed; zero `pca_test_codex_%` schemas and zero temporary platform-audit users remained.
+WINDOWS_RUNNER_NOTE = The npm wrapper failed before test execution with Windows `spawn EPERM`; no product test ran in that attempt. The equivalent guarded serial test passed directly against the disposable instance.
+LIVE_DB = Fresh live TCP/3306 preflight was unreachable; no live SQL read or mutation occurred. Repository/local schema remains 0060; live `pca_pro` last verified 0059, so parity remains NO.
+GIT_AND_GATES = Checkpoint `a7e8a8a1` is on `pca-dev`; local and tracking refs matched before this ledger update, while `git ls-remote` is currently blocked by proxy connection refusal. `.vscode/` and root `0` remain excluded. Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-14 is 45/52 and globally NOT_YET_PROVEN; Platform remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Published ledger CI closure
 

@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36774031399 SUCCESS 27/27 at exact head 0541efe3)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36774031399` at exact SHA `0541efe35a0af955005c492f801ecc5c79fd5c46` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `0541efe35a0af955005c492f801ecc5c79fd5c46` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36774031399` passed 27/27.
-CURRENT_CHECKPOINT_SHA = `0541efe35a0af955005c492f801ecc5c79fd5c46`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36774031399`, the independent DeepSeek re-entry assessment, a fresh local 58-migration/Parent route-audit campaign, and the live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (run 36775428822 SUCCESS 27/27 at exact source head a7e8a8a1)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36775428822` at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `a7e8a8a1064755950738a1b03b7e3e537a5e649d` is the pushed Parent checkpoint and exact Quality Gates run `36775428822` passed 27/27; a fresh `git ls-remote` is currently blocked by the configured proxy.
+CURRENT_CHECKPOINT_SHA = `a7e8a8a1064755950738a1b03b7e3e537a5e649d`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36775428822` at source head `a7e8a8a1`, fresh local 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1055,3 +1055,9 @@ GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `H
 PARENT_VALIDATION = Fresh loopback MySQL 8.4.11 validation applied 58 repository migrations; the serial Parent route-audit suite passed 51/51 with zero leftover UUID test schemas. It reconfirmed the 45/52 integrated disposition and zero unexpected 401/403/other; the seven known security-gated/optional declarations remain open.
 CI = Quality Gates run `36774031399` passed 27/27 at exact SHA `0541efe35a0af955005c492f801ecc5c79fd5c46`.
 GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open. Platform stays `HOLD_PARENT_DEPENDENCY`; no Platform enrollment activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-10-01 — a7e8a8a1 Parent checkpoint and CI closure
+
+PARENT_CI = Quality Gates run `36775428822` passed 27/27 at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d`.
+PARENT_TODO20_LOCAL = Task-owned disposable MySQL 8.4.11 passed all 58 migrations and the six-case runtime privilege suite. Audit update/delete were denied by MySQL; migration-0060 Trust Set append-only/floor constraints and production grant-plan paths passed. Test schema and temporary DB principal were removed.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; Parent TODO-12/14/15/20 and owner localhost acceptance remain open. No Enrollment activation, live DB access/mutation, deployment, or production acceptance occurred.
