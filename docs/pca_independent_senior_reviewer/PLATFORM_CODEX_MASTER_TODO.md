@@ -6,14 +6,21 @@ PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration an
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
 LAST_UPDATED_UTC = 2026-09-30 (Platform real-backend E2E result refreshed)
-VALIDATED_PARENT_SOURCE_HEAD = 785323d2e471d1fa35a27d93935b0451f1a58210 (exact-head Quality Gates PASS 36648259414, 27/27; includes the Parent membership resolver and authorizer)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Current published ledger-refresh commit; post-push fetch and `git ls-remote` agree with local `pca-dev` (latest Parent source and ledger updates are published)
-CURRENT_CHECKPOINT_SHA = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; current exact-head CI is UNVERIFIED. Latest certified predecessor is Quality Gates run `36657492055`, SUCCESS 27/27 at `965479051b547cb659946c0c4a6fb8f237a5883c`.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/playwright.real.config.ts` and `platform-admin-web/playwright.real.config.ts` are tracked local E2E config changes under review. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+VALIDATED_PARENT_SOURCE_HEAD = Remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; Quality Gates run `36658212487` passed 27/27 and includes the Parent membership resolver/authorizer. Local implementation checkpoint `8e83349343eae45586d6ffb1249caad3b17b2b4f` adds the two Playwright real-run configs and E2E ledger evidence; it remains one authorized fast-forward commit ahead and needs its own CI result.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`, confirmed by fresh fetch, tracking ref, and `git ls-remote`.
+CURRENT_CHECKPOINT_SHA = Local `8e83349343eae45586d6ffb1249caad3b17b2b4f`; remote `8e63d4738f3d4c0d06afd25b58adf383ca2352ad`; one fast-forward commit pending publication and exact-head CI.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = No tracked unstaged changes. The pending commit contains `parent-web/playwright.real.config.ts`, `platform-admin-web/playwright.real.config.ts`, and the three mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
 NEXT_ACTION = Continue the Parent mission at TODO-12/14 within current security and integrated-evidence boundaries. TODO-15 source review awaits owner/security protocol input; Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — Re-entry source and CI review
+
+DEEPSEEK_REVIEW = No DeepSeek-attributed commit follows `91f7f6d4`; the reviewed source checkpoint is `59bfc331` plus later coordinator evidence/docs. Registry-backed membership, Parent-session authorization, Android `PAIRING_PENDING` guards, and iOS missing-floor rejection were reviewed. No security regression or Trust Set/device activation shortcut was found.
+CI = Quality Gates run `36658212487` passed 27/27 at remote `8e63d473`; this validates the Parent membership/authorizer source. Local `8e833493` is pending publication and exact-head CI.
+PLATFORM_REAL_BACKEND = PASS 1/1 on local disposable MySQL/Fastify; the run covered Platform login/MFA, dashboard, entitlements, administrator step-up/create, audit, settings, and billing. It proves the local backend journey only.
+PLATFORM_GATE = Remains `HOLD_PARENT_DEPENDENCY`; Owner `LOCALHOST ACCEPTED`, Parent authority/device gates, projection acceptance, live schema/grants, Azure deployment and production acceptance are not promoted.
 
 ### 2026-09-30 — Parent re-entry dependency confirmed
 
