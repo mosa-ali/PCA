@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36778880069 SUCCESS 27/27 at exact head fc100efa)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36778880069` at exact SHA `fc100efadf2d3372fc25ed0fd6760235775aebf9` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `fc100efadf2d3372fc25ed0fd6760235775aebf9` is the pushed Parent/ledger checkpoint; fetch matched the tracking ref and exact Quality Gates run `36778880069` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `fc100efadf2d3372fc25ed0fd6760235775aebf9`; exact-head run `36778880069` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI `36778880069` at `fc100efa`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (run 36781742335 SUCCESS 27/27 at exact head dd7a97ae)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36781742335` at exact SHA `dd7a97ae283e6c6c162a979e8966d3c303a79e31` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `dd7a97ae283e6c6c162a979e8966d3c303a79e31` is the pushed Parent/ledger checkpoint; fetch matched the tracking ref and exact Quality Gates run `36781742335` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
+CURRENT_CHECKPOINT_SHA = `dd7a97ae283e6c6c162a979e8966d3c303a79e31`; exact-head run `36781742335` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Local services are up for browser precheck; Parent is at `/login`, so authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36781742335` at `dd7a97ae`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 are stopped; task-owned disposable MySQL 8.4.11 is loopback-only on 33062 with zero leftover test schemas; exact-head CI is green. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
+NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Owner-UAT MySQL 33061 remains stopped; task-owned local MySQL 8.4.11 is loopback-only on 33062, and local app servers 4001/4000/4100 are running for precheck. Parent browser is at `/login`; authenticated manual screens and owner acceptance remain pending. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1080,3 +1080,10 @@ EXACT_HEAD_CI = Quality Gates run `36778880069` passed 27/27 at `fc100efadf2d337
 LOCAL_REAL_BACKEND = Parent synthetic sign-in, Family provisioning, cookie session, dashboard/settings passed 1/1. Platform Admin real Fastify/MySQL journey covering MFA, dashboard, entitlements, step-up admin user, audit, settings, and billing passed 1/1. Both disposable UUID schemas were removed.
 LOCAL_DATABASE = Task-owned MySQL 8.4.11 at 33062 holds a separately created migration-only `pca_local_owner_uat` schema at 0060 (94 tables/806 columns; zero Parent, Platform-admin, or Family rows). No UUID test schemas remain. Owner-UAT app ports remain stopped; no human acceptance is claimed.
 PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; no Platform Enrollment activation, live DB access/mutation, deployment, or production acceptance occurred.
+
+### 2026-10-01 — dd7a97ae Parent CI and browser precheck
+
+PARENT_CI = Quality Gates run `36781742335` completed SUCCESS 27/27 at exact Parent/ledger SHA `dd7a97ae283e6c6c162a979e8966d3c303a79e31`.
+LOCAL_BROWSER = Task-owned backend health returned HTTP 200; Parent and Platform local web servers are listening on 4000/4100, with local backend on 4001. The Parent browser reached `/login`; authenticated screens and owner localhost acceptance remain pending. Generated credentials were not exposed or entered through the browser tool.
+LOCAL_FIXTURES = Synthetic Parent/Family and pending synthetic Platform owner remain isolated to task-owned local MySQL 33062. Owner-UAT MySQL 33061 remains stopped; no live DB access or mutation occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, projection acceptance, deployment, or production acceptance occurred.
