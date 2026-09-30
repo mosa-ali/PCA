@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36763771064 SUCCESS 27/27 at exact head e12711f3)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36763771064` at exact SHA `e12711f3986eedaa43a82f250a6365c8e5222b0d` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e12711f3986eedaa43a82f250a6365c8e5222b0d` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36763771064` passed 27/27.
-CURRENT_CHECKPOINT_SHA = `e12711f3986eedaa43a82f250a6365c8e5222b0d`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36763771064`, the independent DeepSeek re-entry assessment, local TODO-20 migration/schema/grant validation, and the live-DB preflight limit. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36766189779 SUCCESS 27/27 at exact head e828546b)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36766189779` at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e828546b53ef9c0e1f237d30398f251d506e4529` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36766189779` passed 27/27.
+CURRENT_CHECKPOINT_SHA = `e828546b53ef9c0e1f237d30398f251d506e4529`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36766189779`, the independent DeepSeek re-entry assessment, local TODO-20 migration/schema/grant validation, and the live-DB preflight limit. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1011,3 +1011,9 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no dependent Enrollment activation, de
 PARENT_REENTRY = DeepSeek re-entry review compared the supplied handover with current source, tests, migrations, Git, CI, and TODOs. Current Parent checkout uses Parent active-Administrator plus fresh TOTP for commercial authorization; production device signatures remain fail-closed. No dormant browser-owner or device authority was activated. Parent board remains 15 PASS / 4 IN_PROGRESS / 4 TODO; TODO-14 global aggregate remains NOT_YET_PROVEN.
 GIT_CI = Local, tracking, and server heads matched `e12711f3986eedaa43a82f250a6365c8e5222b0d`; run `36763771064` passed 27/27 on that exact SHA. `.vscode/` and root `0` remain excluded.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`. Owner localhost acceptance is absent; local service ports are stopped; Parent projection and Enrollment dependencies remain open. No Platform source activation, deployment, or production acceptance occurred.
+
+### 2026-09-30 — Re-entry ledger publication CI closure
+
+PUBLICATION = Ledger commit `e828546b53ef9c0e1f237d30398f251d506e4529` was pushed by ordinary fast-forward; post-push fetch and `git ls-remote` verified local/tracking/server equality and all three ledger paths on `origin/pca-dev`.
+CI = Quality Gates run `36766189779` passed 27/27 at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529`. No source or schema changes occurred in the ledger checkpoint.
+GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`; no owner localhost acceptance, live DB mutation, deployment, or production acceptance occurred.

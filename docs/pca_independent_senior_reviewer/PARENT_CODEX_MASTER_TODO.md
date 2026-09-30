@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-30 (run 36763771064 SUCCESS 27/27 at exact head e12711f3)
+LAST_UPDATED_UTC = 2026-09-30 (run 36766189779 SUCCESS 27/27 at exact head e828546b)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
-LAST_GREEN_REMOTE_SHA = `e12711f3986eedaa43a82f250a6365c8e5222b0d` (Quality Gates run `36763771064` SUCCESS, 27/27)
-CURRENT_WAVE_STATUS = Exact-head run `36763771064` at `e12711f3986eedaa43a82f250a6365c8e5222b0d` completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-head reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository and previously validated local disposable schema are 0060; live `pca_pro` was last verified at 0059. Fresh TCP previously accepted but authenticated read-only MySQL timed out before a session/query; no live schema/grant comparison or mutation occurred. Current local UAT and disposable MySQL/app ports are stopped. TODO-12/14/15/20 and owner/release gates remain open.
+LAST_GREEN_REMOTE_SHA = `e828546b53ef9c0e1f237d30398f251d506e4529` (Quality Gates run `36766189779` SUCCESS, 27/27)
+CURRENT_WAVE_STATUS = Exact-head run `36766189779` at `e828546b53ef9c0e1f237d30398f251d506e4529` completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-head reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository and previously validated local disposable schema are 0060; live `pca_pro` was last verified at 0059. Authenticated read-only MySQL timed out before a session/query; no live schema/grant comparison or mutation occurred. Current local UAT and disposable MySQL/app ports are stopped. TODO-12/14/15/20 and owner/release gates remain open.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run `36763771064` at `e12711f3986eedaa43a82f250a6365c8e5222b0d` completed SUCCESS, 27/27.
-LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `e12711f3986eedaa43a82f250a6365c8e5222b0d`; `.vscode/` and root `0` remain untracked and excluded.
+EXACT_HEAD_CI_SHA = Run `36766189779` at `e828546b53ef9c0e1f237d30398f251d506e4529` completed SUCCESS, 27/27.
+LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `e828546b53ef9c0e1f237d30398f251d506e4529`; `.vscode/` and root `0` remain untracked and excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
 NEXT_ACTION = Continue the same board at TODO-12/14/15 and retry the authorized live read-only TODO-20 preflight when connectivity is available. Repository and previously validated disposable schema are 0060; live `pca_pro` remains last verified at 0059. The authenticated read-only session timed out before SQL and the Kudu-sidecar shell was not usable, so no current schema/grant comparison exists. Do not mutate live schema/grants without a fresh successful comparison. Owner-UAT MySQL 33061, disposable MySQL 33062, and app ports 4001/4000/4100 are stopped. Keep all crypto/device and owner gates open.
@@ -1418,3 +1418,9 @@ DATABASE = Repository and previously validated disposable schema are 0060; live 
 PLATFORM = `HOLD_PARENT_DEPENDENCY`; no enrollment activation, live DB mutation, deployment, or production acceptance.
 TRUE_NEXT_DEPENDENCY = Continue safe Parent TODO-12/14/15 source review and evidence. First-device Trust Set root/key custody, encrypted policy/audit paths, production signature verification/attestation, and TODO-14 gated routes require their recorded security or architecture prerequisites. TODO-20 remains authorized but requires a fresh successful live target/schema/grant/data preflight before mutation.
 SUPERVISOR = PROCEED with independently safe source/evidence work and the same TODO board; HOLD cryptographic activation, live mutation without preflight, owner acceptance claims, Platform Enrollment activation, Azure deployment, and production change.
+
+### 2026-09-30 — Re-entry ledger publication CI closure
+
+PUBLICATION = Ledger commit `e828546b53ef9c0e1f237d30398f251d506e4529` was pushed by ordinary fast-forward; post-push fetch and `git ls-remote` verified local/tracking/server equality and all three ledger paths on `origin/pca-dev`.
+CI = Quality Gates run `36766189779` passed 27/27 at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529`. No source or schema changes occurred in the ledger checkpoint.
+GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`; no owner localhost acceptance, live DB mutation, deployment, or production acceptance occurred.
