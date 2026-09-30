@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36746224554 returned HTTP 200 without known success/challenge flags; expanded diagnostics pending)
+LAST_UPDATED_UTC = 2026-09-30 (run 36747499138 exposed an async diagnostic-header bug; fix pending)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `6953836e98c55336432f6b464553d1c3f6360874` was freshly verified at local, tracking, and server refs before the current local diagnostic change.
-CURRENT_CHECKPOINT_SHA = `6953836e98c55336432f6b464553d1c3f6360874`; exact-head run `36746224554` failed only real-backend Parent MFA E2E (26/27 passed). The step-up request included TOTP and returned HTTP 200 JSON without known success/challenge flags; OTP-only retry returned 401. Expanded safe response-state diagnostics are local. Platform product source and activation remain unchanged.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `40f2ed897e34d079bfca4613b1d49e4bf4ad739b` was freshly verified at local, tracking, and server refs before the current local diagnostic change.
+CURRENT_CHECKPOINT_SHA = `40f2ed897e34d079bfca4613b1d49e4bf4ad739b`; exact-head run `36747499138` failed only real-backend Parent MFA E2E (26/27 passed), due to missing `await` on Playwright `headersArray()` in the diagnostic. The prior run showed HTTP 200 without known success/challenge flags and OTP-only retry 401. No additional response-state evidence was gathered. Platform product source and activation remain unchanged.
 LOCAL_UNCOMMITTED_PARENT_CHANGE = `parent-web/e2e-real/parentMfa.spec.ts` plus mission-ledger updates. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish expanded safe Parent MFA response-state diagnostics and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the async Parent MFA diagnostic-header fix and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -38,6 +38,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or a
 ### 2026-09-30 — MFA response-state follow-up
 
 PARENT_CI = Run `36746224554` failed only real-backend MFA E2E (26/27 passed). The TOTP field was present; the JSON response was HTTP 200 without known success/challenge/error fields, and the OTP-only retry returned 401. Expanded local diagnostics capture response keys, selected booleans, and cookie names only.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — MFA diagnostic correction
+
+PARENT_CI = Run `36747499138` failed only the real-backend MFA E2E because the diagnostic called asynchronous `headersArray()` without `await`. No response-state evidence was produced; the correction is local and will be covered by a fresh exact-head run.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up
