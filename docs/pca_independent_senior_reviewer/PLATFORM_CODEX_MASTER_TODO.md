@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36740111414 triaged; enrolled-MFA real-backend test follow-up underway)
+LAST_UPDATED_UTC = 2026-09-30 (diagnostic checkpoint published at 3aff4047; exact-head run 36742259731 queued)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `551d423f8cd01a079574e54fccf441f73f2a1878` was verified at local, tracking, and server refs before current commit `57cc83e5c41ad2553471a56d20724035a1143e68`.
-CURRENT_CHECKPOINT_SHA = `57cc83e5c41ad2553471a56d20724035a1143e68`; it contains the backend canonical TOTP helper, safe email-OTP-only probe, and synchronized mission ledgers. It is one commit ahead of the last verified server head. Platform product source and activation remain unchanged.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `3aff4047ca48c91a25dfd331f231e6b66e4c00fa` was freshly verified at local, tracking, and server refs.
+CURRENT_CHECKPOINT_SHA = `3aff4047ca48c91a25dfd331f231e6b66e4c00fa`; it contains the backend canonical TOTP helper, safe email-OTP-only probe, and synchronized mission ledgers. Exact-head Quality Gates run `36742259731` is queued. Platform product source and activation remain unchanged.
 LOCAL_UNCOMMITTED_PARENT_CHANGE = None. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish commit `57cc83e5c41ad2553471a56d20724035a1143e68` by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Monitor exact-head Quality Gates run `36742259731`; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -22,8 +22,8 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. The reviewed post-DeepSeek Par
 
 ### 2026-09-30 — Parent MFA diagnostic commit recorded
 
-PARENT_CHECKPOINT = Commit `57cc83e5c41ad2553471a56d20724035a1143e68` records the re-entry assessment and safe enrolled-MFA diagnostic; it is one fast-forward commit ahead of last verified server head `551d423f`.
-PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Push and exact-head CI are pending; no Platform source change, Enrollment activation, live DB mutation, deployment, or owner acceptance occurred.
+PARENT_CHECKPOINT = Diagnostic commit `57cc83e5c41ad2553471a56d20724035a1143e68` and ledger sync `3aff4047ca48c91a25dfd331f231e6b66e4c00fa` are published and verified equal at local, tracking, and server heads. Exact-head run `36742259731` is queued.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change, Enrollment activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up
 
