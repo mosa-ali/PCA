@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36777108468 SUCCESS 27/27 at exact head 83e4b875)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36775428822` at exact SHA `a7e8a8a1064755950738a1b03b7e3e537a5e649d` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `a7e8a8a1064755950738a1b03b7e3e537a5e649d` is the pushed Parent checkpoint and exact Quality Gates run `36775428822` passed 27/27; a fresh `git ls-remote` is currently blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `83e4b8757341b8521e4f9df49c7eaa58b2741156`; exact-head Quality Gates run `36777108468` passed 27/27. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36777108468` at `83e4b875`, fresh local 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (run 36778880069 SUCCESS 27/27 at exact head fc100efa)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36778880069` at exact SHA `fc100efadf2d3372fc25ed0fd6760235775aebf9` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `fc100efadf2d3372fc25ed0fd6760235775aebf9` is the pushed Parent/ledger checkpoint; fetch matched the tracking ref and exact Quality Gates run `36778880069` passed 27/27. A fresh `git ls-remote` is blocked by the configured proxy.
+CURRENT_CHECKPOINT_SHA = `fc100efadf2d3372fc25ed0fd6760235775aebf9`; exact-head run `36778880069` passed 27/27. Parent UI 101/101 and Platform UI 21/21 plus both local real-backend browser journeys passed. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI `36778880069` at `fc100efa`, local Parent/Platform real-backend browser evidence, 58-migration/6-case runtime-grant evidence, the independent DeepSeek re-entry assessment, and the refreshed live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1073,3 +1073,10 @@ PLATFORM_GATE = Remains `HOLD_PARENT_DEPENDENCY`; no Parent-dependent Enrollment
 PARENT_CI = Quality Gates run `36777108468` passed 27/27 at exact Parent/ledger head `83e4b8757341b8521e4f9df49c7eaa58b2741156`.
 LIVE_PREFLIGHT = DNS resolves the live DB host to `4.161.89.178`, but TCP/3306 is unreachable; no live SQL read or mutation occurred. Repository/local remain at 0060 and live `pca_pro` last verified 0059.
 PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, live mutation, owner acceptance, deployment, or production acceptance occurred.
+
+### 2026-10-01 — Parent/Platform technical browser precheck
+
+EXACT_HEAD_CI = Quality Gates run `36778880069` passed 27/27 at `fc100efadf2d3372fc25ed0fd6760235775aebf9`; Chromium UI suites passed Parent 101/101 and Platform 21/21.
+LOCAL_REAL_BACKEND = Parent synthetic sign-in, Family provisioning, cookie session, dashboard/settings passed 1/1. Platform Admin real Fastify/MySQL journey covering MFA, dashboard, entitlements, step-up admin user, audit, settings, and billing passed 1/1. Both disposable UUID schemas were removed.
+LOCAL_DATABASE = Task-owned MySQL 8.4.11 at 33062 holds a separately created migration-only `pca_local_owner_uat` schema at 0060 (94 tables/806 columns; zero Parent, Platform-admin, or Family rows). No UUID test schemas remain. Owner-UAT app ports remain stopped; no human acceptance is claimed.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; no Platform Enrollment activation, live DB access/mutation, deployment, or production acceptance occurred.
