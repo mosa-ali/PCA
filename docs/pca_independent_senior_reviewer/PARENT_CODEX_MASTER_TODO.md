@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-09-30 (run 36753042327 SUCCESS 27/27; TODO-17 and TODO-19 promoted)
+LAST_UPDATED_UTC = 2026-09-30 (run 36754475958 green after iOS-only retry; TODO-17/TODO-19 retained PASS)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
-LAST_GREEN_REMOTE_SHA = `8d6fb0b458b69d70438a6492d65d33dac2b3a016` (Quality Gates run `36753042327` SUCCESS 27/27)
-CURRENT_WAVE_STATUS = Exact-head run `36753042327` at `8d6fb0b458b69d70438a6492d65d33dac2b3a016` completed SUCCESS 27/27. Parent enrolled-MFA browser journey passed with cookie-backed session, authenticated `/api/parent/session` response, and dashboard navigation. TODO-17 integrated regression and TODO-19 Git/remote/exact-head CI reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository/local schema 0060 and live `pca_pro` last verified 0059. TODO-12/14/15/20 and owner/release gates remain open.
+LAST_GREEN_REMOTE_SHA = `fa428708efdbabcf36fdedae1c610ddca6bebf3a` (Quality Gates run `36754475958` SUCCESS after iOS-only rerun)
+CURRENT_WAVE_STATUS = Exact-head run `36754475958` at `fa428708efdbabcf36fdedae1c610ddca6bebf3a` is green after rerunning the only failed job. First attempt had 26/27 jobs pass and iOS TEST FAILED; failed iOS job rerun `110026310916` succeeded. No repeat failure or assertion details were reported. TODO-17 regression and TODO-19 Git/remote/exact-head CI reconciliation are PASS. TODO-14 remains 45/52 database-integrated; repository/local schema 0060 and live `pca_pro` last verified 0059. TODO-12/14/15/20 and owner/release gates remain open.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run `36753042327` SUCCESS 27/27 at `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; all required quality gates passed.
-LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `8d6fb0b458b69d70438a6492d65d33dac2b3a016` before current exact-run result sync. Three mission ledgers are modified locally; unrelated `.vscode/` and root `0` remain excluded.
+EXACT_HEAD_CI_SHA = Run `36754475958` at `fa428708efdbabcf36fdedae1c610ddca6bebf3a` completed SUCCESS after iOS job rerun `110026310916`.
+LOCAL_STATE = Local/tracking/server refs were freshly verified equal at `fa428708efdbabcf36fdedae1c610ddca6bebf3a` before current iOS-rerun result sync. Three mission ledgers are modified locally; unrelated `.vscode/` and root `0` remain excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
-NEXT_ACTION = Publish this exact-head result and updated statuses; then resume TODO-20 by re-establishing the disposable/local MySQL environment, comparing repository schema 0060 to local truth, and retrying read-only live `pca_pro` preflight. Preserve Platform `HOLD_PARENT_DEPENDENCY`, schedule-policy activation = NO, and TODO-18 owner acceptance pending.
+NEXT_ACTION = Local TODO-20 checks now pass on the recovered disposable MySQL 8.4.11 runtime: migrations 0060/58, 94-table/806-column schema snapshot parity, and the 0060 runtime-grant tests. Live `pca_pro` remains last verified at 0059 because current TCP/3306 is unreachable. Retry fresh read-only live preflight when reachable; do not mutate live schema/grants without it. Keep all crypto/device and owner gates open.
 
 ### 2026-09-30 — Codex re-entry assessment after DeepSeek handover
 
@@ -594,7 +594,7 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = PASS
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006` passed run `36751605072` (27/27). CI-result ledger commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` was pushed by ordinary fast-forward, then fresh fetch + local/tracking/server refs matched and exact-head run `36753042327` passed 27/27. `.vscode/` and root `0` remain excluded.
+EVIDENCE = Source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006` passed run `36751605072` (27/27). Result-ledger commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` passed run `36753042327` (27/27). Current ledger commit `fa428708efdbabcf36fdedae1c610ddca6bebf3a` was pushed by ordinary fast-forward; refs matched. Its initial iOS job failed, and failed-job rerun `110026310916` succeeded, making exact run `36754475958` green.
 BLOCKER = None for Git reconciliation and exact-head CI at the recorded checkpoint. TODO-18 and dependent Platform validation remain owner gates; TODO-20 remains open because repository/local schema is 0060 while live `pca_pro` was last verified at 0059.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
 LOCAL_HEAD = Current published ledger-refresh commit (see repository HEAD; post-push verification passed)
@@ -1383,3 +1383,18 @@ CI = Quality Gates run `36751605072` passed 27/27 at source checkpoint `cb9d9e1b
 LEDGER_SYNC = Commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` records the CI result and TODO-17/TODO-19 PASS statuses. Fresh fetch and `git ls-remote` matched local/tracking/server refs; exact-head run `36753042327` passed 27/27.
 TODO_STATUS = 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23) / 0 BLOCKED. TODO-14 remains 45/52 integrated, with seven gated/optional declarations. Platform remains `HOLD_PARENT_DEPENDENCY`; TODO-20 live schema/grants and owner/release gates remain open.
 NEXT_ACTION = Resume TODO-20 by restoring/re-establishing only the disposable/local MySQL environment, reconciling repository schema 0060 against local truth, and retrying read-only live `pca_pro` preflight before any mutation.
+
+### 2026-09-30 — Codex re-entry and TODO-20 local runtime diagnosis
+
+REENTRY = Local/tracking/server refs were successfully verified equal at `fa428708efdbabcf36fdedae1c610ddca6bebf3a`; a later fetch/GitHub API attempt failed through the configured proxy. No DeepSeek-authored commit follows accepted checkpoint `91f7f6d4`. Recorded exact-head run `36754475958` is green after iOS job rerun `110026310916`; a fresh GitHub API result is unavailable through the current proxy.
+TODO_STATUS = 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23) / 0 BLOCKED. TODO-14 remains 45/52 database-integrated; global aggregate is NOT_YET_PROVEN.
+TODO20 = Repository schema 0060 (58 migrations); local owner-UAT last recorded at 0060; live `pca_pro` last verified at 0059. No local MySQL listener exists. Docker engine pipe is absent, WSL enumeration returns E_ACCESSDENIED, and only MySQL 9.7 binaries were found; stopped MySQL80/MySQL97 were not started. Live DNS resolves to `4.161.89.178`, TCP/3306 is unreachable. No local or live DB read/mutation occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; owner localhost acceptance, first-device Trust Set root, Platform projection/release, live grants, deployment, and production acceptance remain open.
+
+### 2026-09-30 — TODO-20 local schema, route, Trust Set, and grants validated
+
+LOCAL_RUNTIME = Restored task-owned MySQL 8.4.11 on 127.0.0.1:33062 with UTC. Existing MySQL80/MySQL97 services were not started. After each validation, exact UUID databases were dropped; final check found zero `pca_test_codex_%` schemas and zero `pa_priv_%` users.
+LOCAL_SCHEMA = Repository migration/privacy/environment gate PASS: 58/58 migrations, 94 tables, 806 columns; regenerated `current_schema.sql` and `schema_manifest.json` exactly match tracked files (`git diff --exit-code` PASS). This is a fresh disposable DB proof; owner-UAT itself was not connected.
+VALIDATION = Backend build PASS. Parent route-audit MySQL suites PASS 51/51; collector confirms 45/52 database-integrated declarations over 137 scenarios, zero unexpected 401/403/other, global aggregate still NOT_YET_PROVEN. Migration-0060 runtime-grant acceptance PASS 6/6, including append-only epoch and no-delete floor boundaries with a real throwaway runtime principal. Trust Set migration-safety, persistence, and acceptance MySQL suites PASS 28/28. No seed/application data persisted after cleanup.
+LIVE = Fresh DNS resolves to `4.161.89.178`; TCP/3306 remains unreachable. Live `pca_pro` is last verified at 0059; no live DB connection/read/mutation occurred. TODO-20 remains IN_PROGRESS until fresh live schema and grant preflight/reconciliation can be completed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, deployment, production mutation, or owner acceptance occurred.

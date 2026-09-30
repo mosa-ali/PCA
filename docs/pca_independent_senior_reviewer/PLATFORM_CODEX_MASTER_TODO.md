@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36753042327 SUCCESS 27/27 at exact ledger-sync checkpoint)
+LAST_UPDATED_UTC = 2026-09-30 (run 36754475958 green after iOS-only retry)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `8d6fb0b458b69d70438a6492d65d33dac2b3a016` was freshly verified at local, tracking, and server refs after exact-head CI.
-CURRENT_CHECKPOINT_SHA = `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; Quality Gates run `36753042327` passed 27/27. Parent MFA browser flow passed using the issued cookie, authenticated session endpoint, and dashboard navigation as independent evidence. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = Three mission ledgers are being synchronized to exact-head run `36753042327`; the Parent E2E source is already published in `cb9d9e1b`. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `fa428708efdbabcf36fdedae1c610ddca6bebf3a` was freshly verified at local, tracking, and server refs; exact run `36754475958` is green after iOS-only retry `110026310916`.
+CURRENT_CHECKPOINT_SHA = `fa428708efdbabcf36fdedae1c610ddca6bebf3a`; initial exact-head CI attempt had only iOS failure, and the failed job rerun succeeded. TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = Three mission ledgers record exact-head CI run `36754475958` and the local TODO-20 migration/schema/grant validation; no Parent or Platform source files changed. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the latest exact-head CI result and board counts, then resume TODO-20's local schema reconciliation. Keep Parent TODO-12/14/15 boundaries and Platform Enrollment `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Parent's local TODO-20 schema and grant checks have passed, but live `pca_pro` remains unreconciled while TCP/3306 is unreachable. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -63,6 +63,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or a
 ### 2026-09-30 — Parent Git/CI reconciliation passed
 
 PARENT_CI = Quality Gates run `36753042327` SUCCESS 27/27 at exact SHA `8d6fb0b458b69d70438a6492d65d33dac2b3a016`; this result-ledger checkpoint is aligned across local/tracking/server refs. Parent TODO-17 and TODO-19 are PASS; board is 15 PASS / 4 IN_PROGRESS / 4 owner or release gated.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Exact-head iOS rerun result
+
+PARENT_CI = Run `36754475958` at `fa428708efdbabcf36fdedae1c610ddca6bebf3a` completed green after rerunning only the failed iOS job (`110026310916` succeeded). The initial iOS failure did not repeat; no assertion details were reported.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up
@@ -989,3 +994,14 @@ LOCAL_TEST_TOPOLOGY = MySQL 8.4.11 at loopback port 33062; all 58 migrations and
 LOCAL_STORAGE = One directory for an earlier interrupted UUID database `pca_test_codex_049c1d8cb70343d5b8c36a84d25f988d` remains under the task-owned temporary MySQL datadir with no matching live schema; it has not been manually deleted while MySQL is running.
 DIAGNOSTIC = The earlier pending admin-create request did not reproduce in this fresh complete run. A preceding webServer timeout was an environment/startup issue; executing the configured npm/Vite command from `cmd.exe` made Vite available on `127.0.0.1:4102`, and the complete browser run passed.
 PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`; this E2E result proves the local real-backend workflow only. Parent TODO-12/14/15, Parent projection acceptance, exact-head CI, owner `LOCALHOST ACCEPTED`, and release gates remain open. No Enrollment activation, deployment, or production acceptance is implied.
+
+### 2026-09-30 — Parent re-entry gate refreshed
+
+PARENT_CHECKPOINT = Recorded exact-head CI run `36754475958` at `fa428708efdbabcf36fdedae1c610ddca6bebf3a` is green after iOS-only retry `110026310916`; a fresh GitHub API result is unavailable through the current proxy. Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO, with TODO-14 aggregate unproven.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`. Current Parent local MySQL recovery and live TCP preflight are unavailable; no live DB read/mutation, Enrollment activation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent local schema/grant validation refreshed
+
+PARENT_LOCAL = MySQL 8.4.11 loopback disposable-runtime validation passed: 58 migrations; 94 tables / 806 columns; regenerated repository schema artifacts compare exactly; route-audit suites 51/51; migration-0060 grant acceptance 6/6; Trust Set migration/persistence/acceptance 28/28. All exact UUID databases and the temporary grant principal were removed.
+LIVE_GATE = Live `pca_pro` remains last verified at 0059. Fresh DNS resolves, but TCP/3306 is unreachable, so there is no new live read or grant/schema result.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; no dependent Enrollment activation, deployment, production mutation, or owner acceptance occurred.
