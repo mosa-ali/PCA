@@ -860,3 +860,9 @@ PARENT_BUILD = The current uncommitted Parent source passes `npm run build` (`ts
 
 PARENT_CI_LOCAL = Backend build PASS; the serial focused Parent membership/authorization/child-request/runtime-grant suite passes 145/145 with `NODE_ENV=test`. Corrected disposable MySQL 8.4.11 route-audit campaign passes 51/51 after 58 migrations; owned database cleanup passed. Integrated report is 45/52 declarations and 137 scenarios, zero unexpected 401/403/other, with global aggregate still `NOT_YET_PROVEN`. Android Gradle task exited successfully as UP-TO-DATE; existing XMLs report 30/30 coordinator and 20/20 HTTP tests. No current exact-head CI covers these uncommitted changes.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner acceptance, projection/release prerequisites, and exact-head CI remain outstanding; no Enrollment activation, deployment, production mutation, or acceptance occurred.
+
+### 2026-09-30 — Parent checkpoint `59bfc331` recorded
+
+PARENT_CHECKPOINT = Local commit `59bfc331` contains the reviewed Parent membership/authorizer, route audit and mobile safety changes across 31 exact mission files. `.vscode/` and root `0` remain untracked and excluded. Backend build and focused tests pass; corrected disposable-MySQL route campaign passes 51/51 with 45/52 declarations integrated and global aggregate NOT_YET_PROVEN. No exact-head CI covers this checkpoint.
+GIT = Local branch is one commit ahead of `origin/pca-dev` tracking ref `a8c37162`; a fresh `git ls-remote` could not connect through the configured proxy, so publication/server equality remains unverified.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, deployment, production mutation, or owner acceptance occurred.
