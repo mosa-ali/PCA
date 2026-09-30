@@ -72,14 +72,14 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   await page.getByLabel(/password/i).fill(PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   await expect(page.locator('input[name="emailCode"]')).toBeVisible();
-  const beforeMfa = await context.cookies('http://localhost:4002');
+  const beforeMfa = await context.cookies('http://127.0.0.1:4002');
   expect(beforeMfa.some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
 
   const firstEmailCode = setLoginStepUpCode(EMAIL!, '482731');
   await page.locator('input[name="emailCode"]').fill(firstEmailCode);
   await page.locator('form button[type="submit"]').click();
   await expect(page.locator('input[name="totpCode"]')).toBeVisible();
-  expect((await context.cookies('http://localhost:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
+  expect((await context.cookies('http://127.0.0.1:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
 
   // The disposable fixture enrolled MFA using a real TOTP counter. Do not
   // immediately replay that same 30-second counter through login; production
@@ -87,9 +87,16 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   await waitForNextTotpCounter(ENROLLMENT_COUNTER);
   const firstCode = await currentTotp(SECRET!);
   await page.locator('input[name="totpCode"]').fill(firstCode.code);
+  const firstTotpLoginResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/parent/login/step-up' && response.request().method() === 'POST',
+  );
   await page.locator('form button[type="submit"]').click();
+  const firstTotpLogin = await firstTotpLoginResponse;
+  const firstTotpOutcome = await firstTotpLogin.json().catch(() => ({})) as { error?: unknown; sessionEstablished?: unknown };
+  expect(firstTotpLogin.status(), `email-plus-TOTP login response code: ${String(firstTotpOutcome.error ?? 'none')}`).toBe(200);
+  expect(firstTotpOutcome.sessionEstablished, 'valid email-plus-TOTP login establishes the browser session').toBe(true);
   await expect(page).toHaveURL(/\/dashboard$/);
-  const firstLoginCookies = await context.cookies('http://localhost:4002');
+  const firstLoginCookies = await context.cookies('http://127.0.0.1:4002');
   const sessionCookie = firstLoginCookies.find((cookie) => cookie.name === 'pca_family_session');
   expect(sessionCookie, 'successful TOTP login establishes the backend session cookie').toBeDefined();
   expect(sessionCookie?.httpOnly).toBe(true);
@@ -99,7 +106,7 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
 
   // A second isolated context represents a genuinely unknown browser and
   // cannot inherit the first login's session or daily-grant cookies.
-  const secondContext = await browser.newContext({ baseURL: 'http://localhost:4002', serviceWorkers: 'block' });
+  const secondContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4002', serviceWorkers: 'block' });
   const secondPage = await secondContext.newPage();
   secondPage.on('request', (request) => {
     const url = request.url();
@@ -121,7 +128,7 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
     await secondPage.locator('input[name="totpCode"]').fill(secondCode.code);
     await secondPage.locator('form button[type="submit"]').click();
     await expect(secondPage).toHaveURL(/\/dashboard$/);
-    const secondLoginCookies = await secondContext.cookies('http://localhost:4002');
+    const secondLoginCookies = await secondContext.cookies('http://127.0.0.1:4002');
     const secondSessionCookie = secondLoginCookies.find((cookie) => cookie.name === 'pca_family_session');
     expect(secondSessionCookie, 'successful TOTP login establishes the backend session cookie').toBeDefined();
     expect(secondSessionCookie?.httpOnly).toBe(true);

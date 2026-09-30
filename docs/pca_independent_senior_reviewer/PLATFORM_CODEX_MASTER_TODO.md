@@ -5,15 +5,21 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36735353255 triaged; focused Parent corrections await publication and exact-head CI)
-VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `bfe2005f1b717a452f1f1e09161e533e62cacc50` failed run `36735353255` (24/27); focused Parent corrections are locally validated and await exact-head CI.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `bfe2005f1b717a452f1f1e09161e533e62cacc50` is the local tracking ref; server ref has not been freshly queried this turn.
-CURRENT_CHECKPOINT_SHA = `bfe2005f1b717a452f1f1e09161e533e62cacc50`; local changes correct Parent cross-family cookie origin, regenerate the SDK disclosure after the Nodemailer update, and refresh Parent Web lockfile advisories. Platform code and activation remain unchanged.
-LOCAL_UNCOMMITTED_PARENT_CHANGE = `backend/src/sdkDisclosure/thirdPartySdks.generated.ts`, `parent-web/e2e-real/acceptance-flow.spec.ts`, `parent-web/package-lock.json`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36738374071 triaged; Parent MFA and Platform Admin audit follow-up underway)
+VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77` failed run `36738374071` (25/27); the cross-family correction passed its segment, but the enrolled-MFA browser journey and Platform Admin dependency audit remained red.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77` was verified at local, tracking, and server refs after push; current follow-up is uncommitted.
+CURRENT_CHECKPOINT_SHA = `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77`; local changes update Platform Admin's semver-compatible dependency lock and align Parent MFA/E2E cookie origins with the configured loopback host, with safe failure-code diagnostics. Platform product source and activation remain unchanged.
+LOCAL_UNCOMMITTED_PARENT_CHANGE = `platform-admin-web/package-lock.json`, `parent-web/e2e-real/parentMfa.spec.ts`, `parent-web/e2e-real/optionalMfaSetup.spec.ts`, and mission ledgers. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Publish the focused Parent CI corrections by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the focused Parent E2E and Platform Admin lockfile corrections by authorized fast-forward and inspect exact-head CI. Continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI; TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — exact-head run 36738374071 follow-up
+
+CI = Run `36738374071` failed 2/27 at `3b0fea64`; backend build/unit passed. Parent acceptance/cross-family scenarios proceeded, while the enrolled-MFA browser test remained on `/login` after OTP+TOTP. Parent Admin audit failed on HIGH brace-expansion in the then-pushed Platform Admin lockfile.
+CORRECTION = Platform Admin's lockfile-only semver-compatible update now passes `npm audit --audit-level=high`, leaving two moderate Vitest findings. Parent MFA and MFA-setup specs now use `127.0.0.1:4002` consistently; the enrolled-MFA test reports only HTTP status and safe API error code on failure. Playwright discovers four tests. Exact-head rerun is pending; the MFA outcome remains unproven.
+PLATFORM_GATE = Still `HOLD_PARENT_DEPENDENCY`. No Platform enrollment/source activation, owner acceptance, live database mutation, deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent exact-head CI triage
 

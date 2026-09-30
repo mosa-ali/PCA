@@ -58,7 +58,7 @@ test('real browser: password-only login, authenticated CSRF bootstrap, local QR 
   await context.addCookies([{
     name: 'pca_parent_daily_login_grant',
     value: DAILY_LOGIN_GRANT!,
-    url: 'http://localhost:4002',
+    url: 'http://127.0.0.1:4002',
     httpOnly: true,
     sameSite: 'Lax',
   }]);
@@ -68,7 +68,7 @@ test('real browser: password-only login, authenticated CSRF bootstrap, local QR 
   await page.getByRole('button', { name: /sign in/i }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 
-  const loginCookie = (await context.cookies('http://localhost:4002')).find((cookie) => cookie.name === 'pca_family_session');
+  const loginCookie = (await context.cookies('http://127.0.0.1:4002')).find((cookie) => cookie.name === 'pca_family_session');
   expect(loginCookie?.httpOnly).toBe(true);
   // Parent Web cannot read an API host-only CSRF cookie in production. Model
   // that absence while retaining the authenticated session cookie.
@@ -97,7 +97,7 @@ test('real browser: password-only login, authenticated CSRF bootstrap, local QR 
 
   // A separate context cannot inherit the setup session or grant and
   // therefore exercises the unknown-browser MFA path.
-  const secondContext = await browser.newContext({ baseURL: 'http://localhost:4002', serviceWorkers: 'block' });
+  const secondContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4002', serviceWorkers: 'block' });
   const secondPage = await secondContext.newPage();
   try {
     await waitForNextTotpCounter(enrollmentCode.counter);
@@ -106,22 +106,22 @@ test('real browser: password-only login, authenticated CSRF bootstrap, local QR 
     await secondPage.getByLabel(/password/i).fill(PASSWORD!);
     await secondPage.getByRole('button', { name: /sign in/i }).click();
     await expect(secondPage.locator('input[name="emailCode"]')).toBeVisible();
-    expect((await secondContext.cookies('http://localhost:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
+    expect((await secondContext.cookies('http://127.0.0.1:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
 
     const emailCode = setLoginStepUpCode(EMAIL!, '517284');
     await secondPage.locator('input[name="emailCode"]').fill(emailCode);
     await secondPage.locator('form button[type="submit"]').click();
     await expect(secondPage.locator('input[name="totpCode"]')).toBeVisible();
-    expect((await secondContext.cookies('http://localhost:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
+    expect((await secondContext.cookies('http://127.0.0.1:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
 
     const secondCode = await currentTotp(secret);
     await secondPage.locator('input[name="totpCode"]').fill(secondCode.code);
     await secondPage.locator('form button[type="submit"]').click();
     await expect(secondPage).toHaveURL(/\/dashboard$/);
-    const sessionCookie = (await secondContext.cookies('http://localhost:4002')).find((cookie) => cookie.name === 'pca_family_session');
+    const sessionCookie = (await secondContext.cookies('http://127.0.0.1:4002')).find((cookie) => cookie.name === 'pca_family_session');
     expect(sessionCookie, 'successful TOTP relogin establishes the backend session cookie').toBeDefined();
     expect(sessionCookie?.httpOnly).toBe(true);
-    const dailyLoginGrantCookie = (await secondContext.cookies('http://localhost:4002')).find((cookie) => cookie.name === 'pca_parent_daily_login_grant');
+    const dailyLoginGrantCookie = (await secondContext.cookies('http://127.0.0.1:4002')).find((cookie) => cookie.name === 'pca_parent_daily_login_grant');
     expect(dailyLoginGrantCookie, 'successful unknown-browser relogin trusts this browser').toBeDefined();
     expect(dailyLoginGrantCookie?.httpOnly).toBe(true);
   } finally {

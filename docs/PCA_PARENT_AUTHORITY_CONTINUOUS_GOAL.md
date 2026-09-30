@@ -16,9 +16,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = bfe2005f1b717a452f1f1e09161e533e62cacc50 (local tracking ref; server ref not freshly queried this turn)
-CURRENT_LOCAL_CHECKPOINT_SHA = bfe2005f1b717a452f1f1e09161e533e62cacc50 (focused E2E, generated-disclosure, and Parent Web lockfile corrections plus mission ledgers are locally uncommitted)
-LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36735353255 FAILED 3/27 jobs at exact SHA bfe2005f. Failures: stale SDK disclosure after Nodemailer update; HIGH Parent Web brace-expansion audit; cross-family E2E daily-login cookie scoped to localhost while the configured origin is 127.0.0.1. Focused local corrections are validated; exact-head rerun is pending.
+LAST_VERIFIED_REMOTE_SHA = 3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77 (local, tracking, and server refs matched after push)
+CURRENT_LOCAL_CHECKPOINT_SHA = 3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77 (Platform Admin lockfile and Parent MFA E2E follow-up plus mission ledgers are locally uncommitted)
+LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36738374071 FAILED 2/27 jobs at exact SHA 3b0fea64. Backend build/unit passed. The dependency audit found HIGH brace-expansion in the Platform Admin lockfile. Parent owner/cross-family flow proceeded; enrolled-MFA real-browser test remained on /login after OTP+TOTP with a generic verification error. Local lockfile/cookie-origin/diagnostic follow-up is prepared; exact-head rerun pending.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository/local at 0060; live pca_pro last verified at 0059. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; current TCP/3306 preflight is unreachable, so no live mutation without a fresh reachable preflight)
@@ -32,10 +32,10 @@ CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36658212487; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = The owner-UAT database `pca_local_owner_uat` was last verified at schema 0060. At the latest readiness check, TCP listeners existed on MySQL ports 33061 and 33062, while backend 4001 and Parent/Platform web ports 4000/4100 were stopped; do not offer owner UAT until services are restored and exhaustive browser technical precheck passes. Task-owned MySQL 8.4.11 on 33062 passed the Platform real-backend E2E; its UUID schema was dropped, though one orphan directory from an earlier interrupted UUID attempt remains under the task-owned datadir. Owner-UAT data and live `pca_pro` were not mutated.
-NEXT_CODEX_ACTION = Publish the reviewed cookie-origin correction, regenerated SDK disclosure, Parent Web semver-compatible audit lockfile update, and matching ledgers by ordinary fast-forward; inspect exact-head CI before browser-precheck or owner UAT. Keep all authority, live-DB, Platform and release gates open.
+NEXT_CODEX_ACTION = Publish the Platform Admin lockfile advisory fix, Parent MFA cookie-origin alignment and safe response-code diagnostics, and matching ledgers by ordinary fast-forward; inspect exact-head CI before browser-precheck or owner UAT. Keep all authority, live-DB, Platform and release gates open.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = Local HEAD equals tracking ref at `bfe2005f1b717a452f1f1e09161e533e62cacc50`; server equality is not freshly verified; only intended tracked worktree changes remain
+LOCAL_REMOTE_EQUAL = Local HEAD, tracking ref, and server matched at `3b0fea64af0a04c3d37a14b9dcc0cf82120bbc77`; only intended tracked worktree changes remain
 PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
 PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
@@ -49,7 +49,7 @@ UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
 REMOTE_ALIGNMENT_COMPLETED = YES at `e1f8b218`; fetch and `git ls-remote` agree with local and tracking refs.
-PARENT_LOCAL_ONLY_FILES_REMAINING = Three focused correction files (`backend/src/sdkDisclosure/thirdPartySdks.generated.ts`, `parent-web/e2e-real/acceptance-flow.spec.ts`, `parent-web/package-lock.json`) plus three current-state ledgers; `.vscode/` and root fragment `0` remain excluded.
+PARENT_LOCAL_ONLY_FILES_REMAINING = Three focused follow-up files (`platform-admin-web/package-lock.json`, `parent-web/e2e-real/parentMfa.spec.ts`, `parent-web/e2e-real/optionalMfaSetup.spec.ts`) plus three current-state ledgers; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
 PARENT_UNPUSHED_COMMITS_REMAINING = 0; the scoped correction/ledger changes are uncommitted in the worktree.
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
