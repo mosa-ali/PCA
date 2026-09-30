@@ -17,12 +17,12 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = e828546b53ef9c0e1f237d30398f251d506e4529 (local, tracking, and server refs matched after post-push fetch and ls-remote)
-CURRENT_LOCAL_CHECKPOINT_SHA = e828546b53ef9c0e1f237d30398f251d506e4529
-LAST_EXACT_HEAD_CI = Quality Gates run 36766189779 at exact SHA e828546b53ef9c0e1f237d30398f251d506e4529 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
+LAST_VERIFIED_REMOTE_SHA = 22a10c06ace0244cc3b0e6b2cb731501e51fd2ad (local, tracking, and server refs matched after post-push fetch and ls-remote)
+CURRENT_LOCAL_CHECKPOINT_SHA = 22a10c06ace0244cc3b0e6b2cb731501e51fd2ad
+LAST_EXACT_HEAD_CI = Quality Gates run 36767517932 at exact SHA 22a10c06ace0244cc3b0e6b2cb731501e51fd2ad completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation are PASS at this checkpoint.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
-CURRENT_REPO_LIVE_PARITY = NO (repository/local at 0060; live pca_pro last verified at 0059. Current TCP check accepted, but the read-only MySQL client timed out before completing a session; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
+CURRENT_REPO_LIVE_PARITY = NO (repository and previously validated disposable schema at 0060; live pca_pro last verified at 0059. Fresh DNS resolves to 4.161.89.178, but TCP/3306 is unreachable; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
 PARENT_FORMAL_STATUS = IN_PROGRESS (15 PASS / 4 IN_PROGRESS: TODO-12/14/15/20 / 4 TODO: TODO-18/21/22/23)
 PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
 LOCALHOST_UAT_STATUS = Owner-UAT acceptance NOT YET GIVEN. Current read-only port check: owner-UAT MySQL 33061, task-owned disposable MySQL 33062, and app ports 4001/4000/4100 are stopped. Prior disposable validation UUID databases were removed; no owner-UAT or live DB was changed.
@@ -1316,6 +1316,13 @@ NEXT_ACTION = Retry fresh read-only `pca_pro` schema/grant inspection when TCP/3
 PUBLICATION = Ledger commit `e828546b53ef9c0e1f237d30398f251d506e4529` was pushed to `origin/pca-dev` by ordinary fast-forward. Post-push fetch, local HEAD, tracking ref, and `git ls-remote` all matched. The three mission ledgers exist in the remote tree; `.vscode/` and root `0` remain excluded.
 EXACT_HEAD_CI = Quality Gates run `36766189779` completed SUCCESS 27/27 at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529`.
 SCOPE_AND_GATES = Ledger-only change; no product source or schema change. Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO; TODO-14 aggregate remains NOT_YET_PROVEN. Live `pca_pro` remains last verified at 0059; no live query/mutation or owner acceptance occurred. Platform remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-09-30 — Published re-entry sync CI and live preflight refresh
+
+PUBLICATION = Ledger sync `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad` was pushed by ordinary fast-forward. Post-push fetch, local HEAD, tracking ref, and `git ls-remote` matched; all three mission ledgers exist remotely.
+EXACT_HEAD_CI = Quality Gates run `36767517932` completed SUCCESS 27/27 at exact SHA `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad`.
+LIVE_PREFLIGHT = Fresh DNS resolves `pca-mysql.mysql.database.azure.com` to `4.161.89.178`; TCP/3306 returned false. No live MySQL session, SQL query, or mutation occurred; live remains last verified at 0059 and parity remains NO.
+GATES = Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO; TODO-14 aggregate remains NOT_YET_PROVEN. Owner localhost acceptance is absent and Platform remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — DeepSeek re-entry assessment and exact-head CI
 

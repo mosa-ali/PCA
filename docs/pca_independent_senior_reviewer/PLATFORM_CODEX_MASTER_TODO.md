@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (run 36766189779 SUCCESS 27/27 at exact head e828546b)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36766189779` at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529` (27/27).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `e828546b53ef9c0e1f237d30398f251d506e4529` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36766189779` passed 27/27.
-CURRENT_CHECKPOINT_SHA = `e828546b53ef9c0e1f237d30398f251d506e4529`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36766189779`, the independent DeepSeek re-entry assessment, local TODO-20 migration/schema/grant validation, and the live-DB preflight limit. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-09-30 (run 36767517932 SUCCESS 27/27 at exact head 22a10c06)
+VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36767517932` at exact SHA `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad` (27/27).
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad` was freshly verified at local, tracking, and server refs; exact Quality Gates run `36767517932` passed 27/27.
+CURRENT_CHECKPOINT_SHA = `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad`; TODO-17 and TODO-19 are PASS. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
+LATEST_PARENT_LEDGER_CHECKPOINT = Three mission ledgers record exact-head CI run `36767517932`, the independent DeepSeek re-entry assessment, local TODO-20 validation, and a fresh live TCP preflight failure. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
@@ -1017,3 +1017,10 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`. Owner localhost acceptance is absent; 
 PUBLICATION = Ledger commit `e828546b53ef9c0e1f237d30398f251d506e4529` was pushed by ordinary fast-forward; post-push fetch and `git ls-remote` verified local/tracking/server equality and all three ledger paths on `origin/pca-dev`.
 CI = Quality Gates run `36766189779` passed 27/27 at exact SHA `e828546b53ef9c0e1f237d30398f251d506e4529`. No source or schema changes occurred in the ledger checkpoint.
 GATES = Parent TODO-12/14/15/20 and owner TODO-18 remain open; Platform stays `HOLD_PARENT_DEPENDENCY`; no owner localhost acceptance, live DB mutation, deployment, or production acceptance occurred.
+
+### 2026-09-30 — Published sync CI and live preflight refresh
+
+PUBLICATION = Ledger sync `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad` was pushed by ordinary fast-forward; post-push fetch and server verification matched local/tracking/server refs, and all three ledgers are present remotely.
+CI = Quality Gates run `36767517932` passed 27/27 at exact SHA `22a10c06ace0244cc3b0e6b2cb731501e51fd2ad`.
+LIVE_PREFLIGHT = DNS resolved the live host to `4.161.89.178`; TCP/3306 returned false. No live query or mutation occurred; live schema remains last verified at 0059.
+GATES = TODO-12/14/15/20 and owner TODO-18 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`.
