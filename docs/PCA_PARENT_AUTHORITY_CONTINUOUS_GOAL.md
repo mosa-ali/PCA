@@ -16,8 +16,8 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = 551d423f8cd01a079574e54fccf441f73f2a1878 (local, tracking, and server refs matched after push)
-CURRENT_LOCAL_CHECKPOINT_SHA = 551d423f8cd01a079574e54fccf441f73f2a1878 (enrolled-MFA E2E diagnostic refinement plus mission ledgers are locally uncommitted)
+LAST_VERIFIED_REMOTE_SHA = 551d423f8cd01a079574e54fccf441f73f2a1878 (local, tracking, and server refs matched before the current commit)
+CURRENT_LOCAL_CHECKPOINT_SHA = 57cc83e5c41ad2553471a56d20724035a1143e68 (MFA E2E diagnostic refinement and re-entry assessment committed; pending publication)
 LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36740111414 FAILED 1/27 jobs at exact SHA 551d423f. Backend unit/full-DB, Android/iOS, dependency audits, and other gates passed. Only real-backend browser E2E failed: enrolled Parent `/api/parent/login/step-up` returned 401 `invalid_code` for the OTP+TOTP request after the email-only step returned `mfaRequired`. This route deliberately collapses email-code and TOTP failure; next E2E revision uses backend canonical TOTP and probes OTP validity without logging secrets.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
@@ -31,11 +31,11 @@ CURRENT_ENGINEERING_CRITICAL_PATH = Re-entry review confirms the registry-backed
 CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in newly TOTP-provisioned families (required before ingestion/device activation); TODO-18 literal `LOCALHOST ACCEPTED` after local MySQL/UAT health is restored; TODO-21/22 deployment + production acceptance; release authorization
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36658212487; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
-CURRENT_LOCAL_UAT_ENVIRONMENT = The owner-UAT database `pca_local_owner_uat` was last verified at schema 0060. At the latest readiness check, TCP listeners existed on MySQL ports 33061 and 33062, while backend 4001 and Parent/Platform web ports 4000/4100 were stopped; do not offer owner UAT until services are restored and exhaustive browser technical precheck passes. Task-owned MySQL 8.4.11 on 33062 passed the Platform real-backend E2E; its UUID schema was dropped, though one orphan directory from an earlier interrupted UUID attempt remains under the task-owned datadir. Owner-UAT data and live `pca_pro` were not mutated.
-NEXT_CODEX_ACTION = Publish the enrolled-MFA diagnostic refinement and matching ledgers by ordinary fast-forward; inspect exact-head CI and use the safe OTP validity probe to direct the next correction. Keep all authority, live-DB, Platform and release gates open.
+CURRENT_LOCAL_UAT_ENVIRONMENT = The owner-UAT database `pca_local_owner_uat` was last verified at schema 0060. The current re-entry probe found MySQL ports 33061/33062 and backend/Parent/Platform ports 4001/4000/4100 stopped; do not offer owner UAT until services are restored and exhaustive browser technical precheck passes. Task-owned MySQL 8.4.11 on 33062 previously passed the Platform real-backend E2E; its UUID schema was dropped, though one orphan directory from an earlier interrupted UUID attempt remains under the task-owned datadir. Owner-UAT data and live `pca_pro` were not mutated.
+NEXT_CODEX_ACTION = Publish commit `57cc83e5c41ad2553471a56d20724035a1143e68` by ordinary fast-forward, verify refs, then inspect exact-head CI and use the safe OTP validity probe to direct the next correction. Keep all authority, live-DB, Platform and release gates open.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = Local HEAD, tracking ref, and server matched at `551d423f8cd01a079574e54fccf441f73f2a1878`; only intended tracked worktree changes remain
+LOCAL_REMOTE_EQUAL = NO; local HEAD is `57cc83e5c41ad2553471a56d20724035a1143e68`, tracking/server were last verified at `551d423f8cd01a079574e54fccf441f73f2a1878`
 PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
 PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
@@ -49,8 +49,8 @@ UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
 REMOTE_ALIGNMENT_COMPLETED = YES at `e1f8b218`; fetch and `git ls-remote` agree with local and tracking refs.
-PARENT_LOCAL_ONLY_FILES_REMAINING = One focused follow-up file (`parent-web/e2e-real/parentMfa.spec.ts`) plus three current-state ledgers; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
-PARENT_UNPUSHED_COMMITS_REMAINING = 0; the scoped correction/ledger changes are uncommitted in the worktree.
+PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked files; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
+PARENT_UNPUSHED_COMMITS_REMAINING = 1 (the exact scoped commit above); only unrelated `.vscode/` and root `0` are untracked.
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
 REPO_MIGRATION_HEAD = 0060 (58 SQL migration files)
