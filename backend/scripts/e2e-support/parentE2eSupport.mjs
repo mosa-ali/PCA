@@ -13,7 +13,7 @@
 //   set-verification-code <email> <6 digits>   (latest registration code)
 //   set-login-step-up-code <email> <6 digits>  (latest emailed login code)
 //   set-mfa-recovery-code <email> <6 digits>   (latest lost-authenticator code)
-//   mfa-state <email>  -> { status, graceExpiresAt, enrolled }
+//   mfa-state <email>  -> { status, graceExpiresAt, enrolled, lastAcceptedTotpCounter }
 //   expire-grace <email>  -> moves this account's grace deadline into the past
 import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
@@ -61,9 +61,14 @@ try {
   } else if (command === 'mfa-state') {
     const result = await runInTransaction(async (conn) => {
       const id = await accountId(conn, email);
-      const { rows } = await execute(conn, `SELECT status, grace_expires_at, enrolled_at FROM parent_mfa_state WHERE account_id = ?`, [id]);
+      const { rows } = await execute(conn, `SELECT status, grace_expires_at, enrolled_at, last_accepted_totp_counter FROM parent_mfa_state WHERE account_id = ?`, [id]);
       if (!rows[0]) return { status: 'NOT_STARTED', graceExpiresAt: null, enrolled: false };
-      return { status: rows[0].status, graceExpiresAt: rows[0].grace_expires_at.toISOString(), enrolled: rows[0].enrolled_at !== null };
+      return {
+        status: rows[0].status,
+        graceExpiresAt: rows[0].grace_expires_at.toISOString(),
+        enrolled: rows[0].enrolled_at !== null,
+        lastAcceptedTotpCounter: rows[0].last_accepted_totp_counter === null ? null : Number(rows[0].last_accepted_totp_counter),
+      };
     });
     console.log(JSON.stringify(result));
   } else if (command === 'expire-grace') {

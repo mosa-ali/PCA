@@ -6,9 +6,8 @@ import { base32Decode, computeTotp } from '../../backend/dist/platformadmin/auth
 const EMAIL = process.env.E2E_REAL_MFA_PARENT_EMAIL;
 const PASSWORD = process.env.E2E_REAL_MFA_PARENT_PASSWORD;
 const SECRET = process.env.E2E_REAL_MFA_PARENT_TOTP_SECRET;
-const ENROLLMENT_COUNTER = Number(process.env.E2E_REAL_MFA_PARENT_TOTP_ENROLLMENT_COUNTER);
 
-test.skip(!EMAIL || !PASSWORD || !SECRET || !Number.isSafeInteger(ENROLLMENT_COUNTER), 'real Parent MFA E2E requires the disposable enrolled Parent fixture and its enrollment counter.');
+test.skip(!EMAIL || !PASSWORD || !SECRET, 'real Parent MFA E2E requires the disposable enrolled Parent fixture.');
 test.use({ serviceWorkers: 'block' });
 
 async function currentTotp(secret: string): Promise<{ code: string; counter: number }> {
@@ -32,6 +31,19 @@ function setLoginStepUpCode(email: string, code: string): string {
     { cwd: resolve(process.cwd(), '../backend'), env: process.env },
   );
   return code;
+}
+
+function latestAcceptedTotpCounter(email: string): number {
+  const raw = execFileSync(
+    process.execPath,
+    ['scripts/e2e-support/parentE2eSupport.mjs', 'mfa-state', email],
+    { cwd: resolve(process.cwd(), '../backend'), env: process.env, encoding: 'utf8' },
+  );
+  const state = JSON.parse(raw) as { status?: unknown; lastAcceptedTotpCounter?: unknown };
+  if (state.status !== 'ACTIVE' || !Number.isSafeInteger(state.lastAcceptedTotpCounter)) {
+    throw new Error('The disposable Parent MFA fixture has no durable accepted TOTP counter.');
+  }
+  return state.lastAcceptedTotpCounter as number;
 }
 
 test('real browser: unknown-browser login requires email OTP plus Parent MFA and makes no Microsoft identity request', async ({ page, context, browser }) => {
@@ -59,10 +71,10 @@ test('real browser: unknown-browser login requires email OTP plus Parent MFA and
   await expect(page.locator('input[name="totpCode"]')).toBeVisible();
   expect((await context.cookies('http://127.0.0.1:4002')).some((cookie) => cookie.name === 'pca_family_session')).toBe(false);
 
-  // The disposable fixture enrolled MFA using a real TOTP counter. Do not
-  // immediately replay that same 30-second counter through login; production
-  // correctly rejects counters already claimed during enrollment.
-  await waitForNextTotpCounter(ENROLLMENT_COUNTER);
+  // The earlier certified owner-acceptance E2E uses this same enrolled Parent
+  // fixture and may already have claimed newer TOTP counters. Read the durable
+  // replay watermark after that run, then use only a strictly newer counter.
+  await waitForNextTotpCounter(latestAcceptedTotpCounter(EMAIL!));
   const firstCode = await currentTotp(SECRET!);
   await page.locator('input[name="totpCode"]').fill(firstCode.code);
   const firstTotpLoginResponse = page.waitForResponse((response) =>

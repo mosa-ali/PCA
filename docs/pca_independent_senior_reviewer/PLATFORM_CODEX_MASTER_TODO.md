@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-09-30 (diagnostic checkpoint published at 3aff4047; exact-head run 36742259731 queued)
+LAST_UPDATED_UTC = 2026-09-30 (run 36742456952 isolated stale TOTP replay; test correction pending exact-head CI)
 VALIDATED_PARENT_SOURCE_HEAD = Membership resolver/authorizer source remains covered by Quality Gates run `36658212487` at `8e63d473` (27/27). Latest pushed head `551d423f8cd01a079574e54fccf441f73f2a1878` failed only the real-backend browser job (26/27); the Parent enrolled-MFA step-up returned 401 `invalid_code` after email-only step-up had succeeded.
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `3aff4047ca48c91a25dfd331f231e6b66e4c00fa` was freshly verified at local, tracking, and server refs.
-CURRENT_CHECKPOINT_SHA = `3aff4047ca48c91a25dfd331f231e6b66e4c00fa`; it contains the backend canonical TOTP helper, safe email-OTP-only probe, and synchronized mission ledgers. Exact-head Quality Gates run `36742259731` is queued. Platform product source and activation remain unchanged.
+CURRENT_CHECKPOINT_SHA = `b8b6908e8f86ae332723cd9651e99d1ef6ccf300`; exact-head Quality Gates run `36742456952` failed only the real-backend Parent MFA E2E. The email-only probe confirmed the TOTP code was rejected while the email code remained valid. The Parent MFA test now reads the disposable DB replay watermark to avoid reusing counters consumed by the earlier owner-acceptance E2E. Platform product source and activation remain unchanged.
 LOCAL_UNCOMMITTED_PARENT_CHANGE = None. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, activation, production mutation, or owner acceptance occurred.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Monitor exact-head Quality Gates run `36742259731`; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
+NEXT_ACTION = Publish the Parent MFA replay-watermark test correction and verify exact-head CI; continue Parent TODO-12/14 within current security and integrated-evidence boundaries after CI. TODO-15 source review still awaits owner/security protocol input. Platform Enrollment remains `HOLD_PARENT_DEPENDENCY`.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -24,6 +24,11 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. The reviewed post-DeepSeek Par
 
 PARENT_CHECKPOINT = Diagnostic commit `57cc83e5c41ad2553471a56d20724035a1143e68` and ledger sync `3aff4047ca48c91a25dfd331f231e6b66e4c00fa` are published and verified equal at local, tracking, and server heads. Exact-head run `36742259731` is queued.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change, Enrollment activation, live DB mutation, deployment, or owner acceptance occurred.
+
+### 2026-09-30 — Parent MFA replay diagnosis
+
+PARENT_CI = Run `36742456952` failed only the real-backend Parent MFA E2E; its safe probe showed a valid, unconsumed email OTP and rejected TOTP. The cause was stale test replay baseline after an earlier E2E consumed TOTP counters. Parent test code now reads the disposable DB's durable counter before requesting a fresh one; local syntax/discovery passed and exact-head CI is pending.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform source change or activation, live DB mutation, deployment, or owner acceptance occurred.
 
 ### 2026-09-30 — exact-head run 36740111414 follow-up
 
