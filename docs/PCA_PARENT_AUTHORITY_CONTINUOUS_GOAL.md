@@ -11,31 +11,31 @@ below remain historical evidence and may describe superseded states.
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
 OWNER = Codex coordinates and implements the continuing Parent mission after the DeepSeek handover
-CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16 PASS at verified evidence
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16/17 PASS at verified evidence
 MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex handover checkpoint)
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = e81b181841e22c6d54878ec960718621f94331e9 (local, tracking, and server refs matched after fetch)
-CURRENT_LOCAL_CHECKPOINT_SHA = e81b181841e22c6d54878ec960718621f94331e9 (exact-head E2E independently proved session issuance; assertion now accepts empty captured body only with session + dashboard evidence)
-LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36750307469 FAILED 1/27 at exact SHA e81b1818; all other 26 jobs passed. The real-backend Parent MFA flow reached `/dashboard`, received session and daily-login-grant cookies, and `/api/parent/session` returned 200. The TOTP field was present and OTP-only retry returned 401. The failure was the test's strict `sessionEstablished` JSON assertion although Playwright captured an empty response body; the browser and authenticated session were independently proven. The E2E now accepts an empty captured body only when the session cookie, authenticated session endpoint, and dashboard navigation all pass; non-empty JSON must still declare `sessionEstablished=true`.
+LAST_VERIFIED_REMOTE_SHA = cb9d9e1bd4f25913757a787d8ed02464bfabc006 (local, tracking, and server refs matched after fetch)
+CURRENT_LOCAL_CHECKPOINT_SHA = cb9d9e1bd4f25913757a787d8ed02464bfabc006 (cookie-backed Parent MFA browser login assertion published)
+LAST_EXACT_HEAD_CI = GitHub Quality Gates run 36751605072 SUCCESS 27/27 at exact SHA cb9d9e1b. The Parent MFA journey passed using dashboard navigation, session cookie, and `/api/parent/session` 200 as independent browser evidence; parsed JSON responses still require `sessionEstablished=true`. TODO-17 integrated regression is now PASS. TODO-19 remains IN_PROGRESS while this CI result and checkpoint are synchronized into the canonical ledgers.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository/local at 0060; live pca_pro last verified at 0059. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; current TCP/3306 preflight is unreachable, so no live mutation without a fresh reachable preflight)
-PARENT_FORMAL_STATUS = IN_PROGRESS (13 PASS / 6 IN_PROGRESS: TODO-12/14/15/17/19/20 / 4 TODO: TODO-18/21/22/23)
+PARENT_FORMAL_STATUS = IN_PROGRESS (14 PASS / 5 IN_PROGRESS: TODO-12/14/15/19/20 / 4 TODO: TODO-18/21/22/23)
 PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
 LOCALHOST_UAT_STATUS = Task-owned disposable MySQL 8.4.11 on loopback port 33062 passed the Platform real-backend E2E and was cleaned; owner-UAT acceptance NOT YET GIVEN
 AZURE_STATUS = HOLD
-CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios, seven remain gated/optional; TODO-15 device lifecycle/security; TODO-17 exact-head regression after the failed E2E and vulnerability audit; TODO-19 CI/publication; TODO-20 repository/local 0060 versus live 0059; owner-gated TODO-18; TODO-21/22/23 pending.
+CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios, seven remain gated/optional; TODO-15 device lifecycle/security; TODO-19 CI/publication ledger synchronization; TODO-20 repository/local 0060 versus live 0059; owner-gated TODO-18; TODO-21/22/23 pending.
 CURRENT_ENGINEERING_CRITICAL_PATH = Re-entry review confirms the registry-backed child-profile membership dependency is implemented in `59bfc331` and covered by remote exact-head Quality Gates run 36658212487. TODO-15 source/device-security review found no safe activation change. The next Trust Set/device step depends on an owner/security-approved first-device root and crypto/key-custody protocol: epoch-1 acceptance needs a durable genesis anchor, while PCA-DEC-037 provisioning intentionally creates no device/genesis-anchor/authority-chain rows (`backend/test/db/parentAccount.mysql.test.mjs:337-339`). Do not infer a signer/root from Parent account or TOTP. TODO-14 has 45/52 database-integrated routes; the seven remaining dispositions are schedule-policy Trust Set, Web Rules service/storage, signed/recovery decision crypto, and optional dashboard. No gate may be activated to inflate coverage.
 CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in newly TOTP-provisioned families (required before ingestion/device activation); TODO-18 literal `LOCALHOST ACCEPTED` after local MySQL/UAT health is restored; TODO-21/22 deployment + production acceptance; release authorization
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36658212487; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = The owner-UAT database `pca_local_owner_uat` was last verified at schema 0060. The current re-entry probe found MySQL ports 33061/33062 and backend/Parent/Platform ports 4001/4000/4100 stopped; do not offer owner UAT until services are restored and exhaustive browser technical precheck passes. Task-owned MySQL 8.4.11 on 33062 previously passed the Platform real-backend E2E; its UUID schema was dropped, though one orphan directory from an earlier interrupted UUID attempt remains under the task-owned datadir. Owner-UAT data and live `pca_pro` were not mutated.
-NEXT_CODEX_ACTION = Publish the real-browser session-proof assertion with synchronized ledgers and rerun exact-head CI. Keep all authority, live-DB, Platform and release gates open; after green exact-head evidence resume the earliest unfinished Parent dependency.
+NEXT_CODEX_ACTION = Synchronize the green `cb9d9e1b` exact-head result in the canonical ledgers, then resume the earliest unfinished Parent dependency at TODO-12/14. Keep all authority, live-DB, Platform and release gates open.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = YES before current local edits; local HEAD, tracking ref, and server all equal `0f9e9162251974af0c85341b1ade31a62995cac1`
+LOCAL_REMOTE_EQUAL = YES at the tested checkpoint; local HEAD, tracking ref, and server all equal `cb9d9e1bd4f25913757a787d8ed02464bfabc006`
 PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
 PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
@@ -49,8 +49,8 @@ UNRELATED_FILES_TOUCHED = 0
 
 REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
 REMOTE_ALIGNMENT_COMPLETED = YES at `e1f8b218`; fetch and `git ls-remote` agree with local and tracking refs.
-PARENT_LOCAL_ONLY_FILES_REMAINING = One Parent MFA E2E spec and three mission ledgers have the cookie-backed session-proof assertion after run 36750307469; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 before the new diagnostic update. Only unrelated `.vscode/` and root `0` are untracked.
+PARENT_LOCAL_ONLY_FILES_REMAINING = Three mission ledgers contain the local CI-result synchronization for run 36751605072; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
+PARENT_UNPUSHED_COMMITS_REMAINING = 0 at tested checkpoint. Only unrelated `.vscode/` and root `0` are untracked.
 
 REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
 REPO_MIGRATION_HEAD = 0060 (58 SQL migration files)
