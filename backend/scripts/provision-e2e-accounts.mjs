@@ -201,7 +201,7 @@ await writeFile(
 );
 
 console.log('Provisioned the disposable E2E accounts.');
-console.log('Parent fixtures: two grace-window controls, one fresh MFA-setup account, and one enrolled authenticator account.');
+console.log('Parent fixtures: two grace-window controls, one fresh MFA-setup account, one enrolled authenticator account, and one isolated password-lock account.');
 console.log('Wrote the E2E fixture manifest.');
 
 await closePool();

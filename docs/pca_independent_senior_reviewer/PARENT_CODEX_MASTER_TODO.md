@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-01 (Parent recovery-policy ledger evidence refreshed after publication; exact-head CI remains unverified)
+LAST_UPDATED_UTC = 2026-10-01 (Quality Gates run 36799538564 exposed missing CI credential handoff for the isolated password-lock fixture; workflow correction and local browser rerun are prepared)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
 LAST_GREEN_REMOTE_SHA = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` (Quality Gates run `36784297610` SUCCESS, 27/27 on attempt 2)
-CURRENT_WAVE_STATUS = Owner recovery/password-lock implementation is source commit e66b266dad9f503e2212754d3db020526ac0d8df; validation-harness fixes are commit a8f08abcde68bc7ef11c0f6df910b8872cfde191, pushed and fetched. Local backend 2751/2751, Parent Web 1076/1076, MySQL 669 passed/0 failed/9 expected skips plus populated production-path 275/275/0 skipped, real-browser Parent MFA 4/4, all four contract catalogues, security controls, Parent Web typecheck, repository checks, and diff check passed. Exact-head CI for a8f08abc is unverified because configured GitHub API proxy 127.0.0.1:9 refuses connections. Repository migration head 0061; owner-UAT last verified 0060; live pca_pro last verified 0059. No live SQL, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
+CURRENT_WAVE_STATUS = Owner recovery/password-lock implementation is source commit e66b266dad9f503e2212754d3db020526ac0d8df; validation-harness fixes are published through a8f08abcde68bc7ef11c0f6df910b8872cfde191 and three-ledger sync fc368fc5771189ae404b6fc43ed09b81114ccd17. Exact-head Quality Gates run 36799538564 failed only in the real-backend browser job because the GitHub Actions manifest resolver omitted the isolated password-lock Parent variables. The disposable local wrapper passed Parent MFA 3/3 and optional setup 1/1 with zero skips after adding the missing GitHub Actions validation, masking, and exports; fix awaits publication and a new exact-head CI run. Previous backend/Web/MySQL/contract/security/typecheck/repository validations remain as recorded below. Repository migration 0061; owner-UAT last verified 0060; live pca_pro last verified 0059. No live SQL, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Latest three-ledger sync is pushed; exact-head Quality Gates not yet verified because configured GitHub API proxy 127.0.0.1:9 refuses connections. Last verified green remains run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3.
+EXACT_HEAD_CI_SHA = Run 36799538564 at fc368fc5771189ae404b6fc43ed09b81114ccd17 completed FAILURE in the real-backend browser job: the CI resolver omitted E2E_REAL_MFA_LOCK_PARENT_EMAIL/PASSWORD/TOTP_SECRET. Workflow handoff correction is local and its exact-head run is pending. Last verified green remains run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3.
 LOCAL_STATE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is pushed and fetch-confirmed; this ledger sync is committed and published by ordinary fast-forward, with post-push local/origin equality verified. .vscode/ and root 0 remain untracked, unrelated, and excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 first-device Trust Set root/bootstrap gated; TODO-14 remains 45/52 integrated with seven gated/optional; TODO-15 device security; TODO-17 current exact-head regression CI; TODO-19 exact-head CI/Git closure; TODO-20 live schema/grants; owner-gated TODO-18 remain open. Board totals 13 PASS / 6 IN_PROGRESS (12,14,15,17,19,20) / 4 TODO (18,21,22,23); Platform remains HOLD_PARENT_DEPENDENCY.
-NEXT_ACTION = Obtain exact-head Quality Gates for the latest three-ledger sync when GitHub API access is restored. Do not claim LOCALHOST ACCEPTED. Keep TODO-12/14/15 open pending approved Trust Set root/crypto protocol and route dispositions. Retry only fresh read-only TODO-20 preflight when reachable; live pca_pro remains last verified at 0059 and this policy task authorizes no live mutation.
+NEXT_ACTION = Publish the CI credential-handoff correction with this evidence update, then obtain exact-head Quality Gates. Do not claim LOCALHOST ACCEPTED. Keep TODO-12/14/15 open pending approved Trust Set root/crypto protocol and route dispositions. Retry only fresh read-only TODO-20 preflight when reachable; live pca_pro remains last verified at 0059 and this policy task authorizes no live mutation.
 
 ### 2026-10-01 — a7e8a8a1 exact-head CI and TODO-20 local runtime grants
 
@@ -605,8 +605,8 @@ extra PII/commercial fields = 0
 STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Local policy regression passed: backend 2751/2751; Parent Web 152 files/1076 tests; Parent Web typecheck; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path MySQL 275/275/0 skips; real-browser Parent MFA and optional setup 4/4/0 skipped; four contract catalogues; security controls; repository checks; diff check. Exact-head CI for the latest three-ledger sync is UNVERIFIED because configured GitHub API proxy 127.0.0.1:9 refused connections.
-BLOCKER = Exact-head Quality Gates for the latest three-ledger sync are unverified; TODO-17 remains IN_PROGRESS until the exact pushed head passes CI. TODO-12/14/15 and owner/release gates remain separate.
+EVIDENCE = Local policy regression passed: backend 2751/2751; Parent Web 152 files/1076 tests; Parent Web typecheck; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path MySQL 275/275/0 skips; real-browser Parent MFA and optional setup 4/4/0 skipped; four contract catalogues; security controls; repository checks; diff check. Exact-head run 36799538564 failed in real-backend Parent MFA because the workflow omitted the isolated lock-Parent credentials. The corrected manifest validation/masking/environment mapping is local; disposable wrapper rerun passed Parent MFA 3/3 and optional setup 1/1, zero skips.
+BLOCKER = Publish the corrected workflow handoff and pass the resulting exact-head Quality Gates run; TODO-17 remains IN_PROGRESS. TODO-12/14/15 and owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
@@ -623,8 +623,8 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 and the three-ledger sync were pushed by ordinary fast-forward; a fresh fetch confirmed refs equal and all canonical ledger paths exist remotely. Exact-head CI is unverified because the configured GitHub API proxy refused run lookup.
-BLOCKER = Exact-head Quality Gates for the latest ledger-sync head is unverified; source/test and ledger-sync commits are pushed and fetch-confirmed.
+EVIDENCE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 and ledger head fc368fc5771189ae404b6fc43ed09b81114ccd17 were pushed by ordinary fast-forward; a fresh fetch confirmed refs equal and all three canonical ledger paths exist remotely. Exact-head Quality Gates run 36799538564 failed in real-backend Parent MFA because the workflow omitted lock-fixture variables. The correction and local 4/4 browser rerun are awaiting publication.
+BLOCKER = Publish the CI fixture-handoff correction and verify the exact resulting head; source/test and current ledger commits are pushed and fetch-confirmed.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
 LOCAL_HEAD = Post-sync local HEAD was verified equal to origin/pca-dev by a fresh fetch after the ledger commit.
 REMOTE_HEAD = Post-sync origin/pca-dev matched local HEAD after fresh fetch; see Git history for the ledger-sync SHA.
@@ -1537,3 +1537,9 @@ SCHEMA = Repository migration head 0061 has three additive account-level passwor
 VALIDATION = Backend full non-DB 2751/2751; Parent Web 152 files/1076 tests and typecheck PASS; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path DB 275/275 with zero skips; real-browser Parent MFA/optional setup 4/4 with zero skipped; four contract catalogues, security checks, repository checks, and git diff --check PASS.
 CI = Exact-head Quality Gates for a8f08abc UNVERIFIED. GitHub run lookup failed because configured proxy 127.0.0.1:9 refused connection; no job-level CI result is claimed.
 GATES = TODO-17 and TODO-19 IN_PROGRESS pending exact-head CI and ledger synchronization. Parent board is 13 PASS / 6 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-14 remains 45/52 and NOT_YET_PROVEN. TODO-18 remains TODO; LOCALHOST ACCEPTED was not given. Platform remains HOLD_PARENT_DEPENDENCY. Trust Set/device, Platform, live DB, Azure, and deployment remain unchanged.
+
+### 2026-10-01 — Exact-head CI Parent MFA fixture-handoff correction
+
+CI = Quality Gates run 36799538564 at ledger head fc368fc5771189ae404b6fc43ed09b81114ccd17 failed in real-backend Parent MFA because the workflow manifest resolver did not export E2E_REAL_MFA_LOCK_PARENT_EMAIL, E2E_REAL_MFA_LOCK_PARENT_PASSWORD, or E2E_REAL_MFA_LOCK_PARENT_TOTP_SECRET.
+FIX = Workflow now validates the isolated fixture, masks generated credentials/secrets, and exports all three required variables. The local disposable wrapper passed Parent MFA 3/3 and optional setup 1/1 with zero skips; its owned random schema was removed. The correction and ledger evidence await publication and a new exact-head CI run.
+GATES = TODO-17 and TODO-19 remain IN_PROGRESS until the corrected pushed head passes Quality Gates. No live/owner-UAT database, Platform, Trust Set/device authority, Azure, deployment, or production change occurred.

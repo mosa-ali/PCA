@@ -719,6 +719,11 @@ jobs:
             if (!mfa || !mfa.totpSecretBase32 || !mfa.familyId || mfa.dailyLoginGrant) {
               process.exit(1);
             }
+            const mfaLock = manifest.mfaLockParent;
+            if (!mfaLock || !mfaLock.email || !mfaLock.password || !mfaLock.totpSecretBase32 || !mfaLock.familyId
+              || !Number.isSafeInteger(mfaLock.totpEnrollmentCounter)) {
+              process.exit(1);
+            }
             // These credentials and tokens are generated for this disposable
             // run rather than configured as GitHub Actions secrets, so register
             // every sensitive value with the runner before placing any of them
@@ -730,6 +735,7 @@ jobs:
               second.email, second.password, second.dailyLoginGrant,
               mfaSetup.email, mfaSetup.password, mfaSetup.dailyLoginGrant, mfaSetup.familyId,
               mfa.email, mfa.password, mfa.totpSecretBase32, mfa.familyId,
+              mfaLock.email, mfaLock.password, mfaLock.totpSecretBase32, mfaLock.familyId,
               family.familyId,
               operator.email, operator.password, operator.totpSecretBase32,
             ]) {
@@ -749,6 +755,9 @@ jobs:
               'E2E_REAL_MFA_PARENT_PASSWORD=' + mfa.password,
               'E2E_REAL_MFA_PARENT_TOTP_SECRET=' + mfa.totpSecretBase32,
               'E2E_REAL_MFA_PARENT_TOTP_ENROLLMENT_COUNTER=' + mfa.totpEnrollmentCounter,
+              'E2E_REAL_MFA_LOCK_PARENT_EMAIL=' + mfaLock.email,
+              'E2E_REAL_MFA_LOCK_PARENT_PASSWORD=' + mfaLock.password,
+              'E2E_REAL_MFA_LOCK_PARENT_TOTP_SECRET=' + mfaLock.totpSecretBase32,
               'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
