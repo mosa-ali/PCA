@@ -3,38 +3,38 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed after exact-head run 36806878236 at 8ab308c6dfa2753255acb4a950e1de9a18ffe770. The run failed only in Parent real-backend E2E with an empty reset email on the direct-ref version; all other jobs passed. Current named-form query and privacy-safe pre-submit diagnostics pass local typecheck and disposable browser, pending publication/CI.
+checkpoint was refreshed after Quality Gates run 36810048862 at 7f669b05bd444854cb6f745d27838708a55c832c. The route-specific forgot-password browser correction passed all 27 jobs, including Parent and Platform real-backend E2E, full disposable MySQL, Android/iOS, security, and release-control checks. The result-ledger checkpoint awaits publication.
 
 ## Current checkpoint
 
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
 OWNER = Codex coordinates and implements the continuing Parent mission after the DeepSeek handover
-CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16 PASS
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-17/19 PASS at source SHA 7f669b05
 MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex handover checkpoint)
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = Direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770 is on origin/pca-dev; local and origin were equal after fetch. Run 36806878236 completed FAILURE only in Parent real-backend E2E with empty email; all other jobs passed. Current form-query diagnostic awaits publication.
-CURRENT_LOCAL_CHECKPOINT_SHA = 8ab308c6dfa2753255acb4a950e1de9a18ffe770 plus uncommitted form-query implementation, pre-submit diagnostic, and ledger update.
-LAST_EXACT_HEAD_CI = Quality Gates run 36806878236 at 8ab308c6dfa2753255acb4a950e1de9a18ffe770 completed FAILURE only in Parent real-backend E2E: POST email remained empty (length 0), safe error invalid_request, on the direct-ref version. All other jobs passed. Current form-query implementation and pre-submit diagnostics pass local typecheck/browser 4/4 and await publication/exact-head CI.
+LAST_VERIFIED_REMOTE_SHA = Parent route-specific browser checkpoint 7f669b05bd444854cb6f745d27838708a55c832c is on origin/pca-dev; local and origin were equal after fetch. Quality Gates run 36810048862 completed SUCCESS 27/27.
+CURRENT_LOCAL_CHECKPOINT_SHA = 7f669b05bd444854cb6f745d27838708a55c832c plus pending three-ledger CI evidence synchronization.
+LAST_EXACT_HEAD_CI = Quality Gates run 36810048862 at 7f669b05bd444854cb6f745d27838708a55c832c completed SUCCESS 27/27, including real-backend browser E2E and full disposable MySQL certification.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)
-PARENT_FORMAL_STATUS = IN_PROGRESS (13 PASS / 6 IN_PROGRESS: TODO-12/14/15/17/19/20 / 4 TODO: TODO-18/21/22/23)
+PARENT_FORMAL_STATUS = IN_PROGRESS (15 PASS / 4 IN_PROGRESS: TODO-12/14/15/20 / 4 TODO: TODO-18/21/22/23)
 PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
 LOCALHOST_UAT_STATUS = Literal owner LOCALHOST ACCEPTED remains NOT GIVEN. The official real-browser/DB harness created and removed random disposable schemas through the configured local MySQL endpoint; the owner-UAT schema was not mutated. Local technical test evidence is not human acceptance.
 AZURE_STATUS = HOLD
-CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios with seven gated/optional; TODO-15 device lifecycle/security; TODO-17 and TODO-19 exact-head CI and publication evidence; TODO-20 live repo/schema/grant reconciliation; owner-gated TODO-18; TODO-21/22/23 pending.
+CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios with seven gated/optional; TODO-15 device lifecycle/security; TODO-20 live repo/schema/grant reconciliation; owner-gated TODO-18; TODO-21/22/23 pending. TODO-17/19 passed at the tested source SHA, with this ledger-only checkpoint still to publish.
 CURRENT_ENGINEERING_CRITICAL_PATH = The registry-backed child-profile membership dependency is implemented in `59bfc331` and covered by exact-head Quality Gates run 36763771064. TODO-15 source/device-security review found no safe activation change. The next Trust Set/device step depends on an owner/security-approved first-device root and crypto/key-custody protocol: epoch-1 acceptance needs a durable genesis anchor, while PCA-DEC-037 provisioning intentionally creates no device/genesis-anchor/authority-chain rows (`backend/test/db/parentAccount.mysql.test.mjs:337-339`). Do not infer a signer/root from Parent account or TOTP. TODO-14 has 45/52 database-integrated routes; the seven remaining dispositions are schedule-policy Trust Set, Web Rules service/storage, signed/recovery decision crypto, and optional dashboard. No gate may be activated to inflate coverage.
 CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in newly TOTP-provisioned families (required before ingestion/device activation); TODO-18 literal `LOCALHOST ACCEPTED` after local MySQL/UAT health is restored; TODO-21/22 deployment + production acceptance; release authorization
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36763771064; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = Owner-UAT pca_local_owner_uat was last verified at schema 0060. The official test harness used configured local MySQL 8.4.11 only for random pca_test_codex schemas, applied 59 migrations, ran DB/browser suites, and removed each schema. No owner-UAT schema data was modified. Literal owner acceptance is pending; live pca_pro was not queried or changed.
-NEXT_CODEX_ACTION = Publish the named-form query and privacy-safe pre-submit diagnostics with the ledgers, then use exact-head CI to inspect the request/form mismatch. Continue Parent work within approved boundaries; Platform stays HOLD_PARENT_DEPENDENCY. No live DB, Azure/deployment, or owner acceptance is authorized by this recovery-policy task.
+NEXT_CODEX_ACTION = Publish and verify this successful CI evidence ledger checkpoint, then stop the recovery-policy correction for owner review. Continue the broader Parent mission only within its existing owner/security and external gates; Platform stays HOLD_PARENT_DEPENDENCY. No live DB, Azure/deployment, or owner acceptance is authorized by the recovery-policy task.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = YES; local HEAD, tracking ref, and server all equal `c3c8c5874679e0286d8872e04c23941b7e330c5a`; exact-head CI is run 36761102745 SUCCESS 27/27
+LOCAL_REMOTE_EQUAL = YES at tested source SHA `7f669b05bd444854cb6f745d27838708a55c832c`; fetched local and tracking refs agree; Quality Gates run 36810048862 SUCCESS 27/27. This ledger sync is pending publication.
 PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
 
 PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
@@ -1438,3 +1438,11 @@ CI = Quality Gates run 36809221770 at da9d6c8dcee6090c97fc038e4e3c4665d8ee3287 c
 DIAGNOSIS = The generic locator can act on the still-mounted login email field between URL update and React's forgot-password form render. The browser test now waits for the reset page's unique input and fills that specific control. ForgotPassword source is restored to its original controlled input and state-based submit; earlier form-query and uncontrolled-input workarounds were unnecessary for this navigation race.
 LOCAL = Parent Web typecheck PASS. Run-owned disposable MySQL browser suite passed Parent MFA 3/3 and optional setup 1/1, zero skips, then removed its schema. The route-specific correction awaits publication and CI confirmation.
 GATES = TODO-17/19 remain IN_PROGRESS until the new pushed head passes Quality Gates. No live/owner-UAT DB, Platform product source, Trust Set/device authority, Azure, deployment, production mutation, or owner acceptance occurred.
+
+### 2026-10-01 — Parent recovery policy exact-head Quality Gates success
+
+SOURCE_HEAD = 7f669b05bd444854cb6f745d27838708a55c832c, pushed to origin/pca-dev and fetch-confirmed equal with local HEAD.
+CI = Quality Gates run 36810048862 completed SUCCESS, 27/27 jobs. Its real-backend browser job passed the Parent MFA/password-lock/reset path, optional MFA setup, and Platform E2E; full disposable-MySQL certification, Parent/Platform web, Android/iOS, security, and release-control jobs also passed. The preceding run 36809221770 at da9d6c8d failed only because the test filled the login field before the reset form rendered.
+LOCAL = Parent Web typecheck PASS; the guarded local browser wrapper passed Parent MFA 3/3 plus optional setup 1/1, zero skipped, and removed its run-owned schema. ForgotPassword is restored to its original controlled input; the browser test waits for the unique reset input before filling.
+STATUS = TODO-17/19 PASS for this tested source checkpoint; Parent board 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23). Parent TODO-14 remains 45/52 and NOT_YET_PROVEN. Platform remains HOLD_PARENT_DEPENDENCY; literal LOCALHOST ACCEPTED remains pending. Repository migration head 0061, owner-UAT last verified 0060, live pca_pro last verified 0059. This ledger-only evidence checkpoint awaits publication and its own CI result.
+SCOPE = No live/owner-UAT DB mutation, Platform product source or Enrollment activation, Trust Set/device authority change, Azure deployment, production change, or owner acceptance occurred.

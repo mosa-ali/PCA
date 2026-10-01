@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36806878236 still failed with empty reset email; local form-query/pre-submit diagnostics pass, exact-head run pending)
-VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770. Run 36806878236 failed only in Parent real-backend E2E with empty email despite the visible input; all other jobs passed. Current form-query and pre-submit DOM/form metadata diagnostic passes local typecheck and browser 4/4; publication/exact-head CI pending.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770 is pushed/fetch-confirmed. Run 36806878236 failed only in Parent real-backend E2E with empty email. Current form-query plus pre-submit diagnostic is locally validated and pending publication/CI; Platform remains held.
-CURRENT_CHECKPOINT_SHA = Direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770 plus locally validated form-query fix and pre-submit diagnostics; exact-head run pending publication.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record run 36806878236 and the empty request on the direct-ref version. Form-query pre-submit diagnostics are local; no Platform product scope changed and dependency hold remains.
+LAST_UPDATED_UTC = 2026-10-01 (Parent source SHA 7f669b05bd444854cb6f745d27838708a55c832c passed Quality Gates run 36810048862, 27/27)
+VALIDATED_PARENT_SOURCE_HEAD = Parent recovery/password-lock policy and route-specific browser correction at 7f669b05bd444854cb6f745d27838708a55c832c; Quality Gates run 36810048862 passed 27/27, including real-backend Parent and Platform browser jobs.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 7f669b05bd444854cb6f745d27838708a55c832c is pushed and fetch-confirmed with local/origin equality. Platform remains held on Parent authority/owner acceptance gates.
+CURRENT_CHECKPOINT_SHA = 7f669b05bd444854cb6f745d27838708a55c832c is the latest tested source head; successful CI evidence ledger synchronization is pending publication.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the route timing correction and successful 27/27 CI. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent form-query/pre-submit diagnostics with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent CI result and verify the ledger-only checkpoint, then wait for Parent TODO-12/14/15, projection, TODO-18, and literal LOCALHOST ACCEPTED gates before dependent Enrollment activation. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1165,3 +1165,11 @@ CI = Quality Gates run 36809221770 at da9d6c8dcee6090c97fc038e4e3c4665d8ee3287 c
 DIAGNOSIS = The generic locator can act on the still-mounted login email field between URL update and React's forgot-password form render. The browser test now waits for the reset page's unique input and fills that specific control. ForgotPassword source is restored to its original controlled input and state-based submit; earlier form-query and uncontrolled-input workarounds were unnecessary for this navigation race.
 LOCAL = Parent Web typecheck PASS. Run-owned disposable MySQL browser suite passed Parent MFA 3/3 and optional setup 1/1, zero skips, then removed its schema. The route-specific correction awaits publication and CI confirmation.
 GATES = TODO-17/19 remain IN_PROGRESS until the new pushed head passes Quality Gates. No live/owner-UAT DB, Platform product source, Trust Set/device authority, Azure, deployment, production mutation, or owner acceptance occurred.
+
+### 2026-10-01 — Parent recovery policy exact-head Quality Gates success
+
+SOURCE_HEAD = 7f669b05bd444854cb6f745d27838708a55c832c, pushed to origin/pca-dev and fetch-confirmed equal with local HEAD.
+CI = Quality Gates run 36810048862 completed SUCCESS, 27/27 jobs. Its real-backend browser job passed the Parent MFA/password-lock/reset path, optional MFA setup, and Platform E2E; full disposable-MySQL certification, Parent/Platform web, Android/iOS, security, and release-control jobs also passed. The preceding run 36809221770 at da9d6c8d failed only because the test filled the login field before the reset form rendered.
+LOCAL = Parent Web typecheck PASS; the guarded local browser wrapper passed Parent MFA 3/3 plus optional setup 1/1, zero skipped, and removed its run-owned schema. ForgotPassword is restored to its original controlled input; the browser test waits for the unique reset input before filling.
+STATUS = TODO-17/19 PASS for this tested source checkpoint; Parent board 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23). Parent TODO-14 remains 45/52 and NOT_YET_PROVEN. Platform remains HOLD_PARENT_DEPENDENCY; literal LOCALHOST ACCEPTED remains pending. Repository migration head 0061, owner-UAT last verified 0060, live pca_pro last verified 0059. This ledger-only evidence checkpoint awaits publication and its own CI result.
+SCOPE = No live/owner-UAT DB mutation, Platform product source or Enrollment activation, Trust Set/device authority change, Azure deployment, production change, or owner acceptance occurred.
