@@ -3,37 +3,35 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed on 2026-09-30 after the supplied DeepSeek re-entry review and exact-head
-Quality Gates run 36763771064; older dated entries below remain historical evidence and may
-describe superseded states.
+checkpoint was refreshed on 2026-10-01 after the owner recovery/password-lock amendment and local validation at source/test checkpoint a8f08abc; exact-head Quality Gates remain unverified. Older dated entries below remain historical evidence and may describe superseded states.
 
 ## Current checkpoint
 
 ```text
 PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
 OWNER = Codex coordinates and implements the continuing Parent mission after the DeepSeek handover
-CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16/17/19 PASS at verified evidence
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16 PASS
 MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex handover checkpoint)
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = fc100efadf2d3372fc25ed0fd6760235775aebf9 (push and fetch succeeded; local and tracking refs matched; exact-head run 36778880069 passed; direct ls-remote remains blocked by the configured proxy)
-CURRENT_LOCAL_CHECKPOINT_SHA = fc100efadf2d3372fc25ed0fd6760235775aebf9
-LAST_EXACT_HEAD_CI = Quality Gates run 36778880069 at exact SHA fc100efadf2d3372fc25ed0fd6760235775aebf9 completed SUCCESS, 27/27. TODO-17 regression and TODO-19 Git/remote/exact-CI reconciliation remain PASS.
-CURRENT_REPOSITORY_MIGRATION_HEAD = 0060 (58 migration files; additive family_trust_set_epochs + family_epoch_floors)
+LAST_VERIFIED_REMOTE_SHA = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is present on origin/pca-dev; the subsequent ledger sync was pushed and fresh fetch confirmed local/origin equality. Exact-head CI lookup remains blocked by configured proxy at 127.0.0.1:9.
+CURRENT_LOCAL_CHECKPOINT_SHA = a8f08abcde68bc7ef11c0f6df910b8872cfde191
+LAST_EXACT_HEAD_CI = Current a8f08abc exact-head Quality Gates result UNVERIFIED because configured proxy at 127.0.0.1:9 refuses connections; last verified green is run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3, 27/27.
+CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
-CURRENT_REPO_LIVE_PARITY = NO (repository and previously validated disposable schema at 0060; live pca_pro last verified at 0059. Fresh DNS resolves to 4.161.89.178, but TCP/3306 is unreachable; no schema/grant query or live mutation occurred. TODO-20 owner authorization to reconcile/apply a validated additive migration persists; fresh live schema/grant comparison is still required before mutation.)
-PARENT_FORMAL_STATUS = IN_PROGRESS (15 PASS / 4 IN_PROGRESS: TODO-12/14/15/20 / 4 TODO: TODO-18/21/22/23)
+CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)
+PARENT_FORMAL_STATUS = IN_PROGRESS (13 PASS / 6 IN_PROGRESS: TODO-12/14/15/17/19/20 / 4 TODO: TODO-18/21/22/23)
 PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
-LOCALHOST_UAT_STATUS = Owner-UAT acceptance NOT YET GIVEN. Owner-UAT MySQL 33061 and app ports 4001/4000/4100 remain stopped. Task-owned disposable MySQL 8.4.11 is running loopback-only at 127.0.0.1:33062; its locally created `pca_local_owner_uat` schema has migration/schema state through 0060 (94 tables/806 columns) and zero Parent, Platform-admin, or Family rows. Both real-backend E2E UUID schemas were removed; zero `pca_test_codex_%` schemas remain. No owner-UAT or live DB was changed.
+LOCALHOST_UAT_STATUS = Literal owner LOCALHOST ACCEPTED remains NOT GIVEN. The official real-browser/DB harness created and removed random disposable schemas through the configured local MySQL endpoint; the owner-UAT schema was not mutated. Local technical test evidence is not human acceptance.
 AZURE_STATUS = HOLD
-CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios, seven remain gated/optional; TODO-15 device lifecycle/security; TODO-20 repository/local 0060 versus live 0059; owner-gated TODO-18; TODO-21/22/23 pending.
+CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios with seven gated/optional; TODO-15 device lifecycle/security; TODO-17 and TODO-19 exact-head CI and publication evidence; TODO-20 live repo/schema/grant reconciliation; owner-gated TODO-18; TODO-21/22/23 pending.
 CURRENT_ENGINEERING_CRITICAL_PATH = The registry-backed child-profile membership dependency is implemented in `59bfc331` and covered by exact-head Quality Gates run 36763771064. TODO-15 source/device-security review found no safe activation change. The next Trust Set/device step depends on an owner/security-approved first-device root and crypto/key-custody protocol: epoch-1 acceptance needs a durable genesis anchor, while PCA-DEC-037 provisioning intentionally creates no device/genesis-anchor/authority-chain rows (`backend/test/db/parentAccount.mysql.test.mjs:337-339`). Do not infer a signer/root from Parent account or TOTP. TODO-14 has 45/52 database-integrated routes; the seven remaining dispositions are schedule-policy Trust Set, Web Rules service/storage, signed/recovery decision crypto, and optional dashboard. No gate may be activated to inflate coverage.
 CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in newly TOTP-provisioned families (required before ingestion/device activation); TODO-18 literal `LOCALHOST ACCEPTED` after local MySQL/UAT health is restored; TODO-21/22 deployment + production acceptance; release authorization
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36763771064; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
-CURRENT_LOCAL_UAT_ENVIRONMENT = Owner-UAT database `pca_local_owner_uat` was last verified at schema 0060, but its service on 33061 is currently unavailable. Task-owned MySQL 8.4.11 is running loopback-only on 127.0.0.1:33062 with UTC. The latest route-audit UUID database was removed; zero `pca_test_codex_%` databases remain. Current ports 4001/4000/4100 are stopped. Docker Desktop remains stopped and WSL enumeration returns E_ACCESSDENIED; stopped MySQL80/MySQL97 were not used. Owner-UAT and live `pca_pro` were not mutated.
-NEXT_CODEX_ACTION = Continue TODO-20 with a fresh read-only live schema/grant preflight when reachable. Current DNS resolves to `4.161.89.178`, but TCP/3306 is unreachable; live `pca_pro` remains last verified at 0059. Do not mutate until a successful live comparison is obtained. Repository truth is migration 0060/58; disposable MySQL 8.4.11 passed all 58 migrations and snapshot parity was previously regenerated/verified. Continue TODO-12/14/15 within approved security boundaries. Keep the first-device Trust Set root, Platform, owner-UAT, deployment and production gates open.
+CURRENT_LOCAL_UAT_ENVIRONMENT = Owner-UAT pca_local_owner_uat was last verified at schema 0060. The official test harness used configured local MySQL 8.4.11 only for random pca_test_codex schemas, applied 59 migrations, ran DB/browser suites, and removed each schema. No owner-UAT schema data was modified. Literal owner acceptance is pending; live pca_pro was not queried or changed.
+NEXT_CODEX_ACTION = Obtain exact-head Quality Gates when the configured GitHub API proxy is reachable. Continue TODO-12/14/15 only within approved security boundaries; keep Platform HOLD_PARENT_DEPENDENCY. Retry TODO-20 live read-only preflight only when reachable. No live DB mutation, Azure/deployment, or owner acceptance is authorized by this policy amendment.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
 LOCAL_REMOTE_EQUAL = YES; local HEAD, tracking ref, and server all equal `c3c8c5874679e0286d8872e04c23941b7e330c5a`; exact-head CI is run 36761102745 SUCCESS 27/27
@@ -155,7 +153,7 @@ NEXT_ACTION = Publish review findings, then continue TODO-14 runtime route/actio
 CHECKPOINT_MISSION = PCA CURRENT WORKTREE -> LOGICAL COMMITS -> pca-dev REMOTE ALIGNMENT
 OWNER_CHECKPOINT_PUSH_AUTHORIZATION = YES (checkpoint sync only)
 MISSION_STATUS = IN_PROGRESS
-CURRENT_TODO = TODO-12 through TODO-17 (integrated Parent evidence)
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16 PASS
 NEXT_TODO = TODO-12 remaining Parent authority/device boundaries; then TODO-17 integrated regression
 BRANCH = pca-dev
 PRE_CHECKPOINT_LOCAL_HEAD = e9c93a78497a5e536ceb23d56c5ac825640810b2
@@ -231,7 +229,7 @@ LOCALHOST_ACCEPTED = NO (literal owner response still required)
 OWNER_PRODUCTION_ACCEPTANCE = NOT OFFERED
 AZURE_DEPLOYED_BY_THIS_CHECKPOINT = NO
 PURSUING_GOAL_STATUS = IN_PROGRESS
-CURRENT_TODO = TODO-12 through TODO-17 (integrated Parent implementation/evidence)
+CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-17, TODO-19, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-01…11/13/16 PASS
 NEXT_ACTION = continue the earliest unfinished Parent authority/device and integrated-regression work; keep Platform activation held until TODO-18 and literal LOCALHOST ACCEPTED=YES
 ```
 
@@ -1394,3 +1392,12 @@ LOCAL_PLATFORM_REAL_E2E = The local runner generated a UUID-owned disposable sch
 LOCAL_POSTFLIGHT = `pca_local_owner_uat` remains at migration 0060 with 94 tables / 806 columns and zero Parent, Platform-admin, or Family rows; zero `pca_test_codex_%` schemas remain. Owner-UAT ports 33061/4001/4000/4100 are stopped; literal `LOCALHOST ACCEPTED` was not given.
 LIVE_PREFLIGHT = DNS resolves `pca-mysql.mysql.database.azure.com` to `4.161.89.178`; TCP/3306 remains unreachable. No live SQL read or mutation occurred; live schema remains last verified 0059 while repository/local are 0060.
 NEXT_GATE = Automated browser and real-backend evidence passed for the exercised workflows; restore a full isolated local browser session and cover remaining Parent/Platform screens/actions before owner localhost acceptance. Parent remains 15 PASS / 4 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-14 remains 45/52 and `NOT_YET_PROVEN`.
+
+### 2026-10-01 — Owner MFA recovery and password-lock policy, locally validated
+
+OWNER_DECISION = OWNER_MFA_RECOVERY_POLICY=NO_24_HOUR_HOLD; OWNER_PASSWORD_FAILURE_POLICY=5 failed Parent password authentications in a rolling 15-minute window => one-hour password-login lock; FORGOT_PASSWORD_DURING_LOCK=ALLOWED; PASSWORD_RESET_CLEARS_PASSWORD_LOCK=YES; MFA_AND_PASSWORD_FAILURE_COUNTERS=SEPARATE.
+IMPLEMENTATION = Policy source is commit e66b266dad9f503e2212754d3db020526ac0d8df. The exact test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 fixes mysql2 query-row assertions and isolates the password-lock browser journey on a separate enrolled Parent, without changing rate limits. The checkpoint was pushed and fetched; HEAD and origin/pca-dev matched.
+SCHEMA = Existing account persistence lacked durable password failure state, so minimal additive migration 0061 adds account-level rolling-window start, failure count, and lock-until fields. Full disposable MySQL validation ran all 59 migrations from zero and replay/upgrade safety; owner-UAT last verified schema remains 0060; live pca_pro last verified 0059. No live or owner-UAT schema mutation occurred.
+VALIDATION = Backend build/full non-DB regression 2751/2751; Parent Web 152 files/1076 tests and typecheck PASS; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path certification 275/275 with zero skips; real-browser Parent MFA + optional setup 4/4, zero skipped; all four contract validators/test catalogues PASS; deterministic security controls/negative controls PASS; repository checks and git diff --check PASS.
+CI = Exact-head Quality Gates for a8f08abc UNVERIFIED. GitHub run lookup failed because configured proxy 127.0.0.1:9 refused connection; do not claim CI or inspect jobs without access.
+GATES = TODO-17 and TODO-19 return to IN_PROGRESS pending exact-head CI and ledger synchronization. Parent board is 13 PASS / 6 IN_PROGRESS / 4 TODO / 0 BLOCKED. TODO-14 remains 45/52 and NOT_YET_PROVEN. TODO-18 is TODO; LOCALHOST ACCEPTED was not given. Platform remains HOLD_PARENT_DEPENDENCY. No Trust Set, device authority, Platform, live DB, Azure, deployment, or production change.

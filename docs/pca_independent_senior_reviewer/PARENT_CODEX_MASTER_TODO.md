@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-01 (run 36784297610 SUCCESS 27/27 at exact head 9f6bd581, attempt 2)
+LAST_UPDATED_UTC = 2026-10-01 (Parent recovery-policy regression at pushed source/test head a8f08abc; three-ledger sync pending)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
 LAST_GREEN_REMOTE_SHA = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` (Quality Gates run `36784297610` SUCCESS, 27/27 on attempt 2)
-CURRENT_WAVE_STATUS = Exact-head Quality Gates run `36784297610` at `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` completed SUCCESS, 27/27 on attempt 2, including Parent 101/101 and Platform 21/21 Chromium suites, full disposable MySQL, real-backend E2E, Android/iOS, security, and release controls. Initial iOS attempt 1 failed after 571.9 seconds with Xcode exit 65 and no named XCTest failure in its log/artifact summary; the same iOS job passed on immediate attempt 2. Cause is unconfirmed. TODO-14 remains 45/52 database-integrated; repository/local schema is 0060. Live `pca_pro` was last verified 0059; fresh DNS/TCP resolved `4.161.89.178`, but TCP/3306 is unreachable and no live SQL occurred. Task-owned MySQL 8.4.11 remains loopback-only at 33062. Local Parent registration and forgot-password screens were inspected without submitting credentials; authenticated manual coverage remains incomplete. Synthetic Parent/Family and pending Platform owner fixtures remain task-local; local apps are up on 4001/4000/4100. TODO-12/14/15/20 and owner/release gates remain open.
+CURRENT_WAVE_STATUS = Owner recovery/password-lock implementation is source commit e66b266dad9f503e2212754d3db020526ac0d8df; validation-harness fixes are commit a8f08abcde68bc7ef11c0f6df910b8872cfde191, pushed and fetched. Local backend 2751/2751, Parent Web 1076/1076, MySQL 669 passed/0 failed/9 expected skips plus populated production-path 275/275/0 skipped, real-browser Parent MFA 4/4, all four contract catalogues, security controls, Parent Web typecheck, repository checks, and diff check passed. Exact-head CI for a8f08abc is unverified because configured GitHub API proxy 127.0.0.1:9 refuses connections. Repository migration head 0061; owner-UAT last verified 0060; live pca_pro last verified 0059. No live SQL, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run `36784297610` at `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` completed SUCCESS, 27/27 on attempt 2 after the iOS-only retry.
-LOCAL_STATE = Local and tracking refs match ledger commit `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3`; push/fetch verified both master TODO paths remotely. Direct `git ls-remote` is blocked by the configured proxy. `.vscode/` and root `0` remain untracked and excluded.
+EXACT_HEAD_CI_SHA = a8f08abcde68bc7ef11c0f6df910b8872cfde191 is pushed; exact-head Quality Gates not yet verified because configured GitHub API proxy 127.0.0.1:9 refuses connections. Last verified green remains run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3.
+LOCAL_STATE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is pushed and fetch-confirmed; this ledger sync is committed and published by ordinary fast-forward, with post-push local/origin equality verified. .vscode/ and root 0 remain untracked, unrelated, and excluded.
 COORDINATOR = Current Codex agent  
-CURRENT_ACTIVE_TODO = TODO-12 remains IN_PROGRESS with first-device root/bootstrap and Trust Set ingestion gated; TODO-14 remains 45/52 database-integrated with seven gated/optional; TODO-15 device security; TODO-20 live reconciliation; and owner-gated TODO-18 remain open. Current board totals 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23); Platform stays held, and schedule-policy/device activation, deployment, and live mutation without fresh preflight remain closed.
-NEXT_ACTION = Continue isolated localhost Parent/Platform browser coverage; public Parent registration and forgot-password screens were inspected, but authenticated manual screens remain incomplete because no synthetic login/OTP is available through the permitted browser path. Local services remain up. Literal owner acceptance is still a separate gate; automated UI matrices (Parent 101/101, Platform 21/21) and local real-backend journeys (1/1 each) are separate evidence. Keep TODO-12/14/15 open until the owner-approved first-device Trust Set root/crypto protocol and all route dispositions exist. Retry authorized live read-only TODO-20 preflight when connectivity returns; live `pca_pro` remains last verified at 0059 versus repo/local 0060, TCP/3306 is unreachable, and mutation requires fresh successful comparison.
+CURRENT_ACTIVE_TODO = TODO-12 first-device Trust Set root/bootstrap gated; TODO-14 remains 45/52 integrated with seven gated/optional; TODO-15 device security; TODO-17 current exact-head regression CI; TODO-19 exact-head CI/Git closure; TODO-20 live schema/grants; owner-gated TODO-18 remain open. Board totals 13 PASS / 6 IN_PROGRESS (12,14,15,17,19,20) / 4 TODO (18,21,22,23); Platform remains HOLD_PARENT_DEPENDENCY.
+NEXT_ACTION = Publish the three-ledger result sync for tested head a8f08abc, fetch and verify refs plus remote ledger paths, then verify exact-head Quality Gates when GitHub API access is restored. Do not claim LOCALHOST ACCEPTED. Keep TODO-12/14/15 open pending approved Trust Set root/crypto protocol and route dispositions. Retry only fresh read-only TODO-20 preflight when reachable; live pca_pro remains last verified at 0059 and this policy task authorizes no live mutation.
 
 ### 2026-10-01 — a7e8a8a1 exact-head CI and TODO-20 local runtime grants
 
@@ -602,11 +602,11 @@ extra PII/commercial fields = 0
 
 ### TODO-17 — Full MySQL / security / browser regression
 
-STATUS = PASS
+STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Quality Gates run `36751605072` SUCCESS 27/27 at exact SHA `cb9d9e1bd4f25913757a787d8ed02464bfabc006`. This includes full disposable-MySQL, backend, mobile, web, security, and real-browser suites. Parent MFA login reached `/dashboard`; the session cookie was accepted by `/api/parent/session` with HTTP 200. The E2E requires the explicit `sessionEstablished=true` field whenever a response body is available and uses independent cookie/session/dashboard proof only for an empty browser-captured body.
-BLOCKER = None for integrated regression at the certified checkpoint. TODO-12/14/15 architecture/device gates and TODO-18/21/22 owner/release gates remain separate.
+EVIDENCE = Local policy regression passed: backend 2751/2751; Parent Web 152 files/1076 tests; Parent Web typecheck; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path MySQL 275/275/0 skips; real-browser Parent MFA and optional setup 4/4/0 skipped; four contract catalogues; security controls; repository checks; diff check. Exact-head CI for pushed a8f08abc is UNVERIFIED because configured GitHub API proxy 127.0.0.1:9 refused connections.
+BLOCKER = Exact-head Quality Gates for a8f08abc is unverified; TODO-17 remains IN_PROGRESS until the exact pushed head passes CI. TODO-12/14/15 and owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
@@ -620,17 +620,17 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 
 ### TODO-19 — Git reconciliation + remote alignment + exact-head CI
 
-STATUS = PASS
+STATUS = IN_PROGRESS
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source checkpoint `cb9d9e1bd4f25913757a787d8ed02464bfabc006` passed run `36751605072` (27/27). Result-ledger commit `8d6fb0b458b69d70438a6492d65d33dac2b3a016` passed run `36753042327` (27/27). Current ledger commit `fa428708efdbabcf36fdedae1c610ddca6bebf3a` was pushed by ordinary fast-forward; refs matched. Its initial iOS job failed, and failed-job rerun `110026310916` succeeded, making exact run `36754475958` green.
-BLOCKER = None for Git reconciliation and exact-head CI at the recorded checkpoint. TODO-18 and dependent Platform validation remain owner gates; TODO-20 remains open because repository/local schema is 0060 while live `pca_pro` was last verified at 0059.
+EVIDENCE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 was pushed by ordinary fast-forward and fresh fetch confirmed HEAD=origin/pca-dev at that SHA. Exact-head CI and the result-ledger publication remain pending; configured GitHub API proxy refused run lookup.
+BLOCKER = Exact-head Quality Gates for a8f08abc and the subsequent ledger-sync commit are unverified; source/test checkpoint is pushed and fetch-confirmed.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
-LOCAL_HEAD = Current published ledger-refresh commit (see repository HEAD; post-push verification passed)
-REMOTE_HEAD = Same as local HEAD and `origin/pca-dev` at post-push fetch plus fresh `git ls-remote`
-PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked mission files; `.vscode/` and root `0` remain excluded
+LOCAL_HEAD = Post-sync local HEAD was verified equal to origin/pca-dev by a fresh fetch after the ledger commit.
+REMOTE_HEAD = Post-sync origin/pca-dev matched local HEAD after fresh fetch; see Git history for the ledger-sync SHA.
+PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked mission files; .vscode/ and root 0 remain excluded.
 PARENT_UNPUSHED_COMMITS_REMAINING = 0
-EXACT_HEAD_CI = Run `36656702092` completed SUCCESS 27/27 at `31332369502ccf2c7845c06d783726b956d92240`; full disposable-MySQL, real-backend E2E, Android, iOS, web, security and release-control gates passed.
+EXACT_HEAD_CI = a8f08abc result UNVERIFIED; gh run list cannot reach GitHub because configured proxy 127.0.0.1:9 refused the connection.
 
 CURRENT_REENTRY_CHECK = 2026-09-30: exact-head Quality Gates run `36657492055` passed 27/27 at SHA `965479051b547cb659946c0c4a6fb8f237a5883c`. Full disposable-MySQL certification, real-backend browser E2E, Android, iOS, backend, Parent/Platform, release-control and security jobs passed. Parent production-preview browser suite passed 101/101 with demo fixtures; Platform production-preview suite passed 21/21 with HTTP mocks. Backend and DB health returned 200; both web apps were restored to real-backend local development mode. Use `127.0.0.1` because `localhost` reaches an unrelated IPv6 listener. Fresh read-only TODO-20 preflight resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178` but TCP/3306 returned False; no live read or mutation occurred. TODO-20 and owner TODO-18 remain open.
 
@@ -642,7 +642,7 @@ GATES = TODO-14 remains 45/52 with gated/optional declarations; TODO-15 awaits t
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
-STATUS = IN_PROGRESS (repository/local schema is at 0060; live pca_pro was last verified at 0059 and current parity is NO)
+STATUS = IN_PROGRESS (repository migration 0061; owner-UAT last verified at 0060; live pca_pro last verified at 0059; current parity is NO)
 OWNER = Coordinator  
 FILES = Repository schema/migrations, local PCA DB, live `pca_pro`, runtime grants  
 AUTHORIZATION = Owner reminder received 2026-09-27: full repository/local/live pca_pro/runtime-grant reconciliation is approved; ordinary additive/corrective migrations may proceed only after local test and fresh live preflight.  
@@ -650,8 +650,8 @@ EVIDENCE = Canonical schema + migrations through 0059 declare 92 tables, 792 col
 LOCAL_SERVICE_REPAIR = Downloaded official MySQL 8.4.11 Windows archive and verified its published MD5; extracted and initialized a loopback-only instance on 127.0.0.1:33361 under a fresh OS-temp datadir. No installed MySQL service or existing datadir was started or touched. Local DB harness uses only disposable databases and test-only credentials; no live credentials/data were used locally.  
 LOCAL_SNAPSHOT_REGENERATION = Reviewed dirty snapshot diffs and found `device_session_epoch` under `complimentary_entitlement_grants` despite migration 0056/schema.ts locating it on `families`. Preserved pre-refresh files in task temp storage. A fresh disposable MySQL 8.4.11 database applied migrations 0001–0059 through `npm run db:migrate`; `npm run db:schema:snapshot` regenerated both artifacts from that DB. An independent second database passed `verify-mysql.mjs` from zero (57 migrations, 92 tables); both databases' complete introspection snapshots compare `EXACT_MATCH`. Follow-up artifact check confirms 92 SQL table sections and 92 manifest tables; the epoch occurs on `families` only. No application rows or seeds were created.
 PCA_PRO_TARGET = Previously verified Azure MySQL Flexible Server `pca-mysql.mysql.database.azure.com` / database `pca_pro`, version `8.4.9-azure`; TLS cipher `TLS_AES_256_GCM_SHA384`. Last proven migration 0059 applied and post-verified; current endpoint access failed the TCP/3306 reachability preflight. The API CNAME points to a hostname absent from the listed App Services; API owner remains unidentified.
-CURRENT_RECHECK = Repository/local now contain migration 0060, adding only `family_trust_set_epochs` and `family_epoch_floors`. Fresh isolated MySQL 8.4.11 verification applied all 58 migrations; a temporary runtime principal was granted by the actual `buildRuntimeGrantPlan` path and the privileged MySQL grant suite passed 6/6. The database, principal, UUID probe rows and owned temp datadir were removed; no application/seed data remains. The new probes prove the runtime can SELECT/INSERT accepted epochs, cannot UPDATE/DELETE them, can SELECT/INSERT/UPDATE floors, and cannot DELETE a floor. The policy suite also asserts exact grant declarations (17/17). Live remains last verified through 0059: a fresh preflight resolved `4.161.89.178` but TCP port 3306 is unreachable. No current live schema/grant claim or mutation is made. TODO-20 owner authorization remains active; require fresh live inspection immediately before any mutation.
-BLOCKER = Current network reachability to live MySQL is unavailable (`Test-NetConnection ... -Port 3306 = False`). No PCA/MySQL/Azure connection variables are present in the workspace. Azure CLI account inspection was denied because the managed filesystem blocked writing `C:\Users\mdrwe\.azure\az.sess`. Resume from an authorized network/credential context, inspect live read-only, then apply locally validated 0060 and reconcile grants only if the fresh comparison confirms the mismatch.
+CURRENT_RECHECK = Repository source contains additive migration 0061 for Parent password-failure window/count/lock-until fields. Full disposable MySQL applied all 59 migrations from zero and passed 669 tests/0 failures/9 expected skips; populated-database production-path certification passed 275/275 with zero skips. The official harness removed its random disposable schema. Owner-UAT remains last verified at 0060 and was not mutated; live pca_pro remains last verified at 0059 with TCP/3306 previously unreachable. No live query or mutation occurred in this policy task.
+BLOCKER = Current live MySQL reachability was last measured unavailable (`Test-NetConnection ... -Port 3306 = False`); this policy task made no fresh live query. Resume from an authorized network/credential context, inspect live read-only, then apply only the locally validated migration(s) required by a fresh comparison and reconcile grants if that comparison confirms a mismatch.
 DONE_WHEN = repository schema matches local DB and pca_pro; required migration locally tested and live-applied if required; grants match; no seed data  
 NO_SEED_DATA = YES (no test fixtures or application rows; only migration-required reference data)  
 DATA_LOSS = 0  
@@ -1527,3 +1527,13 @@ EXACT_HEAD_CI = Not yet verified. `gh run list` could not reach GitHub Actions b
 BACKEND_FULL_SUITE = Full non-DB runner completed 2,750/2,751 before the migration correction; its sole failure was the newly added 0061 resumability guard. After making each DDL conditional, `migrationResumability.test.mjs` passed 5/5. The full backend runner was not repeated after that exact fix. Backend build, test-double conformance, schema privacy/server stages passed; no broad PASS is inferred from the partial rerun.
 MYSQL_AND_BROWSER = `npm run test:db:parent-auth` stopped before database creation with `ECONNREFUSED 127.0.0.1:33061`; no disposable MySQL listener or Docker Desktop engine is available. Real-browser specs discover 14 tests but their execution needs that disposable MySQL. No local owner-UAT/live database or production data was changed.
 GATES = `LOCALHOST ACCEPTED` remains NO; TODO-18 remains unchanged and is not PASS. TODO-20 remains IN_PROGRESS. Platform remains `HOLD_PARENT_DEPENDENCY`. No live DB/Azure/Platform/Trust Set/device-authority change occurred.
+
+
+### 2026-10-01 — Parent recovery/password-lock validation and test-harness checkpoint
+
+OWNER_DECISION = OWNER_MFA_RECOVERY_POLICY=NO_24_HOUR_HOLD; OWNER_PASSWORD_FAILURE_POLICY=5 failed Parent password authentications within a rolling 15-minute window => one-hour password-login lock; FORGOT_PASSWORD_DURING_LOCK=ALLOWED; PASSWORD_RESET_CLEARS_PASSWORD_LOCK=YES; MFA_AND_PASSWORD_FAILURE_COUNTERS=SEPARATE.
+IMPLEMENTATION = Policy source commit e66b266dad9f503e2212754d3db020526ac0d8df. Test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 fixes mysql2 row extraction and isolates the password-lock browser case on its own enrolled Parent without changing rate limits. Push and post-push fetch confirmed local and origin/pca-dev equality at a8f08abc.
+SCHEMA = Repository migration head 0061 has three additive account-level password-lock fields; disposable MySQL applied all 59 migrations from zero and replay/upgrade certification passed. Owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. No owner-UAT or live schema mutation occurred.
+VALIDATION = Backend full non-DB 2751/2751; Parent Web 152 files/1076 tests and typecheck PASS; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path DB 275/275 with zero skips; real-browser Parent MFA/optional setup 4/4 with zero skipped; four contract catalogues, security checks, repository checks, and git diff --check PASS.
+CI = Exact-head Quality Gates for a8f08abc UNVERIFIED. GitHub run lookup failed because configured proxy 127.0.0.1:9 refused connection; no job-level CI result is claimed.
+GATES = TODO-17 and TODO-19 IN_PROGRESS pending exact-head CI and ledger synchronization. Parent board is 13 PASS / 6 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-14 remains 45/52 and NOT_YET_PROVEN. TODO-18 remains TODO; LOCALHOST ACCEPTED was not given. Platform remains HOLD_PARENT_DEPENDENCY. Trust Set/device, Platform, live DB, Azure, and deployment remain unchanged.

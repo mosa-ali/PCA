@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36784297610 SUCCESS 27/27 at exact head 9f6bd581, attempt 2)
-VALIDATED_PARENT_SOURCE_HEAD = Current Parent source and ledgers are covered by Quality Gates run `36784297610` at exact SHA `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` (27/27, attempt 2).
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` is the pushed Parent/ledger checkpoint; fetch verified local/tracking equality and both master TODO files on `origin/pca-dev`. Exact Quality Gates run `36784297610` passed 27/27 on attempt 2. A fresh `git ls-remote` is blocked by the configured proxy.
-CURRENT_CHECKPOINT_SHA = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3`; exact-head run `36784297610` passed 27/27 on attempt 2. Parent UI 101/101, Platform UI 21/21, and both local real-backend browser journeys passed. Parent registration and forgot-password pages were inspected without account creation or credential submission; authenticated manual screens and human localhost acceptance remain pending. Platform product source and activation remain unchanged; the dependent Platform gate remains held.
-LATEST_PARENT_LEDGER_CHECKPOINT = The two tracked master ledgers record exact-head CI `36784297610` at `9f6bd581`, including the initial iOS exit 65 and successful same-job retry (cause unconfirmed), plus local pre-auth browser findings and a failed live TCP preflight. No Parent or Platform product source files changed in this ledger checkpoint. `.vscode/` and root `0` remain unrelated untracked exclusions. No Platform enrollment, production mutation, or owner acceptance occurred.
+LAST_UPDATED_UTC = 2026-10-01 (Parent recovery-policy local validation refreshed; source/test head a8f08abc; exact-head CI unverified)
+VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191. Local backend, Parent Web, MySQL, real-browser, contract, security, typecheck, and repository checks passed; exact-head CI remains unverified due configured GitHub API proxy failure.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 was pushed and post-push fetch confirmed local/tracking equality. The three-ledger evidence sync was committed, pushed, and verified by fresh fetch; exact-head Quality Gates remains unverified.
+CURRENT_CHECKPOINT_SHA = Parent source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191; local validation passed as recorded in Parent master TODO. No current exact-head CI result is available.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers record the owner policy and local validation evidence for a8f08abc; this three-ledger sync was pushed and fetch-verified. Platform remains unchanged and held.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Parent's local TODO-20 schema and grant checks passed, but live `pca_pro` remains unreconciled: fresh TCP/3306 to `4.161.89.178` is unreachable. Task-owned local MySQL 8.4.11 is loopback-only on 33062; local app servers 4001/4000/4100 remain up. Parent registration and forgot-password pages were inspected, but authenticated manual screens and owner acceptance remain pending because no local login/OTP is available through the permitted browser path. Keep Platform Enrollment `HOLD_PARENT_DEPENDENCY`; continue only after Parent TODO-12/14/15, owner acceptance, and projection prerequisites are satisfied.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Parent recovery/password-lock local validation passed; await exact-head CI and ledger sync. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059 with TCP/3306 previously unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1109,3 +1109,10 @@ PARENT_POLICY = Owner removed the 24-hour MFA recovery hold and set a separate f
 PLATFORM_SCOPE = No Platform source, Enrollment, projection, or database work was changed. Parent master TODO records the additive local migration and outstanding evidence.
 PARENT_POLICY_CHECKPOINT = Parent policy correction commit `e66b266dad9f503e2212754d3db020526ac0d8df` was pushed and fetched; local/tracking/fetched heads matched and both master TODO paths exist remotely. Parent exact-head CI lookup is blocked by the configured GitHub API proxy refusing connections. Disposable-MySQL migration/integration and actual real-browser execution are also pending.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform Enrollment activation, projection acceptance, live DB/Azure mutation, deployment, or owner acceptance occurred.
+
+
+### 2026-10-01 — Parent recovery/password-lock policy evidence refresh
+
+PARENT_POLICY = No 24-hour MFA recovery hold; five account password failures in a rolling 15-minute window cause a one-hour password-login lock; forgot-password remains available; valid reset clears the lock; password and MFA failure budgets remain separate.
+PARENT_VALIDATION = Source/test checkpoint a8f08abc was pushed and fetched. Backend 2751/2751, Parent Web 1076/1076, disposable DB 669 pass/0 fail/9 expected skips, populated production-path DB 275/275/0 skips, real-browser Parent MFA 4/4, four contract catalogues, security checks, typecheck, and repository checks passed. Exact-head CI remains unverified because configured GitHub API proxy 127.0.0.1:9 refused connections.
+PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment activation, owner acceptance, live DB, Azure, deployment, or production change occurred. Repository migration is 0061; live pca_pro remains last verified at 0059. Owner-UAT acceptance remains pending.
