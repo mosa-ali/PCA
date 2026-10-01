@@ -357,6 +357,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!(await requireActiveParentReader(session, reply))) return;
       const { requestId } = request.params as { requestId: string };
       const body = request.body;
       const decisionInput = parseDecisionBody(body);
@@ -383,8 +384,8 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   // Signed remote-parent decisions are exact-request-bound and independently
   // RBAC/signature/anti-replay verified by RemovalDecisionAuthority itself;
-  // this route's own job is limited to session/family-scope/CSRF plus input
-  // shape, never to weaken or duplicate that verification.
+  // this route also requires a current active Parent membership before
+  // parsing the request, without weakening that independent verification.
   app.post(
     '/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed',
     { bodyLimit: MAX_BODY_BYTES },
@@ -392,6 +393,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!(await requireActiveParentReader(session, reply))) return;
       const { requestId } = request.params as { requestId: string };
       const body = request.body;
       if (!isPlainObject(body) || typeof body.signature !== 'string') return reply.code(400).send({ error: 'invalid_request' });

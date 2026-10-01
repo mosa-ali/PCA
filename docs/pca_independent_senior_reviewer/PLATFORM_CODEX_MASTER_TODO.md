@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (Parent ledger head 826ef5b3588064a58375d2fb299bfc1e31970eab passed Quality Gates run 36811707041, 27/27)
+LAST_UPDATED_UTC = 2026-10-01 05:32 UTC (Parent source head a2045c2bb5111e9602ee0d593ea2fd7e08ae135e passed Quality Gates run 36815327871, 27/27)
 VALIDATED_PARENT_SOURCE_HEAD = Parent recovery/password-lock policy and route-specific browser correction at 7f669b05bd444854cb6f745d27838708a55c832c; Quality Gates run 36810048862 passed 27/27, including real-backend Parent and Platform browser jobs.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 826ef5b3588064a58375d2fb299bfc1e31970eab is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36811707041 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = 826ef5b3588064a58375d2fb299bfc1e31970eab is the latest published, CI-tested head. TODO-14 crosswalk policy correction is local and pending a separate checkpoint.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 policy CI; the ledger-only head also passed 27/27. No Platform product scope changed; dependency hold remains.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = a2045c2bb5111e9602ee0d593ea2fd7e08ae135e is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36815327871 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
+CURRENT_CHECKPOINT_SHA = a2045c2bb5111e9602ee0d593ea2fd7e08ae135e is the latest published, CI-tested head. Current Parent POST membership and enrollment-contract test edits are local.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 source CI. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while Parent authority/read guards, iOS pairing-status validation, and generated schema snapshots are integrated and certified. Dependent Enrollment activation awaits Parent TODO-12/14/15, projection, TODO-18, and literal LOCALHOST ACCEPTED. Repository migration is 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while the next Parent authority and enrollment-contract checkpoint is published and certified. Dependent Enrollment activation awaits Parent TODO-12/14/15, projection, TODO-18, and literal LOCALHOST ACCEPTED. Repository migration is 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1179,3 +1179,9 @@ SCOPE = No live/owner-UAT DB mutation, Platform product source or Enrollment act
 PARENT_SOURCE = Active-membership guards on removal/PIN reads, iOS PAIRING_PENDING response validation, generated 0061 schema snapshots, and corrected TODO-14 recovery evidence are local. Backend build, focused authority 18/18, and disposable route audit 52/52 pass; iOS XCTest and exact-head CI remain pending.
 DATABASE = Repository and fresh disposable MySQL match through 0061 (94 tables, 809 columns); owner-UAT remains last verified at 0060 and live pca_pro at 0059. Azure identifies the Ready target, but TCP/3306 is unreachable; no live schema/grant preflight or mutation occurred.
 PLATFORM_GATE = HOLD_PARENT_DEPENDENCY remains. No Platform product or Enrollment activation, owner localhost acceptance, Azure deployment, or production acceptance occurred.
+
+### 2026-10-01 05:32 UTC — Parent source certified; dependent Platform hold retained
+
+PARENT_CI = Parent source `a2045c2bb5111e9602ee0d593ea2fd7e08ae135e` was pushed, fetch-confirmed, and passed exact-head Quality Gates run `36815327871` 27/27, including full disposable MySQL, real-backend browser E2E, iOS and Android. Parent removal/PIN read guards, iOS pairing-response guard, and 0061 generated schema snapshots are certified at that head.
+PARENT_LOCAL = Current uncommitted Parent source adds active-membership checks to signed/authorized-recovery removal-decision POSTs and a MySQL regression distinguishing historical bootstrap recovery from live paired/revoked device status. Backend build, focused wiring 22/22, and disposable MySQL authority diagnostics 62/62 passed; exact-head CI for this new source is pending.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15, projection, literal TODO-18 `LOCALHOST ACCEPTED`, and live TODO-20 reconciliation remain open. No Platform product/Enrollment activation, live DB mutation, Azure deployment, or production acceptance occurred.

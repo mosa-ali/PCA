@@ -479,6 +479,30 @@ test('authorized-recovery decisions fail closed NOT_AUTHORIZED (no real recovery
   assert.deepEqual(response.json(), { error: 'not_authorized' });
 });
 
+for (const mode of ['signed', 'authorized-recovery']) {
+  for (const [membership, appOptions] of [
+    ['revoked', { parentRole: null }],
+    ['lookup failure', { roleLookupError: true }],
+  ]) {
+    test(`${mode} decisions reject ${membership} Parent membership before crypto processing`, async () => {
+      const app = buildApp(appOptions);
+      const requestId = `req-${mode}-${membership.replace(' ', '-')}`;
+      await seedPendingRequest(app, requestId);
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/family-a/removal-decisions/${requestId}/decide/${mode}`,
+        headers: authHeaders,
+        payload: mode === 'signed'
+          ? { signature: 'opaque-signature' }
+          : { decision: 'ALLOW_REMOVAL', proof: { proof: 'opaque-proof', recoveryTransactionId: 'recovery-txn' } },
+      });
+      assert.equal(response.statusCode, 403);
+      assert.deepEqual(response.json(), { error: 'forbidden' });
+      assert.equal((await app.__removalDecisionAuthority.getRequest(app.__familyId, requestId)).state, 'PARENT_APPROVAL_REQUIRED');
+    });
+  }
+}
+
 test('administration-pin status route is registered and reflects unconfigured state', async () => {
   const app = buildApp();
   const response = await app.inject({

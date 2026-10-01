@@ -818,7 +818,7 @@ test('MySQL HTTP OLD-ENROLLMENT BACKWARD COMPATIBILITY: a redeemed invitation wi
 
 // --- PCA-ENROLLMENT-RUNTIME-2: end-to-end ambiguous-retry recovery scenario ---
 
-test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commits -> client response is discarded -> Android recovers the SAME deviceId -> parent sees exactly one pairing request -> parent confirms -> PAIRED', async () => {
+test('MySQL E2E: lost bootstrap response recovers the same device while pairing and revocation use current lifecycle authority', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
 
@@ -890,6 +890,42 @@ test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commi
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
   assert.notEqual(confirm.json().status, 'ACTIVE');
+
+  // The recovery token identifies the committed bootstrap attempt, not the
+  // device's current authority. Parent-scoped status and device-session checks
+  // must continue to use the live lifecycle after pairing or revocation.
+  const recoveryAfterPairing = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: androidPayload.bootstrapAttemptId, attemptRecoveryToken: androidPayload.attemptRecoveryToken },
+  });
+  assert.equal(recoveryAfterPairing.statusCode, 200);
+  assert.equal(recoveryAfterPairing.json().status, 'PAIRING_PENDING');
+  const pairedView = await app.inject({
+    method: 'GET',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}`,
+    headers: authHeader(parent.rawToken),
+  });
+  assert.equal(pairedView.statusCode, 200);
+  assert.equal(pairedView.json().status, 'PAIRED');
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, deviceIdTheClientNeverSaw), false);
+
+  await deviceRepository.revokeDeviceAndKeysAtomically(parent.familyId, deviceIdTheClientNeverSaw, new Date());
+  const recoveryAfterRevocation = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: androidPayload.bootstrapAttemptId, attemptRecoveryToken: androidPayload.attemptRecoveryToken },
+  });
+  assert.equal(recoveryAfterRevocation.statusCode, 200);
+  assert.equal(recoveryAfterRevocation.json().status, 'PAIRING_PENDING');
+  const revokedView = await app.inject({
+    method: 'GET',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}`,
+    headers: authHeader(parent.rawToken),
+  });
+  assert.equal(revokedView.statusCode, 200);
+  assert.equal(revokedView.json().status, 'REVOKED');
+  assert.equal(await deviceRepository.isDeviceSessionActive(parent.familyId, deviceIdTheClientNeverSaw), false);
 });
 
 // --- Pairing --------------------------------------------------------------
