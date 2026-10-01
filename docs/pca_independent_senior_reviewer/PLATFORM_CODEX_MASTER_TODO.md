@@ -5,10 +5,10 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 06:02 UTC (Parent source f1b0a7d2 and ledger head 4a858054 passed exact-head Quality Gates 27/27; local owner-UAT schema advanced to 0061)
+LAST_UPDATED_UTC = 2026-10-01 06:15 UTC (ledger head 83e13dbc passed exact-head Quality Gates 27/27; authenticated local Parent/Platform browser checks passed)
 VALIDATED_PARENT_SOURCE_HEAD = Parent recovery/password-lock policy and route-specific browser correction at 7f669b05bd444854cb6f745d27838708a55c832c; Quality Gates run 36810048862 passed 27/27, including real-backend Parent and Platform browser jobs.
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = f1b0a7d29c6c402875de0cb71551ca2931cc9d28 is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36820461082 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = 4a858054491552c13456546c01420d602692eeff is the latest published, CI-tested ledger head (Quality Gates run 36821262727 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current local-UAT result update awaits publication.
+CURRENT_CHECKPOINT_SHA = 83e13dbc2a1bdafc4406ec76725635f4b9dece09 is the latest published, CI-tested ledger head (Quality Gates run 36823080788 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current authenticated local-UAT result update awaits publication.
 LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 source CI. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
@@ -1196,3 +1196,9 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and proje
 LOCAL_DB = The retained local-only `pca_local_owner_uat` database was preflighted at exact repository migration prefix 0060 and advanced by the official runner with only additive migration 0061. Postflight matched all 59 repository journal entries and all 94 tracked table manifests, with 809 columns and the enforced password-state CHECK. Four existing Parent rows and exact application-table row-count fingerprints were preserved. No seed or production data was inserted.
 LOCAL_SERVICES = API `/health` and `/health/db` return 200 JSON; Parent and Platform login pages return 200 HTML on `localhost:4000` and `localhost:4100`. The Platform same-origin auth route returns JSON 401 without a session; this is routing evidence, not authenticated owner acceptance. Both source `f1b0a7d2` and prior ledger head `4a858054` passed exact-head Quality Gates 27/27.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Live pca_pro is last verified at 0059, and TCP/3306 is unreachable; no live grants/schema reconciliation or mutation occurred. Parent TODO-12/14/15, Platform projection acceptance and literal TODO-18 `LOCALHOST ACCEPTED` remain open. No Enrollment activation, Azure deployment, or production acceptance occurred.
+
+### 2026-10-01 06:15 UTC — Published 0061 evidence certified; local Platform login passed
+
+PARENT_CI = Ledger head `83e13dbc2a1bdafc4406ec76725635f4b9dece09` is pushed, fetch-confirmed equal with origin/pca-dev, and passed exact-head Quality Gates run `36823080788` 27/27. The underlying Parent source head f1b0a7d2 also passed 27/27.
+LOCAL_AUTHENTICATED_UAT = After local owner-UAT schema 0061 postflight, fresh Chromium sessions signed in to Parent with password plus unknown-browser email OTP and to Platform with password plus fresh TOTP. Parent dashboard and session API 200 were observed; Platform dashboard and App Owner account-menu role were observed. This is technical real-browser evidence using synthetic local accounts, not literal owner acceptance.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15/20 and Platform projection acceptance, TODO-18 literal `LOCALHOST ACCEPTED`, and deployment/production gates remain open. Live pca_pro is last verified at 0059; no live DB mutation or Enrollment activation occurred.
