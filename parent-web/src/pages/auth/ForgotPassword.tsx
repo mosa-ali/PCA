@@ -18,7 +18,6 @@ export default function ForgotPassword() {
   const clients = getApiClients();
 
   const [email, setEmail] = useState('');
-  const emailInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -33,9 +32,9 @@ export default function ForgotPassword() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Read the live input itself. The real-backend browser run showed that
-    // FormData on the submit event could omit the displayed email control.
-    const submittedEmail = emailInputRef.current?.value ?? email;
+    // Read the named control from the submitted form itself. This keeps the
+    // request aligned with the visible field if React state is stale.
+    const submittedEmail = event.currentTarget.querySelector<HTMLInputElement>('#forgot-password-email')?.value ?? email;
     setEmail(submittedEmail);
     setError(null);
     setSubmitting(true);
@@ -80,7 +79,6 @@ export default function ForgotPassword() {
           <input
             id="forgot-password-email"
             name="email"
-            ref={emailInputRef}
             type="email"
             autoComplete="email"
             required

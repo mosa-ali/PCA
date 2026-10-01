@@ -265,6 +265,17 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
   await expect(page).toHaveURL(/\/forgot-password$/);
   await page.getByLabel(/email/i).fill(LOCK_EMAIL);
   await expect(page.getByLabel(/email/i)).toHaveValue(LOCK_EMAIL);
+  const preSubmitEmailDiagnostic = await page.locator('#forgot-password-email').evaluate((node) => {
+    const input = node as HTMLInputElement;
+    const formDataEmail = input.form ? new FormData(input.form).get('email') : null;
+    return {
+      inputValueLength: input.value.length,
+      inputName: input.name,
+      formAssociated: Boolean(input.form),
+      formContainsInput: input.form?.contains(input) ?? false,
+      formDataEmailLength: typeof formDataEmail === 'string' ? formDataEmail.length : null,
+    };
+  });
   const resetRequest = page.waitForResponse((response) => response.url().endsWith('/api/parent/request-password-reset'));
   await page.getByRole('button', { name: /send reset code/i }).click();
   const resetResponse = await resetRequest;
@@ -278,7 +289,7 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
     submittedEmailLength: typeof submittedEmail === 'string' ? submittedEmail.length : null,
   };
   const resetResponseBody = await resetResponse.json() as { error?: unknown };
-  expect(resetResponse.status(), `password reset remains available during the lock (safe API error: ${String(resetResponseBody.error ?? 'none')}; request diagnostic: ${JSON.stringify(resetAddressDiagnostic)})`).toBe(202);
+  expect(resetResponse.status(), `password reset remains available during the lock (safe API error: ${String(resetResponseBody.error ?? 'none')}; request diagnostic: ${JSON.stringify({ preSubmitEmailDiagnostic, resetAddressDiagnostic })})`).toBe(202);
   expect(submittedEmail === LOCK_EMAIL, 'forgot-password submits the isolated locked Parent address').toBe(true);
   await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible();
   const resetCode = setPasswordResetCode(LOCK_EMAIL, '693184');

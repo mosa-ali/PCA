@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (run 36805623573 still failed with an empty reset email; direct input-ref correction passes local checks, exact-head validation pending)
-VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and published FormData checkpoint 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac. Run 36805623573 failed only in Parent real-backend E2E with empty email despite the displayed fixture; all other jobs passed. Direct input-ref correction now passes local typecheck and browser 4/4, pending publication and exact-head CI.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = FormData checkpoint 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac is pushed/fetch-confirmed. Run 36805623573 failed only in Parent real-backend E2E with empty email; the local direct-ref correction passes Parent Web typecheck and disposable browser 4/4 with zero skips and awaits publication/CI.
-CURRENT_CHECKPOINT_SHA = FormData checkpoint 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac plus locally validated direct-input-ref fix and ledger update; exact-head CI pending.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers record run 36805623573 and the unresolved empty reset POST on the FormData version. The direct-ref source fix passes locally; no Platform product scope changed and dependency hold remains.
+LAST_UPDATED_UTC = 2026-10-01 (run 36806878236 still failed with empty reset email; local form-query/pre-submit diagnostics pass, exact-head run pending)
+VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770. Run 36806878236 failed only in Parent real-backend E2E with empty email despite the visible input; all other jobs passed. Current form-query and pre-submit DOM/form metadata diagnostic passes local typecheck and browser 4/4; publication/exact-head CI pending.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770 is pushed/fetch-confirmed. Run 36806878236 failed only in Parent real-backend E2E with empty email. Current form-query plus pre-submit diagnostic is locally validated and pending publication/CI; Platform remains held.
+CURRENT_CHECKPOINT_SHA = Direct-ref checkpoint 8ab308c6dfa2753255acb4a950e1de9a18ffe770 plus locally validated form-query fix and pre-submit diagnostics; exact-head run pending publication.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record run 36806878236 and the empty request on the direct-ref version. Form-query pre-submit diagnostics are local; no Platform product scope changed and dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the locally validated Parent direct-input-ref correction with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent form-query/pre-submit diagnostics with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1134,6 +1134,12 @@ PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection
 PARENT_CI = Run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 failed only in Parent real-backend E2E: the reset POST email was empty although the form displayed the lock fixture; all other jobs passed.
 PARENT_LOCAL = FormData submission correction passes Parent Web typecheck and disposable browser 4/4, zero skips. It awaits publication and exact-head CI.
 PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment, live database, owner acceptance, Azure, or deployment work occurred.
+
+### 2026-10-01 — Parent form/input metadata probe
+
+PARENT_CI = Run 36806878236 at 8ab308c6dfa2753255acb4a950e1de9a18ffe770 failed only in Parent real-backend E2E with an empty reset email; all other jobs passed.
+PARENT_LOCAL = Named-form query and privacy-safe pre-submit metadata probe pass Parent Web typecheck and disposable browser 4/4, zero skips. Exact-head CI is pending publication.
+PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged; no Platform product source or live/deployment scope changed.
 
 ### 2026-10-01 — Direct-input-ref Parent reset follow-up
 
