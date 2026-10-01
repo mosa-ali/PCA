@@ -89,21 +89,23 @@ test('MySQL: password failure lock is durable and password reset clears it while
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await assert.rejects(service.login(email, 'incorrect password'), (error) => error.code === 'UNAUTHORIZED');
   }
-  let [state] = await getPool().query(
+  let [rows] = await getPool().query(
     `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
        FROM parent_accounts WHERE account_id = ?`,
     [account.accountId],
   );
+  let state = rows[0];
   assert.equal(Number(state.password_failed_attempt_count), 4, 'four failures remain below the lock threshold');
   assert.ok(state.password_failure_window_started_at instanceof Date);
   assert.equal(state.password_login_locked_until, null);
 
   await assert.rejects(service.login(email, 'incorrect password'), (error) => error.code === 'UNAUTHORIZED');
-  [state] = await getPool().query(
+  [rows] = await getPool().query(
     `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
        FROM parent_accounts WHERE account_id = ?`,
     [account.accountId],
   );
+  state = rows[0];
   assert.equal(Number(state.password_failed_attempt_count), 5);
   assert.ok(state.password_login_locked_until instanceof Date);
   assert.ok(state.password_login_locked_until.getTime() > Date.now());
@@ -113,11 +115,12 @@ test('MySQL: password failure lock is durable and password reset clears it while
   const resetCode = emailSender.lastCodeFor(email, 'PASSWORD_RESET');
   const newPassword = 'A different secure password 9!';
   assert.deepEqual(await service.resetPassword(email, resetCode, newPassword, newPassword), { status: 'PASSWORD_RESET' });
-  [state] = await getPool().query(
+  [rows] = await getPool().query(
     `SELECT password_failed_attempt_count, password_failure_window_started_at, password_login_locked_until
        FROM parent_accounts WHERE account_id = ?`,
     [account.accountId],
   );
+  state = rows[0];
   assert.equal(Number(state.password_failed_attempt_count), 0);
   assert.equal(state.password_failure_window_started_at, null);
   assert.equal(state.password_login_locked_until, null);

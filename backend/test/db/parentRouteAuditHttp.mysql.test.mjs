@@ -571,8 +571,9 @@ test('MYSQL HTTP MFA recovery: generic 202, malformed 400, immediate setup ticke
     assert.equal(completed.json().status, 'MFA_SETUP_REQUIRED');
     assert.equal(completed.json().mfaSetupRequired, true);
     assert.equal((await app.inject({ method: 'GET', url: SESSION_ROUTE, headers: sessionHeaders(session) })).statusCode, 401, 'recovery revokes the old Parent session');
-    const [state] = await getPool().query(`SELECT status, totp_secret_ciphertext, recovery_hold_started_at, recovery_hold_expires_at
+    const [rows] = await getPool().query(`SELECT status, totp_secret_ciphertext, recovery_hold_started_at, recovery_hold_expires_at
       FROM parent_mfa_state WHERE account_id = ?`, [session.accountId]);
+    const state = rows[0];
     assert.equal(state.status, 'NOT_ENROLLED');
     assert.equal(state.totp_secret_ciphertext, null);
     assert.equal(state.recovery_hold_started_at, null);

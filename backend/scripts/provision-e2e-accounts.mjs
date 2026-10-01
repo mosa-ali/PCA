@@ -59,6 +59,8 @@ const SECOND_PARENT_KEY = 'e2e-cross-family';
 const MFA_PARENT_KEY = 'e2e-mfa';
 // A fresh, unenrolled Parent whose real-browser flow enrolls TOTP itself.
 const MFA_SETUP_PARENT_KEY = 'e2e-mfa-setup';
+// Isolated from recovery journeys so the password-lock browser case has a fresh per-email login rate-limit budget.
+const MFA_LOCK_PARENT_KEY = 'e2e-mfa-lock';
 const ADMIN_KEY = 'e2e-owner';
 
 function refuse(reason) {
@@ -108,6 +110,17 @@ async function provisionParent(key) {
 const { sessionToken: _parentSession, ...parent } = await provisionParent(PARENT_KEY);
 const { sessionToken: _secondSession, ...secondParent } = await provisionParent(SECOND_PARENT_KEY);
 const { sessionToken: _mfaSetupSession, ...mfaSetupParent } = await provisionParent(MFA_SETUP_PARENT_KEY);
+const mfaLockProvisioned = await provisionParent(MFA_LOCK_PARENT_KEY);
+const mfaLockTotpEnrollmentAt = Date.now();
+const mfaLockTotpSecretBase32 = await enrollParentAuthenticator({
+  service: parentAccountService,
+  sessionToken: mfaLockProvisioned.sessionToken,
+  email: mfaLockProvisioned.email,
+  password: TEST_PASSWORD,
+  nowMs: mfaLockTotpEnrollmentAt,
+});
+const mfaLockTotpEnrollmentCounter = Math.floor(mfaLockTotpEnrollmentAt / 30_000);
+const { sessionToken: _mfaLockSession, dailyLoginGrant: _mfaLockRevokedGrant, ...mfaLockParent } = mfaLockProvisioned;
 const mfaProvisioned = await provisionParent(MFA_PARENT_KEY);
 const mfaTotpEnrollmentAt = Date.now();
 const mfaTotpSecretBase32 = await enrollParentAuthenticator({
@@ -177,6 +190,7 @@ await writeFile(
       secondParent: { ...secondParent, password: TEST_PASSWORD },
       mfaSetupParent: { ...mfaSetupParent, password: TEST_PASSWORD },
       mfaParent: { ...mfaParent, password: TEST_PASSWORD, totpSecretBase32: mfaTotpSecretBase32, totpEnrollmentCounter: mfaTotpEnrollmentCounter },
+      mfaLockParent: { ...mfaLockParent, password: TEST_PASSWORD, totpSecretBase32: mfaLockTotpSecretBase32, totpEnrollmentCounter: mfaLockTotpEnrollmentCounter },
       operator: { email: adminEmail, password: TEST_PASSWORD, role: 'APP_OWNER', totpSecretBase32: base32Encode(totpSecret) },
       family: { familyId: testFamilyId },
     },

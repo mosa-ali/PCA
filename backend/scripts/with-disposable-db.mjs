@@ -393,6 +393,7 @@ async function runParentMfaRealE2e(e2eEnv, { onlyAcceptanceFlow = false } = {}) 
   const parent = manifest?.parent;
   const secondParent = manifest?.secondParent;
   const enrolledParent = manifest?.mfaParent;
+  const lockParent = manifest?.mfaLockParent;
   const setupParent = manifest?.mfaSetupParent;
   const operator = manifest?.operator;
   const family = manifest?.family;
@@ -400,6 +401,8 @@ async function runParentMfaRealE2e(e2eEnv, { onlyAcceptanceFlow = false } = {}) 
     || !secondParent?.email || !secondParent?.password || !secondParent?.dailyLoginGrant
     || !enrolledParent?.email || !enrolledParent?.password || !enrolledParent?.totpSecretBase32 || !enrolledParent?.familyId
     || !Number.isSafeInteger(enrolledParent?.totpEnrollmentCounter)
+    || !lockParent?.email || !lockParent?.password || !lockParent?.totpSecretBase32 || !lockParent?.familyId
+    || !Number.isSafeInteger(lockParent?.totpEnrollmentCounter)
     || !setupParent?.email || !setupParent?.password || !setupParent?.dailyLoginGrant || !setupParent?.familyId
     || !operator?.email || !operator?.password || !operator?.totpSecretBase32 || !family?.familyId) {
     throw new Error('The disposable fixture manifest is incomplete for the certified Parent E2E set.');
@@ -436,6 +439,10 @@ async function runParentMfaRealE2e(e2eEnv, { onlyAcceptanceFlow = false } = {}) 
     enrolledParent.password,
     enrolledParent.totpSecretBase32,
     enrolledParent.familyId,
+    lockParent.email,
+    lockParent.password,
+    lockParent.totpSecretBase32,
+    lockParent.familyId,
     setupParent.email,
     setupParent.password,
     setupParent.dailyLoginGrant,
@@ -458,6 +465,9 @@ async function runParentMfaRealE2e(e2eEnv, { onlyAcceptanceFlow = false } = {}) 
         E2E_REAL_MFA_PARENT_EMAIL: enrolledParent.email,
         E2E_REAL_MFA_PARENT_PASSWORD: enrolledParent.password,
         E2E_REAL_MFA_PARENT_TOTP_SECRET: enrolledParent.totpSecretBase32,
+        E2E_REAL_MFA_LOCK_PARENT_EMAIL: lockParent.email,
+        E2E_REAL_MFA_LOCK_PARENT_PASSWORD: lockParent.password,
+        E2E_REAL_MFA_LOCK_PARENT_TOTP_SECRET: lockParent.totpSecretBase32,
       },
     },
     {

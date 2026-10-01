@@ -6,7 +6,9 @@ import { base32Decode, computeTotp } from '../../backend/dist/platformadmin/auth
 const EMAIL = process.env.E2E_REAL_MFA_PARENT_EMAIL;
 const PASSWORD = process.env.E2E_REAL_MFA_PARENT_PASSWORD;
 const SECRET = process.env.E2E_REAL_MFA_PARENT_TOTP_SECRET;
-let replacementSecretForPasswordReset: string | null = null;
+const LOCK_EMAIL = process.env.E2E_REAL_MFA_LOCK_PARENT_EMAIL;
+const LOCK_PASSWORD = process.env.E2E_REAL_MFA_LOCK_PARENT_PASSWORD;
+const LOCK_SECRET = process.env.E2E_REAL_MFA_LOCK_PARENT_TOTP_SECRET;
 
 test.skip(!EMAIL || !PASSWORD || !SECRET, 'real Parent MFA E2E requires the disposable enrolled Parent fixture.');
 test.use({ serviceWorkers: 'block' });
@@ -203,7 +205,6 @@ test('real browser: immediate lost-authenticator recovery, replacement enrollmen
   await page.getByRole('button', { name: /^continue$/i }).click();
   await page.locator('[data-testid="mfa-manual-key"] summary').click();
   const replacementSecret = (await page.locator('[data-testid="mfa-manual-secret"]').textContent())!.replace(/\s+/g, '');
-  replacementSecretForPasswordReset = replacementSecret;
   await expect(page.locator('input[name="totp"]')).toBeVisible();
   const replacementCode = await currentTotp(replacementSecret);
   await page.locator('input[name="totp"]').fill(replacementCode.code);
@@ -246,26 +247,32 @@ test('real browser: immediate lost-authenticator recovery, replacement enrollmen
   }
 });
 
-test('real browser: five wrong passwords lock sign-in, Forgot password stays available, reset clears lock and preserves replacement TOTP', async ({ page }) => {
-  const replacementSecret = replacementSecretForPasswordReset;
-  if (!replacementSecret) throw new Error('The prior real-browser recovery journey did not create a replacement authenticator.');
+test('real browser: five wrong passwords lock sign-in, Forgot password stays available, reset clears lock and preserves the active TOTP', async ({ page }) => {
+  if (!LOCK_EMAIL || !LOCK_PASSWORD || !LOCK_SECRET) throw new Error('The isolated password-lock Parent fixture is incomplete.');
 
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByLabel(/email/i).fill(LOCK_EMAIL);
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await page.getByLabel(/password/i).fill('incorrect password');
     await page.getByRole('button', { name: /sign in/i }).click();
     await expect(page.getByRole('alert')).toBeVisible();
   }
-  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByLabel(/password/i).fill(LOCK_PASSWORD);
   await page.getByRole('button', { name: /sign in/i }).click();
   await expect(page.getByRole('alert')).toContainText(/too many unsuccessful sign-in attempts/i);
   await expect(page.getByRole('link', { name: /forgot password/i })).toBeVisible();
   await page.getByRole('link', { name: /forgot password/i }).click();
-  await page.getByLabel(/email/i).fill(EMAIL!);
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await page.getByLabel(/email/i).fill(LOCK_EMAIL);
+  await expect(page.getByLabel(/email/i)).toHaveValue(LOCK_EMAIL);
+  const resetRequest = page.waitForResponse((response) => response.url().endsWith('/api/parent/request-password-reset'));
   await page.getByRole('button', { name: /send reset code/i }).click();
+  const resetResponse = await resetRequest;
+  const resetPayload = resetResponse.request().postDataJSON() as { email?: unknown } | null;
+  expect(typeof resetPayload?.email).toBe('string');
+  expect(resetResponse.status(), 'password reset request remains available during the password lock').toBe(202);
   await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible();
-  const resetCode = setPasswordResetCode(EMAIL!, '693184');
+  const resetCode = setPasswordResetCode(LOCK_EMAIL, '693184');
   await page.getByRole('link', { name: /enter it here/i }).click();
   await page.locator('input[name="code"]').fill(resetCode);
   const newPassword = 'A fresh browser test password 7!';
@@ -276,16 +283,16 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
   const oldSession = await page.request.get('/api/parent/session');
   expect(oldSession.status(), 'password reset revokes the existing browser session').toBe(401);
   await page.getByRole('link', { name: /back to sign in/i }).click();
-  await page.getByLabel(/email/i).fill(EMAIL!);
+  await page.getByLabel(/email/i).fill(LOCK_EMAIL);
   await page.getByLabel(/password/i).fill(newPassword);
   await page.getByRole('button', { name: /sign in/i }).click();
   await expect(page.locator('input[name="emailCode"]')).toBeVisible();
-  const postResetLoginCode = setLoginStepUpCode(EMAIL!, '703159');
+  const postResetLoginCode = setLoginStepUpCode(LOCK_EMAIL, '703159');
   await page.locator('input[name="emailCode"]').fill(postResetLoginCode);
   await page.locator('form button[type="submit"]').click();
   await expect(page.locator('input[name="totpCode"]')).toBeVisible();
-  await waitForNextTotpCounter(latestAcceptedTotpCounter(EMAIL!));
-  await page.locator('input[name="totpCode"]').fill((await currentTotp(replacementSecret)).code);
+  await waitForNextTotpCounter(latestAcceptedTotpCounter(LOCK_EMAIL));
+  await page.locator('input[name="totpCode"]').fill((await currentTotp(LOCK_SECRET)).code);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
