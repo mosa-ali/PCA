@@ -32,14 +32,10 @@ export default function ForgotPassword() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Read the named control from the submitted form itself. This keeps the
-    // request aligned with the visible field if React state is stale.
-    const submittedEmail = event.currentTarget.querySelector<HTMLInputElement>('#forgot-password-email')?.value ?? email;
-    setEmail(submittedEmail);
     setError(null);
     setSubmitting(true);
     try {
-      await clients.serviceAuth.requestPasswordReset(submittedEmail);
+      await clients.serviceAuth.requestPasswordReset(email);
       setDone(true);
     } catch (err) {
       if (err instanceof ServiceAuthError && err.code === 'RATE_LIMITED') {
@@ -83,6 +79,8 @@ export default function ForgotPassword() {
             autoComplete="email"
             required
             aria-describedby={error ? 'forgot-password-error' : undefined}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 

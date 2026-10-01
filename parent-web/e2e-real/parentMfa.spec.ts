@@ -263,8 +263,12 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
   await expect(page.getByRole('link', { name: /forgot password/i })).toBeVisible();
   await page.getByRole('link', { name: /forgot password/i }).click();
   await expect(page).toHaveURL(/\/forgot-password$/);
-  await page.getByLabel(/email/i).fill(LOCK_EMAIL);
-  await expect(page.getByLabel(/email/i)).toHaveValue(LOCK_EMAIL);
+  // The URL can change before React replaces the login form. Target the
+  // reset page's own input so the login email field cannot satisfy this fill.
+  const resetEmailInput = page.locator('#forgot-password-email');
+  await expect(resetEmailInput).toBeVisible();
+  await resetEmailInput.fill(LOCK_EMAIL);
+  await expect(resetEmailInput).toHaveValue(LOCK_EMAIL);
   const preSubmitEmailDiagnostic = await page.locator('#forgot-password-email').evaluate((node) => {
     const input = node as HTMLInputElement;
     const formDataEmail = input.form ? new FormData(input.form).get('email') : null;
