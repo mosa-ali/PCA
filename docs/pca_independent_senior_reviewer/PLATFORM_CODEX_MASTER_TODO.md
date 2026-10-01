@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (Quality Gates run 36799538564 found a Parent CI fixture-handoff gap; workflow correction and 4/4 local browser rerun are prepared)
-VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191. Quality Gates run 36799538564 failed because the workflow omitted three isolated password-lock fixture variables; local wrapper passed Parent MFA 3/3 plus optional setup 1/1 after the workflow mapping correction. Corrected head awaits publication and CI.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 and ledger head fc368fc5771189ae404b6fc43ed09b81114ccd17 were pushed and fetch-confirmed; run 36799538564 failed in Parent real-backend MFA because the CI fixture handoff omitted the isolated password-lock account. Corrected mapping is local pending publication.
-CURRENT_CHECKPOINT_SHA = Parent source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191; local validation passed as recorded in Parent master TODO. No current exact-head CI result is available.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers record the owner policy and local validation evidence for a8f08abc; this three-ledger sync was pushed and fetch-verified. Platform remains unchanged and held.
+LAST_UPDATED_UTC = 2026-10-01 (Quality Gates run 36801172432 reached password reset but received HTTP 400; exact-fixture and safe-error diagnostics pass locally and await exact-head CI)
+VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191. Workflow fixture handoff correction is published at 89678729ac1581f7cc95404e2801f2ee1af1f76c; Quality Gates run 36801172432 exercised the lock fixture but password reset returned HTTP 400. Exact request-address equality and safe API-error diagnostics pass in the disposable local browser wrapper; updated test/evidence awaits publication and exact-head CI.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191, ledger head fc368fc5771189ae404b6fc43ed09b81114ccd17, and workflow correction 89678729ac1581f7cc95404e2801f2ee1af1f76c were pushed/fetch-confirmed; run 36801172432 failed at password reset HTTP 400. Current exact-fixture assertion and response diagnostic are local pending publication.
+CURRENT_CHECKPOINT_SHA = Parent workflow correction 89678729ac1581f7cc95404e2801f2ee1af1f76c; exact-head Quality Gates run 36801172432 failed in Parent real-backend MFA. Updated local diagnostic passes but has no exact-head CI result yet.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent master records run 36801172432 and the local diagnostic; continuous-goal ledger has not yet been reconciled for this failure. This diagnostic checkpoint makes no Platform source change; Platform remains unchanged and held.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent-only CI fixture handoff correction and its evidence, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent-only exact-fixture assertion and safe response diagnostic with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1122,3 +1122,9 @@ PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection
 PARENT_CI = Run 36799538564 at fc368fc5771189ae404b6fc43ed09b81114ccd17 failed only in Parent real-backend MFA because GitHub Actions did not export the isolated password-lock Parent fixture. The workflow now validates, masks, and exports those test-only values locally.
 PARENT_LOCAL_VALIDATION = Disposable wrapper passed Parent MFA 3/3 and optional setup 1/1 with zero skips; its random owned schema was removed. Corrected workflow is not yet pushed or CI-verified.
 PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged; no Platform source/projection/enrollment, live DB, owner acceptance, Azure, or deployment work occurred.
+
+### 2026-10-01 — Parent exact-head CI password-reset diagnostic
+
+PARENT_CI = Run 36801172432 at 89678729ac1581f7cc95404e2801f2ee1af1f76c passed all jobs except Parent real-backend MFA, where forgot-password returned HTTP 400 instead of 202 after the lock fixture loaded.
+PARENT_LOCAL_DIAGNOSTIC = Test now asserts exact reset-address equality and exposes only the safe API error code on failure. Disposable local wrapper passed Parent MFA 3/3 plus optional setup 1/1, zero skips. Diagnostic and reconciled evidence await publication and a new exact-head CI run.
+PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment, live DB, owner acceptance, Azure, or deployment work occurred.

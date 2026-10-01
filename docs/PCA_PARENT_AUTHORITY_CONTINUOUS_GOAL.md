@@ -3,7 +3,7 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed on 2026-10-01 after the owner recovery/password-lock amendment and local validation at source/test checkpoint a8f08abc; exact-head Quality Gates remain unverified. Older dated entries below remain historical evidence and may describe superseded states.
+checkpoint was refreshed on 2026-10-01 after the owner recovery/password-lock amendment and follow-up CI at workflow checkpoint 89678729; exact-head run 36801172432 failed when forgot-password returned HTTP 400. The exact-fixture and safe-error diagnostic passes locally and awaits publication. Older dated entries below remain historical evidence and may describe superseded states.
 
 ## Current checkpoint
 
@@ -15,9 +15,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is present on origin/pca-dev; the subsequent ledger sync was pushed and fresh fetch confirmed local/origin equality. Exact-head CI lookup remains blocked by configured proxy at 127.0.0.1:9.
-CURRENT_LOCAL_CHECKPOINT_SHA = a8f08abcde68bc7ef11c0f6df910b8872cfde191
-LAST_EXACT_HEAD_CI = Quality Gates run 36799538564 at fc368fc5771189ae404b6fc43ed09b81114ccd17 completed FAILURE in Parent real-backend browser E2E because the CI resolver omitted the isolated password-lock fixture variables. Local workflow correction passed the disposable Parent MFA/optional setup browser wrapper; corrected exact-head CI awaits publication.
+LAST_VERIFIED_REMOTE_SHA = Workflow correction 89678729ac1581f7cc95404e2801f2ee1af1f76c is present on origin/pca-dev; local HEAD and origin/pca-dev matched at that checkpoint. Exact-head CI run 36801172432 is recorded as failed at the forgot-password HTTP 400 assertion; live Actions API refresh is blocked by configured proxy at 127.0.0.1:9.
+CURRENT_LOCAL_CHECKPOINT_SHA = 89678729ac1581f7cc95404e2801f2ee1af1f76c plus uncommitted exact-fixture and safe-error diagnostic.
+LAST_EXACT_HEAD_CI = Quality Gates run 36801172432 at 89678729ac1581f7cc95404e2801f2ee1af1f76c completed FAILURE in Parent real-backend browser E2E: password-reset returned HTTP 400 instead of 202. The diagnostic asserts exact isolated address equality and reports only the safe API error code; local disposable Parent MFA/optional setup browser wrapper passes. Diagnostic publication and exact-head rerun are pending.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)
@@ -31,7 +31,7 @@ CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36763771064; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = Owner-UAT pca_local_owner_uat was last verified at schema 0060. The official test harness used configured local MySQL 8.4.11 only for random pca_test_codex schemas, applied 59 migrations, ran DB/browser suites, and removed each schema. No owner-UAT schema data was modified. Literal owner acceptance is pending; live pca_pro was not queried or changed.
-NEXT_CODEX_ACTION = Publish the workflow credential-handoff correction with updated ledgers, then rerun exact-head Quality Gates. Continue TODO-12/14/15 only within approved security boundaries; keep Platform HOLD_PARENT_DEPENDENCY. Retry TODO-20 live read-only preflight only when reachable. No live DB mutation, Azure/deployment, or owner acceptance is authorized by this policy amendment.
+NEXT_CODEX_ACTION = Publish the exact-fixture assertion and safe API-error diagnostic with reconciled ledgers, then rerun exact-head Quality Gates. Continue TODO-12/14/15 only within approved security boundaries; keep Platform HOLD_PARENT_DEPENDENCY. Retry TODO-20 live read-only preflight only when reachable. No live DB mutation, Azure/deployment, or owner acceptance is authorized by this policy amendment.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
 LOCAL_REMOTE_EQUAL = YES; local HEAD, tracking ref, and server all equal `c3c8c5874679e0286d8872e04c23941b7e330c5a`; exact-head CI is run 36761102745 SUCCESS 27/27
