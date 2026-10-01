@@ -32,10 +32,16 @@ export default function ForgotPassword() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Read the value submitted by the form itself. This keeps the request
+    // aligned with the visible field even when React has not committed the
+    // latest controlled-input state before the submit event arrives.
+    const formEmail = new FormData(event.currentTarget).get('email');
+    const submittedEmail = typeof formEmail === 'string' ? formEmail : '';
+    setEmail(submittedEmail);
     setError(null);
     setSubmitting(true);
     try {
-      await clients.serviceAuth.requestPasswordReset(email);
+      await clients.serviceAuth.requestPasswordReset(submittedEmail);
       setDone(true);
     } catch (err) {
       if (err instanceof ServiceAuthError && err.code === 'RATE_LIMITED') {

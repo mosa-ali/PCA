@@ -279,6 +279,7 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
   };
   const resetResponseBody = await resetResponse.json() as { error?: unknown };
   expect(resetResponse.status(), `password reset remains available during the lock (safe API error: ${String(resetResponseBody.error ?? 'none')}; request diagnostic: ${JSON.stringify(resetAddressDiagnostic)})`).toBe(202);
+  expect(submittedEmail === LOCK_EMAIL, 'forgot-password submits the isolated locked Parent address').toBe(true);
   await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible();
   const resetCode = setPasswordResetCode(LOCK_EMAIL, '693184');
   await page.getByRole('link', { name: /enter it here/i }).click();

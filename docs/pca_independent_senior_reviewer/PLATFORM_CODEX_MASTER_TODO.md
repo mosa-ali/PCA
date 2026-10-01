@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (Quality Gates run 36802924706 failed only in Parent real-backend E2E because the POST email differed from the displayed fixture; all other jobs passed)
-VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and test/harness checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191. Workflow fixture handoff correction is published at 89678729ac1581f7cc95404e2801f2ee1af1f76c. Exact-head run 36802924706 passed all jobs except Parent real-backend E2E: the form showed the lock fixture, but the submitted POST email did not exactly match it. Local wrapper passes; privacy-safe request-shape diagnostics are local pending publication.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Diagnostic checkpoint cf74bb2dcd1c95044db5cdf458fc146166d41d9f is pushed and fetch-confirmed; run 36802924706 passed all jobs except Parent real-backend E2E with a displayed-versus-submitted reset email mismatch. Current privacy-safe request-shape diagnostic is local pending publication.
-CURRENT_CHECKPOINT_SHA = Parent diagnostic checkpoint cf74bb2dcd1c95044db5cdf458fc146166d41d9f; exact-head run 36802924706 failed only in Parent real-backend E2E. A safe diagnostic update is local and has no exact-head CI result yet.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers are being updated for run 36802924706 and the address mismatch. This checkpoint makes no Platform source change; Platform remains unchanged and held.
+LAST_UPDATED_UTC = 2026-10-01 (Parent FormData correction passes local typecheck and disposable browser 4/4 with zero skips; exact-head CI pending; Platform remains held)
+VALIDATED_PARENT_SOURCE_HEAD = Parent policy source e66b266dad9f503e2212754d3db020526ac0d8df and workflow/test checkpoint 766d1c4199470d9cdcd5355037bdbc681d49c969. Exact-head run 36804016655 failed only in Parent real-backend E2E: request body email was empty (safe error invalid_request) although the form displayed the fixture. FormData source correction passes local typecheck and disposable browser 4/4; publication and new exact-head CI are pending.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = Diagnostic checkpoint 766d1c4199470d9cdcd5355037bdbc681d49c969 is pushed/fetch-confirmed. Parent FormData correction passes local typecheck and disposable real-browser MFA 3/3 plus optional setup 1/1, zero skips; it is local pending publication and exact-head CI.
+CURRENT_CHECKPOINT_SHA = Parent diagnostic checkpoint 766d1c4199470d9cdcd5355037bdbc681d49c969 plus locally typechecked FormData fix and synchronized evidence; new exact-head CI is pending publication.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers record CI 36804016655 and the empty request body. FormData fix is locally validated; no Platform product scope changed and dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent-only privacy-safe request-shape diagnostic with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the locally validated Parent FormData fix with reconciled ledgers, then verify exact-head Quality Gates. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1128,6 +1128,12 @@ PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged; no Platform source/projection/
 PARENT_CI = Run 36801172432 at 89678729ac1581f7cc95404e2801f2ee1af1f76c passed all jobs except Parent real-backend MFA, where forgot-password returned HTTP 400 instead of 202 after the lock fixture loaded.
 PARENT_LOCAL_DIAGNOSTIC = Test now asserts exact reset-address equality and exposes only the safe API error code on failure. Disposable local wrapper passed Parent MFA 3/3 plus optional setup 1/1, zero skips. Diagnostic and reconciled evidence await publication and a new exact-head CI run.
 PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment, live DB, owner acceptance, Azure, or deployment work occurred.
+
+### 2026-10-01 — Parent forgot-password FormData correction
+
+PARENT_CI = Run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 failed only in Parent real-backend E2E: the reset POST email was empty although the form displayed the lock fixture; all other jobs passed.
+PARENT_LOCAL = FormData submission correction passes Parent Web typecheck and disposable browser 4/4, zero skips. It awaits publication and exact-head CI.
+PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment, live database, owner acceptance, Azure, or deployment work occurred.
 
 ### 2026-10-01 — Parent exact-head CI reset-address mismatch
 
