@@ -83,6 +83,12 @@ public struct PCAEnrollmentBootstrapClient {
         guard let decoded = try? decoder.decode(PCAEnrollmentBootstrapResponse.self, from: response.data) else {
             throw PCAAPIError.malformedResponse
         }
+        // Bootstrap and recovery return the original pending pairing only. A
+        // later lifecycle status cannot be treated as enrollment proof or
+        // persisted as this device's freshly enrolled identity.
+        guard decoded.status == "PAIRING_PENDING" else {
+            throw PCAAPIError.malformedResponse
+        }
         return decoded
     }
 }

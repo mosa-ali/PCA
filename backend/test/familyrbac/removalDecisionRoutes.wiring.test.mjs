@@ -148,6 +148,38 @@ test('removal-decision routes are registered and reachable (not 404) without a s
   assert.notEqual(response.statusCode, 404);
 });
 
+test('removal and PIN reads require current active Parent membership', async () => {
+  const paths = [
+    '/api/parent/families/family-a/removal-decisions',
+    '/api/parent/families/family-a/removal-decisions/req-read',
+    '/api/parent/families/family-a/administration-pin',
+  ];
+  for (const options of [{ parentRole: null }, { roleLookupError: true }]) {
+    const app = buildApp(options);
+    await seedPendingRequest(app, 'req-read');
+    try {
+      for (const url of paths) {
+        const response = await app.inject({ method: 'GET', url, headers: authHeaders });
+        assert.equal(response.statusCode, 403, url);
+        assert.deepEqual(response.json(), { error: 'forbidden' });
+      }
+    } finally {
+      await app.close();
+    }
+  }
+
+  const viewerApp = buildApp({ parentRole: 'VIEWER' });
+  await seedPendingRequest(viewerApp, 'req-read');
+  try {
+    for (const url of paths) {
+      const response = await viewerApp.inject({ method: 'GET', url, headers: authHeaders });
+      assert.equal(response.statusCode, 200, url);
+    }
+  } finally {
+    await viewerApp.close();
+  }
+});
+
 test('create-request fails closed 409 while the coordinator protective-authority resolver is honestly unavailable', async () => {
   const app = buildApp();
   const response = await app.inject({
@@ -565,6 +597,7 @@ test('a Viewer cannot configure the family Administration PIN', async () => {
     url: '/api/parent/families/family-a/administration-pin',
     headers: authHeaders,
   });
+  assert.equal(status.statusCode, 200);
   assert.equal(status.json().pinStatus.configured, false);
 });
 
@@ -584,7 +617,8 @@ test('a failed active-role lookup denies Administration PIN configuration', asyn
     url: '/api/parent/families/family-a/administration-pin',
     headers: authHeaders,
   });
-  assert.equal(status.json().pinStatus.configured, false);
+  assert.equal(status.statusCode, 403);
+  assert.deepEqual(status.json(), { error: 'forbidden' });
 });
 
 test('removal-decision detail GET returns same-family records and hides unknown or cross-family IDs', async () => {

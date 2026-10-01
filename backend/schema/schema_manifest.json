@@ -6204,6 +6204,30 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "password_failed_attempt_count",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "password_failure_window_started_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "password_login_locked_until",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
         }
       ],
       "indexes": [

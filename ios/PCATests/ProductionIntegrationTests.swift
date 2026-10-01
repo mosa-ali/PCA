@@ -37,6 +37,86 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
 
+    func testBootstrapAndRecoveryRejectLaterLifecycleStatuses() async throws {
+        for status in ["PAIRED", "ACTIVE", "REVOKED"] {
+            let response = Data("{\"deviceId\":\"device-1\",\"status\":\"\(status)\",\"childProfileId\":\"child-1\",\"ageUxTier\":\"TEEN\",\"initialPolicyProfile\":\"BALANCED\"}".utf8)
+            let transport = InMemoryPCAHTTPTransport { _ in PCAHTTPResponse(statusCode: 200, data: response) }
+            let client = try PCAEnrollmentBootstrapClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+
+            do {
+                _ = try await client.bootstrap(PCAEnrollmentBootstrapRequest(rawInvitationToken: "token", signingPublicKey: "dsk", encryptionPublicKey: "dek", bootstrapAttemptId: "attempt", attemptRecoveryToken: "recovery"))
+                XCTFail("bootstrap accepted \(status)")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .malformedResponse)
+            }
+
+            do {
+                _ = try await client.recover(attemptId: "attempt", attemptRecoveryToken: "recovery")
+                XCTFail("recovery accepted \(status)")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .malformedResponse)
+            }
+        }
+    }
+
+    func testLaterLifecycleBootstrapDoesNotPersistDeviceIdentity() async throws {
+        let identityStore = RecordingDeviceIdentityStore()
+        let model = try makeEnrollmentModel(identityStore: identityStore, attemptStore: InMemoryPCADeviceStateStore())
+        model.start()
+
+        let token = String(repeating: "A", count: 43)
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        await waitForRejectedEnrollment(model)
+
+        XCTAssertNil(identityStore.loadDeviceId())
+        XCTAssertTrue(identityStore.savedDeviceIds.isEmpty)
+    }
+
+    func testLaterLifecycleRecoveryDoesNotPersistDeviceIdentity() async throws {
+        let identityStore = RecordingDeviceIdentityStore()
+        let attemptStore = InMemoryPCADeviceStateStore()
+        try attemptStore.saveAttempt(PCAEnrollmentAttempt(attemptId: "attempt", attemptRecoveryToken: "recovery"))
+        let model = try makeEnrollmentModel(identityStore: identityStore, attemptStore: attemptStore)
+        model.start()
+        await waitForRejectedEnrollment(model)
+
+        XCTAssertNil(identityStore.loadDeviceId())
+        XCTAssertTrue(identityStore.savedDeviceIds.isEmpty)
+    }
+
+    private func makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore, attemptStore: InMemoryPCADeviceStateStore) throws -> PCAApplicationModel {
+        let authorizationSource = FakeAuthorizationStatusSource()
+        authorizationSource.status = .approved
+        let authorizationCenter = ChildAuthorizationCenter(source: authorizationSource)
+        let transport = InMemoryPCAHTTPTransport { _ in
+            PCAHTTPResponse(statusCode: 200, data: Data(#"{"deviceId":"device-1","status":"PAIRED","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.utf8))
+        }
+        let dependencies = PCAProductionDependencies(
+            authorizationCenter: authorizationCenter,
+            enrollmentCoordinator: ChildEnrollmentCoordinator(
+                keyMaterialStore: FamilyKeyMaterialStore(keychain: InMemoryKeychainStore(), serviceNamespace: "org.pca.test"),
+                authorizationCenter: authorizationCenter
+            ),
+            enrollmentClient: try PCAEnrollmentBootstrapClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            sessionStore: attemptStore,
+            attemptStore: attemptStore,
+            profileStore: InMemoryPCAEnrollmentProfileStore(),
+            proofProvider: TestEnrollmentProofProvider(),
+            protectionRuntime: PCAHostProtectionRuntime(),
+            deviceIdentityStore: identityStore
+        )
+        return PCAApplicationModel(dependencies: dependencies)
+    }
+
+    private func waitForRejectedEnrollment(_ model: PCAApplicationModel) async {
+        for _ in 0..<100 {
+            if model.applicationState == .error(.permanent) { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(model.applicationState, .error(.permanent))
+        XCTAssertEqual(model.lastError, .permanent)
+    }
+
     func testRuntimeProtectionStatusUsesExistingAuthenticatedRoute() async throws {
         let transport = InMemoryPCAHTTPTransport { request in
             XCTAssertEqual(request.httpMethod, "POST")
@@ -100,4 +180,16 @@ final class ProductionIntegrationTests: XCTestCase {
         runtime.authorizationChanged(.revoked(to: .denied))
         XCTAssertEqual(runtime.status, .degraded)
     }
+}
+
+private final class RecordingDeviceIdentityStore: PCADeviceIdentityStore {
+    private(set) var savedDeviceIds: [String] = []
+    func loadDeviceId() -> String? { savedDeviceIds.last }
+    func saveDeviceId(_ deviceId: String) { savedDeviceIds.append(deviceId) }
+}
+
+private struct TestEnrollmentProofProvider: PCADeviceProofProvider {
+    let signingPublicKey = "test-signing-public-key"
+    let encryptionPublicKey = "test-encryption-public-key"
+    func sign(challenge: String) throws -> String { "test-signature" }
 }

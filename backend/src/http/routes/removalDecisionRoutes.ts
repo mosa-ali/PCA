@@ -36,6 +36,7 @@ import type { SensitiveParentStepUpOperation } from '../../parentaccount/mfa/Par
 import type { RemovalTargetResolver } from '../../familyrbac/RemovalTargetResolver.js';
 
 const MAX_BODY_BYTES = 8 * 1024;
+const PARENT_READ_ROLES: ReadonlySet<string> = new Set(['ADMINISTRATOR', 'VIEWER']);
 
 /**
  * Resolves whether protective authority currently applies to the target
@@ -201,6 +202,20 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
     return false;
   }
 
+  async function requireActiveParentReader(
+    session: { accountId: string; familyId: string },
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    try {
+      const role = await parentAccountService.activeFamilyRole(session.accountId as never, session.familyId);
+      if (role !== null && PARENT_READ_ROLES.has(role)) return true;
+    } catch {
+      // A failed membership lookup must never disclose family removal or PIN state.
+    }
+    await reply.code(403).send({ error: 'forbidden' });
+    return false;
+  }
+
   async function consumeParentStepUp(
     session: { rawSessionToken: string; familyId: string },
     reply: FastifyReply,
@@ -228,6 +243,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
   app.get('/api/parent/families/:familyId/removal-decisions', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireActiveParentReader(session, reply))) return;
     try {
       const records = await removalDecisionAuthority.listRequests(session.familyId);
       return reply.code(200).send({ removalDecisions: records.map(toRecordDto) });
@@ -239,6 +255,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
   app.get('/api/parent/families/:familyId/removal-decisions/:requestId', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireActiveParentReader(session, reply))) return;
     const { requestId } = request.params as { requestId: string };
     try {
       const record = await removalDecisionAuthority.getRequest(session.familyId, requestId);
@@ -437,6 +454,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
   app.get('/api/parent/families/:familyId/administration-pin', async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await requireActiveParentReader(session, reply))) return;
     if (!deps.administrationPinService) return reply.code(503).send({ error: 'not_configured' });
     try {
       const status = await deps.administrationPinService.getStatus(session.familyId);

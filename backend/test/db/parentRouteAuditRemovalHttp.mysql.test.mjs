@@ -428,6 +428,38 @@ test('MYSQL HTTP removal-decisions list: anonymous 401, owner 200 with the durab
   }
 });
 
+test('MYSQL HTTP removal and PIN reads deny a revoked Parent membership with a still-bound family account', async () => {
+  const app = buildApp();
+  try {
+    const owner = await registerVerifyLogin(app, uniqueEmail('audit-rem-revoked-owner'));
+    const member = await createBoundMemberSession({ familyId: owner.familyId, role: 'VIEWER', email: uniqueEmail('audit-rem-revoked-viewer') });
+    const target = await seedRemovalTarget(owner.familyId);
+    const requestId = await seedPendingRequest({ familyId: owner.familyId, deviceId: target.deviceId });
+    const paths = [
+      `/api/parent/families/${owner.familyId}/removal-decisions`,
+      `/api/parent/families/${owner.familyId}/removal-decisions/${requestId}`,
+      `/api/parent/families/${owner.familyId}/administration-pin`,
+    ];
+
+    for (const url of paths) {
+      const active = await app.inject({ method: 'GET', url, headers: sessionHeaders(member) });
+      assert.equal(active.statusCode, 200, url);
+    }
+
+    await getPool().query(
+      `UPDATE family_parent_memberships SET status = 'REVOKED', updated_at = NOW(3) WHERE account_id = ? AND family_id = ?`,
+      [member.accountId, owner.familyId],
+    );
+    for (const url of paths) {
+      const revoked = await app.inject({ method: 'GET', url, headers: sessionHeaders(member) });
+      assert.equal(revoked.statusCode, 403, url);
+      assert.deepEqual(revoked.json(), { error: 'forbidden' });
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 test('MYSQL HTTP removal-decision create: session/CSRF/role boundaries, protective-authority-not-applicable 409, 201 with durable readback and detail GET', async () => {
   const app = buildApp();
   try {

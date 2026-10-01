@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 (Parent source SHA 7f669b05bd444854cb6f745d27838708a55c832c passed Quality Gates run 36810048862, 27/27)
+LAST_UPDATED_UTC = 2026-10-01 (Parent ledger head 826ef5b3588064a58375d2fb299bfc1e31970eab passed Quality Gates run 36811707041, 27/27)
 VALIDATED_PARENT_SOURCE_HEAD = Parent recovery/password-lock policy and route-specific browser correction at 7f669b05bd444854cb6f745d27838708a55c832c; Quality Gates run 36810048862 passed 27/27, including real-backend Parent and Platform browser jobs.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 7f669b05bd444854cb6f745d27838708a55c832c is pushed and fetch-confirmed with local/origin equality. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = 7f669b05bd444854cb6f745d27838708a55c832c is the latest tested source head; successful CI evidence ledger synchronization is pending publication.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the route timing correction and successful 27/27 CI. No Platform product scope changed; dependency hold remains.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 826ef5b3588064a58375d2fb299bfc1e31970eab is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36811707041 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
+CURRENT_CHECKPOINT_SHA = 826ef5b3588064a58375d2fb299bfc1e31970eab is the latest published, CI-tested head. TODO-14 crosswalk policy correction is local and pending a separate checkpoint.
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 policy CI; the ledger-only head also passed 27/27. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Publish the Parent CI result and verify the ledger-only checkpoint, then wait for Parent TODO-12/14/15, projection, TODO-18, and literal LOCALHOST ACCEPTED gates before dependent Enrollment activation. Repository migration is 0061; live pca_pro remains last verified at 0059. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while Parent authority/read guards, iOS pairing-status validation, and generated schema snapshots are integrated and certified. Dependent Enrollment activation awaits Parent TODO-12/14/15, projection, TODO-18, and literal LOCALHOST ACCEPTED. Repository migration is 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1173,3 +1173,9 @@ CI = Quality Gates run 36810048862 completed SUCCESS, 27/27 jobs. Its real-backe
 LOCAL = Parent Web typecheck PASS; the guarded local browser wrapper passed Parent MFA 3/3 plus optional setup 1/1, zero skipped, and removed its run-owned schema. ForgotPassword is restored to its original controlled input; the browser test waits for the unique reset input before filling.
 STATUS = TODO-17/19 PASS for this tested source checkpoint; Parent board 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23). Parent TODO-14 remains 45/52 and NOT_YET_PROVEN. Platform remains HOLD_PARENT_DEPENDENCY; literal LOCALHOST ACCEPTED remains pending. Repository migration head 0061, owner-UAT last verified 0060, live pca_pro last verified 0059. This ledger-only evidence checkpoint awaits publication and its own CI result.
 SCOPE = No live/owner-UAT DB mutation, Platform product source or Enrollment activation, Trust Set/device authority change, Azure deployment, production change, or owner acceptance occurred.
+
+### 2026-10-01 — Parent dependent integration checkpoint
+
+PARENT_SOURCE = Active-membership guards on removal/PIN reads, iOS PAIRING_PENDING response validation, generated 0061 schema snapshots, and corrected TODO-14 recovery evidence are local. Backend build, focused authority 18/18, and disposable route audit 52/52 pass; iOS XCTest and exact-head CI remain pending.
+DATABASE = Repository and fresh disposable MySQL match through 0061 (94 tables, 809 columns); owner-UAT remains last verified at 0060 and live pca_pro at 0059. Azure identifies the Ready target, but TCP/3306 is unreachable; no live schema/grant preflight or mutation occurred.
+PLATFORM_GATE = HOLD_PARENT_DEPENDENCY remains. No Platform product or Enrollment activation, owner localhost acceptance, Azure deployment, or production acceptance occurred.
