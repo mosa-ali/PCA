@@ -3,7 +3,7 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed on 2026-10-01 after CI 36804016655 isolated an empty forgot-password POST and the FormData correction passed Parent Web typecheck plus disposable browser MFA 3/3 and optional setup 1/1 with zero skips. Corrected source awaits publication and exact-head CI.
+checkpoint was refreshed on 2026-10-01 after run 36805623573 still returned an empty reset email on the FormData version. The direct input-ref correction passes Parent Web typecheck and disposable browser MFA 3/3 plus optional setup 1/1, zero skips; the owned schema was removed. This corrected source awaits publication and exact-head CI.
 
 ## Current checkpoint
 
@@ -15,9 +15,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = Diagnostic checkpoint 766d1c4199470d9cdcd5355037bdbc681d49c969 is on origin/pca-dev; local and origin were equal after fetch. Run 36804016655 completed FAILURE only in Parent real-backend E2E; local FormData correction now passes typecheck and disposable browser, pending publication.
-CURRENT_LOCAL_CHECKPOINT_SHA = 766d1c4199470d9cdcd5355037bdbc681d49c969 plus locally validated FormData source fix and ledger synchronization.
-LAST_EXACT_HEAD_CI = Quality Gates run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 completed FAILURE only in Parent real-backend E2E: UI showed the fixture but POST email was empty (length 0), safe error invalid_request. All other jobs passed. FormData source fix passes local typecheck and disposable browser 4/4; publication and exact-head rerun pending.
+LAST_VERIFIED_REMOTE_SHA = FormData checkpoint 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac is on origin/pca-dev; local and origin were equal after fetch. Run 36805623573 completed FAILURE only in Parent real-backend E2E; direct-ref correction now passes local typecheck and disposable browser, pending publication.
+CURRENT_LOCAL_CHECKPOINT_SHA = 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac plus locally validated direct-input-ref source fix and ledger synchronization.
+LAST_EXACT_HEAD_CI = Quality Gates run 36805623573 at 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac completed FAILURE only in Parent real-backend E2E: request email was still empty (length 0), safe error invalid_request, on the FormData version. All other jobs passed. Direct input-ref correction passes local typecheck and disposable browser 4/4; publication and exact-head rerun pending.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)
@@ -31,7 +31,7 @@ CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
 CURRENT_SECURITY_GATES = Trust Set acceptance writer unwired (no production ingestion; no bootstrap anchor path for new TOTP-provisioned families; store-backed resolver answers NO_TRUST_SET only); one shared async registry-backed child-profile membership resolver serves Parent action authorization, Parent-session child-request decisions/grants and child-request routes and is covered by Quality Gates run 36763771064; webRuleService absent (503); RejectingDeviceSignatureVerifier; PAIRED-to-ACTIVE has no writer; no security downgrade permitted
 CURRENT_LOCAL_UAT_ENVIRONMENT = Owner-UAT pca_local_owner_uat was last verified at schema 0060. The official test harness used configured local MySQL 8.4.11 only for random pca_test_codex schemas, applied 59 migrations, ran DB/browser suites, and removed each schema. No owner-UAT schema data was modified. Literal owner acceptance is pending; live pca_pro was not queried or changed.
-NEXT_CODEX_ACTION = Publish the locally typechecked and browser-validated FormData fix with ledgers, then rerun exact-head Quality Gates. Continue Parent work within approved boundaries and keep Platform HOLD_PARENT_DEPENDENCY. No live DB mutation, Azure/deployment, or owner acceptance is authorized by the recovery policy task.
+NEXT_CODEX_ACTION = Publish the locally validated direct-input-ref correction with ledgers, then rerun exact-head Quality Gates. Continue Parent work within approved boundaries and keep Platform HOLD_PARENT_DEPENDENCY. No live DB mutation, Azure/deployment, or owner acceptance is authorized by the recovery policy task.
 APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
 PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
 LOCAL_REMOTE_EQUAL = YES; local HEAD, tracking ref, and server all equal `c3c8c5874679e0286d8872e04c23941b7e330c5a`; exact-head CI is run 36761102745 SUCCESS 27/27
@@ -1413,3 +1413,9 @@ SCOPE = No live/owner-UAT database, Platform, Trust Set/device authority, Azure,
 CI = Run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 failed only in Parent real-backend E2E: the form showed the lock fixture while the POST body contained an empty email and returned `invalid_request`. All other jobs passed.
 FIX = ForgotPassword reads the submitted input from FormData. Parent Web typecheck passed; disposable browser passed Parent MFA 3/3 plus optional setup 1/1, zero skips, and removed its run-owned schema.
 NEXT = Publish the fix and updated ledgers, then inspect a new exact-head Quality Gates run. No live/owner-UAT DB, Platform, Trust Set, Azure, deployment, or production mutation occurred.
+
+### 2026-10-01 — Direct-input-ref submission correction
+
+CI = Run 36805623573 at 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac repeated the empty reset-email result on the FormData version; all other jobs passed.
+FIX = ForgotPassword now reads the exact current email input via ref. Parent Web typecheck and disposable browser MFA 3/3 plus optional setup 1/1 passed with zero skips; the owned schema was removed.
+NEXT = Publish this correction and updated ledgers, then require exact-head Quality Gates before owner review. No live/owner-UAT DB, Platform, Trust Set, Azure, deployment, or production mutation occurred.

@@ -5,16 +5,16 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-01 (FormData fix passes Parent Web typecheck and disposable Parent MFA 3/3 plus optional setup 1/1 with zero skips; exact-head CI pending)
+LAST_UPDATED_UTC = 2026-10-01 (exact-head run 36805623573 still saw an empty email with the FormData version; the direct input-ref correction now passes local typecheck and browser validation)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
 LAST_GREEN_REMOTE_SHA = `9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3` (Quality Gates run `36784297610` SUCCESS, 27/27 on attempt 2)
-CURRENT_WAVE_STATUS = Owner recovery/password-lock implementation is source commit e66b266dad9f503e2212754d3db020526ac0d8df; workflow handoff 89678729 and diagnostics 766d1c41 are published. Run 36804016655 proved POST email empty (string, length 0, invalid_request) despite the populated form. ForgotPassword now submits FormData directly; Parent Web typecheck passed and disposable real-browser MFA passed 3/3 plus optional setup 1/1, zero skips, with the owned schema removed. Exact-head validation remains pending. No live SQL, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
+CURRENT_WAVE_STATUS = Owner recovery/password-lock implementation is source commit e66b266dad9f503e2212754d3db020526ac0d8df; workflow handoff 89678729 and diagnostics 766d1c41 are published. Run 36804016655 proved POST email empty despite the populated input; run 36805623573 showed the same even after a FormData submission attempt. ForgotPassword now reads directly from a ref to the displayed input; Parent Web typecheck and disposable real-browser MFA pass 3/3 plus optional setup 1/1, zero skips, schema removed. Exact-head validation of this direct-ref correction is pending. No live SQL, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 completed FAILURE only in Parent real-backend browser E2E: forgot-password POST email was empty (length 0), safe API error invalid_request, while the form displayed the lock fixture. All other jobs passed. Handler now submits FormData; local typecheck and disposable browser pass; exact-head rerun is pending. Last verified green remains run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3.
+EXACT_HEAD_CI_SHA = Run 36805623573 at 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac completed FAILURE only in Parent real-backend browser E2E: request email remained empty (length 0), safe error invalid_request, on the FormData version. All other jobs passed. Current direct-input-ref correction passes local typecheck and disposable browser; pending publication and exact-head rerun. Last verified green remains run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3.
 LOCAL_STATE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is pushed and fetch-confirmed; this ledger sync is committed and published by ordinary fast-forward, with post-push local/origin equality verified. .vscode/ and root 0 remain untracked, unrelated, and excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 first-device Trust Set root/bootstrap gated; TODO-14 remains 45/52 integrated with seven gated/optional; TODO-15 device security; TODO-17 current exact-head regression CI; TODO-19 exact-head CI/Git closure; TODO-20 live schema/grants; owner-gated TODO-18 remain open. Board totals 13 PASS / 6 IN_PROGRESS (12,14,15,17,19,20) / 4 TODO (18,21,22,23); Platform remains HOLD_PARENT_DEPENDENCY.
-NEXT_ACTION = Publish the typechecked FormData submission fix with reconciled ledgers, confirm fetched local/origin equality, and require the resulting exact-head Quality Gates run. Do not claim LOCALHOST ACCEPTED. Keep TODO-12/14/15 open pending approved Trust Set root/crypto protocol and route dispositions. TODO-20 remains separately governed; no live pca_pro mutation is authorized by this policy task.
+NEXT_ACTION = Publish the locally validated direct-input-ref correction with reconciled ledgers, confirm fetched local/origin equality, and require exact-head Quality Gates. Do not claim LOCALHOST ACCEPTED. Keep TODO-12/14/15 open pending approved Trust Set root/crypto protocol and route dispositions. TODO-20 remains separately governed; no live pca_pro mutation is authorized by this policy task.
 
 ### 2026-10-01 — a7e8a8a1 exact-head CI and TODO-20 local runtime grants
 
@@ -605,8 +605,8 @@ extra PII/commercial fields = 0
 STATUS = IN_PROGRESS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Local policy regression passed: backend 2751/2751; Parent Web 152 files/1076 tests and typecheck; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path DB 275/275/0 skips; real-browser Parent MFA and optional setup 4/4/0 skipped; four contract catalogues; security controls; repository checks; diff check. Exact-head run 36804016655 proved the CI forgot-password POST contained an empty email and returned invalid_request although the field displayed the fixture. FormData correction now passes local typecheck and disposable browser: Parent MFA 3/3 plus optional setup 1/1, zero skips; random schema removed. New exact-head CI is pending.
-BLOCKER = Publish the locally validated FormData correction and pass exact-head Quality Gates; TODO-17 remains IN_PROGRESS. TODO-12/14/15 and owner/release gates remain separate.
+EVIDENCE = Local policy regression passed: backend 2751/2751; Parent Web 152 files/1076 tests and typecheck; disposable MySQL 669 pass/0 fail/9 expected skips; populated production-path DB 275/275/0 skips; real-browser Parent MFA and optional setup 4/4/0 skipped; four contract catalogues; security controls; repository checks; diff check. Run 36805623573 showed empty POST email with the FormData version; all other jobs passed. Direct input-ref correction now passes local typecheck and disposable browser: Parent MFA 3/3 plus optional setup 1/1, zero skips; run-owned schema removed. Exact-head validation pending.
+BLOCKER = Publish the locally validated direct-input-ref correction and pass exact-head Quality Gates; TODO-17 remains IN_PROGRESS. TODO-12/14/15 and owner/release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
 ### TODO-18 — Owner localhost acceptance
@@ -623,8 +623,8 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = IN_PROGRESS
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191, workflow correction 89678729ac1581f7cc95404e2801f2ee1af1f76c, and diagnostic checkpoint 766d1c4199470d9cdcd5355037bdbc681d49c969 are pushed/fetched. Run 36804016655 failed only in Parent real-backend E2E: displayed fixture but empty POST email. FormData fix passes local typecheck and disposable browser 4/4 with zero skips; source/ledger checkpoint and exact-head CI await publication.
-BLOCKER = Publish the locally validated source correction, verify exact-head Quality Gates, and synchronize final evidence.
+EVIDENCE = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191, workflow correction 89678729ac1581f7cc95404e2801f2ee1af1f76c, and FormData checkpoint 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac are pushed/fetched. Run 36805623573 failed only in Parent real-backend E2E with empty email; all other jobs passed. Direct input-ref correction passes local typecheck and disposable browser 4/4 with zero skips; source/ledger checkpoint and exact-head CI await publication.
+BLOCKER = Publish the locally validated direct-input-ref correction, verify exact-head Quality Gates, and synchronize final evidence.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
 LOCAL_HEAD = Post-sync local HEAD was verified equal to origin/pca-dev by a fresh fetch after the ledger commit.
 REMOTE_HEAD = Post-sync origin/pca-dev matched local HEAD after fresh fetch; see Git history for the ledger-sync SHA.
@@ -1561,3 +1561,9 @@ GATES = Root cause and exact-head green are still pending. TODO-17/19 remain IN_
 CI_DIAGNOSIS = Run 36804016655 at 766d1c4199470d9cdcd5355037bdbc681d49c969 completed FAILURE only in Parent real-backend E2E. UI displayed the lock fixture but POST email was empty (length 0); safe API error was invalid_request. All other jobs passed.
 SOURCE_FIX = ForgotPassword now reads the submitted form field via FormData. Parent Web typecheck passed; disposable real-browser MFA passed 3/3 and optional setup 1/1 with zero skips, and its owned schema was removed. E2E asserts submitted fixture equality and keeps safe diagnostics.
 GATES = Publish this correction and require exact-head Quality Gates before closing TODO-17/19. No live database, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
+
+### 2026-10-01 — Direct-input-ref follow-up after FormData CI failure
+
+CI = Run 36805623573 at 836ff1ed0a396cef2ab584bf47522a8d9e7d23ac repeated the empty-email result on the FormData version (`invalid_request`, submitted string length 0); every other Quality Gates job passed.
+FIX = ForgotPassword now reads the live value from a ref to the specific displayed email input. Parent Web typecheck and disposable real-browser MFA passed locally: MFA 3/3 plus optional setup 1/1, zero skips; the run-owned schema was removed. Exact-head validation remains pending.
+GATES = Publish this correction and require exact-head CI. TODO-17/19 stay IN_PROGRESS; no live database, Platform, Trust Set, Azure, deployment, or owner acceptance occurred.
