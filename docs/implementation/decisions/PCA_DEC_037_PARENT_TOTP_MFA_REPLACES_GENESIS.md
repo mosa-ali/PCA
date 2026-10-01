@@ -154,10 +154,11 @@ unchanged. No device-signature requirement remains on this path.
   one browser. Now anyone holding the password **and** the authenticator (or the
   password **and** the mailbox, via recovery) holds full Parent authority from any
   device.
-- **Recovery still relies on password and mailbox control.** The selected
-  24-hour hold gives the owner time to detect and report an unrequested reset;
-  it does not make a compromised mailbox safe by itself. The old authenticator
-  remains active during the hold, but session sign-in is blocked.
+- **Recovery still relies on password and mailbox control.** The current
+  immediate flow clears the old authenticator and revokes sessions after both
+  proofs succeed, then issues only an enrollment ticket. A caller who controls
+  the password and mailbox can replace the factor without a waiting period;
+  the security notice does not delay that replacement.
 - **3-day grace.** For up to 3 days after first login an account is protected by
   password + emailed code (+ 24 h remembered browser), not TOTP.
 - **Commercial authority is server-asserted**, not cryptographically attested by

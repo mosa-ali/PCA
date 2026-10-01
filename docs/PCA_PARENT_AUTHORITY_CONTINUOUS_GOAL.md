@@ -3,7 +3,7 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed after Quality Gates run 36824039318 at ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc. The published Parent removal-decision guard and enrollment recovery contract source also passed all 27 jobs at f1b0a7d2. Local owner-UAT schema matches repository migration 0061, synthetic Parent/Platform browser logins passed, and the retained Parent identity projection agrees with the Platform Parent Email lookup. Work continues on Parent TODO-12/14/15/20 under the recorded owner and external gates.
+checkpoint was refreshed after Quality Gates run 36827409031 at ledger head 50b4287ff5f84a09034ad145cbf748ec9298bd68. The published Parent removal-decision guard and enrollment recovery contract source also passed all 27 jobs at f1b0a7d2. Local owner-UAT schema matches repository migration 0061, synthetic Parent/Platform browser logins passed, and the retained Parent identity projection agrees with the Platform Parent Email lookup. DEC-037's active recovery-tradeoff wording is being aligned to the owner's immediate-recovery policy. Work continues on Parent TODO-12/14/15/20 under the recorded owner and external gates.
 
 ## Current checkpoint
 
@@ -15,9 +15,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = Parent ledger checkpoint fa4f2092dfc455d1505d098ee39c72a2ecd376cc is on origin/pca-dev; local and origin were equal after fetch. Quality Gates run 36824039318 completed SUCCESS 27/27.
-CURRENT_LOCAL_CHECKPOINT_SHA = fa4f2092dfc455d1505d098ee39c72a2ecd376cc plus the current local projection evidence update awaiting publication.
-LAST_EXACT_HEAD_CI = Quality Gates run 36824039318 at fa4f2092dfc455d1505d098ee39c72a2ecd376cc completed SUCCESS 27/27, including real-backend browser E2E, full disposable MySQL, iOS and Android certification.
+LAST_VERIFIED_REMOTE_SHA = Parent ledger checkpoint 50b4287ff5f84a09034ad145cbf748ec9298bd68 is on origin/pca-dev; local and origin were equal after fetch. Quality Gates run 36827409031 completed SUCCESS 27/27.
+CURRENT_LOCAL_CHECKPOINT_SHA = 50b4287ff5f84a09034ad145cbf748ec9298bd68 plus the current DEC-037 policy-doc correction awaiting publication.
+LAST_EXACT_HEAD_CI = Quality Gates run 36827409031 at 50b4287ff5f84a09034ad145cbf748ec9298bd68 completed SUCCESS 27/27, including real-backend browser E2E, full disposable MySQL, iOS and Android certification.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository and local owner-UAT head 0061; live pca_pro was last verified at 0059. This local-only checkpoint made no live SQL query or mutation.)
@@ -1488,3 +1488,8 @@ GATES = Repository/disposable/local owner-UAT schema is at 0061; live pca_pro re
 LOCAL_PARENT_PROJECTION = Production MySQL Parent identity repository selected the explicit verified Parent for the retained local 0061 family. Current-key email decryption and exact DTO mapping yielded only first name, last name, email, and nullable phone; the synthetic email matched and phone was NULL. This was a read-only repository/mapper check with no identity values or keys printed.
 PLATFORM_LOOKUP = Production Parent Email resolver linked one family and classified the synthetic account `ACCOUNT_FOUND_BUT_NOT_ELIGIBLE / ALREADY_ENTITLED`. A fresh authenticated Platform Chromium session displayed the matching already-entitled status in Enrollment Management > Entitlements. This strengthens existing TODO-16 and PLATFORM-02 PASS evidence, but does not activate the held Enrollment Name/Email/Phone directory package.
 CI_AND_GATES = Ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc passed exact-head Quality Gates run 36824039318 27/27. Parent TODO-12/14/15/20, owner TODO-18 literal `LOCALHOST ACCEPTED`, live pca_pro reconciliation, first-device root/crypto, and deployment/production gates remain open. Platform remains HOLD_PARENT_DEPENDENCY; no live DB mutation or Enrollment activation occurred. This projection-evidence update awaits publication.
+
+### 2026-10-01 07:07 UTC — DEC-037 immediate-recovery summary aligned
+
+POLICY = The accepted DEC-037 decision had a current security-tradeoff bullet that still credited the retired 24-hour recovery hold, despite its explicit 2026-10-01 owner amendment and historical-section label. The bullet now states the immediate reset's actual consequence: password plus mailbox proof clears the old authenticator and sessions, issues an enrollment-only ticket, and has no delay. No auth source or runtime policy changed; the historical hold narrative remains marked superseded.
+CI_AND_GATES = Published ledger head 50b4287ff5f84a09034ad145cbf748ec9298bd68 passed exact-head Quality Gates run 36827409031 27/27. Parent TODO-12/14/15/20, owner TODO-18 literal `LOCALHOST ACCEPTED`, live pca_pro, first-device security and Platform activation gates remain open. This documentation correction awaits publication.

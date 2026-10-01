@@ -5,10 +5,10 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 06:45 UTC (ledger head fa4f2092 passed exact-head Quality Gates 27/27; retained local Parent projection and Platform lookup verified)
+LAST_UPDATED_UTC = 2026-10-01 07:07 UTC (ledger head 50b4287f passed exact-head Quality Gates 27/27; dependent hold unchanged)
 VALIDATED_PARENT_SOURCE_HEAD = Parent authority/enrollment source at f1b0a7d29c6c402875de0cb71551ca2931cc9d28; Quality Gates run 36820461082 passed 27/27, including real-backend Parent and Platform browser jobs.
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = f1b0a7d29c6c402875de0cb71551ca2931cc9d28 is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36820461082 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = fa4f2092dfc455d1505d098ee39c72a2ecd376cc is the latest published, CI-tested ledger head (Quality Gates run 36824039318 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current local projection evidence update awaits publication.
+CURRENT_CHECKPOINT_SHA = 50b4287ff5f84a09034ad145cbf748ec9298bd68 is the latest published, CI-tested ledger head (Quality Gates run 36827409031 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current Parent policy-doc correction awaits publication.
 LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 source CI. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
@@ -1208,3 +1208,8 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15/20 and Pl
 LOCAL_PROJECTION = The production MySQL Parent identity repository resolved the explicit verified synthetic Parent in the retained 0061 family. The DTO contained exactly First Name, Last Name, Email and nullable Phone; email matched the synthetic account and phone was NULL. Decryption used the current local development identity key; no repair write or PII output occurred. The server-side Parent Email resolver returned one linked family with `ALREADY_ENTITLED`, and authenticated Platform Chromium rendered the same status in Enrollment Management > Entitlements.
 STATUS = PLATFORM-02 remains PASS with stronger local data/UI evidence. PLATFORM-03/04/05 and their Enrollment-specific tests remain held; this read did not add the Name/Email/Phone directory columns or activate Enrollment. Published ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc passed exact-head Quality Gates run 36824039318 27/27.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains while Parent TODO-12/14/15/20 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. Live pca_pro was last verified at 0059; no live DB mutation, Enrollment activation, Azure deployment or production acceptance occurred.
+
+### 2026-10-01 07:07 UTC — Parent recovery policy documentation aligned
+
+PARENT_CI = Ledger head 50b4287ff5f84a09034ad145cbf748ec9298bd68 passed exact-head Quality Gates run 36827409031 27/27. Parent DEC-037's active security-tradeoff prose is being corrected to describe the already implemented immediate MFA recovery; no Platform source, Parent runtime policy or database schema changed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15/20 and literal TODO-18 `LOCALHOST ACCEPTED` remain open; live pca_pro is last verified at 0059. No Enrollment activation, live mutation, deployment or production acceptance occurred.
