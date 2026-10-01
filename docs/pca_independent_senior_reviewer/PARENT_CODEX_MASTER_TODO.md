@@ -1573,3 +1573,9 @@ GATES = Publish this correction and require exact-head CI. TODO-17/19 stay IN_PR
 CI = Exact-head run 36806878236 at 8ab308c6dfa2753255acb4a950e1de9a18ffe770 failed only in Parent real-backend E2E; POST email remained empty on the direct-ref version. All other jobs passed.
 PROBE = ForgotPassword now reads the named email control from the submitted form. Browser E2E captures only pre-submit input length, name, form association/containment, and FormData email length, plus prior safe request diagnostics. Local typecheck and disposable browser pass MFA 3/3 plus optional setup 1/1, zero skips; owned schema removed.
 GATES = Publish the probe and inspect a fresh exact-head CI run before any policy completion claim.
+
+### 2026-10-01 — Uncontrolled forgot-password input follow-up
+
+CI = Exact-head Quality Gates run 36808069045 at 6de7e93d1a95fca8d7ee8a527da8cdba613fffa9 failed only in real-backend Parent browser E2E. The reset input was already empty before submit (`inputValueLength=0`), although it remained associated with the form; FormData also had length 0. All other jobs passed.
+FIX = The email control is now uncontrolled, and E2E asserts the input and FormData retain the fixture length immediately before submission. Local Parent Web typecheck and disposable browser suite pass (Parent MFA 3/3 plus optional setup 1/1, zero skips); the run-owned schema was removed.
+NEXT = Publish this scoped correction and ledger update, then inspect exact-head Quality Gates. TODO-17/19 remain IN_PROGRESS. No live/owner-UAT DB, Platform, Trust Set/device authority, Azure, deployment, production change, or owner acceptance occurred.

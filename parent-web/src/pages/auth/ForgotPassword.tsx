@@ -83,8 +83,6 @@ export default function ForgotPassword() {
             autoComplete="email"
             required
             aria-describedby={error ? 'forgot-password-error' : undefined}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 

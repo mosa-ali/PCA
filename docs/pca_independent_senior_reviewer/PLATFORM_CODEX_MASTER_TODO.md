@@ -1152,3 +1152,9 @@ PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection
 PARENT_CI = Quality Gates run 36802924706 at cf74bb2dcd1c95044db5cdf458fc146166d41d9f completed FAILURE only in Parent real-backend E2E; all other jobs passed. The forgot-password input displayed the fixture address, but the observed POST email differed.
 PARENT_NEXT = Privacy-safe request-shape diagnostics are local: email type, character count, exact/normalized fixture comparisons, and safe API error code only. Local disposable wrapper passes; diagnostic publication and exact-head rerun remain pending.
 PLATFORM_GATE = HOLD_PARENT_DEPENDENCY unchanged. No Platform source, projection, Enrollment, live DB, owner acceptance, Azure, or deployment work occurred.
+
+### 2026-10-01 — Uncontrolled forgot-password input follow-up
+
+CI = Exact-head Quality Gates run 36808069045 at 6de7e93d1a95fca8d7ee8a527da8cdba613fffa9 failed only in real-backend Parent browser E2E. The reset input was already empty before submit (`inputValueLength=0`), although it remained associated with the form; FormData also had length 0. All other jobs passed.
+FIX = The email control is now uncontrolled, and E2E asserts the input and FormData retain the fixture length immediately before submission. Local Parent Web typecheck and disposable browser suite pass (Parent MFA 3/3 plus optional setup 1/1, zero skips); the run-owned schema was removed.
+NEXT = Publish this scoped correction and ledger update, then inspect exact-head Quality Gates. TODO-17/19 remain IN_PROGRESS. No live/owner-UAT DB, Platform, Trust Set/device authority, Azure, deployment, production change, or owner acceptance occurred.

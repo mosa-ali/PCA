@@ -276,6 +276,8 @@ test('real browser: five wrong passwords lock sign-in, Forgot password stays ava
       formDataEmailLength: typeof formDataEmail === 'string' ? formDataEmail.length : null,
     };
   });
+  expect(preSubmitEmailDiagnostic.inputValueLength, 'the reset address remains in the input until submit').toBe(LOCK_EMAIL.length);
+  expect(preSubmitEmailDiagnostic.formDataEmailLength, 'the submitted form includes the reset address').toBe(LOCK_EMAIL.length);
   const resetRequest = page.waitForResponse((response) => response.url().endsWith('/api/parent/request-password-reset'));
   await page.getByRole('button', { name: /send reset code/i }).click();
   const resetResponse = await resetRequest;
