@@ -3,7 +3,7 @@
 This is the live mission history. The canonical TODO-01…TODO-23 status board is
 maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
 continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint was refreshed after Quality Gates run 36815327871 at a2045c2bb5111e9602ee0d593ea2fd7e08ae135e. The published Parent authority, iOS enrollment and schema-snapshot source passed all 27 jobs. Work now continues on Parent TODO-12/14/15/20 under the recorded owner and external gates.
+checkpoint was refreshed after Quality Gates run 36820461082 at f1b0a7d29c6c402875de0cb71551ca2931cc9d28. The published Parent removal-decision guard and enrollment recovery contract source passed all 27 jobs. Work now continues on Parent TODO-12/14/15/20 under the recorded owner and external gates.
 
 ## Current checkpoint
 
@@ -15,9 +15,9 @@ MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex ha
 
 BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = Parent source checkpoint a2045c2bb5111e9602ee0d593ea2fd7e08ae135e is on origin/pca-dev; local and origin were equal after fetch. Quality Gates run 36815327871 completed SUCCESS 27/27.
-CURRENT_LOCAL_CHECKPOINT_SHA = a2045c2bb5111e9602ee0d593ea2fd7e08ae135e plus local removal-decision POST membership, enrollment-contract test, and mission-ledger edits.
-LAST_EXACT_HEAD_CI = Quality Gates run 36815327871 at a2045c2bb5111e9602ee0d593ea2fd7e08ae135e completed SUCCESS 27/27, including real-backend browser E2E, full disposable MySQL, iOS and Android certification.
+LAST_VERIFIED_REMOTE_SHA = Parent source checkpoint f1b0a7d29c6c402875de0cb71551ca2931cc9d28 is on origin/pca-dev; local and origin were equal after fetch. Quality Gates run 36820461082 completed SUCCESS 27/27.
+CURRENT_LOCAL_CHECKPOINT_SHA = f1b0a7d29c6c402875de0cb71551ca2931cc9d28 plus the current CI-result ledger update awaiting publication.
+LAST_EXACT_HEAD_CI = Quality Gates run 36820461082 at f1b0a7d29c6c402875de0cb71551ca2931cc9d28 completed SUCCESS 27/27, including real-backend browser E2E, full disposable MySQL, iOS and Android certification.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)
@@ -25,7 +25,7 @@ PARENT_FORMAL_STATUS = IN_PROGRESS (15 PASS / 4 IN_PROGRESS: TODO-12/14/15/20 / 
 PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
 LOCALHOST_UAT_STATUS = Literal owner LOCALHOST ACCEPTED remains NOT GIVEN. The official real-browser/DB harness created and removed random disposable schemas through the configured local MySQL endpoint; the owner-UAT schema was not mutated. Local technical test evidence is not human acceptance.
 AZURE_STATUS = HOLD
-CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios with seven gated/optional; TODO-15 device lifecycle/security; TODO-20 live repo/schema/grant reconciliation; owner-gated TODO-18; TODO-21/22/23 pending. TODO-17/19 passed at published CI-tested head a2045c2b; the next implementation checkpoint remains local.
+CURRENT_ACTIVE_TODOS = TODO-12 first-device Trust Set root protocol and encrypted audit/policy dependencies; TODO-14 has 45/52 database-integrated declarations across 137 scenarios with seven gated/optional; TODO-15 device lifecycle/security; TODO-20 live repo/schema/grant reconciliation; owner-gated TODO-18; TODO-21/22/23 pending. TODO-17/19 passed at published CI-tested source head f1b0a7d2.
 CURRENT_ENGINEERING_CRITICAL_PATH = The registry-backed child-profile membership dependency is implemented in `59bfc331` and covered by exact-head Quality Gates run 36763771064. TODO-15 source/device-security review found no safe activation change. The next Trust Set/device step depends on an owner/security-approved first-device root and crypto/key-custody protocol: epoch-1 acceptance needs a durable genesis anchor, while PCA-DEC-037 provisioning intentionally creates no device/genesis-anchor/authority-chain rows (`backend/test/db/parentAccount.mysql.test.mjs:337-339`). Do not infer a signer/root from Parent account or TOTP. TODO-14 has 45/52 database-integrated routes; the seven remaining dispositions are schedule-policy Trust Set, Web Rules service/storage, signed/recovery decision crypto, and optional dashboard. No gate may be activated to inflate coverage.
 CURRENT_OWNER_GATES = Owner/security protocol for first-device Trust Set root in newly TOTP-provisioned families (required before ingestion/device activation); TODO-18 literal `LOCALHOST ACCEPTED` after local MySQL/UAT health is restored; TODO-21/22 deployment + production acceptance; release authorization
 CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
@@ -1464,3 +1464,8 @@ PUBLISHED_SOURCE = `a2045c2bb5111e9602ee0d593ea2fd7e08ae135e` is fetch-confirmed
 CURRENT_LOCAL_SOURCE = Signed and authorized-recovery removal-decision POSTs require current active Parent membership before decision parsing. Four focused revoked/lookup-failure cases fail closed; valid active cases still encounter the intentionally unavailable signing/recovery gate. The lost-response MySQL test now proves the attempt-scoped recovery response stays `PAIRING_PENDING` after pairing or revocation, while Parent-scoped status shows the current device lifecycle and device session remains inactive.
 LOCAL_VALIDATION = Backend build PASS; focused removal-decision wiring 22/22 PASS; guarded disposable MySQL authority diagnostics applied 59 migrations and passed 62/62, zero skips, then removed its run-owned schema. Current edits remain unpublished and lack exact-head CI.
 GATES = TODO-12/14/15/20 remain IN_PROGRESS; TODO-14 is 45/52 and NOT_YET_PROVEN. Child-readable live pre-activation status needs a separately approved proof protocol; historical recovery token must not become standing device authority. Repository/local disposable is 0061, owner-UAT last verified 0060, and live pca_pro last verified 0059 with TCP/3306 unavailable. Platform remains HOLD_PARENT_DEPENDENCY; literal `LOCALHOST ACCEPTED`, owner/security and deployment gates remain open. No live DB/owner-UAT mutation or production change occurred.
+
+### 2026-10-01 05:42 UTC — Parent authority and enrollment contract exact-head certification
+
+SOURCE = `f1b0a7d29c6c402875de0cb71551ca2931cc9d28` is pushed and fetch-confirmed equal to origin/pca-dev. Quality Gates run `36820461082` completed SUCCESS 27/27, including full disposable MySQL, real-backend browser E2E, backend unit, iOS, Android, security, web, and release-control jobs.
+STATUS = TODO-17/19 PASS at this source checkpoint; board remains 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 owner or release gated (18,21,22,23). TODO-14 remains 45/52 and NOT_YET_PROVEN, signed/recovery crypto remains gated, and TODO-15 first-device root/key custody remains open. Repository/disposable schema is 0061; owner-UAT last verified 0060 and live pca_pro 0059. TCP/3306 remains unreachable on a read-only probe; no live database or owner-UAT mutation, Platform activation, Azure deployment, production acceptance or literal `LOCALHOST ACCEPTED` occurred.
