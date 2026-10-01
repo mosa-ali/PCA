@@ -5,13 +5,13 @@
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-01 06:15 UTC (published ledger head 83e13dbc passed exact-head Quality Gates 27/27; authenticated local Parent/Platform browser checks passed)
+LAST_UPDATED_UTC = 2026-10-01 06:45 UTC (published ledger head fa4f2092 passed exact-head Quality Gates 27/27; retained local Parent identity projection and Platform lookup verified)
 WAVE_BASE_SHA = `59bfc331` Parent membership/authorizer implementation checkpoint, derived from the accepted `a8c37162` handover; published and validated by exact-head run `36648259414` at `785323d2`.
 LAST_GREEN_REMOTE_SHA = `f1b0a7d29c6c402875de0cb71551ca2931cc9d28` (Quality Gates run `36820461082` SUCCESS, 27/27)
 CURRENT_WAVE_STATUS = Published Parent active-membership checks on signed/recovery removal-decision POSTs and the historical-bootstrap-versus-live-device-lifecycle regression passed exact-head CI. Owner-UAT local MySQL now matches repository migration 0061 with preserved application rows. No live pca_pro SQL, Platform activation, Trust Set authority, deployment, or owner acceptance occurred.
 WAVE_CONTENT_SHA = `59bfc331` Parent source checkpoint, published and included in exact-head run `36648259414` at `785323d2`.
-EXACT_HEAD_CI_SHA = Run 36823080788 at ledger head 83e13dbc2a1bdafc4406ec76725635f4b9dece09 completed SUCCESS 27/27, including full disposable MySQL, real-backend browser E2E, Android/iOS, web, security, and release-control jobs. Source f1b0a7d2 independently passed 27/27.
-LOCAL_STATE = Ledger head 83e13dbc2a1bdafc4406ec76725635f4b9dece09 is pushed, fetch-confirmed equal with origin/pca-dev, and passed Quality Gates run 36823080788 27/27. Current authenticated local-UAT evidence update awaits publication. .vscode/ and root 0 remain untracked, unrelated, and excluded.
+EXACT_HEAD_CI_SHA = Run 36824039318 at ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc completed SUCCESS 27/27, including full disposable MySQL, real-backend browser E2E, Android/iOS, web, security, and release-control jobs. Source f1b0a7d2 independently passed 27/27.
+LOCAL_STATE = Ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc is pushed, fetch-confirmed equal with origin/pca-dev, and passed Quality Gates run 36824039318 27/27. Current local projection evidence update awaits publication. .vscode/ and root 0 remain untracked, unrelated, and excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12 first-device Trust Set root/bootstrap gated; TODO-14 remains 45/52 integrated with seven gated/optional; TODO-15 device security; TODO-20 live schema/grants; owner-gated TODO-18 remains open. TODO-17 and TODO-19 are PASS at source SHA f1b0a7d2. Board totals 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO (18,21,22,23); Platform remains HOLD_PARENT_DEPENDENCY.
 NEXT_ACTION = Continue TODO-12/14/15/20 within their security and live-DB prerequisites. Keep first-device Trust Set root, literal LOCALHOST ACCEPTED, Platform Enrollment, and release gates explicit.
@@ -596,8 +596,8 @@ WAVE4_VERIFIED_LIFECYCLE_FACTS = (read-only at 89570c6d; Agents 3/4 + Agent 7 C5
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Parent identity API/UI/migrations; Platform family read model, route/UI, tests  
-EVIDENCE = Unicode-friendly nullable legacy names and optional phone; family-scoped four-field projection (first/last/email/nullable phone); prior Parent identity UI 15/15, backend identity/projection route tests 11/11 and disposable MySQL projection 61/61 (two-family isolation, zero-admin fail-closed, nullable phone, provisioning precedence). Projection and UI source are verified at the checkpoint remote.  
-BLOCKER = Current MySQL rerun awaits Docker; dependent Platform Enrollment-specific work is separately held in the Platform ledger.  
+EVIDENCE = Unicode-friendly nullable legacy names and optional phone; family-scoped four-field projection (first/last/email/nullable phone); prior Parent identity UI 15/15, backend identity/projection route tests 11/11 and disposable MySQL projection 61/61 (two-family isolation, zero-admin fail-closed, nullable phone, provisioning precedence). Retained owner-UAT MySQL 0061 read-only projection resolves the explicit verified Parent with first/last names, current-key encrypted display email, and NULL phone; DTO keys are exactly the four approved fields. The server-side Parent Email resolver links one family and reports ALREADY_ENTITLED, matching the Platform Entitlements UI.
+BLOCKER = None for the existing Parent projection; dependent Platform Enrollment Name/Email/Phone work is separately held in the Platform ledger.
 DONE_WHEN = Parent identity persistence and minimal family-scoped Platform projection are implemented and evidence gates recorded  
 First Name required = PASS  
 Last Name required = PASS  
@@ -611,7 +611,7 @@ extra PII/commercial fields = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Backend, Parent Web, Platform Web, disposable MySQL and real-browser suites  
-EVIDENCE = Quality Gates run 36811707041 at published ledger head 826ef5b3588064a58375d2fb299bfc1e31970eab passed 27/27 jobs, including full disposable-MySQL certification, real-backend Parent and Platform browser E2E, Android/iOS, Parent/Platform web, backend, contracts, security, and release controls. The corrected Parent reset browser test waits for the route-specific field; local Parent Web typecheck and disposable browser 4/4 passed with zero skips, and its run-owned schema was removed. Earlier empty-POST failures are superseded by this exact-head result.
+EVIDENCE = Quality Gates run 36824039318 at published ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc passed 27/27 jobs, including full disposable-MySQL certification, real-backend Parent and Platform browser E2E, Android/iOS, Parent/Platform web, backend, contracts, security, and release controls. Earlier Parent reset browser failures are superseded by the route-specific field correction and subsequent green exact-head runs. Local owner-UAT schema 0061 and authenticated synthetic Parent/Platform browsers were separately verified; human acceptance remains distinct.
 BLOCKER = None for this certified regression checkpoint. Later source changes require their own validation; owner, Trust Set/device, live-DB, Platform activation, and release gates remain separate.
 DONE_WHEN = integrated regression is green and remaining external device/owner gates are accurately separated
 
@@ -629,14 +629,14 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 STATUS = PASS
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Recovery-policy source, focused browser correction, and three-ledger result checkpoint are published through 826ef5b3588064a58375d2fb299bfc1e31970eab. Post-push fetch verified local HEAD = origin/pca-dev; zero unpushed commits and zero dirty tracked Parent files remained. Quality Gates run 36811707041 passed 27/27 at that exact SHA. Unrelated .vscode/ and root 0 remain untracked and excluded.
+EVIDENCE = Parent authority/enrollment source and three-ledger checkpoints are published through fa4f2092dfc455d1505d098ee39c72a2ecd376cc. Post-push fetch verified local HEAD = origin/pca-dev; zero unpushed commits and zero dirty tracked Parent files remained. Quality Gates run 36824039318 passed 27/27 at that exact SHA. Unrelated .vscode/ and root 0 remain untracked and excluded.
 BLOCKER = None for this published checkpoint. New mission changes require a fresh scoped commit, fetch-back check, and exact-head CI.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
 LOCAL_HEAD = Post-sync local HEAD was verified equal to origin/pca-dev by a fresh fetch after the ledger commit.
 REMOTE_HEAD = Post-sync origin/pca-dev matched local HEAD after fresh fetch; see Git history for the ledger-sync SHA.
 PARENT_LOCAL_ONLY_FILES_REMAINING = 0 tracked mission files; .vscode/ and root 0 remain excluded.
 PARENT_UNPUSHED_COMMITS_REMAINING = 0
-EXACT_HEAD_CI = Run 36811707041 SUCCESS 27/27 at 826ef5b3588064a58375d2fb299bfc1e31970eab.
+EXACT_HEAD_CI = Run 36824039318 SUCCESS 27/27 at fa4f2092dfc455d1505d098ee39c72a2ecd376cc.
 
 CURRENT_REENTRY_CHECK = 2026-09-30: exact-head Quality Gates run `36657492055` passed 27/27 at SHA `965479051b547cb659946c0c4a6fb8f237a5883c`. Full disposable-MySQL certification, real-backend browser E2E, Android, iOS, backend, Parent/Platform, release-control and security jobs passed. Parent production-preview browser suite passed 101/101 with demo fixtures; Platform production-preview suite passed 21/21 with HTTP mocks. Backend and DB health returned 200; both web apps were restored to real-backend local development mode. Use `127.0.0.1` because `localhost` reaches an unrelated IPv6 listener. Fresh read-only TODO-20 preflight resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178` but TCP/3306 returned False; no live read or mutation occurred. TODO-20 and owner TODO-18 remain open.
 
@@ -1634,3 +1634,9 @@ GATES = TODO-20 remains IN_PROGRESS because live pca_pro was last verified at 00
 PUBLISHED_CI = Ledger checkpoint `83e13dbc2a1bdafc4406ec76725635f4b9dece09` was pushed and fetch-confirmed equal with origin/pca-dev. Exact-head Quality Gates run `36823080788` completed SUCCESS 27/27, including full disposable MySQL, real-backend browser E2E, iOS, Android, security, web and release-control jobs.
 LOCAL_AUTHENTICATED_UAT = A fresh Chromium session signed in as the retained synthetic Parent through password and unknown-browser email OTP, reached `/dashboard`, and received 200 from the Parent session API. A separate Chromium session signed in as the synthetic Platform Owner through password and fresh TOTP, reached `/dashboard`, and displayed the App Owner role from the account menu. Both used the retained local 0061 database; no credentials, OTPs or TOTP secret were added to tracked files. The local handoff records the technical result.
 STATUS = Parent board remains 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 owner or release gated (18,21,22,23). TODO-20 repository and local owner-UAT match through 0061; live pca_pro remains last verified at 0059 with TCP/3306 unreachable. TODO-14 remains 45/52 and NOT_YET_PROVEN; first-device Trust Set, crypto and Platform projection gates remain. Literal owner `LOCALHOST ACCEPTED` was not supplied, so TODO-18 and Platform HOLD_PARENT_DEPENDENCY are unchanged. No live DB mutation, Platform Enrollment activation, Azure deployment or production acceptance occurred.
+
+### 2026-10-01 06:45 UTC — Parent projection confirmed against retained local family
+
+LOCAL_READ = The production MySQL Parent identity repository selected the explicit verified Parent for the retained local 0061 family. Authenticated decryption used the current local development identity key; the DTO whitelist was exactly first name, last name, email, nullable phone. Names were present, email matched the synthetic account, and phone was NULL. No identity value, key, or ciphertext was printed, and the projection read performed no repair write.
+PLATFORM_READ = The production Parent Email resolver found one linked family for the synthetic Parent and classified it `ACCOUNT_FOUND_BUT_NOT_ELIGIBLE / ALREADY_ENTITLED`. A fresh Platform Owner Chromium session displayed the same already-entitled status in Enrollment Management > Entitlements. This strengthens existing TODO-16/PLATFORM-02 evidence; it does not implement the held Enrollment Name/Email/Phone columns.
+CI_AND_GATES = Published ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc passed exact-head Quality Gates run 36824039318 27/27. Parent remains 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 owner or release gated (18,21,22,23). Live pca_pro is last verified at 0059, literal `LOCALHOST ACCEPTED` is absent, and Platform stays HOLD_PARENT_DEPENDENCY. No live DB mutation, Enrollment activation, deployment, or production acceptance occurred.

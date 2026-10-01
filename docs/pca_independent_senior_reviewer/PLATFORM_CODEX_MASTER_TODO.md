@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 06:15 UTC (ledger head 83e13dbc passed exact-head Quality Gates 27/27; authenticated local Parent/Platform browser checks passed)
-VALIDATED_PARENT_SOURCE_HEAD = Parent recovery/password-lock policy and route-specific browser correction at 7f669b05bd444854cb6f745d27838708a55c832c; Quality Gates run 36810048862 passed 27/27, including real-backend Parent and Platform browser jobs.
+LAST_UPDATED_UTC = 2026-10-01 06:45 UTC (ledger head fa4f2092 passed exact-head Quality Gates 27/27; retained local Parent projection and Platform lookup verified)
+VALIDATED_PARENT_SOURCE_HEAD = Parent authority/enrollment source at f1b0a7d29c6c402875de0cb71551ca2931cc9d28; Quality Gates run 36820461082 passed 27/27, including real-backend Parent and Platform browser jobs.
 VERIFIED_PARENT_SOURCE_REMOTE_HEAD = f1b0a7d29c6c402875de0cb71551ca2931cc9d28 is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36820461082 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = 83e13dbc2a1bdafc4406ec76725635f4b9dece09 is the latest published, CI-tested ledger head (Quality Gates run 36823080788 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current authenticated local-UAT result update awaits publication.
+CURRENT_CHECKPOINT_SHA = fa4f2092dfc455d1505d098ee39c72a2ecd376cc is the latest published, CI-tested ledger head (Quality Gates run 36824039318 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current local projection evidence update awaits publication.
 LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 source CI. No Platform product scope changed; dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while Parent TODO-12/14/15/20 and owner acceptance remain open. Dependent Enrollment activation awaits Parent projection, TODO-18, and literal LOCALHOST ACCEPTED. Repository and owner-UAT local schema are 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while Parent TODO-12/14/15/20 and owner acceptance remain open. The Parent family projection itself is PASS; dependent Enrollment Name/Email/nullable Phone activation awaits the Parent and literal TODO-18 `LOCALHOST ACCEPTED` gates. Repository and owner-UAT local schema are 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -403,7 +403,7 @@ DONE_WHEN = latest Parent-complete remote state safely reconciled
 STATUS = PASS  
 OWNER = Coordinator; Platform specialist integration remains held  
 FILES = `backend/src/platformadmin/readmodels/ParentIdentityReadModel.ts`, `backend/src/http/routes/platformadmin/accountsRoutes.ts`, `platform-admin-web/src/pages/accounts/AccountDetail.tsx`  
-EVIDENCE = Existing Platform Account Detail calls the Parent-owned family-scoped projection; exact whitelist is First Name, Last Name, Email, nullable Phone. Prior backend projection/route 11/11 and MySQL 61/61 evidence is recorded in the Parent ledger; exact source is verified at the current remote head.  
+EVIDENCE = Existing Platform Account Detail calls the Parent-owned family-scoped projection; exact whitelist is First Name, Last Name, Email, nullable Phone. Prior backend projection/route 11/11 and MySQL 61/61 evidence is recorded in the Parent ledger. A read-only retained local 0061 family probe selected the explicit verified Parent, opened current-key encrypted email, and produced exactly the approved four-field DTO with NULL phone. The Parent Email resolver found one already-entitled family, and the Platform Entitlements UI rendered that status in a fresh authenticated Chromium session.
 BLOCKER = Enrollment-specific integration is separately held by the Parent gate.  
 DONE_WHEN = Platform consumes Parent-owned family projection without duplicating identity logic
 
@@ -1202,3 +1202,9 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Live pca_pro is last verified 
 PARENT_CI = Ledger head `83e13dbc2a1bdafc4406ec76725635f4b9dece09` is pushed, fetch-confirmed equal with origin/pca-dev, and passed exact-head Quality Gates run `36823080788` 27/27. The underlying Parent source head f1b0a7d2 also passed 27/27.
 LOCAL_AUTHENTICATED_UAT = After local owner-UAT schema 0061 postflight, fresh Chromium sessions signed in to Parent with password plus unknown-browser email OTP and to Platform with password plus fresh TOTP. Parent dashboard and session API 200 were observed; Platform dashboard and App Owner account-menu role were observed. This is technical real-browser evidence using synthetic local accounts, not literal owner acceptance.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15/20 and Platform projection acceptance, TODO-18 literal `LOCALHOST ACCEPTED`, and deployment/production gates remain open. Live pca_pro is last verified at 0059; no live DB mutation or Enrollment activation occurred.
+
+### 2026-10-01 06:45 UTC — Retained local Parent projection and Platform lookup
+
+LOCAL_PROJECTION = The production MySQL Parent identity repository resolved the explicit verified synthetic Parent in the retained 0061 family. The DTO contained exactly First Name, Last Name, Email and nullable Phone; email matched the synthetic account and phone was NULL. Decryption used the current local development identity key; no repair write or PII output occurred. The server-side Parent Email resolver returned one linked family with `ALREADY_ENTITLED`, and authenticated Platform Chromium rendered the same status in Enrollment Management > Entitlements.
+STATUS = PLATFORM-02 remains PASS with stronger local data/UI evidence. PLATFORM-03/04/05 and their Enrollment-specific tests remain held; this read did not add the Name/Email/Phone directory columns or activate Enrollment. Published ledger head fa4f2092dfc455d1505d098ee39c72a2ecd376cc passed exact-head Quality Gates run 36824039318 27/27.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains while Parent TODO-12/14/15/20 and literal TODO-18 `LOCALHOST ACCEPTED` remain open. Live pca_pro was last verified at 0059; no live DB mutation, Enrollment activation, Azure deployment or production acceptance occurred.
