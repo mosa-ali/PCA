@@ -17,7 +17,7 @@ BRANCH = pca-dev
 REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
 LAST_VERIFIED_REMOTE_SHA = Source/test checkpoint a8f08abcde68bc7ef11c0f6df910b8872cfde191 is present on origin/pca-dev; the subsequent ledger sync was pushed and fresh fetch confirmed local/origin equality. Exact-head CI lookup remains blocked by configured proxy at 127.0.0.1:9.
 CURRENT_LOCAL_CHECKPOINT_SHA = a8f08abcde68bc7ef11c0f6df910b8872cfde191
-LAST_EXACT_HEAD_CI = Current a8f08abc exact-head Quality Gates result UNVERIFIED because configured proxy at 127.0.0.1:9 refuses connections; last verified green is run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3, 27/27.
+LAST_EXACT_HEAD_CI = Exact-head Quality Gates for the latest three-ledger sync are UNVERIFIED because configured proxy at 127.0.0.1:9 refuses connections; last verified green is run 36784297610 at 9f6bd581c203dd8d08fcf6f9abc811b93b7c98c3, 27/27.
 CURRENT_REPOSITORY_MIGRATION_HEAD = 0061 (59 migration files; additive Parent password-failure window/count/lock-until fields)
 LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
 CURRENT_REPO_LIVE_PARITY = NO (repository head 0061; owner-UAT was last verified at 0060; live pca_pro was last verified at 0059. This policy checkpoint made no live SQL query or mutation.)

@@ -13,7 +13,7 @@ LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous-goal ledgers record the 
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Parent recovery/password-lock local validation passed; await exact-head CI and ledger sync. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059 with TCP/3306 previously unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY. Parent recovery/password-lock local validation passed; exact-head CI remains unverified for the latest three-ledger sync. Continue Platform only after Parent TODO-01…17, projection, TODO-18, and literal LOCALHOST ACCEPTED gates are satisfied. Repository migration is 0061; live pca_pro remains last verified at 0059 with TCP/3306 previously unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
