@@ -60,7 +60,7 @@
       ]
     },
     "PCA-SEC-022": {
-      "boundedClaim": "The Wave-6B first-device trust-root bootstrap ceremony keeps its owner-eligibility gate, dual-signature verification, ceremony-field binding, one-root-per-family enforcement (a second root attempt is never reported as ACCEPTED), single-transaction atomicity and fail-closed attestation boundary test-enforced (focused temp-copy kill-run: control suite 44/44 pass; mutants B-SEC022-001..006 all behaviorally killed; B-004 targets the reachable second-root-reporting mapping as the store-level duplicate catch is defense-in-depth behind the serializing floors latch). Production activation of the ceremony remains blocked by the fail-closed attestation verifier; device-side attestation-provider verification is not certified.",
+      "boundedClaim": "The Wave-6B-R1 first-device bootstrap closure keeps the ceremony's owner-eligibility gate, dual-signature verification, ceremony-field binding, canonical committed-submission identity (PCA_FIRST_DEVICE_BOOTSTRAP_COMMIT_V1: proofBytes + proofSignature + epoch1Bytes + epoch1Signature + evidence presence/value; a changed proofSignature or evidence is a different identity and can never replay), exact expected/attested DSK binding in the attestation contract (service-side independent equality; no blind echo), one-root-per-family enforcement (a second root attempt is never reported ACCEPTED), single-transaction atomicity, durable audit reconstruction (bootstrap_proof_sha256 + attestation_evidence_sha256; digests only) and the fail-closed attestation boundary test-enforced (focused temp-copy kill-run v3: control suite 58/58 pass; all sixteen mutants B-SEC022-001..016 behaviorally killed, none survived). Production activation of the ceremony remains blocked by the fail-closed attestation verifier; device-side attestation-provider verification is not certified.",
       "tests": [
         "tooling/mutation/run-mutation.mjs"
       ]
@@ -371,8 +371,98 @@
       "requirement": "PCA-SEC-022",
       "surface": "backend",
       "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
-      "from": "    if (attestation.status !== 'VERIFIED') return rejected;\n    if (attestation.evidenceDigest !== evidenceDigest) return rejected;\n    if (proof.attestationEvidenceDigest !== evidenceDigest) return rejected;",
+      "from": "    if (attestation.status !== 'VERIFIED') return rejected;\n    if (attestation.evidenceDigest !== evidenceDigest) return rejected;\n    if (proof.attestationEvidenceDigest !== evidenceDigest) return rejected;\n    if (attestation.attestedDskKeyId !== ceremony.dskKeyId) return rejected;\n    if (attestation.attestedDskPublicKey !== ceremony.dskPublicKey) return rejected;\n    if (attestation.attestedDskAlgorithm !== ceremony.dskAlgorithm) return rejected;",
       "to": "    void attestation;\n    void evidenceDigest;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-007",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapCommit.ts",
+      "from": "    proofBytes,\n    proofSignature,\n    epoch1Bytes,",
+      "to": "    proofBytes,\n    proofSignature.slice(0, 0),\n    epoch1Bytes,",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-008",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "      return ceremony.payloadDigest === payloadDigest ? { status: 'ACCEPTED' } : rejected;",
+      "to": "      return { status: 'ACCEPTED' };",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-009",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "      expectedDskKeyId: ceremony.dskKeyId,",
+      "to": "      expectedDskKeyId: '',",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-010",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    if (attestation.attestedDskKeyId !== ceremony.dskKeyId) return rejected;",
+      "to": "    if (false) return rejected;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-011",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    if (attestation.attestedDskPublicKey !== ceremony.dskPublicKey) return rejected;",
+      "to": "    if (false) return rejected;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-012",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    if (attestation.attestedDskAlgorithm !== ceremony.dskAlgorithm) return rejected;",
+      "to": "    if (false) return rejected;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-013",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapCommit.ts",
+      "from": "    evidence === null ? '0' : '1',",
+      "to": "    '1',",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-014",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/MySqlFirstDeviceBootstrapStore.ts",
+      "from": "          [input.payloadDigest, input.bootstrapProofSha256, input.attestationEvidenceSha256, input.now, input.now, input.ceremonyId],",
+      "to": "          [input.payloadDigest, input.bootstrapProofSha256, null, input.now, input.now, input.ceremonyId],",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-015",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/MySqlFirstDeviceBootstrapStore.ts",
+      "from": "        if (anchorRows.length > 0) return { outcome: 'ALREADY_BOOTSTRAPPED' };",
+      "to": "        if (anchorRows.length > 0) return { outcome: 'ACCEPTED' };",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-016",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/MySqlFirstDeviceBootstrapStore.ts",
+      "from": "        const hook = this.commitHooks?.afterAnchorInsert;\n        if (hook) await hook(conn);",
+      "to": "        const hook = this.commitHooks?.afterAnchorInsert;\n        if (hook) {\n          await conn.commit();\n          await hook(conn);\n        }",
       "expectedClassification": "KILLED"
     }
   ]

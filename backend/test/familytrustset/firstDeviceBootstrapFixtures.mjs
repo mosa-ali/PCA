@@ -88,6 +88,8 @@ export function buildCeremonyRecord(attempt, overrides = {}) {
     approvedByAccountId: randomUUID(),
     approvedAt: stamp(),
     payloadDigest: null,
+    bootstrapProofSha256: null,
+    attestationEvidenceSha256: null,
     outcome: null,
     consumedAt: null,
     createdAt: stamp(),
@@ -243,6 +245,8 @@ export class FakeFirstDeviceBootstrapStore {
         status: 'COMMITTED',
         outcome: 'ACCEPTED',
         payloadDigest: input.payloadDigest,
+        bootstrapProofSha256: input.bootstrapProofSha256,
+        attestationEvidenceSha256: input.attestationEvidenceSha256,
         consumedAt: input.now,
       };
     }
@@ -250,16 +254,44 @@ export class FakeFirstDeviceBootstrapStore {
   }
 }
 
-/** Records every call; returns a scripted verdict. */
+/** Records every call. With no scripted verdict (the default), answers VERIFIED by ECHOING the
+ * expected DSK triple and the null-safe evidence digest -- the exact shape a correct 6C/6D verifier
+ * must produce after independently validating evidence. Scripted verdicts (see verifiedVerdict)
+ * override that behavior; mismatch cases use MismatchedAttestationVerifier. */
 export class ScriptedAttestationVerifier {
-  constructor(verdict = { status: 'VERIFIED', evidenceDigest: null }) {
+  constructor(verdict = null) {
     this.verdict = verdict;
     this.calls = [];
   }
 
   async verifyFirstDeviceAttestation(input) {
     this.calls.push(input);
-    return this.verdict;
+    return this.verdict ?? verifiedVerdict(input);
+  }
+}
+
+/** A correct-shape VERIFIED verdict for the given input, with optional field overrides. */
+export function verifiedVerdict(input, overrides = {}) {
+  return {
+    status: 'VERIFIED',
+    evidenceDigest: input.attestationEvidence === null ? null : sha256Hex(input.attestationEvidence),
+    attestedDskKeyId: input.expectedDskKeyId,
+    attestedDskPublicKey: input.expectedDskPublicKey,
+    attestedDskAlgorithm: input.expectedDskAlgorithm,
+    ...overrides,
+  };
+}
+
+/** Answers VERIFIED but with one or more attested fields deliberately wrong (R1-04/05/06 mismatch tests). */
+export class MismatchedAttestationVerifier {
+  constructor(overrides = {}) {
+    this.overrides = overrides;
+    this.calls = [];
+  }
+
+  async verifyFirstDeviceAttestation(input) {
+    this.calls.push(input);
+    return verifiedVerdict(input, this.overrides);
   }
 }
 

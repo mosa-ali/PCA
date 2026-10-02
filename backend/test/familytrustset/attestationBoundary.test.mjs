@@ -30,6 +30,9 @@ const representativeInput = Object.freeze({
   nonce: 'N'.repeat(43),
   platform: 'ANDROID',
   attestationEvidence: null,
+  expectedDskKeyId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+  expectedDskPublicKey: 'A'.repeat(86),
+  expectedDskAlgorithm: 'ECDSA_P256_SHA256',
   now: new Date('2026-10-02T00:00:00.000Z'),
 });
 

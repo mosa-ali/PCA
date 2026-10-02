@@ -72,7 +72,8 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0059_parent_mfa_ascii_check_literal_charset.sql', CURRENT_TIMESTAMP(3)),
   ('0060_family_trust_set_epoch_persistence.sql', CURRENT_TIMESTAMP(3)),
   ('0061_parent_password_login_lock.sql', CURRENT_TIMESTAMP(3)),
-  ('0062_first_device_trust_root_bootstrap.sql', CURRENT_TIMESTAMP(3));
+  ('0062_first_device_trust_root_bootstrap.sql', CURRENT_TIMESTAMP(3)),
+  ('0063_first_device_bootstrap_audit_digests.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

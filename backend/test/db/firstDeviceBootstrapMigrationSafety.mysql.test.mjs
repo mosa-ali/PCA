@@ -36,6 +36,9 @@ if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
 const MIGRATION_0062_PATH = fileURLToPath(
   new URL('../../migrations/0062_first_device_trust_root_bootstrap.sql', import.meta.url),
 );
+const MIGRATION_0063_PATH = fileURLToPath(
+  new URL('../../migrations/0063_first_device_bootstrap_audit_digests.sql', import.meta.url),
+);
 
 // The EXACT pre-0062 operation list (0055's widening): 0062's list minus the
 // new first-device marker. Restoring this list is how the pre-0062 state is
@@ -62,6 +65,10 @@ const PRE_0062_OPERATIONS = [
 
 async function readMigration0062() {
   return readFile(MIGRATION_0062_PATH, 'utf8');
+}
+
+async function readMigration0063() {
+  return readFile(MIGRATION_0063_PATH, 'utf8');
 }
 
 function openConnection() {
@@ -92,6 +99,45 @@ async function countCeremonyColumns(conn) {
       WHERE table_schema = DATABASE() AND table_name = 'family_first_device_bootstrap_ceremonies'`,
   );
   return Number(rows[0].n);
+}
+
+async function ceremonyCheckNames(conn) {
+  const [rows] = await conn.query(
+    `SELECT constraint_name AS name FROM information_schema.table_constraints
+      WHERE constraint_schema = DATABASE() AND table_name = 'family_first_device_bootstrap_ceremonies'
+        AND constraint_type = 'CHECK'`,
+  );
+  return rows.map((row) => row.name).sort();
+}
+
+const AUDIT_CHECK_NAMES = [
+  'ffdbc_evidence_requires_proof_check',
+  'ffdbc_evidence_sha256_hex_check',
+  'ffdbc_proof_sha256_committed_check',
+  'ffdbc_proof_sha256_hex_check',
+];
+
+/** Simulate "migrated through 0062": drop the 0063 audit checks (probe-then-drop) and their two columns. */
+async function dropToPre0063Shape(conn) {
+  for (const name of AUDIT_CHECK_NAMES) {
+    const [rows] = await conn.query(
+      `SELECT COUNT(*) AS n FROM information_schema.table_constraints
+        WHERE constraint_schema = DATABASE() AND table_name = 'family_first_device_bootstrap_ceremonies'
+          AND constraint_name = ?`,
+      [name],
+    );
+    if (Number(rows[0].n) > 0) {
+      await conn.query(`ALTER TABLE family_first_device_bootstrap_ceremonies DROP CHECK ${name}`);
+    }
+  }
+  const [columnRows] = await conn.query(
+    `SELECT column_name AS name FROM information_schema.columns
+      WHERE table_schema = DATABASE() AND table_name = 'family_first_device_bootstrap_ceremonies'
+        AND column_name IN ('bootstrap_proof_sha256', 'attestation_evidence_sha256')`,
+  );
+  for (const row of columnRows) {
+    await conn.query(`ALTER TABLE family_first_device_bootstrap_ceremonies DROP COLUMN ${row.name}`);
+  }
 }
 
 async function signatureSchemeColumn(conn) {
@@ -274,6 +320,11 @@ test('WAVE 6B MIGRATION_0062_UPGRADE_FROM_0061_SAFETY: applying the real 0062 fi
       [seededFamilyId],
     );
     assert.equal(Number(grantRows[0].n), 1, 'the pre-existing grant must survive the widening');
+
+    // Restore the lane's shared end-state: the FULL post-0063 shape (the ceremony
+    // suite runs next and its store selects the 0063 audit columns).
+    await conn.query(await readMigration0063());
+    assert.equal(await countCeremonyColumns(conn), 20, '0063 must restore the full 20-column shape');
   } finally {
     await conn.end();
   }
@@ -292,7 +343,7 @@ test('WAVE 6B MIGRATION_0062_REPLAY_SAFETY: applying the same migration file con
     await conn.query(await readMigration0062());
 
     assert.equal(await ceremonyTableExists(conn), true);
-    assert.equal(await countCeremonyColumns(conn), 18);
+    assert.equal(await countCeremonyColumns(conn), 20, 'post-0062+0063 shape (the upgrade test left the 0063 digest columns in place)');
     assert.ok((await signatureSchemeColumn(conn)) !== null);
 
     const anchorAfter = await conn.query(
@@ -328,6 +379,15 @@ test('WAVE 6B MIGRATION_0062_REPLAY_SAFETY: applying the same migration file con
       [before.familyId],
     );
     assert.equal(Number(widened[0].n), 1);
+
+    // Replay the 0063 audit migration too (no-op) and keep the full shape.
+    await conn.query(await readMigration0063());
+    await conn.query(await readMigration0063());
+    assert.equal(await countCeremonyColumns(conn), 20);
+    assert.equal(
+      (await ceremonyCheckNames(conn)).filter((name) => AUDIT_CHECK_NAMES.includes(name)).length,
+      AUDIT_CHECK_NAMES.length,
+    );
   } finally {
     await conn.end();
   }
@@ -364,6 +424,106 @@ test('WAVE 6B MIGRATION_0062_CONSTRAINT_BACKSTOP: the ceremony table rejects eve
       );
       assert.equal(Number(residue[0].n), 0, `${label}: a rejected probe may not leave a row behind`);
     }
+  } finally {
+    await conn.end();
+  }
+});
+
+test('WAVE 6B-R1 MIGRATION_0063_AUDIT_DIGESTS: upgrade from the pre-0063 shape, legacy-row preservation, replay safety and constraint backstops', async () => {
+  const conn = await openConnection();
+  try {
+    await dropToPre0063Shape(conn);
+    assert.equal(await countCeremonyColumns(conn), 18, 'pre-0063 shape proven: 18 columns');
+    assert.equal(
+      (await ceremonyCheckNames(conn)).filter((name) => AUDIT_CHECK_NAMES.includes(name)).length,
+      0,
+      'pre-0063 shape proven: none of the audit CHECKs exist',
+    );
+
+    // Seed a legacy COMMITTED row (pre-0063 shape: no digest columns) and a PENDING row.
+    const legacyFamilyId = `migration-0063-legacy-${randomUUID()}`;
+    await conn.query(
+      `INSERT INTO family_first_device_bootstrap_ceremonies
+         (ceremony_id, family_id, device_id, dsk_key_id, dsk_public_key, dsk_algorithm, purpose,
+          challenge_id, nonce, expires_at, status, payload_digest, outcome, consumed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'ECDSA_P256_SHA256', 'PCA_FIRST_DEVICE_BOOTSTRAP_V1', ?, ?, DATE_ADD(NOW(3), INTERVAL 5 MINUTE), 'COMMITTED', ?, 'ACCEPTED', NOW(3), NOW(3), NOW(3))`,
+      [randomUUID(), legacyFamilyId, randomUUID(), randomUUID(), 'p'.repeat(87), randomUUID(), 'n'.repeat(43), 'ab'.repeat(32)],
+    );
+    const pending = insertCeremonyProbe(conn, { familyId: `migration-0063-pending-${randomUUID()}` });
+    await pending.run();
+
+    // The REAL 0063 file, applied from the pre-0063 shape.
+    await conn.query(await readMigration0063());
+
+    assert.equal(await countCeremonyColumns(conn), 20, '0063 adds exactly the two audit digest columns');
+    const checks = await ceremonyCheckNames(conn);
+    for (const name of AUDIT_CHECK_NAMES) {
+      assert.equal(checks.filter((entry) => entry === name).length, 1, `${name} must exist exactly once`);
+    }
+
+    // Legacy rows are preserved; grandfathered NULL digests pass the coherence CHECK.
+    const [legacyRows] = await conn.query(
+      `SELECT payload_digest AS payload_digest, outcome AS outcome, bootstrap_proof_sha256 AS proof_sha,
+              attestation_evidence_sha256 AS evidence_sha
+         FROM family_first_device_bootstrap_ceremonies WHERE family_id = ?`,
+      [legacyFamilyId],
+    );
+    assert.equal(legacyRows[0].payload_digest, 'ab'.repeat(32));
+    assert.equal(legacyRows[0].outcome, 'ACCEPTED');
+    assert.equal(legacyRows[0].proof_sha, null);
+    assert.equal(legacyRows[0].evidence_sha, null);
+
+    // Backstops: every malformed audit state is refused by the database itself.
+    const probeUpdate = (familyId, setClause) =>
+      conn.query(`UPDATE family_first_device_bootstrap_ceremonies SET ${setClause} WHERE family_id = ?`, [familyId]);
+    await assert.rejects(
+      probeUpdate(pending.familyId, `bootstrap_proof_sha256 = '${'c'.repeat(64)}'`),
+      isBackstopRejection,
+      'a proof digest on a PENDING row must be refused',
+    );
+    await assert.rejects(
+      probeUpdate(legacyFamilyId, `bootstrap_proof_sha256 = '${'C'.repeat(64)}'`),
+      isBackstopRejection,
+      'an uppercase digest must be refused',
+    );
+    await assert.rejects(
+      probeUpdate(legacyFamilyId, `bootstrap_proof_sha256 = '${'c'.repeat(63)}'`),
+      isBackstopRejection,
+      'a short digest must be refused',
+    );
+    await assert.rejects(
+      probeUpdate(pending.familyId, `attestation_evidence_sha256 = '${'c'.repeat(64)}'`),
+      isBackstopRejection,
+      'an evidence digest without a proof digest must be refused',
+    );
+    await assert.rejects(
+      probeUpdate(legacyFamilyId, `attestation_evidence_sha256 = '${'g'.repeat(64)}'`),
+      isBackstopRejection,
+      'a non-hex evidence digest must be refused',
+    );
+
+    // Positive control: a fully coherent committed audit update succeeds.
+    await probeUpdate(
+      legacyFamilyId,
+      `bootstrap_proof_sha256 = '${'c'.repeat(64)}', attestation_evidence_sha256 = '${'d'.repeat(64)}'`,
+    );
+    const [positive] = await conn.query(
+      `SELECT bootstrap_proof_sha256 AS proof_sha, attestation_evidence_sha256 AS evidence_sha
+         FROM family_first_device_bootstrap_ceremonies WHERE family_id = ?`,
+      [legacyFamilyId],
+    );
+    assert.equal(positive[0].proof_sha, 'c'.repeat(64));
+    assert.equal(positive[0].evidence_sha, 'd'.repeat(64));
+
+    // Replay safety: re-applying the same file twice is a complete no-op.
+    await conn.query(await readMigration0063());
+    await conn.query(await readMigration0063());
+    assert.equal(await countCeremonyColumns(conn), 20);
+    assert.equal(
+      (await ceremonyCheckNames(conn)).filter((name) => AUDIT_CHECK_NAMES.includes(name)).length,
+      AUDIT_CHECK_NAMES.length,
+      'replay must not duplicate constraint names',
+    );
   } finally {
     await conn.end();
   }

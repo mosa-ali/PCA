@@ -29,6 +29,10 @@ export interface FirstDeviceBootstrapCeremonyRecord {
   approvedByAccountId: string | null;
   approvedAt: Date | null;
   payloadDigest: string | null;
+  /** R1-03 audit: sha256 of the exact canonical bootstrap proof bytes (committed rows; NULL only on pre-0063 rows). */
+  bootstrapProofSha256: string | null;
+  /** R1-03 audit: sha256 of the exact attestation evidence string; NULL means the proof bound the literal 'null'. */
+  attestationEvidenceSha256: string | null;
   outcome: string | null;
   consumedAt: Date | null;
   createdAt: Date;
@@ -84,6 +88,10 @@ export type ApproveCeremonyOutcome =
 export interface CommitBootstrapInput {
   ceremonyId: string;
   payloadDigest: string;
+  /** R1-03: sha256Hex(proofBytes) -- durable audit binding of the exact canonical proof bytes. */
+  bootstrapProofSha256: string;
+  /** R1-03: sha256Hex(evidence) or null when the proof bound the literal 'null'. */
+  attestationEvidenceSha256: string | null;
   anchor: {
     deviceId: string;
     dskKeyId: string;

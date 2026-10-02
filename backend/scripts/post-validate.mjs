@@ -38,7 +38,17 @@ const execFileP = promisify(execFile);
 // .signature_scheme, widened parent_mfa_step_up_grants operation CHECK);
 // computed via schema-fingerprint.mjs against the from-zero 0062 disposable
 // database (95 tables including schema_migrations).
-const EXPECTED_FINGERPRINT = '442c7c7259ec40d1f2769bfd2c286ce34716a8f38283f494234f438d05712c69';
+// WAVE 6B-R1 (2026-10-02): regenerated for migration 0063
+// (bootstrap_proof_sha256 + attestation_evidence_sha256 audit digest columns on
+// family_first_device_bootstrap_ceremonies); computed via schema-fingerprint.mjs
+// against the from-zero 0063 disposable database (61 migrations; 95 tables
+// including schema_migrations). Known pre-existing condition, documented here so
+// future fingerprint work is not misled: CHECK-clause introducer rendering is
+// build-path-sensitive (a from-zero migration build stores plain literals as
+// _ascii; the canonical-bootstrap build preserves the explicit _utf8mb4
+// introducers from schema.ts), so a bootstrap-built database hashes differently
+// from a migration-built one even when structurally identical.
+const EXPECTED_FINGERPRINT = '5231cd6e838a8d4e4ee11a25188aeb490e1e3360d4a37dadfd765177893af3a7';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

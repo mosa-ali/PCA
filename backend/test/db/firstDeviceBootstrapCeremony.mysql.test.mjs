@@ -56,7 +56,10 @@ import { FailClosedAttestationVerifier } from '../../dist/familytrustset/Attesta
 import {
   ANCHOR_SIGNATURE_SCHEME_FIRST_DEVICE,
   TRUST_ROOT_PROTOCOL_VERSION,
+  canonicalizeFirstDeviceBootstrapProof,
+  verifyFirstDeviceBootstrapProofSignature,
 } from '../../dist/familytrustset/FirstDeviceBootstrapProof.js';
+import { computeFirstDeviceBootstrapCommitDigest } from '../../dist/familytrustset/FirstDeviceBootstrapCommit.js';
 import {
   buildPerfectSubmission,
   makeP256Device,
@@ -79,7 +82,13 @@ class AcceptingTestAttestationVerifier {
   async verifyFirstDeviceAttestation(input) {
     if (input.attestationEvidence === null) return { status: 'REJECTED', reason: 'missing-evidence' };
     if (Buffer.byteLength(input.attestationEvidence, 'utf8') > 16_384) return { status: 'REJECTED', reason: 'oversized-evidence' };
-    return { status: 'VERIFIED', evidenceDigest: sha256Hex(input.attestationEvidence) };
+    return {
+      status: 'VERIFIED',
+      evidenceDigest: sha256Hex(input.attestationEvidence),
+      attestedDskKeyId: input.expectedDskKeyId,
+      attestedDskPublicKey: input.expectedDskPublicKey,
+      attestedDskAlgorithm: input.expectedDskAlgorithm,
+    };
   }
 }
 
@@ -239,28 +248,26 @@ async function floorsRowFor(familyId) {
 
 async function ceremonyRowFor(ceremonyId) {
   const [rows] = await getPool().query(
-    `SELECT status, outcome, consumed_at, payload_digest, approved_by_account_id FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`,
+    `SELECT status, outcome, consumed_at, payload_digest, approved_by_account_id,
+            bootstrap_proof_sha256, attestation_evidence_sha256
+       FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`,
     [ceremonyId],
   );
   return rows[0] ?? null;
 }
 
 function expectedPayloadDigest(submission, evidence) {
-  return sha256Hex(
-    Buffer.concat([
-      Buffer.from(submission.proofBytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(submission.epoch1Bytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(submission.epoch1Signature, 'ascii'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(evidence ?? '', 'utf8'),
-    ]),
-  );
+  return computeFirstDeviceBootstrapCommitDigest({
+    proofBytes: submission.proofBytes,
+    proofSignature: submission.proofSignature,
+    epoch1Bytes: submission.epoch1Bytes,
+    epoch1Signature: submission.epoch1Signature,
+    attestationEvidence: evidence ?? null,
+  });
 }
 
 /** issueChallenge -> approve -> build the perfect dual-signed submission. */
-async function runCeremonyToApproved(service, seed) {
+async function runCeremonyToApproved(service, seed, evidence = TEST_EVIDENCE) {
   const issued = await service.issueChallenge({
     attemptId: seed.attemptId,
     attemptRecoveryToken: seed.rawRecoveryToken,
@@ -279,7 +286,7 @@ async function runCeremonyToApproved(service, seed) {
     attempt: { attemptId: seed.attemptId, familyId: seed.familyId },
     ceremony,
     device: seed.device,
-    attestationEvidence: TEST_EVIDENCE,
+    attestationEvidence: evidence,
   });
   return { issued, ceremony, submission, input: submissionInput({ attemptId: seed.attemptId }, seed.rawRecoveryToken, ceremony, submission) };
 }
@@ -323,6 +330,8 @@ test('VALID FIRST ROOT: a provisioned-owner approval commits exactly one anchor 
   assert.equal(committed.status, 'COMMITTED');
   assert.equal(committed.outcome, 'ACCEPTED');
   assert.equal(committed.payload_digest, expectedPayloadDigest(submission, TEST_EVIDENCE));
+  assert.equal(committed.bootstrap_proof_sha256, sha256Hex(submission.proofBytes), 'R1-03: proof sha persisted');
+  assert.equal(committed.attestation_evidence_sha256, sha256Hex(TEST_EVIDENCE), 'R1-03: evidence sha persisted');
   assert.equal(committed.approved_by_account_id, seed.accountId);
   assert.notEqual(committed.consumed_at, null);
 
@@ -648,6 +657,117 @@ test('0062: the step-up operation CHECK accepts family.device.bootstrap.root and
     ),
     (error) => error.code === 'ER_CHECK_CONSTRAINT_VIOLATED',
   );
+});
+
+/** Accepts ONLY null evidence (the literal-null binding case), echoing the expected DSK identity. */
+class NullEvidenceAcceptingTestAttestationVerifier {
+  async verifyFirstDeviceAttestation(input) {
+    if (input.attestationEvidence !== null) return { status: 'REJECTED', reason: 'unexpected-evidence' };
+    return {
+      status: 'VERIFIED',
+      evidenceDigest: null,
+      attestedDskKeyId: input.expectedDskKeyId,
+      attestedDskPublicKey: input.expectedDskPublicKey,
+      attestedDskAlgorithm: input.expectedDskAlgorithm,
+    };
+  }
+}
+
+test('COMMITTED IDENTITY (R1-01): exact retry replays; a changed proofSignature or evidence is a different identity and can never re-enter', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'identity' });
+  const service = makeService();
+  const { ceremony, submission, input } = await runCeremonyToApproved(service, seed);
+  assert.deepEqual(await service.submit(input), { status: 'ACCEPTED' });
+  const committed = await ceremonyRowFor(ceremony.ceremonyId);
+  assert.equal(committed.status, 'COMMITTED');
+  assert.equal(committed.payload_digest, expectedPayloadDigest(submission, TEST_EVIDENCE));
+
+  // Restart/readback exact retry: the durable digest alone answers ACCEPTED.
+  assert.deepEqual(await freshService().submit(input), { status: 'ACCEPTED' });
+
+  // A changed proofSignature is byte-different => a different committed identity.
+  const changedProofSignature = {
+    ...input,
+    proofSignature: `${submission.proofSignature.slice(0, -1)}${submission.proofSignature.endsWith('A') ? 'B' : 'A'}`,
+  };
+  assert.deepEqual(await freshService().submit(changedProofSignature), { status: 'REJECTED' });
+  // Changed attestation evidence is also a different committed identity.
+  assert.deepEqual(await freshService().submit({ ...input, attestationEvidence: `${TEST_EVIDENCE}!` }), { status: 'REJECTED' });
+
+  // The rejections may not change any durable state.
+  const after = await ceremonyRowFor(ceremony.ceremonyId);
+  assert.equal(after.payload_digest, committed.payload_digest);
+  assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 1);
+  assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 1);
+});
+
+test('R1-03 AUDIT RECONSTRUCTION: the exact canonical proof is reconstructible and re-verifiable from durable non-secret state alone', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'audit' });
+  const service = makeService();
+  const { ceremony, submission, input } = await runCeremonyToApproved(service, seed);
+  assert.deepEqual(await service.submit(input), { status: 'ACCEPTED' });
+
+  const [rows] = await getPool().query(
+    `SELECT ceremony_id, family_id, device_id, dsk_key_id, dsk_public_key, challenge_id, nonce, expires_at,
+            bootstrap_proof_sha256, attestation_evidence_sha256
+       FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`,
+    [ceremony.ceremonyId],
+  );
+  const row = rows[0];
+  const anchor = await anchorRowFor(seed.familyId);
+  const epochs = await epochRowsFor(seed.familyId);
+  const epochBytes = Buffer.from(epochs[0].signed_epoch_bytes);
+
+  // Every input of the 13-field canonical statement comes from durable state alone.
+  const rebuiltFields = {
+    familyId: row.family_id,
+    deviceId: row.device_id,
+    ceremonyId: row.ceremony_id,
+    challengeId: row.challenge_id,
+    nonce: row.nonce,
+    expiresAt: new Date(row.expires_at),
+    dskKeyId: row.dsk_key_id,
+    dskPublicKey: row.dsk_public_key,
+    epoch1Sha256Hex: sha256Hex(epochBytes),
+    attestationEvidenceDigest: row.attestation_evidence_sha256,
+  };
+  const rebuilt = canonicalizeFirstDeviceBootstrapProof(rebuiltFields);
+
+  assert.equal(rebuilt, submission.proofBytes, 'the durable reconstruction is byte-identical to the signed statement');
+  assert.equal(sha256Hex(rebuilt), row.bootstrap_proof_sha256, 'the stored proof sha binds the exact canonical bytes');
+  assert.equal(row.bootstrap_proof_sha256, sha256Hex(submission.proofBytes));
+  assert.equal(row.attestation_evidence_sha256, sha256Hex(TEST_EVIDENCE), 'the evidence digest field is durably recoverable');
+  assert.equal(
+    verifyFirstDeviceBootstrapProofSignature(anchor.genesis_dsk_public_key, rebuilt, anchor.signature),
+    true,
+    'the anchor proof signature re-verifies over the reconstructed canonical statement',
+  );
+  assert.equal(anchor.signature_scheme, ANCHOR_SIGNATURE_SCHEME_FIRST_DEVICE);
+
+  // Tamper detection: any changed signed field fails re-verification against durable state.
+  const tampered = canonicalizeFirstDeviceBootstrapProof({ ...rebuiltFields, nonce: 'Z'.repeat(43) });
+  assert.notEqual(sha256Hex(tampered), row.bootstrap_proof_sha256);
+  assert.equal(verifyFirstDeviceBootstrapProofSignature(anchor.genesis_dsk_public_key, tampered, anchor.signature), false);
+});
+
+test('R1-03 EVIDENCE VARIANTS: null evidence keeps the digest column NULL (literal null marker); empty evidence binds sha256(\'\')', async () => {
+  // null evidence: the proof binds the literal 'null'; the digest column stays NULL.
+  const nullService = makeService({ attestationVerifier: new NullEvidenceAcceptingTestAttestationVerifier() });
+  const seedNull = await seedBootstrappableFamily({ label: 'audit-null' });
+  const nullRun = await runCeremonyToApproved(nullService, seedNull, null);
+  assert.deepEqual(await nullService.submit(nullRun.input), { status: 'ACCEPTED' });
+  const nullRow = await ceremonyRowFor(nullRun.ceremony.ceremonyId);
+  assert.equal(nullRow.attestation_evidence_sha256, null, 'null evidence commits keep the evidence digest column NULL');
+  assert.equal(nullRow.bootstrap_proof_sha256, sha256Hex(nullRun.submission.proofBytes));
+
+  // empty-string evidence: a REAL digest (sha256 of empty) -- never conflated with NULL.
+  const emptyService = makeService();
+  const seedEmpty = await seedBootstrappableFamily({ label: 'audit-empty' });
+  const emptyRun = await runCeremonyToApproved(emptyService, seedEmpty, '');
+  assert.deepEqual(await emptyService.submit(emptyRun.input), { status: 'ACCEPTED' });
+  const emptyRow = await ceremonyRowFor(emptyRun.ceremony.ceremonyId);
+  assert.equal(emptyRow.attestation_evidence_sha256, sha256Hex(''));
+  assert.notEqual(emptyRow.attestation_evidence_sha256, null);
 });
 
 test.after(async () => {

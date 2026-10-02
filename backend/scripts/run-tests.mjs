@@ -77,6 +77,7 @@ const files = [
   "test/familytrustset/canonicalDecode.test.mjs",
   "test/familytrustset/p256TrustSetSignatureVerifier.test.mjs",
   "test/familytrustset/trustSetEpochAcceptance.test.mjs",
+  "test/familytrustset/firstDeviceBootstrapCommit.test.mjs",
   "test/familytrustset/firstDeviceBootstrapProof.test.mjs",
   "test/familytrustset/firstDeviceBootstrapService.test.mjs",
   "test/familytrustset/attestationBoundary.test.mjs",

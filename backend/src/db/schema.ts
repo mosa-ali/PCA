@@ -3,7 +3,7 @@
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 95 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0062; 60 files, 0009/0010 never existed) from an empty database
+// through 0063; 61 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -36,6 +36,10 @@
 // owner rulings D4/F4/F5) added family_first_device_bootstrap_ceremonies,
 // family_authority_genesis_anchors.signature_scheme, and widened the
 // parent_mfa_step_up_grants operation CHECK with family.device.bootstrap.root.
+// 0063 (Wave 6B-R1, finding R1-03) added the ceremony table's durable audit
+// digest columns bootstrap_proof_sha256 and attestation_evidence_sha256
+// (digests only - raw proof bytes and raw attestation evidence are never
+// stored).
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -2088,7 +2092,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0062_first_device_trust_root_bootstrap.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0063_first_device_bootstrap_audit_digests.sql"],
     ownerModule: "backend/src/familytrustset",
     columns: [
       { name: "ceremony_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2104,11 +2108,13 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "approved_by_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
       { name: "approved_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
-      { name: "payload_digest", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "SHA-256 digest of the exact submitted bootstrap payload; idempotent-replay comparison material." },
+      { name: "payload_digest", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "SHA-256 digest of the exact canonical committed bootstrap submission (PCA_FIRST_DEVICE_BOOTSTRAP_COMMIT_V1); idempotent-replay comparison material." },
       { name: "outcome", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
       { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "bootstrap_proof_sha256", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "SHA-256 digest of the exact canonical PCA_FIRST_DEVICE_BOOTSTRAP_V1 proof statement signed by the device DSK; committed-root audit binding. Inputs are ids/nonce/timestamps/public keys/digests only -- no secret input, never raw proof bytes." },
+      { name: "attestation_evidence_sha256", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "SHA-256 digest of the opaque bounded (<=16 KiB) device-supplied attestation evidence; one-way commit-coherence/audit digest -- never raw evidence, never a raw secret; NULL on non-committed rows and on COMMITTED rows bound to the literal 'null' marker." },
     ],
     primaryKey: ["ceremony_id"],
     uniqueIndexes: [
@@ -2131,6 +2137,10 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "family_first_device_bootstrap_ceremonies_dsk_public_key_check", clause: "(char_length(`dsk_public_key`) between 1 and 128)" },
       { name: "family_first_device_bootstrap_ceremonies_expiry_check", clause: "(`expires_at` > `created_at`)" },
       { name: "family_first_device_bootstrap_ceremonies_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
+      { name: "ffdbc_evidence_requires_proof_check", clause: "((`attestation_evidence_sha256` is null) or (`bootstrap_proof_sha256` is not null))" },
+      { name: "ffdbc_evidence_sha256_hex_check", clause: "((`attestation_evidence_sha256` is null) or regexp_like(`attestation_evidence_sha256`,_utf8mb4'^[0-9a-f]{64}$'))" },
+      { name: "ffdbc_proof_sha256_committed_check", clause: "((`bootstrap_proof_sha256` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))" },
+      { name: "ffdbc_proof_sha256_hex_check", clause: "((`bootstrap_proof_sha256` is null) or regexp_like(`bootstrap_proof_sha256`,_utf8mb4'^[0-9a-f]{64}$'))" },
       { name: "family_first_device_bootstrap_ceremonies_nonce_check", clause: "(char_length(`nonce`) = 43)" },
       { name: "family_first_device_bootstrap_ceremonies_outcome_check", clause: "((`outcome` is null) or (`outcome` = _utf8mb4'ACCEPTED'))" },
       { name: "family_first_device_bootstrap_ceremonies_payload_digest_check", clause: "((`payload_digest` is null) or regexp_like(`payload_digest`,_utf8mb4'^[0-9a-f]{64}$'))" },

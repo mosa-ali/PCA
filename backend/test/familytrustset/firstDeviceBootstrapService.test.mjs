@@ -8,9 +8,11 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { FirstDeviceBootstrapService } from '../../dist/familytrustset/FirstDeviceBootstrapService.js';
+import { computeFirstDeviceBootstrapCommitDigest } from '../../dist/familytrustset/FirstDeviceBootstrapCommit.js';
 import { canonicalizeFirstDeviceBootstrapProof, sha256Hex } from '../../dist/familytrustset/FirstDeviceBootstrapProof.js';
 import {
   FakeFirstDeviceBootstrapStore,
+  MismatchedAttestationVerifier,
   ScriptedAttestationVerifier,
   buildPerfectSubmission,
   makeAttempt,
@@ -18,6 +20,7 @@ import {
   signCanonical,
   stamp,
   submissionInput,
+  verifiedVerdict,
 } from './firstDeviceBootstrapFixtures.mjs';
 
 function makeRig({ ceremonyOverrides = {}, attemptOverrides = {}, verifier = new ScriptedAttestationVerifier() } = {}) {
@@ -144,18 +147,9 @@ test('submit accepts a perfect dual-signed payload and hands the store one commi
 
   assert.equal(rig.store.commitCalls.length, 1);
   const commit = rig.store.commitCalls[0];
-  const expectedDigest = sha256Hex(
-    Buffer.concat([
-      Buffer.from(input.proofBytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(input.epoch1Bytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(input.epoch1Signature, 'ascii'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from('', 'utf8'),
-    ]),
-  );
-  assert.equal(commit.payloadDigest, expectedDigest);
+  assert.equal(commit.payloadDigest, computeFirstDeviceBootstrapCommitDigest(input));
+  assert.equal(commit.bootstrapProofSha256, sha256Hex(input.proofBytes), 'R1-03: the exact proof bytes are audit-bound');
+  assert.equal(commit.attestationEvidenceSha256, null, 'null evidence commits bind the literal null marker');
   assert.equal(commit.anchor.deviceId, rig.ceremony.deviceId);
   assert.equal(commit.anchor.dskKeyId, rig.ceremony.dskKeyId);
   assert.equal(commit.anchor.dskPublicKey, rig.ceremony.dskPublicKey);
@@ -172,10 +166,10 @@ test('submit accepts a perfect dual-signed payload and hands the store one commi
 test('submit replays a committed ceremony by payload digest WITHOUT re-running attestation (M3)', async () => {
   let calls = 0;
   const verifier = {
-    async verifyFirstDeviceAttestation() {
+    async verifyFirstDeviceAttestation(input) {
       calls += 1;
       if (calls > 1) throw new Error('attestation must not run on an idempotent replay');
-      return { status: 'VERIFIED', evidenceDigest: null };
+      return verifiedVerdict(input);
     },
   };
   const rig = makeRig({ verifier });
@@ -197,6 +191,26 @@ test('submit replays a committed ceremony by payload digest WITHOUT re-running a
     }`,
   });
   assert.deepEqual(await rig.service.submit(different), { status: 'REJECTED' }, 'a different payload can never replay');
+
+  // R1-01: a changed proofSignature is a different committed identity (previously ACCEPTED).
+  const changedProofSignature = submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, rig.perfect, {
+    proofSignature: `${rig.perfect.proofSignature.slice(0, -1)}${
+      rig.perfect.proofSignature.endsWith('A') ? 'B' : 'A'
+    }`,
+  });
+  assert.deepEqual(
+    await rig.service.submit(changedProofSignature),
+    { status: 'REJECTED' },
+    'a changed proofSignature can never replay (R1-01)',
+  );
+
+  // R1-01: null and '' evidence are structurally distinct committed identities.
+  assert.deepEqual(
+    await rig.service.submit(submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, rig.perfect, { attestationEvidence: '' })),
+    { status: 'REJECTED' },
+    "null vs '' evidence must never collide (R1-01)",
+  );
+  assert.equal(rig.store.commitCalls.length, 1, 'no rejection ever reaches the store');
 });
 
 test('submit rejects proof-field and binding violations before ever reaching the store', async () => {
@@ -326,7 +340,9 @@ test('submit fails closed at the attestation boundary and digest-binds evidence 
   rig.verifier.verdict = { status: 'VERIFIED', evidenceDigest: sha256Hex(evidence) };
   assert.deepEqual(await rig.service.submit(input), { status: 'REJECTED' });
 
-  // Fully evidence-bound happy path: proof digest + verifier digest + evidence all equal
+  // Fully evidence-bound happy path: proof digest + verifier digest + evidence all equal.
+  // The default ScriptedAttestationVerifier echoes the expected DSK triple and the
+  // null-safe evidence digest (the correct-verifier shape a real 6C/6D verifier must emit).
   const bound = makeRig();
   const boundPerfect = buildPerfectSubmission({
     attempt: bound.attempt,
@@ -334,23 +350,22 @@ test('submit fails closed at the attestation boundary and digest-binds evidence 
     device: bound.device,
     attestationEvidence: evidence,
   });
-  bound.verifier.verdict = { status: 'VERIFIED', evidenceDigest: sha256Hex(evidence) };
   assert.deepEqual(
     await bound.service.submit(submissionInput(bound.attempt, bound.rawRecoveryToken, bound.ceremony, boundPerfect, { attestationEvidence: evidence })),
     { status: 'ACCEPTED' },
   );
-  const expectedDigest = sha256Hex(
-    Buffer.concat([
-      Buffer.from(boundPerfect.proofBytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(boundPerfect.epoch1Bytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(boundPerfect.epoch1Signature, 'ascii'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(evidence, 'utf8'),
-    ]),
+  assert.equal(
+    bound.store.commitCalls[0].payloadDigest,
+    computeFirstDeviceBootstrapCommitDigest({
+      proofBytes: boundPerfect.proofBytes,
+      proofSignature: boundPerfect.proofSignature,
+      epoch1Bytes: boundPerfect.epoch1Bytes,
+      epoch1Signature: boundPerfect.epoch1Signature,
+      attestationEvidence: evidence,
+    }),
+    'evidence is part of the durable committed identity',
   );
-  assert.equal(bound.store.commitCalls[0].payloadDigest, expectedDigest, 'evidence is part of the durable digest');
+  assert.equal(bound.store.commitCalls[0].attestationEvidenceSha256, sha256Hex(evidence));
 });
 
 test('submit refuses device claims that do not match the enrollment attempt DSK (M1)', async () => {
@@ -408,4 +423,64 @@ test('describeForApproval is family-scoped and checkApprovalEligibility refuses 
   rig.store.eligibility = true;
   assert.equal(await rig.service.checkApprovalEligibility(rig.ceremony.familyId, randomUUID()), true);
   assert.equal(await rig.service.checkApprovalEligibility(undefined, randomUUID()), false);
+});
+
+test('submit hands the verifier the exact expected DSK triple, ceremony context and raw evidence (R1-02)', async () => {
+  const rig = makeRig();
+  const evidence = 'dsk-binding-evidence';
+  const perfect = buildPerfectSubmission({ attempt: rig.attempt, ceremony: rig.ceremony, device: rig.device, attestationEvidence: evidence });
+  assert.deepEqual(
+    await rig.service.submit(submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, perfect, { attestationEvidence: evidence })),
+    { status: 'ACCEPTED' },
+  );
+  assert.equal(rig.verifier.calls.length, 1);
+  const captured = rig.verifier.calls[0];
+  assert.equal(captured.expectedDskKeyId, rig.ceremony.dskKeyId);
+  assert.equal(captured.expectedDskPublicKey, rig.ceremony.dskPublicKey);
+  assert.equal(captured.expectedDskAlgorithm, rig.ceremony.dskAlgorithm);
+  assert.equal(captured.ceremonyId, rig.ceremony.ceremonyId);
+  assert.equal(captured.challengeId, rig.ceremony.challengeId);
+  assert.equal(captured.nonce, rig.ceremony.nonce);
+  assert.equal(captured.familyId, rig.attempt.familyId);
+  assert.equal(captured.deviceId, rig.attempt.deviceId);
+  assert.equal(captured.attestationEvidence, evidence, 'the raw evidence string is passed byte-identically');
+});
+
+test('attested DSK identity mismatches (keyId / publicKey / algorithm / non-canonical key) are REJECTED with zero writes (R1-02)', async () => {
+  const cases = [
+    { attestedDskKeyId: randomUUID() },
+    { attestedDskPublicKey: makeP256Device('different-attested-key').dskPublicKey },
+    { attestedDskAlgorithm: 'ECDSA_P256_SHA384' },
+    { attestedDskPublicKey: 'A'.repeat(86) },
+  ];
+  for (const [index, overrides] of cases.entries()) {
+    const rig = makeRig({ verifier: new MismatchedAttestationVerifier(overrides) });
+    const outcome = await rig.service.submit(submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, rig.perfect));
+    assert.deepEqual(outcome, { status: 'REJECTED' }, `mismatch case ${index} must reject`);
+    assert.equal(rig.store.commitCalls.length, 0, `mismatch case ${index} must not reach the store`);
+    assert.equal(rig.store.ceremony.status, 'APPROVED', `mismatch case ${index} leaves the challenge unconsumed`);
+  }
+});
+
+test('a degenerate VERIFIED verdict without the attested key identity is REJECTED (R1-02 fail-closed)', async () => {
+  const rig = makeRig({ verifier: new ScriptedAttestationVerifier({ status: 'VERIFIED', evidenceDigest: null }) });
+  assert.deepEqual(
+    await rig.service.submit(submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, rig.perfect)),
+    { status: 'REJECTED' },
+  );
+  assert.equal(rig.store.commitCalls.length, 0);
+});
+
+test('the commit carries the R1-03 audit digests: proof sha and null-safe evidence sha', async () => {
+  const rig = makeRig();
+  const evidence = 'audit-evidence';
+  const perfect = buildPerfectSubmission({ attempt: rig.attempt, ceremony: rig.ceremony, device: rig.device, attestationEvidence: evidence });
+  assert.deepEqual(
+    await rig.service.submit(submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, perfect, { attestationEvidence: evidence })),
+    { status: 'ACCEPTED' },
+  );
+  const commit = rig.store.commitCalls[0];
+  assert.equal(commit.bootstrapProofSha256, sha256Hex(perfect.proofBytes));
+  assert.equal(commit.attestationEvidenceSha256, sha256Hex(evidence));
+  assert.equal(rig.store.ceremony.bootstrapProofSha256, sha256Hex(perfect.proofBytes));
 });

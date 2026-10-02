@@ -62,6 +62,8 @@ const CEREMONY_COLUMNS = [
   'consumed_at',
   'created_at',
   'updated_at',
+  'bootstrap_proof_sha256',
+  'attestation_evidence_sha256',
 ].join(', ');
 
 interface CeremonyRow extends RowDataPacket {
@@ -83,6 +85,8 @@ interface CeremonyRow extends RowDataPacket {
   consumed_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  bootstrap_proof_sha256: string | null;
+  attestation_evidence_sha256: string | null;
 }
 
 interface AttemptRow extends RowDataPacket {
@@ -148,6 +152,8 @@ function toCeremonyRecord(row: CeremonyRow): FirstDeviceBootstrapCeremonyRecord 
     consumedAt: toNullableDate(row.consumed_at),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+    bootstrapProofSha256: row.bootstrap_proof_sha256,
+    attestationEvidenceSha256: row.attestation_evidence_sha256,
   };
 }
 
@@ -379,9 +385,11 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
         // ---- 8. Consume the challenge: committed result + durable payload digest ----
         const [update] = await conn.execute<ResultSetHeader>(
           `UPDATE family_first_device_bootstrap_ceremonies
-              SET status = 'COMMITTED', outcome = 'ACCEPTED', payload_digest = ?, consumed_at = ?, updated_at = ?
+              SET status = 'COMMITTED', outcome = 'ACCEPTED', payload_digest = ?,
+                  bootstrap_proof_sha256 = ?, attestation_evidence_sha256 = ?,
+                  consumed_at = ?, updated_at = ?
             WHERE ceremony_id = ? AND status = 'APPROVED'`,
-          [input.payloadDigest, input.now, input.now, input.ceremonyId],
+          [input.payloadDigest, input.bootstrapProofSha256, input.attestationEvidenceSha256, input.now, input.now, input.ceremonyId],
         );
         if (update.affectedRows !== 1) {
           // Unreachable while the row lock is held; throw so nothing commits.

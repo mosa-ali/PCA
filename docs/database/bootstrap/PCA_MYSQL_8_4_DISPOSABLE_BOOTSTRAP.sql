@@ -16,15 +16,15 @@
 --
 -- CONTENTS
 --    95 tables
---   828 columns
+--   830 columns
 --    95 primary keys
 --   104 foreign keys
 --    38 unique non-primary-key indexes
 --   144 non-unique indexes
---   308 CHECK constraints
+--   312 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    60 schema_migrations journal rows
+--    61 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1037,7 +1037,7 @@ CREATE TABLE `family_epoch_floors` (
   CONSTRAINT `family_epoch_floors_min_trust_set_epoch_check` CHECK ((`minimum_accepted_trust_set_epoch` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- family_first_device_bootstrap_ceremonies (defined by backend/migrations/0062_first_device_trust_root_bootstrap.sql)
+-- family_first_device_bootstrap_ceremonies (defined by backend/migrations/0062_first_device_trust_root_bootstrap.sql, altered by 0063_first_device_bootstrap_audit_digests.sql)
 CREATE TABLE `family_first_device_bootstrap_ceremonies` (
   `ceremony_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
@@ -1057,6 +1057,8 @@ CREATE TABLE `family_first_device_bootstrap_ceremonies` (
   `consumed_at` datetime(3) NULL,
   `created_at` datetime(3) NOT NULL,
   `updated_at` datetime(3) NOT NULL,
+  `bootstrap_proof_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `attestation_evidence_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
   PRIMARY KEY (`ceremony_id`),
   KEY `family_first_device_bootstrap_ceremonies_device_idx` (`device_id`),
   KEY `family_first_device_bootstrap_ceremonies_family_idx` (`family_id`, `created_at`),
@@ -1069,6 +1071,10 @@ CREATE TABLE `family_first_device_bootstrap_ceremonies` (
   CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_public_key_check` CHECK ((char_length(`dsk_public_key`) between 1 and 128)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `ffdbc_evidence_requires_proof_check` CHECK (((`attestation_evidence_sha256` is null) or (`bootstrap_proof_sha256` is not null))),
+  CONSTRAINT `ffdbc_evidence_sha256_hex_check` CHECK (((`attestation_evidence_sha256` is null) or regexp_like(`attestation_evidence_sha256`,_utf8mb4'^[0-9a-f]{64}$'))),
+  CONSTRAINT `ffdbc_proof_sha256_committed_check` CHECK (((`bootstrap_proof_sha256` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))),
+  CONSTRAINT `ffdbc_proof_sha256_hex_check` CHECK (((`bootstrap_proof_sha256` is null) or regexp_like(`bootstrap_proof_sha256`,_utf8mb4'^[0-9a-f]{64}$'))),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_nonce_check` CHECK ((char_length(`nonce`) = 43)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_outcome_check` CHECK (((`outcome` is null) or (`outcome` = _utf8mb4'ACCEPTED'))),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_payload_digest_check` CHECK (((`payload_digest` is null) or regexp_like(`payload_digest`,_utf8mb4'^[0-9a-f]{64}$'))),
@@ -2038,4 +2044,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0059_parent_mfa_ascii_check_literal_charset.sql'),
   ('0060_family_trust_set_epoch_persistence.sql'),
   ('0061_parent_password_login_lock.sql'),
-  ('0062_first_device_trust_root_bootstrap.sql');
+  ('0062_first_device_trust_root_bootstrap.sql'),
+  ('0063_first_device_bootstrap_audit_digests.sql');

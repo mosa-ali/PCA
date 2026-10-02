@@ -13,6 +13,7 @@ import {
   sha256Hex,
   verifyFirstDeviceBootstrapProofSignature,
 } from './FirstDeviceBootstrapProof.js';
+import { computeFirstDeviceBootstrapCommitDigest } from './FirstDeviceBootstrapCommit.js';
 import type { FirstDeviceAttemptContext, FirstDeviceBootstrapCeremonyRecord, FirstDeviceBootstrapStore } from './FirstDeviceBootstrapStore.js';
 import type { AttestationVerifier } from './AttestationVerifier.js';
 import type { TrustSetEpochRecord } from './TrustSetEpochStore.js';
@@ -281,7 +282,7 @@ export class FirstDeviceBootstrapService {
     const ceremony = await this.store.readCeremony(input.ceremonyId);
     if (!ceremony || ceremony.familyId !== attempt.familyId || ceremony.deviceId !== attempt.deviceId) return unavailable;
 
-    const payloadDigest = this.computePayloadDigest(input);
+    const payloadDigest = computeFirstDeviceBootstrapCommitDigest(input);
 
     // ---- 2. Replay classification FIRST (M3) ----
     if (ceremony.status === 'COMMITTED') {
@@ -352,7 +353,8 @@ export class FirstDeviceBootstrapService {
       return rejected;
     }
 
-    // ---- 7. Attestation: fail closed, digest-bound in both directions ----
+    // ---- 7. Attestation: fail closed; evidence digest-bound in both directions; the
+    //         attested key identity must equal the exact DSK the ceremony anchors (R1-02) ----
     const evidenceDigest = input.attestationEvidence === null ? null : sha256Hex(input.attestationEvidence);
     const attestation = await this.attestationVerifier.verifyFirstDeviceAttestation({
       familyId: attempt.familyId,
@@ -362,11 +364,17 @@ export class FirstDeviceBootstrapService {
       nonce: ceremony.nonce,
       platform: attempt.platform,
       attestationEvidence: input.attestationEvidence,
+      expectedDskKeyId: ceremony.dskKeyId,
+      expectedDskPublicKey: ceremony.dskPublicKey,
+      expectedDskAlgorithm: ceremony.dskAlgorithm,
       now,
     });
     if (attestation.status !== 'VERIFIED') return rejected;
     if (attestation.evidenceDigest !== evidenceDigest) return rejected;
     if (proof.attestationEvidenceDigest !== evidenceDigest) return rejected;
+    if (attestation.attestedDskKeyId !== ceremony.dskKeyId) return rejected;
+    if (attestation.attestedDskPublicKey !== ceremony.dskPublicKey) return rejected;
+    if (attestation.attestedDskAlgorithm !== ceremony.dskAlgorithm) return rejected;
 
     // ---- 8. One atomic commit (or full rollback; challenge consumed only on success) ----
     const epochRecord: TrustSetEpochRecord = {
@@ -384,6 +392,8 @@ export class FirstDeviceBootstrapService {
     const commit = await this.store.commitBootstrap({
       ceremonyId: ceremony.ceremonyId,
       payloadDigest,
+      bootstrapProofSha256: sha256Hex(input.proofBytes),
+      attestationEvidenceSha256: evidenceDigest,
       anchor: {
         deviceId: proof.deviceId,
         dskKeyId: proof.dskKeyId,
@@ -395,26 +405,6 @@ export class FirstDeviceBootstrapService {
       now,
     });
     return commit.outcome === 'ACCEPTED' || commit.outcome === 'IDEMPOTENT_ACCEPTED' ? { status: 'ACCEPTED' } : rejected;
-  }
-
-  /**
-   * The durable committed-result digest: sha256 over the exact proof bytes,
-   * LF, exact epoch-1 bytes, LF, epoch-1 signature, LF, the attestation
-   * evidence (or empty). Deterministic for byte-identical retries and
-   * collision-resistant across any changed component, so response-loss
-   * retries replay idempotently while every different payload is rejected.
-   */
-  private computePayloadDigest(input: SubmitBootstrapInput): string {
-    const parts: Buffer[] = [
-      Buffer.from(input.proofBytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(input.epoch1Bytes, 'utf8'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(input.epoch1Signature, 'ascii'),
-      Buffer.from('\n', 'ascii'),
-      Buffer.from(input.attestationEvidence ?? '', 'utf8'),
-    ];
-    return sha256Hex(Buffer.concat(parts));
   }
 
   /**

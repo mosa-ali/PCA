@@ -777,3 +777,54 @@ Verified:
 
 LIVE APPLICATION IS NOT AUTHORIZED: `pca_pro` remains last verified at 0059;
 0060/0061/0062 are repository/local only.
+
+---
+
+## Wave 6B-R1 — first-device bootstrap verification-gap closure (migration 0063, 2026-10-02)
+
+`SCHEMA_CHANGED = YES`; `MIGRATION_ADDED = YES` (`0063_first_device_bootstrap_audit_digests.sql`).
+
+Closure findings (owner R1 directive): R1-01 committed-payload identity is now the
+canonical netstring `PCA_FIRST_DEVICE_BOOTSTRAP_COMMIT_V1` (binds proofBytes,
+proofSignature, epoch1Bytes, epoch1Signature and the evidence presence/value — the
+legacy LF-concatenation omitted proofSignature and allowed cross-field
+byte-shifting and null/'' aliasing); R1-02 the attestation contract now carries the
+expected DSK triple in and the attested DSK triple out, with service-side
+independent equality before any commit; R1-03 durable auditability implemented.
+
+Changes:
+- `family_first_device_bootstrap_ceremonies.bootstrap_proof_sha256` /
+  `.attestation_evidence_sha256` (char(64) ascii_bin NULL, appended at the end of
+  the table): SHA-256 digests ONLY — the exact canonical proof bytes and the exact
+  attestation evidence string are never stored. Four abbreviated `ffdbc_*` CHECKs
+  enforce hex-64 shape, committed-only proof digests, and the
+  evidence-requires-proof coherence (names abbreviated to fit the 64-character
+  MySQL identifier limit).
+
+Verified:
+- From-zero migration run through 0063: 61/61 migrations; migration-safety suite
+  extended (0062→0063 upgrade, legacy-row preservation, replay, constraint
+  backstops); disposable-bootstrap `--check` counts now 95 tables / 830 columns /
+  312 checks / 61 migration rows / 14 reference rows.
+- `backend/schema/current_schema.sql` + `backend/schema/schema_manifest.json`
+  updated (95 tables, 830 columns, 95 primary keys, 104 foreign keys, 38 unique /
+  144 non-unique indexes, 312 checks).
+- `database/live-bootstrap/01_create_database_schema.sql` +
+  `02_reference_data.sql` (61 migration rows + 14 reference rows) and the
+  disposable-bootstrap pair (`docs/database/bootstrap/`) regenerated from the
+  canonical `schema.ts`.
+- `docs/database/PCA_CENTRAL_DATA_PRIVACY_CLASSIFICATION.csv`: the two new digest
+  columns classified `SECURITY_METADATA` with explicit "one-way digest, raw
+  evidence/proof never persisted" rationale; the `payload_digest` rationale was
+  refreshed for the canonical committed submission.
+- `CANONICAL_SCHEMA_FINGERPRINT = sha256:5231cd6e838a8d4e4ee11a25188aeb490e1e3360d4a37dadfd765177893af3a7`
+  (was `sha256:442c7c7259ec40d1f2769bfd2c286ce34716a8f38283f494234f438d05712c69`;
+  95 tables including `schema_migrations`, from-zero migrated 0063 database).
+  Note: CHECK-clause introducer rendering is build-path-sensitive (a from-zero
+  migration build stores plain literals as `_ascii`; the canonical-bootstrap build
+  preserves the explicit `_utf8mb4` introducers from `schema.ts`) — a pre-existing,
+  documented condition; `post-validate.mjs`'s `EXPECTED_FINGERPRINT` targets the
+  from-zero migrated build, matching its own historical reference.
+
+LIVE APPLICATION IS NOT AUTHORIZED: `pca_pro` remains last verified at 0059;
+0060/0061/0062/0063 are repository/local only.

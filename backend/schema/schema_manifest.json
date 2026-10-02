@@ -5415,6 +5415,22 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "bootstrap_proof_sha256",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attestation_evidence_sha256",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
         }
       ],
       "indexes": [
