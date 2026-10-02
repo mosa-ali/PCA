@@ -86,7 +86,12 @@ test('NEGATIVE CONTROL: the byte-expression evaluator handles both real forms an
  * inheriting the ceiling would reject contract-legal requests with 413, and
  * raising the ceiling globally would weaken every other route at once.
  */
-const DELIBERATE_CEILING_OVERRIDES = new Set(['MAX_OUTBOUND_BODY_BYTES']);
+// MAX_SUBMIT_BODY_BYTES (Wave 6B first-device trust-root bootstrap submit)
+// carries a contract-maximum canonical epoch-1 (up to exactly 256 KiB, the
+// same MAX_CANONICAL_TRUST_SET_LENGTH bound Wave 5B certifies) PLUS the
+// domain-separated bootstrap proof and both signatures, so a contract-legal
+// maximum submit inherently exceeds the 256 KiB ceiling.
+const DELIBERATE_CEILING_OVERRIDES = new Set(['MAX_OUTBOUND_BODY_BYTES', 'MAX_SUBMIT_BODY_BYTES']);
 
 test('PCA-P2-13: every route either sits under the ceiling or deliberately overrides it', () => {
   const limits = perRouteBodyLimits();

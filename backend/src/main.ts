@@ -46,6 +46,9 @@ import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotenc
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
 import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStore.js';
+import { MySqlFirstDeviceBootstrapStore } from './familytrustset/MySqlFirstDeviceBootstrapStore.js';
+import { FirstDeviceBootstrapService } from './familytrustset/FirstDeviceBootstrapService.js';
+import { FailClosedAttestationVerifier } from './familytrustset/AttestationVerifier.js';
 import { StoreBackedTrustSetRoleResolver } from './familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { RegistryBackedChildProfileMembershipResolver } from './childprofiles/RegistryBackedChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
@@ -586,12 +589,30 @@ async function start(): Promise<void> {
   // and the envelope-context floors stay rejecting; that atomic-set
   // invariant is pinned by test/tooling/ftsProductionWiring.test.mjs and
   // must be honored together if a future wave wires ingestion.
+  // WAVE 6B adds exactly ONE further writer of the same store: the
+  // first-device bootstrap ceremony commit (below), which is wired but can
+  // never append in production while it is bound to the fail-closed
+  // attestation verifier; the acceptance service STILL has no production
+  // caller. The ftsProductionWiring guard pins both halves of that
+  // invariant together.
   // Shared across every consumer of the family-action authorization matrix
   // (Safe Zone below, and RemovalDecisionAuthority further down) -- one
   // resolver instance, not a second independently-constructed one, per the
   // one-production-composition-boundary rule the Unavailable stub's doc
   // comment established.
-  const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: new MySqlTrustSetEpochStore() });
+  const trustSetEpochStore = new MySqlTrustSetEpochStore();
+  const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore });
+  // WAVE 6B (owner rulings D4/F4): first-device trust-root bootstrap. The
+  // ceremony store shares the SAME epoch store instance above, so anchor +
+  // epoch-1 + floors commit through one per-family serialization; the
+  // service is wired with the always-fail-closed attestation verifier as
+  // its production default (no permissive production verifier exists), so
+  // this path cannot mint a root in production until a verified attestation
+  // integration is decided in a later wave.
+  const firstDeviceBootstrapService = new FirstDeviceBootstrapService({
+    store: new MySqlFirstDeviceBootstrapStore({ epochStore: trustSetEpochStore }),
+    attestationVerifier: new FailClosedAttestationVerifier(),
+  });
   // PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: ONE shared instance -- both
   // safeZoneParentActionAuthorization below (covering decide()/grantDirectly()'s own
   // targetScope check) AND registerChildRequestRoutes' childProfileMembership dep (covering the
@@ -993,6 +1014,10 @@ async function start(): Promise<void> {
     // vs. honestly fail-closed pending a real implementation (signed
     // remote-parent, authorized recovery).
     removalDecisionAuthority,
+    // WAVE 6B (D4/F4): first-device trust-root bootstrap ceremony -- see
+    // the wiring block above (near trustSetRoleResolver) for construction
+    // and the fail-closed attestation posture.
+    firstDeviceBootstrapService,
     // PCA-ADD-ENR-016/PCA-FR-145: derive child and protective status from
     // durable family-scoped enrollment/membership/status sources. Device
     // protection remains a device-session-authenticated self-report, not

@@ -58,6 +58,12 @@
       "tests": [
         "tooling/mutation/run-mutation.mjs"
       ]
+    },
+    "PCA-SEC-022": {
+      "boundedClaim": "The Wave-6B first-device trust-root bootstrap ceremony keeps its owner-eligibility gate, dual-signature verification, ceremony-field binding, one-root-per-family enforcement (a second root attempt is never reported as ACCEPTED), single-transaction atomicity and fail-closed attestation boundary test-enforced (focused temp-copy kill-run: control suite 44/44 pass; mutants B-SEC022-001..006 all behaviorally killed; B-004 targets the reachable second-root-reporting mapping as the store-level duplicate catch is defense-in-depth behind the serializing floors latch). Production activation of the ceremony remains blocked by the fail-closed attestation verifier; device-side attestation-provider verification is not certified.",
+      "tests": [
+        "tooling/mutation/run-mutation.mjs"
+      ]
     }
   },
   "mutants": [
@@ -313,6 +319,60 @@
       "source": "src/familytrustset/TrustSetEpochAcceptance.ts",
       "from": "      if (epoch.trustSetEpoch < latest.trustSetEpoch) return rejected('STALE_TRUST_SET_EPOCH');\n",
       "to": "",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-001",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/MySqlFirstDeviceBootstrapStore.ts",
+      "from": "    if (family.status !== 'ACTIVE') return false;",
+      "to": "    if (false) return false;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-002",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    if (!verifyFirstDeviceBootstrapProofSignature(proof.dskPublicKey, input.proofBytes, input.proofSignature)) {\n      return rejected;\n    }",
+      "to": "    void verifyFirstDeviceBootstrapProofSignature;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-003",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "      proof.challengeId !== ceremony.challengeId ||\n      proof.nonce !== ceremony.nonce ||",
+      "to": "      proof.challengeId !== ceremony.challengeId ||",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-004",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    return commit.outcome === 'ACCEPTED' || commit.outcome === 'IDEMPOTENT_ACCEPTED' ? { status: 'ACCEPTED' } : rejected;",
+      "to": "    return commit.outcome === 'ACCEPTED' || commit.outcome === 'IDEMPOTENT_ACCEPTED' || commit.outcome === 'ALREADY_BOOTSTRAPPED' ? { status: 'ACCEPTED' } : rejected;",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-005",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/MySqlFirstDeviceBootstrapStore.ts",
+      "from": "        const hook = this.commitHooks?.afterAnchorInsert;\n        if (hook) await hook(conn);",
+      "to": "        await conn.commit();\n        await conn.beginTransaction();\n        const hook = this.commitHooks?.afterAnchorInsert;\n        if (hook) await hook(conn);",
+      "expectedClassification": "KILLED"
+    },
+    {
+      "id": "B-SEC022-006",
+      "requirement": "PCA-SEC-022",
+      "surface": "backend",
+      "source": "src/familytrustset/FirstDeviceBootstrapService.ts",
+      "from": "    if (attestation.status !== 'VERIFIED') return rejected;\n    if (attestation.evidenceDigest !== evidenceDigest) return rejected;\n    if (proof.attestationEvidenceDigest !== evidenceDigest) return rejected;",
+      "to": "    void attestation;\n    void evidenceDigest;",
       "expectedClassification": "KILLED"
     }
   ]

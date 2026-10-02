@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-01 07:07 UTC (ledger head 50b4287f passed exact-head Quality Gates 27/27; dependent hold unchanged)
-VALIDATED_PARENT_SOURCE_HEAD = Parent authority/enrollment source at f1b0a7d29c6c402875de0cb71551ca2931cc9d28; Quality Gates run 36820461082 passed 27/27, including real-backend Parent and Platform browser jobs.
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = f1b0a7d29c6c402875de0cb71551ca2931cc9d28 is pushed and fetch-confirmed with local/origin equality; Quality Gates run 36820461082 passed 27/27. Platform remains held on Parent authority/owner acceptance gates.
-CURRENT_CHECKPOINT_SHA = 50b4287ff5f84a09034ad145cbf748ec9298bd68 is the latest published, CI-tested ledger head (Quality Gates run 36827409031 SUCCESS 27/27); Parent source head f1b0a7d2 also passed 27/27. Current Parent policy-doc correction awaits publication.
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent and continuous ledgers record the successful 27/27 source CI. No Platform product scope changed; dependency hold remains.
+LAST_UPDATED_UTC = 2026-10-02 01:38 UTC (Wave-6B Parent checkpoint recorded; Platform hold unchanged)
+VALIDATED_PARENT_SOURCE_HEAD = 994612ef155e65b63c95eb720f4277d03b83b672 (exact-head Quality Gates run 36828807047 SUCCESS 27/27 at that head; Wave 6B is Parent-only backend work with zero Platform impact)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 994612ef155e65b63c95eb720f4277d03b83b672 (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 994612ef155e65b63c95eb720f4277d03b83b672 (last certified exact-head run 36828807047 SUCCESS 27/27; the Wave-6B commit and its CI are reported with the Wave-6B report)
+LATEST_PARENT_LEDGER_CHECKPOINT = Wave-6B Parent checkpoint rolled (base 994612ef, exact-head run 36828807047 SUCCESS 27/27); LOCAL_UNCOMMITTED_PARENT_CHANGE = none after the single Wave-6B commit; no Platform product scope changed and the dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve Platform HOLD_PARENT_DEPENDENCY while Parent TODO-12/14/15/20 and owner acceptance remain open. The Parent family projection itself is PASS; dependent Enrollment Name/Email/nullable Phone activation awaits the Parent and literal TODO-18 `LOCALHOST ACCEPTED` gates. Repository and owner-UAT local schema are 0061; live pca_pro remains last verified at 0059 and TCP/3306 is unreachable. No live DB mutation, Enrollment activation, Azure deployment, or production acceptance occurred.
+NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. Wave 6B is Parent backend-only (first-device trust-root bootstrap foundation, stopped for owner review); Wave 6C/6D and any Platform Enrollment work are NOT authorized. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1213,3 +1213,9 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains while Parent TODO-12/14/15/20 a
 
 PARENT_CI = Ledger head 50b4287ff5f84a09034ad145cbf748ec9298bd68 passed exact-head Quality Gates run 36827409031 27/27. Parent DEC-037's active security-tradeoff prose is being corrected to describe the already implemented immediate MFA recovery; no Platform source, Parent runtime policy or database schema changed.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15/20 and literal TODO-18 `LOCALHOST ACCEPTED` remain open; live pca_pro is last verified at 0059. No Enrollment activation, live mutation, deployment or production acceptance occurred.
+
+### 2026-10-02 01:38 UTC — Wave 6B Parent bootstrap foundation recorded; Platform remains held
+
+PARENT = Wave 6B delivered the backend-only first-device trust-root bootstrap foundation (owner rulings D4/F4/F5): migration 0062 (ceremony/challenge state + root-anchor linkage + idempotent committed-result recovery; no private keys), domain-separated dual-signature ceremony (`PCA_FIRST_DEVICE_BOOTSTRAP_V1` + certified epoch-1 format), provisioned-owner gate with the dedicated `family.device.bootstrap.root` step-up, fail-closed production attestation boundary, atomic one-root commit with ceremony-ID recovery. Evidence: backend unit suite 2790/2790; disposable MySQL inner 694 tests / 684 pass / 0 fail / 10 privileged-mode skips + certified production paths 276/276 (0 skipped, 0 failed); focused temp-copy kill-run: control 44/44 pass and all six PCA-SEC-022 mutants behaviorally killed. Repository/local schema is 0062; live `pca_pro` remains 0059 (no contact/mutation); production cannot create a first root until the 6C/6D attestation implementations exist; WAVE_6B_STOPPED_FOR_OWNER_REVIEW = YES.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Preserve the hold; await owner review of Wave 6B before any further Parent or Platform wave.

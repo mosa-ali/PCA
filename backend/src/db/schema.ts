@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 94 tables, including schema_migrations itself),
+// central MySQL schema (all 95 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0061; 59 files, 0009/0010 never existed) from an empty database
+// through 0062; 60 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -31,6 +31,11 @@
 // MFA grants; 0056 adds a durable family device-session epoch; 0057 persists
 // Parent actor provenance; 0058 reconciles the missing service-account index
 // on family_authority_request_challenges with this canonical declaration.
+// Migration 0060 added the durable Family Trust Set epoch store and epoch
+// floors; 0061 added the Parent password-login lock columns; 0062 (Wave 6B,
+// owner rulings D4/F4/F5) added family_first_device_bootstrap_ceremonies,
+// family_authority_genesis_anchors.signature_scheme, and widened the
+// parent_mfa_step_up_grants operation CHECK with family.device.bootstrap.root.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -1935,7 +1940,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0011_family_commercial_authority.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0062_first_device_trust_root_bootstrap.sql"],
     ownerModule: "backend/src/db",
     columns: [
       { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -1945,6 +1950,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "protocol_version", columnType: "smallint unsigned", dataType: "smallint", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
       { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "signature", columnType: "varchar(512)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Cryptographic self-signature, opaque to the schema." },
+      { name: "signature_scheme", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: "PCA_FAMILY_AUTHORITY_GENESIS_V1", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary signature-scheme discriminator (migration 0062): PCA_FAMILY_AUTHORITY_GENESIS_V1 legacy self-signature semantics vs PCA_FIRST_DEVICE_BOOTSTRAP_V1 approved first-device ceremony proof signature." },
     ],
     primaryKey: ["family_id"],
     uniqueIndexes: [
@@ -2074,6 +2080,66 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
+    ],
+  },
+  {
+    name: "family_first_device_bootstrap_ceremonies",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0062_first_device_trust_root_bootstrap.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familytrustset",
+    columns: [
+      { name: "ceremony_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "dsk_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "dsk_public_key", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key material (never private)." },
+      { name: "dsk_algorithm", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "purpose", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "challenge_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "nonce", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Single-use CSPRNG bootstrap nonce (base64url); anti-replay material, never a raw secret." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "approved_by_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "approved_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "payload_digest", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "SHA-256 digest of the exact submitted bootstrap payload; idempotent-replay comparison material." },
+      { name: "outcome", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["ceremony_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "family_first_device_bootstrap_ceremonies_device_idx", columns: ["device_id"], unique: false },
+      { name: "family_first_device_bootstrap_ceremonies_family_idx", columns: ["family_id", "created_at"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "family_first_device_bootstrap_ceremonies_approved_pair_check", clause: "((`approved_by_account_id` is null) = (`approved_at` is null))" },
+      { name: "family_first_device_bootstrap_ceremonies_challenge_id_check", clause: "(char_length(`challenge_id`) = 36)" },
+      { name: "family_first_device_bootstrap_ceremonies_committed_pair_check", clause: "((`payload_digest` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))" },
+      { name: "family_first_device_bootstrap_ceremonies_device_id_check", clause: "(char_length(`device_id`) = 36)" },
+      { name: "family_first_device_bootstrap_ceremonies_dsk_algorithm_check", clause: "(`dsk_algorithm` = _utf8mb4'ECDSA_P256_SHA256')" },
+      { name: "family_first_device_bootstrap_ceremonies_dsk_key_id_check", clause: "(char_length(`dsk_key_id`) = 36)" },
+      { name: "family_first_device_bootstrap_ceremonies_dsk_public_key_check", clause: "(char_length(`dsk_public_key`) between 1 and 128)" },
+      { name: "family_first_device_bootstrap_ceremonies_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "family_first_device_bootstrap_ceremonies_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
+      { name: "family_first_device_bootstrap_ceremonies_nonce_check", clause: "(char_length(`nonce`) = 43)" },
+      { name: "family_first_device_bootstrap_ceremonies_outcome_check", clause: "((`outcome` is null) or (`outcome` = _utf8mb4'ACCEPTED'))" },
+      { name: "family_first_device_bootstrap_ceremonies_payload_digest_check", clause: "((`payload_digest` is null) or regexp_like(`payload_digest`,_utf8mb4'^[0-9a-f]{64}$'))" },
+      { name: "family_first_device_bootstrap_ceremonies_purpose_check", clause: "(`purpose` = _utf8mb4'PCA_FIRST_DEVICE_BOOTSTRAP_V1')" },
+      { name: "family_first_device_bootstrap_ceremonies_status_check", clause: "(`status` in (_utf8mb4'PENDING',_utf8mb4'APPROVED',_utf8mb4'COMMITTED'))" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
+      { column: "device_id", impliedReferencedTable: "devices", impliedReferencedColumn: "device_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Candidate enrollment device; existence and pre-bootstrap lifecycle state are verified by the ceremony store inside the committing transaction (PAIRING_PENDING or PAIRED accepted; REVOKED/ACTIVE rejected).", source: "backend/migrations/0062_first_device_trust_root_bootstrap.sql" },
     ],
   },
   {
@@ -2753,7 +2819,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0049_parent_totp_mfa_and_family_provisioning.sql",
-    alteredByMigrations: ["0054_parent_sensitive_step_up_operations.sql", "0055_parent_device_invitation_step_up.sql"],
+    alteredByMigrations: ["0054_parent_sensitive_step_up_operations.sql", "0055_parent_device_invitation_step_up.sql", "0062_first_device_trust_root_bootstrap.sql"],
     ownerModule: "backend/src/parentaccount/mfa",
     columns: [
       { name: "grant_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2780,7 +2846,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     checkConstraints: [
       { name: "parent_mfa_step_up_grants_expiry_check", clause: "(`expires_at` > `created_at`)" },
       { name: "parent_mfa_step_up_grants_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
-      { name: "parent_mfa_step_up_grants_operation_check", clause: "(`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change'))" },
+      { name: "parent_mfa_step_up_grants_operation_check", clause: "(`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.device.bootstrap.root',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change'))" },
     ],
     applicationEnforcedRelations: [],
   },

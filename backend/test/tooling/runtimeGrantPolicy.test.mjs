@@ -106,6 +106,14 @@ test('migration 0060 Trust Set storage keeps accepted epochs append-only and flo
   );
 });
 
+test('migration 0062 first-device bootstrap ceremonies declare exactly their source-derived verbs', () => {
+  assert.deepEqual(
+    sorted(privilegesForTable('family_first_device_bootstrap_ceremonies')),
+    ['INSERT', 'SELECT', 'UPDATE'],
+    'the ceremony row is created, read back, and advanced through its one-time PENDING->APPROVED->COMMITTED lifecycle; the runtime must never DELETE it',
+  );
+});
+
 test('no declaration contains a forbidden verb, and none is a table-level ALL', () => {
   for (const [table, verbs] of Object.entries(RUNTIME_TABLE_PRIVILEGES)) {
     for (const verb of verbs) {

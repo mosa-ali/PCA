@@ -140,6 +140,13 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // construction: a public key is published, and a server-minted UUID-length
   // id is not key material at all.
   'candidate_key_id', 'candidate_public_key',
+  // WAVE 6B (migration 0062, family_first_device_bootstrap_ceremonies):
+  // dsk_key_id and dsk_public_key are the candidate first-device DSK's opaque
+  // key identifier and PUBLIC signing key -- the same device_public_keys-class
+  // pair already approved above under the genesis_/owner_/signer_ role
+  // prefixes (schema.ts: OPAQUE_IDENTIFIER and SECURITY_METADATA, "Public
+  // signing key material (never private)"). Never private key material.
+  'dsk_key_id', 'dsk_public_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {

@@ -374,6 +374,7 @@ family_authority_genesis_anchors,genesis_dsk_public_key,varchar(128),SECURITY_ME
 family_authority_genesis_anchors,protocol_version,smallint unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 family_authority_genesis_anchors,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 family_authority_genesis_anchors,signature,varchar(512),SECURITY_METADATA,"Cryptographic self-signature, opaque to the schema."
+family_authority_genesis_anchors,signature_scheme,varchar(64),OPERATIONAL_METADATA,Closed-vocabulary signature-scheme discriminator (migration 0062): PCA_FAMILY_AUTHORITY_GENESIS_V1 legacy self-signature semantics vs PCA_FIRST_DEVICE_BOOTSTRAP_V1 approved first-device ceremony proof signature.
 family_child_memberships,child_profile_id,varchar(128),OPAQUE_IDENTIFIER,"Server-minted UUID, membership/existence edge only (migration 0036 / doc 10 Section 7.1) -- never a ChildProfile record."
 family_child_memberships,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_child_memberships,creation_request_key,varchar(191),OPAQUE_IDENTIFIER,"Caller-supplied idempotency key, never used as row identity."
@@ -382,6 +383,24 @@ family_epoch_floors,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application 
 family_epoch_floors,minimum_accepted_trust_set_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 family_epoch_floors,minimum_accepted_key_epoch,int unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 family_epoch_floors,updated_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_first_device_bootstrap_ceremonies,ceremony_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_first_device_bootstrap_ceremonies,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_first_device_bootstrap_ceremonies,device_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_first_device_bootstrap_ceremonies,dsk_key_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_first_device_bootstrap_ceremonies,dsk_public_key,varchar(128),SECURITY_METADATA,Public signing key material (never private).
+family_first_device_bootstrap_ceremonies,dsk_algorithm,varchar(32),OPERATIONAL_METADATA,Closed-vocabulary status/type/category/currency/market column.
+family_first_device_bootstrap_ceremonies,purpose,varchar(64),OPERATIONAL_METADATA,Closed-vocabulary status/type/category/currency/market column.
+family_first_device_bootstrap_ceremonies,challenge_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+family_first_device_bootstrap_ceremonies,nonce,varchar(64),SECURITY_METADATA,Single-use CSPRNG bootstrap nonce (base64url); anti-replay material never a raw secret.
+family_first_device_bootstrap_ceremonies,expires_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_first_device_bootstrap_ceremonies,status,varchar(16),OPERATIONAL_METADATA,Closed-vocabulary status/type/category/currency/market column.
+family_first_device_bootstrap_ceremonies,approved_by_account_id,char(36),OPAQUE_IDENTIFIER,Verified Parent account reference.
+family_first_device_bootstrap_ceremonies,approved_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_first_device_bootstrap_ceremonies,payload_digest,char(64),SECURITY_METADATA,SHA-256 digest of the exact submitted bootstrap payload; idempotent-replay comparison material.
+family_first_device_bootstrap_ceremonies,outcome,varchar(32),OPERATIONAL_METADATA,Closed-vocabulary status/type/category/currency/market column.
+family_first_device_bootstrap_ceremonies,consumed_at,datetime(3),OPERATIONAL_METADATA,One-time consumption timestamp.
+family_first_device_bootstrap_ceremonies,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+family_first_device_bootstrap_ceremonies,updated_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 family_member_invitations,invitation_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_member_invitations,family_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 family_member_invitations,invited_email_hash,binary(32),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."

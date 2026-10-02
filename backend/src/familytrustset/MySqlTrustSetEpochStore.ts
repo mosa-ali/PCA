@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { execute, runInTransaction } from '../db/pool.js';
 import { isPlausibleOpaqueId, isPlausibleSignature, MIN_TRUST_SET_EPOCH } from './policy.js';
 import {
@@ -111,6 +112,44 @@ function toRecord(row: EpochRow): TrustSetEpochRecord {
 }
 
 /**
+ * Ensures the family's floors row exists and then latches it with SELECT ...
+ * FOR UPDATE. This single row is the per-family serialization point shared by
+ * every acceptance path (ordinary appends and the Wave-6B first-device
+ * bootstrap ceremony): concurrent writers for one family are ordered by the
+ * database itself, never by in-process state. Returns the current floors.
+ */
+export async function ensureAndLockFamilyFloors(
+  conn: PoolConnection,
+  familyId: OpaqueFamilyId,
+  now: Date,
+): Promise<{ trustSetFloor: number; keyFloor: number }> {
+  await execute(
+    conn,
+    `INSERT INTO family_epoch_floors (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, 1, 1, ?)
+     ON DUPLICATE KEY UPDATE family_id = family_id`,
+    [familyId, now],
+  );
+
+  const { rows } = await execute<FloorRow>(
+    conn,
+    `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
+     FROM family_epoch_floors
+     WHERE family_id = ?
+     FOR UPDATE`,
+    [familyId],
+  );
+  const floor = rows[0];
+  if (!floor) {
+    // Unreachable on a healthy schema: the ensure-insert above runs in the
+    // same transaction. Fail closed rather than proceed with no recorded
+    // floors behind the append.
+    throw new Error('family_epoch_floors row missing after ensure-insert; refusing to proceed without floors.');
+  }
+  return { trustSetFloor: Number(floor.minimum_accepted_trust_set_epoch), keyFloor: Number(floor.minimum_accepted_key_epoch) };
+}
+
+/**
  * Durable, MySQL-backed TrustSetEpochStore over the migration-0060 tables
  * `family_trust_set_epochs` (accepted signed epochs) and
  * `family_epoch_floors` (per-family monotonic acceptance floors).
@@ -165,97 +204,87 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
   async appendAcceptedEpoch(record: TrustSetEpochRecord): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
     const now = new Date();
-    return runInTransaction<AppendTrustSetEpochOutcome>(async (conn) => {
-      await execute(
-        conn,
-        `INSERT INTO family_epoch_floors (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
-         VALUES (?, 1, 1, ?)
-         ON DUPLICATE KEY UPDATE family_id = family_id`,
-        [record.familyId, now],
-      );
+    return runInTransaction<AppendTrustSetEpochOutcome>((conn) => this.appendAcceptedEpochOnConnection(conn, record, now));
+  }
 
-      const { rows: floorRows } = await execute<FloorRow>(
-        conn,
-        `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
-         FROM family_epoch_floors
-         WHERE family_id = ?
-         FOR UPDATE`,
-        [record.familyId],
-      );
-      const floor = floorRows[0];
-      if (!floor) {
-        // Unreachable on a healthy schema: the ensure-insert above runs in
-        // this same transaction. Fail closed rather than proceed with no
-        // recorded floors behind the append.
-        throw new Error('family_epoch_floors row missing after ensure-insert; refusing to append without floors.');
+  /**
+   * Connection-scoped append used by appendAcceptedEpoch and by the Wave-6B
+   * first-device bootstrap ceremony, which must persist the accepted genesis
+   * epoch inside ITS OWN transaction together with the family-root anchor
+   * and the ceremony's committed result (see MySqlFirstDeviceBootstrapStore).
+   * The caller owns transaction management; the per-family floors row remains
+   * the serialization point either way (ensure-insert + SELECT ... FOR UPDATE).
+   */
+  async appendAcceptedEpochOnConnection(
+    conn: PoolConnection,
+    record: TrustSetEpochRecord,
+    now: Date = new Date(),
+  ): Promise<AppendTrustSetEpochOutcome> {
+    assertValidAppendRecord(record);
+    const { trustSetFloor: floorTrustSetEpoch, keyFloor: floorKeyEpoch } = await ensureAndLockFamilyFloors(conn, record.familyId, now);
+
+    const { rows: existingRows } = await execute<EpochRow>(
+      conn,
+      `SELECT ${EPOCH_COLUMNS} FROM family_trust_set_epochs WHERE family_id = ? AND trust_set_epoch = ?`,
+      [record.familyId, record.trustSetEpoch],
+    );
+    const existing = existingRows[0];
+    if (existing) {
+      const storedBytes = Buffer.isBuffer(existing.signed_epoch_bytes)
+        ? existing.signed_epoch_bytes
+        : Buffer.from(existing.signed_epoch_bytes);
+      if (
+        storedBytes.equals(record.signedEpochBytes) &&
+        existing.signature === record.signature &&
+        Number(existing.key_epoch) === record.keyEpoch
+      ) {
+        return { outcome: 'IDEMPOTENT_MATCH' };
       }
-      const floorTrustSetEpoch = Number(floor.minimum_accepted_trust_set_epoch);
-      const floorKeyEpoch = Number(floor.minimum_accepted_key_epoch);
+      return { outcome: 'CONFLICT' };
+    }
 
-      const { rows: existingRows } = await execute<EpochRow>(
-        conn,
-        `SELECT ${EPOCH_COLUMNS} FROM family_trust_set_epochs WHERE family_id = ? AND trust_set_epoch = ?`,
-        [record.familyId, record.trustSetEpoch],
-      );
-      const existing = existingRows[0];
-      if (existing) {
-        const storedBytes = Buffer.isBuffer(existing.signed_epoch_bytes)
-          ? existing.signed_epoch_bytes
-          : Buffer.from(existing.signed_epoch_bytes);
-        if (
-          storedBytes.equals(record.signedEpochBytes) &&
-          existing.signature === record.signature &&
-          Number(existing.key_epoch) === record.keyEpoch
-        ) {
-          return { outcome: 'IDEMPOTENT_MATCH' };
-        }
-        return { outcome: 'CONFLICT' };
-      }
+    // Strictly-less-than: the floor is the MINIMUM accepted trust-set epoch.
+    // Equality here is unreachable for a row-backed floor (the duplicate
+    // check above already resolved it as IDEMPOTENT_MATCH or CONFLICT); the
+    // only equality without a backing row is the virgin floor of 1, where a
+    // genesis epoch (trustSetEpoch = 1) must be appendable.
+    if (record.trustSetEpoch < floorTrustSetEpoch) {
+      return { outcome: 'REJECTED_STALE', reason: 'STALE_TRUST_SET_EPOCH' };
+    }
+    if (record.keyEpoch < floorKeyEpoch) {
+      return { outcome: 'REJECTED_STALE', reason: 'STALE_KEY_EPOCH' };
+    }
 
-      // Strictly-less-than: the floor is the MINIMUM accepted trust-set
-      // epoch. Equality here is unreachable for a row-backed floor (the
-      // duplicate check above already resolved it as IDEMPOTENT_MATCH or
-      // CONFLICT); the only equality without a backing row is the virgin
-      // floor of 1, where a genesis epoch (trustSetEpoch = 1) must be
-      // appendable.
-      if (record.trustSetEpoch < floorTrustSetEpoch) {
-        return { outcome: 'REJECTED_STALE', reason: 'STALE_TRUST_SET_EPOCH' };
-      }
-      if (record.keyEpoch < floorKeyEpoch) {
-        return { outcome: 'REJECTED_STALE', reason: 'STALE_KEY_EPOCH' };
-      }
+    await execute(
+      conn,
+      `INSERT INTO family_trust_set_epochs
+         (family_id, trust_set_epoch, key_epoch, supersedes_epoch, signed_epoch_bytes, signature, signer_key_id, signer_device_id, issued_at, received_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.familyId,
+        record.trustSetEpoch,
+        record.keyEpoch,
+        record.supersedesEpoch,
+        record.signedEpochBytes,
+        record.signature,
+        record.signerKeyId,
+        record.signerDeviceId,
+        record.issuedAt,
+        record.receivedAt,
+      ],
+    );
 
-      await execute(
-        conn,
-        `INSERT INTO family_trust_set_epochs
-           (family_id, trust_set_epoch, key_epoch, supersedes_epoch, signed_epoch_bytes, signature, signer_key_id, signer_device_id, issued_at, received_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          record.familyId,
-          record.trustSetEpoch,
-          record.keyEpoch,
-          record.supersedesEpoch,
-          record.signedEpochBytes,
-          record.signature,
-          record.signerKeyId,
-          record.signerDeviceId,
-          record.issuedAt,
-          record.receivedAt,
-        ],
-      );
+    await execute(
+      conn,
+      `UPDATE family_epoch_floors
+       SET minimum_accepted_trust_set_epoch = ?,
+           minimum_accepted_key_epoch = GREATEST(minimum_accepted_key_epoch, ?),
+           updated_at = ?
+       WHERE family_id = ?`,
+      [record.trustSetEpoch, record.keyEpoch, now, record.familyId],
+    );
 
-      await execute(
-        conn,
-        `UPDATE family_epoch_floors
-         SET minimum_accepted_trust_set_epoch = ?,
-             minimum_accepted_key_epoch = GREATEST(minimum_accepted_key_epoch, ?),
-             updated_at = ?
-         WHERE family_id = ?`,
-        [record.trustSetEpoch, record.keyEpoch, now, record.familyId],
-      );
-
-      return { outcome: 'APPENDED' };
-    });
+    return { outcome: 'APPENDED' };
   }
 
   async readLatestEpoch(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord | null> {

@@ -941,7 +941,7 @@ CREATE TABLE `family_authority_chain_heads` (
   CONSTRAINT `family_authority_chain_heads_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- family_authority_genesis_anchors (defined by backend/migrations/0011_family_commercial_authority.sql)
+-- family_authority_genesis_anchors (defined by backend/migrations/0011_family_commercial_authority.sql, altered by 0062_first_device_trust_root_bootstrap.sql)
 CREATE TABLE `family_authority_genesis_anchors` (
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `genesis_device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -950,6 +950,7 @@ CREATE TABLE `family_authority_genesis_anchors` (
   `protocol_version` smallint unsigned NOT NULL,
   `created_at` datetime(3) NOT NULL,
   `signature` varchar(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `signature_scheme` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'PCA_FAMILY_AUTHORITY_GENESIS_V1',
   PRIMARY KEY (`family_id`),
   CONSTRAINT `family_authority_genesis_anchors_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `family_authority_genesis_anchors_protocol_version_check` CHECK ((`protocol_version` between 1 and 100))
@@ -1004,6 +1005,45 @@ CREATE TABLE `family_epoch_floors` (
   CONSTRAINT `family_epoch_floors_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `family_epoch_floors_min_key_epoch_check` CHECK ((`minimum_accepted_key_epoch` >= 1)),
   CONSTRAINT `family_epoch_floors_min_trust_set_epoch_check` CHECK ((`minimum_accepted_trust_set_epoch` >= 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- family_first_device_bootstrap_ceremonies (defined by backend/migrations/0062_first_device_trust_root_bootstrap.sql)
+CREATE TABLE `family_first_device_bootstrap_ceremonies` (
+  `ceremony_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `dsk_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `dsk_public_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `dsk_algorithm` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `approved_by_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `approved_at` datetime(3) NULL,
+  `payload_digest` char(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `outcome` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `consumed_at` datetime(3) NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`ceremony_id`),
+  KEY `family_first_device_bootstrap_ceremonies_device_idx` (`device_id`),
+  KEY `family_first_device_bootstrap_ceremonies_family_idx` (`family_id`, `created_at`),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_approved_pair_check` CHECK (((`approved_by_account_id` is null) = (`approved_at` is null))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_challenge_id_check` CHECK ((char_length(`challenge_id`) = 36)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_committed_pair_check` CHECK (((`payload_digest` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_device_id_check` CHECK ((char_length(`device_id`) = 36)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_algorithm_check` CHECK ((`dsk_algorithm` = _utf8mb4'ECDSA_P256_SHA256')),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_key_id_check` CHECK ((char_length(`dsk_key_id`) = 36)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_public_key_check` CHECK ((char_length(`dsk_public_key`) between 1 and 128)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_nonce_check` CHECK ((char_length(`nonce`) = 43)),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_outcome_check` CHECK (((`outcome` is null) or (`outcome` = _utf8mb4'ACCEPTED'))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_payload_digest_check` CHECK (((`payload_digest` is null) or regexp_like(`payload_digest`,_utf8mb4'^[0-9a-f]{64}$'))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_purpose_check` CHECK ((`purpose` = _utf8mb4'PCA_FIRST_DEVICE_BOOTSTRAP_V1')),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'APPROVED',_utf8mb4'COMMITTED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_member_invitations (defined by backend/migrations/0027_family_member_invitations.sql, altered by 0035_family_member_invitation_pending_uniqueness.sql)
@@ -1358,7 +1398,7 @@ CREATE TABLE `parent_mfa_state` (
   CONSTRAINT `parent_mfa_state_recovery_hold_check` CHECK (((`recovery_hold_started_at` is null and `recovery_hold_expires_at` is null) or (`recovery_hold_started_at` is not null and `recovery_hold_expires_at` is not null and `recovery_hold_expires_at` > `recovery_hold_started_at`)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_mfa_step_up_grants (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql, altered by 0054_parent_sensitive_step_up_operations.sql, 0055_parent_device_invitation_step_up.sql)
+-- parent_mfa_step_up_grants (defined by backend/migrations/0049_parent_totp_mfa_and_family_provisioning.sql, altered by 0054_parent_sensitive_step_up_operations.sql, 0055_parent_device_invitation_step_up.sql, 0062_first_device_trust_root_bootstrap.sql)
 CREATE TABLE `parent_mfa_step_up_grants` (
   `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1376,7 +1416,7 @@ CREATE TABLE `parent_mfa_step_up_grants` (
   CONSTRAINT `parent_mfa_step_up_grants_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `parent_mfa_step_up_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_mfa_step_up_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
-  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change')))
+  CONSTRAINT `parent_mfa_step_up_grants_operation_check` CHECK ((`operation` in (_utf8mb4'BILLING_CHECKOUT_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CREATE',_utf8mb4'FAMILY_COMMERCIAL_REQUEST_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL',_utf8mb4'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME',_utf8mb4'family.member.add',_utf8mb4'family.member.remove',_utf8mb4'family.member.role_change',_utf8mb4'family.member.invitation.revoke',_utf8mb4'family.device.enrollment.create',_utf8mb4'family.device.enrollment.revoke',_utf8mb4'family.device.bootstrap.root',_utf8mb4'family.retention.update',_utf8mb4'family.history.export',_utf8mb4'family.history.delete',_utf8mb4'family.ownership.transfer',_utf8mb4'family.recovery.material.reveal',_utf8mb4'family.security.settings.change')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes (defined by backend/migrations/0029_parent_password_reset_codes.sql)

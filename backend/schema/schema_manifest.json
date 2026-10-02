@@ -4994,6 +4994,14 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "signature_scheme",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": "PCA_FAMILY_AUTHORITY_GENESIS_V1",
+          "key": "",
+          "extra": ""
         }
       ],
       "indexes": [
@@ -5257,6 +5265,181 @@
           "name": "PRIMARY",
           "unique": true,
           "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_first_device_bootstrap_ceremonies": {
+      "columns": [
+        {
+          "name": "ceremony_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "dsk_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "dsk_public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "dsk_algorithm",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "purpose",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "approved_by_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "approved_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "payload_digest",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "outcome",
+          "type": "varchar(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_first_device_bootstrap_ceremonies_device_idx",
+          "unique": false,
+          "column": "device_id",
+          "seq": 1
+        },
+        {
+          "name": "family_first_device_bootstrap_ceremonies_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_first_device_bootstrap_ceremonies_family_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "ceremony_id",
           "seq": 1
         }
       ],

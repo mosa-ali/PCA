@@ -33,7 +33,12 @@ const execFileP = promisify(execFile);
 // from-zero-migrated disposable database with all 40 migrations applied
 // (compare-schema-snapshots.mjs reported EXACT_MATCH against the
 // canonical-bootstrap build).
-const EXPECTED_FINGERPRINT = '638155c4f808cd673d31464ef881c42e68b7e493498324d8a1f8b20b9f48f3b1';
+// WAVE 6B (2026-10-02): regenerated for migration 0062
+// (family_first_device_bootstrap_ceremonies, family_authority_genesis_anchors
+// .signature_scheme, widened parent_mfa_step_up_grants operation CHECK);
+// computed via schema-fingerprint.mjs against the from-zero 0062 disposable
+// database (95 tables including schema_migrations).
+const EXPECTED_FINGERPRINT = '442c7c7259ec40d1f2769bfd2c286ce34716a8f38283f494234f438d05712c69';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

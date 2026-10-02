@@ -87,6 +87,11 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
     { skip: SKIP_REASON },
     () => {},
   );
+  test(
+    'MySQL PRIVILEGE BOUNDARY: migration 0062 first-device bootstrap ceremonies keep SELECT/INSERT/UPDATE and are denied DELETE',
+    { skip: SKIP_REASON },
+    () => {},
+  );
   test(PRODUCTION_PATH_TEST_NAME, { skip: SKIP_REASON }, () => {});
 } else {
   // PRIVILEGE ACCEPTANCE GATE mode: PCA_MIGRATION_DATABASE_URL is set --
@@ -254,6 +259,46 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
       // connection. The containing database is also a disposable grant-test DB.
       await adminConnection.query(`DELETE FROM family_trust_set_epochs WHERE family_id = ?`, [familyId]).catch(() => {});
       await adminConnection.query(`DELETE FROM family_epoch_floors WHERE family_id = ?`, [familyId]).catch(() => {});
+    }
+  });
+
+  test('MySQL PRIVILEGE BOUNDARY: migration 0062 first-device bootstrap ceremonies keep SELECT/INSERT/UPDATE and are denied DELETE', async () => {
+    const ceremonyId = randomUUID();
+    const familyId = `privilege-probe-${randomUUID()}`;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+    try {
+      await runtimeConnection.query(
+        `INSERT INTO family_first_device_bootstrap_ceremonies
+           (ceremony_id, family_id, device_id, dsk_key_id, dsk_public_key, dsk_algorithm, purpose,
+            challenge_id, nonce, expires_at, status, approved_by_account_id, approved_at, payload_digest,
+            outcome, consumed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'probe-public-key', 'ECDSA_P256_SHA256', 'PCA_FIRST_DEVICE_BOOTSTRAP_V1',
+            ?, ?, ?, 'PENDING', NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+        [ceremonyId, familyId, randomUUID(), randomUUID(), randomUUID(), randomBytes(32).toString('base64url'), expiresAt, now, now],
+      );
+      const [ceremonyRows] = await runtimeConnection.query(
+        `SELECT status FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`,
+        [ceremonyId],
+      );
+      assert.equal(ceremonyRows.length, 1, 'runtime principal must retain SELECT and INSERT on ceremonies');
+      assert.equal(ceremonyRows[0].status, 'PENDING');
+      await assert.doesNotReject(() =>
+        runtimeConnection.query(
+          `UPDATE family_first_device_bootstrap_ceremonies
+             SET status = 'APPROVED', approved_by_account_id = ?, approved_at = ?, updated_at = ?
+           WHERE ceremony_id = ?`,
+          [randomUUID(), now, now, ceremonyId],
+        ),
+      );
+      await assert.rejects(
+        () => runtimeConnection.query(`DELETE FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`, [ceremonyId]),
+        isTableAccessDenied,
+      );
+    } finally {
+      // Only this test's UUID-owned row is removed, using the privileged
+      // connection. The containing database is also a disposable grant-test DB.
+      await adminConnection.query(`DELETE FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`, [ceremonyId]).catch(() => {});
     }
   });
 

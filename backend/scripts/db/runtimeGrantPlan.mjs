@@ -126,6 +126,13 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   family_trust_set_epochs: Object.freeze(['SELECT', 'INSERT']),
   family_epoch_floors: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
 
+  // --- migration 0062 (first-device trust-root bootstrap ceremony), derived
+  // from MySqlFirstDeviceBootstrapStore statements. The ceremony row is
+  // created (INSERT), read back (SELECT), and advanced in place through its
+  // one-time PENDING -> APPROVED -> COMMITTED lifecycle (UPDATE); it is never
+  // deleted by the runtime. ---
+  family_first_device_bootstrap_ceremonies: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+
   // --- ordinary runtime DML tables (explicit declaration each) ---
   account_entitlements: DML,
   billing_commercial_markets: DML,

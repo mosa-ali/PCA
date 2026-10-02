@@ -104,8 +104,10 @@ import type { ParentAccountService } from '../parentaccount/ParentAccountService
 // registered exactly like every other domain's registerXRoutes call. See
 // removalDecisionRoutes.ts's own header for why it was not previously wired.
 import { registerRemovalDecisionRoutes } from './routes/removalDecisionRoutes.js';
+import { registerFirstDeviceBootstrapRoutes } from './routes/firstDeviceBootstrapRoutes.js';
 import type { RemovalTargetResolver } from '../familyrbac/RemovalTargetResolver.js';
 import type { RemovalDecisionAuthority } from '../familyrbac/RemovalDecisionAuthority.js';
+import type { FirstDeviceBootstrapService } from '../familytrustset/FirstDeviceBootstrapService.js';
 import type { DeviceProtectionStatusRepository } from '../device/DeviceProtectionStatusRepository.js';
 import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
@@ -251,6 +253,8 @@ export interface ServerDependencies {
   removalTargetResolver?: Pick<RemovalTargetResolver, 'resolveForRemoval'>;
   /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration -- see registerRemovalDecisionRoutes below. */
   administrationPinService?: AdministrationPinService;
+  /** WAVE 6B (D4/F4): first-device trust-root bootstrap ceremony -- see registerFirstDeviceBootstrapRoutes below. */
+  firstDeviceBootstrapService: FirstDeviceBootstrapService;
   /** PCA-ADD-ENR-016/PCA-FR-145: verified device-session protection-status writes. */
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: see registerRuntimeSyncRoutes' own ProtectionStatusAlerting doc comment. */
@@ -628,6 +632,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     removalDecisionAuthority: deps.removalDecisionAuthority,
     removalTargetResolver: deps.removalTargetResolver,
     administrationPinService: deps.administrationPinService,
+  });
+  registerFirstDeviceBootstrapRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    bootstrapService: deps.firstDeviceBootstrapService,
+    rateLimiter,
   });
   registerComplimentaryGrantRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,

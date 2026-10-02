@@ -736,3 +736,44 @@ class of independent hardcoded-list drift as `§20`).
 corresponding rows. No production or live database was touched.
 `SCHEMA_CHANGED = YES` (one new table, one new column on an existing table),
 `MIGRATION_ADDED = YES` (`0042_parent_login_step_up_codes.sql`).
+
+---
+
+## Wave 6B — first-device trust-root bootstrap ceremony (migration 0062, 2026-10-02)
+
+`SCHEMA_CHANGED = YES`; `MIGRATION_ADDED = YES` (`0062_first_device_trust_root_bootstrap.sql`).
+
+Changes:
+- NEW TABLE `family_first_device_bootstrap_ceremonies` (18 columns): the durable
+  one-time ceremony/challenge state and committed-result record for the approved
+  first-device Trust Set root ceremony (owner rulings D4/F4/F5;
+  `PCA_FIRST_DEVICE_BOOTSTRAP_V1` proof domain / `PCA_FAMILY_TRUST_ROOT_V1` anchor
+  protocol identifier). PUBLIC key material and ceremony state only — no private
+  keys, no recovery envelopes, no server-held family keys.
+- `family_authority_genesis_anchors.signature_scheme` (varchar(64), NOT NULL,
+  DEFAULT 'PCA_FAMILY_AUTHORITY_GENESIS_V1'): explicit discriminator between the
+  0011 legacy self-signature scheme and the approved `PCA_FIRST_DEVICE_BOOTSTRAP_V1`
+  ceremony proof signature.
+- `parent_mfa_step_up_grants_operation_check` widened (additively) with the new
+  one-use `family.device.bootstrap.root` step-up operation.
+
+Verified:
+- From-zero migration run through 0062: 60/60 migrations; `verify-mysql.mjs`'s
+  expected-table list extended in the same change.
+- `backend/schema/current_schema.sql` + `backend/schema/schema_manifest.json`
+  regenerated from the migrated database (95 tables, 828 columns, 95 primary
+  keys, 104 foreign keys, 38 unique / 144 non-unique indexes, 308 checks).
+- `database/live-bootstrap/01_create_database_schema.sql` +
+  `02_reference_data.sql` (60 migration rows + 14 reference rows) and the
+  disposable-bootstrap pair (`docs/database/bootstrap/`) regenerated from the
+  canonical schema.ts.
+- `docs/database/PCA_CENTRAL_DATA_PRIVACY_CLASSIFICATION.csv` gained the 19
+  corresponding rows; no `READABLE_CHILD_DATA`/`READABLE_PARENT_DATA` column
+  was introduced.
+- `CANONICAL_SCHEMA_FINGERPRINT = sha256:442c7c7259ec40d1f2769bfd2c286ce34716a8f38283f494234f438d05712c69`
+  (was `sha256:638155c4f808cd673d31464ef881c42e68b7e493498324d8a1f8b20b9f48f3b1`;
+  95 tables including `schema_migrations`). `backend/scripts/post-validate.mjs`'s
+  `EXPECTED_FINGERPRINT` was updated to match.
+
+LIVE APPLICATION IS NOT AUTHORIZED: `pca_pro` remains last verified at 0059;
+0060/0061/0062 are repository/local only.

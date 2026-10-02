@@ -300,6 +300,7 @@ const REGISTER = new Map([
   ['MySqlDeviceChallengeRepository', { status: 'GAP', category: 'CRYPTO_GATED', note: 'the production device-signature verifier rejects unconditionally pending PCA-DEC-020.' }],
   ['MySqlEnvelopeAcceptanceTransaction', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RejectingEnvelopeSignatureVerifier + rejecting context resolver make no production write reachable.' }],
   ['MySqlTrustSetEpochStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'WAVE 5B: newly constructed in main.ts by the store-backed trust-set role resolver. Reads are production-reachable but always answer NO_TRUST_SET while the durable state is empty, and no write can occur: appendAcceptedEpoch is called only by TrustSetEpochAcceptanceService, which has no production caller, and the P-256 TrustSet verifier is deliberately not production-activated pending the PCA-DEC-020 human crypto review. The REAL writer/reader pair IS exercised end-to-end against real MySQL in CI (test/db/familyTrustSetEpochAcceptance.mysql.test.mjs, with the persistence + migration-safety siblings), and the activation atomic set is pinned by test/tooling/ftsProductionWiring.test.mjs. Promotion follows the owner-authorized ingestion-wiring wave.' }],
+  ['MySqlFirstDeviceBootstrapStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'WAVE 6B: newly constructed in main.ts for the first-device trust-root bootstrap ceremony (owner rulings D4/F4). No production write is reachable: the ceremony service requires its injected attestation verifier to answer VERIFIED, and the only production verifier is FailClosedAttestationVerifier, which can never answer VERIFIED; absent that boundary a verified submission would commit the family root anchor + epoch-1 + floors in ONE transaction through the certified Wave-5B epoch append. The REAL commit path IS exercised end-to-end against real MySQL in CI (test/db/firstDeviceBootstrapCeremony.mysql.test.mjs, with the migration-safety sibling), and the fail-closed wiring pins live in test/tooling/ftsProductionWiring.test.mjs. Promotion follows the owner-authorized attestation/device wave (6C/6D).' }],
   ['MySqlMessageIdempotencyLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through envelope acceptance, which the rejecting verifier blocks.' }],
   ['MySqlReplayLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'same: no production envelope is accepted, so nothing is recorded.' }],
   ['MySqlDataVersionLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through the same envelope-acceptance path, which the rejecting signature verifier blocks.' }],
@@ -379,7 +380,12 @@ const REGISTER = new Map([
 // unreachable -- the honest CRYPTO_GATED row above. This is a new tracked gated
 // surface, not a regression of an existing certification; recorded here so the
 // ratchet stays an exact record of the register.
-const BASELINE_GAP_COUNT = 21;
+// 21 -> 22 in Wave 6B: MySqlFirstDeviceBootstrapStore is a NEW
+// production-constructed store (first-device trust-root bootstrap ceremony)
+// whose write path is fail-closed at the attestation boundary -- the honest
+// CRYPTO_GATED row above, pinned by ftsProductionWiring.test.mjs. Same rule:
+// a new tracked gated surface, not a regression, recorded for the ratchet.
+const BASELINE_GAP_COUNT = 22;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
