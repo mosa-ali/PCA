@@ -54,4 +54,15 @@ class EncryptedSharedPreferencesStateStore(
     override fun clear() {
         prefs.edit().clear().apply()
     }
+
+    /**
+     * Wave 6C: SYNCHRONOUS commit -- unlike every mutating call above (which
+     * uses apply()), this returns only after the current in-memory map has
+     * been written to disk (SharedPreferences.commit() persists pending
+     * applies as well). Reserved for the first-device ceremony's
+     * before-submit barrier; ordinary snapshot writes stay asynchronous.
+     */
+    override fun flush() {
+        prefs.edit().commit()
+    }
 }

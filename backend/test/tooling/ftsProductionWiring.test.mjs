@@ -27,6 +27,16 @@
 // already do for their own composition invariants) and includes a GATE
 // SELF-TEST proving the checks can actually fail (the permanent principle:
 // a gate must be demonstrably able to fail).
+//
+// WAVE 6C amendment: the temporary 6B fail-closed pin is replaced by the
+// REAL platform attestation router (createPlatformAttestationVerifier),
+// which is itself fail-closed by construction: with absent/empty/malformed
+// pinned-root configuration the Android lane answers UNAVAILABLE and never
+// VERIFIED, and iOS stays unimplemented. main.ts must construct the router
+// (never a bare fail-closed class, never a permissive double), pinned roots
+// may never appear as PEM literals in src (configuration only), and the
+// permissive-verifier token bans are extended with test/mock/fake/bypass
+// names so no such construction can ever enter production composition.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -88,36 +98,64 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
     }
   }
 
-  // 2c. Wave 6B: the first-device trust-root bootstrap lane must be wired in
-  //     exactly its fail-closed shape -- the service over the MySQL store
-  //     over the SHARED epoch store, with the fail-closed attestation
-  //     verifier, and actually handed to the HTTP composition. Removing any
-  //     pin silently disarms the boundary.
+  // 2c. Wave 6B/6C: the first-device trust-root bootstrap lane must be
+  //     wired in exactly its real-but-fail-closed shape -- the service over
+  //     the MySQL store over the SHARED epoch store, terminated by the
+  //     platform attestation router constructed from explicit environment
+  //     configuration. Removing any pin silently disarms the boundary.
   for (const pin of [
     'new FirstDeviceBootstrapService({',
     'store: new MySqlFirstDeviceBootstrapStore({ epochStore: trustSetEpochStore }),',
-    'attestationVerifier: new FailClosedAttestationVerifier(),',
+    'attestationVerifier: platformAttestationVerifier,',
+    'createPlatformAttestationVerifier(process.env)',
     'firstDeviceBootstrapService,',
   ]) {
     if (!mainText.includes(pin)) {
       violations.push(`main.ts must keep the fail-closed bootstrap wiring pin: ${pin}`);
     }
   }
+  if (mainText.includes('new FailClosedAttestationVerifier(')) {
+    violations.push(
+      'main.ts must construct the platform attestation router via createPlatformAttestationVerifier, not a bare fail-closed class directly',
+    );
+  }
 
   // 2d. No permissive attestation verifier may exist anywhere in src: the
-  //     ceremony lane is admissible in production only behind the
-  //     fail-closed verifier (ruling 11), so a stub/bypass verifier
-  //     construction is a violation on sight.
+  //     ceremony lane is admissible in production only behind the real
+  //     platform verifier (ruling 11 + Wave 6C), so a stub/bypass verifier
+  //     construction is a violation on sight. Test doubles live in test/
+  //     fixtures and never in src. PEM certificate literals are likewise
+  //     banned from src: pinned roots arrive ONLY via explicit runtime
+  //     configuration, never as compiled-in trust material.
   for (const [file, text] of Object.entries({ 'src/main.ts': mainText, ...sourceFiles })) {
     for (const token of [
       'StubAttestationVerifier',
       'PermissiveAttestationVerifier',
       'AcceptAllAttestationVerifier',
       'AlwaysVerifiedAttestationVerifier',
+      'TestAttestationVerifier',
+      'MockAttestationVerifier',
+      'FakeAttestationVerifier',
+      'BypassAttestationVerifier',
+      'DebugAttestationVerifier',
     ]) {
       if (text.includes(token)) {
         violations.push(`${file} must not contain the permissive attestation verifier token ${token}`);
       }
+    }
+    if (/-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=]{40,}/.test(text)) {
+      violations.push(`${file} must not embed PEM certificate material (pinned roots arrive only via explicit configuration)`);
+    }
+    // Stage-B hardening (Agent-3 MINOR-4): the escaped-newline and
+    // concatenated spellings are the SAME compiled-in trust material as the
+    // multi-line literal. A bare marker stays allowed OUTSIDE main.ts
+    // (src/db/pool.ts documents the marker in a comment); main.ts never
+    // gets to mention it at all.
+    if (/-----BEGIN CERTIFICATE-----\\n[A-Za-z0-9+/=]{40,}/.test(text)) {
+      violations.push(`${file} must not embed PEM certificate material via escaped newlines`);
+    }
+    if (file === 'src/main.ts' && text.includes('-----BEGIN CERTIFICATE-----')) {
+      violations.push('src/main.ts must not mention the PEM certificate marker at all (pinned roots arrive only via explicit runtime configuration)');
     }
   }
 
@@ -172,9 +210,10 @@ test('GATE SELF-TEST: the checker detects a partially-wired composition and acce
   const goodMain = [
     'const trustSetEpochStore = new MySqlTrustSetEpochStore();',
     'const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore });',
+    'const platformAttestationVerifier = createPlatformAttestationVerifier(process.env);',
     'const firstDeviceBootstrapService = new FirstDeviceBootstrapService({',
     '  store: new MySqlFirstDeviceBootstrapStore({ epochStore: trustSetEpochStore }),',
-    '  attestationVerifier: new FailClosedAttestationVerifier(),',
+    '  attestationVerifier: platformAttestationVerifier,',
     '});',
     'firstDeviceBootstrapService,',
     'resolveEnvelopeContext: rejectingResolveEnvelopeContext,',
@@ -193,9 +232,44 @@ test('GATE SELF-TEST: the checker detects a partially-wired composition and acce
     [],
   );
   assert.notDeepEqual(
-    findFtsWiringViolations(goodMain.replace('attestationVerifier: new FailClosedAttestationVerifier(),', 'attestationVerifier: stubVerifier,'), {}),
+    findFtsWiringViolations(goodMain.replace('attestationVerifier: platformAttestationVerifier,', 'attestationVerifier: stubVerifier,'), {}),
     [],
-    'unpinning the fail-closed verifier must be caught',
+    'unpinning the platform attestation router at the service construction must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain.replace('createPlatformAttestationVerifier(process.env)', 'buildSomethingElse(process.env)'), {}),
+    [],
+    'unpinning the platform router factory call must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\nconst v = new FailClosedAttestationVerifier();`, {}),
+    [],
+    'main.ts constructing a bare fail-closed class directly (instead of the router) must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\nconst pem = '-----BEGIN CERTIFICATE-----\n${'A'.repeat(48)}';`, {}),
+    [],
+    'embedded PEM certificate material in main.ts must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain, { 'src/familytrustset/evilPem.ts': `const pem = "-----BEGIN CERTIFICATE-----\n${'B'.repeat(48)}";` }),
+    [],
+    'embedded PEM certificate material anywhere in src must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\nconst pem = '-----BEGIN CERTIFICATE-----\\n${'A'.repeat(48)}';`, {}),
+    [],
+    'escaped-newline PEM certificate material in main.ts must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\n// see the -----BEGIN CERTIFICATE----- marker docs`, {}),
+    [],
+    'main.ts must not mention the PEM certificate marker even without material',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain, { 'src/familytrustset/evilPemEscaped.ts': `const pem = "-----BEGIN CERTIFICATE-----\\n${'C'.repeat(48)}";` }),
+    [],
+    'escaped-newline PEM certificate material anywhere in src must be caught',
   );
   assert.notDeepEqual(
     findFtsWiringViolations(goodMain.replace('new FirstDeviceBootstrapService({', 'const disconnected = ('), {}),
@@ -206,6 +280,11 @@ test('GATE SELF-TEST: the checker detects a partially-wired composition and acce
     findFtsWiringViolations(`${goodMain}\nconst v = new StubAttestationVerifier();`, {}),
     [],
     'a permissive verifier token in main.ts must be caught',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(`${goodMain}\nconst v = new FakeAttestationVerifier();`, {}),
+    [],
+    'a fake verifier token in main.ts must be caught (Wave 6C extended bans)',
   );
   assert.notDeepEqual(
     findFtsWiringViolations(goodMain, { 'src/familytrustset/evilVerifier.ts': 'export class StubAttestationVerifier {}' }),

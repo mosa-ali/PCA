@@ -384,6 +384,9 @@ test('MySQL RECOVERY: recoverAttempt returns the original deviceId after a lost 
   const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
   assert.equal(recovered.deviceId, original.deviceId);
   assert.equal(recovered.status, 'PAIRING_PENDING');
+  // Wave 6C: recovery delivers the persisted server-minted key ids verbatim.
+  assert.equal(recovered.signingKeyId, original.signingKeyId);
+  assert.equal(recovered.encryptionKeyId, original.encryptionKeyId);
 });
 
 test('MySQL RECOVERY: unknown attempt id and wrong recovery token both raise the identical NOT_FOUND error -- no oracle', async () => {

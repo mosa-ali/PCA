@@ -95,6 +95,18 @@ export function toPairingRequestDto(view: PairingRequestView): PairingRequestDto
 
 export interface BootstrapResultDto {
   deviceId: string;
+  /**
+   * Wave 6C: the server-minted DSK/DEK key ids registered for this device.
+   * The first-device trust-root ceremony (M1) is bound to the enrollment
+   * attempt's exact DSK, and the device must present its own dskKeyId /
+   * dskPublicKey pair to the ceremony's challenge endpoint -- delivering
+   * these ids is what makes that possible without the server ever
+   * accepting a caller-supplied id it has not already recorded. Opaque
+   * server identifiers; no key material of any kind. Delivered on both
+   * /bootstrap and /recover responses (same shape, same mapper).
+   */
+  signingKeyId: string;
+  encryptionKeyId: string;
   status: string;
   childProfileId: string | null;
   ageUxTier: string;
@@ -103,6 +115,8 @@ export interface BootstrapResultDto {
 
 export function toBootstrapResultDto(result: {
   deviceId: string;
+  signingKeyId: string;
+  encryptionKeyId: string;
   status: string;
   childProfileId: string | null;
   ageUxTier: string;
@@ -110,6 +124,8 @@ export function toBootstrapResultDto(result: {
 }): BootstrapResultDto {
   return {
     deviceId: result.deviceId,
+    signingKeyId: result.signingKeyId,
+    encryptionKeyId: result.encryptionKeyId,
     status: result.status,
     childProfileId: result.childProfileId,
     ageUxTier: result.ageUxTier,

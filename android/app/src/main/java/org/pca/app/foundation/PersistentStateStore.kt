@@ -15,6 +15,16 @@ interface PersistentStateStore {
     fun remove(key: String)
     fun contains(key: String): Boolean
     fun clear()
+
+    /**
+     * Wave 6C: synchronous durability barrier -- returns only after every
+     * prior [putString]/[remove] is durably written. Backends that write
+     * asynchronously (e.g. SharedPreferences.apply()) MUST implement this
+     * with a synchronous commit; the first-device ceremony REQUIRES it
+     * before sending an ECDSA-signed submission whose exact bytes can
+     * never be reproduced after process death.
+     */
+    fun flush()
 }
 
 /**
@@ -34,4 +44,5 @@ class InMemoryPersistentStateStore : PersistentStateStore {
     override fun remove(key: String) { values.remove(key) }
     override fun contains(key: String): Boolean = values.containsKey(key)
     override fun clear() { values.clear() }
+    override fun flush() { /* in-memory: already "durable" for the process lifetime */ }
 }

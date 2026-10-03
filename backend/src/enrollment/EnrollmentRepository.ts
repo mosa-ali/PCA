@@ -32,6 +32,10 @@ export type EnrollDeviceOutcome =
 export interface AttemptRecoveryRow {
   deviceId: string;
   recoveryTokenHash: string;
+  /** Server-minted DSK key id recorded at enrollment (Wave 6C delivery: the device needs its own key ids for the first-device trust-root ceremony). */
+  signingKeyId: string;
+  /** Server-minted DEK key id recorded at enrollment. */
+  encryptionKeyId: string;
   childProfileId: string | null;
   ageUxTier: AgeUxTier;
   initialPolicyProfile: InitialPolicyProfile;

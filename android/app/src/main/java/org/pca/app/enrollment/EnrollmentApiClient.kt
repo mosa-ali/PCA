@@ -23,6 +23,15 @@ interface EnrollmentApiClient {
 data class DeviceBootstrapResult(
     val deviceId: String,
     val status: String,
+    /**
+     * Wave 6C: server-minted DSK/DEK key ids (backend dto.ts toBootstrapResultDto).
+     * Required for the first-device trust-root ceremony: the challenge call must
+     * present the SAME dskKeyId/dskPublicKey pair the attempt registered (M1), and
+     * the ceremony's epoch-1 entry names both ids. Blank values are treated as an
+     * ambiguous bootstrap response by the HTTP client (never a guess).
+     */
+    val signingKeyId: String = "",
+    val encryptionKeyId: String = "",
     val childProfileId: String? = null,
     val ageUxTier: AgeUxTier = AgeUxTier.YOUNG_CHILD,
     val initialPolicyProfile: InitialPolicyProfile = InitialPolicyProfile.BALANCED,

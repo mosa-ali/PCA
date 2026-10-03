@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-02 03:30 UTC (Wave-6B-R1 Parent closure recorded; Platform hold unchanged)
-VALIDATED_PARENT_SOURCE_HEAD = ca2cf8abf2c6a9bc3d71ae433f2ed4c1d0855f62 (exact-head Quality Gates run 36951972948 SUCCESS 27/27 at that head; Wave 6B-R1 is Parent-only backend work with zero Platform impact)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = ca2cf8abf2c6a9bc3d71ae433f2ed4c1d0855f62 (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
-CURRENT_CHECKPOINT_SHA = ca2cf8abf2c6a9bc3d71ae433f2ed4c1d0855f62 (last certified exact-head run 36951972948 SUCCESS 27/27; the R1 commit and its CI are reported with the R1 report)
-LATEST_PARENT_LEDGER_CHECKPOINT = Wave-6B-R1 Parent checkpoint rolled (base ca2cf8ab); LOCAL_UNCOMMITTED_PARENT_CHANGE = none after the single R1 commit; no Platform product scope changed and the dependency hold remains.
+LAST_UPDATED_UTC = 2026-10-03 00:44 UTC (Wave-6C Parent closure recorded; Platform hold unchanged)
+VALIDATED_PARENT_SOURCE_HEAD = 778805355ddefe0fefc83747035470076e86b404 (exact-head Quality Gates run 36961389056 SUCCESS 27/27 at that head; Wave 6C is Parent Android work with zero Platform impact)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 778805355ddefe0fefc83747035470076e86b404 (fresh fetch, local HEAD, tracking ref and git ls-remote agree)
+CURRENT_CHECKPOINT_SHA = 778805355ddefe0fefc83747035470076e86b404 (last certified exact-head run 36961389056 SUCCESS 27/27; the 6C commit and its CI are reported with the 6C report)
+LATEST_PARENT_LEDGER_CHECKPOINT = Wave-6C Parent checkpoint rolled (base 77880535); LOCAL_UNCOMMITTED_PARENT_CHANGE = none after the single 6C commit; no Platform product scope changed and the dependency hold remains.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. Wave 6B-R1 is Parent backend-only (first-device trust-root security closure, stopped for owner review); Wave 6C/6D and any Platform Enrollment work are NOT authorized. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. Wave 6C is Parent Android activation work (real-device attestation gate open); Wave 6D and any Platform Enrollment work are NOT authorized. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -1225,3 +1225,9 @@ NEXT_ACTION = Preserve the hold; await owner review of Wave 6B before any furthe
 PARENT = Wave 6B-R1 closed the three review findings on the first-device trust-root foundation backend-only: canonical `PCA_FIRST_DEVICE_BOOTSTRAP_COMMIT_V1` committed-submission identity (proofSignature + evidence presence bound; a changed signature or evidence can never replay), attestation contract binding the exact expected/attested DSK identity (service-side independent equality; no blind echo), and durable auditability via migration 0063 (`bootstrap_proof_sha256` + `attestation_evidence_sha256`; digests only; the canonical proof is reconstructible and re-verifiable from durable state). Evidence: backend unit suite 2801/2801; full DB lane inner 698 tests / 688 pass / 0 fail / 10 privileged-mode skips + certified production paths 276/276 (0 skipped, 0 failed); focused temp-copy kill-run v3: control 58/58 pass and all sixteen B-SEC022-001..016 mutants behaviorally killed. Repository/local schema is 0063; live `pca_pro` remains 0059 (no contact/mutation); production cannot create a first root until the 6C/6D attestation implementations exist; NO DOWNSTREAM PARENT-POLICY / ORDINARY TRUST-SET / DEVICE-ACTIVE ROUTE ACTIVATION; WAVE_6B_100_PERCENT_CLOSED = YES.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
 NEXT_ACTION = Preserve the hold; await owner review of Wave 6B-R1 before any further Parent or Platform wave.
+
+### 2026-10-03 00:44 UTC — Wave 6C Parent trust-root Android activation recorded; Platform remains held
+
+PARENT = Wave 6C activated the first-device trust root end-to-end for Android repository-side: real AndroidKeyStore DSK custody (TEE/StrongBox, non-exportable, hardware-asserted), Android Key Attestation evidence verified server-side against pinned roots (fail closed via UNAVAILABLE otherwise), and the certified 6B/R1 ceremony bound to that same DSK with durable replay-first retries and no optimistic commit. Seven-specialist Stage-B findings (including a demonstrated signed-region provenance blocker and a committed-root key-sweep hazard) were fully resolved pre-publication with behavioral kill controls. No iOS source change; no new migration (repository head remains 0063); live `pca_pro` remains 0059 (no contact/mutation). REAL_DEVICE_ATTESTATION_GATE = OPEN: no physical-device attestation evidence exists yet, and emulator/unit/CI results are not device evidence. WAVE_6C_CODE_COMPLETE = YES; WAVE_6C_100_PERCENT_CLOSED = NO by the duty-of-honesty closure rule.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent TODO-12/14/15 and literal TODO-18 acceptance remain open; no Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Preserve the hold; await owner review of Wave 6C before any further Parent or Platform wave.

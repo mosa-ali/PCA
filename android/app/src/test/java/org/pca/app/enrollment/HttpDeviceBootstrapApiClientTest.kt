@@ -35,20 +35,47 @@ class HttpDeviceBootstrapApiClientTest {
         val fake = FakeHttpServer.start().also { server = it }
         fake.start { body ->
             capturedBody = JSONObject(body)
-            201 to JSONObject().put("deviceId", "device-123").put("status", "PAIRING_PENDING").toString().toByteArray()
+            201 to JSONObject()
+                .put("deviceId", "device-123")
+                .put("status", "PAIRING_PENDING")
+                // Wave 6C: the certified DTO delivers the server-minted key ids.
+                .put("signingKeyId", "dsk-key-123")
+                .put("encryptionKeyId", "dek-key-123")
+                .toString().toByteArray()
         }
 
         val result = withTimeout(5_000) {
             client(fake.baseUrl).bootstrap("raw-token-abc", "ANDROID", "signing-pub-key", "encryption-pub-key", "attempt-id-1", "recovery-token-1")
         }
 
-        assertEquals(DeviceBootstrapResult(deviceId = "device-123", status = "PAIRING_PENDING"), result)
+        assertEquals(
+            DeviceBootstrapResult(
+                deviceId = "device-123",
+                status = "PAIRING_PENDING",
+                signingKeyId = "dsk-key-123",
+                encryptionKeyId = "dek-key-123",
+            ),
+            result,
+        )
         assertEquals("raw-token-abc", capturedBody?.getString("rawInvitationToken"))
         assertEquals("ANDROID", capturedBody?.getString("platform"))
         assertEquals("signing-pub-key", capturedBody?.getString("signingPublicKey"))
         assertEquals("encryption-pub-key", capturedBody?.getString("encryptionPublicKey"))
         assertEquals("attempt-id-1", capturedBody?.getString("bootstrapAttemptId"))
         assertEquals("recovery-token-1", capturedBody?.getString("attemptRecoveryToken"))
+    }
+
+    @Test
+    fun `a 201 without the server-minted key ids is ambiguous -- the attempt is preserved for recovery`() = runBlocking {
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start { 201 to """{"deviceId":"device-123","status":"PAIRING_PENDING"}""".toByteArray() }
+        try {
+            withTimeout(5_000) { client(fake.baseUrl).bootstrap("t", "ANDROID", "s", "e", "a", "r") }
+            fail("expected BootstrapError.AmbiguousOutcome")
+        } catch (e: BootstrapError.AmbiguousOutcome) {
+            // expected: a response that cannot feed the first-device ceremony
+            // is treated as ambiguous, never as a partial success.
+        }
     }
 
     @Test
@@ -215,12 +242,26 @@ class HttpDeviceBootstrapApiClientTest {
         val fake = FakeHttpServer.start().also { server = it }
         fake.start { body ->
             capturedBody = JSONObject(body)
-            200 to JSONObject().put("deviceId", "recovered-device").put("status", "PAIRING_PENDING").toString().toByteArray()
+            200 to JSONObject()
+                .put("deviceId", "recovered-device")
+                .put("status", "PAIRING_PENDING")
+                // Wave 6C: recovery delivers the same key ids as bootstrap.
+                .put("signingKeyId", "dsk-key-recovered")
+                .put("encryptionKeyId", "dek-key-recovered")
+                .toString().toByteArray()
         }
 
         val result = withTimeout(5_000) { client(fake.baseUrl).recoverAttempt("attempt-id-1", "recovery-token-1") }
 
-        assertEquals(DeviceBootstrapResult(deviceId = "recovered-device", status = "PAIRING_PENDING"), result)
+        assertEquals(
+            DeviceBootstrapResult(
+                deviceId = "recovered-device",
+                status = "PAIRING_PENDING",
+                signingKeyId = "dsk-key-recovered",
+                encryptionKeyId = "dek-key-recovered",
+            ),
+            result,
+        )
         assertEquals("attempt-id-1", capturedBody?.getString("bootstrapAttemptId"))
         assertEquals("recovery-token-1", capturedBody?.getString("attemptRecoveryToken"))
         assertFalse(capturedBody?.has("rawInvitationToken") ?: true)

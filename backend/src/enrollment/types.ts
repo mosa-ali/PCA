@@ -51,6 +51,10 @@ export interface RecoverAttemptInput {
 /** Same shape as a successful bootstrap so the HTTP layer can reuse one DTO for both. */
 export interface RecoverAttemptResult {
   deviceId: string;
+  /** The server-minted DSK key id registered for this device (Wave 6C: delivered so the device can run the first-device trust-root ceremony, which M1-binds the ceremony to the enrollment attempt's exact DSK). */
+  signingKeyId: string;
+  /** The server-minted DEK key id registered for this device (same Wave-6C delivery rationale). */
+  encryptionKeyId: string;
   childProfileId: string | null;
   ageUxTier: AgeUxTier;
   initialPolicyProfile: InitialPolicyProfile;

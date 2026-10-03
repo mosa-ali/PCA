@@ -236,6 +236,13 @@ class HttpDeviceBootstrapApiClient(
         // as an ambiguous success, preserve the attempt, and require recovery
         // rather than persisting a higher lifecycle state from this response.
         if (deviceId.isBlank() || status != PAIRING_PENDING_STATUS) throw onAmbiguous()
+        // Wave 6C: the server-minted DSK/DEK key ids are part of the
+        // certified DTO on BOTH routes; a response missing them cannot feed
+        // the first-device trust-root ceremony and is therefore ambiguous
+        // (the attempt is preserved and recovery can re-obtain them).
+        val signingKeyId = json.optString("signingKeyId", "")
+        val encryptionKeyId = json.optString("encryptionKeyId", "")
+        if (signingKeyId.isBlank() || encryptionKeyId.isBlank()) throw onAmbiguous()
         val ageUxTier = runCatching { AgeUxTier.valueOf(json.optString("ageUxTier", AgeUxTier.YOUNG_CHILD.name)) }
             .getOrElse { throw onAmbiguous() }
         val initialPolicyProfile = runCatching {
@@ -244,6 +251,8 @@ class HttpDeviceBootstrapApiClient(
         return DeviceBootstrapResult(
             deviceId = deviceId,
             status = status,
+            signingKeyId = signingKeyId,
+            encryptionKeyId = encryptionKeyId,
             childProfileId = json.optString("childProfileId", "").ifBlank { null },
             ageUxTier = ageUxTier,
             initialPolicyProfile = initialPolicyProfile,

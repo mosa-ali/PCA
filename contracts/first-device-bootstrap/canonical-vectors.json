@@ -1,0 +1,33 @@
+{
+  "note": "Wave 6C shared golden vectors — byte-exact canonical encodings pinned by BOTH backend (test/familytrustset/firstDeviceBootstrapCanonicalVectors.test.mjs) and Android (FirstDeviceCanonicalTest.kt). Generated with the certified backend canonicalizers.",
+  "challengePrefix": "PCA_ANDROID_DSK_ATTESTATION_V1|",
+  "challengeExample": {
+    "attemptId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "challengeBytesBase64Url": "UENBX0FORFJPSURfRFNLX0FUVEVTVEFUSU9OX1YxfEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB"
+  },
+  "proofInput": {
+    "familyId": "11111111-1111-4111-8111-111111111111",
+    "deviceId": "22222222-2222-4222-8222-222222222222",
+    "ceremonyId": "33333333-3333-4333-8333-333333333333",
+    "challengeId": "44444444-4444-4444-8444-444444444444",
+    "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expiresAtIso": "2026-10-02T00:00:00.000Z",
+    "dskKeyId": "55555555-5555-4555-8555-555555555555",
+    "dskPublicKeyBase64": "BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A",
+    "epoch1Sha256Hex": "abababababababababababababababababababababababababababababababab",
+    "attestationEvidenceDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+  },
+  "proofCanonicalBytes": "29:PCA_FIRST_DEVICE_BOOTSTRAP_V11:136:11111111-1111-4111-8111-11111111111136:22222222-2222-4222-8222-22222222222236:33333333-3333-4333-8333-33333333333336:44444444-4444-4444-8444-44444444444443:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA24:2026-10-02T00:00:00.000Z17:ECDSA_P256_SHA25636:55555555-5555-4555-8555-55555555555587:BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A64:abababababababababababababababababababababababababababababababab64:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "proofCanonicalSha256Hex": "a5e6da273ee5564a3cf933de93b55557d4c2389a9cb183243069c5502a90a3bf",
+  "epoch1Input": {
+    "familyId": "11111111-1111-4111-8111-111111111111",
+    "deviceId": "22222222-2222-4222-8222-222222222222",
+    "dskKeyId": "55555555-5555-4555-8555-555555555555",
+    "dskPublicKeyBase64": "BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A",
+    "dekKeyId": "66666666-6666-4666-8666-666666666666",
+    "dekPublicKeyBase64": "BP_-_fz7-vn49_b19PPy8fDv7u3s6-rp6Ofm5eTj4uHg397d3Nva2djX1tXU09LR0M_OzczLysnIx8bFxMPCwcA",
+    "issuedAtIso": "2026-10-02T00:00:00.000Z"
+  },
+  "epoch1CanonicalBytes": "36:11111111-1111-4111-8111-1111111111111:11:11:136:22222222-2222-4222-8222-2222222222225:OWNER36:55555555-5555-4555-8555-55555555555587:BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A36:66666666-6666-4666-8666-66666666666687:BP_-_fz7-vn49_b19PPy8fDv7u3s6-rp6Ofm5eTj4uHg397d3Nva2djX1tXU09LR0M_OzczLysnIx8bFxMPCwcA6:ACTIVE24:2026-10-02T00:00:00.000Z4:null",
+  "epoch1CanonicalSha256Hex": "e02aa85c2c9804775762a5c78a56c30ca57bed6cdae46614f1f9544c6a4a299d"
+}

@@ -100,6 +100,8 @@ export function createInMemoryEnrollmentRepository() {
       return {
         deviceId: attempt.deviceId,
         recoveryTokenHash: attempt.recoveryTokenHash,
+        signingKeyId: attempt.signingKeyId,
+        encryptionKeyId: attempt.encryptionKeyId,
         childProfileId: attempt.childProfileId ?? null,
         ageUxTier: attempt.ageUxTier ?? 'YOUNG_CHILD',
         initialPolicyProfile: attempt.initialPolicyProfile ?? 'BALANCED',

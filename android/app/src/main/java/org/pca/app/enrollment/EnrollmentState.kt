@@ -48,6 +48,15 @@ sealed interface EnrollmentState {
     /** [org.pca.app.security.CryptoSuiteNotApprovedException] was thrown while preparing keys -- production key generation is not yet approved for release. Bootstrap never reached the network in this case. */
     data object CryptoReviewRequired : EnrollmentState
 
+    /**
+     * Wave 6C: [org.pca.app.security.SecureKeyUnavailableException] was
+     * thrown while preparing keys -- the platform could not provide (or
+     * attest) a hardware-backed key pair. No software-only key may ever
+     * enter the trust-root path, so the attempt stops before any network
+     * call and before any durable record exists.
+     */
+    data object SecureKeyUnavailable : EnrollmentState
+
     /** This device's local family state reports it has been revoked. Reachable only by a future status-refresh path (not built by this coordinator) that reads the real, authenticated pairing status and writes REVOKED into [org.pca.app.storage.FamilyStateStore]. */
     data object Revoked : EnrollmentState
 

@@ -346,6 +346,11 @@ test('RECOVERY: correct attempt id + correct recovery token returns the same dev
   const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
   assert.equal(recovered.deviceId, original.deviceId);
   assert.equal(recovered.status, 'PAIRING_PENDING');
+  // Wave 6C: the recovery result must deliver the server-minted DSK/DEK key
+  // ids verbatim (the device needs its own key ids for the first-device
+  // trust-root ceremony, which M1-binds to the enrollment attempt's DSK).
+  assert.equal(recovered.signingKeyId, original.signingKeyId);
+  assert.equal(recovered.encryptionKeyId, original.encryptionKeyId);
 });
 
 test('RECOVERY: unknown attempt id is NOT_FOUND', async () => {

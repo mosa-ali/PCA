@@ -111,6 +111,10 @@ fun EnrollmentScreen(
                 Text(stringResource(R.string.enrollment_crypto_review_required))
             }
 
+            is EnrollmentState.SecureKeyUnavailable -> {
+                Text(stringResource(R.string.enrollment_secure_key_unavailable))
+            }
+
             is EnrollmentState.Revoked -> {
                 Text(stringResource(R.string.enrollment_revoked))
             }

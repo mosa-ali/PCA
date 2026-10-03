@@ -62,6 +62,11 @@ import org.pca.app.enrollment.screenTimeConfigForEnrollmentProfile
 import org.pca.app.enrollment.EnrollmentDeepLinkConfig
 import org.pca.app.enrollment.EnrollmentLinkParser
 import org.pca.app.enrollment.HttpDeviceBootstrapApiClient
+import org.pca.app.firstdevice.FirstDeviceBootstrapApiClient
+import org.pca.app.firstdevice.FirstDeviceRootStore
+import org.pca.app.firstdevice.FirstDeviceTrustRootCoordinator
+import org.pca.app.firstdevice.HttpFirstDeviceBootstrapApiClient
+import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
 import org.pca.app.enrollment.PersistentEnrollmentLifecycleAuditSink
 import org.pca.app.enrollment.UriEnrollmentLinkParser
 import org.pca.app.feature.wellbeing.persistence.WellbeingPolicyStore
@@ -107,8 +112,8 @@ import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
 import org.pca.app.runtime.tamper.DevicePolicyDegradationMonitor
 import org.pca.app.runtime.tamper.WallClockRollbackMonitor
 import org.pca.app.runtime.tamper.VpnDegradationMonitor
+import org.pca.app.security.AndroidKeystoreDskProvider
 import org.pca.app.security.DeviceKeyPairGenerator
-import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
 import org.pca.app.runtime.PcaRuntime
 import org.pca.app.runtime.boot.AndroidBootInstanceSource
 import org.pca.app.runtime.boot.BootInstanceSource
@@ -341,18 +346,20 @@ class PcaAppGraph private constructor(
     /** PCA-ANDROID-ENROLLMENT-1: the real, production-composed enrollment flow that writes into
      * [familyStateStore] above -- closing the KNOWN_ARCHITECTURE_GAP [PersistentDeviceIdentityProvider]'s
      * own doc comment previously described ("no production code path ... calls the backend
-     * enrollment endpoint"). [deviceKeyPairGenerator] is the fail-closed
-     * [NotApprovedDeviceKeyPairGenerator] -- production key generation is still gated behind
-     * PRODUCTION_CRYPTO_SUITE human security review, so [enrollmentCoordinator] can be safely wired
-     * here today: any real bootstrap attempt stops at key preparation
-     * (`EnrollmentState.CryptoReviewRequired`) and never reaches [deviceBootstrapApiClient]. The
+     * enrollment endpoint"). WAVE 6C (owner-authorized): [deviceKeyPairGenerator] is now the REAL
+     * [AndroidKeystoreDskProvider] -- keys are generated inside the TEE-backed (or StrongBox)
+     * AndroidKeyStore, non-exportable by construction, create-once per attempt, and required to
+     * pass the provider's post-generation hardware-backing assertion before anything leaves
+     * [enrollmentCoordinator]; a platform without a hardware-backed key fails closed into
+     * `EnrollmentState.SecureKeyUnavailable` and never reaches [deviceBootstrapApiClient]. The
      * endpoint base URL is the recorded production API hostname (api.pcasafe.com -- the hostname
      * bound to the backend App Service in docs/deployment/DOCKER_AZURE_SUPPORT_REVIEW.md's
      * cross-surface matrix; FABLE-A051 closed 2026-09-08: the previous "https://api.pca.app"
      * placeholder was a domain the project does not own, so a future key-generator swap would have
      * POSTed invitation tokens and device public keys to an unowned host). Nothing is deployed
      * there yet -- see that review's status section; HTTPS is enforced unconditionally regardless. */
-    val deviceKeyPairGenerator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator()
+    val androidKeystoreDskProvider = AndroidKeystoreDskProvider()
+    val deviceKeyPairGenerator: DeviceKeyPairGenerator = androidKeystoreDskProvider
     val deviceBootstrapApiClient: DeviceBootstrapApiClient =
         HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pcasafe.com"))
     /** PCA-ADD-ENR-008: accepts both the custom `pca://enroll` scheme and the `https://` Android
@@ -369,6 +376,10 @@ class PcaAppGraph private constructor(
      * device reboot so an ambiguous bootstrap response can be recovered instead of silently lost.
      * See [PersistentPendingEnrollmentAttemptStore]'s own doc comment. */
     val pendingEnrollmentAttemptStore: PendingEnrollmentAttemptStore = PersistentPendingEnrollmentAttemptStore(runtimeStateStore)
+    /** WAVE 6C: durable first-device trust-root ceremony state (attempt credential seed captured
+     * at enrollment success + ceremony/submission progress). Backed by the same encrypted
+     * [runtimeStateStore]; see [FirstDeviceRootStore]'s own doc for the two write-before steps. */
+    val firstDeviceRootStore: FirstDeviceRootStore = PersistentFirstDeviceRootStore(runtimeStateStore)
     val enrollmentCoordinator = EnrollmentCoordinator(
         linkParser = enrollmentLinkParser,
         apiClient = deviceBootstrapApiClient,
@@ -380,6 +391,26 @@ class PcaAppGraph private constructor(
         // death/app restart. See PersistentEnrollmentLifecycleAuditSink's
         // own doc comment.
         lifecycleAuditSink = PersistentEnrollmentLifecycleAuditSink(persistence.enrollmentLifecycleAuditRepository),
+        // WAVE 6C: capture the ceremony seed at enrollment success (before
+        // the pending attempt record is cleared) so the trust-root ceremony
+        // can always reach its own attempt credentials.
+        firstDeviceRootStore = firstDeviceRootStore,
+    )
+
+    /** WAVE 6C: the Android side of the certified first-device trust-root ceremony -- consumes
+     * the EXISTING backend endpoints over the same production hostname, signs the bootstrap
+     * proof and epoch-1 with the enrollment DSK through [androidKeystoreDskProvider], assembles
+     * hardware Key Attestation evidence from that same key's certificate chain, and persists
+     * byte-stable submission state before the first send. It cannot and does not move any device
+     * lifecycle state: server-authoritative acceptance is recorded in [firstDeviceRootStore]
+     * only. */
+    val firstDeviceBootstrapApiClient: FirstDeviceBootstrapApiClient =
+        HttpFirstDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pcasafe.com"))
+    val firstDeviceTrustRootCoordinator = FirstDeviceTrustRootCoordinator(
+        rootStore = firstDeviceRootStore,
+        apiClient = firstDeviceBootstrapApiClient,
+        signatureEngine = androidKeystoreDskProvider,
+        evidenceSource = androidKeystoreDskProvider,
     )
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports

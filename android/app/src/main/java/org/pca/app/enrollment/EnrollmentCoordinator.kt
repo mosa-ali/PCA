@@ -3,9 +3,15 @@ package org.pca.app.enrollment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.pca.app.firstdevice.FirstDeviceCeremonySeed
+import org.pca.app.firstdevice.FirstDeviceRootRecord
+import org.pca.app.firstdevice.FirstDeviceRootState
+import org.pca.app.firstdevice.FirstDeviceRootStore
 import org.pca.app.security.CryptoSuiteNotApprovedException
+import org.pca.app.security.DeviceKeyPairDeletion
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.GeneratedKeyPair
+import org.pca.app.security.SecureKeyUnavailableException
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.LocalFamilyState
 import org.pca.app.storage.PendingEnrollmentAttempt
@@ -62,6 +68,15 @@ class EnrollmentCoordinator(
      * root has not yet been updated to inject a durable one.
      */
     private val lifecycleAuditSink: EnrollmentLifecycleAuditSink = InMemoryEnrollmentLifecycleAuditSink(),
+    /**
+     * WAVE 6C: durable sink for the first-device trust-root ceremony seed.
+     * Injected by production composition (PcaAppGraph); nullable only so
+     * enrollment-focused tests can omit it. A null sink means the ceremony
+     * cannot run later (its attempt credential was never captured) -- it is
+     * a fail-closed omission, never a security downgrade: the ceremony has
+     * no path that fabricates credentials.
+     */
+    private val firstDeviceRootStore: FirstDeviceRootStore? = null,
 ) {
     private val _state = MutableStateFlow(restoreInitialState())
     val state: StateFlow<EnrollmentState> = _state.asStateFlow()
@@ -139,15 +154,35 @@ class EnrollmentCoordinator(
         }
 
         _state.value = EnrollmentState.PreparingKeys
+        // Wave 6C: the attempt id is minted BEFORE key generation -- it scopes
+        // both key aliases and is baked into the DSK's hardware attestation
+        // challenge, so it must exist first (previously it was minted after).
+        val attemptId = AttemptIdentifiers.newAttemptId()
+        val attemptRecoveryToken = AttemptIdentifiers.newAttemptRecoveryToken()
+        // Reclaim key material orphaned by any crashed prior attempt before
+        // minting this attempt's keys (create-once namespace). Stage-B fix
+        // (Agents 1/5/7): the keep set MUST also include the first-device
+        // trust root's attempt -- a committed (or in-flight) root's DSK/DEK
+        // are LIVE key material, and sweeping them would irreversibly
+        // destroy the device's only family-root signing key.
+        val keepAttemptIds = mutableSetOf(attemptId)
+        firstDeviceRootStore?.current()?.seed?.attemptId?.let { keepAttemptIds.add(it) }
+        (keyPairGenerator as? DeviceKeyPairDeletion)?.deleteOrphanedAttemptKeys(keepAttemptIds)
         val signingKey: GeneratedKeyPair
         val encryptionKey: GeneratedKeyPair
         try {
-            signingKey = keyPairGenerator.generateSigningKeyPair()
-            encryptionKey = keyPairGenerator.generateEncryptionKeyPair()
+            signingKey = keyPairGenerator.generateSigningKeyPair(attemptId)
+            encryptionKey = keyPairGenerator.generateEncryptionKeyPair(attemptId)
         } catch (e: CryptoSuiteNotApprovedException) {
             // Never proceeds to the network call from here -- no apiClient.bootstrap() call
             // exists on this path, and nothing is persisted to pendingAttemptStore either.
             _state.value = EnrollmentState.CryptoReviewRequired
+            return
+        } catch (e: SecureKeyUnavailableException) {
+            // Wave 6C: the platform could not provide a hardware-backed key.
+            // No software-only key may enter the trust-root path; nothing is
+            // persisted and no network call happens.
+            _state.value = EnrollmentState.SecureKeyUnavailable
             return
         }
 
@@ -160,8 +195,8 @@ class EnrollmentCoordinator(
         )
 
         val pending = PendingEnrollmentAttempt(
-            attemptId = AttemptIdentifiers.newAttemptId(),
-            attemptRecoveryToken = AttemptIdentifiers.newAttemptRecoveryToken(),
+            attemptId = attemptId,
+            attemptRecoveryToken = attemptRecoveryToken,
             serverBaseUrl = readyState.serverBaseUrl,
             platform = platform,
             signingPublicKeyBase64 = signingKey.publicKeyBase64,
@@ -216,14 +251,14 @@ class EnrollmentCoordinator(
             // pending attempt -- its key material is unused and safe to stop tracking. A fresh
             // invitation from the parent is required.
             rawInvitationToken = null
-            pendingAttemptStore.clear()
+            abandonPendingAttempt()
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: BootstrapError.InvalidRequest) {
             // Our own request shape was malformed (should not happen from a correct client) --
             // retrying with the same malformed shape cannot help.
             rawInvitationToken = null
-            pendingAttemptStore.clear()
+            abandonPendingAttempt()
             _state.value = EnrollmentState.FailedRetryable
             return
         } catch (e: BootstrapError.UnexpectedServerError) {
@@ -289,13 +324,13 @@ class EnrollmentCoordinator(
             // (attemptId, attemptRecoveryToken) pair. Section 12: abandon; this attempt's key
             // material is unused and safe to stop tracking. The one-time invitation token itself
             // is unrecoverable by design (never persisted) -- a fresh invitation is required.
-            pendingAttemptStore.clear()
+            abandonPendingAttempt()
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: RecoveryError.InvalidRequest) {
             // Our own persisted attempt state is malformed (should not normally happen) --
             // retrying the same malformed request cannot help.
-            pendingAttemptStore.clear()
+            abandonPendingAttempt()
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: RecoveryError.AmbiguousOutcome) {
@@ -321,6 +356,24 @@ class EnrollmentCoordinator(
             ageUxTier = result.ageUxTier,
             initialPolicyProfile = result.initialPolicyProfile,
         )
+    }
+
+    /**
+     * Wave 6C: abandons the pending attempt AND deletes its key material
+     * (delete-before-clear). The keys were never used in any accepted server
+     * state -- the whole attempt is definitively dead -- so removing them
+     * shrinks the local secret surface without any recovery implication.
+     * Never called on a merely-ambiguous outcome; never called after a
+     * successful [persistSuccess] (whose keys back the ceremony).
+     */
+    private fun abandonPendingAttempt() {
+        val pending = pendingAttemptStore.current()
+        if (pending != null) {
+            val deleter = keyPairGenerator as? DeviceKeyPairDeletion
+            deleter?.deleteKeyPair(pending.signingPrivateKeyAlias)
+            deleter?.deleteKeyPair(pending.encryptionPrivateKeyAlias)
+        }
+        pendingAttemptStore.clear()
     }
 
     /**
@@ -419,6 +472,54 @@ class EnrollmentCoordinator(
                 initialPolicyProfile = result.initialPolicyProfile,
             ),
         )
+        // Wave 6C: capture the first-device ceremony seed BEFORE the pending
+        // attempt record is cleared (confirmProfile's clear() happens after
+        // this method returns true). The ceremony authenticates with the
+        // attempt credential pair and is M1-bound to this enrollment's DSK;
+        // a missing capture would strand a bootstrappable device.
+        captureFirstDeviceCeremonySeed(result)
         return true
+    }
+
+    /**
+     * WAVE 6C: writes the durable ceremony seed from the durable pending
+     * attempt + the server-issued bootstrap result. No-op when the sink was
+     * not wired (fail-closed: the ceremony then simply cannot run) or when
+     * a durable root record already exists in any non-terminal state
+     * (AWAITING_APPROVAL/APPROVED/SUBMITTING/UNKNOWN: the ORIGINAL
+     * ceremony's recovery material must survive a re-enrollment; ROOT_COMMITTED:
+     * a re-enrollment must never erase the record of an accepted root).
+     * Only a definitively terminal-dead record (EXPIRED/REJECTED) may be
+     * replaced by a new enrollment's seed (Stage-B fix, Agent 5 MINOR-2).
+     */
+    private fun captureFirstDeviceCeremonySeed(result: DeviceBootstrapResult) {
+        val rootStore = firstDeviceRootStore ?: return
+        val pending = pendingAttemptStore.current() ?: return
+        if (result.signingKeyId.isBlank() || result.encryptionKeyId.isBlank()) return
+        val existing = rootStore.current()
+        if (
+            existing != null &&
+            existing.state != FirstDeviceRootState.EXPIRED &&
+            existing.state != FirstDeviceRootState.REJECTED
+        ) {
+            return
+        }
+        rootStore.save(
+            FirstDeviceRootRecord(
+                seed = FirstDeviceCeremonySeed(
+                    attemptId = pending.attemptId,
+                    attemptRecoveryToken = pending.attemptRecoveryToken,
+                    serverBaseUrl = pending.serverBaseUrl,
+                    deviceId = result.deviceId,
+                    signingKeyId = result.signingKeyId,
+                    encryptionKeyId = result.encryptionKeyId,
+                    dskPublicKeyBase64 = pending.signingPublicKeyBase64,
+                    dekPublicKeyBase64 = pending.encryptionPublicKeyBase64,
+                    dskAlias = pending.signingPrivateKeyAlias,
+                    dekAlias = pending.encryptionPrivateKeyAlias,
+                ),
+            ),
+        )
+        rootStore.flush()
     }
 }

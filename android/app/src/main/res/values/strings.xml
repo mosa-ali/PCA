@@ -270,6 +270,7 @@
     <string name="enrollment_recovery_pending_title">Finishing setup…</string>
     <string name="enrollment_recovery_pending_body">Setup may already be complete on the server. Tap below to check.</string>
     <string name="enrollment_crypto_review_required">This build isn\'t approved for real device setup yet (development mode).</string>
+    <string name="enrollment_secure_key_unavailable">This device can\'t create the protected security key that family setup requires, so setup can\'t continue here.</string>
     <string name="enrollment_revoked">This device\'s access has been removed. Ask a parent for a new invitation.</string>
 
     <!-- PCA-FR-007/142: informed-consent summary, shown before enrollment starts on this device

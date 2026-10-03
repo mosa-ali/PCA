@@ -48,7 +48,7 @@ import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } fr
 import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStore.js';
 import { MySqlFirstDeviceBootstrapStore } from './familytrustset/MySqlFirstDeviceBootstrapStore.js';
 import { FirstDeviceBootstrapService } from './familytrustset/FirstDeviceBootstrapService.js';
-import { FailClosedAttestationVerifier } from './familytrustset/AttestationVerifier.js';
+import { createPlatformAttestationVerifier } from './familytrustset/PlatformAttestationVerifier.js';
 import { StoreBackedTrustSetRoleResolver } from './familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { RegistryBackedChildProfileMembershipResolver } from './childprofiles/RegistryBackedChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
@@ -604,14 +604,17 @@ async function start(): Promise<void> {
   const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore });
   // WAVE 6B (owner rulings D4/F4): first-device trust-root bootstrap. The
   // ceremony store shares the SAME epoch store instance above, so anchor +
-  // epoch-1 + floors commit through one per-family serialization; the
-  // service is wired with the always-fail-closed attestation verifier as
-  // its production default (no permissive production verifier exists), so
-  // this path cannot mint a root in production until a verified attestation
-  // integration is decided in a later wave.
+  // epoch-1 + floors commit through one per-family serialization.
+  // WAVE 6C: the attestation boundary is now the REAL platform router -- the
+  // Android Key Attestation verifier active only when explicit pinned-root
+  // configuration (PCA_ANDROID_ATTESTATION_ROOTS_PEM) is present, and
+  // UNAVAILABLE for every other platform or unconfigured/malformed
+  // configuration, so this path still cannot mint a root anywhere the
+  // platform evidence does not actually verify.
+  const platformAttestationVerifier = createPlatformAttestationVerifier(process.env);
   const firstDeviceBootstrapService = new FirstDeviceBootstrapService({
     store: new MySqlFirstDeviceBootstrapStore({ epochStore: trustSetEpochStore }),
-    attestationVerifier: new FailClosedAttestationVerifier(),
+    attestationVerifier: platformAttestationVerifier,
   });
   // PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: ONE shared instance -- both
   // safeZoneParentActionAuthorization below (covering decide()/grantDirectly()'s own

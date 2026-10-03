@@ -668,6 +668,10 @@ test('MySQL HTTP: recovery endpoint returns the same deviceId after a bootstrap 
   const payload = bootstrapPayload({ rawInvitationToken: rawToken });
   const bootstrap = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
   assert.equal(bootstrap.statusCode, 201);
+  // Wave 6C: both responses carry the server-minted DSK/DEK key ids.
+  assert.ok(typeof bootstrap.json().signingKeyId === 'string' && bootstrap.json().signingKeyId.length > 0);
+  assert.ok(typeof bootstrap.json().encryptionKeyId === 'string' && bootstrap.json().encryptionKeyId.length > 0);
+  assert.notEqual(bootstrap.json().signingKeyId, bootstrap.json().encryptionKeyId);
 
   const recovery = await app.inject({
     method: 'POST',
@@ -677,6 +681,8 @@ test('MySQL HTTP: recovery endpoint returns the same deviceId after a bootstrap 
   assert.equal(recovery.statusCode, 200);
   assert.equal(recovery.json().deviceId, bootstrap.json().deviceId);
   assert.equal(recovery.json().status, 'PAIRING_PENDING');
+  assert.equal(recovery.json().signingKeyId, bootstrap.json().signingKeyId);
+  assert.equal(recovery.json().encryptionKeyId, bootstrap.json().encryptionKeyId);
 });
 
 test('MySQL HTTP: recovery with an unknown attempt id is a generic 404', async () => {

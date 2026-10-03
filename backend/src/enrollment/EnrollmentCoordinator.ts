@@ -203,6 +203,8 @@ export class EnrollmentCoordinator {
 
     return {
       deviceId: row.deviceId,
+      signingKeyId: row.signingKeyId,
+      encryptionKeyId: row.encryptionKeyId,
       childProfileId: row.childProfileId,
       ageUxTier: row.ageUxTier,
       initialPolicyProfile: row.initialPolicyProfile,

@@ -66,10 +66,21 @@ test('PCA-DEC-037: main.ts no longer constructs the attestation-chain ENGINE, it
   assert.match(main, /new MySqlOwnerParentDeviceResolver\(familyAuthorityAttestationChainStore\)/);
 });
 
-test('R2 native production adapters remain explicitly fail-closed pending cross-client certification', async () => {
+test('R2 native production adapters remain fail-closed: Android wires the Wave-6C hardware-attested DSK composition, iOS keeps its pending cross-client adapters', async () => {
   const android = await readFile(path.resolve(backendRoot, '../android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt'), 'utf8');
   const ios = await readFile(path.resolve(backendRoot, '../ios/PCA/Transport/PCADeviceAPI.swift'), 'utf8');
-  assert.match(android, /NotApprovedDeviceKeyPairGenerator/);
+  // Wave 6C: Android production crypto activation moved from the typed-failure
+  // default generator to the REAL AndroidKeyStore provider -- whose
+  // fail-closed boundary is the post-generation hardware assertion (software
+  // keys are refused with a typed SecureKeyUnavailable, never silently
+  // accepted) plus the single-flight trust-root coordinator (no optimistic
+  // commit). The pre-approval default generator and every test double must
+  // never be constructed by the production graph.
+  assert.match(android, /AndroidKeystoreDskProvider\(\)/);
+  assert.equal(android.includes('NotApprovedDeviceKeyPairGenerator'), false, 'the pre-approval default generator must not be constructed in production');
+  assert.equal(android.includes('TestConformanceDeviceKeyPairGenerator'), false, 'test-only key generators must never reach the production composition');
+  assert.match(android, /firstDeviceTrustRootCoordinator/);
+  // iOS remains explicitly fail-closed pending cross-client certification.
   assert.match(ios, /PendingPCADeviceProofProvider/);
   assert.match(ios, /cryptoActivationPending/);
 });

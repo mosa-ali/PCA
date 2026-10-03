@@ -29,14 +29,15 @@ import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
  * (Buffer.from(canonicalBytes, 'utf8')). `publicKey` is always a DSK; a DEK
  * must never be accepted here (see TrustSetSignatureVerifier.ts).
  *
- * NOT production-wired. Production crypto-suite selection remains gated
- * behind CRYPTO_SUITE = WAITING_HUMAN_SECURITY_REVIEW (PCA-DEC-020; doc 09
- * Sections 3.1/3.6), and per the PCA-DEC-020-R2 closure matrix
- * (docs/security/production-crypto-review/PCA_DEC_020_R2_CLOSURE_MATRIX.md)
- * M-004 "canonical P256" and M-005 "canonical base64url" are PASS with
- * production state "Not activated"; the matrix's standing non-goal holds:
- * no P256 verifier is activated in production, and R2-9 native interop
- * remains BLOCKED. No production composition constructs this class yet.
+ * WIRING STATUS (corrected 2026-10-02, Wave 6C): this class IS constructed
+ * in production -- the Wave-6B first-device trust-root bootstrap service
+ * constructs it internally as its epoch-1 (statement B) verifier, and the
+ * Wave-6C platform attestation router terminates that same ceremony lane.
+ * What remains owner-gated is the GENERAL production ingestion path: the
+ * ordinary TrustSetEpochAcceptanceService still has no production caller,
+ * and no other production composition constructs this verifier; the
+ * ceremony's own reachability additionally requires configured pinned
+ * attestation roots plus genuine hardware-backed Android evidence.
  */
 export class P256TrustSetSignatureVerifier implements TrustSetSignatureVerifier {
   async verify(publicKey: string, canonicalBytes: string, signature: string): Promise<boolean> {

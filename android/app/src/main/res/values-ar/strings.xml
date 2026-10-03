@@ -269,6 +269,7 @@
     <string name="enrollment_recovery_pending_title">جارٍ إنهاء الإعداد…</string>
     <string name="enrollment_recovery_pending_body">قد يكون الإعداد قد اكتمل بالفعل على الخادم. اضغط أدناه للتحقق.</string>
     <string name="enrollment_crypto_review_required">هذا الإصدار غير معتمد لإعداد جهاز حقيقي بعد (وضع التطوير).</string>
+    <string name="enrollment_secure_key_unavailable">لا يمكن لهذا الجهاز إنشاء مفتاح الحماية المطلوب لإعداد العائلة، لذا لا يمكن متابعة الإعداد هنا.</string>
     <string name="enrollment_revoked">تمت إزالة وصول هذا الجهاز. اطلب دعوة جديدة من أحد الوالدين.</string>
 
     <string name="enrollment_consent_title">قبل أن تتابع</string>

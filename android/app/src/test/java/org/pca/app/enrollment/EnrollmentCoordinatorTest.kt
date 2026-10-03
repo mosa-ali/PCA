@@ -126,14 +126,14 @@ private class CountingKeyPairGenerator(private val delegate: DeviceKeyPairGenera
     var encryptionCallCount = 0
         private set
 
-    override fun generateSigningKeyPair(): GeneratedKeyPair {
+    override fun generateSigningKeyPair(attemptId: String): GeneratedKeyPair {
         signingCallCount++
-        return delegate.generateSigningKeyPair()
+        return delegate.generateSigningKeyPair(attemptId)
     }
 
-    override fun generateEncryptionKeyPair(): GeneratedKeyPair {
+    override fun generateEncryptionKeyPair(attemptId: String): GeneratedKeyPair {
         encryptionCallCount++
-        return delegate.generateEncryptionKeyPair()
+        return delegate.generateEncryptionKeyPair(attemptId)
     }
 }
 
@@ -186,13 +186,13 @@ class EnrollmentCoordinatorTest {
     fun `the crypto gate throws CryptoSuiteNotApprovedException directly -- proving there is no bypass path`() {
         val generator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator()
         try {
-            generator.generateSigningKeyPair()
+            generator.generateSigningKeyPair("test-attempt-id")
             org.junit.Assert.fail("expected CryptoSuiteNotApprovedException")
         } catch (e: CryptoSuiteNotApprovedException) {
             // expected
         }
         try {
-            generator.generateEncryptionKeyPair()
+            generator.generateEncryptionKeyPair("test-attempt-id")
             org.junit.Assert.fail("expected CryptoSuiteNotApprovedException")
         } catch (e: CryptoSuiteNotApprovedException) {
             // expected

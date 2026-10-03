@@ -31,6 +31,8 @@ interface AttemptRow {
 interface AttemptRecoveryDbRow {
   device_id: string;
   recovery_token_hash: string;
+  signing_key_id: string;
+  encryption_key_id: string;
   child_profile_id: string | null;
   age_ux_tier: 'YOUNG_CHILD' | 'TEEN';
   initial_policy_profile: 'BALANCED' | 'STRICT';
@@ -224,7 +226,7 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
    */
   async findAttemptForRecovery(attemptId: string): Promise<AttemptRecoveryRow | null> {
     const [rows] = await getPool().query(
-      `SELECT a.device_id, a.recovery_token_hash, i.child_profile_id, i.age_ux_tier, i.initial_policy_profile
+      `SELECT a.device_id, a.recovery_token_hash, a.signing_key_id, a.encryption_key_id, i.child_profile_id, i.age_ux_tier, i.initial_policy_profile
        FROM enrollment_bootstrap_attempts a
        INNER JOIN enrollment_invitations i ON i.invitation_id = a.invitation_id
        WHERE a.attempt_id = ?`,
@@ -235,6 +237,8 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
     return {
       deviceId: row.device_id,
       recoveryTokenHash: row.recovery_token_hash,
+      signingKeyId: row.signing_key_id,
+      encryptionKeyId: row.encryption_key_id,
       childProfileId: row.child_profile_id,
       ageUxTier: row.age_ux_tier,
       initialPolicyProfile: row.initial_policy_profile,

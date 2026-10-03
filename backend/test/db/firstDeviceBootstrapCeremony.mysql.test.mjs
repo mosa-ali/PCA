@@ -27,10 +27,14 @@
 //     a foreign owner cannot approve and a foreign ceremony cannot be used.
 //   - DEVICE/CREDENTIAL GATES: REVOKED/ACTIVE device states, a wrong DSK
 //     claim, and a wrong attempt credential can never issue a challenge.
-//   - PRODUCTION ATTESTATION IS FAIL-CLOSED (ruling 11): the real
-//     FailClosedAttestationVerifier blocks a cryptographically perfect
-//     submission with zero writes; only an explicit test verifier (as
-//     injected here, never in production) lets the ceremony commit.
+//   - PRODUCTION ATTESTATION IS FAIL-CLOSED (rulings 11 + Wave 6C): with no
+//     configured pinned roots the production platform router answers
+//     UNAVAILABLE, so a cryptographically perfect submission is rejected
+//     with zero writes; only an explicit test verifier (as injected here,
+//     never in production) lets the ceremony commit. The real Android
+//     verifier and its fail-closed composition are exercised by the
+//     dedicated Wave-6C unit suites
+//     (androidKeyAttestationVerifier/platformAttestationVerifier).
 //   - EXPIRY: approve-after-expiry and submit-after-expiry fail closed.
 //   - 0062 CHECK WIDENING: the step-up operation CHECK accepts
 //     'family.device.bootstrap.root' and still refuses unknown operations.
@@ -578,7 +582,7 @@ test('DEVICE + CREDENTIAL GATES: REVOKED/ACTIVE devices, a wrong DSK claim and a
   assert.equal(await countRows('family_first_device_bootstrap_ceremonies', seed.familyId), 0);
 });
 
-test('PRODUCTION ATTESTATION IS FAIL-CLOSED: the real verifier blocks a perfect submission with zero writes; the explicit test verifier commits', async () => {
+test('PRODUCTION ATTESTATION IS FAIL-CLOSED: an unconfigured platform lane blocks a perfect submission with zero writes; the explicit test verifier commits', async () => {
   const seed = await seedBootstrappableFamily({ label: 'attestation' });
   const failClosedService = makeService({ attestationVerifier: new FailClosedAttestationVerifier() });
   const { ceremony, input } = await runCeremonyToApproved(failClosedService, seed);
