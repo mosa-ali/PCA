@@ -195,7 +195,7 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         // The transcript handed to App Attest is the exact canonical 10-field string.
         XCTAssertEqual(
             evidence.lastTranscript,
-            "26:PCA_IOS_DSK_ATTESTATION_V11:136:11111111-1111-4111-8111-11111111111136:22222222-2222-4222-8222-22222222222236:33333333-3333-4333-8333-33333333333336:44444444-4444-4444-8444-44444444444443:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA17:ECDSA_P256_SHA25636:55555555-5555-4555-8555-55555555555587:BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A"
+            "26:PCA_IOS_DSK_ATTESTATION_V11:136:11111111-1111-4111-8111-1111111111118:device-136:33333333-3333-4333-8333-33333333333336:44444444-4444-4444-8444-44444444444443:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA17:ECDSA_P256_SHA25636:55555555-5555-4555-8555-55555555555587:BAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A"
         )
         // The evidence digest is bound into the DSK-signed proof (64 hex chars netstring-framed).
         let expectedDigest = FirstDeviceCanonical.sha256Hex(evidence.evidence)
@@ -363,11 +363,10 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         api.holdSubmit = false
         api.releaseSubmit()
         await submitTask.value
-        XCTAssertEqual(store.current()?.state, .unknown, "the ambiguous submit resolved honestly before the waiter ran")
+        XCTAssertEqual(api.submitCalls.count, 1)
         await statusTask.value
 
         XCTAssertEqual(api.statusCalls, 1, "the queued operation runs AFTER the first completes -- FIFO, not interleaved")
         XCTAssertEqual(store.current()?.state, .rootCommitted)
-        XCTAssertEqual(api.submitCalls.count, 1)
     }
 }

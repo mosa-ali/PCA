@@ -153,7 +153,7 @@ final class FirstDeviceCanonicalTests: XCTestCase {
     }
 
     func testBase64UrlEncodingIsUnpaddedAndURLSafe() {
-        XCTAssertEqual(FirstDeviceCanonical.base64Url(Data([0xFB, 0xFF])), "u_8")
+        XCTAssertEqual(FirstDeviceCanonical.base64Url(Data([0xFB, 0xFF])), "-_8")
         XCTAssertEqual(FirstDeviceCanonical.base64Url(Data()), "")
         let sample = Data([0xBA, 0xEC, 0x03, 0x04, 0xFB, 0xFF])
         let encoded = FirstDeviceCanonical.base64Url(sample)

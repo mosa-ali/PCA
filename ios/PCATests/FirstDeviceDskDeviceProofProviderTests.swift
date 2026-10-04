@@ -180,8 +180,11 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         fake.publicKeys["pca.dsk.committed"] = "dsk-public-committed"
         fake.publicKeys["pca.dek.committed"] = "dek-public-committed"
         let provider = FirstDeviceDskDeviceProofProvider(provider: fake, persistedAttemptId: { "committed" })
-        try provider.prepareEnrollmentKeys(attemptId: "a1")
-        XCTAssertEqual(provider.signingPublicKey, "dsk-public-a1")
+        // Crash-recovery preparation of the PERSISTED attempt is legal and
+        // regenerates nothing; preparing a DIFFERENT attempt while a root
+        // exists is refused (second-root guard) and is covered separately.
+        try provider.prepareEnrollmentKeys(attemptId: "committed")
+        XCTAssertEqual(provider.signingPublicKey, "dsk-public-committed")
         provider.clearPreparedAttempt()
         XCTAssertEqual(provider.signingPublicKey, "dsk-public-committed")
     }
