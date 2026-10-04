@@ -167,11 +167,15 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
         lock.lock()
         defer { lock.unlock() }
 
-        if try keyExists(alias: alias) {
-            throw SecureEnclaveDskError.keyAliasConflict
-        }
+        // Environment gate FIRST: without a Secure Enclave nothing below may
+        // run -- not even a keychain consultation (a host without the SE
+        // keychain entitlement reports -34018 for key-class queries, which
+        // must never be mistaken for a key-material decision).
         guard secureEnclaveAvailability() else {
             throw SecureEnclaveDskError.secureEnclaveUnavailable
+        }
+        if try keyExists(alias: alias) {
+            throw SecureEnclaveDskError.keyAliasConflict
         }
         let privateKey = try createSecureEnclaveKey(alias: alias)
         guard isSecureEnclaveBound(privateKey) else {

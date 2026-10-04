@@ -144,7 +144,10 @@ final class SecureEnclaveDskProviderTests: XCTestCase {
 
     func testCreateOnceRefusesExistingAliasBeforeGeneration() throws {
         try requireUsableKeychain()
-        let provider = SecureEnclaveDskProvider(secureEnclaveAvailability: { false })
+        // Availability is gated first; inject it open so this test exercises
+        // the CREATE-ONCE conflict detection itself (before ANY generation
+        // attempt happens).
+        let provider = SecureEnclaveDskProvider(secureEnclaveAvailability: { true })
         let attemptId = uniqueAttemptId()
         let alias = provider.signingKeyAlias(attemptId: attemptId)
         if let code = installSoftwareKey(alias) {
@@ -152,8 +155,8 @@ final class SecureEnclaveDskProviderTests: XCTestCase {
         }
         defer { removeKey(alias) }
 
-        // The alias-conflict check must win over the (false) availability
-        // signal: conflict detection happens before ANY generation attempt.
+        // The alias-conflict check must win over ANY generation attempt:
+        // conflict detection happens before generation is even considered.
         XCTAssertThrowsError(try provider.generateSigningKeyPair(attemptId: attemptId)) { error in
             XCTAssertEqual(error as? SecureEnclaveDskError, .keyAliasConflict)
         }
