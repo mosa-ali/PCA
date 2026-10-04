@@ -9,21 +9,22 @@ PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
 OWNER = Codex coordinates and implements the continuing Parent mission
 MISSION_STATUS = IN_PROGRESS
 BRANCH = pca-dev
-VERIFIED_REMOTE_BASE = 46167c4f4257d1b66d6426dee4b158043b18ac2c (fresh fetch; Quality Gates run 37173316758 SUCCESS 27/27)
-LOCAL_IMPLEMENTATION_COMMIT = 23487319 (bounded Trust Set compare-and-append hardening; ledger sync and publication pending)
-EXACT_HEAD_CI = PENDING for the local implementation commit
-VALIDATION = backend build PASS; focused unit 39/39, Trust Set MySQL 52/52, and childPolicy route tests 10/10 PASS. Fresh disposable MySQL 8.4.11 applied 61 migrations; inner suite 694 passed / 0 failed / 10 explicit privilege skips; certified production paths 276/276; dedicated least-privilege/runtime/append-only tests 10/10. 95-table schema snapshot generated; manifest unchanged. UUID DBs and temporary principals removed. The all-certified wrapper exit code and prior full backend TAP exit remain uncaptured.
+VERIFIED_REMOTE_HEAD = 6f983f6c97a08511028e7bc8613adfc0591e69a8 (fresh fetch; local = origin)
+LOCAL_IMPLEMENTATION_COMMIT = 23487319 (bounded Trust Set compare-and-append); CHECKPOINT_SYNC_COMMIT = 6f983f6c
+EXACT_HEAD_CI = run 37237189482 completed FAILURE at 6f983f6c: 26/27 jobs succeeded; only Backend build and unit tests failed, on `ftsProductionWiring.test.mjs` because a route comment named a resolver class prohibited by its static guard. The other jobs, including full disposable-MySQL certification, Android, iOS, browser E2E and security, succeeded.
+VALIDATION = Backend build passed. Elevated local `npm test` completed 2857/2858; the sole failure is the same source-wiring comment guard. After a comment-only wording correction, `node --test test/tooling/ftsProductionWiring.test.mjs` passed 3/3. Fresh disposable MySQL 8.4.11 had previously applied 61 migrations; inner suite 694 passed / 0 failed / 10 explicit privilege skips; certified production paths 276/276; dedicated least-privilege/runtime/append-only tests 10/10. 95-table schema snapshot generated; manifest unchanged. UUID DBs and temporary principals removed. The all-certified wrapper exit code was not captured.
 CAS_REVIEW = Seven reviewers approved the scoped CAS diff with 0 blocker/major/minor; later DB source review found the uint32 schema/input bound mismatch that must be resolved before ordinary ingestion
 PARENT_TODO_BOARD = 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO or owner/release gated (18,21,22,23) / 0 BLOCKED
 TODO14 = 45/52 integrated; aggregate NOT_YET_PROVEN
 PLATFORM = HOLD_PARENT_DEPENDENCY
 REPOSITORY_SCHEMA = 0063 (61 migration files)
-DISPOSABLE_MYSQL = Docker 29.7.2; task-owned MySQL 8.4.11 `pca-codex-mission-20261004` on 127.0.0.1:33062; focused test schema removed after tests. Separate app container at 33061 was not used or changed.
+DISPOSABLE_MYSQL = Docker 29.7.2; task-owned MySQL 8.4.11 `pca-codex-mission-20261004` on 127.0.0.1:33062; currently only system schemas. Separate app container at 33061 was not used or changed.
 TODO20_LOCAL = YES for repository/local evidence: 61 migrations from zero, 95-table schema snapshot and manifest comparison, constraints/indexes, 704-test inner MySQL lane (694 pass/0 fail/10 privilege-only skips), 276 certified production-path tests, and 10 dedicated grant/append-only tests passed. UUID test schemas and temporary principals are absent. The all-certified wrapper's shell exit code was not captured, so the component summaries are reported separately.
 LIVE_PCA_PRO = Last verified at migration 0059; not contacted in this checkpoint; repository/live parity remains NO.
 LOCAL_OWNER_UAT = Retained local owner-UAT schema last recorded at 0061; literal owner `LOCALHOST ACCEPTED` remains NOT GIVEN.
 REAL_DEVICE_GATES = Android and iOS physical-device proof OPEN; production Android and Apple attestation configuration OPEN.
 RELEASE_GATES = Platform, Azure, deployment, and production remain HOLD.
+NEXT_REPOSITORY_WAVE = Cross-surface `INT32_MAX` epoch-bound enforcement, with raw-input and durable-row ordering; Family Envelope encode/decode; owner-attestation, direct owner-device resolver, and signed-removal paths; policy ACK/status; Parent audit/decryption, tamper convergence, and protection-alert boundaries; Android snapshot/receipt/schedule state; iOS gates; and recovery metadata/transaction binding. No security source mutation has started. The exact seven-specialist model is required; the agent service rejected adding a fourth reviewer with `agent thread limit reached`, so reviewer coverage is currently incomplete. A read-only preflight for persisted values above the cap remains a pre-deployment gate because MySQL columns are `INT UNSIGNED`.
 ```
 
 ### Source-to-ledger implementation matrix — 2026-10-05

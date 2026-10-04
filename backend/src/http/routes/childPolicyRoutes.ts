@@ -160,9 +160,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       // TRUE authority is the receiving device's own signed-envelope
       // verification against its own trust set -- this call is a pre-check
       // only (ParentActionAuthorizationService's own doc comment). The
-      // production StoreBackedTrustSetRoleResolver returns NO_TRUST_SET while
-      // no accepted epoch exists, and also fails closed on read/decode
-      // errors; a server ACL never stands in for family cryptographic authority.
+      // production resolver returns NO_TRUST_SET while no accepted epoch
+      // exists and also fails closed on read/decode errors; a server ACL
+      // never stands in for family cryptographic authority.
       const issuedAt = now();
       const decision = await deps.parentActionAuthorization.authorize({
         familyId: session.familyId,

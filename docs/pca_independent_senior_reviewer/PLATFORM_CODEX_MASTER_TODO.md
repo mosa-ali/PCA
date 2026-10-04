@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-05 UTC (Codex takeover amendment and Parent Trust Set compare-and-append/local TODO-20 checkpoint)
-VALIDATED_PARENT_SOURCE_HEAD = 23487319 (local Parent CAS implementation commit; backend build, focused unit 39/39, Trust Set disposable MySQL 52/52 and childPolicy routes 10/10 passed; fresh local TODO-20 migration/production/grant evidence recorded in Parent master; exact-head CI pending)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 46167c4f4257d1b66d6426dee4b158043b18ac2c (fresh fetch; prior exact-head Quality Gates run 37173316758 SUCCESS 27/27)
-CURRENT_CHECKPOINT_SHA = 23487319 (local Parent implementation commit; ledger sync and exact-head CI pending)
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent compare-and-append precursor committed locally as 23487319; no Platform source changed. Local schema 0063 and runtime/append-only grants were refreshed on disposable MySQL; live parity remains unverified and untouched. Parent ordinary epoch-domain hardening and ingestion remain the next authorized code wave. Platform Enrollment remains held pending Parent identity projection and formal gates.
+LAST_UPDATED_UTC = 2026-10-05 UTC (published Parent CAS checkpoint, exact-head CI result and comment-only correction)
+VALIDATED_PARENT_SOURCE_HEAD = 6f983f6c (Parent compare-and-append checkpoint and ledger sync; backend build and focused checks passed; exact-head CI run 37237189482 failed 1/27 on a static wiring comment assertion; correction passes the focused 3/3 guard suite and awaits exact-head CI)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 6f983f6c97a08511028e7bc8613adfc0591e69a8 (fresh fetch; local = origin)
+CURRENT_CHECKPOINT_SHA = 6f983f6c (Parent checkpoint; comment-only correction pending publication and exact-head CI)
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent compare-and-append implementation remains commit 23487319; evidence sync is published as 6f983f6c. No Platform source changed. Local schema 0063 and runtime/append-only grants were refreshed on disposable MySQL; live parity remains unverified and untouched. Parent epoch-bound hardening and ordinary ingestion remain the next authorized code work; security-wave mutation awaits the required seven specialist approvals. Platform Enrollment remains held pending Parent identity projection and formal gates.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
