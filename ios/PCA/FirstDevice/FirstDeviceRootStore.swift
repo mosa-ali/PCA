@@ -1,0 +1,209 @@
+import Foundation
+
+/// WAVE 6D: durable local state of THIS device's first-device trust-root
+/// ceremony. Written in two moments, both BEFORE any irreversible step:
+///
+///  1. The [FirstDeviceCeremonySeed] is captured at enrollment completion
+///     (before the pending-attempt record is cleared), because the ceremony
+///     authenticates with the attempt's (attemptId, attemptRecoveryToken)
+///     credential pair and is M1-bound to the enrollment DSK. Without this
+///     capture a process death would strand a perfectly committed-capable
+///     device with no way to reach its own ceremony.
+///  2. The submission payload (proof/epoch-1 bytes + signatures + evidence)
+///     is persisted BEFORE the first submit, because ECDSA signatures are
+///     randomized: the backend's commit identity is over the EXACT submitted
+///     bytes, so a re-signed retry after a lost response would 409. Replays
+///     must be byte-identical.
+///
+/// The record deliberately contains NO private key material (aliases only --
+/// the key lives inside the Secure Enclave) and NO device-lifecycle field:
+/// this store can never move the device lifecycle; server-authoritative
+/// acceptance is tracked here and nowhere else.
+///
+/// The state raw values are the SAME vocabulary Android persists
+/// (`NOT_STARTED` ... `UNKNOWN`), so both platforms describe one state
+/// machine in one language.
+public enum FirstDeviceRootState: String, Codable, Equatable {
+    /// Seeded from a successful enrollment; no ceremony contact yet.
+    case notStarted = "NOT_STARTED"
+    /// Challenge obtained; waiting for the parent to approve server-side.
+    case awaitingApproval = "AWAITING_APPROVAL"
+    /// Server status APPROVED; ready to sign + submit.
+    case approved = "APPROVED"
+    /// Submission payload persisted; submit in flight or outcome ambiguous.
+    case submitting = "SUBMITTING"
+    /// Server-authoritative acceptance (status COMMITTED + outcome ACCEPTED). Terminal success.
+    case rootCommitted = "ROOT_COMMITTED"
+    /// The ceremony expired before an accepted submission; its persisted submission is trimmed and a NEW ceremony may be started explicitly.
+    case expired = "EXPIRED"
+    /// Server rejected the submission while the ceremony was still APPROVED. Terminal for this ceremony.
+    case rejected = "REJECTED"
+    /// Outcome not currently determinable (credential/ceremony ambiguity). Resolve via status, never by guessing.
+    case unknown = "UNKNOWN"
+}
+
+/// Enrollment-time ceremony credentials (captured at enrollment success).
+public struct FirstDeviceCeremonySeed: Codable, Equatable {
+    public var attemptId: String
+    public var attemptRecoveryToken: String
+    public var serverBaseUrl: String
+    public var deviceId: String
+    public var signingKeyId: String
+    public var encryptionKeyId: String
+    public var dskPublicKeyBase64: String
+    public var dekPublicKeyBase64: String
+    public var dskAlias: String
+    public var dekAlias: String
+
+    public init(
+        attemptId: String,
+        attemptRecoveryToken: String,
+        serverBaseUrl: String,
+        deviceId: String,
+        signingKeyId: String,
+        encryptionKeyId: String,
+        dskPublicKeyBase64: String,
+        dekPublicKeyBase64: String,
+        dskAlias: String,
+        dekAlias: String
+    ) {
+        self.attemptId = attemptId
+        self.attemptRecoveryToken = attemptRecoveryToken
+        self.serverBaseUrl = serverBaseUrl
+        self.deviceId = deviceId
+        self.signingKeyId = signingKeyId
+        self.encryptionKeyId = encryptionKeyId
+        self.dskPublicKeyBase64 = dskPublicKeyBase64
+        self.dekPublicKeyBase64 = dekPublicKeyBase64
+        self.dskAlias = dskAlias
+        self.dekAlias = dekAlias
+    }
+}
+
+/// The exact bytes of one submission (persisted before first send; replayed verbatim).
+public struct FirstDeviceSubmissionPayload: Codable, Equatable {
+    public var proofBytes: String
+    public var proofSignature: String
+    public var epoch1Bytes: String
+    public var epoch1Signature: String
+    public var attestationEvidence: String
+
+    public init(proofBytes: String, proofSignature: String, epoch1Bytes: String, epoch1Signature: String, attestationEvidence: String) {
+        self.proofBytes = proofBytes
+        self.proofSignature = proofSignature
+        self.epoch1Bytes = epoch1Bytes
+        self.epoch1Signature = epoch1Signature
+        self.attestationEvidence = attestationEvidence
+    }
+}
+
+public struct FirstDeviceRootRecord: Codable, Equatable {
+    public var seed: FirstDeviceCeremonySeed
+    public var state: FirstDeviceRootState
+    public var ceremonyId: String?
+    public var challengeId: String?
+    public var nonce: String?
+    /// Server ISO string from the challenge response; echoed verbatim into the proof.
+    public var expiresAt: String?
+    public var familyId: String?
+    public var submission: FirstDeviceSubmissionPayload?
+    public var committedAtMillis: Int64?
+
+    public init(
+        seed: FirstDeviceCeremonySeed,
+        state: FirstDeviceRootState = .notStarted,
+        ceremonyId: String? = nil,
+        challengeId: String? = nil,
+        nonce: String? = nil,
+        expiresAt: String? = nil,
+        familyId: String? = nil,
+        submission: FirstDeviceSubmissionPayload? = nil,
+        committedAtMillis: Int64? = nil
+    ) {
+        self.seed = seed
+        self.state = state
+        self.ceremonyId = ceremonyId
+        self.challengeId = challengeId
+        self.nonce = nonce
+        self.expiresAt = expiresAt
+        self.familyId = familyId
+        self.submission = submission
+        self.committedAtMillis = committedAtMillis
+    }
+}
+
+public protocol FirstDeviceRootStoring {
+    func current() -> FirstDeviceRootRecord?
+    func save(_ record: FirstDeviceRootRecord)
+    func clear()
+
+    /// Synchronous durability barrier: returns only after everything written
+    /// so far is durably stored. The first submit MUST be preceded by
+    /// `flush` (a lost, non-persisted submission payload is unrecoverable
+    /// byte-identically).
+    func flush()
+}
+
+/// In-memory reference implementation -- usable for tests/dev builds, NOT
+/// durable across process death.
+public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
+    private var record: FirstDeviceRootRecord?
+
+    public init(record: FirstDeviceRootRecord? = nil) {
+        self.record = record
+    }
+
+    public func current() -> FirstDeviceRootRecord? { record }
+    public func save(_ record: FirstDeviceRootRecord) { self.record = record }
+    public func clear() { record = nil }
+    public func flush() { /* nothing to flush */ }
+}
+
+/// Durable binding over the OS Keychain ([KeychainStoreProtocol], the same
+/// storage placement every other runtime snapshot uses). The record is a
+/// JSON encoding; malformed or legacy records decode to nil (fail safe to
+/// "no ceremony", never a fabricated state).
+public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
+    public static let defaultAccount = "first-device-root"
+    public static let defaultServiceSuffix = "first-device-root"
+
+    private let keychain: KeychainStoreProtocol
+    private let account: String
+    private let service: String
+
+    public init(
+        keychain: KeychainStoreProtocol,
+        serviceNamespace: String,
+        account: String = KeychainFirstDeviceRootStore.defaultAccount
+    ) {
+        self.keychain = keychain
+        self.account = account
+        self.service = "\(serviceNamespace).\(Self.defaultServiceSuffix)"
+    }
+
+    public func current() -> FirstDeviceRootRecord? {
+        guard let data = try? keychain.retrieve(forAccount: account, service: service) else { return nil }
+        return try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data)
+    }
+
+    public func save(_ record: FirstDeviceRootRecord) {
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        try? keychain.store(
+            data,
+            forAccount: account,
+            service: service,
+            accessibility: .whenUnlockedThisDeviceOnly
+        )
+    }
+
+    public func clear() {
+        try? keychain.delete(forAccount: account, service: service)
+    }
+
+    public func flush() {
+        // The Keychain API writes synchronously: by the time `store` has
+        // returned, the item is durably placed by the platform. This method
+        // exists to keep the caller-visible durability contract explicit
+        // and identical to Android's flush barrier.
+    }
+}

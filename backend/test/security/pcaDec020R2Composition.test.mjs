@@ -66,9 +66,10 @@ test('PCA-DEC-037: main.ts no longer constructs the attestation-chain ENGINE, it
   assert.match(main, /new MySqlOwnerParentDeviceResolver\(familyAuthorityAttestationChainStore\)/);
 });
 
-test('R2 native production adapters remain fail-closed: Android wires the Wave-6C hardware-attested DSK composition, iOS keeps its pending cross-client adapters', async () => {
+test('R2 native production adapters remain fail-closed: Android wires the Wave-6C hardware-attested DSK composition, iOS wires the Wave-6D Secure Enclave DSK behind ONE shared reference-typed provider', async () => {
   const android = await readFile(path.resolve(backendRoot, '../android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt'), 'utf8');
   const ios = await readFile(path.resolve(backendRoot, '../ios/PCA/Transport/PCADeviceAPI.swift'), 'utf8');
+  const iosComposition = await readFile(path.resolve(backendRoot, '../ios/PCA/Application/PCAApplication.swift'), 'utf8');
   // Wave 6C: Android production crypto activation moved from the typed-failure
   // default generator to the REAL AndroidKeyStore provider -- whose
   // fail-closed boundary is the post-generation hardware assertion (software
@@ -80,7 +81,31 @@ test('R2 native production adapters remain fail-closed: Android wires the Wave-6
   assert.equal(android.includes('NotApprovedDeviceKeyPairGenerator'), false, 'the pre-approval default generator must not be constructed in production');
   assert.equal(android.includes('TestConformanceDeviceKeyPairGenerator'), false, 'test-only key generators must never reach the production composition');
   assert.match(android, /firstDeviceTrustRootCoordinator/);
-  // iOS remains explicitly fail-closed pending cross-client certification.
+  // Wave 6D: the iOS production composition activates the REAL Secure
+  // Enclave DSK-backed provider (fail-closed until an attempt prepares its
+  // keys) and shares ONE reference-typed instance between the enrollment
+  // path and the runtime-sync session client. The typed pending provider
+  // remains in the transport file as the non-Apple-platform fallback and
+  // must never be constructed by the production composition.
+  assert.match(iosComposition, /FirstDeviceDskDeviceProofProvider\(/);
+  assert.match(iosComposition, /SecureEnclaveDskProvider\(\)/);
+  assert.match(iosComposition, /persistedAttemptId: \{ firstDeviceRootStore\.current\(\)\?\.seed\.attemptId \}/);
+  assert.match(iosComposition, /enrollmentKeys: enrollmentKeyPreparation,/);
+  assert.match(iosComposition, /firstDeviceRootStore: firstDeviceRootStore,/);
+  assert.match(iosComposition, /proofProvider: deviceProofProvider,/);
+  assert.match(iosComposition, /proof: deviceProofProvider\)/);
+  assert.doesNotMatch(
+    iosComposition,
+    /proof: PendingPCADeviceProofProvider\(\)/,
+    'the permissive pending proof provider must not back the session client in production',
+  );
+  assert.doesNotMatch(
+    iosComposition,
+    /proofProvider: PendingPCADeviceProofProvider,/,
+    'the permissive pending proof provider must not back the enrollment path in production',
+  );
+  // The typed fail-closed defaults remain available (and unchanged) for
+  // platforms without Security.framework and for integration tests.
   assert.match(ios, /PendingPCADeviceProofProvider/);
   assert.match(ios, /cryptoActivationPending/);
 });

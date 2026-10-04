@@ -9,6 +9,9 @@ import { X509Certificate, generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import {
   ANDROID_ATTESTATION_ROOTS_ENV,
+  IOS_APPATTEST_APP_ID_ENV,
+  IOS_APPATTEST_ENVIRONMENT_ENV,
+  IOS_APPATTEST_ROOT_PEM_ENV,
   PlatformAttestationVerifier,
   createPlatformAttestationVerifier,
   parsePemCertificateBundle,
@@ -90,6 +93,70 @@ test('router: IOS and unknown platforms are UNAVAILABLE; ANDROID routes to the c
   assert.equal((await verifier.verifyFirstDeviceAttestation({ ...baseInput, platform: 'IOS' })).status, 'UNAVAILABLE');
   assert.equal((await verifier.verifyFirstDeviceAttestation({ ...baseInput, platform: 'WINDOWS' })).status, 'UNAVAILABLE');
   assert.equal((await verifier.verifyFirstDeviceAttestation({ ...baseInput, platform: 'ANDROID' })).status, 'VERIFIED');
+});
+
+test('Wave 6D factory: incomplete or invalid IOS configuration keeps the IOS lane UNAVAILABLE, never VERIFIED', async () => {
+  const chain = buildAttestationChain();
+  const attemptId = randomAttemptId();
+  const { evidence } = evidenceForDevice(attemptId, keyPairForDevice().leafKeyPair);
+  const baseInput = {
+    familyId: 'f',
+    deviceId: 'd',
+    ceremonyId: 'c',
+    challengeId: 'ch',
+    nonce: 'n',
+    platform: 'IOS',
+    attestationEvidence: evidence,
+    expectedDskKeyId: 'k',
+    expectedDskPublicKey: 'p',
+    expectedDskAlgorithm: 'ECDSA_P256_SHA256',
+    now: new Date(),
+  };
+  const invalidEnvironments = [
+    {}, // nothing configured
+    { [IOS_APPATTEST_ROOT_PEM_ENV]: chain.rootPem }, // app id + environment absent
+    { [IOS_APPATTEST_ROOT_PEM_ENV]: chain.rootPem, [IOS_APPATTEST_APP_ID_ENV]: 'ABCDE12345.com.pca.app' }, // environment absent
+    { [IOS_APPATTEST_ROOT_PEM_ENV]: chain.rootPem, [IOS_APPATTEST_APP_ID_ENV]: 'ABCDE12345.com.pca.app', [IOS_APPATTEST_ENVIRONMENT_ENV]: 'sandbox' }, // unknown environment
+    { [IOS_APPATTEST_ROOT_PEM_ENV]: 'not a pem', [IOS_APPATTEST_APP_ID_ENV]: 'ABCDE12345.com.pca.app', [IOS_APPATTEST_ENVIRONMENT_ENV]: 'production' },
+    { [IOS_APPATTEST_APP_ID_ENV]: 'ABCDE12345.com.pca.app', [IOS_APPATTEST_ENVIRONMENT_ENV]: 'production' }, // root absent
+    { [IOS_APPATTEST_ROOT_PEM_ENV]: chain.rootPem, [IOS_APPATTEST_APP_ID_ENV]: 'not-a-team-id', [IOS_APPATTEST_ENVIRONMENT_ENV]: 'production' }, // bad app id
+  ];
+  for (const env of invalidEnvironments) {
+    const verifier = createPlatformAttestationVerifier(env);
+    const verdict = await verifier.verifyFirstDeviceAttestation(baseInput);
+    assert.equal(verdict.status, 'UNAVAILABLE', `env ${JSON.stringify(env)} must stay UNAVAILABLE`);
+  }
+});
+
+test('Wave 6D router: a configured IOS lane receives IOS input, is never reached by ANDROID input, and default-absent stays UNAVAILABLE', async () => {
+  const iosStub = {
+    async verifyFirstDeviceAttestation(input) {
+      return { status: 'REJECTED', reason: `ios-stub-saw-${input.platform}` };
+    },
+  };
+  const routed = new PlatformAttestationVerifier(null, iosStub);
+  const baseInput = {
+    familyId: 'f',
+    deviceId: 'd',
+    ceremonyId: 'c',
+    challengeId: 'ch',
+    nonce: 'n',
+    attestationEvidence: 'evidence',
+    expectedDskKeyId: 'k',
+    expectedDskPublicKey: 'p',
+    expectedDskAlgorithm: 'ECDSA_P256_SHA256',
+    now: new Date(),
+  };
+  assert.deepEqual(await routed.verifyFirstDeviceAttestation({ ...baseInput, platform: 'IOS' }), {
+    status: 'REJECTED',
+    reason: 'ios-stub-saw-IOS',
+  });
+  assert.equal((await routed.verifyFirstDeviceAttestation({ ...baseInput, platform: 'ANDROID' })).status, 'UNAVAILABLE');
+  assert.equal((await routed.verifyFirstDeviceAttestation({ ...baseInput, platform: 'WINDOWS' })).status, 'UNAVAILABLE');
+
+  // Default constructor argument: the IOS lane stays UNAVAILABLE when absent.
+  const androidOnly = new PlatformAttestationVerifier(null);
+  assert.equal((await androidOnly.verifyFirstDeviceAttestation({ ...baseInput, platform: 'IOS' })).status, 'UNAVAILABLE');
 });
 
 test('PEM bundle parser: strict, multi-cert bundles, null on garbage', () => {

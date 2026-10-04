@@ -30,6 +30,10 @@ public struct PCAEnrollmentBootstrapRequest: Encodable, Equatable {
 
 public struct PCAEnrollmentBootstrapResponse: Decodable, Equatable {
     public let deviceId: String
+    /// Server-minted M1 DSK label for this enrollment (Wave 6D seed capture).
+    public let signingKeyId: String
+    /// Server-minted DEK label for this enrollment (Wave 6D seed capture).
+    public let encryptionKeyId: String
     public let status: String
     public let childProfileId: String?
     public let ageUxTier: PCAAgeUxTier
@@ -112,6 +116,10 @@ public protocol PCADeviceProofProvider {
 
 public enum PCADeviceProofError: Error, Equatable {
     case cryptoActivationPending
+    /// Wave 6D: the Secure Enclave DSK is absent or refused (no prepared
+    /// identity, missing key material, signing refusal). Fail closed --
+    /// never a fabricated or software-signed challenge response.
+    case secureKeyUnavailable
 }
 
 /// Explicit production boundary for the still-unapproved crypto suite. The

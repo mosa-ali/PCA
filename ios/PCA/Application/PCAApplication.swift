@@ -114,6 +114,14 @@ public struct PCAProductionDependencies {
     public let attemptStore: PCAEnrollmentAttemptStore
     public let profileStore: PCAEnrollmentProfileStore
     public let proofProvider: PCADeviceProofProvider
+    /// Wave 6D: the Secure Enclave key-preparation seam (nil keeps the
+    /// fail-closed pre-6D posture: without it, no attempt can prepare keys
+    /// and the enrollment guard blocks).
+    public let enrollmentKeys: FirstDeviceEnrollmentKeyPreparation?
+    /// Wave 6D: attempt-scoped key hygiene (nil disables the sweep call).
+    public let keyDeletion: FirstDeviceKeyPairDeletion?
+    /// Wave 6D: durable first-device root store (nil disables seed capture).
+    public let firstDeviceRootStore: FirstDeviceRootStoring?
     public let policyRuntime: PCAProtectionPolicyRuntime
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
@@ -129,6 +137,9 @@ public struct PCAProductionDependencies {
         attemptStore: PCAEnrollmentAttemptStore,
         profileStore: PCAEnrollmentProfileStore,
         proofProvider: PCADeviceProofProvider,
+        enrollmentKeys: FirstDeviceEnrollmentKeyPreparation? = nil,
+        keyDeletion: FirstDeviceKeyPairDeletion? = nil,
+        firstDeviceRootStore: FirstDeviceRootStoring? = nil,
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
@@ -143,6 +154,9 @@ public struct PCAProductionDependencies {
         self.attemptStore = attemptStore
         self.profileStore = profileStore
         self.proofProvider = proofProvider
+        self.enrollmentKeys = enrollmentKeys
+        self.keyDeletion = keyDeletion
+        self.firstDeviceRootStore = firstDeviceRootStore
         self.policyRuntime = policyRuntime
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
@@ -323,12 +337,6 @@ public final class PCAApplicationModel: ObservableObject {
             return
         }
         guard let link = linkRouter.takePendingLink() else { return }
-        guard !dependencies.proofProvider.signingPublicKey.isEmpty,
-              !dependencies.proofProvider.encryptionPublicKey.isEmpty else {
-            applicationState = .enrollmentBlockedBySecurityGate
-            lastError = .securityGate
-            return
-        }
 
         let attempt = PCAEnrollmentAttempt(
             attemptId: UUID().uuidString.replacingOccurrences(of: "-", with: ""),
@@ -336,6 +344,27 @@ public final class PCAApplicationModel: ObservableObject {
         )
         do {
             try dependencies.attemptStore.saveAttempt(attempt)
+            // Wave 6D ordering: the attempt record exists BEFORE any key is
+            // generated (attemptId BEFORE keygen), and the Secure Enclave
+            // DSK/DEK preparation happens BEFORE the bootstrap request reads
+            // the public keys. Every preparation failure (no Secure
+            // Enclave, alias conflict, refused generation) is a typed,
+            // fail-closed security-gate block -- never a software fallback.
+            if let preparation = dependencies.enrollmentKeys {
+                do {
+                    try preparation.prepareEnrollmentKeys(attemptId: attempt.attemptId)
+                } catch {
+                    lastError = .securityGate
+                    applicationState = .enrollmentBlockedBySecurityGate
+                    return
+                }
+            }
+            guard !dependencies.proofProvider.signingPublicKey.isEmpty,
+                  !dependencies.proofProvider.encryptionPublicKey.isEmpty else {
+                applicationState = .enrollmentBlockedBySecurityGate
+                lastError = .securityGate
+                return
+            }
             let request = PCAEnrollmentBootstrapRequest(
                 rawInvitationToken: link.rawInvitationToken,
                 signingPublicKey: dependencies.proofProvider.signingPublicKey,
@@ -346,6 +375,19 @@ public final class PCAApplicationModel: ObservableObject {
             let response = try await dependencies.enrollmentClient.bootstrap(request)
             pendingDeviceId = response.deviceId
             dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            // Wave 6D seed capture: durably record the ceremony credentials
+            // and the M1-minted key ids NOW (before any later clear), so a
+            // process death can never strand a committed-capable device
+            // with no way to reach its own first-device ceremony.
+            captureFirstDeviceSeed(attempt: attempt, response: response)
+            // Attempt-scoped key hygiene: only this attempt AND the durable
+            // root record's attempt (if any) may keep key material -- the
+            // same keep-set union Android recorded as a Wave-6C Stage-B fix.
+            var keepAttemptIds: Set<String> = [attempt.attemptId]
+            if let persistedAttempt = dependencies.firstDeviceRootStore?.current()?.seed.attemptId {
+                keepAttemptIds.insert(persistedAttempt)
+            }
+            dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: keepAttemptIds)
             let profile = PCAEnrollmentProfile(childProfileId: response.childProfileId, ageUxTier: response.ageUxTier, initialPolicyProfile: response.initialPolicyProfile)
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
@@ -362,6 +404,40 @@ public final class PCAApplicationModel: ObservableObject {
         }
     }
 
+    /// Wave 6D: durable ceremony seed (no private material -- aliases only).
+    /// FAIL CLOSED: a seed is persisted only when BOTH Secure Enclave public
+    /// keys are actually readable (the Android blank-guard parity); an empty
+    /// capture would wedge the ceremony with an unusable identity.
+    private func captureFirstDeviceSeed(attempt: PCAEnrollmentAttempt, response: PCAEnrollmentBootstrapResponse) {
+        guard let rootStore = dependencies.firstDeviceRootStore else { return }
+        let dskPublicKey = dependencies.proofProvider.signingPublicKey
+        let dekPublicKey = dependencies.proofProvider.encryptionPublicKey
+        guard !dskPublicKey.isEmpty, !dekPublicKey.isEmpty else { return }
+        let seed = FirstDeviceCeremonySeed(
+            attemptId: attempt.attemptId,
+            attemptRecoveryToken: attempt.attemptRecoveryToken,
+            serverBaseUrl: PCAProductionCompositionRoot.productionAPIBaseURL.absoluteString,
+            deviceId: response.deviceId,
+            signingKeyId: response.signingKeyId,
+            encryptionKeyId: response.encryptionKeyId,
+            dskPublicKeyBase64: dskPublicKey,
+            dekPublicKeyBase64: dekPublicKey,
+            dskAlias: "pca.dsk.\(attempt.attemptId)",
+            dekAlias: "pca.dek.\(attempt.attemptId)"
+        )
+        let existing = rootStore.current()
+        if let existing = existing, existing.seed.attemptId != attempt.attemptId {
+            // A different attempt already owns the persisted root state:
+            // never overwrite it silently (that would orphan a committed
+            // root's identity). Lifecycle decisions belong to the ceremony
+            // coordinator, not this capture path.
+            return
+        }
+        let record = FirstDeviceRootRecord(seed: seed, state: existing?.state ?? .notStarted)
+        rootStore.save(record)
+        rootStore.flush()
+    }
+
     private func resumeEnrollmentIfPossible() async {
         guard authorization.permitsEnforcement,
               pendingDeviceId == nil,
@@ -374,6 +450,12 @@ public final class PCAApplicationModel: ObservableObject {
             )
             pendingDeviceId = response.deviceId
             dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            // Wave 6D: the recovery path restores the SAME ceremony seed the
+            // original bootstrap would have captured (idempotent capture).
+            if let preparation = dependencies.enrollmentKeys {
+                try? preparation.prepareEnrollmentKeys(attemptId: attempt.attemptId)
+            }
+            captureFirstDeviceSeed(attempt: attempt, response: response)
             let profile = PCAEnrollmentProfile(
                 childProfileId: response.childProfileId,
                 ageUxTier: response.ageUxTier,
@@ -515,10 +597,32 @@ public enum PCAProductionCompositionRoot {
         #endif
         let stateStore = PCAKeychainDeviceStateStore(keychain: keychain, serviceNamespace: "org.pca.app")
         let keyMaterial = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "org.pca.app")
+        let firstDeviceRootStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.app")
         let enrollmentCoordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterial, authorizationCenter: authorizationCenter)
         let transport = PCAURLSessionTransport()
         let client = try! PCAEnrollmentBootstrapClient(baseURL: productionAPIBaseURL, transport: transport)
-        let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: PendingPCADeviceProofProvider())
+        // Wave 6D: ONE shared reference-typed device identity -- the
+        // Secure Enclave DSK-backed provider -- used by BOTH the enrollment
+        // bootstrap path and the runtime-sync session client. It fails
+        // closed (empty public keys / typed refusals) until an enrollment
+        // attempt has prepared its keys, so nothing permissive can leak
+        // into either transport. The persisted attempt seam resolves the
+        // enrolled DSK across process restarts through the durable
+        // first-device root store.
+        #if canImport(Security) && canImport(CryptoKit)
+        let secureEnclaveProvider = SecureEnclaveDskProvider()
+        let deviceProofProvider = FirstDeviceDskDeviceProofProvider(
+            provider: secureEnclaveProvider,
+            persistedAttemptId: { firstDeviceRootStore.current()?.seed.attemptId }
+        )
+        let enrollmentKeyPreparation: FirstDeviceEnrollmentKeyPreparation? = deviceProofProvider
+        let keyDeletion: FirstDeviceKeyPairDeletion? = secureEnclaveProvider
+        #else
+        let deviceProofProvider: PCADeviceProofProvider = PendingPCADeviceProofProvider()
+        let enrollmentKeyPreparation: FirstDeviceEnrollmentKeyPreparation? = nil
+        let keyDeletion: FirstDeviceKeyPairDeletion? = nil
+        #endif
+        let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
         let profileStore = UserDefaultsPCAEnrollmentProfileStore()
         #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
@@ -538,7 +642,10 @@ public enum PCAProductionCompositionRoot {
             sessionStore: stateStore,
             attemptStore: stateStore,
             profileStore: profileStore,
-            proofProvider: PendingPCADeviceProofProvider(),
+            proofProvider: deviceProofProvider,
+            enrollmentKeys: enrollmentKeyPreparation,
+            keyDeletion: keyDeletion,
+            firstDeviceRootStore: firstDeviceRootStore,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()

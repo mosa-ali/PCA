@@ -1,8 +1,13 @@
 // One-shot generator for contracts/first-device-bootstrap/canonical-vectors.json
-// (Wave 6C). Uses the certified backend canonicalizers; run from backend/.
+// (Wave 6C Android + Wave 6D iOS additions). Uses the certified backend
+// canonicalizers; run from backend/.
 import fs from 'node:fs';
 import { canonicalizeFirstDeviceBootstrapProof, sha256Hex } from '../dist/familytrustset/FirstDeviceBootstrapProof.js';
 import { canonicalizeTrustSetEpoch } from '../dist/familytrustset/canonicalize.js';
+import {
+  canonicalizeIosAppAttestEnrollmentClientData,
+  canonicalizeIosAttestationTranscript,
+} from '../dist/familytrustset/IosAttestationTranscript.js';
 
 const point = Buffer.concat([Buffer.from([4]), Buffer.from(Array.from({ length: 64 }, (_, i) => i + 1))]).toString('base64url');
 const dekPoint = Buffer.concat([Buffer.from([4]), Buffer.from(Array.from({ length: 64 }, (_, i) => 255 - i))]).toString('base64url');
@@ -61,8 +66,32 @@ const epoch1CanonicalBytes = canonicalizeTrustSetEpoch({
 });
 
 const attemptId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+// Wave 6D (owner freeze): the iOS App Attest binding transcript is 10
+// netstring fields with NO expiresAt (Option A of the freeze).
+const iosTranscriptInput = {
+  familyId: proofInput.familyId,
+  deviceId: proofInput.deviceId,
+  ceremonyId: proofInput.ceremonyId,
+  challengeId: proofInput.challengeId,
+  nonce: proofInput.nonce,
+  dskKeyId: proofInput.dskKeyId,
+  dskPublicKeyBase64: point,
+};
+const iosTranscriptCanonicalBytes = canonicalizeIosAttestationTranscript({
+  familyId: iosTranscriptInput.familyId,
+  deviceId: iosTranscriptInput.deviceId,
+  ceremonyId: iosTranscriptInput.ceremonyId,
+  challengeId: iosTranscriptInput.challengeId,
+  nonce: iosTranscriptInput.nonce,
+  dskKeyId: iosTranscriptInput.dskKeyId,
+  dskPublicKey: iosTranscriptInput.dskPublicKeyBase64,
+});
+const iosAttestationClientData = canonicalizeIosAppAttestEnrollmentClientData(
+  iosTranscriptInput.dskKeyId,
+  iosTranscriptInput.dskPublicKeyBase64,
+);
 const json = {
-  note: 'Wave 6C shared golden vectors — byte-exact canonical encodings pinned by BOTH backend (test/familytrustset/firstDeviceBootstrapCanonicalVectors.test.mjs) and Android (FirstDeviceCanonicalTest.kt). Generated with the certified backend canonicalizers.',
+  note: 'Wave 6C/6D shared golden vectors — byte-exact canonical encodings pinned by the backend (test/familytrustset/firstDeviceBootstrapCanonicalVectors.test.mjs, iosAttestationTranscript.test.mjs), Android (FirstDeviceCanonicalTest.kt) and iOS/Swift (FirstDeviceCanonicalTests). Generated with the certified backend canonicalizers.',
   challengePrefix: 'PCA_ANDROID_DSK_ATTESTATION_V1|',
   challengeExample: {
     attemptId,
@@ -74,7 +103,12 @@ const json = {
   epoch1Input,
   epoch1CanonicalBytes,
   epoch1CanonicalSha256Hex: sha256Hex(epoch1CanonicalBytes),
+  iosTranscriptInput,
+  iosTranscriptCanonicalBytes,
+  iosTranscriptCanonicalSha256Hex: sha256Hex(iosTranscriptCanonicalBytes),
+  iosAttestationClientData,
+  iosAttestationClientDataSha256Hex: sha256Hex(iosAttestationClientData),
 };
 fs.mkdirSync('../contracts/first-device-bootstrap', { recursive: true });
 fs.writeFileSync('../contracts/first-device-bootstrap/canonical-vectors.json', JSON.stringify(json, null, 2) + '\n', 'utf8');
-console.log('WROTE proofLen', proofCanonicalBytes.length, 'epochLen', epoch1CanonicalBytes.length);
+console.log('WROTE proofLen', proofCanonicalBytes.length, 'epochLen', epoch1CanonicalBytes.length, 'iosTranscriptLen', iosTranscriptCanonicalBytes.length);

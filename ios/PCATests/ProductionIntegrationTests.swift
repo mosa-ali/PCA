@@ -3,7 +3,7 @@ import XCTest
 
 final class ProductionIntegrationTests: XCTestCase {
     func testBootstrapBuildsExistingBackendContractWithoutLoggingSecrets() async throws {
-        let response = #"{"deviceId":"device-1","status":"PAIRING_PENDING","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.data(using: .utf8)!
+        let response = #"{"deviceId":"device-1","signingKeyId":"key-1","encryptionKeyId":"key-2","status":"PAIRING_PENDING","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.data(using: .utf8)!
         let transport = InMemoryPCAHTTPTransport { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/v1/enrollment/bootstrap")
@@ -20,6 +20,8 @@ final class ProductionIntegrationTests: XCTestCase {
             attemptRecoveryToken: String(repeating: "c", count: 32)
         ))
         XCTAssertEqual(result.deviceId, "device-1")
+        XCTAssertEqual(result.signingKeyId, "key-1")
+        XCTAssertEqual(result.encryptionKeyId, "key-2")
         XCTAssertEqual(result.status, "PAIRING_PENDING")
         XCTAssertEqual(result.ageUxTier, .teen)
     }
@@ -89,7 +91,7 @@ final class ProductionIntegrationTests: XCTestCase {
         authorizationSource.status = .approved
         let authorizationCenter = ChildAuthorizationCenter(source: authorizationSource)
         let transport = InMemoryPCAHTTPTransport { _ in
-            PCAHTTPResponse(statusCode: 200, data: Data(#"{"deviceId":"device-1","status":"PAIRED","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.utf8))
+            PCAHTTPResponse(statusCode: 200, data: Data(#"{"deviceId":"device-1","signingKeyId":"key-1","encryptionKeyId":"key-2","status":"PAIRED","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.utf8))
         }
         let dependencies = PCAProductionDependencies(
             authorizationCenter: authorizationCenter,
