@@ -28,9 +28,20 @@ export interface TrustSetEpochRecord {
 }
 
 /**
- * The outcome of appendAcceptedEpoch. Deliberately a closed result union
- * (the only throw is TrustSetEpochStoreError INVALID_INPUT, raised before
- * any SQL runs) so a caller can never mistake a rejection for an append:
+ * Immutable identity of the head against which an acceptance candidate was
+ * validated. The exact signed bytes and signature bind the comparison to
+ * the full accepted Trust Set, not only its numeric epoch.
+ */
+export type ExpectedTrustSetEpochHead = Pick<
+  TrustSetEpochRecord,
+  'trustSetEpoch' | 'keyEpoch' | 'signedEpochBytes' | 'signature'
+>;
+
+/**
+ * The outcome of appendAcceptedEpoch. Deliberately a closed result union so
+ * a caller can never mistake a rejection for an append. Structurally invalid
+ * input throws TrustSetEpochStoreError INVALID_INPUT before any SQL; normal
+ * duplicate and stale-head results roll back any transaction-local writes.
  *
  *   APPENDED            -- the epoch was durably inserted and the family's
  *                          acceptance floors were advanced in the same
@@ -43,6 +54,10 @@ export interface TrustSetEpochRecord {
  *                          differs in bytes, signature or keyEpoch. State
  *                          is unchanged; the caller must treat this as a
  *                          genuine equivocation attempt, never as success.
+ *   REJECTED_STALE_AUTHORITY -- the current accepted head no longer matches
+ *                          the exact head the caller validated. The append
+ *                          is rolled back and must be re-evaluated against
+ *                          the new accepted state.
  *   REJECTED_STALE      -- the epoch is below the family's recorded
  *                          acceptance floors (trust-set epoch already
  *                          superseded, or key epoch already rotated past).
@@ -52,6 +67,7 @@ export type AppendTrustSetEpochOutcome =
   | { outcome: 'APPENDED' }
   | { outcome: 'IDEMPOTENT_MATCH' }
   | { outcome: 'CONFLICT' }
+  | { outcome: 'REJECTED_STALE_AUTHORITY' }
   | { outcome: 'REJECTED_STALE'; reason: 'STALE_TRUST_SET_EPOCH' | 'STALE_KEY_EPOCH' };
 
 /**
@@ -75,12 +91,19 @@ export interface TrustSetEpochStore {
    * floors atomically. This method performs NO signature or structural
    * acceptance itself -- the caller owns that judgement; this store only
    * enforces durability, per-family serialization, idempotency and the
-   * anti-rollback floors.
+   * anti-rollback floors. `expectedHead` is the exact accepted head used by
+   * the caller's validation; `null` means validation observed no accepted
+   * epoch. The store snapshots it before asynchronous work and compares it
+   * under the family lock before an ordinary append. It does not verify the
+   * candidate signature or bind this head into the candidate's signed bytes.
    *
    * Throws TrustSetEpochStoreError('INVALID_INPUT') for structurally
    * malformed input BEFORE any database operation.
    */
-  appendAcceptedEpoch(record: TrustSetEpochRecord): Promise<AppendTrustSetEpochOutcome>;
+  appendAcceptedEpoch(
+    record: TrustSetEpochRecord,
+    expectedHead: ExpectedTrustSetEpochHead | null,
+  ): Promise<AppendTrustSetEpochOutcome>;
 
   /**
    * The latest accepted epoch for the family (highest trustSetEpoch), or

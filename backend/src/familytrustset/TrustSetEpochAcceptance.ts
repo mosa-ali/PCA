@@ -107,6 +107,7 @@ export type TrustSetEpochAcceptanceRejectionReason =
   | 'INVALID_GENESIS_SIGNER'
   | 'STALE_TRUST_SET_EPOCH'
   | 'STALE_KEY_EPOCH'
+  | 'STALE_AUTHORITY'
   | 'UNKNOWN_PREDECESSOR'
   | 'SIGNER_NOT_AUTHORIZED'
   | 'SIGNATURE_INVALID'
@@ -399,7 +400,15 @@ export class TrustSetEpochAcceptanceService {
       issuedAt: epoch.issuedAt,
       receivedAt: input.receivedAt,
     };
-    const appended = await this.deps.epochStore.appendAcceptedEpoch(record);
+    const expectedHead = latest === null
+      ? null
+      : {
+          trustSetEpoch: latest.trustSetEpoch,
+          keyEpoch: latest.keyEpoch,
+          signedEpochBytes: Buffer.from(latest.signedEpochBytes),
+          signature: latest.signature,
+        };
+    const appended = await this.deps.epochStore.appendAcceptedEpoch(record, expectedHead);
     switch (appended.outcome) {
       case 'APPENDED':
         return { outcome: 'ACCEPTED' };
@@ -407,6 +416,8 @@ export class TrustSetEpochAcceptanceService {
         return { outcome: 'IDEMPOTENT' };
       case 'CONFLICT':
         return { outcome: 'CONFLICT' };
+      case 'REJECTED_STALE_AUTHORITY':
+        return { outcome: 'REJECTED', reason: 'STALE_AUTHORITY' };
       case 'REJECTED_STALE':
         return { outcome: 'REJECTED', reason: appended.reason };
       default:

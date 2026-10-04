@@ -67,6 +67,42 @@ function makeRecord(familyId, trustSetEpoch, keyEpoch, overrides = {}) {
   };
 }
 
+function expectedHeadFrom(record) {
+  return record === null
+    ? null
+    : {
+        trustSetEpoch: record.trustSetEpoch,
+        keyEpoch: record.keyEpoch,
+        signedEpochBytes: Buffer.from(record.signedEpochBytes),
+        signature: record.signature,
+  };
+}
+
+async function insertEpochWithoutFloors(record) {
+  await getPool().query(
+    `INSERT INTO family_trust_set_epochs
+       (family_id, trust_set_epoch, key_epoch, supersedes_epoch, signed_epoch_bytes, signature, signer_key_id, signer_device_id, issued_at, received_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      record.familyId,
+      record.trustSetEpoch,
+      record.keyEpoch,
+      record.supersedesEpoch,
+      record.signedEpochBytes,
+      record.signature,
+      record.signerKeyId,
+      record.signerDeviceId,
+      record.issuedAt,
+      record.receivedAt,
+    ],
+  );
+}
+
+async function appendAgainstCurrent(store, record) {
+  const current = await store.readLatestEpoch(record.familyId);
+  return store.appendAcceptedEpoch(record, expectedHeadFrom(current));
+}
+
 async function countEpochRows(familyId, trustSetEpoch = null) {
   const [rows] =
     trustSetEpoch === null
@@ -104,7 +140,7 @@ test('APPEND: a fresh accepted epoch is APPENDED, and readLatestEpoch/listEpochs
   const familyId = uniqueFamilyId();
   const record = makeRecord(familyId, 1, 1);
 
-  assert.deepEqual(await store.appendAcceptedEpoch(record), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, record), { outcome: 'APPENDED' });
 
   const latest = await store.readLatestEpoch(familyId);
   assert.notEqual(latest, null);
@@ -135,16 +171,16 @@ test('IDEMPOTENT_MATCH / CONFLICT: an identical retry appends nothing; a differe
   const familyId = uniqueFamilyId();
   const record = makeRecord(familyId, 1, 2);
 
-  assert.deepEqual(await store.appendAcceptedEpoch(record), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, record), { outcome: 'APPENDED' });
   const floorsAfterFirst = await floorStore.readFloors(familyId);
   assert.deepEqual(floorsAfterFirst, { minimumAcceptedTrustSetEpoch: 1, minimumAcceptedKeyEpoch: 2 });
 
   // Identical bytes + signature + keyEpoch -> a retry of an accepted epoch, not a second row.
-  assert.deepEqual(await store.appendAcceptedEpoch({ ...record }), { outcome: 'IDEMPOTENT_MATCH' });
+  assert.deepEqual(await appendAgainstCurrent(store, { ...record }), { outcome: 'IDEMPOTENT_MATCH' });
   assert.equal(await countEpochRows(familyId), 1, 'an idempotent retry must not add a row');
 
   // Same trust-set epoch number, different signed content -> CONFLICT, no state change.
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 1, 2)), { outcome: 'CONFLICT' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 1, 2)), { outcome: 'CONFLICT' });
   assert.equal(await countEpochRows(familyId), 1, 'a conflict must not add a row');
   assert.deepEqual(await floorStore.readFloors(familyId), floorsAfterFirst, 'a conflict must not move the floors');
   const latest = await store.readLatestEpoch(familyId);
@@ -161,10 +197,10 @@ test('STALE_TRUST_SET_EPOCH: a reuse of the current number conflicts; an older n
   const floorStore = new MySqlEpochFloorStore();
   const familyId = uniqueFamilyId();
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 2, 1)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 2, 1)), { outcome: 'APPENDED' });
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 2, 1)), { outcome: 'CONFLICT' });
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 1, 1)), {
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 2, 1)), { outcome: 'CONFLICT' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 1, 1)), {
     outcome: 'REJECTED_STALE',
     reason: 'STALE_TRUST_SET_EPOCH',
   });
@@ -184,9 +220,9 @@ test('STALE_KEY_EPOCH: a higher trust-set epoch with a rotated-back key epoch is
   const floorStore = new MySqlEpochFloorStore();
   const familyId = uniqueFamilyId();
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 3, 2)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 3, 2)), { outcome: 'APPENDED' });
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 4, 1)), {
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 4, 1)), {
     outcome: 'REJECTED_STALE',
     reason: 'STALE_KEY_EPOCH',
   });
@@ -195,7 +231,7 @@ test('STALE_KEY_EPOCH: a higher trust-set epoch with a rotated-back key epoch is
 
   // Metadata-only epoch: trustSetEpoch advances, keyEpoch stays EQUAL -- allowed.
   const metadataOnly = makeRecord(familyId, 4, 2);
-  assert.deepEqual(await store.appendAcceptedEpoch(metadataOnly), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, metadataOnly), { outcome: 'APPENDED' });
   assert.deepEqual(await floorStore.readFloors(familyId), { minimumAcceptedTrustSetEpoch: 4, minimumAcceptedKeyEpoch: 2 });
   const latest = await store.readLatestEpoch(familyId);
   assert.equal(latest.trustSetEpoch, 4);
@@ -213,7 +249,7 @@ test('ROLLBACK ATTEMPT: after (5,5), every lower submission is rejected and floo
   const familyId = uniqueFamilyId();
 
   const accepted = makeRecord(familyId, 5, 5);
-  assert.deepEqual(await store.appendAcceptedEpoch(accepted), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, accepted), { outcome: 'APPENDED' });
 
   for (const [ts, key] of [
     [4, 5],
@@ -221,12 +257,12 @@ test('ROLLBACK ATTEMPT: after (5,5), every lower submission is rejected and floo
     [1, 1],
   ]) {
     assert.deepEqual(
-      await store.appendAcceptedEpoch(makeRecord(familyId, ts, key)),
+      await appendAgainstCurrent(store, makeRecord(familyId, ts, key)),
       { outcome: 'REJECTED_STALE', reason: 'STALE_TRUST_SET_EPOCH' },
       `ts=${ts} must never land below the accepted floor`,
     );
   }
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 5, 5)), { outcome: 'CONFLICT' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 5, 5)), { outcome: 'CONFLICT' });
 
   assert.equal(await countEpochRows(familyId), 1, 'no rollback attempt may create a row');
   assert.deepEqual(await floorStore.readFloors(familyId), { minimumAcceptedTrustSetEpoch: 5, minimumAcceptedKeyEpoch: 5 });
@@ -246,11 +282,11 @@ test('CROSS-FAMILY ISOLATION: two families with identical epoch numbers append i
   const familyA = uniqueFamilyId();
   const familyB = uniqueFamilyId();
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyA, 1, 1)), { outcome: 'APPENDED' });
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyB, 1, 1)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyA, 1, 1)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyB, 1, 1)), { outcome: 'APPENDED' });
 
   // Family A advances; family B must not move.
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyA, 2, 2)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyA, 2, 2)), { outcome: 'APPENDED' });
 
   assert.deepEqual(await floorStore.readFloors(familyA), { minimumAcceptedTrustSetEpoch: 2, minimumAcceptedKeyEpoch: 2 });
   assert.deepEqual(await floorStore.readFloors(familyB), { minimumAcceptedTrustSetEpoch: 1, minimumAcceptedKeyEpoch: 1 });
@@ -258,7 +294,7 @@ test('CROSS-FAMILY ISOLATION: two families with identical epoch numbers append i
   assert.deepEqual(await keyEpochStore.readCanonicalKeyEpoch(familyB), { trustSetEpoch: 1, keyEpoch: 1 });
 
   // Family B still accepts the very same epoch numbers family A already used.
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyB, 2, 2)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyB, 2, 2)), { outcome: 'APPENDED' });
 
   assert.equal(await countEpochRows(familyA), 2);
   assert.equal(await countEpochRows(familyB), 2);
@@ -269,75 +305,72 @@ test('CROSS-FAMILY ISOLATION: two families with identical epoch numbers append i
 // 7. REAL CONCURRENCY (Promise.all, live database as the arbiter)
 // ---------------------------------------------------------------------
 
-test('CONCURRENCY (a) CONCURRENT_HIGHER_HIGHER: simultaneous (2,2) and (3,3) resolve so the floor ends at 3 with exactly one latest=3', async () => {
+test('CONCURRENCY (a) SAME_VALIDATED_HEAD: different increasing candidates validated against one head yield one append and one stale-authority rejection', async () => {
   const store = new MySqlTrustSetEpochStore();
   const floorStore = new MySqlEpochFloorStore();
   const familyId = uniqueFamilyId();
+  const headRecord = makeRecord(familyId, 1, 1);
+  assert.deepEqual(await appendAgainstCurrent(store, headRecord), { outcome: 'APPENDED' });
+  const expectedHead = expectedHeadFrom(headRecord);
+  const lowRecord = makeRecord(familyId, 2, 1);
+  const highRecord = makeRecord(familyId, 3, 1);
 
-  const [lowOutcome, highOutcome] = await recordConcurrentOutcomes('CONCURRENT_HIGHER_HIGHER', [
-    () => store.appendAcceptedEpoch(makeRecord(familyId, 2, 2)),
-    () => store.appendAcceptedEpoch(makeRecord(familyId, 3, 3)),
+  const [lowOutcome, highOutcome] = await recordConcurrentOutcomes('CONCURRENT_SAME_VALIDATED_HEAD', [
+    () => store.appendAcceptedEpoch(lowRecord, expectedHead),
+    () => store.appendAcceptedEpoch(highRecord, expectedHead),
   ]);
 
-  assert.deepEqual(highOutcome, { outcome: 'APPENDED' }, 'the higher contender must always land');
-  assert.ok(
-    lowOutcome.outcome === 'APPENDED' ||
-      (lowOutcome.outcome === 'REJECTED_STALE' && lowOutcome.reason === 'STALE_TRUST_SET_EPOCH'),
-    `unexpected ts=2 contender outcome: ${JSON.stringify(lowOutcome)}`,
-  );
-
-  assert.deepEqual(await floorStore.readFloors(familyId), { minimumAcceptedTrustSetEpoch: 3, minimumAcceptedKeyEpoch: 3 });
-  assert.equal(await countEpochRows(familyId, 3), 1, 'exactly one ts=3 row may exist');
+  assert.equal([lowOutcome, highOutcome].filter((outcome) => outcome.outcome === 'APPENDED').length, 1);
+  assert.equal([lowOutcome, highOutcome].filter((outcome) => outcome.outcome === 'REJECTED_STALE_AUTHORITY').length, 1);
+  const winnerEpoch = lowOutcome.outcome === 'APPENDED' ? 2 : 3;
+  const loserEpoch = winnerEpoch === 2 ? 3 : 2;
+  assert.equal(await countEpochRows(familyId, winnerEpoch), 1, 'the winner has one durable row');
+  assert.equal(await countEpochRows(familyId, loserEpoch), 0, 'the stale candidate leaves no row');
   const latest = await store.readLatestEpoch(familyId);
-  assert.equal(latest.trustSetEpoch, 3);
-
-  // Any REJECTED outcome left no partial row; any APPENDED outcome is durable.
-  for (const [ts, outcome] of [
-    [2, lowOutcome],
-    [3, highOutcome],
-  ]) {
-    if (outcome.outcome === 'REJECTED_STALE') {
-      assert.equal(await countEpochRows(familyId, ts), 0, `rejected ts=${ts} must leave no row`);
-    }
-    if (outcome.outcome === 'APPENDED') {
-      assert.equal(await countEpochRows(familyId, ts), 1, `appended ts=${ts} must exist exactly once`);
-    }
-  }
+  assert.equal(latest.trustSetEpoch, winnerEpoch);
+  assert.deepEqual(await floorStore.readFloors(familyId), {
+    minimumAcceptedTrustSetEpoch: winnerEpoch,
+    minimumAcceptedKeyEpoch: 1,
+  });
 });
 
-test('CONCURRENCY (b) CONCURRENT_HIGHER_LOWER: after (4,4), simultaneous (5,5) and (3,6) -- the lower trust-set epoch can never land', async () => {
+test('CONCURRENCY (b) CONCURRENT_HIGHER_LOWER: two increasing candidates on one head yield one append and one stale-authority rejection', async () => {
   const store = new MySqlTrustSetEpochStore();
   const floorStore = new MySqlEpochFloorStore();
   const familyId = uniqueFamilyId();
 
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 4, 4)), { outcome: 'APPENDED' });
+  const headRecord = makeRecord(familyId, 1, 1);
+  assert.deepEqual(await appendAgainstCurrent(store, headRecord), { outcome: 'APPENDED' });
+  const expectedHead = expectedHeadFrom(headRecord);
 
   const [higherOutcome, lowerOutcome] = await recordConcurrentOutcomes('CONCURRENT_HIGHER_LOWER', [
-    () => store.appendAcceptedEpoch(makeRecord(familyId, 5, 5)),
-    () => store.appendAcceptedEpoch(makeRecord(familyId, 3, 6)),
+    () => store.appendAcceptedEpoch(makeRecord(familyId, 5, 5), expectedHead),
+    () => store.appendAcceptedEpoch(makeRecord(familyId, 3, 6), expectedHead),
   ]);
 
-  assert.deepEqual(higherOutcome, { outcome: 'APPENDED' });
-  assert.ok(
-    (lowerOutcome.outcome === 'REJECTED_STALE' && lowerOutcome.reason === 'STALE_TRUST_SET_EPOCH') || lowerOutcome.outcome === 'CONFLICT',
-    `the lower trust-set epoch must not land behind the higher contender: ${JSON.stringify(lowerOutcome)}`,
-  );
-  assert.equal(await countEpochRows(familyId, 3), 0, 'ts=3 must never land');
-  assert.equal(await countEpochRows(familyId, 5), 1);
-
-  // Final floors and latest reflect the higher trust-set epoch.
-  assert.deepEqual(await floorStore.readFloors(familyId), { minimumAcceptedTrustSetEpoch: 5, minimumAcceptedKeyEpoch: 5 });
-  assert.equal((await store.readLatestEpoch(familyId)).trustSetEpoch, 5);
+  assert.equal([higherOutcome, lowerOutcome].filter((outcome) => outcome.outcome === 'APPENDED').length, 1);
+  assert.equal([higherOutcome, lowerOutcome].filter((outcome) => outcome.outcome === 'REJECTED_STALE_AUTHORITY').length, 1);
+  const winnerEpoch = higherOutcome.outcome === 'APPENDED' ? 5 : 3;
+  const loserEpoch = winnerEpoch === 5 ? 3 : 5;
+  const winnerKeyEpoch = winnerEpoch === 5 ? 5 : 6;
+  assert.equal(await countEpochRows(familyId, winnerEpoch), 1);
+  assert.equal(await countEpochRows(familyId, loserEpoch), 0, 'the candidate against the old head leaves no row');
+  assert.deepEqual(await floorStore.readFloors(familyId), {
+    minimumAcceptedTrustSetEpoch: winnerEpoch,
+    minimumAcceptedKeyEpoch: winnerKeyEpoch,
+  });
+  assert.equal((await store.readLatestEpoch(familyId)).trustSetEpoch, winnerEpoch);
 });
 
 test('CONCURRENCY (c) SAME_VALUE_RETRY: a concurrent identical-bytes retry pair never conflicts and leaves exactly one row', async () => {
   const store = new MySqlTrustSetEpochStore();
   const familyId = uniqueFamilyId();
   const record = makeRecord(familyId, 2, 2);
+  const expectedHead = null;
 
   const outcomes = await recordConcurrentOutcomes('SAME_VALUE_RETRY', [
-    () => store.appendAcceptedEpoch(record),
-    () => store.appendAcceptedEpoch({ ...record }),
+    () => store.appendAcceptedEpoch(record, expectedHead),
+    () => store.appendAcceptedEpoch({ ...record }, expectedHead),
   ]);
 
   for (const outcome of outcomes) {
@@ -356,6 +389,29 @@ test('CONCURRENCY (c) SAME_VALUE_RETRY: a concurrent identical-bytes retry pair 
   assert.ok(latest.signedEpochBytes.equals(record.signedEpochBytes));
 });
 
+test('DUPLICATE PRECEDENCE: exact replay and same-epoch conflict are resolved before a stale expected-head check', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const familyId = uniqueFamilyId();
+  const accepted = makeRecord(familyId, 1, 1);
+  assert.deepEqual(await appendAgainstCurrent(store, accepted), { outcome: 'APPENDED' });
+
+  assert.deepEqual(
+    await store.appendAcceptedEpoch({ ...accepted }, null),
+    { outcome: 'IDEMPOTENT_MATCH' },
+    'an exact historical replay remains idempotent even when its original expected head is stale',
+  );
+  assert.deepEqual(
+    await store.appendAcceptedEpoch(makeRecord(familyId, 1, 1), null),
+    { outcome: 'CONFLICT' },
+    'same-epoch conflicting bytes remain a conflict before expected-head evaluation',
+  );
+  assert.equal(await countEpochRows(familyId), 1);
+  assert.deepEqual(await new MySqlEpochFloorStore().readFloors(familyId), {
+    minimumAcceptedTrustSetEpoch: 1,
+    minimumAcceptedKeyEpoch: 1,
+  });
+});
+
 // ---------------------------------------------------------------------
 // 8. RESTART / READBACK DURABILITY
 // ---------------------------------------------------------------------
@@ -364,8 +420,9 @@ test('RESTART/READBACK DURABILITY: brand-new store instances (and raw pool queri
   const familyId = uniqueFamilyId();
   const first = makeRecord(familyId, 1, 1);
   const second = makeRecord(familyId, 2, 3);
-  assert.deepEqual(await new MySqlTrustSetEpochStore().appendAcceptedEpoch(first), { outcome: 'APPENDED' });
-  assert.deepEqual(await new MySqlTrustSetEpochStore().appendAcceptedEpoch(second), { outcome: 'APPENDED' });
+  const firstStore = new MySqlTrustSetEpochStore();
+  assert.deepEqual(await appendAgainstCurrent(firstStore, first), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(new MySqlTrustSetEpochStore(), second), { outcome: 'APPENDED' });
 
   // "Process B": fresh instances, no shared in-process state whatsoever.
   const latest = await new MySqlTrustSetEpochStore().readLatestEpoch(familyId);
@@ -404,7 +461,7 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
       typeof record.familyId === 'string' && record.familyId.length > 0 ? record.familyId : familyId;
 
     await assert.rejects(
-      () => store.appendAcceptedEpoch(record),
+      () => store.appendAcceptedEpoch(record, null),
       (error) => {
         assert.ok(
           error instanceof TrustSetEpochStoreError,
@@ -440,6 +497,85 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
   await assertInvalidInput((record) => ({ ...record, supersedesEpoch: 5 }));
   await assertInvalidInput((record) => ({ ...record, issuedAt: new Date(Number.NaN) }));
   await assertInvalidInput((record) => ({ ...record, receivedAt: 'not-a-date' }));
+});
+
+test('EXPECTED_HEAD_REQUIRED: an omitted expected head cannot bypass the compare-and-append contract', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const familyId = uniqueFamilyId();
+  const record = makeRecord(familyId, 1, 1);
+
+  await assert.rejects(
+    () => store.appendAcceptedEpoch(record),
+    (error) => error instanceof TrustSetEpochStoreError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(await countEpochRows(familyId), 0);
+  assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+});
+
+test('EXPECTED_HEAD_SNAPSHOT: caller mutation after invocation cannot change the locked compare target', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const familyId = uniqueFamilyId();
+  const first = makeRecord(familyId, 1, 1);
+  assert.deepEqual(await store.appendAcceptedEpoch(first, null), { outcome: 'APPENDED' });
+
+  const expectedHead = expectedHeadFrom(first);
+  const candidate = makeRecord(familyId, 2, 1);
+  const appendPromise = store.appendAcceptedEpoch(candidate, expectedHead);
+  expectedHead.signedEpochBytes.fill(0);
+
+  assert.deepEqual(await appendPromise, { outcome: 'APPENDED' });
+  const latest = await store.readLatestEpoch(familyId);
+  assert.equal(latest?.trustSetEpoch, 2);
+  assert.ok(latest?.signedEpochBytes.equals(candidate.signedEpochBytes));
+});
+
+test('EXPECTED_HEAD_INVALID: malformed compare targets throw before creating epoch or floors rows', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const familyId = uniqueFamilyId();
+  const record = makeRecord(familyId, 1, 1);
+
+  await assert.rejects(
+    () => store.appendAcceptedEpoch(record, {
+      trustSetEpoch: 0,
+      keyEpoch: 1,
+      signedEpochBytes: Buffer.from('head'),
+      signature: 'sig',
+    }),
+    (error) => error instanceof TrustSetEpochStoreError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(await countEpochRows(familyId), 0);
+  assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+});
+
+test('STALE_AUTHORITY_ROLLBACK: a stale comparison leaves no recreated floors row when storage was already inconsistent', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const familyId = uniqueFamilyId();
+  const first = makeRecord(familyId, 1, 1);
+  await insertEpochWithoutFloors(first);
+  assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+
+  const stale = await store.appendAcceptedEpoch(makeRecord(familyId, 2, 1), null);
+  assert.deepEqual(stale, { outcome: 'REJECTED_STALE_AUTHORITY' });
+  assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+  assert.equal(await countEpochRows(familyId), 1);
+  assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 1);
+});
+
+test('DUPLICATE_ROLLBACK: exact replay and same-epoch conflict preserve duplicate precedence without recreating missing floors', async () => {
+  const store = new MySqlTrustSetEpochStore();
+
+  for (const expectedOutcome of ['IDEMPOTENT_MATCH', 'CONFLICT']) {
+    const familyId = uniqueFamilyId();
+    const first = makeRecord(familyId, 1, 1);
+    await insertEpochWithoutFloors(first);
+
+    const replay = expectedOutcome === 'IDEMPOTENT_MATCH'
+      ? { ...first, signedEpochBytes: Buffer.from(first.signedEpochBytes) }
+      : makeRecord(familyId, 1, 1);
+    assert.deepEqual(await store.appendAcceptedEpoch(replay, null), { outcome: expectedOutcome });
+    assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+    assert.equal(await countEpochRows(familyId), 1);
+  }
 });
 
 // ---------------------------------------------------------------------
@@ -506,7 +642,7 @@ test('PRIVACY/SHAPE: the epoch table has exactly the ten declared columns and th
 
   const store = new MySqlTrustSetEpochStore();
   const familyId = uniqueFamilyId();
-  assert.deepEqual(await store.appendAcceptedEpoch(makeRecord(familyId, 1, 1)), { outcome: 'APPENDED' });
+  assert.deepEqual(await appendAgainstCurrent(store, makeRecord(familyId, 1, 1)), { outcome: 'APPENDED' });
   const record = await store.readLatestEpoch(familyId);
   assert.deepEqual(Object.keys(record).sort(), [
     'familyId',
@@ -527,7 +663,7 @@ test('PRIVACY/SHAPE: the epoch table has exactly the ten declared columns and th
 // ---------------------------------------------------------------------
 
 test('CONCURRENCY OUTCOMES (machine-readable): raw outcomes are captured per scenario for the coordinator lane', async () => {
-  for (const label of ['CONCURRENT_HIGHER_HIGHER', 'CONCURRENT_HIGHER_LOWER', 'SAME_VALUE_RETRY']) {
+  for (const label of ['CONCURRENT_SAME_VALIDATED_HEAD', 'CONCURRENT_HIGHER_LOWER', 'SAME_VALUE_RETRY']) {
     assert.ok(Object.prototype.hasOwnProperty.call(CONCURRENCY_OUTCOMES, label), `${label} must have been recorded`);
   }
   console.log(`[familytrustset-epoch-persistence-concurrency-outcomes] ${JSON.stringify(CONCURRENCY_OUTCOMES)}`);

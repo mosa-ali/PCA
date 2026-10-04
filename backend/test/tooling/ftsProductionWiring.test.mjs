@@ -90,6 +90,7 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
     'new TrustSetEpochAcceptanceService(',
     '.appendAcceptedEpoch(',
     'appendAcceptedEpochOnConnection',
+    'appendGenesisEpochOnConnection',
     'P256TrustSetSignatureVerifier',
     'decodeCanonicalTrustSetEpoch',
   ]) {
@@ -177,6 +178,7 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
         'StoreBackedTrustSetRoleResolver',
         'appendAcceptedEpoch',
         'appendAcceptedEpochOnConnection',
+        'appendGenesisEpochOnConnection',
         'TrustSetEpochAcceptance',
         'P256TrustSetSignatureVerifier',
         'decodeCanonicalTrustSetEpoch',
@@ -192,6 +194,7 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
         'TrustSetEpochAcceptance',
         'appendAcceptedEpoch',
         'appendAcceptedEpochOnConnection',
+        'appendGenesisEpochOnConnection',
         'P256TrustSetSignatureVerifier',
         'decodeCanonicalTrustSetEpoch',
         'StoreBackedTrustSetRoleResolver',
@@ -310,6 +313,13 @@ test('GATE SELF-TEST: the checker detects a partially-wired composition and acce
   );
   assert.notDeepEqual(findFtsWiringViolations(`${goodMain}\nawait store.appendAcceptedEpoch(record);`, {}), []);
   assert.notDeepEqual(findFtsWiringViolations(`${goodMain}\nawait store.appendAcceptedEpochOnConnection(conn, record, now);`, {}), []);
+});
+
+test('GENESIS APPEND WIRING GUARD: connection-scoped genesis writes stay out of routes', () => {
+  const violations = findFtsWiringViolations('', {
+    'src/http/routes/evil.ts': 'await store.appendGenesisEpochOnConnection(conn, record, now);',
+  });
+  assert.notDeepEqual(violations, []);
 });
 
 test('WAVE 6B ATOMIC SET: main.ts wires the store-backed resolver AND the fail-closed bootstrap lane, keeps the rejecting floor/verifier set, and no production path references the acceptance writer', () => {

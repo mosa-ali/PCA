@@ -167,13 +167,13 @@ class EpochAppendRefusedError extends Error {
 
 export interface MySqlFirstDeviceBootstrapStoreDeps {
   /** The shared epoch store, so anchor + epoch-1 + floors commit through the same per-family serialization. */
-  epochStore: Pick<MySqlTrustSetEpochStore, 'appendAcceptedEpochOnConnection'>;
+  epochStore: Pick<MySqlTrustSetEpochStore, 'appendGenesisEpochOnConnection'>;
   /** Test-only seam; never wired in production. */
   commitHooks?: FirstDeviceBootstrapCommitHooks;
 }
 
 export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore {
-  private readonly epochStore: Pick<MySqlTrustSetEpochStore, 'appendAcceptedEpochOnConnection'>;
+  private readonly epochStore: Pick<MySqlTrustSetEpochStore, 'appendGenesisEpochOnConnection'>;
   private readonly commitHooks: FirstDeviceBootstrapCommitHooks | undefined;
 
   constructor(deps: MySqlFirstDeviceBootstrapStoreDeps) {
@@ -379,7 +379,7 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
         if (hook) await hook(conn);
 
         // ---- 7. Epoch-1 append through the certified Wave-5B path (same connection) ----
-        const appendResult = await this.epochStore.appendAcceptedEpochOnConnection(conn, input.epochRecord, input.now);
+        const appendResult = await this.epochStore.appendGenesisEpochOnConnection(conn, input.epochRecord, input.now);
         if (appendResult.outcome !== 'APPENDED') throw new EpochAppendRefusedError(appendResult.outcome);
 
         // ---- 8. Consume the challenge: committed result + durable payload digest ----

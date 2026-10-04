@@ -162,9 +162,31 @@ function createHarness({ anchors = [], appendOutcome = null, readErrors = {} } =
   const realVerifier = new P256TrustSetSignatureVerifier();
   const deps = {
     epochStore: {
-      async appendAcceptedEpoch(record) {
+      async appendAcceptedEpoch(record, expectedHead) {
         state.appendCalls.push(record);
         if (state.appendOutcome !== null) return state.appendOutcome;
+
+        const duplicate = state.epochs.find((accepted) =>
+          accepted.familyId === record.familyId && accepted.trustSetEpoch === record.trustSetEpoch,
+        );
+        if (duplicate) {
+          return duplicate.signedEpochBytes.equals(record.signedEpochBytes) &&
+            duplicate.signature === record.signature && duplicate.keyEpoch === record.keyEpoch
+            ? { outcome: 'IDEMPOTENT_MATCH' }
+            : { outcome: 'CONFLICT' };
+        }
+
+        const familyEpochs = state.epochs.filter((accepted) => accepted.familyId === record.familyId);
+        const currentHead = familyEpochs.length > 0 ? familyEpochs[familyEpochs.length - 1] : null;
+        const expectedHeadMatches = expectedHead === null
+          ? currentHead === null
+          : currentHead !== null &&
+            currentHead.trustSetEpoch === expectedHead.trustSetEpoch &&
+            currentHead.keyEpoch === expectedHead.keyEpoch &&
+            currentHead.signedEpochBytes.equals(expectedHead.signedEpochBytes) &&
+            currentHead.signature === expectedHead.signature;
+        if (!expectedHeadMatches) return { outcome: 'REJECTED_STALE_AUTHORITY' };
+
         state.epochs.push(record);
         advanceFloors(state, record);
         return { outcome: 'APPENDED' };
@@ -412,6 +434,51 @@ test('VALID_NEXT_EPOCH: the next epoch signed by the previous epoch\'s ACTIVE OW
   assert.equal(harness.state.appendCalls[0].signerDeviceId, owner.deviceId);
   assert.equal(harness.state.appendCalls[0].signerKeyId, owner.dskKeyId);
   assert.deepEqual(harness.state.appendCalls[0].signedEpochBytes, Buffer.from(candidate.bytes, 'utf8'));
+});
+
+test('CONCURRENT_VALIDATIONS: candidates validated against the same accepted head cannot both append after that head moves', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness();
+  seedAcceptedEpoch(harness.state, epochFields({ trustSetEpoch: 1, keyEpoch: 1, entries: [entryFor(owner)] }), owner);
+
+  const epoch2 = signedCandidate(
+    epochFields({ trustSetEpoch: 2, keyEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+  const epoch3 = signedCandidate(
+    epochFields({ trustSetEpoch: 3, keyEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  const originalVerifier = harness.deps.verifier;
+  let verified = 0;
+  let releaseBoth;
+  const bothVerified = new Promise((resolve) => { releaseBoth = resolve; });
+  harness.deps.verifier = {
+    async verify(publicKey, canonicalBytes, signature) {
+      const valid = await originalVerifier.verify(publicKey, canonicalBytes, signature);
+      verified += 1;
+      if (verified === 2) releaseBoth();
+      await bothVerified;
+      return valid;
+    },
+  };
+
+  const results = await Promise.all([
+    harness.service.acceptCandidate(inputFor(epoch2)),
+    harness.service.acceptCandidate(inputFor(epoch3)),
+  ]);
+
+  assert.equal(results.filter((result) => result.outcome === 'ACCEPTED').length, 1);
+  assert.equal(results.filter((result) => result.outcome === 'REJECTED' && result.reason === 'STALE_AUTHORITY').length, 1);
+  assert.equal(harness.state.appendCalls.length, 2, 'both verified candidates reach the compare-and-append gate');
+  assert.equal(harness.state.epochs.length, 2, 'the stale contender leaves no accepted epoch row');
+  const winner = harness.state.epochs[1];
+  assert.ok(winner.trustSetEpoch === 2 || winner.trustSetEpoch === 3);
+  assert.deepEqual(harness.state.floorsByFamily.get(FAMILY_ID), {
+    minimumAcceptedTrustSetEpoch: winner.trustSetEpoch,
+    minimumAcceptedKeyEpoch: winner.keyEpoch,
+  });
 });
 
 test('VALID_KEY_ROTATION: a higher keyEpoch signed by the previous ACTIVE OWNER is ACCEPTED', async () => {
@@ -695,6 +762,23 @@ test('CONFLICT_SURFACED: a store CONFLICT outcome is surfaced as CONFLICT, never
 
   assert.deepEqual(result, { outcome: 'CONFLICT' });
   assert.equal(harness.state.appendCalls.length, 1);
+});
+
+test('STALE_AUTHORITY_SURFACED: a compare-and-append head mismatch is a distinct rejection', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness();
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  harness.state.appendOutcome = { outcome: 'REJECTED_STALE_AUTHORITY' };
+  const candidate = signedCandidate(
+    epochFields({ trustSetEpoch: 2, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  const result = await harness.service.acceptCandidate(inputFor(candidate));
+
+  assert.deepEqual(result, { outcome: 'REJECTED', reason: 'STALE_AUTHORITY' });
+  assert.equal(harness.state.appendCalls.length, 1);
+  assert.equal(harness.state.epochs.length, 1, 'the stale authority result leaves accepted state unchanged');
 });
 
 test('REJECTED_LEAVES_STORE_UNTOUCHED: no rejection path calls appendAcceptedEpoch, and seeded state is unchanged', async () => {

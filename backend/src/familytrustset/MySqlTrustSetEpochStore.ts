@@ -4,6 +4,7 @@ import { isPlausibleOpaqueId, isPlausibleSignature, MIN_TRUST_SET_EPOCH } from '
 import {
   TrustSetEpochStoreError,
   type AppendTrustSetEpochOutcome,
+  type ExpectedTrustSetEpochHead,
   type TrustSetEpochRecord,
   type TrustSetEpochStore,
 } from './TrustSetEpochStore.js';
@@ -36,6 +37,15 @@ const EPOCH_COLUMNS = `family_id, trust_set_epoch, key_epoch, supersedes_epoch, 
 
 function invalidInput(message: string): TrustSetEpochStoreError {
   return new TrustSetEpochStoreError(`Invalid accepted-epoch input: ${message}`);
+}
+
+type AppendRollbackOutcome = Exclude<AppendTrustSetEpochOutcome, { outcome: 'APPENDED' }>;
+
+class AppendWithoutCommitError extends Error {
+  constructor(readonly appendOutcome: AppendRollbackOutcome) {
+    super(`append-without-commit:${appendOutcome.outcome}`);
+    this.name = 'AppendWithoutCommitError';
+  }
 }
 
 function isValidDate(value: unknown): value is Date {
@@ -88,6 +98,44 @@ function assertValidAppendRecord(record: TrustSetEpochRecord): void {
   if (!isValidDate(record.receivedAt)) {
     throw invalidInput('receivedAt must be a valid Date.');
   }
+}
+
+function snapshotExpectedHead(
+  expectedHead: ExpectedTrustSetEpochHead | null,
+): ExpectedTrustSetEpochHead | null {
+  if (expectedHead === null) return null;
+  if (!expectedHead || typeof expectedHead !== 'object') {
+    throw invalidInput('expectedHead must be null or a valid accepted-epoch head.');
+  }
+  if (
+    typeof expectedHead.trustSetEpoch !== 'number' ||
+    !Number.isInteger(expectedHead.trustSetEpoch) ||
+    expectedHead.trustSetEpoch < MIN_TRUST_SET_EPOCH
+  ) {
+    throw invalidInput('expectedHead.trustSetEpoch must be an integer >= 1.');
+  }
+  if (typeof expectedHead.keyEpoch !== 'number' || !Number.isInteger(expectedHead.keyEpoch) || expectedHead.keyEpoch < 1) {
+    throw invalidInput('expectedHead.keyEpoch must be an integer >= 1.');
+  }
+  if (
+    !Buffer.isBuffer(expectedHead.signedEpochBytes) ||
+    expectedHead.signedEpochBytes.length < 1 ||
+    expectedHead.signedEpochBytes.length > MAX_SIGNED_EPOCH_BYTES
+  ) {
+    throw invalidInput(`expectedHead.signedEpochBytes must be a Buffer of 1..${MAX_SIGNED_EPOCH_BYTES} bytes.`);
+  }
+  if (!isPlausibleSignature(expectedHead.signature)) {
+    throw invalidInput('expectedHead.signature must be a non-empty string of at most 512 characters.');
+  }
+
+  // Snapshot the caller-owned Buffer before the first await so the locked
+  // comparison cannot be changed by mutation during connection acquisition.
+  return {
+    trustSetEpoch: expectedHead.trustSetEpoch,
+    keyEpoch: expectedHead.keyEpoch,
+    signedEpochBytes: Buffer.from(expectedHead.signedEpochBytes),
+    signature: expectedHead.signature,
+  };
 }
 
 function toDate(value: Date | string): Date {
@@ -172,7 +220,10 @@ export async function ensureAndLockFamilyFloors(
  *      (anything else) -- a conflicting re-use of an already-accepted
  *      trust-set epoch number can never overwrite or extend the recorded
  *      row, and is surfaced, never absorbed.
- *   e. Anti-rollback floors: trustSetEpoch < floor -> REJECTED_STALE /
+ *   e. Compare the locked current head with the snapshotted expected head;
+ *      a mismatch returns REJECTED_STALE_AUTHORITY before any row/floor
+ *      write, so a candidate validated against an older head cannot append.
+ *   f. Anti-rollback floors: trustSetEpoch < floor -> REJECTED_STALE /
  *      STALE_TRUST_SET_EPOCH; keyEpoch < key floor -> REJECTED_STALE /
  *      STALE_KEY_EPOCH. A lower-numbered epoch can never be appended even
  *      when it carries a HIGHER key epoch, and an already-rotated-past key
@@ -185,8 +236,8 @@ export async function ensureAndLockFamilyFloors(
  *      WITHOUT a backing row is the virgin floor seeded at 1 -- where a
  *      genesis epoch (trustSetEpoch = 1) is exactly the legitimate first
  *      append this store exists to persist.
- *   f. INSERT the epoch row (all ten columns, bytes verbatim).
- *   g. Advance the floors: trust-set floor := the just-accepted
+ *   g. INSERT the epoch row (all ten columns, bytes verbatim).
+ *   h. Advance the floors: trust-set floor := the just-accepted
  *      trustSetEpoch (never below the old floor -- see (e)); key floor :=
  *      GREATEST(old key floor, accepted keyEpoch) (equal keyEpoch is
  *      legitimate -- a trust-set-metadata-only epoch need not rotate FDEK
@@ -201,24 +252,52 @@ export async function ensureAndLockFamilyFloors(
  * `appendAcceptedEpoch` strictly after a full acceptance decision.
  */
 export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
-  async appendAcceptedEpoch(record: TrustSetEpochRecord): Promise<AppendTrustSetEpochOutcome> {
+  async appendAcceptedEpoch(
+    record: TrustSetEpochRecord,
+    expectedHead: ExpectedTrustSetEpochHead | null,
+  ): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
+    if (expectedHead === undefined) {
+      throw new TrustSetEpochStoreError('expected head is required for an accepted epoch append');
+    }
+    const headSnapshot = snapshotExpectedHead(expectedHead);
     const now = new Date();
-    return runInTransaction<AppendTrustSetEpochOutcome>((conn) => this.appendAcceptedEpochOnConnection(conn, record, now));
+    try {
+      return await runInTransaction<AppendTrustSetEpochOutcome>((conn) =>
+        this.appendAcceptedEpochOnConnection(conn, record, now, headSnapshot, true),
+      );
+    } catch (error) {
+      if (error instanceof AppendWithoutCommitError) return error.appendOutcome;
+      throw error;
+    }
   }
 
   /**
-   * Connection-scoped append used by appendAcceptedEpoch and by the Wave-6B
-   * first-device bootstrap ceremony, which must persist the accepted genesis
-   * epoch inside ITS OWN transaction together with the family-root anchor
-   * and the ceremony's committed result (see MySqlFirstDeviceBootstrapStore).
-   * The caller owns transaction management; the per-family floors row remains
-   * the serialization point either way (ensure-insert + SELECT ... FOR UPDATE).
+   * @internal Connection-scoped genesis append for the Wave-6B first-device
+   * bootstrap ceremony only. The ceremony transaction owns the family lock,
+   * checks anchor absence, and atomically writes anchor + epoch 1 + consumed
+   * ceremony. The shared append additionally requires an empty accepted-
+   * epoch head while that family lock is held. This path is deliberately
+   * separate from ordinary acceptance.
    */
-  async appendAcceptedEpochOnConnection(
+  async appendGenesisEpochOnConnection(
     conn: PoolConnection,
     record: TrustSetEpochRecord,
     now: Date = new Date(),
+  ): Promise<AppendTrustSetEpochOutcome> {
+    assertValidAppendRecord(record);
+    if (record.trustSetEpoch !== 1 || record.keyEpoch !== 1 || record.supersedesEpoch !== null) {
+      throw new TrustSetEpochStoreError('genesis append must be epoch 1/key epoch 1 with no predecessor');
+    }
+    return this.appendAcceptedEpochOnConnection(conn, record, now, null, false);
+  }
+
+  private async appendAcceptedEpochOnConnection(
+    conn: PoolConnection,
+    record: TrustSetEpochRecord,
+    now: Date,
+    expectedHead: ExpectedTrustSetEpochHead | null,
+    rollbackNoWriteOutcomes: boolean,
   ): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
     const { trustSetFloor: floorTrustSetEpoch, keyFloor: floorKeyEpoch } = await ensureAndLockFamilyFloors(conn, record.familyId, now);
@@ -238,9 +317,36 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
         existing.signature === record.signature &&
         Number(existing.key_epoch) === record.keyEpoch
       ) {
+        if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError({ outcome: 'IDEMPOTENT_MATCH' });
         return { outcome: 'IDEMPOTENT_MATCH' };
       }
+      if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError({ outcome: 'CONFLICT' });
       return { outcome: 'CONFLICT' };
+    }
+
+    // The expected head is the coherent row against which the caller
+    // validated the candidate signer. This read occurs after the family
+    // floors serialization lock so another acceptance cannot move the head
+    // between this comparison and the append below.
+    const { rows: latestRows } = await execute<EpochRow>(
+      conn,
+      `SELECT ${EPOCH_COLUMNS} FROM family_trust_set_epochs WHERE family_id = ? ORDER BY trust_set_epoch DESC LIMIT 1 FOR UPDATE`,
+      [record.familyId],
+    );
+    const currentHead = latestRows[0];
+    const expectedHeadMatches = expectedHead === null
+      ? currentHead === undefined
+      : currentHead !== undefined &&
+        Number(currentHead.trust_set_epoch) === expectedHead.trustSetEpoch &&
+        Number(currentHead.key_epoch) === expectedHead.keyEpoch &&
+        (Buffer.isBuffer(currentHead.signed_epoch_bytes)
+          ? currentHead.signed_epoch_bytes
+          : Buffer.from(currentHead.signed_epoch_bytes)).equals(expectedHead.signedEpochBytes) &&
+        currentHead.signature === expectedHead.signature;
+    if (!expectedHeadMatches) {
+      const outcome = { outcome: 'REJECTED_STALE_AUTHORITY' } as const;
+      if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError(outcome);
+      return outcome;
     }
 
     // Strictly-less-than: the floor is the MINIMUM accepted trust-set epoch.
