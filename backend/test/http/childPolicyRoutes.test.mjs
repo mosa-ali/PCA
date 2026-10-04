@@ -183,7 +183,7 @@ test('cross-family target denial: a childProfileId belonging to another family i
   }
 });
 
-test('while UnavailableTrustSetRoleResolver is wired (production default), every submission fails closed honestly -- the real success-criterion proof for this route', async () => {
+test('when the explicit UnavailableTrustSetRoleResolver is supplied, every submission fails closed honestly -- the real success-criterion proof for this route', async () => {
   const authorization = buildAuthorization({ roleResolver: new UnavailableTrustSetRoleResolver() });
   const { app, submittedBatches } = buildApp({ authorization });
   try {

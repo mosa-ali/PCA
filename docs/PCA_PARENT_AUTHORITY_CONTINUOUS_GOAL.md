@@ -1,84 +1,54 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
-This is the live mission history. The canonical TODO-01…TODO-23 status board is
-maintained in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`;
-continue the same mission there and do not reset it or create a disconnected goal. This current
-checkpoint is the Wave-6D ledger-reconciliation checkpoint (`WAVE_6D_LR`, records only). Wave 6C delivered the Android first-device trust-root activation and Wave 6D delivered the iOS first-device trust-root activation (Secure Enclave P-256 DSK + Apple App Attest), both repository-side; the owner accepted Wave 6D code and exact-head CI on 2026-10-04 (published head `a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f`, Quality Gates run 37171171191 SUCCESS 27/27; WAVE_6D_CODE_COMPLETE = YES / WAVE_6D_CI_CERTIFIED = YES / WAVE_6D_100_PERCENT_CLOSED = NO). Production first-root creation still requires operator-pinned attestation roots for BOTH platforms and genuine real-device runs: REAL_ANDROID_DEVICE_GATE = OPEN, REAL_IOS_DEVICE_GATE = OPEN, PRODUCTION_ANDROID_ATTESTATION_GATE = OPEN, PRODUCTION_APP_ATTEST_GATE = OPEN. Private-key custody, live DB, Platform, Azure and deployment gates are unchanged. This reconciliation commit changes only the three canonical ledgers and awaits its own exact-head CI result.
+This is the live mission history. The canonical TODO-01…TODO-23 board remains in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`; continue the same mission and retain its history. The 2026-10-04 owner amendment assigns Codex overall implementation ownership and authorizes continuing repository engineering. External device, live database, owner acceptance, Platform, Azure, and production gates remain separate.
 
 ## Current checkpoint
 
 ```text
-PURSUING_GOAL = PCA PARENT AUTHENTICATION + AUTHORITY — CONTINUOUS COMPLETION
-OWNER = Codex coordinates and implements the continuing Parent mission after the DeepSeek handover
-CURRENT_TODO = TODO-12, TODO-14, TODO-15, TODO-20 and owner-gated TODO-18; TODO-21/22/23 pending; TODO-17/19 PASS at source SHA f1b0a7d2
-MISSION_STATUS = IN_PROGRESS (DeepSeek implementation stopped by owner; Codex handover checkpoint)
-
+PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
+OWNER = Codex coordinates and implements the continuing Parent mission
+MISSION_STATUS = IN_PROGRESS
 BRANCH = pca-dev
-REMOTE = origin (TARGET_DEV_BRANCH = pca-dev)
-LAST_VERIFIED_REMOTE_SHA = a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f (Wave-6D accepted head; LOCAL = ORIGIN = SERVER verified; this ledger-reconciliation checkpoint awaits its own exact-head run)
-CURRENT_LOCAL_CHECKPOINT_SHA = a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f plus the current Wave-6D ledger-reconciliation edits awaiting publication.
-LAST_EXACT_HEAD_CI = Quality Gates run 37171171191 at a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f completed SUCCESS 27/27 (owner-inspected, all jobs); the ledger-reconciliation commit's own exact-head run is reported with the LR checkpoint
-CURRENT_REPOSITORY_MIGRATION_HEAD = 0063 (61 migration files; unchanged by Waves 6C/6D -- no new migration, no 0064)
-LIVE_PCA_PRO_MIGRATION_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure)
-CURRENT_REPO_LIVE_PARITY = NO (repository and local disposable head 0063; live pca_pro was last verified at 0059. No live SQL query or mutation occurred.)
-PARENT_FORMAL_STATUS = IN_PROGRESS (15 PASS / 4 IN_PROGRESS: TODO-12/14/15/20 / 4 TODO: TODO-18/21/22/23)
-PLATFORM_STATUS = HOLD_PARENT_DEPENDENCY
-LOCALHOST_UAT_STATUS = Literal owner LOCALHOST ACCEPTED remains NOT GIVEN. The owner-UAT schema was advanced locally to 0061 after disposable testing and preservation preflight. Fresh synthetic Parent and Platform browser logins succeeded, but authenticated human owner acceptance has not been given. Local technical evidence is not human acceptance.
-AZURE_STATUS = HOLD
-CURRENT_ACTIVE_TODOS = TODO-12 IN_PROGRESS (Android first-device trust-root activation accepted in 6C; device activation, route activation, ordinary epoch ingestion and recovery remain later waves); TODO-14 IN_PROGRESS 45/52 integrated with seven gated/optional; TODO-15 IN_PROGRESS (first-device trust-root activation now repository-side complete end-to-end for BOTH platforms -- Android hardware-attested DSK in 6C and iOS Secure Enclave DSK + App Attest in 6D; REAL_ANDROID_DEVICE_GATE / REAL_IOS_DEVICE_GATE / PRODUCTION_ANDROID_ATTESTATION_GATE / PRODUCTION_APP_ATTEST_GATE OPEN; ANDROID_6C_RD_GATE OPEN pending a physical-device proof); TODO-20 IN_PROGRESS (repo/local 0063 vs live 0059); owner-gated TODO-18; TODO-21/22/23 pending.
-CURRENT_ENGINEERING_CRITICAL_PATH = TODO-12/15: durable Trust Set foundation (5A/5B), first-device bootstrap foundation (6B), its seven-specialist security closure (6B-R1), the Android first-device trust-root activation (6C) and the iOS first-device trust-root activation (6D) are complete repository-side and both accepted. The authorized next activity is PHYSICAL-DEVICE CERTIFICATION (iOS real-device through the real backend verifier; Android 6C-RD hardware attestation) plus pinning/validating each platform's production attestation configuration; no further feature wave is authorized. Route activation stays behind the recorded dependency order; encrypted policy/audit/Web-Rules storage and recovery remain later, separately-gated waves. All real-device and production-attestation gates remain OPEN.
-CURRENT_OWNER_GATES = Owner direction for physical-device certification and production attestation pinning; the operator-supplied pinned Android root configuration and Apple App Attest configuration (root PEM + TeamID.BundleID + environment); TODO-18 literal `LOCALHOST ACCEPTED`; TODO-21/22 deployment + production acceptance; release authorization.
-CURRENT_EXTERNAL_GATES = E2EE/crypto human security review; device attestation review; Azure deployment authorization; Platform activation gate
-CURRENT_SECURITY_GATES = First-device bootstrap ceremony is backend-complete and R1-closed; Android supplies REAL hardware-backed DSK custody and Key Attestation evidence (6C) and iOS supplies a Secure Enclave P-256 DSK plus Apple App Attest platform authenticity (6D, assertion-bound to the server-rebuilt 10-field transcript; enrollment-stable attestation clientDataHash derived from the server-minted signingKeyId + M1-enrolled DSK key). The production attestation boundary verifies each platform's evidence against operator-pinned roots or answers UNAVAILABLE -- fail closed, no permissive verifier, no test seam reachable from the production composition (pinned by tooling tests; iOS lane additionally requires the app id + environment). Production cannot create a family root until operators pin real roots for BOTH platforms AND genuine real-device runs complete (REAL_ANDROID_DEVICE_GATE / REAL_IOS_DEVICE_GATE / PRODUCTION_ANDROID_ATTESTATION_GATE / PRODUCTION_APP_ATTEST_GATE = OPEN). No downstream Parent-policy / ordinary Trust-Set / device-active route activation is wired; PAIRED-to-ACTIVE has no writer; recovery is not implemented; no security downgrade permitted.
-CURRENT_LOCAL_UAT_ENVIRONMENT = Retained local-only pca_local_owner_uat has all 59 migrations through 0061, 94 table manifests matching the tracked snapshot, 809 columns, and four preserved Parent rows. Local API health/DB endpoints return JSON 200; Parent/Platform login pages return HTML 200 on localhost ports 4000/4100. Fresh synthetic Parent password/email-OTP and Platform Owner password/TOTP browser logins reached dashboards. A read-only Parent-owned family identity projection returned the approved four-field DTO with NULL phone; Platform Entitlements showed the same already-entitled Parent Email result as the server resolver. Literal owner acceptance is pending; live pca_pro was not queried or changed.
-CURRENT_TODO20_LOCAL_RECHECK = Fresh run-owned MySQL 8.4.11 applied all 59 repository migrations through 0061 and generated the tracked schema snapshot. The retained owner-UAT database was then preflighted at exact repository prefix 0060 and advanced by the official runner with only additive 0061. Postflight journal, 94 table manifests, 809 columns, enforced CHECK, and data/row-count preservation passed. Live pca_pro TCP/3306 was unreachable; authenticated live schema/grant/data comparison and mutation remain pending.
-CURRENT_TODO15_LOCAL_RECHECK = iOS enrollment bootstrap/recovery rejects every status other than PAIRING_PENDING before the app model can save the device ID; exact-head iOS CI passed at a2045c2b. Android enforces the same boundary at parser, coordinator and persistence layers. Current local MySQL contract test proves bootstrap recovery is historical attempt status after pairing/revocation while Parent view and session checks use current lifecycle. As of Wave 6D (accepted at a8c98fbc, CI 37171171191 27/27) the iOS device root and verifier exist repository-side end-to-end (Secure Enclave DSK + App Attest behind the certified boundary; no migration); physical-device certification and production attestation pinning remain the open gates, alongside policy receipt gates.
-CURRENT_TODO12_14_LOCAL_RECHECK = Removal-decision list/detail and Administration PIN status reads require active Administrator or Viewer membership; signed/recovery POSTs also require current active membership before decision parsing. Backend build, focused wiring 22/22 and guarded disposable-MySQL authority diagnostics 62/62 passed. Exact-head source CI at f1b0a7d2 passed 27/27. TODO-14's 45/52 integrated collector count remains unchanged; signed/recovery crypto gates remain open.
-CURRENT_TODO20_LIVE_PREFLIGHT = Read-only Azure inventory confirms pca-mysql.mysql.database.azure.com is the Ready Flexible Server in pca-group under subscription 5f5205e2-4e56-4cea-8ce7-3d408ed1507b. DNS resolved the host, but direct TCP/3306 remained false; no firewall change, authenticated live SQL/grants read, or live mutation occurred.
-NEXT_CODEX_ACTION = Wave 6D is ACCEPTED (code + exact-head CI). The authorized next activity is PHYSICAL-DEVICE CERTIFICATION -- iOS real-device DSK + genuine App Attest through the real backend verifier, Android 6C-RD hardware attestation, and pinning/validating each platform's production attestation configuration -- pending explicit owner direction. Do NOT begin any new feature wave, route activation, ingestion, recovery, Platform or live DB work. Preserve every recorded gate.
-APPROVED_PARENT_ARCHITECTURE = PARENT IDENTITY = verified email; PARENT PRIMARY AUTHENTICATION = email + password; FIRST-LOGIN ACTIVATION = safe family provisioning; PARENT MFA = TOTP enrolled within 3 days; KNOWN-BROWSER LOGIN = email + password; NEW-BROWSER LOGIN = email + password + email OTP + TOTP if already enrolled; BROWSER TRUST = account-bound login assurance only; PARENT AUTHORIZATION = family membership + ACTIVE Administrator role; SENSITIVE ACTION = fresh operation-scoped TOTP step-up; CHILD DEVICE SECURITY = separate device cryptography
-PROHIBITIONS = NO Genesis Parent authority; NO browser-trust family authority; NO fake device ACTIVE state; NO unsigned Trust Set acceptance; NO plaintext E2EE-required policy storage; NO security downgrade to make UAT pass
-LOCAL_REMOTE_EQUAL = YES at the published Wave-6D accepted head `a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f`; fetched local and tracking refs agree (run 37171171191 SUCCESS 27/27). This ledger-reconciliation checkpoint is local and pending publication with its own exact-head run.
-PEER_WORK_PRESERVED = YES (historical; all date-bound assessment files committed separately; unrelated/mobile source untouched)
-
-PARENT_IMPLEMENTATION_PATHS = Codex owns the authorized Parent + dependent Platform implementation after the handover; no DeepSeek implementation remains uncommitted
-SHARED_PATHS = backend, database bootstrap, and cross-surface tests; one active writer per file, shared edits serialized
-OUT_OF_SCOPE_DIRTY_PATHS = `.vscode/` and root fragment `0` only; preserved and excluded
-MISSION_LEDGER = docs/PCA_PARENT_AUTHORITY_CONTINUOUS_GOAL.md
-CODE_CHANGES_BY_LATEST_WAVES = Wave 5A `6cefdf1e` (migration 0060 + durable trust-set stores; 13 modified + 9 new files); Wave 5B `91f7f6d4` (verified trust-set acceptance + fail-closed store-backed role-resolver activation; 23 files). Both certified: runs 36505757047 and 36519047489 SUCCESS 27/27.
-BROWSER_EVIDENCE = Exact-head run `36648259414` at `785323d2` passed all 27 jobs, including Android and real-backend browser E2E. Global route/action aggregates remain NOT_YET_PROVEN.
-BROADER_REGRESSION = Wave-5B historical evidence: backend unit suite 2734/2734; disposable MySQL full lane inner 666 pass / 0 fail / 8 pre-existing skips; certified production paths 273/273; both PCA-SEC020 mutation negative controls KILLED. Current local Wave-5C focused suites passed as recorded below. Exact-head run `36753042327` passed 27/27, including full disposable MySQL, Parent MFA browser, mobile, backend, security, and web gates. TODO-17 is PASS at the certified checkpoint.
-UNRELATED_FILES_TOUCHED = 0
-
-REMOTE_ALIGNMENT_AUTHORIZED = YES (continuation of the existing synchronization amendment; origin / pca-dev)
-REMOTE_ALIGNMENT_COMPLETED = YES at `e1f8b218`; fetch and `git ls-remote` agree with local and tracking refs.
-PARENT_LOCAL_ONLY_FILES_REMAINING = Three mission ledgers now record the iOS retry result for run 36754475958 and the local TODO-20 migration/schema/grant validation. No source files changed; `.vscode/`, root fragment `0`, and downloaded ignored CI diagnostics remain excluded.
-PARENT_UNPUSHED_COMMITS_REMAINING = 0 at tested checkpoint. Only unrelated `.vscode/` and root `0` are untracked.
-
-REPO_SCHEMA_HEAD = canonical source/migrations through 0060 (94 tables; 58 migration files; 0009 and 0010 absent from repository history)
-REPO_MIGRATION_HEAD = 0060 (58 SQL migration files)
-LOCAL_SCHEMA_HEAD = 0060 on the local owner-UAT database `pca_local_owner_uat` (all 58 migrations applied from empty; 94 tables / 806 columns)
-LIVE_PCA_PRO_SCHEMA_HEAD = 0059 on verified pca-mysql.mysql.database.azure.com / pca_pro (MySQL 8.4.9-azure; 92 tables / 792 columns)
-SOURCE_SCHEMA_MATCH = EXACT_MATCH on all 92 shared tables by full introspection comparison (local 0060 vs live 0059); the only difference is the two additive 0060 tables, intentionally local-only
-LOCAL_DB_SCHEMA_MATCH = PASS; local UAT database verified by `verify-mysql.mjs` (environment + 94-table schema + collations)
-LIVE_PCA_PRO_SCHEMA_MATCH = PASS through 0059; zero column differences on shared tables (type/nullability/default/extra/charset/collation)
-LIVE_GRANTS_MATCH = Last verified PASS through 0059 (92/92 at that schema level); 0060 runtime grants are not yet reconciled
-MIGRATION_REQUIRED = YES for live when authorized: repository head 0060 vs live 0059; 0060 is additive and touches no existing table
-MIGRATION_FILE = 0060_family_trust_set_epoch_persistence.sql (repository/local only; NOT applied to any live database)
-LOCAL_MIGRATION_TEST = PASS; all 58 migrations applied from zero on guarded local disposable MySQL 8.4.11; child-profile registry DB suite 10/10 passed; UUID-owned database removed
-LIVE_MIGRATION_APPLIED = 0059 is the last verified live application (journal 56→57); current endpoint preflight to TCP/3306 is unreachable; 0060 has not been applied
-LIVE_MIGRATION_RESULT = Previous 0059 application passed and remains historical evidence; TODO-20 owner authorization to reconcile/apply ordinary locally tested additive corrections persists; no live mutation until fresh reachable preflight
-NO_SEED_DATA = YES
-DATA_LOSS = 0
-
-CURRENT_P0 = pending re-review; prior assessment reported none
-CURRENT_P1 = No production-code regression is proven. Exact-head run 36754475958 is recorded green after the iOS-only retry; local 0060 schema, route-audit, runtime-grant, and Trust Set DB validations now pass. Authority/device/owner gates remain open, including PCA-DEC-035 policy enablement requirements.
-BLOCKERS = First-device/root-of-trust ceremony remains undefined; do not wire Trust Set ingestion or device activation without the owner/security protocol. Web Rules remain 503 pending reviewed encrypted storage/delivery; device attestation and PAIRED-to-ACTIVE crypto/trust wiring remain open; FamilyAudit actor kinds remain conflated pending explicit actor model and reviewed encrypted delivery; four Administrator-configurable policy operations remain `ALLOW_WITH_STEP_UP` pending signed E2EE DEC-034/035; ownership-transfer/recovery-material operations have no consumers; TODO-14 has seven gated/optional declarations and aggregate remains NOT_YET_PROVEN; live `pca_pro` remains last verified at 0059 because TCP/3306 is unreachable; TODO-18 literal LOCALHOST ACCEPTED and deployment/production owner gates remain pending.
-CURRENT_AUTHORITY_REVIEW = Trust-set lane: durable signed-epoch store + cryptographic acceptance foundation DONE and locally revalidated on MySQL 8.4.11; accepted population remains EMPTY. The acceptance service requires a genesis anchor; PCA-DEC-037 first-login provisioning deliberately creates none. Membership lane: one async registry-backed resolver is published and exact-head CI-covered. Production has no Trust Set acceptance caller, Web Rules service remains absent, FamilyAudit actor provenance/encrypted delivery and DEC-034/035 policy writer remain unimplemented; PCA-DEC-028 keeps policy/request content E2EE-only and BonusGrantLedger process-local.
-PARENT_ROUTE_MATRIX = Current-source matrix maps 35/35 Parent Web call paths; 52 method/path declarations across 43 unique paths; 45/52 declarations carry database-backed integrated evidence across 137 scenarios, with zero unexpected 401/403/other. Seven remain gated/optional; `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`.
-NEXT_ACTION = Retry TODO-20 read-only live preflight when 3306 becomes reachable; apply migration 0060 and reconcile grants only after fresh local/live comparison. Continue TODO-12/15 only within owner-approved security boundaries; preserve Platform `HOLD_PARENT_DEPENDENCY`, do not deploy, and keep localhost acceptance as the owner's decision.
+VERIFIED_REMOTE_BASE = 46167c4f4257d1b66d6426dee4b158043b18ac2c (fresh fetch; Quality Gates run 37173316758 SUCCESS 27/27)
+LOCAL_IMPLEMENTATION_COMMIT = 23487319 (bounded Trust Set compare-and-append hardening; ledger sync and publication pending)
+EXACT_HEAD_CI = PENDING for the local implementation commit
+VALIDATION = backend build PASS; focused unit 39/39, Trust Set MySQL 52/52, and childPolicy route tests 10/10 PASS. Fresh disposable MySQL 8.4.11 applied 61 migrations; inner suite 694 passed / 0 failed / 10 explicit privilege skips; certified production paths 276/276; dedicated least-privilege/runtime/append-only tests 10/10. 95-table schema snapshot generated; manifest unchanged. UUID DBs and temporary principals removed. The all-certified wrapper exit code and prior full backend TAP exit remain uncaptured.
+CAS_REVIEW = Seven reviewers approved the scoped CAS diff with 0 blocker/major/minor; later DB source review found the uint32 schema/input bound mismatch that must be resolved before ordinary ingestion
+PARENT_TODO_BOARD = 15 PASS / 4 IN_PROGRESS (12,14,15,20) / 4 TODO or owner/release gated (18,21,22,23) / 0 BLOCKED
+TODO14 = 45/52 integrated; aggregate NOT_YET_PROVEN
+PLATFORM = HOLD_PARENT_DEPENDENCY
+REPOSITORY_SCHEMA = 0063 (61 migration files)
+DISPOSABLE_MYSQL = Docker 29.7.2; task-owned MySQL 8.4.11 `pca-codex-mission-20261004` on 127.0.0.1:33062; focused test schema removed after tests. Separate app container at 33061 was not used or changed.
+TODO20_LOCAL = YES for repository/local evidence: 61 migrations from zero, 95-table schema snapshot and manifest comparison, constraints/indexes, 704-test inner MySQL lane (694 pass/0 fail/10 privilege-only skips), 276 certified production-path tests, and 10 dedicated grant/append-only tests passed. UUID test schemas and temporary principals are absent. The all-certified wrapper's shell exit code was not captured, so the component summaries are reported separately.
+LIVE_PCA_PRO = Last verified at migration 0059; not contacted in this checkpoint; repository/live parity remains NO.
+LOCAL_OWNER_UAT = Retained local owner-UAT schema last recorded at 0061; literal owner `LOCALHOST ACCEPTED` remains NOT GIVEN.
+REAL_DEVICE_GATES = Android and iOS physical-device proof OPEN; production Android and Apple attestation configuration OPEN.
+RELEASE_GATES = Platform, Azure, deployment, and production remain HOLD.
 ```
 
+### Source-to-ledger implementation matrix — 2026-10-05
+
+| Item | Current source and test state | External dependency | Code still required | Can implement now / priority |
+|---|---|---|---|---|
+| Ordinary Trust Set epochs | Backend canonical decode, signature/owner validation, floors, MySQL storage and expected-head CAS exist; no production acceptance caller. Validators currently have no shared upper protocol bound; migration 0060 uses unsigned 32-bit columns. | Seven-specialist selection of a cross-platform bound and general mobile epoch contract; later physical-device evidence. | Enforce one reviewed numeric domain at direct candidate, floor, durable-row, envelope and mobile policy boundaries; reserve genesis to bootstrap, then define ordinary request/retry contract. | Yes, owner-authorized; priority 1. |
+| First-device root | Android hardware-backed DSK/Key Attestation, iOS Secure Enclave DSK/App Attest, and backend bootstrap ceremony exist. | Genuine devices and operator-pinned roots/configuration. | No source reimplementation; collect external proof. | Repository source exists; evidence stays open. |
+| Device lifecycle | Registration is `PAIRING_PENDING`, owner confirmation reaches `PAIRED`, and revocation exists; no Trust Set-authoritative `PAIRED -> ACTIVE` writer. | Reviewed activation semantics and mobile receipt path. | Add only a server-authoritative transition justified by accepted Trust Set state. | Candidate after epoch protocol; priority 3. |
+| Schedule-policy authorization | Parent session Administrator/CSRF plus actor-device checks precede shared Trust Set authorization; the production resolver reads accepted epochs and fails closed. The route relays ciphertext as pending and does not apply policy. | A committed Trust Set and receiving-device enforcement. | Preserve authority separation and add DB-backed route evidence once ordinary epochs work. | Part of priority 1; not yet integrated. |
+| Web Rules delivery | Production Web Rules service is absent; the three routes return `503 not_configured`. | Reviewed encrypted persistence and delivery contract. | Implement the storage/delivery path after its security contract is resolved. | Later wave. |
+| Recovery | Recovery engine has tests, but no production recovery route; all-device-loss authority recovery remains gated. | Reviewed recovery authority protocol. | Safe status/restart/revocation handling can be separately implemented without authority recreation. | Later wave. |
+| Mobile ordinary update | Android and iOS currently expose genesis bootstrap only; no generic epoch-N encoder, submission API, accepted-head projection, or byte-stable ordinary retry. | Physical-device certification remains external. | Define and implement cross-platform canonical model/signing/API/retry behavior. | Yes, paired with priority 1. |
+
+### TODO-14 unresolved declarations — source dispositions
+
+1. `POST schedule-policy`: authority-gated because no accepted root/ordinary ingestion path is in production; required repository work is authorized.
+2. `GET web-rules`: service/storage/delivery gate; production service absent and route returns 503.
+3. `POST web-rules`: service/storage/delivery gate; production service absent and route returns 503.
+4. `POST web-rules/remove`: service/storage/delivery gate; production service absent and route returns 503.
+5. `POST removal-decisions/:id/decide/signed`: crypto/device gate; keep fail-closed pending signing-key binding.
+6. `POST removal-decisions/:id/decide/authorized-recovery`: recovery-protocol gate; all-device-loss authority recreation remains outside this wave.
+7. `GET dashboard`: optional, unconsumed route; no implementation priority.
+
+NEXT_REPOSITORY_ACTION = Publish and exact-head certify 23487319 with its synchronized ledgers/schema snapshot. Local TODO-20 certification is complete; live parity remains open and was not contacted. Then continue the highest-priority TODO-12/14 ordinary epoch protocol work after the seven-specialist scope is settled; preserve genesis/bootstrap, device-signature, lifecycle, and mobile evidence boundaries. Do not activate Platform, deploy, or claim owner acceptance.
 ### 2026-09-28 02:34 UTC — status report reconciled; publication and exact-head CI passed
 
 REPORT = The attachment's `0daf660` failure snapshot, `399304c` checkpoint, and live migration-0050 claim are historical. Current `origin/pca-dev` is `dfefe27c277c0e225ee1f1a50e38f00871dc8082`; live `pca_pro` was already reconciled through migration 0059 with exact schema/grant postflight and row-count preservation.

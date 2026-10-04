@@ -46,7 +46,7 @@ The refreshed run-owned disposable-MySQL campaign passes all 51 tests across its
 
 | # | Declaration | Disposition | Integrated evidence / reason |
 |---:|---|---|---|
-| 1 | POST schedule-policy | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Production wires `UnavailableTrustSetRoleResolver` (NO_TRUST_SET, fail-closed); TODO-12 Trust Set path required before success evidence exists |
+| 1 | POST schedule-policy | KNOWN_FAIL_CLOSED_AUTHORITY_GATE | Production wires `StoreBackedTrustSetRoleResolver` over accepted Trust Set epochs. An empty store or read/decode failure returns NO_TRUST_SET; the ordinary acceptance service has no production caller, so TODO-12 ingestion work is still required before success evidence exists. |
 | 2 | GET child-requests | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | `parentRouteAuditChildRequestHttp.mysql.test.mjs` — real Parent session and active-role lookup with a DB-backed family/child registry fixture |
 | 3 | POST child-requests/:requestId/decide | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — session Administrator, CSRF, and the shared registry-backed Parent-session authorizer |
 | 4 | POST bonus-time/grant | MYSQL_INTEGRATED_REQUIRED_AND_PROVEN | Same suite — member grant succeeds; cross-family child and database-backed Viewer role are denied |

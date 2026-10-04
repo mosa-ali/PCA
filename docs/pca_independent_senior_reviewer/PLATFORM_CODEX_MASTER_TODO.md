@@ -5,15 +5,15 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-04 UTC (Wave-6D ledger reconciliation `WAVE_6D_LR` recorded; Platform hold unchanged)
-VALIDATED_PARENT_SOURCE_HEAD = a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f (Wave-6D accepted head; exact-head Quality Gates run 37171171191 SUCCESS 27/27; Wave 6D is Parent iOS-only work plus iOS-verifier backend adapter files with zero Platform impact; owner-accepted 2026-10-04)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f (LOCAL = ORIGIN = SERVER verified at the Wave-6D accepted head; the LR ledger-only checkpoint is certified by its own run reported with the LR checkpoint)
-CURRENT_CHECKPOINT_SHA = a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f (Wave-6D accepted; exact-head Quality Gates run 37171171191 SUCCESS 27/27; the LR ledger-only head is certified by its own run reported with the LR checkpoint)
-LATEST_PARENT_LEDGER_CHECKPOINT = Wave 6D published and accepted at a8c98fbc (run 37171171191, 27/27); `LOCAL_UNCOMMITTED_PARENT_CHANGE` = none after the accepted 6D chain -- the current sole change is the authorized Wave-6D ledger reconciliation (three canonical ledgers only); no Platform product scope changed and the dependency hold remains.
+LAST_UPDATED_UTC = 2026-10-05 UTC (Codex takeover amendment and Parent Trust Set compare-and-append/local TODO-20 checkpoint)
+VALIDATED_PARENT_SOURCE_HEAD = 23487319 (local Parent CAS implementation commit; backend build, focused unit 39/39, Trust Set disposable MySQL 52/52 and childPolicy routes 10/10 passed; fresh local TODO-20 migration/production/grant evidence recorded in Parent master; exact-head CI pending)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 46167c4f4257d1b66d6426dee4b158043b18ac2c (fresh fetch; prior exact-head Quality Gates run 37173316758 SUCCESS 27/27)
+CURRENT_CHECKPOINT_SHA = 23487319 (local Parent implementation commit; ledger sync and exact-head CI pending)
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent compare-and-append precursor committed locally as 23487319; no Platform source changed. Local schema 0063 and runtime/append-only grants were refreshed on disposable MySQL; live parity remains unverified and untouched. Parent ordinary epoch-domain hardening and ingestion remain the next authorized code wave. Platform Enrollment remains held pending Parent identity projection and formal gates.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. Wave 6D (Parent iOS first-device trust-root activation: Secure Enclave DSK + App Attest) is code+CI ACCEPTED at a8c98fbc with the real-device and production App Attest gates OPEN; the recorded next Parent activity is physical-device certification (iOS real-device, Android 6C-RD, production attestation pinning) pending owner direction. Any Platform Enrollment work is NOT authorized. No Enrollment activation, deployment, production smoke, or owner UAT is implied.
+NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. The current Parent CAS change has no Platform product impact. Continue only the owner-authorized Parent Trust Set repository work; keep Platform Enrollment, deployment, production smoke, and owner UAT on hold until Parent identity projection, Parent TODO gates, and literal `LOCALHOST ACCEPTED=YES` are satisfied.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 

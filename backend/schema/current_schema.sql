@@ -1021,22 +1021,22 @@ CREATE TABLE `family_first_device_bootstrap_ceremonies` (
   KEY `family_first_device_bootstrap_ceremonies_device_idx` (`device_id`),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_approved_pair_check` CHECK (((`approved_by_account_id` is null) = (`approved_at` is null))),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_challenge_id_check` CHECK ((char_length(`challenge_id`) = 36)),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_committed_pair_check` CHECK (((`payload_digest` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_committed_pair_check` CHECK (((`payload_digest` is null) or ((`status` = _ascii'COMMITTED') and (`consumed_at` is not null)))),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_device_id_check` CHECK ((char_length(`device_id`) = 36)),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_algorithm_check` CHECK ((`dsk_algorithm` = _utf8mb4'ECDSA_P256_SHA256')),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_algorithm_check` CHECK ((`dsk_algorithm` = _ascii'ECDSA_P256_SHA256')),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_key_id_check` CHECK ((char_length(`dsk_key_id`) = 36)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_dsk_public_key_check` CHECK ((char_length(`dsk_public_key`) between 1 and 128)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
-  CONSTRAINT `ffdbc_evidence_requires_proof_check` CHECK (((`attestation_evidence_sha256` is null) or (`bootstrap_proof_sha256` is not null))),
-  CONSTRAINT `ffdbc_evidence_sha256_hex_check` CHECK (((`attestation_evidence_sha256` is null) or regexp_like(`attestation_evidence_sha256`,_utf8mb4'^[0-9a-f]{64}$'))),
-  CONSTRAINT `ffdbc_proof_sha256_committed_check` CHECK (((`bootstrap_proof_sha256` is null) or ((`status` = _utf8mb4'COMMITTED') and (`consumed_at` is not null)))),
-  CONSTRAINT `ffdbc_proof_sha256_hex_check` CHECK (((`bootstrap_proof_sha256` is null) or regexp_like(`bootstrap_proof_sha256`,_utf8mb4'^[0-9a-f]{64}$'))),
   CONSTRAINT `family_first_device_bootstrap_ceremonies_nonce_check` CHECK ((char_length(`nonce`) = 43)),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_outcome_check` CHECK (((`outcome` is null) or (`outcome` = _utf8mb4'ACCEPTED'))),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_payload_digest_check` CHECK (((`payload_digest` is null) or regexp_like(`payload_digest`,_utf8mb4'^[0-9a-f]{64}$'))),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_purpose_check` CHECK ((`purpose` = _utf8mb4'PCA_FIRST_DEVICE_BOOTSTRAP_V1')),
-  CONSTRAINT `family_first_device_bootstrap_ceremonies_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'APPROVED',_utf8mb4'COMMITTED')))
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_outcome_check` CHECK (((`outcome` is null) or (`outcome` = _ascii'ACCEPTED'))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_payload_digest_check` CHECK (((`payload_digest` is null) or regexp_like(`payload_digest`,_ascii'^[0-9a-f]{64}$'))),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_purpose_check` CHECK ((`purpose` = _ascii'PCA_FIRST_DEVICE_BOOTSTRAP_V1')),
+  CONSTRAINT `family_first_device_bootstrap_ceremonies_status_check` CHECK ((`status` in (_ascii'PENDING',_ascii'APPROVED',_ascii'COMMITTED'))),
+  CONSTRAINT `ffdbc_evidence_requires_proof_check` CHECK (((`attestation_evidence_sha256` is null) or (`bootstrap_proof_sha256` is not null))),
+  CONSTRAINT `ffdbc_evidence_sha256_hex_check` CHECK (((`attestation_evidence_sha256` is null) or regexp_like(`attestation_evidence_sha256`,_ascii'^[0-9a-f]{64}$'))),
+  CONSTRAINT `ffdbc_proof_sha256_committed_check` CHECK (((`bootstrap_proof_sha256` is null) or ((`status` = _ascii'COMMITTED') and (`consumed_at` is not null)))),
+  CONSTRAINT `ffdbc_proof_sha256_hex_check` CHECK (((`bootstrap_proof_sha256` is null) or regexp_like(`bootstrap_proof_sha256`,_ascii'^[0-9a-f]{64}$')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_member_invitations
