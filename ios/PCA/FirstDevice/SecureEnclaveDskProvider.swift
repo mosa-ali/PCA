@@ -333,7 +333,10 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
         guard let item = item, CFGetTypeID(item) == SecKeyGetTypeID() else {
             throw SecureEnclaveDskError.keyMaterialMissing
         }
-        return (item as? SecKey)
+        // The type-ID check above proves this is a SecKey; the bitcast avoids
+        // Swift's "downcast to CoreFoundation type will always succeed"
+        // diagnostic for CFTypeRef -> SecKey.
+        return unsafeBitCast(item, to: SecKey.self)
     }
 
     private func isSecureEnclaveBound(_ key: SecKey) -> Bool {
