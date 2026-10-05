@@ -501,10 +501,10 @@ final class ProductionIntegrationTests: XCTestCase {
             attemptStore: attemptStore,
             profileStore: InMemoryPCAEnrollmentProfileStore(),
             proofProvider: proofProvider,
-            protectionRuntime: PCAHostProtectionRuntime(),
-            deviceIdentityStore: identityStore,
             firstDeviceRootStore: firstDeviceRootStore,
-            firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator
+            firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
+            protectionRuntime: PCAHostProtectionRuntime(),
+            deviceIdentityStore: identityStore
         )
         return PCAApplicationModel(dependencies: dependencies)
     }
