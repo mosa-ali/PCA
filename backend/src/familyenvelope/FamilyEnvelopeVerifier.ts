@@ -370,3 +370,21 @@ export async function evaluateEnvelope(
 
   return { accepted: true, idempotent: false };
 }
+
+/** Current delivery eligibility, independent of historical acceptance ledgers.
+ * Revalidates custody handoff without claiming role authorization or applying
+ * replay/version side effects a second time. */
+export async function getDeliveryRejection(
+  envelope: FamilyEnvelope,
+  context: EnvelopeAcceptanceContext,
+  verifier: EnvelopeSignatureVerifier,
+): Promise<EnvelopeRejectionReason | null> {
+  if (!isPlausibleEpoch(envelope.trustSetEpoch) || !isPlausibleEpoch(envelope.keyEpoch)) return 'INVALID_EPOCH';
+  if (!isProtocolCompatible(envelope.protocolMajor)) return 'UNSUPPORTED_PROTOCOL_MAJOR';
+  if (envelope.familyId !== context.familyId) return 'FAMILY_ID_MISMATCH';
+  if (context.now.getTime() >= envelope.expiresAt.getTime()) return 'EXPIRED';
+  if (envelope.trustSetEpoch < context.minimumAcceptedTrustSetEpoch) return 'STALE_TRUST_SET_EPOCH';
+  if (envelope.keyEpoch < context.minimumAcceptedKeyEpoch) return 'STALE_KEY_EPOCH';
+  if (!await verifier.verify(context.senderPublicKey, canonicalizeEnvelope(envelope), envelope.signature)) return 'INVALID_SIGNATURE';
+  return null;
+}

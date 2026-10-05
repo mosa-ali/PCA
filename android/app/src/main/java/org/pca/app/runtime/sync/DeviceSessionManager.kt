@@ -3,6 +3,14 @@ package org.pca.app.runtime.sync
 import java.time.Instant
 import org.pca.app.runtime.sync.transport.DeviceSessionInfo
 import org.pca.app.runtime.sync.transport.RelayHttpClient
+import org.pca.app.security.DskSignatureEngine
+
+/** Provider output is already canonical 64-byte P1363; never DER-decode it twice. */
+internal fun signRuntimeDeviceChallenge(engine: DskSignatureEngine, alias: String, nonce: String): String {
+    val signature = engine.signCanonicalDer(alias, nonce.toByteArray(Charsets.UTF_8))
+    require(signature.size == 64) { "Invalid device signature" }
+    return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signature)
+}
 
 /** Signs a device-authentication challenge nonce with this device's DSK. See envelope/EnvelopeSignatureVerifier.kt's doc comment -- the concrete signing implementation behind this interface is gated the same way (PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW). */
 fun interface ChallengeSigner {
@@ -22,7 +30,9 @@ class DeviceSessionManager(
     private val deviceId: String,
     private val signer: ChallengeSigner,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
+    private val assertKeyCustody: () -> Unit = {},
 ) {
+    val configuredDeviceId: String get() = deviceId
     private var session: DeviceSessionInfo? = null
 
     fun isAuthenticated(): Boolean {
@@ -35,15 +45,25 @@ class DeviceSessionManager(
     }
 
     suspend fun authenticate(): DeviceSessionInfo {
+        verifyKeyCustody()
         val challenge = relayHttpClient.issueChallenge(deviceId)
         val signature = signer.sign(challenge.nonce)
         val newSession = relayHttpClient.completeChallenge(deviceId, challenge.challengeId, signature)
+        verifyKeyCustody()
         session = newSession
         return newSession
     }
 
     suspend fun requireSessionToken(): String {
+        verifyKeyCustody()
         if (isAuthenticated()) return (session as DeviceSessionInfo).sessionToken
         return authenticate().sessionToken
+    }
+
+    private fun verifyKeyCustody() {
+        try { assertKeyCustody() } catch (error: Exception) {
+            session = null
+            throw error
+        }
     }
 }

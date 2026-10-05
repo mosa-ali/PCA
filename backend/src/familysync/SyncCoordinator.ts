@@ -1,7 +1,7 @@
 import { canonicalizeEnvelope } from '../familyenvelope/canonicalize.js';
-import { evaluateEnvelope } from '../familyenvelope/FamilyEnvelopeVerifier.js';
+import { evaluateEnvelope, getDeliveryRejection } from '../familyenvelope/FamilyEnvelopeVerifier.js';
 import { isPlausibleEpoch } from '../familyenvelope/policy.js';
-import type { EnvelopeAcceptanceContext } from '../familyenvelope/FamilyEnvelopeVerifier.js';
+import type { EnvelopeAcceptanceContext, EnvelopeRejectionReason } from '../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { DataVersionLedger } from '../familyenvelope/DataVersionLedger.js';
 import type { EnvelopeAcceptanceTransaction } from '../familyenvelope/EnvelopeAcceptanceTransaction.js';
 import type { EnvelopeSignatureVerifier } from '../familyenvelope/EnvelopeSignatureVerifier.js';
@@ -21,6 +21,9 @@ import type { SequenceProgressLedger } from './SequenceProgressLedger.js';
 import type { PendingEnvelopeRecord, SyncDecision } from './types.js';
 
 export const MAX_PENDING_CANONICAL_BYTES = 128 * 1024;
+
+/** Resolves each pending sender against its own current authority context. */
+export type PendingSenderContextResolver = (senderKeyId: string, nowUtc: Date) => EnvelopeAcceptanceContext;
 
 export interface SyncCoordinatorOptions {
   /**
@@ -147,6 +150,11 @@ export class SyncCoordinator {
     this.maxPendingGlobal = options.maxPendingGlobal ?? MAX_PENDING_GLOBAL;
   }
 
+  /** No ledger mutation: historical acceptance cannot bypass current delivery authority. */
+  async deliveryRejection(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext): Promise<EnvelopeRejectionReason | null> {
+    return getDeliveryRejection(envelope, context, this.verifier);
+  }
+
   /** Removes and returns every pending record whose effectiveExpiresAt has passed. Callers may turn each into an EXPIRED SyncReceipt (see receipts.ts). Expired state is never later applicable -- it is deleted, not merely flagged. */
   sweepExpired(nowUtc: Date): PendingEnvelopeRecord[] {
     const expired = this.pendingStore.listExpired(nowUtc);
@@ -154,7 +162,7 @@ export class SyncCoordinator {
     return expired;
   }
 
-  async submit(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext): Promise<SubmitResult> {
+  async submit(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext, resolvePendingContext?: PendingSenderContextResolver): Promise<SubmitResult> {
     // `submit` is a public typed entry point and must not assume its caller
     // passed through parseFamilyEnvelope. Reject before canonicalization,
     // in-flight deduplication/serialization maps, queue cleanup, or ledgers.
@@ -182,8 +190,8 @@ export class SyncCoordinator {
 
     const previousInChain = this.chainByKey.get(key) ?? Promise.resolve();
     const runPromise: Promise<SubmitResult> = previousInChain.then(
-      () => this.submitInternal(envelope, context, canonicalBytes),
-      () => this.submitInternal(envelope, context, canonicalBytes),
+      () => this.submitInternal(envelope, context, canonicalBytes, resolvePendingContext),
+      () => this.submitInternal(envelope, context, canonicalBytes, resolvePendingContext),
     );
     // The chain link must never itself reject (a rejected chain link would
     // permanently wedge every future submission for this key) -- settle
@@ -211,7 +219,7 @@ export class SyncCoordinator {
     }
   }
 
-  private async submitInternal(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext, canonicalBytes: string): Promise<SubmitResult> {
+  private async submitInternal(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext, canonicalBytes: string, resolvePendingContext?: PendingSenderContextResolver): Promise<SubmitResult> {
     this.sweepExpired(context.now);
     // PCA-17C: every bookkeeping/queueing operation below uses
     // context.familyId (authoritative), never envelope.familyId -- see the
@@ -234,7 +242,7 @@ export class SyncCoordinator {
         // apply a candidate whose dependency has since resolved, exactly like
         // drainFamily would.
         const decision = await this.resolvePendingCandidate(existingPending, context);
-        const drained = decision.kind === 'APPLY_NOW' ? await this.drainFamily(familyId, context) : [];
+        const drained = decision.kind === 'APPLY_NOW' ? await this.drainFamily(familyId, context, envelope.senderKeyId, resolvePendingContext) : [];
         return { decision, drained };
       }
       return { decision: { kind: 'REJECT', reason: 'PENDING_MESSAGE_ID_CONFLICT' }, drained: [] };
@@ -310,18 +318,18 @@ export class SyncCoordinator {
     }
 
     await this.recordSequenceIfApplicable(envelope, familyId);
-    const drained = await this.drainFamily(familyId, context);
+    const drained = await this.drainFamily(familyId, context, envelope.senderKeyId, resolvePendingContext);
     return { decision: { kind: 'APPLY_NOW', idempotent: verdict.idempotent }, drained };
   }
 
   /** Deterministic reconnect batch drain: sorts by (issuedAt, messageId) -- never by relay arrival order, which is not authoritative -- and submits each in turn. Idempotent: replaying the exact same batch again produces the same end state (every already-applied/still-ineligible item resolves via submit()'s own idempotency/dedupe). */
-  async reconnectDrain(envelopes: FamilyEnvelope[], context: EnvelopeAcceptanceContext): Promise<SubmitResult[]> {
+  async reconnectDrain(envelopes: FamilyEnvelope[], context: EnvelopeAcceptanceContext, resolvePendingContext?: PendingSenderContextResolver): Promise<SubmitResult[]> {
     const ordered = [...envelopes].sort(
       (a, b) => a.issuedAt.getTime() - b.issuedAt.getTime() || a.messageId.localeCompare(b.messageId),
     );
     const results: SubmitResult[] = [];
     for (const envelope of ordered) {
-      results.push(await this.submit(envelope, context));
+      results.push(await this.submit(envelope, context, resolvePendingContext));
     }
     return results;
   }
@@ -476,7 +484,7 @@ export class SyncCoordinator {
     };
   }
 
-  private async drainFamily(familyId: OpaqueFamilyId, context: EnvelopeAcceptanceContext): Promise<DrainedOutcome[]> {
+  private async drainFamily(familyId: OpaqueFamilyId, context: EnvelopeAcceptanceContext, triggeringSenderKeyId: string, resolvePendingContext?: PendingSenderContextResolver): Promise<DrainedOutcome[]> {
     const outcomes: DrainedOutcome[] = [];
     let progressed = true;
     while (progressed) {
@@ -487,7 +495,16 @@ export class SyncCoordinator {
         .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.messageId.localeCompare(b.messageId));
 
       for (const record of candidates) {
-        const decision = await this.resolvePendingCandidate(record, context);
+        // Never borrow a different sender's key or epoch floors. Generic
+        // callers without a resolver leave those candidates pending.
+        const invalidEpoch = !isPlausibleEpoch(record.envelope.trustSetEpoch) || !isPlausibleEpoch(record.envelope.keyEpoch);
+        // Malformed legacy entries are structurally rejected before any
+        // context-dependent work, even when their sender cannot be resolved.
+        if (!invalidEpoch && !resolvePendingContext && record.envelope.senderKeyId !== triggeringSenderKeyId) continue;
+        const candidateContext = !invalidEpoch && resolvePendingContext
+          ? resolvePendingContext(record.envelope.senderKeyId, context.now)
+          : context;
+        const decision = await this.resolvePendingCandidate(record, candidateContext);
         if (decision.kind === 'HOLD_PENDING') continue; // no progress on this one this pass
         outcomes.push({ messageId: record.messageId, decision });
         progressed = true;

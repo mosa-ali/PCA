@@ -6,6 +6,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeviceSessionManagerTest {
+    @Test fun `runtime challenge composition encodes already canonical provider bytes once`() {
+        val canonical = ByteArray(64) { (it + 1).toByte() }
+        val engine = object : org.pca.app.security.DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                assertEquals("original-dsk-alias", alias)
+                assertEquals("server-nonce", String(message, Charsets.UTF_8))
+                return canonical
+            }
+        }
+        val encoded = signRuntimeDeviceChallenge(engine, "original-dsk-alias", "server-nonce")
+        org.junit.Assert.assertArrayEquals(canonical, java.util.Base64.getUrlDecoder().decode(encoded))
+    }
+
+    @Test
+    fun `key loss invalidates cached session and never returns bearer token`() = runTest {
+        var keyAvailable = true
+        val manager = DeviceSessionManager(FakeRelayHttpClient(), "device-1", signer = { "sig-1" },
+            assertKeyCustody = { check(keyAvailable) })
+        manager.requireSessionToken()
+        assertTrue(manager.isAuthenticated())
+        keyAvailable = false
+        assertTrue(runCatching { manager.requireSessionToken() }.isFailure)
+        assertTrue(!manager.isAuthenticated())
+    }
 
     @Test
     fun `requireSessionToken authenticates on first use`() = runTest {

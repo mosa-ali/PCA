@@ -17,11 +17,20 @@ data class OutboundSubmitItem(
 data class OutboundItemOutcome(val messageId: String, val outcome: String)
 data class OutboundBatchResult(val results: List<OutboundItemOutcome>, val droppedForBatchBound: List<String>)
 
-data class InboundAppliedEnvelope(val messageId: String, val senderDeviceId: String, val messageType: String, val payloadBase64: String)
+data class InboundAppliedEnvelope(
+    val messageId: String,
+    val senderDeviceId: String,
+    val messageType: String,
+    val payloadBase64: String,
+    /** Complete signed wrapper, retained without discarding epoch/signature/recipient fields. */
+    val envelopeWire: String? = null,
+)
 data class InboundListResult(
     val applied: List<InboundAppliedEnvelope>,
     val unparseableMessageIds: List<String>,
     val droppedForListBound: List<String>,
+    /** Only the authenticated server response supplies this scope. */
+    val scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope? = null,
 )
 
 /**

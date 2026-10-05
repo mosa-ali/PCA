@@ -206,6 +206,19 @@ class AndroidKeystoreDskProvider(
         return P256DerSignature.toLowSIeeeP1363(der)
     }
 
+    /** Read-only original-key check for cached-session custody. Never creates or repairs keys. */
+    fun assertSigningKeyCustody(alias: String, expectedPublicKeyBase64: String) {
+        try {
+            val privateHandle = keyStore.getKey(alias, null) as? PrivateKey ?: throw KeyMaterialMissingException("Device key unavailable")
+            val info = KeyFactory.getInstance("EC", ANDROID_KEYSTORE_PROVIDER).getKeySpec(privateHandle, KeyInfo::class.java)
+            val publicKey = keyStore.getCertificate(alias)?.publicKey as? ECPublicKey ?: throw KeyMaterialMissingException("Device key unavailable")
+            if (!info.isInsideSecureHardware || info.purposes and KeyProperties.PURPOSE_SIGN == 0 ||
+                canonicalSec1PublicKeyBase64(publicKey) != expectedPublicKeyBase64) {
+                throw KeyMaterialMissingException("Device key unavailable")
+            }
+        } catch (_: Exception) { throw KeyMaterialMissingException("Device key unavailable; refusing to regenerate") }
+    }
+
     private fun deleteEntryQuietly(alias: String) {
         try {
             if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)

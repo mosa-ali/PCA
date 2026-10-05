@@ -1,9 +1,15 @@
 package org.pca.app.runtime.sync
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.runtime.sync.inbox.PersistentCiphertextInbox
+import org.pca.app.runtime.sync.inbox.RuntimeInboxScope
+import org.pca.app.runtime.sync.envelope.*
 import org.pca.app.runtime.sync.state.SyncConnectionState
 import org.pca.app.runtime.sync.transport.InboundAppliedEnvelope
 
@@ -16,11 +22,13 @@ private class RecordingInboundHandler : InboundEnvelopeHandler {
 
 private fun buildOrchestrator(
     store: FakeDurableBackingStore,
-    relay: FakeRelayHttpClient = FakeRelayHttpClient(),
+    relay: org.pca.app.runtime.sync.transport.RelayHttpClient = FakeRelayHttpClient(),
     handler: InboundEnvelopeHandler = RecordingInboundHandler(),
     now: Long = 1_700_000_000_000L,
+    inbox: PersistentCiphertextInbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1"),
+    assertKeyCustody: () -> Unit = {},
 ): ReconnectSyncOrchestrator {
-    val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { now })
+    val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { now }, assertKeyCustody = assertKeyCustody)
     return ReconnectSyncOrchestrator(
         connectivitySource = FakeConnectivitySource(),
         sessionManager = sessionManager,
@@ -28,34 +36,84 @@ private fun buildOrchestrator(
         outboxPort = FakeSyncOutboxPort(store),
         inboundHandler = handler,
         nowEpochMillis = { now },
+        ciphertextInbox = inbox,
     )
 }
 
-class ReconnectSyncOrchestratorTest {
+private fun inbound(id: String): InboundAppliedEnvelope {
+    val wire = String(envelopeToRelayCiphertext(FamilyEnvelope(1, 0, id, "family-1", "sender-1",
+        RecipientBinding.Device("device-1"), "key-1", "STATUS_SNAPSHOT", 1, 1, "nonce-$id",
+        1_700_000_000_000L, 1_700_000_060_000L, "1.0.0", null, byteArrayOf(1), "signature-1")), Charsets.UTF_8)
+    return InboundAppliedEnvelope(id, "sender-1", "STATUS_SNAPSHOT", "AQ==", wire)
+}
 
-    @Test
-    fun `failed inbound handling remains retryable and successful delivery is deduplicated`() = runTest {
+class ReconnectSyncOrchestratorTest {
+    @Test fun `key loss after pull retains ciphertext without acknowledgement`() = runTest {
         val relay = FakeRelayHttpClient()
-        var calls = 0
-        var applied = 0
-        val handler = object : InboundEnvelopeHandler {
-            override suspend fun handle(messageId: String, senderDeviceId: String, messageType: String, payloadBase64: String) {
-                calls += 1
-                if (calls == 1) error("transient local persistence failure")
-                applied += 1
+        relay.enqueueInbound(inbound("message-1"))
+        var keyAvailable = true
+        val lostKey = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String) = relay.listInbound(sessionToken).also { keyAvailable = false }
+        }
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), lostKey, inbox = inbox,
+            assertKeyCustody = { check(keyAvailable) })
+        orchestrator.syncNow()
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+        assertEquals(1, inbox.pendingCryptoCount())
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+    }
+
+    @Test fun `uncaptured relay ids remain pending and never report LIVE`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val incomplete = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String) = org.pca.app.runtime.sync.transport.InboundListResult(
+                emptyList(), listOf("malformed-1"), listOf("overflow-1"), RuntimeInboxScope("family-1", "device-1"))
+        }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), incomplete)
+        orchestrator.syncNow()
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+    }
+
+    @Test fun `overlapping reconnects serialize custody and acknowledge once`() = runTest {
+        val relay = FakeRelayHttpClient()
+        relay.enqueueInbound(inbound("message-1"))
+        var active = 0
+        var maximum = 0
+        val delayed = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String): org.pca.app.runtime.sync.transport.InboundListResult {
+                active++
+                maximum = maxOf(maximum, active)
+                delay(10)
+                return relay.listInbound(sessionToken).also { active-- }
             }
         }
-        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, handler)
-        val envelope = InboundAppliedEnvelope("retry-1", "sender-1", "STATUS_SNAPSHOT", "cGF5bG9hZA==")
-        relay.enqueueInbound(envelope)
-        assertTrue(runCatching { orchestrator.syncNow() }.isFailure)
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), delayed)
+        val first = async { orchestrator.syncNow() }
+        val second = async { orchestrator.syncNow() }
+        first.await(); second.await()
+        assertEquals(1, maximum)
+        assertEquals(listOf("message-1"), relay.acknowledgedMessageIds)
+    }
+
+    @Test
+    fun `ack failure retries after restart without invoking unverified handler`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val backing = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(backing, "device-1")
+        val handler = RecordingInboundHandler()
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, handler, inbox = inbox)
+        relay.enqueueInbound(inbound("retry-1"))
+        relay.failNextAck = true
+        orchestrator.syncNow()
         assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
-        relay.enqueueInbound(envelope)
-        orchestrator.syncNow()
-        relay.enqueueInbound(envelope)
-        orchestrator.syncNow()
-        assertEquals(2, calls)
-        assertEquals(1, applied)
+        assertEquals(1, inbox.pendingAcknowledgements(RuntimeInboxScope("family-1", "device-1")).size)
+        val restored = PersistentCiphertextInbox(backing, "device-1")
+        buildOrchestrator(FakeDurableBackingStore(), relay, handler, inbox = restored).syncNow()
+        assertEquals(listOf("retry-1"), relay.acknowledgedMessageIds)
+        assertTrue(handler.handled.isEmpty())
+        assertEquals(1, restored.pendingCrypto(RuntimeInboxScope("family-1", "device-1")).size)
     }
 
     // ---- doc 40 Section 21: reboot while offline ----
@@ -140,36 +198,58 @@ class ReconnectSyncOrchestratorTest {
     // ---- flapping / exactly-once inbound dispatch ----
 
     @Test
-    fun `flapping reconnect -- repeated syncNow calls never re-dispatch the same inbound envelope twice`() = runTest {
+    fun `flapping reconnect acknowledges custody once and never dispatches unverified payload`() = runTest {
         val store = FakeDurableBackingStore()
         val relay = FakeRelayHttpClient()
         val handler = RecordingInboundHandler()
         val orchestrator = buildOrchestrator(store, relay, handler)
 
-        relay.enqueueInbound(InboundAppliedEnvelope("msg-1", "sender-1", "STATUS_SNAPSHOT", "cGF5bG9hZA=="))
+        relay.enqueueInbound(inbound("msg-1"))
 
         // online / offline / online / offline / online -- flap several times.
         repeat(5) { orchestrator.syncNow() }
 
-        assertEquals(listOf("msg-1"), handler.handled)
+        assertEquals(listOf("msg-1"), relay.acknowledgedMessageIds)
+        assertTrue(handler.handled.isEmpty())
     }
 
     @Test
-    fun `two distinct inbound envelopes across separate reconnects are both dispatched, in order received`() = runTest {
+    fun `two distinct ciphertexts across reconnects are acknowledged in order`() = runTest {
         val store = FakeDurableBackingStore()
         val relay = FakeRelayHttpClient()
         val handler = RecordingInboundHandler()
         val orchestrator = buildOrchestrator(store, relay, handler)
 
-        relay.enqueueInbound(InboundAppliedEnvelope("msg-1", "sender-1", "STATUS_SNAPSHOT", "cGF5bG9hZA=="))
+        relay.enqueueInbound(inbound("msg-1"))
         orchestrator.syncNow()
-        relay.enqueueInbound(InboundAppliedEnvelope("msg-2", "sender-1", "STATUS_SNAPSHOT", "cGF5bG9hZA=="))
+        relay.enqueueInbound(inbound("msg-2"))
         orchestrator.syncNow()
 
-        assertEquals(listOf("msg-1", "msg-2"), handler.handled)
+        assertEquals(listOf("msg-1", "msg-2"), relay.acknowledgedMessageIds)
+        assertTrue(handler.handled.isEmpty())
     }
 
     // ---- connection state honesty ----
+
+    @Test
+    fun `failed later pull never hides pending crypto behind LIVE`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val backing = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(backing, "device-1")
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox)
+        relay.enqueueInbound(inbound("message-1"))
+        orchestrator.syncNow()
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+        relay.failNextList = true
+        orchestrator.syncNow()
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+        assertEquals(1, inbox.pendingCryptoCount())
+        val restored = buildOrchestrator(FakeDurableBackingStore(), relay,
+            inbox = PersistentCiphertextInbox(backing, "device-1"))
+        relay.failNextList = true
+        restored.syncNow()
+        assertTrue(restored.connectionState.value != SyncConnectionState.LIVE)
+    }
 
     @Test
     fun `connection state becomes LIVE only after a successful syncNow, never merely because the transport is up`() = runTest {

@@ -580,3 +580,16 @@ test('last-valid sequence progress is preserved when a later candidate is reject
   const legitimateTwo = await coordinator.submit(buildEnvelope({ sequenceOrNonce: '2', messageId: 'legit-2' }), baseContext());
   assert.deepEqual(legitimateTwo.decision, { kind: 'APPLY_NOW', idempotent: false });
 });
+
+test('a caller without a pending sender resolver cannot borrow its key to drain another sender', async () => {
+  const coordinator = buildHarness({ isNumericSequenceSender: () => false });
+  const child = buildEnvelope({ senderKeyId: 'child-key', messageType: 'CHILD_REQUEST' });
+  const parent = buildEnvelope({ senderKeyId: 'parent-key', messageType: 'PARENT_DECISION', correlationId: child.messageId });
+  assert.equal((await coordinator.submit(parent, baseContext())).decision.kind, 'HOLD_PENDING');
+  const childResult = await coordinator.submit(child, baseContext());
+  assert.deepEqual(childResult.drained, []);
+  assert.notEqual(coordinator.pendingStore.get('family-1', parent.messageId), null);
+  assert.equal(await coordinator.messageIdempotencyLedger.getAcceptedCanonicalBytes('family-1', parent.messageId), null);
+  // An explicit call for the parent's own context can resolve it safely.
+  assert.equal((await coordinator.submit(parent, baseContext())).decision.kind, 'APPLY_NOW');
+});

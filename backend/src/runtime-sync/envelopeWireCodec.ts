@@ -25,8 +25,8 @@ function serializeRecipient(envelope: FamilyEnvelope): Pick<RawFamilyEnvelope, '
   return { recipientGroup: envelope.recipient.recipientGroup };
 }
 
-export function envelopeToRelayCiphertext(envelope: FamilyEnvelope): Buffer {
-  const raw: RawFamilyEnvelope = {
+export function envelopeToRawFamilyEnvelope(envelope: FamilyEnvelope): RawFamilyEnvelope {
+  return {
     protocolMajor: envelope.protocolMajor,
     protocolMinor: envelope.protocolMinor,
     messageId: envelope.messageId,
@@ -45,7 +45,10 @@ export function envelopeToRelayCiphertext(envelope: FamilyEnvelope): Buffer {
     payload: envelope.payload.toString('base64'),
     signature: envelope.signature,
   };
-  return Buffer.from(JSON.stringify(raw), 'utf8');
+}
+
+export function envelopeToRelayCiphertext(envelope: FamilyEnvelope): Buffer {
+  return Buffer.from(JSON.stringify(envelopeToRawFamilyEnvelope(envelope)), 'utf8');
 }
 
 /** Returns null for anything structurally malformed -- same "no granular error" posture as parseFamilyEnvelope itself. */

@@ -22,6 +22,7 @@ class FakeRelayHttpClient(
     val reportedProtectionLevels = mutableListOf<RelayProtectionLevel>()
     var failNextSubmit = false
     var failNextList = false
+    var failNextAck = false
 
     fun enqueueInbound(envelope: InboundAppliedEnvelope) {
         recipientQueue.add(envelope)
@@ -52,16 +53,18 @@ class FakeRelayHttpClient(
             failNextList = false
             throw RelayHttpException(RelayHttpErrorCode.Network, "simulated network failure")
         }
-        // Real backend auto-acknowledges everything it returns as "applied"
-        // -- mirror that here so a repeated listInbound() call (e.g. across
-        // a connectivity flap) does not return the same envelope twice.
         val snapshot = recipientQueue.toList()
-        recipientQueue.clear()
-        return InboundListResult(applied = snapshot, unparseableMessageIds = emptyList(), droppedForListBound = emptyList())
+        return InboundListResult(applied = snapshot, unparseableMessageIds = emptyList(), droppedForListBound = emptyList(),
+            scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope("family-1", "device-1"))
     }
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {
+        if (failNextAck) {
+            failNextAck = false
+            throw RelayHttpException(RelayHttpErrorCode.Network, "simulated ack loss")
+        }
         acknowledgedMessageIds.add(messageId)
+        recipientQueue.removeAll { it.messageId == messageId }
     }
 
     override suspend fun getStatus(sessionToken: String): String = "LIVE"

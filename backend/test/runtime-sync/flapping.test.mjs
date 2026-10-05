@@ -67,16 +67,17 @@ test('flapping reconnect: the same envelope redelivered across repeated online/o
   });
 
   const now = new Date('2026-01-01T01:00:00.000Z');
-  // online (first drain applies it and acknowledges in relay)
-  const firstDrain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, resolveContext(now), now);
+  // online: GET exposes ciphertext; explicit recipient acknowledgement completes transport custody
+  const firstDrain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now);
   assert.equal(firstDrain.applied.length, 1);
+  await relayService.acknowledgeEnvelope(RECIPIENT_DEVICE_ID, envelope.messageId);
 
   // offline / online / offline / online -- flap several times. Each flap
   // re-triggers a reconnect drain; since relay already acknowledged the
   // envelope, listQueuedForRecipient no longer returns it, so nothing is
   // redelivered, let alone reapplied.
   for (let flap = 0; flap < 4; flap += 1) {
-    const drain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, resolveContext(now), now);
+    const drain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now);
     assert.equal(drain.applied.length, 0);
   }
 
@@ -86,8 +87,8 @@ test('flapping reconnect: the same envelope redelivered across repeated online/o
   // redelivering the identical envelope to relay again. Relay's own
   // idempotent-create returns IDEMPOTENT_MATCH without resetting the
   // already-ACKNOWLEDGED record back to QUEUED -- so it is never
-  // re-surfaced to the recipient, and never reapplied. This is the "exactly
-  // once" guarantee holding even across a sender-side resend, layered on
+  // re-surfaced to the recipient, and never reapplied. This is transport
+  // acknowledgement idempotency across a sender-side resend, layered on
   // top of (not a replacement for) FamilyEnvelopeVerifier's own
   // message-id-idempotency ledger.
   await relayService.queueEnvelope({
@@ -97,7 +98,7 @@ test('flapping reconnect: the same envelope redelivered across repeated online/o
     recipientDeviceId: RECIPIENT_DEVICE_ID,
     ciphertext: envelopeToRelayCiphertext(envelope),
   });
-  const redeliveryDrain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, resolveContext(now), now);
+  const redeliveryDrain = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now);
   assert.equal(redeliveryDrain.applied.length, 0);
 });
 

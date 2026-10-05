@@ -67,6 +67,14 @@ import org.pca.app.firstdevice.FirstDeviceRootStore
 import org.pca.app.firstdevice.FirstDeviceTrustRootCoordinator
 import org.pca.app.firstdevice.HttpFirstDeviceBootstrapApiClient
 import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
+import org.pca.app.firstdevice.FirstDeviceRootState
+import org.pca.app.runtime.sync.DeviceSessionManager
+import org.pca.app.runtime.sync.ReconnectSyncOrchestrator
+import org.pca.app.runtime.sync.InboundEnvelopeHandler
+import org.pca.app.runtime.sync.connectivity.AndroidConnectivityMonitor
+import org.pca.app.runtime.sync.inbox.PersistentCiphertextInbox
+import org.pca.app.runtime.sync.outbox.SyncOutboxRepositoryAdapter
+import org.pca.app.runtime.sync.transport.HttpUrlConnectionRelayHttpClient
 import org.pca.app.enrollment.PersistentEnrollmentLifecycleAuditSink
 import org.pca.app.enrollment.UriEnrollmentLinkParser
 import org.pca.app.feature.wellbeing.persistence.WellbeingPolicyStore
@@ -181,7 +189,7 @@ class PcaAppGraph private constructor(
     val context: Context,
     scheduleRuntimePortOverride: ScheduleRuntimePort?,
     val familySyncRuntimePort: FamilySyncRuntimePort,
-    runtimeStateStore: PersistentStateStore,
+    private val runtimeStateStore: PersistentStateStore,
     childRequestStateStore: PersistentStateStore,
 ) {
     val monotonicTimeSource = SystemMonotonicTimeSource()
@@ -414,6 +422,41 @@ class PcaAppGraph private constructor(
         signatureEngine = androidKeystoreDskProvider,
         evidenceSource = androidKeystoreDskProvider,
     )
+
+    private var custodyDeviceId: String? = null
+    private var custodyOrchestrator: ReconnectSyncOrchestrator? = null
+    private var custodyJob: Job? = null
+
+    /** Transport custody only. A committed root never becomes ACTIVE through this path. */
+    internal suspend fun synchronizeRuntimeCustody() {
+        val deviceId = enrolledDeviceIdOrNull() ?: return
+        val root = firstDeviceRootStore.current() ?: return
+        if (root.state != FirstDeviceRootState.ROOT_COMMITTED || root.seed.deviceId != deviceId) return
+        if (custodyDeviceId != deviceId) {
+            val relay = HttpUrlConnectionRelayHttpClient(baseUrl = "https://api.pcasafe.com")
+            val session = DeviceSessionManager(relay, deviceId, signer = { nonce ->
+                val current = firstDeviceRootStore.current() ?: error("Device identity unavailable")
+                check(current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
+                org.pca.app.runtime.sync.signRuntimeDeviceChallenge(androidKeystoreDskProvider, current.seed.dskAlias, nonce)
+            }, assertKeyCustody = {
+                val current = firstDeviceRootStore.current() ?: error("Device identity unavailable")
+                check(current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
+                androidKeystoreDskProvider.assertSigningKeyCustody(current.seed.dskAlias, current.seed.dskPublicKeyBase64)
+            })
+            custodyOrchestrator = ReconnectSyncOrchestrator(
+                AndroidConnectivityMonitor(context), session, relay,
+                SyncOutboxRepositoryAdapter(persistence.syncOutboxRepository),
+                object : InboundEnvelopeHandler {
+                    override suspend fun handle(messageId: String, senderDeviceId: String, messageType: String, payloadBase64: String) {
+                        error("Unverified ciphertext dispatch is unavailable")
+                    }
+                },
+                ciphertextInbox = PersistentCiphertextInbox(runtimeStateStore, deviceId),
+            )
+            custodyDeviceId = deviceId
+        }
+        if (connectivityObserver.isCurrentlyOnline()) custodyOrchestrator?.syncNow()
+    }
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports
      * [DeviceIdentityState.NotEnrolled] -- read fresh by [UsageSessionRecorder.poll] and
@@ -895,6 +938,14 @@ class PcaAppGraph private constructor(
         eyeRestShieldTrigger.start()
         breakShieldTrigger.start()
         startUsageLocationPolling()
+        if (custodyJob?.isActive != true) {
+            custodyJob = coroutineScope.launch {
+                while (true) {
+                    runCatching { synchronizeRuntimeCustody() }
+                    delay(60_000L)
+                }
+            }
+        }
         backgroundExecutionScheduler.scheduleUsageIngestion()
         backgroundExecutionScheduler.scheduleRetentionMaintenance()
     }

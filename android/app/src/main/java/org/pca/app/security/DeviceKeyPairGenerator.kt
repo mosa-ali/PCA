@@ -136,7 +136,9 @@ interface DeviceKeyAttestationEvidenceSource {
  * depends on the narrowest possible capability.
  */
 interface DskSignatureEngine {
-    /** Signs [message] with the private key behind [alias]; throws [KeyMaterialMissingException] when absent. */
+    /** Signs [message] with the private key behind [alias]. Despite its legacy name,
+     * returns canonical low-S IEEE-P1363 bytes (64 bytes), already converted from
+     * JCA DER. Throws [KeyMaterialMissingException] when absent. */
     fun signCanonicalDer(alias: String, message: ByteArray): ByteArray
 }
 

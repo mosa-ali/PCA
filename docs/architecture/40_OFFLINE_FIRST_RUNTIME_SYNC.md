@@ -112,8 +112,8 @@ port) and decides bounded batches with the *shared* policy in
 Idempotency: every envelope carries its own `messageId`; both
 `RelayService.queueEnvelope` (relay-level idempotent create) and
 `FamilyEnvelopeVerifier`/`SyncCoordinator` (message-id idempotency ledger)
-independently guarantee that redelivering the same batch after a flapping
-reconnect never double-applies.
+prevent duplicate server acceptance effects when a batch is redelivered.
+They do not establish on-device cryptographic dispatch or OS application.
 
 ## 6. Inbound: reconnect drain
 
@@ -126,18 +126,27 @@ reconnect never double-applies.
    `senderPublicKey`/epoch floor as caller-provided inputs (FTS-owned,
    per `FamilyEnvelopeVerifier`'s own documented boundary); it does not
    resolve them itself.
-4. `RelayService.acknowledgeEnvelope` for every `APPLY_NOW` outcome.
+4. Fresh delivery eligibility checks against each sender's own current key,
+   trust/key floors and expiry. Historical acceptance is not current delivery authority.
 5. `familysync/receipts.ts` to build local, metadata-only `SyncReceipt`s.
 
 The caller (parent-web, or the Android on-device runtime for the child's own
 side) is responsible for decrypting `payload` and dispatching the
-authorized result -- this service hands back verified-but-still-encrypted
-`FamilyEnvelope`s plus their `SyncDecision`s, never plaintext.
+authorized result -- this service hands back eligible-but-still-encrypted
+`FamilyEnvelope`s plus their `SyncDecision`s, never plaintext. The authenticated
+response includes the full signed wrapper and the verified family/device scope.
+The relay remains queued across GET response loss until an explicit recipient ACK.
+An `APPLIED` server receipt describes acceptance classification, not OS enforcement.
 
 On the Android side, the same shape is mirrored on-device by
 `SyncReceiptRepository` (PCA-12, already merged) rather than duplicated --
 `ReconnectSyncOrchestrator` (this lane) is the piece that drives inbound
-fetch/verify-adapter/apply/ack around it.
+fetch/durable-custody/ack around it. Android's encrypted persistent inbox and iOS's
+atomic Keychain inbox confirm a bounded whole batch and exact readback before ACK.
+ACK records transport custody only: ciphertext remains `PENDING_CRYPTO`, including
+after restart and empty pulls, until the separately verified crypto dispatcher can
+authorize/decrypt/apply it. No lossy callback or successful ACK creates ACTIVE.
+Key loss, corrupt storage, scope replacement and capacity exhaustion fail closed.
 
 ## 7. Family Envelope runtime adapter (Android)
 

@@ -1,3 +1,4 @@
+import { canonicalizeEnvelope } from '../../../dist/familyenvelope/canonicalize.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
@@ -16,6 +17,8 @@ import { InMemoryReplayLedger } from '../../../dist/familyenvelope/InMemoryRepla
 import { InMemoryDataVersionLedger } from '../../../dist/familyenvelope/InMemoryDataVersionLedger.js';
 import { InMemoryMessageIdempotencyLedger } from '../../../dist/familyenvelope/InMemoryMessageIdempotencyLedger.js';
 import {
+  envelopeToRelayCiphertext,
+  envelopeToRawFamilyEnvelope,
   DeviceSessionService,
   InMemoryDeviceSessionRepository,
   OutboundRelayService,
@@ -30,7 +33,7 @@ import { createInMemoryDeviceRepository } from '../../support/inMemoryDeviceRepo
 import { createInMemoryRelayRepository } from '../../support/inMemoryRelayRepository.mjs';
 import { createInMemoryDeviceChallengeRepository } from '../../support/inMemoryDeviceChallengeRepository.mjs';
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../../support/testOnlyDeviceSignatureVerifier.mjs';
-import { createTestOnlyEnvelopeSignatureVerifier } from '../../support/testOnlyEnvelopeSignatureVerifier.mjs';
+import { createTestOnlyEnvelopeSignatureVerifier, signTestOnlyEnvelope } from '../../support/testOnlyEnvelopeSignatureVerifier.mjs';
 import { InMemoryDeviceProtectionStatusRepository } from '../../../dist/device/DeviceProtectionStatusRepository.js';
 import { RealProtectiveAuthorityResolver } from '../../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
 import { ProtectionAlertProducer } from '../../../dist/alerts/ProtectionAlertProducer.js';
@@ -42,7 +45,7 @@ import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAl
 // ledger's clock to the same instant these fixtures use.
 const LEDGER_NOW = new Date('2026-08-21T00:00:00.000Z');
 
-function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, alertComposeFailureLogger } = {}) {
+function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, alertComposeFailureLogger, envelopePublicKey = '' } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
@@ -75,7 +78,7 @@ function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, 
     inboundReconnectService,
     statusTracker,
     resolveEnvelopeContext: (_senderKeyId, familyId, nowUtc) => ({
-      senderPublicKey: '',
+      senderPublicKey: envelopePublicKey,
       minimumAcceptedTrustSetEpoch: 0,
       minimumAcceptedKeyEpoch: 0,
       familyId,
@@ -85,7 +88,7 @@ function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, 
     protectionStatusAlerting,
     alertComposeFailureLogger,
   });
-  return { app, deviceRepository };
+  return { app, deviceRepository, relayService };
 }
 
 function makeAlerting({ enabled = true } = {}) {
@@ -557,4 +560,35 @@ test('recovering FROM DEGRADED back to DEGRADED again re-emits PROTECTION_DEGRAD
   } finally {
     await app.close();
   }
+});
+
+test('inbound returns full signed envelope and verified session scope, ignoring query identity claims', async () => {
+  const envelopePublicKey = 'wire-test-public-key';
+  const { app, deviceRepository, relayService } = buildApp({ envelopePublicKey });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: recipientDeviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: senderDeviceId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, recipientDeviceId, publicKey);
+    const now = new Date();
+    const unsigned = {
+      protocolMajor: 1, protocolMinor: 0, messageId: randomUUID(), familyId, senderDeviceId,
+      recipient: { kind: 'DEVICE', recipientDeviceId }, senderKeyId: 'wire-test-key',
+      messageType: 'STATUS_SNAPSHOT', trustSetEpoch: 1, keyEpoch: 1, sequenceOrNonce: randomUUID(),
+      issuedAt: new Date(now.getTime() - 1000), expiresAt: new Date(now.getTime() + 60000),
+      semanticVersion: '1.0.0', correlationId: null, payload: Buffer.from('opaque-ciphertext'),
+    };
+    const envelope = { ...unsigned, signature: signTestOnlyEnvelope(envelopePublicKey, canonicalizeEnvelope(unsigned)) };
+    await relayService.queueEnvelope({
+      messageId: envelope.messageId, familyId, senderDeviceId, recipientDeviceId,
+      ciphertext: envelopeToRelayCiphertext(envelope),
+    });
+    const response = await app.inject({ method: 'GET',
+      url: '/v1/runtime-sync/inbound?familyId=forged-family&deviceId=forged-device',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().scope, { familyId, recipientDeviceId });
+    assert.deepEqual(response.json().applied, [envelopeToRawFamilyEnvelope(envelope)]);
+  } finally { await app.close(); }
 });

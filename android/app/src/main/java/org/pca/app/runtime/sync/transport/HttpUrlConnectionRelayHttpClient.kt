@@ -1,8 +1,11 @@
 package org.pca.app.runtime.sync.transport
 
 import java.io.OutputStreamWriter
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -60,7 +63,7 @@ class HttpUrlConnectionRelayHttpClient(
 
                 val status = connection.responseCode
                 val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-                val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                val text = stream?.use { readBoundedResponse(it) } ?: ""
                 val parsed = if (text.isNotBlank()) JSONObject(text) else JSONObject()
 
                 if (status in 200..299) return@withContext parsed
@@ -118,9 +121,10 @@ class HttpUrlConnectionRelayHttpClient(
         val response = request("/v1/runtime-sync/inbound", "GET", sessionToken, null)
         val applied = mutableListOf<InboundAppliedEnvelope>()
         val appliedArray = response.getJSONArray("applied")
+        if (appliedArray.length() > 256) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Inbound batch too large")
         for (i in 0 until appliedArray.length()) {
             val entry = appliedArray.getJSONObject(i)
-            applied.add(InboundAppliedEnvelope(entry.getString("messageId"), entry.getString("senderDeviceId"), entry.getString("messageType"), entry.getString("payload")))
+            applied.add(InboundAppliedEnvelope(entry.getString("messageId"), entry.getString("senderDeviceId"), entry.getString("messageType"), entry.getString("payload"), entry.toString()))
         }
         val unparseable = mutableListOf<String>()
         val unparseableArray = response.getJSONArray("unparseableMessageIds")
@@ -129,11 +133,19 @@ class HttpUrlConnectionRelayHttpClient(
         val droppedArray = response.getJSONArray("droppedForListBound")
         for (i in 0 until droppedArray.length()) dropped.add(droppedArray.getString(i))
 
-        return InboundListResult(applied, unparseable, dropped)
+        val scopeJson = response.getJSONObject("scope")
+        if (scopeJson.get("familyId") !is String || scopeJson.get("recipientDeviceId") !is String) {
+            throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound scope")
+        }
+        val scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope(
+            scopeJson.getString("familyId"), scopeJson.getString("recipientDeviceId"),
+        )
+        return InboundListResult(applied, unparseable, dropped, scope)
     }
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {
-        request("/v1/runtime-sync/inbound/$messageId/ack", "POST", sessionToken, null)
+        val component = URLEncoder.encode(messageId, Charsets.UTF_8.name()).replace("+", "%20").replace(".", "%2E")
+        request("/v1/runtime-sync/inbound/$component/ack", "POST", sessionToken, null)
     }
 
     override suspend fun getStatus(sessionToken: String): String {
@@ -160,4 +172,17 @@ class HttpUrlConnectionRelayHttpClient(
     private companion object {
         val LOCAL_DEV_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
     }
+}
+
+/** Limit while streaming, before JSON construction or envelope allocation. */
+internal fun readBoundedResponse(stream: InputStream, maxBytes: Int = 4 * 1024 * 1024): String {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (true) {
+        val count = stream.read(buffer)
+        if (count == -1) break
+        if (count > maxBytes - output.size()) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Response too large")
+        output.write(buffer, 0, count)
+    }
+    return output.toString(Charsets.UTF_8.name())
 }

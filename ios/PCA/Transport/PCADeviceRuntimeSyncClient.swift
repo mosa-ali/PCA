@@ -3,14 +3,61 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public struct PCAInboundEnvelope: Decodable, Equatable {
+public struct PCAInboundScope: Codable, Equatable {
+    public let familyId: String
+    public let recipientDeviceId: String
+}
+
+public struct PCAInboundEnvelope: Codable, Equatable {
+    public let protocolMajor: Int
+    public let protocolMinor: Int
     public let messageId: String
+    public let familyId: String
     public let senderDeviceId: String
+    public let recipientDeviceId: String?
+    public let recipientGroup: String?
+    public let senderKeyId: String
     public let messageType: String
+    public let trustSetEpoch: Int
+    public let keyEpoch: Int
+    public let sequenceOrNonce: String
+    public let issuedAt: String
+    public let expiresAt: String
+    public let semanticVersion: String
+    public let correlationId: String?
     public let payload: String
+    public let signature: String
+
+    /// Structural custody validation only; no signature/decryption/OS authority.
+    func validate(scope: PCAInboundScope) throws {
+        let ids = [messageId, familyId, senderDeviceId, senderKeyId, sequenceOrNonce]
+        guard ids.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
+              familyId == scope.familyId, recipientDeviceId == scope.recipientDeviceId,
+              recipientGroup == nil, protocolMajor == 1, protocolMinor >= 0, protocolMinor <= Int(Int32.max),
+              trustSetEpoch >= 0, trustSetEpoch <= Int(Int32.max), keyEpoch >= 0, keyEpoch <= Int(Int32.max),
+              !signature.isEmpty, signature.utf16.count <= 512,
+              semanticVersion.utf16.count <= 32,
+              semanticVersion.range(of: #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"#, options: .regularExpression) != nil,
+              Self.messageTypes.contains(messageType),
+              let bytes = Data(base64Encoded: payload), bytes.count > 0, bytes.count <= 65536,
+              bytes.base64EncodedString() == payload else { throw PCAInboundInboxError.unavailable }
+        if let correlationId {
+            guard !correlationId.isEmpty, correlationId.utf16.count <= 128 else { throw PCAInboundInboxError.unavailable }
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let issued = formatter.date(from: issuedAt), let expires = formatter.date(from: expiresAt),
+              formatter.string(from: issued) == issuedAt, formatter.string(from: expires) == expiresAt,
+              expires > issued else { throw PCAInboundInboxError.unavailable }
+    }
+
+    private static let messageTypes: Set<String> = ["POLICY_UPDATE", "POLICY_RECEIPT", "STATUS_SNAPSHOT", "ACTIVITY_SUMMARY",
+        "LOCATION_RESPONSE", "CHILD_REQUEST", "PARENT_DECISION", "TAMPER_ALERT", "RETENTION_DELETION_INSTRUCTION",
+        "RETENTION_RECEIPT", "FTS_UPDATE", "KEY_ROTATION", "DEVICE_REVOKE", "RECOVERY_TRANSACTION", "SIGNED_ROLLBACK"]
 }
 
 public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
+    public let scope: PCAInboundScope
     public let applied: [PCAInboundEnvelope]
     public let unparseableMessageIds: [String]
     public let droppedForListBound: [String]
@@ -47,7 +94,12 @@ public final class PCADeviceRuntimeSyncClient {
     }
 
     public func acknowledge(messageId: String, session: PCADeviceSession) async throws {
-        var request = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/inbound/\(messageId)/ack"))
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%."))
+        guard let component = messageId.addingPercentEncoding(withAllowedCharacters: allowed),
+              let url = URL(string: baseURL.appendingPathComponent("v1/runtime-sync/inbound").absoluteString + "/" + component + "/ack") else {
+            throw PCAAPIError.invalidRequest
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.sessionToken)", forHTTPHeaderField: "Authorization")
         _ = try await send(request, decodeAs: EmptyPCAResponse.self)

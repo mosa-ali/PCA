@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.pca.app.runtime.sync.inbox.PersistentCiphertextInbox
 import org.pca.app.runtime.sync.backoff.computeBackoff
 import org.pca.app.runtime.sync.connectivity.ConnectivitySignal
 import org.pca.app.runtime.sync.connectivity.ConnectivitySource
@@ -15,12 +18,7 @@ import org.pca.app.runtime.sync.state.computeSyncConnectionState
 import org.pca.app.runtime.sync.transport.OutboundSubmitItem
 import org.pca.app.runtime.sync.transport.RelayHttpClient
 
-/**
- * Receives verified, backend-forwarded inbound envelopes (doc 40 Section
- * 6/11) -- dispatch to whatever authorized local runtime handles a given
- * `messageType` (decrypt + apply) is entirely this callback's job; this
- * orchestrator never decrypts `payloadBase64` itself.
- */
+/** Legacy callback retained for constructor compatibility; the custody path never dispatches through it. */
 interface InboundEnvelopeHandler {
     suspend fun handle(messageId: String, senderDeviceId: String, messageType: String, payloadBase64: String)
 }
@@ -37,11 +35,10 @@ interface InboundEnvelopeHandler {
  * batch-slot priority ordering by message-type tier is not wired here
  * because the real outbox has no message-type column; delivery order
  * follows `SyncOutboxDao.getReadyForDelivery`'s own `sequence` ordering
- * instead. Inbound envelopes are consumed from the backend's already
- * signature/replay/epoch-verified `/inbound` response (doc 40 Section 4) --
- * on-device re-verification via [org.pca.app.runtime.sync.envelope.EnvelopeSignatureVerifier]
- * is a documented follow-up once a reviewed crypto suite lands (both
- * layers currently fail closed identically either way).
+ * instead. Complete signed inbound wrappers are retained in a durable inbox
+ * before explicit relay acknowledgement. They remain pending crypto; this
+ * transport never invokes the legacy lossy handler or claims OS enforcement.
+ * Missing durable storage fails closed and cannot produce a successful sync.
  */
 class ReconnectSyncOrchestrator(
     private val connectivitySource: ConnectivitySource,
@@ -50,7 +47,9 @@ class ReconnectSyncOrchestrator(
     private val outboxPort: SyncOutboxPort,
     private val inboundHandler: InboundEnvelopeHandler,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
+    private val ciphertextInbox: PersistentCiphertextInbox? = null,
 ) {
+    private val reconnectMutex = Mutex()
     private val _connectionState = MutableStateFlow(SyncConnectionState.OFFLINE)
     val connectionState: StateFlow<SyncConnectionState> = _connectionState.asStateFlow()
 
@@ -58,14 +57,7 @@ class ReconnectSyncOrchestrator(
     private var isSyncing = false
     private var lastSuccessfulSyncAtEpochMillis: Long? = null
     private var pendingLocalWorkCount = 0
-
-    // Bounded "already dispatched to the handler this process lifetime" set
-    // -- defense against a repeated connectivity flap re-dispatching the
-    // SAME already-applied inbound envelope to the runtime handler more
-    // than once (doc 40 Section 17's "no reconnect flood" / "duplicate
-    // policy application"), on top of (not instead of) the backend's own
-    // message-id idempotency, which is the authoritative guarantee.
-    private val deliveredMessageIds = LinkedHashSet<String>()
+    private var pendingRelayWorkCount = 0
 
     /** Starts observing connectivity and attempting a reconnect on every transition to AVAILABLE. Caller owns the CoroutineScope's lifecycle. */
     fun start(scope: CoroutineScope) {
@@ -95,7 +87,8 @@ class ReconnectSyncOrchestrator(
             ComputeConnectionStateInput(
                 isTransportConnected = isTransportConnected,
                 isSyncing = isSyncing,
-                hasPendingLocalWork = pendingLocalWorkCount > 0,
+                hasPendingLocalWork = pendingLocalWorkCount > 0 || pendingRelayWorkCount > 0 ||
+                    (ciphertextInbox?.let { runCatching { it.pendingCryptoCount() > 0 }.getOrDefault(true) } ?: true),
                 lastSuccessfulSyncAtEpochMillis = lastSuccessfulSyncAtEpochMillis,
                 nowEpochMillis = nowEpochMillis(),
             ),
@@ -103,15 +96,16 @@ class ReconnectSyncOrchestrator(
     }
 
     /** One bounded reconnect attempt: outbound drain, then inbound drain. Safe to call repeatedly (e.g. on every connectivity flap) -- every step below is itself idempotent/bounded. */
-    suspend fun attemptReconnect() {
-        if (!isTransportConnected) return
+    suspend fun attemptReconnect() = reconnectMutex.withLock {
+        if (!isTransportConnected) return@withLock
         isSyncing = true
         publishState()
         try {
             val sessionToken = try {
                 sessionManager.requireSessionToken()
             } catch (_: Exception) {
-                return // authentication failed -- next connectivity/trigger event retries; never crash the caller.
+                lastSuccessfulSyncAtEpochMillis = null
+                return@withLock // authentication failed -- next trigger retries.
             }
             val outboundReached = drainOutbound(sessionToken)
             val inboundReached = drainInbound(sessionToken)
@@ -188,16 +182,22 @@ class ReconnectSyncOrchestrator(
         } catch (_: Exception) {
             return false
         }
-        for (envelope in result.applied) {
-            if (envelope.messageId in deliveredMessageIds) continue
-            // A failed handler must remain retryable; receipt is complete only
-            // after the runtime has successfully accepted the envelope.
-            inboundHandler.handle(envelope.messageId, envelope.senderDeviceId, envelope.messageType, envelope.payloadBase64)
-            deliveredMessageIds.add(envelope.messageId)
-            if (deliveredMessageIds.size > MAX_DELIVERED_DEDUPE_ENTRIES) {
-                deliveredMessageIds.iterator().let { it.next(); it.remove() } // evict oldest (LinkedHashSet insertion order)
+        val inbox = ciphertextInbox ?: return false
+        val scope = result.scope ?: return false
+        if (scope.recipientDeviceId != sessionManager.configuredDeviceId) return false
+        pendingRelayWorkCount = result.unparseableMessageIds.size + result.droppedForListBound.size
+        return try {
+            // Capture the complete bounded response before ANY acknowledgement.
+            // This is transport custody, never verification or OS application.
+            inbox.capture(scope, result.applied.map { it.envelopeWire ?: throw IllegalStateException("Missing envelope") })
+            for (record in inbox.pendingAcknowledgements(scope)) {
+                if (!sessionManager.isAuthenticated() || sessionManager.requireSessionToken() != sessionToken) return false
+                relayHttpClient.acknowledgeInbound(sessionToken, record.messageId)
+                inbox.markAcknowledged(scope, record.messageId, record.envelopeWire)
             }
+            true
+        } catch (_: Exception) {
+            false
         }
-        return true
     }
 }

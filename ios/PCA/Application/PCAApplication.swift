@@ -113,6 +113,8 @@ public struct PCAProductionDependencies {
     public let enrollmentClient: PCAEnrollmentBootstrapClient
     public let sessionClient: PCADeviceSessionClient?
     public let runtimeSyncClient: PCADeviceRuntimeSyncClient?
+    public let inboundInbox: PCAInboundInboxStoring?
+    public let assertRuntimeKeyCustody: (String) throws -> Void
     public let sessionStore: PCADeviceSessionStore
     public let attemptStore: PCAEnrollmentAttemptStore
     public let profileStore: PCAEnrollmentProfileStore
@@ -140,6 +142,8 @@ public struct PCAProductionDependencies {
         enrollmentClient: PCAEnrollmentBootstrapClient,
         sessionClient: PCADeviceSessionClient? = nil,
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
+        inboundInbox: PCAInboundInboxStoring? = nil,
+        assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in throw PCADeviceProofError.secureKeyUnavailable },
         sessionStore: PCADeviceSessionStore,
         attemptStore: PCAEnrollmentAttemptStore,
         profileStore: PCAEnrollmentProfileStore,
@@ -158,6 +162,8 @@ public struct PCAProductionDependencies {
         self.enrollmentClient = enrollmentClient
         self.sessionClient = sessionClient
         self.runtimeSyncClient = runtimeSyncClient
+        self.inboundInbox = inboundInbox
+        self.assertRuntimeKeyCustody = assertRuntimeKeyCustody
         self.sessionStore = sessionStore
         self.attemptStore = attemptStore
         self.profileStore = profileStore
@@ -223,6 +229,7 @@ public final class PCAApplicationModel: ObservableObject {
     public let linkRouter: PCAEnrollmentLinkRouter
     private let now: () -> Date
     private var started = false
+    private var runtimeSyncInProgress = false
     private var pendingDeviceId: String?
 
     public init(dependencies: PCAProductionDependencies, now: @escaping () -> Date = { Date() }) {
@@ -643,8 +650,12 @@ public final class PCAApplicationModel: ObservableObject {
         }
     }
 
-    private func synchronizeRuntime() async {
+    @MainActor func synchronizeRuntime() async {
+        guard !runtimeSyncInProgress else { return }
+        runtimeSyncInProgress = true
+        defer { runtimeSyncInProgress = false }
         guard let runtimeSyncClient = dependencies.runtimeSyncClient,
+              let inbox = dependencies.inboundInbox,
               let session = try? dependencies.sessionStore.loadSession(),
               session.expiresAt > now() else {
             syncConnectionState = .stale
@@ -652,24 +663,49 @@ public final class PCAApplicationModel: ObservableObject {
         }
         syncConnectionState = .syncing
         do {
+            try dependencies.assertRuntimeKeyCustody(session.deviceId)
             let response = try await runtimeSyncClient.pull(session: session)
+            guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
+                throw PCAAPIError.unauthorized
+            }
+            try inbox.capture(response, sessionDeviceId: session.deviceId)
+            for record in try inbox.pendingAcknowledgements(scope: response.scope) {
+                try dependencies.assertRuntimeKeyCustody(session.deviceId)
+                guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
+                    throw PCAAPIError.unauthorized
+                }
+                try await runtimeSyncClient.acknowledge(messageId: record.envelope.messageId, session: session)
+                try inbox.markAcknowledged(record.envelope, scope: response.scope)
+            }
+            guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
+                throw PCAAPIError.unauthorized
+            }
+            let pendingCrypto = try inbox.pendingCrypto(scope: response.scope)
+            try dependencies.assertRuntimeKeyCustody(session.deviceId)
             syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
                 isTransportConnected: true,
                 isSyncing: false,
-                hasPendingLocalWork: !response.applied.isEmpty,
+                hasPendingLocalWork: !pendingCrypto.isEmpty || !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
                 lastSuccessfulSyncAtUtc: now(),
                 nowUtc: now(),
                 staleThresholdSeconds: 24 * 60 * 60
             ))
-            if !response.applied.isEmpty {
+            if !pendingCrypto.isEmpty {
                 dependencies.protectionRuntime.recordPolicyApplication(.degraded)
                 applicationState = stateForCurrentData()
             }
             await reportProtectionStatusIfPossible(session: session)
         } catch let error as PCAAPIError {
             syncConnectionState = (error == .unauthorized) ? .stale : .offline
-            if error == .unauthorized { try? dependencies.sessionStore.clearSession() }
+            if error == .unauthorized, (try? dependencies.sessionStore.loadSession()) == session {
+                try? dependencies.sessionStore.clearSession()
+            }
             applicationState = error == .unauthorized ? .recovering : .offline
+        } catch is PCADeviceProofError {
+            if (try? dependencies.sessionStore.loadSession()) == session { try? dependencies.sessionStore.clearSession() }
+            syncConnectionState = .stale
+            applicationState = .enrollmentBlockedBySecurityGate
+            lastError = .securityGate
         } catch {
             syncConnectionState = .offline
             applicationState = .offline
@@ -735,6 +771,11 @@ public enum PCAProductionCompositionRoot {
         let authorizationCenter = ChildAuthorizationCenter(source: UnavailableAuthorizationStatusSource())
         #endif
         let stateStore = PCAKeychainDeviceStateStore(keychain: keychain, serviceNamespace: "org.pca.app")
+        #if canImport(Security)
+        let inboundInbox: PCAInboundInboxStoring? = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "org.pca.app")
+        #else
+        let inboundInbox: PCAInboundInboxStoring? = nil
+        #endif
         let keyMaterial = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "org.pca.app")
         let firstDeviceRootStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.app")
         let enrollmentCoordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterial, authorizationCenter: authorizationCenter)
@@ -796,6 +837,14 @@ public enum PCAProductionCompositionRoot {
             enrollmentClient: client,
             sessionClient: sessionClient,
             runtimeSyncClient: runtimeSyncClient,
+            inboundInbox: inboundInbox,
+            assertRuntimeKeyCustody: { deviceId in
+                guard let root = firstDeviceRootStore.current(), root.state == .rootCommitted,
+                      root.seed.deviceId == deviceId, deviceProofProvider.signingPublicKey == root.seed.dskPublicKeyBase64 else {
+                    throw PCADeviceProofError.secureKeyUnavailable
+                }
+                _ = try deviceProofProvider.sign(challenge: "PCA_LOCAL_RUNTIME_KEY_CUSTODY_V1")
+            },
             sessionStore: stateStore,
             attemptStore: stateStore,
             profileStore: profileStore,

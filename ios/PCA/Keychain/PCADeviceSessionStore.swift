@@ -1,5 +1,122 @@
 import Foundation
 
+public enum PCAInboundInboxError: Error { case unavailable }
+
+public struct PCAStoredInboundEnvelope: Codable, Equatable {
+    public let envelope: PCAInboundEnvelope
+    public var relayAcknowledged: Bool
+    /// Custody never advances to applied without the separately verified crypto dispatcher.
+    public let processingState: String
+}
+
+public protocol PCAInboundInboxStoring {
+    func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String) throws
+    func pendingAcknowledgements(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope]
+    func markAcknowledged(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) throws
+    func pendingCrypto(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope]
+}
+
+/// One immutable, authenticated scope in one device-local Keychain slot.
+/// Locked/corrupt storage fails closed; no eviction or plaintext fallback.
+public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
+    private struct Snapshot: Codable {
+        let version: Int
+        let scope: PCAInboundScope
+        var entries: [PCAStoredInboundEnvelope]
+    }
+    // Serialize independently constructed stores sharing the same Keychain namespace.
+    private static let lock = NSRecursiveLock()
+    private let keychain: KeychainStoreProtocol
+    private let service: String
+    private let account = "current.ciphertext-inbox"
+    private let maxRecords: Int
+    private let maxBytes: Int
+
+    public init(keychain: KeychainStoreProtocol, serviceNamespace: String, maxRecords: Int = 256, maxBytes: Int = 4 * 1024 * 1024) {
+        precondition(maxRecords > 0 && maxRecords <= 256 && maxBytes > 0 && maxBytes <= 4 * 1024 * 1024)
+        self.keychain = keychain
+        self.service = "\(serviceNamespace).ciphertext-inbox"
+        self.maxRecords = maxRecords
+        self.maxBytes = maxBytes
+    }
+
+    public func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String) throws {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        try validateScope(response.scope)
+        guard response.scope.recipientDeviceId == sessionDeviceId, response.applied.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+        let existing = try read()
+        guard existing == nil || existing?.scope == response.scope else { throw PCAInboundInboxError.unavailable }
+        var snapshot = existing ?? Snapshot(version: 1, scope: response.scope, entries: [])
+        for envelope in response.applied {
+            try envelope.validate(scope: response.scope)
+            if let prior = snapshot.entries.first(where: { $0.envelope.messageId == envelope.messageId }) {
+                guard prior.envelope == envelope else { throw PCAInboundInboxError.unavailable }
+            } else {
+                guard snapshot.entries.count < maxRecords else { throw PCAInboundInboxError.unavailable }
+                snapshot.entries.append(PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: false, processingState: "PENDING_CRYPTO"))
+            }
+        }
+        try persist(snapshot)
+    }
+
+    public func pendingAcknowledgements(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        return try confirmed(scope: scope).entries.filter { !$0.relayAcknowledged }
+    }
+
+    public func pendingCrypto(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        return try confirmed(scope: scope).entries
+    }
+
+    public func markAcknowledged(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) throws {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        var snapshot = try confirmed(scope: scope)
+        guard let index = snapshot.entries.firstIndex(where: { $0.envelope.messageId == envelope.messageId }),
+              snapshot.entries[index].envelope == envelope else { throw PCAInboundInboxError.unavailable }
+        snapshot.entries[index].relayAcknowledged = true
+        try persist(snapshot)
+    }
+
+    private func confirmed(scope: PCAInboundScope) throws -> Snapshot {
+        guard let snapshot = try read(), snapshot.scope == scope else { throw PCAInboundInboxError.unavailable }
+        // Repeat the durability/readback barrier even for cached exact redelivery.
+        try persist(snapshot)
+        return snapshot
+    }
+
+    private func validateScope(_ scope: PCAInboundScope) throws {
+        guard [scope.familyId, scope.recipientDeviceId].allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }) else { throw PCAInboundInboxError.unavailable }
+    }
+
+    private func read() throws -> Snapshot? {
+        let data: Data
+        do { data = try keychain.retrieve(forAccount: account, service: service) }
+        catch KeychainStoreError.itemNotFound { return nil }
+        catch { throw PCAInboundInboxError.unavailable }
+        guard data.count <= maxBytes, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+              snapshot.version == 1, snapshot.entries.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+        try validateScope(snapshot.scope)
+        var seen = Set<String>()
+        for record in snapshot.entries {
+            guard record.processingState == "PENDING_CRYPTO", seen.insert(record.envelope.messageId).inserted else { throw PCAInboundInboxError.unavailable }
+            try record.envelope.validate(scope: snapshot.scope)
+        }
+        return snapshot
+    }
+
+    private func persist(_ snapshot: Snapshot) throws {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(snapshot)
+            guard data.count <= maxBytes else { throw PCAInboundInboxError.unavailable }
+            try keychain.storeReplacingAtomically(data, forAccount: account, service: service, accessibility: .whenUnlockedThisDeviceOnly)
+            guard try keychain.retrieve(forAccount: account, service: service) == data else { throw PCAInboundInboxError.unavailable }
+        } catch { throw PCAInboundInboxError.unavailable }
+    }
+}
+
 public struct PCADeviceSession: Codable, Equatable {
     public let deviceId: String
     public let sessionToken: String

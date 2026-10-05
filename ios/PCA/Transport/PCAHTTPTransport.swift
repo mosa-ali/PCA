@@ -35,7 +35,7 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
     private let session: URLSession
     private let maxResponseBytes: Int
 
-    public init(session: URLSession = .shared, maxResponseBytes: Int = 512 * 1024) {
+    public init(session: URLSession = .shared, maxResponseBytes: Int = 4 * 1024 * 1024) {
         self.session = session
         self.maxResponseBytes = maxResponseBytes
     }
@@ -52,7 +52,17 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
         boundedRequest.timeoutInterval = min(max(request.timeoutInterval, 1), 60)
 
         do {
+            #if canImport(FoundationNetworking)
             let (data, response) = try await session.data(for: boundedRequest)
+            #else
+            let (bytes, response) = try await session.bytes(for: boundedRequest)
+            guard response.expectedContentLength <= Int64(maxResponseBytes) else { throw PCAHTTPTransportError.responseTooLarge }
+            var data = Data()
+            for try await byte in bytes {
+                guard data.count < maxResponseBytes else { throw PCAHTTPTransportError.responseTooLarge }
+                data.append(byte)
+            }
+            #endif
             guard data.count <= maxResponseBytes else { throw PCAHTTPTransportError.responseTooLarge }
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PCAHTTPTransportError.invalidResponse

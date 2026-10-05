@@ -35,6 +35,9 @@ class UsageIngestionWorker(appContext: Context, params: WorkerParameters) : Coro
         return try {
             val graph = PcaAppGraph.getInstance(applicationContext)
             graph.runUsageLocationIngestionCycle()
+            // Reuse this persisted OS schedule after process death/reboot.
+            // Only an eligible committed identity may pull; custody never applies a policy.
+            graph.synchronizeRuntimeCustody()
             BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = true)
             Result.success()
         } catch (t: Throwable) {

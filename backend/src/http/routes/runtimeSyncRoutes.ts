@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { EnvelopeAcceptanceContext } from '../../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { InboundReconnectService } from '../../runtime-sync/InboundReconnectService.js';
+import { envelopeToRawFamilyEnvelope } from '../../runtime-sync/envelopeWireCodec.js';
 import type { OutboundEnvelopeItem, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { RelayError } from '../../relay/RelayService.js';
@@ -272,17 +273,14 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       try {
         const outcome = await deps.inboundReconnectService.reconnectDrainForRecipient(
           deviceId,
+          request.runtimeSyncFamilyId as string,
           (senderKeyId, nowUtc) => deps.resolveEnvelopeContext(senderKeyId, request.runtimeSyncFamilyId as string, nowUtc),
           new Date(),
         );
         deps.statusTracker.markSyncSuccess(deviceId, new Date());
         return reply.send({
-          applied: outcome.applied.map((envelope) => ({
-            messageId: envelope.messageId,
-            senderDeviceId: envelope.senderDeviceId,
-            messageType: envelope.messageType,
-            payload: envelope.payload.toString('base64'),
-          })),
+          scope: { familyId: request.runtimeSyncFamilyId, recipientDeviceId: deviceId },
+          applied: outcome.applied.map(envelopeToRawFamilyEnvelope),
           receipts: outcome.receipts.map((receipt) => ({
             messageId: receipt.messageId,
             outcome: receipt.outcome,
@@ -291,6 +289,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           })),
           unparseableMessageIds: outcome.unparseableMessageIds,
           droppedForListBound: outcome.droppedForListBound,
+          hasMore: outcome.hasMore,
         });
       } finally {
         deps.statusTracker.markSyncEnd(deviceId);

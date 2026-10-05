@@ -499,6 +499,295 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
 
+    private func inboundResponse(id: String = "message-1", mutation: ((inout [String: Any]) -> Void)? = nil) throws -> PCAInboundRuntimeSyncResponse {
+        var envelope: [String: Any] = ["protocolMajor": 1, "protocolMinor": 0, "messageId": id,
+            "familyId": "family-1", "senderDeviceId": "sender-1", "recipientDeviceId": "device-1",
+            "senderKeyId": "key-1", "messageType": "STATUS_SNAPSHOT", "trustSetEpoch": 1, "keyEpoch": 1,
+            "sequenceOrNonce": "nonce-1", "issuedAt": "2026-10-01T00:00:00.000Z",
+            "expiresAt": "2026-10-01T00:01:00.000Z", "semanticVersion": "1.0.0",
+            "payload": "AQID", "signature": "signature-1"]
+        mutation?(&envelope)
+        let data = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
+            "applied": [envelope], "unparseableMessageIds": [], "droppedForListBound": []])
+        return try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self, from: data)
+    }
+
+    func testInboundInboxRetainsFullSignedWrapperAcrossRestartAndAck() throws {
+        let keychain = InMemoryKeychainStore()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "inbox-test")
+        let response = try inboundResponse()
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        let restored = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "inbox-test")
+        XCTAssertEqual(try restored.pendingAcknowledgements(scope: response.scope).singleEnvelope, response.applied.first)
+        try restored.markAcknowledged(response.applied[0], scope: response.scope)
+        XCTAssertTrue(try restored.pendingAcknowledgements(scope: response.scope).isEmpty)
+        XCTAssertEqual(try restored.pendingCrypto(scope: response.scope).singleEnvelope, response.applied.first)
+        try restored.capture(response, sessionDeviceId: "device-1")
+        XCTAssertTrue(try restored.pendingAcknowledgements(scope: response.scope).isEmpty)
+        XCTAssertEqual(keychain.storedAccessibility(forAccount: "current.ciphertext-inbox", service: "inbox-test.ciphertext-inbox"), .whenUnlockedThisDeviceOnly)
+    }
+
+    func testInboundInboxRejectsConflictsWithoutChangingOriginal() throws {
+        let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "inbox-test")
+        let response = try inboundResponse()
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        for field in ["signature", "senderKeyId", "sequenceOrNonce", "payload"] {
+            let changed = try inboundResponse { $0[field] = field == "payload" ? "BA==" : "changed" }
+            XCTAssertThrowsError(try inbox.capture(changed, sessionDeviceId: "device-1"))
+        }
+        XCTAssertThrowsError(try inbox.capture(response, sessionDeviceId: "other-device"))
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).singleEnvelope, response.applied.first)
+    }
+
+    func testInboundInboxRejectsMalformedFieldsBeforeKeychainWrite() throws {
+        for (field, value) in [("trustSetEpoch", 2147483648 as Any), ("keyEpoch", -1 as Any),
+            ("payload", "A!QID" as Any), ("semanticVersion", "01.0.0" as Any),
+            ("messageType", "UNKNOWN" as Any), ("signature", String(repeating: "s", count: 513) as Any),
+            ("recipientDeviceId", "other-device" as Any), ("familyId", "other-family" as Any)] {
+            let keychain = InMemoryKeychainStore()
+            let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "inbox-test")
+            let response = try inboundResponse { $0[field] = value }
+            XCTAssertThrowsError(try inbox.capture(response, sessionDeviceId: "device-1"))
+            XCTAssertThrowsError(try keychain.retrieve(forAccount: "current.ciphertext-inbox", service: "inbox-test.ciphertext-inbox"))
+        }
+        XCTAssertThrowsError(try inboundResponse { $0["correlationId"] = 42 })
+        XCTAssertThrowsError(try inboundResponse { $0["trustSetEpoch"] = 1.5 })
+    }
+
+    func testInboundInboxWriteAndReadbackFailuresNeverExposeAckCandidates() throws {
+        let keychain = FaultingInboxKeychain()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "inbox-test")
+        let response = try inboundResponse()
+        keychain.failReplace = true
+        XCTAssertThrowsError(try inbox.capture(response, sessionDeviceId: "device-1"))
+        XCTAssertThrowsError(try inbox.pendingAcknowledgements(scope: response.scope))
+        keychain.failReplace = false
+        keychain.corruptReadback = true
+        XCTAssertThrowsError(try inbox.capture(response, sessionDeviceId: "device-1"))
+        keychain.corruptReadback = false
+        XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).count, 1)
+    }
+
+    func testInboundInboxCapacityAndCorruptionNeverEvictCiphertext() throws {
+        let keychain = FaultingInboxKeychain()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "inbox-test", maxRecords: 1)
+        let response = try inboundResponse()
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        let original = keychain.data
+        XCTAssertThrowsError(try inbox.capture(inboundResponse(id: "message-2"), sessionDeviceId: "device-1"))
+        XCTAssertEqual(keychain.data, original)
+        keychain.data = Data(#"{"version":99}"#.utf8)
+        XCTAssertThrowsError(try inbox.capture(response, sessionDeviceId: "device-1"))
+        XCTAssertThrowsError(try inbox.pendingAcknowledgements(scope: response.scope))
+        XCTAssertEqual(keychain.data, Data(#"{"version":99}"#.utf8))
+    }
+
+    @MainActor func testRuntimeHostPersistsBeforeAckAndEmptyPullKeepsPendingCrypto() async throws {
+        let keychain = InMemoryKeychainStore()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "host-test")
+        let response = try inboundResponse()
+        let responseData = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
+            "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(response.applied[0]))],
+            "unparseableMessageIds": [], "droppedForListBound": []])
+        var pulls = 0
+        var acks = 0
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.httpMethod == "GET" {
+                pulls += 1
+                if pulls == 1 { return PCAHTTPResponse(statusCode: 200, data: responseData) }
+                return PCAHTTPResponse(statusCode: 200, data: Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8))
+            }
+            if request.url?.path.hasSuffix("/ack") == true {
+                XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).singleEnvelope, response.applied[0])
+                acks += 1
+            }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport), inboundInbox: inbox)
+        await model.synchronizeRuntime()
+        await model.synchronizeRuntime()
+        XCTAssertEqual(acks, 1)
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).count, 1)
+        XCTAssertNotEqual(model.syncConnectionState, .live)
+        XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
+
+    @MainActor func testRuntimeHostSessionReplacementDuringPullNeverAcksOrDeletesNewSession() async throws {
+        for responseStatus in [200, 401] {
+            let attempts = InMemoryPCADeviceStateStore()
+            let old = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(60))
+            let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(60))
+            try attempts.saveSession(old)
+            var acks = 0
+            let transport = InMemoryPCAHTTPTransport { request in
+                if request.httpMethod == "GET" {
+                    try attempts.saveSession(replacement)
+                    return PCAHTTPResponse(statusCode: responseStatus, data: Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8))
+                }
+                if request.url?.path.hasSuffix("/ack") == true { acks += 1 }
+                return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+            }
+            let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+                runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "race-test"))
+            await model.synchronizeRuntime()
+            XCTAssertEqual(try attempts.loadSession(), replacement)
+            XCTAssertEqual(acks, 0)
+        }
+    }
+
+    @MainActor func testRuntimeHostFailedCustodyOrMissingInboxNeverAcknowledges() async throws {
+        for mode in [0, 1, 2] {
+            let keychain = FaultingInboxKeychain()
+            keychain.failReplace = mode == 0
+            keychain.corruptReadback = mode == 1
+            var acks = 0
+            let response = try inboundResponse()
+            let responseData = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
+                "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(response.applied[0]))],
+                "unparseableMessageIds": [], "droppedForListBound": []])
+            let transport = InMemoryPCAHTTPTransport { request in
+                if request.httpMethod == "GET" { return PCAHTTPResponse(statusCode: 200, data: responseData) }
+                if request.url?.path.hasSuffix("/ack") == true { acks += 1 }
+                return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+            }
+            let attempts = InMemoryPCADeviceStateStore()
+            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+            let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+                runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: mode == 2 ? nil : PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "failed-host"))
+            await model.synchronizeRuntime()
+            XCTAssertEqual(acks, 0)
+            XCTAssertNotEqual(model.syncConnectionState, .live)
+        }
+    }
+
+    @MainActor func testRuntimeHostLostAckAndMarkerFailureRetryFromRestoredInbox() async throws {
+        for failMarker in [false, true] {
+            let keychain = FaultingInboxKeychain()
+            let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "retry-host")
+            let response = try inboundResponse()
+            let responseData = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
+                "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(response.applied[0]))],
+                "unparseableMessageIds": [], "droppedForListBound": []])
+            let emptyData = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
+            var serverAcked = false
+            var ackCalls = 0
+            let transport = InMemoryPCAHTTPTransport { request in
+                if request.httpMethod == "GET" { return PCAHTTPResponse(statusCode: 200, data: serverAcked ? emptyData : responseData) }
+                if request.url?.path.hasSuffix("/ack") == true {
+                    ackCalls += 1
+                    serverAcked = true
+                    if ackCalls == 1 {
+                        if failMarker { keychain.failOnReplaceCall = keychain.replaceCalls + 2 }
+                        else { throw PCAHTTPTransportError.network }
+                    }
+                }
+                return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+            }
+            let attempts = InMemoryPCADeviceStateStore()
+            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+            let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let first = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+                runtimeSyncClient: client, inboundInbox: inbox)
+            await first.synchronizeRuntime()
+            keychain.failReplace = false
+            XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).count, 1)
+            let restored = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "retry-host")
+            let second = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+                runtimeSyncClient: client, inboundInbox: restored)
+            await second.synchronizeRuntime()
+            XCTAssertEqual(ackCalls, 2)
+            XCTAssertTrue(try restored.pendingAcknowledgements(scope: response.scope).isEmpty)
+            XCTAssertEqual(try restored.pendingCrypto(scope: response.scope).count, 1)
+            XCTAssertNotEqual(second.syncConnectionState, .live)
+        }
+    }
+
+    @MainActor func testRuntimeHostSessionReplacementDuringAckPreservesReplacement() async throws {
+        let attempts = InMemoryPCADeviceStateStore()
+        let old = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(60))
+        let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(60))
+        try attempts.saveSession(old)
+        let response = try inboundResponse()
+        let responseData = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
+            "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(response.applied[0]))],
+            "unparseableMessageIds": [], "droppedForListBound": []])
+        var reports = 0
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.httpMethod == "GET" { return PCAHTTPResponse(statusCode: 200, data: responseData) }
+            if request.url?.path.hasSuffix("/ack") == true { try attempts.saveSession(replacement) }
+            else { reports += 1 }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "ack-race"))
+        await model.synchronizeRuntime()
+        XCTAssertEqual(try attempts.loadSession(), replacement)
+        XCTAssertEqual(reports, 0)
+        XCTAssertNotEqual(model.syncConnectionState, .live)
+    }
+
+    @MainActor func testRuntimeKeyLossStopsCachedSessionBeforePull() async throws {
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        var requests = 0
+        let transport = InMemoryPCAHTTPTransport { _ in
+            requests += 1
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "lost-key"),
+            assertRuntimeKeyCustody: { _ in throw PCADeviceProofError.secureKeyUnavailable })
+        await model.synchronizeRuntime()
+        XCTAssertEqual(requests, 0)
+        XCTAssertNil(try attempts.loadSession())
+        XCTAssertEqual(model.lastError, .securityGate)
+        XCTAssertNotEqual(model.syncConnectionState, .live)
+    }
+
+    func testRuntimeAckEncodesOpaqueMessageIdAsOnePathComponent() async throws {
+        for (id, encoded) in [("a/b?c#d%e", "a%2Fb%3Fc%23d%25e"), (".", "%2E"), ("..", "%2E%2E")] {
+            let transport = InMemoryPCAHTTPTransport { request in
+                XCTAssertEqual(request.url?.absoluteString, "https://api.example.test/v1/runtime-sync/inbound/\(encoded)/ack")
+                return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+            }
+            let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            try await client.acknowledge(messageId: id, session: PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        }
+    }
+
+    func testInboundInboxScopeReplacementByteBoundAndInvalidBatchPreservePreviousData() throws {
+        let keychain = FaultingInboxKeychain()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "bounded-inbox", maxBytes: 1500)
+        let response = try inboundResponse()
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        let original = keychain.data
+        for scope in [PCAInboundScope(familyId: "other-family", recipientDeviceId: "device-1"),
+                      PCAInboundScope(familyId: "family-1", recipientDeviceId: "other-device")] {
+            let changed = PCAInboundRuntimeSyncResponse(scope: scope, applied: [], unparseableMessageIds: [], droppedForListBound: [])
+            XCTAssertThrowsError(try inbox.capture(changed, sessionDeviceId: scope.recipientDeviceId))
+            XCTAssertEqual(keychain.data, original)
+        }
+        let valid = try inboundResponse(id: "message-2")
+        let invalid = try inboundResponse(id: "message-3") { $0["familyId"] = "wrong-family" }
+        let batch = PCAInboundRuntimeSyncResponse(scope: response.scope, applied: valid.applied + invalid.applied,
+            unparseableMessageIds: [], droppedForListBound: [])
+        XCTAssertThrowsError(try inbox.capture(batch, sessionDeviceId: "device-1"))
+        XCTAssertEqual(keychain.data, original)
+        let large = try inboundResponse(id: "message-2") { $0["signature"] = String(repeating: "s", count: 500) }
+        XCTAssertThrowsError(try inbox.capture(large, sessionDeviceId: "device-1"))
+        XCTAssertEqual(keychain.data, original)
+        keychain.failReplace = true
+        XCTAssertThrowsError(try inbox.capture(valid, sessionDeviceId: "device-1"))
+        XCTAssertEqual(keychain.data, original)
+    }
+
     private func makeEnrollmentModel(
         identityStore: RecordingDeviceIdentityStore,
         attemptStore: InMemoryPCADeviceStateStore,
@@ -506,7 +795,10 @@ final class ProductionIntegrationTests: XCTestCase {
         firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating? = nil,
         proofProvider: PCADeviceProofProvider = TestEnrollmentProofProvider(),
         keyDeletion: FirstDeviceKeyPairDeletion? = nil,
-        bootstrapStatus: String = "PAIRED"
+        bootstrapStatus: String = "PAIRED",
+        runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
+        inboundInbox: PCAInboundInboxStoring? = nil,
+        assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in }
     ) throws -> PCAApplicationModel {
         let authorizationSource = FakeAuthorizationStatusSource()
         authorizationSource.status = .approved
@@ -521,6 +813,9 @@ final class ProductionIntegrationTests: XCTestCase {
                 authorizationCenter: authorizationCenter
             ),
             enrollmentClient: try PCAEnrollmentBootstrapClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            runtimeSyncClient: runtimeSyncClient,
+            inboundInbox: inboundInbox,
+            assertRuntimeKeyCustody: assertRuntimeKeyCustody,
             sessionStore: attemptStore,
             attemptStore: attemptStore,
             profileStore: InMemoryPCAEnrollmentProfileStore(),
@@ -603,7 +898,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
-                return PCAHTTPResponse(statusCode: 200, data: Data("{\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(overflow)}".utf8))
+                return PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(overflow)}".utf8))
             }
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
             let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
@@ -781,4 +1076,29 @@ private struct EmptyEnrollmentProofProvider: PCADeviceProofProvider {
     let signingPublicKey = ""
     let encryptionPublicKey = ""
     func sign(challenge: String) throws -> String { throw PCADeviceProofError.secureKeyUnavailable }
+}
+
+private extension Array where Element == PCAStoredInboundEnvelope {
+    var singleEnvelope: PCAInboundEnvelope? { count == 1 ? first?.envelope : nil }
+}
+
+private final class FaultingInboxKeychain: KeychainStoreProtocol {
+    var data: Data?
+    var failReplace = false
+    var failOnReplaceCall: Int?
+    var replaceCalls = 0
+    var corruptReadback = false
+    func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        try storeReplacingAtomically(data, forAccount: account, service: service, accessibility: accessibility)
+    }
+    func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        replaceCalls += 1
+        if failReplace || replaceCalls == failOnReplaceCall { throw KeychainStoreError.unexpectedStatus(-1) }
+        self.data = data
+    }
+    func retrieve(forAccount account: String, service: String) throws -> Data {
+        guard let data else { throw KeychainStoreError.itemNotFound }
+        return corruptReadback ? Data("{}".utf8) : data
+    }
+    func delete(forAccount account: String, service: String) throws { data = nil }
 }
