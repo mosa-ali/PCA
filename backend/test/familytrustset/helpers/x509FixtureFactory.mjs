@@ -34,6 +34,21 @@ export function derSet(...parts) {
   return der(0x31, Buffer.concat(parts));
 }
 
+export function derExplicit(tagNumber, content) {
+  let tagBytes;
+  if (tagNumber < 31) tagBytes = [0xa0 | tagNumber];
+  else {
+    const numberBytes = [tagNumber & 0x7f];
+    let remaining = Math.floor(tagNumber / 128);
+    while (remaining > 0) {
+      numberBytes.unshift(0x80 | (remaining & 0x7f));
+      remaining = Math.floor(remaining / 128);
+    }
+    tagBytes = [0xbf, ...numberBytes];
+  }
+  return Buffer.concat([Buffer.from(tagBytes), derLength(content.length), content]);
+}
+
 export function derInt(value) {
   let hex = value.toString(16);
   if (hex.length % 2 === 1) hex = `0${hex}`;
@@ -99,10 +114,8 @@ function algorithmIdentifier() {
  * Builds KeyDescription DER exactly per the platform schema:
  * SEQUENCE { INT version, ENUM attestationSecurityLevel, INT keymasterVersion,
  *            ENUM keymasterSecurityLevel, OCTET STRING challenge,
- *            OCTET STRING uniqueId, [1] softwareEnforced, [2] teeEnforced }
- * Authorization lists use the IMPLICIT encoding (context tag on the entry,
- * e.g. 0xA1 for the purpose SET, 0x83 for the algorithm INTEGER) that
- * KeyMint emits; the production parser also accepts explicit wrappers.
+ *            OCTET STRING uniqueId, SEQUENCE softwareEnforced, SEQUENCE teeEnforced }
+ * AuthorizationList entries follow the AOSP EXPLICIT context-tag schema.
  */
 export function buildKeyDescription({
   attestationVersion = 3,
@@ -119,29 +132,29 @@ export function buildKeyDescription({
   const authList = (entries, config) => {
     const parts = [];
     if (config.purpose && config.purpose.length > 0) {
-      parts.push(der(0xa0 | 1, Buffer.concat(config.purpose.map((value) => derInt(value)))));
-    }
-    if (includeUnknownTeeEntry) {
-      // Unknown but validly encoded entry (keySize tag [4], INTEGER 256):
-      // the parser must skip it strictly and keep going.
-      parts.push(der(0x80 | 4, Buffer.from([0x01, 0x00])));
+      parts.push(derExplicit(1, derSet(...config.purpose.map((value) => derInt(value)))));
     }
     if (config.algorithm !== null && config.algorithm !== undefined) {
-      parts.push(der(0x80 | 3, Buffer.from([config.algorithm])));
+      parts.push(derExplicit(2, derInt(config.algorithm)));
+    }
+    if (includeUnknownTeeEntry) {
+      // Unknown but validly encoded entry (keySize tag [3], INTEGER 256):
+      // the parser must skip it strictly and keep going.
+      parts.push(derExplicit(3, derInt(256)));
     }
     if (config.digest && config.digest.length > 0) {
-      parts.push(der(0xa0 | 5, Buffer.concat(config.digest.map((value) => derInt(value)))));
-    }
-    if (config.origin !== null && config.origin !== undefined) {
-      parts.push(der(0x80 | 6, Buffer.from([config.origin])));
+      parts.push(derExplicit(5, derSet(...config.digest.map((value) => derInt(value)))));
     }
     if (config.curve !== null && config.curve !== undefined) {
-      parts.push(der(0x80 | 10, Buffer.from([config.curve])));
+      parts.push(derExplicit(10, derInt(config.curve)));
+    }
+    if (config.origin !== null && config.origin !== undefined) {
+      parts.push(derExplicit(702, derInt(config.origin)));
     }
     return Buffer.concat(parts);
   };
-  const softwareEnforced = der(0xa1, authList('software', software));
-  const teeEnforced = omitTee ? der(0xa2, Buffer.alloc(0)) : der(0xa2, authList('tee', tee));
+  const softwareEnforced = derSeq(authList('software', software));
+  const teeEnforced = omitTee ? derSeq() : derSeq(authList('tee', tee));
   return derSeq(
     derInt(attestationVersion),
     derEnum(securityLevel),
@@ -231,6 +244,10 @@ export function buildAttestationChain(options = {}) {
   const {
     leafKeyPair = generateP256KeyPair(),
     securityLevel = 1,
+    attestationVersion = 3,
+    keymasterVersion = 4,
+    keymasterSecurityLevel = 1,
+    includeUnknownTeeEntry = false,
     challenge = Buffer.from('fixture-challenge', 'utf8'),
     tee = undefined,
     software = undefined,
@@ -289,7 +306,7 @@ export function buildAttestationChain(options = {}) {
     notBefore: leafNotBefore,
     notAfter: leafNotAfter,
     isCa: leafIsCa,
-    keyDescription: { securityLevel, challenge, ...(tee ? { tee } : {}), ...(software ? { software } : {}) },
+    keyDescription: { securityLevel, attestationVersion, keymasterVersion, keymasterSecurityLevel, includeUnknownTeeEntry, challenge, ...(tee ? { tee } : {}), ...(software ? { software } : {}) },
     omitKeyDescription,
     duplicateKeyDescription,
     corruptSignature: corruptLeafSignature,

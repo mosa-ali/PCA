@@ -2,6 +2,14 @@
 
 ## Mission
 
+### Mobile completion wave — reviewed source, validation in progress
+
+Continuing TODO-12/14/15/20 from published checkpoint `799c4cb6c0fa1aa50d7f342f6a7fc93c903befec`; canonical TODO-01…23 states below are retained. Seven Stage A specialists returned USABLE. Stage B approvals are 5/5 required mobile and 7/7 including backend and independent QA, with zero new BLOCKER/MAJOR findings in the bounded checkpoint. Both minor attestation findings were corrected and re-reviewed. Coordinator remains sole writer.
+
+Source implements actual Android attestation ASN.1/key-handle fixes, failed-handler retry and rejected-policy timestamp preservation; iOS confirmed-root cleanup, corrupt extension-policy rejection and backend-shaped inbound response decoding. Final full backend regression passed 2928/2928 after the minor corrections; corrected attestation suites passed 53/53. Full disposable MySQL certification passed 701/711 in the first lane (10 explicit privilege-only skips, zero failures), then 276/276 against populated state (zero skips/failures); the owned schema was removed. Android lint, release Kotlin and instrumentation-test compilation passed. Full Android unit suite passed 1471/1472 across 251 suites, with one existing PcaAppGraphTest skip and zero failures/errors; selected regression also passed 20/20. Swift parsing passed; Windows typechecking lacks C SDK headers and is not Apple build evidence. See [mobile work matrix](PCA_MOBILE_COMPLETION_WORK_MATRIX.md).
+
+The preceding ledger-only commit's exact-head CI `37362988090` is terminal failure with 22 successful and 5 cancelled jobs; it is not an all-green checkpoint. Current source remains uncommitted pending final validation. Durable relay receipt, offline iOS boundaries and reviewed production crypto/ordinary-submission contracts remain unfinished. No migration 0064, retained manual UAT mutation, live pca_pro mutation, Azure deployment or Platform activation occurred.
+
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  

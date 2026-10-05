@@ -152,11 +152,23 @@ public protocol FirstDeviceRootStoring {
     /// Re-confirms persistence before replaying an already stored submission.
     func confirmDurable(_ record: FirstDeviceRootRecord) -> Bool
 
+    /// Runs optional key cleanup under this instance's root write lock.
+    /// The synchronous callback must not mutate the root. An unavailable
+    /// or corrupt record skips cleanup so its keys remain intact.
+    @discardableResult func withConfirmedCurrentRecord(_ operation: (FirstDeviceRootRecord) -> Void) -> Bool
+
     /// Synchronous durability barrier: returns only after everything written
     /// so far is durably stored. The first submit MUST be preceded by
     /// `flush` (a lost, non-persisted submission payload is unrecoverable
     /// byte-identically).
     func flush()
+}
+
+public extension FirstDeviceRootStoring {
+    @discardableResult func withConfirmedCurrentRecord(_ operation: (FirstDeviceRootRecord) -> Void) -> Bool {
+        // Compatibility stores cannot establish an atomic keep-set.
+        false
+    }
 }
 
 /// In-memory reference implementation -- usable for tests/dev builds, NOT
@@ -204,6 +216,14 @@ public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
         synchronized { self.record == record }
     }
     public func flush() { /* nothing to flush */ }
+
+    @discardableResult public func withConfirmedCurrentRecord(_ operation: (FirstDeviceRootRecord) -> Void) -> Bool {
+        synchronized {
+            guard let retained = record, !retained.seed.attemptId.isEmpty else { return false }
+            operation(retained)
+            return true
+        }
+    }
 
     private func synchronized<T>(_ body: () -> T) -> T {
         lock.lock()
@@ -306,6 +326,17 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
         // returned, the item is durably placed by the platform. This method
         // exists to keep the caller-visible durability contract explicit
         // and identical to Android's flush barrier.
+    }
+
+    @discardableResult public func withConfirmedCurrentRecord(_ operation: (FirstDeviceRootRecord) -> Void) -> Bool {
+        synchronized {
+            guard case .valid(let retained) = readStoredRecordUnlocked(),
+                  !retained.seed.attemptId.isEmpty else { return false }
+            flush()
+            guard isCurrentUnlocked(retained) else { return false }
+            operation(retained)
+            return true
+        }
     }
 
     private func readStoredRecordUnlocked() -> StoredRecord {

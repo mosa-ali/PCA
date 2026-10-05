@@ -83,7 +83,7 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   const request = indexOf('PCAEnrollmentBootstrapRequest(');
   const bootstrap = indexOf('dependencies.enrollmentClient.bootstrap(request)');
   const seedCapture = indexOf('captureFirstDeviceSeed(attempt: attempt, response: response)');
-  const sweep = indexOf('dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: keepAttemptIds)');
+  const sweep = indexOf('rootStore.withConfirmedCurrentRecord { retained in');
   assert.ok(saveAttempt < prepare, 'the attempt record must exist before any key is generated');
   assert.ok(prepare < pubkeyGuard, 'key preparation must precede the public-key read');
   assert.ok(pubkeyGuard < request, 'the request must read prepared public keys');
@@ -93,8 +93,8 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   // The sweep keep-set is the UNION of this attempt and the durable root
   // record's attempt (the Wave-6C Stage-B parity fix): a committed root's
   // Secure Enclave keys can never be reclaimed by a later enrollment round.
-  assert.match(composition, /keepAttemptIds\.insert\(persistedAttempt\)/);
-  assert.match(composition, /firstDeviceRootStore\?\.current\(\)\?\.seed\.attemptId/);
+  assert.match(composition, /withConfirmedCurrentRecord \{ retained in\s*dependencies\.keyDeletion\?\.deleteOrphanedAttemptKeys\(\s*keepAttemptIds: \[attempt\.attemptId, retained\.seed\.attemptId\]/);
+  assert.doesNotMatch(composition, /firstDeviceRootStore\?\.current\(\)\?\.seed\.attemptId/);
   // The seed capture is blank-guarded (fail closed, never a wedged identity).
   assert.match(composition, /guard !dskPublicKey\.isEmpty, !dekPublicKey\.isEmpty else \{ return false \}/);
 

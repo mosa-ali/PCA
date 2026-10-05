@@ -189,11 +189,14 @@ class ReconnectSyncOrchestrator(
             return false
         }
         for (envelope in result.applied) {
-            if (!deliveredMessageIds.add(envelope.messageId)) continue // already dispatched this process lifetime
+            if (envelope.messageId in deliveredMessageIds) continue
+            // A failed handler must remain retryable; receipt is complete only
+            // after the runtime has successfully accepted the envelope.
+            inboundHandler.handle(envelope.messageId, envelope.senderDeviceId, envelope.messageType, envelope.payloadBase64)
+            deliveredMessageIds.add(envelope.messageId)
             if (deliveredMessageIds.size > MAX_DELIVERED_DEDUPE_ENTRIES) {
                 deliveredMessageIds.iterator().let { it.next(); it.remove() } // evict oldest (LinkedHashSet insertion order)
             }
-            inboundHandler.handle(envelope.messageId, envelope.senderDeviceId, envelope.messageType, envelope.payloadBase64)
         }
         return true
     }

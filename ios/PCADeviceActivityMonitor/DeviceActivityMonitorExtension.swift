@@ -141,7 +141,6 @@ struct DeviceActivityAppliedPolicy {
 struct AppGroupDeviceActivityPolicySource: DeviceActivityPolicySource {
     private let scheduleBlobStore: OpaqueBlobStore?
     private let tokenBlobStore: OpaqueBlobStore?
-    private let plistDecoder = PropertyListDecoder()
 
     init(appGroupIdentifier: String) {
         self.scheduleBlobStore = try? AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
@@ -151,27 +150,13 @@ struct AppGroupDeviceActivityPolicySource: DeviceActivityPolicySource {
     func currentPolicy(for activity: DeviceActivityName) -> DeviceActivityAppliedPolicy? {
         guard let scheduleStore = scheduleBlobStore, let tokenStore = tokenBlobStore else { return nil }
 
-        let activityId = activity.rawValue
-        guard let scheduleData = scheduleStore.read(forKey: "schedule.\(activityId)") else { return nil }
-        guard case .success(let decodedSchedule) = PolicySyncDecoder.decode(scheduleData) else { return nil }
-
-        guard let applicationTokensData = tokenStore.read(forKey: "applicationTokens.\(activityId)") else { return nil }
-        guard let applicationTokens = try? plistDecoder.decode(Set<ApplicationToken>.self, from: applicationTokensData) else { return nil }
-
-        // Protected tokens are a family-independent, device-local
-        // reference set captured once during setup (see
-        // ShieldSafetyValidator's doc) -- stored under a fixed key, not
-        // per-activity, since the emergency floor never varies by which
-        // schedule is currently evaluating.
-        let protectedTokens: Set<ApplicationToken>
-        if let protectedData = tokenStore.read(forKey: "protectedApplicationTokens"),
-           let decoded = try? plistDecoder.decode(Set<ApplicationToken>.self, from: protectedData) {
-            protectedTokens = decoded
-        } else {
-            protectedTokens = []
-        }
-
-        return DeviceActivityAppliedPolicy(schedule: decodedSchedule, applicationTokens: applicationTokens, protectedApplicationTokens: protectedTokens)
+        guard let loaded = StoredDeviceActivityPolicyLoader<ApplicationToken>(
+            scheduleStore: scheduleStore, tokenStore: tokenStore
+        ).load(activityId: activity.rawValue) else { return nil }
+        return DeviceActivityAppliedPolicy(
+            schedule: loaded.schedule, applicationTokens: loaded.applicationTokens,
+            protectedApplicationTokens: loaded.protectedApplicationTokens
+        )
     }
 }
 #endif

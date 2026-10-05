@@ -2,6 +2,12 @@
 
 ## Mission
 
+### Parent mobile completion wave — dependent release remains held
+
+Parent continues its existing TODO-12/14/15/20 with coordinator-only edits and 7/7 specialist source approvals (5/5 required mobile), zero new checkpoint BLOCKER/MAJOR. The bounded uncommitted fixes and unfinished delivery/offline/crypto work are recorded in [mobile work matrix](PCA_MOBILE_COMPLETION_WORK_MATRIX.md). Final full backend passed 2928/2928; corrected attestation tests passed 53/53. Full disposable MySQL passed 701/711 in the first lane (10 explicit privilege-only skips, zero failures), then 276/276 populated certification (zero skips/failures); owned schema cleanup passed. Android lint, release Kotlin and instrumentation-test compilation passed; full unit suite passed 1471/1472 across 251 suites with one existing PcaAppGraphTest skip and zero failures/errors.
+
+Published ledger checkpoint `799c4cb6c0fa1aa50d7f342f6a7fc93c903befec` has terminal CI run `37362988090` with 22 successful and 5 cancelled jobs, aggregate failure. It is not release acceptance. Platform remains `HOLD_PARENT_DEPENDENCY`; no Enrollment activation, migration 0064, live pca_pro mutation or Azure deployment is authorized by this mobile wave.
+
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  

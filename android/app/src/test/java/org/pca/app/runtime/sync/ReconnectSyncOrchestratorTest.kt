@@ -17,7 +17,7 @@ private class RecordingInboundHandler : InboundEnvelopeHandler {
 private fun buildOrchestrator(
     store: FakeDurableBackingStore,
     relay: FakeRelayHttpClient = FakeRelayHttpClient(),
-    handler: RecordingInboundHandler = RecordingInboundHandler(),
+    handler: InboundEnvelopeHandler = RecordingInboundHandler(),
     now: Long = 1_700_000_000_000L,
 ): ReconnectSyncOrchestrator {
     val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { now })
@@ -32,6 +32,31 @@ private fun buildOrchestrator(
 }
 
 class ReconnectSyncOrchestratorTest {
+
+    @Test
+    fun `failed inbound handling remains retryable and successful delivery is deduplicated`() = runTest {
+        val relay = FakeRelayHttpClient()
+        var calls = 0
+        var applied = 0
+        val handler = object : InboundEnvelopeHandler {
+            override suspend fun handle(messageId: String, senderDeviceId: String, messageType: String, payloadBase64: String) {
+                calls += 1
+                if (calls == 1) error("transient local persistence failure")
+                applied += 1
+            }
+        }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, handler)
+        val envelope = InboundAppliedEnvelope("retry-1", "sender-1", "STATUS_SNAPSHOT", "cGF5bG9hZA==")
+        relay.enqueueInbound(envelope)
+        assertTrue(runCatching { orchestrator.syncNow() }.isFailure)
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+        relay.enqueueInbound(envelope)
+        orchestrator.syncNow()
+        relay.enqueueInbound(envelope)
+        orchestrator.syncNow()
+        assertEquals(2, calls)
+        assertEquals(1, applied)
+    }
 
     // ---- doc 40 Section 21: reboot while offline ----
 

@@ -13,6 +13,26 @@ import XCTest
 /// docs/MAC_XCODE_VALIDATION_CHECKLIST.md's project-membership/build
 /// sections for that remaining piece.
 final class PolicySyncDecoderTests: XCTestCase {
+
+    func testRestoredPolicyRejectsCorruptSafetyFloorAndMismatchedActivity() throws {
+        let store = InMemoryBlobStore()
+        try store.write(encode(wellFormedPolicy()), forKey: "schedule.activity-1")
+        try store.write(PropertyListEncoder().encode(Set(["ordinary-app"])), forKey: "applicationTokens.activity-1")
+        let loader = StoredDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store)
+        XCTAssertEqual(loader.load(activityId: "activity-1")?.applicationTokens, ["ordinary-app"])
+        XCTAssertEqual(loader.load(activityId: "activity-1")?.protectedApplicationTokens, [])
+        try store.write(PropertyListEncoder().encode(Set(["emergency-app"])), forKey: "protectedApplicationTokens")
+        let restarted = StoredDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store)
+        XCTAssertEqual(restarted.load(activityId: "activity-1")?.protectedApplicationTokens, ["emergency-app"])
+        try store.write(Data("corrupt safety floor".utf8), forKey: "protectedApplicationTokens")
+        XCTAssertNil(restarted.load(activityId: "activity-1"))
+        store.remove(forKey: "protectedApplicationTokens")
+        try store.write(encode(wellFormedPolicy()), forKey: "schedule.another-activity")
+        try store.write(PropertyListEncoder().encode(Set(["ordinary-app"])), forKey: "applicationTokens.another-activity")
+        XCTAssertNil(restarted.load(activityId: "another-activity"))
+        try store.write(Data("corrupt applications".utf8), forKey: "applicationTokens.activity-1")
+        XCTAssertNil(restarted.load(activityId: "activity-1"))
+    }
     private func encode(_ stored: StoredDeviceActivityPolicy) -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

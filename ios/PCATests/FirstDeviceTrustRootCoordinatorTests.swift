@@ -8,6 +8,55 @@ import XCTest
 /// binding). All transports/keys/evidence are in-memory fakes.
 final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
 
+    private final class RootLockTestContext: @unchecked Sendable {
+        let store: FirstDeviceRootStoring
+        let replacement: FirstDeviceRootRecord
+        init(store: FirstDeviceRootStoring, replacement: FirstDeviceRootRecord) {
+            self.store = store
+            self.replacement = replacement
+        }
+    }
+
+    func testConfirmedCleanupSerializesConcurrentRootReplacement() throws {
+        let retained = approvedRecord()
+        var replacement = retained
+        replacement.seed = makeSeed().replacingAttemptId("replacement-attempt")
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(retained)
+        let stores: [FirstDeviceRootStoring] = [
+            InMemoryFirstDeviceRootStore(record: retained),
+            KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        ]
+        for store in stores {
+            let context = RootLockTestContext(store: store, replacement: replacement)
+            let entered = DispatchSemaphore(value: 0)
+            let release = DispatchSemaphore(value: 0)
+            let sweepDone = DispatchSemaphore(value: 0)
+            let writerStarted = DispatchSemaphore(value: 0)
+            let writerDone = DispatchSemaphore(value: 0)
+            defer { release.signal() }
+            DispatchQueue.global().async {
+                context.store.withConfirmedCurrentRecord { _ in
+                    entered.signal()
+                    _ = release.wait(timeout: .now() + 3)
+                }
+                sweepDone.signal()
+            }
+            XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+            DispatchQueue.global().async {
+                writerStarted.signal()
+                _ = context.store.save(context.replacement)
+                writerDone.signal()
+            }
+            XCTAssertEqual(writerStarted.wait(timeout: .now() + 2), .success)
+            XCTAssertEqual(writerDone.wait(timeout: .now() + 0.1), .timedOut)
+            release.signal()
+            XCTAssertEqual(sweepDone.wait(timeout: .now() + 2), .success)
+            XCTAssertEqual(writerDone.wait(timeout: .now() + 2), .success)
+            XCTAssertEqual(store.current(), replacement)
+        }
+    }
+
     // MARK: - Fakes
 
     private final class FakeApiClient: FirstDeviceBootstrapApiClienting {
@@ -462,6 +511,36 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertFalse(store.save(submitting))
         XCTAssertEqual(store.current(), previous)
         XCTAssertEqual(keychain.atomicReplaceCalls, 1)
+    }
+
+    func testRootCleanupRequiresReadableAndConfirmedRetainedRecord() throws {
+        let retained = approvedRecord()
+        for failingRead in [1, 2] {
+            let keychain = FailingOverwriteKeychainStore()
+            let original = try JSONEncoder().encode(retained)
+            keychain.storedData = original
+            keychain.failRetrieveOnCall = failingRead
+            let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+            var swept = false
+            XCTAssertFalse(store.withConfirmedCurrentRecord { _ in swept = true })
+            XCTAssertFalse(swept)
+            XCTAssertEqual(keychain.storedData, original)
+        }
+        for data in [Data?.none, Data("malformed-root".utf8)] {
+            let keychain = FailingOverwriteKeychainStore()
+            keychain.storedData = data
+            let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+            XCTAssertFalse(store.withConfirmedCurrentRecord { _ in XCTFail("unreadable root must never authorize key deletion") })
+        }
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(retained)
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        var keepAttemptIds: Set<String> = []
+        XCTAssertTrue(store.withConfirmedCurrentRecord { record in
+            keepAttemptIds = ["new-attempt", record.seed.attemptId]
+        })
+        XCTAssertEqual(keepAttemptIds, ["new-attempt", retained.seed.attemptId])
+        XCTAssertEqual(store.current(), retained)
     }
 
     func testCoordinatorDoesNotSubmitWhenFailedKeychainOverwriteLeavesOldApprovedRecord() async throws {

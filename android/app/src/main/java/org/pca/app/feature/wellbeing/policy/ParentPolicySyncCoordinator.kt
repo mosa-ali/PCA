@@ -77,6 +77,7 @@ object ParentPolicySyncCoordinator {
         nowMonotonicNanos: Long,
     ): ReceiveResult {
         val result = receive(current, policy, operationId)
+        if (result.outcome !is RevisionOutcome.Accepted) return result
         val pending = result.snapshot.syncState.pending ?: return result
         return result.copy(
             snapshot = result.snapshot.copy(

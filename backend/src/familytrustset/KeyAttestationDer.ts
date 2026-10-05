@@ -30,19 +30,17 @@
  *         keymasterSecurityLevel   ENUMERATED,
  *         attestationChallenge     OCTET STRING,
  *         uniqueId                 OCTET STRING,
- *         softwareEnforced         [1] AuthorizationList,
- *         teeEnforced              [2] AuthorizationList
+ *         softwareEnforced         AuthorizationList,
+ *         teeEnforced              AuthorizationList
  *       }
  *
  *     exactly 8 fields, full consumption, no trailing bytes. The
  *     AuthorizationList contents are read for the five fields the Wave-6C
  *     verification needs (purpose, algorithm, origin, digest, curve);
  *     every other entry is skipped by its declared length. Both the
- *     IMPLICIT form (context tag replacing the collection tag, as KeyMint
- *     emits) and an EXPLICIT inner SEQUENCE/SET wrapper are accepted for
- *     the collection-valued fields -- real-device evidence is the external
- *     gate and the parser is deliberately tolerant of that one encoding
- *     degree of freedom while remaining strict about everything else.
+ *     platform's EXPLICIT context tags wrap exactly one INTEGER or SET.
+ *     AuthorizationList itself is an ordinary SEQUENCE. See the AOSP
+ *     Key and ID attestation schema; invented implicit encodings are rejected.
  *
  * Integers are bounded to 4 bytes (all KeyDescription integer fields are
  * int32/enum in the platform schema); negative values are rejected. The
@@ -92,12 +90,14 @@ function readElement(buf: Buffer, offset: number): DerElement {
     for (;;) {
       if (cursor >= buf.length) throw malformed('truncated high-tag-number.');
       const byte = buf[cursor];
+      if (count === 0 && (byte & 0x7f) === 0) throw malformed('nonminimal high-tag-number.');
       cursor += 1;
       tagNumber = tagNumber * 128 + (byte & 0x7f);
       count += 1;
-      if ((byte & 0x80) === 0) break;
       if (count > 4) throw malformed('unreasonably long high-tag-number.');
+      if ((byte & 0x80) === 0) break;
     }
+    if (tagNumber < 31) throw malformed('nonminimal high-tag-number.');
   }
   if (cursor >= buf.length) throw malformed('missing length.');
   const lengthFirst = buf[cursor];
@@ -110,11 +110,13 @@ function readElement(buf: Buffer, offset: number): DerElement {
     if (lengthBytes === 0) throw malformed('indefinite lengths are not valid DER.');
     if (lengthBytes > 4) throw malformed('length field too long.');
     if (cursor + lengthBytes > buf.length) throw malformed('truncated length.');
+    if (buf[cursor] === 0) throw malformed('nonminimal length.');
     length = 0;
     for (let i = 0; i < lengthBytes; i += 1) {
       length = length * 256 + buf[cursor + i];
     }
     cursor += lengthBytes;
+    if (length < 128) throw malformed('nonminimal long length.');
   }
   const contentEnd = cursor + length;
   if (contentEnd > buf.length) throw malformed('element content overruns buffer.');
@@ -134,6 +136,9 @@ function expectElement(buf: Buffer, offset: number, tagClass: number, tagNumber:
   if (element.tagClass !== tagClass || element.tagNumber !== tagNumber) {
     throw malformed(`${what}: unexpected tag (class ${element.tagClass}, number ${element.tagNumber}).`);
   }
+  if (tagClass === 0 && element.constructed !== (tagNumber === 0x10 || tagNumber === 0x11)) {
+    throw malformed(`${what}: incorrect constructed bit.`);
+  }
   return element;
 }
 
@@ -142,6 +147,9 @@ function readNonNegativeInteger(buf: Buffer, element: DerElement, what: string):
   const length = element.contentEnd - element.contentStart;
   if (length < 1 || length > MAX_INTEGER_BYTES) throw malformed(`${what}: integer length out of range.`);
   if ((buf[element.contentStart] & 0x80) !== 0) throw malformed(`${what}: negative integers are not valid here.`);
+  if (length > 1 && buf[element.contentStart] === 0 && (buf[element.contentStart + 1] & 0x80) === 0) {
+    throw malformed(`${what}: nonminimal integer.`);
+  }
   let value = 0;
   for (let i = 0; i < length; i += 1) value = value * 256 + buf[element.contentStart + i];
   return value;
@@ -199,29 +207,26 @@ const EMPTY_AUTHLIST: KeyAttestationAuthorizationList = Object.freeze({
 });
 
 /**
- * Reads one [1]/[2] AuthorizationList element. Accepts both the IMPLICIT
- * wrapping KeyMint emits (the context tag directly carries the entries) and
- * an EXPLICIT inner SEQUENCE wrapper. Every unneeded entry is skipped
+ * Reads one platform AuthorizationList SEQUENCE. Every unneeded entry is skipped
  * strictly by its declared length; duplicate entries for a needed field are
  * rejected (canonical KeyMint never duplicates them).
  */
 function parseAuthorizationList(buf: Buffer, element: DerElement, what: string): KeyAttestationAuthorizationList {
   let cursor = element.contentStart;
-  if (cursor < element.contentEnd && buf[cursor] === 0x30) {
-    const seq = readElement(buf, cursor);
-    if (seq.tagNumber !== 0x10) throw malformed(`${what}: malformed wrapper.`);
-    cursor = seq.contentStart;
-    if (seq.contentEnd !== element.contentEnd) throw malformed(`${what}: wrapper does not fill the tagged element.`);
-  }
   let purpose: number[] | null = null;
   let algorithm: number | null = null;
   let origin: number | null = null;
   let digest: number[] | null = null;
   let curve: number | null = null;
   let entries = 0;
+  const seenTags = new Set<number>();
   while (cursor < element.contentEnd) {
     const entry = readElement(buf, cursor);
-    if (entry.tagClass !== 2) throw malformed(`${what}: authorization entry is not context-tagged.`);
+    if (entry.tagClass !== 2 || !entry.constructed || entry.end > element.contentEnd) {
+      throw malformed(`${what}: authorization entry is not a bounded EXPLICIT context tag.`);
+    }
+    if (seenTags.has(entry.tagNumber)) throw malformed(`${what}: duplicate authorization tag.`);
+    seenTags.add(entry.tagNumber);
     entries += 1;
     if (entries > MAX_AUTHLIST_ENTRIES) throw malformed(`${what}: too many entries.`);
     switch (entry.tagNumber) {
@@ -230,9 +235,9 @@ function parseAuthorizationList(buf: Buffer, element: DerElement, what: string):
         purpose = readIntegerSet(buf, entry, `${what}.purpose`);
         break;
       }
-      case 3: {
+      case 2: {
         if (algorithm !== null) throw malformed(`${what}: duplicate algorithm.`);
-        algorithm = readNonNegativeInteger(buf, entry, `${what}.algorithm`);
+        algorithm = readExplicitInteger(buf, entry, `${what}.algorithm`);
         break;
       }
       case 5: {
@@ -240,14 +245,14 @@ function parseAuthorizationList(buf: Buffer, element: DerElement, what: string):
         digest = readIntegerSet(buf, entry, `${what}.digest`);
         break;
       }
-      case 6: {
+      case 702: {
         if (origin !== null) throw malformed(`${what}: duplicate origin.`);
-        origin = readNonNegativeInteger(buf, entry, `${what}.origin`);
+        origin = readExplicitInteger(buf, entry, `${what}.origin`);
         break;
       }
       case 10: {
         if (curve !== null) throw malformed(`${what}: duplicate curve.`);
-        curve = readNonNegativeInteger(buf, entry, `${what}.curve`);
+        curve = readExplicitInteger(buf, entry, `${what}.curve`);
         break;
       }
       default:
@@ -259,26 +264,25 @@ function parseAuthorizationList(buf: Buffer, element: DerElement, what: string):
   return { purpose: purpose ?? [], algorithm, origin, digest: digest ?? [], curve };
 }
 
-/** Reads a SET OF INTEGER as either an explicit SET element or a raw INTEGER run (IMPLICIT form). */
+function readExplicitInteger(buf: Buffer, element: DerElement, what: string): number {
+  const integer = expectElement(buf, element.contentStart, 0, 0x02, what);
+  if (integer.end !== element.contentEnd) throw malformed(`${what}: INTEGER does not fill EXPLICIT wrapper.`);
+  return readNonNegativeInteger(buf, integer, what);
+}
+
+/** Reads exactly one EXPLICIT SET OF INTEGER. */
 function readIntegerSet(buf: Buffer, element: DerElement, what: string): number[] {
-  let cursor = element.contentStart;
+  const set = expectElement(buf, element.contentStart, 0, 0x11, what);
+  if (set.end !== element.contentEnd) throw malformed(`${what}: SET does not fill EXPLICIT wrapper.`);
+  let cursor = set.contentStart;
   const values: number[] = [];
-  let hasSetWrapper = false;
-  if (cursor < element.contentEnd && buf[cursor] === 0x31) {
-    const set = readElement(buf, cursor);
-    if (set.contentEnd !== element.contentEnd) throw malformed(`${what}: set does not fill element.`);
-    cursor = set.contentStart;
-    hasSetWrapper = true;
-  }
-  if (!hasSetWrapper && cursor < element.contentEnd && buf[cursor] === 0x30) {
-    // An explicit SEQUENCE wrapper is also tolerated (some encoders wrap SET
-    // contents in a SEQUENCE when tag substitutes a SET); treat identically.
-    const seq = readElement(buf, cursor);
-    if (seq.contentEnd !== element.contentEnd) throw malformed(`${what}: sequence does not fill element.`);
-    cursor = seq.contentStart;
-  }
-  while (cursor < element.contentEnd) {
+  let previous: Buffer | null = null;
+  while (cursor < set.contentEnd) {
     const integer = expectElement(buf, cursor, 0, 0x02, what);
+    if (integer.end > set.contentEnd) throw malformed(`${what}: INTEGER overruns SET.`);
+    const encoded = buf.subarray(integer.headerStart, integer.end);
+    if (previous !== null && Buffer.compare(previous, encoded) >= 0) throw malformed(`${what}: unordered or duplicate SET entry.`);
+    previous = encoded;
     values.push(readNonNegativeInteger(buf, integer, what));
     cursor = integer.end;
   }
@@ -301,7 +305,7 @@ export interface ParsedKeyDescription {
 export function parseKeyDescription(keyDescriptionDer: Buffer): ParsedKeyDescription {
   if (!Buffer.isBuffer(keyDescriptionDer) || keyDescriptionDer.length === 0) throw malformed('empty KeyDescription.');
   const sequence = readElement(keyDescriptionDer, 0);
-  if (sequence.tagClass !== 0 || sequence.tagNumber !== 0x10 || sequence.end !== keyDescriptionDer.length) {
+  if (sequence.tagClass !== 0 || sequence.tagNumber !== 0x10 || !sequence.constructed || sequence.end !== keyDescriptionDer.length) {
     throw malformed('KeyDescription is not exactly one SEQUENCE.');
   }
   let cursor = sequence.contentStart;
@@ -319,8 +323,8 @@ export function parseKeyDescription(keyDescriptionDer: Buffer): ParsedKeyDescrip
   if (challengeLength < 0 || challengeLength > MAX_CHALLENGE_BYTES) throw malformed('attestationChallenge length out of range.');
   const uniqueId = take(0, 0x04, 'uniqueId');
   if (uniqueId.contentEnd - uniqueId.contentStart > MAX_CHALLENGE_BYTES) throw malformed('uniqueId too long.');
-  const softwareEnforced = parseAuthorizationList(keyDescriptionDer, take(2, 1, 'softwareEnforced'), 'softwareEnforced');
-  const teeEnforced = parseAuthorizationList(keyDescriptionDer, take(2, 2, 'teeEnforced'), 'teeEnforced');
+  const softwareEnforced = parseAuthorizationList(keyDescriptionDer, take(0, 0x10, 'softwareEnforced'), 'softwareEnforced');
+  const teeEnforced = parseAuthorizationList(keyDescriptionDer, take(0, 0x10, 'teeEnforced'), 'teeEnforced');
   if (cursor !== sequence.contentEnd) throw malformed('KeyDescription has trailing bytes.');
   return {
     attestationVersion,

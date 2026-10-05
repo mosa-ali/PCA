@@ -17,6 +17,42 @@ import Foundation
 /// Apple-only framework.
 public let policySyncSchemaVersion = 1
 
+/// Shared host/extension reload boundary. Present corrupt safety-floor data
+/// is unavailable, never an empty floor; schedule identity is key-bound.
+public struct StoredDeviceActivityPolicySnapshot<Token: Hashable & Codable> {
+    public let schedule: DecodedSchedulePolicy
+    public let applicationTokens: Set<Token>
+    public let protectedApplicationTokens: Set<Token>
+}
+
+public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
+    private let scheduleStore: OpaqueBlobStore
+    private let tokenStore: OpaqueBlobStore
+
+    public init(scheduleStore: OpaqueBlobStore, tokenStore: OpaqueBlobStore) {
+        self.scheduleStore = scheduleStore
+        self.tokenStore = tokenStore
+    }
+
+    public func load(activityId: String) -> StoredDeviceActivityPolicySnapshot<Token>? {
+        guard let scheduleData = scheduleStore.read(forKey: "schedule.\(activityId)"),
+              case .success(let schedule) = PolicySyncDecoder.decode(scheduleData),
+              schedule.activityId == activityId,
+              let tokenData = tokenStore.read(forKey: "applicationTokens.\(activityId)"),
+              let tokens = try? PropertyListDecoder().decode(Set<Token>.self, from: tokenData) else { return nil }
+        let protectedTokens: Set<Token>
+        if let data = tokenStore.read(forKey: "protectedApplicationTokens") {
+            guard let decoded = try? PropertyListDecoder().decode(Set<Token>.self, from: data) else { return nil }
+            protectedTokens = decoded
+        } else {
+            protectedTokens = []
+        }
+        return StoredDeviceActivityPolicySnapshot(
+            schedule: schedule, applicationTokens: tokens, protectedApplicationTokens: protectedTokens
+        )
+    }
+}
+
 public struct StoredTimeOfDay: Codable, Equatable {
     public let hour: Int
     public let minute: Int

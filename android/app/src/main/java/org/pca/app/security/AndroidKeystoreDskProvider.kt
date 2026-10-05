@@ -28,7 +28,7 @@ import org.pca.app.firstdevice.P256DerSignature
  *    platform makes it non-exportable by construction.
  *  - Every generated key is REQUIRED to be hardware-backed: after
  *    generation the pair is resolved back through
- *    `KeyFactory("AndroidKeyStore").getKeySpec(pub, KeyInfo::class.java)`
+ *    `KeyFactory("AndroidKeyStore").getKeySpec(privateHandle, KeyInfo::class.java)`
  *    and `isInsideSecureHardware` must be true. On failure the entry is
  *    DELETED and [SecureKeyUnavailableException] is thrown -- a
  *    software-only key can never enter the trust-root path.
@@ -117,8 +117,8 @@ class AndroidKeystoreDskProvider(
         val publicKey = keyPair.public as? ECPublicKey
             ?: run { deleteEntryQuietly(alias); throw SecureKeyUnavailableException("generated key is not EC P-256") }
         val secure = try {
-            val keyInfo = KeyFactory.getInstance(publicKey.algorithm, providerName)
-                .getKeySpec(publicKey, KeyInfo::class.java)
+            val keyInfo = KeyFactory.getInstance(keyPair.private.algorithm, providerName)
+                .getKeySpec(keyPair.private, KeyInfo::class.java)
             keyInfo.isInsideSecureHardware
         } catch (e: Exception) {
             false

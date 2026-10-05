@@ -514,11 +514,15 @@ public final class PCAApplicationModel: ObservableObject {
             // Attempt-scoped key hygiene: only this attempt AND the durable
             // root record's attempt (if any) may keep key material -- the
             // same keep-set union Android recorded as a Wave-6C Stage-B fix.
-            var keepAttemptIds: Set<String> = [attempt.attemptId]
-            if let persistedAttempt = dependencies.firstDeviceRootStore?.current()?.seed.attemptId {
-                keepAttemptIds.insert(persistedAttempt)
+            if let rootStore = dependencies.firstDeviceRootStore {
+                rootStore.withConfirmedCurrentRecord { retained in
+                    dependencies.keyDeletion?.deleteOrphanedAttemptKeys(
+                        keepAttemptIds: [attempt.attemptId, retained.seed.attemptId]
+                    )
+                }
+            } else {
+                dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: [attempt.attemptId])
             }
-            dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: keepAttemptIds)
             let profile = PCAEnrollmentProfile(childProfileId: response.childProfileId, ageUxTier: response.ageUxTier, initialPolicyProfile: response.initialPolicyProfile)
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)

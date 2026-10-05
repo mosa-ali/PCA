@@ -90,7 +90,7 @@ const MAX_ATTEMPT_ID_LENGTH = 64;
 const MIN_ATTEMPT_ID_LENGTH = 16;
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
-const MAX_KEY_DESCRIPTION_VERSION = 4;
+const SUPPORTED_KEY_DESCRIPTION_VERSIONS = new Set([1, 2, 3, 4, 100, 200, 300, 400, 500]);
 
 // KeyDescription / AuthorizationList vocabulary (keymint platform schema).
 const SECURITY_LEVEL_TEE = 1;
@@ -282,12 +282,13 @@ export class AndroidKeyAttestationVerifier implements AttestationVerifier {
     ) {
       return rejected('security_level_not_hardware');
     }
-    if (
-      keyDescription.attestationVersion < 1 ||
-      keyDescription.attestationVersion > MAX_KEY_DESCRIPTION_VERSION
-    ) {
+    if (!SUPPORTED_KEY_DESCRIPTION_VERSIONS.has(keyDescription.attestationVersion)) {
       return rejected('attestation_version_unsupported');
     }
+    if (
+      keyDescription.keymasterSecurityLevel !== SECURITY_LEVEL_TEE &&
+      keyDescription.keymasterSecurityLevel !== SECURITY_LEVEL_STRONGBOX
+    ) return rejected('key_security_level_not_hardware');
     const tee = keyDescription.teeEnforced;
     if (!tee.purpose.includes(KM_PURPOSE_SIGN)) return rejected('purpose_missing_sign');
     if (tee.algorithm !== KM_ALGORITHM_EC) return rejected('algorithm_not_ec');

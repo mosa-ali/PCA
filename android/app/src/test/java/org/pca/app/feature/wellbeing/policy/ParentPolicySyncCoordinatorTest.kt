@@ -7,6 +7,22 @@ import org.junit.Test
 
 class ParentPolicySyncCoordinatorTest {
 
+    @Test
+    fun `duplicate and stale receipt preserve the complete pending snapshot and its timestamp`() {
+        val original = ParentPolicySyncCoordinator.receiveAt(
+            ParentPolicyStateStore.Snapshot.EMPTY, policy(2), "op-2", 100L,
+        ).snapshot
+        val duplicate = ParentPolicySyncCoordinator.receiveAt(original, policy(3), "op-2", 200L)
+        assertTrue(duplicate.outcome is RevisionOutcome.DuplicateNoOp)
+        assertEquals(original, duplicate.snapshot)
+        val stale = ParentPolicySyncCoordinator.receiveAt(original, policy(1), "op-stale", 300L)
+        assertTrue(stale.outcome is RevisionOutcome.StaleRejected)
+        assertEquals(original, stale.snapshot)
+        val accepted = ParentPolicySyncCoordinator.receiveAt(original, policy(3), "op-3", 400L)
+        assertTrue(accepted.outcome is RevisionOutcome.Accepted)
+        assertEquals(400L, accepted.snapshot.syncState.pending?.receivedAtMonotonicNanos)
+    }
+
     private fun policy(revision: Int, enabled: Boolean = true) = ParentWellbeingPolicyV1(
         policyId = "family-1",
         policyRevision = revision,

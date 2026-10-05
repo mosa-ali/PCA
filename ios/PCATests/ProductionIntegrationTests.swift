@@ -423,10 +423,12 @@ final class ProductionIntegrationTests: XCTestCase {
                 submission: submission
             )
             let rootStore = InMemoryFirstDeviceRootStore(record: existing)
+            let keyDeletion = RecordingKeyDeletion()
             let model = try makeEnrollmentModel(
                 identityStore: identityStore,
                 attemptStore: attemptStore,
                 firstDeviceRootStore: rootStore,
+                keyDeletion: keyDeletion,
                 bootstrapStatus: "PAIRING_PENDING"
             )
 
@@ -434,7 +436,28 @@ final class ProductionIntegrationTests: XCTestCase {
             await waitForEnrollmentInProgress(model)
 
             XCTAssertEqual(rootStore.current(), existing)
+            XCTAssertEqual(keyDeletion.keepSets, [Set(["new-attempt", "root-owner"])])
         }
+    }
+
+    func testUnavailableAtomicCleanupKeepsKeysAndEnrollmentCanContinue() async throws {
+        let rootStore = SwitchableFirstDeviceRootStore()
+        rootStore.failCapture = false
+        let retained = FirstDeviceRootRecord(seed: trustRootSeed(), state: .rootCommitted)
+        XCTAssertTrue(rootStore.save(retained))
+        rootStore.failCurrent = true
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveAttempt(PCAEnrollmentAttempt(attemptId: "new-attempt", attemptRecoveryToken: "new-recovery"))
+        let deletion = RecordingKeyDeletion()
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+            firstDeviceRootStore: rootStore, keyDeletion: deletion, bootstrapStatus: "PAIRING_PENDING"
+        )
+        model.start()
+        await waitForEnrollmentInProgress(model)
+        XCTAssertTrue(deletion.keepSets.isEmpty, "uncertain retained root must never authorize orphan deletion")
+        rootStore.failCurrent = false
+        XCTAssertEqual(rootStore.current(), retained)
     }
 
     func testNewEnrollmentReplacesOnlyExpiredOrRejectedRoot() async throws {
@@ -482,6 +505,7 @@ final class ProductionIntegrationTests: XCTestCase {
         firstDeviceRootStore: FirstDeviceRootStoring? = nil,
         firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating? = nil,
         proofProvider: PCADeviceProofProvider = TestEnrollmentProofProvider(),
+        keyDeletion: FirstDeviceKeyPairDeletion? = nil,
         bootstrapStatus: String = "PAIRED"
     ) throws -> PCAApplicationModel {
         let authorizationSource = FakeAuthorizationStatusSource()
@@ -501,6 +525,7 @@ final class ProductionIntegrationTests: XCTestCase {
             attemptStore: attemptStore,
             profileStore: InMemoryPCAEnrollmentProfileStore(),
             proofProvider: proofProvider,
+            keyDeletion: keyDeletion,
             firstDeviceRootStore: firstDeviceRootStore,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
             protectionRuntime: PCAHostProtectionRuntime(),
@@ -572,6 +597,23 @@ final class ProductionIntegrationTests: XCTestCase {
         try await client.reportProtectionStatus(.active, session: session)
     }
 
+    func testRuntimePullDecodesBackendOverflowIdentifierArrays() async throws {
+        for overflow in ["[]", "[\"overflow-message\"]"] {
+            let transport = InMemoryPCAHTTPTransport { request in
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
+                return PCAHTTPResponse(statusCode: 200, data: Data("{\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(overflow)}".utf8))
+            }
+            let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+            let result = try await client.pull(session: session)
+            XCTAssertEqual(result.droppedForListBound, overflow == "[]" ? [] : ["overflow-message"])
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self,
+            from: Data(#"{"applied":[],"unparseableMessageIds":[],"droppedForListBound":false}"#.utf8)))
+    }
+
     func testProductionBaseURLRejectsHTTP() {
         XCTAssertThrowsError(try PCAEnrollmentBootstrapClient(baseURL: URL(string: "http://localhost:4001")!, transport: InMemoryPCAHTTPTransport { _ in fatalError() })) { error in
             XCTAssertEqual(error as? PCAAPIError, .invalidConfiguration)
@@ -628,6 +670,12 @@ private final class RecordingDeviceIdentityStore: PCADeviceIdentityStore {
     private(set) var savedDeviceIds: [String] = []
     func loadDeviceId() -> String? { savedDeviceIds.last }
     func saveDeviceId(_ deviceId: String) { savedDeviceIds.append(deviceId) }
+}
+
+private final class RecordingKeyDeletion: FirstDeviceKeyPairDeletion {
+    private(set) var keepSets: [Set<String>] = []
+    func deleteKeyPair(alias: String) {}
+    func deleteOrphanedAttemptKeys(keepAttemptIds: Set<String>) { keepSets.append(keepAttemptIds) }
 }
 
 private final class SwitchableFirstDeviceRootStore: FirstDeviceRootStoring {

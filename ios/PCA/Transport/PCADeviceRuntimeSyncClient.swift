@@ -13,7 +13,7 @@ public struct PCAInboundEnvelope: Decodable, Equatable {
 public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
     public let applied: [PCAInboundEnvelope]
     public let unparseableMessageIds: [String]
-    public let droppedForListBound: Bool
+    public let droppedForListBound: [String]
 }
 
 public enum PCAReportedProtectionLevel: String, Encodable {

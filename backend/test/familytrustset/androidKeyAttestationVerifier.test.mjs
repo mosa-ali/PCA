@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { X509Certificate } from 'node:crypto';
 import { AndroidKeyAttestationVerifier, ANDROID_ATTESTATION_CHALLENGE_PREFIX } from '../../dist/familytrustset/AndroidKeyAttestationVerifier.js';
+import { parseKeyDescription } from '../../dist/familytrustset/KeyAttestationDer.js';
 import {
   buildAttestationChain,
   buildEvidence,
@@ -40,6 +41,56 @@ function happyFixture(overrides = {}) {
     ...overrides.input,
   });
   return { attemptId, chain, evidence, input };
+}
+
+// Independent, literal ASN.1 vector transcribed from the AOSP schema:
+// two SEQUENCE authorization lists, EXPLICIT purpose[1], algorithm[2],
+// digest[5], ecCurve[10], origin[702]. No fixture writer creates these bytes.
+const AOSP_KEYMINT_VECTOR = Buffer.from(
+  '30340201640a01010201640a010104017804003000301fa1053103020102a203020103a5053103020104aa03020101bf853e03020100', 'hex',
+);
+
+test('AOSP KeyMint DER vector decodes the actual platform tags and explicit wrappers', () => {
+  const parsed = parseKeyDescription(AOSP_KEYMINT_VECTOR);
+  assert.equal(parsed.attestationVersion, 100);
+  assert.equal(parsed.attestationChallenge.toString(), 'x');
+  assert.deepEqual(parsed.teeEnforced, { purpose: [2], algorithm: 3, digest: [4], curve: 1, origin: 0 });
+});
+
+test('invented legacy authorization-list tags and malformed EXPLICIT wrappers are rejected', () => {
+  for (const [offset, replacement] of [[0, 0x10], [19, 0xa1], [21, 0xa2], [25, 0x30], [30, 0x82], [32, 0x04]]) {
+    const malformed = Buffer.from(AOSP_KEYMINT_VECTOR);
+    malformed[offset] = replacement;
+    assert.throws(() => parseKeyDescription(malformed), /Malformed key attestation DER/);
+  }
+  const duplicatePurpose = Buffer.concat([
+    AOSP_KEYMINT_VECTOR.subarray(0, 23), AOSP_KEYMINT_VECTOR.subarray(23, 30), AOSP_KEYMINT_VECTOR.subarray(23),
+  ]);
+  duplicatePurpose[1] += 7;
+  duplicatePurpose[22] += 7;
+  assert.throws(() => parseKeyDescription(duplicatePurpose), /duplicate/);
+});
+
+for (const version of [1, 2, 3, 4, 100, 200, 300, 400, 500]) {
+  test(`VERIFIED: platform attestation version ${version} with real-schema authorization tags`, async () => {
+    const keymasterVersion = version >= 100 ? version : ({ 1: 2, 2: 3, 3: 4, 4: 41 })[version];
+    const { chain, input } = happyFixture({ chain: { attestationVersion: version, keymasterVersion, includeUnknownTeeEntry: true } });
+    assert.equal((await makeVerifier(chain).verifyFirstDeviceAttestation(input)).status, 'VERIFIED');
+  });
+}
+
+for (const version of [0, 5, 99, 101, 401, 501]) {
+  test(`REJECTED: unsupported attestation version ${version}`, async () => {
+    const { chain, input } = happyFixture({ chain: { attestationVersion: version } });
+    assert.equal((await makeVerifier(chain).verifyFirstDeviceAttestation(input)).reason, 'attestation_version_unsupported');
+  });
+}
+
+for (const keymasterSecurityLevel of [0, 3]) {
+  test(`REJECTED: modern hardware attestation cannot authorize key security level ${keymasterSecurityLevel}`, async () => {
+    const { chain, input } = happyFixture({ chain: { attestationVersion: 500, keymasterSecurityLevel } });
+    assert.equal((await makeVerifier(chain).verifyFirstDeviceAttestation(input)).reason, 'key_security_level_not_hardware');
+  });
 }
 
 test('VERIFIED: full chain (root included), TEE level, valid DSK, exact challenge — attested identity derived from evidence', async () => {
