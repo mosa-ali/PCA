@@ -1,14 +1,18 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+WORKSPACE_EXECUTION_GATE = RESTORED; automatic approval review executed the resumed CI status check. Exact-head run 37369407921 is live with 1 successful job, 2 in progress and 24 queued at this observation. Next-wave specialist qualification has resumed; prior credit interruption is resolved for this check, not proof of CI acceptance.
+
 ## Mission
 
 ### Mobile completion wave — reviewed source, validation in progress
+
+Published source checkpoint: `37f75aacdb07121f877095ca927bb66bf3b1b8a4`. PUSH_RESULT = PASS; LOCAL_HEAD = REMOTE_HEAD = SERVER_HEAD; all 22 files verified through GitHub commit API. Exact-head Quality Gates run `37369407921` is QUEUED, not acceptance. These post-publication ledger updates will travel with the next substantive checkpoint.
 
 Continuing TODO-12/14/15/20 from published checkpoint `799c4cb6c0fa1aa50d7f342f6a7fc93c903befec`; canonical TODO-01…23 states below are retained. Seven Stage A specialists returned USABLE. Stage B approvals are 5/5 required mobile and 7/7 including backend and independent QA, with zero new BLOCKER/MAJOR findings in the bounded checkpoint. Both minor attestation findings were corrected and re-reviewed. Coordinator remains sole writer.
 
 Source implements actual Android attestation ASN.1/key-handle fixes, failed-handler retry and rejected-policy timestamp preservation; iOS confirmed-root cleanup, corrupt extension-policy rejection and backend-shaped inbound response decoding. Final full backend regression passed 2928/2928 after the minor corrections; corrected attestation suites passed 53/53. Full disposable MySQL certification passed 701/711 in the first lane (10 explicit privilege-only skips, zero failures), then 276/276 against populated state (zero skips/failures); the owned schema was removed. Android lint, release Kotlin and instrumentation-test compilation passed. Full Android unit suite passed 1471/1472 across 251 suites, with one existing PcaAppGraphTest skip and zero failures/errors; selected regression also passed 20/20. Swift parsing passed; Windows typechecking lacks C SDK headers and is not Apple build evidence. See [mobile work matrix](PCA_MOBILE_COMPLETION_WORK_MATRIX.md).
 
-The preceding ledger-only commit's exact-head CI `37362988090` is terminal failure with 22 successful and 5 cancelled jobs; it is not an all-green checkpoint. Current source remains uncommitted pending final validation. Durable relay receipt, offline iOS boundaries and reviewed production crypto/ordinary-submission contracts remain unfinished. No migration 0064, retained manual UAT mutation, live pca_pro mutation, Azure deployment or Platform activation occurred.
+The preceding ledger-only commit's exact-head CI `37362988090` is terminal failure with 22 successful and 5 cancelled jobs; it is not an all-green checkpoint. Source checkpoint is published with all local validation complete; exact-head CI remains pending. Durable relay receipt, offline iOS boundaries and reviewed production crypto/ordinary-submission contracts remain unfinished. No migration 0064, retained manual UAT mutation, live pca_pro mutation, Azure deployment or Platform activation occurred.
 
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
@@ -2021,3 +2025,7 @@ LOCAL_VALIDATION = Full backend `npm test` passed 2909/2909. The recovery red-te
 REMOTE_CI = Exact source SHA `1fb46c764a682b6d9c5596fd1cf1798f3c9411b2`, Quality Gates run `37359044803`, SUCCESS 27/27. The previous `60f08e2b` run reported the iOS named-argument order; run `b19a433c` reported outdated backend assertions/registration and an iOS test expecting recoverable state despite the security gate. All were corrected before this green run.
 TODO_AND_GATES = Parent formal counts remain 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. TODO-12/14/15 and TODO-20 remain IN_PROGRESS; live `pca_pro` TCP/3306 is unreachable, no live SQL ran, and no deployment occurred. Platform remains `HOLD_PARENT_DEPENDENCY`; owner localhost acceptance, physical device, production routing, installer, live grants/schema and release gates remain open.
 GIT = Source checkpoint and both master TODOs are on `pca-dev`. This ledger checkpoint will be published as a docs-only descendant; retain the green CI attribution to source SHA `1fb46c764a682b6d9c5596fd1cf1798f3c9411b2`. Excluded `.vscode/`, root `0`, and owner protocol-review artifact remain untouched.
+
+## CI correction — saved-attempt recovery key retention
+
+Exact source run `37369407921` failed the iOS competing-enrollment XCTest at ProductionIntegrationTests.swift:439: the saved-attempt recovery path did not invoke bootstrap-only key cleanup. Both paths now call the same confirmed-root helper after successful seed capture. Existing behavioral expectations remain unchanged. Swift parsing and six backend source-guard tests pass; Apple XCTest execution is still pending on the correction checkpoint. Delivery-wave source qualification is 5/5 mobile USABLE; full signed-envelope transport, verified-session scope, outer/inner identity binding and durable inbox remain unfinished. No release or live mutation acceptance is inferred.

@@ -1,8 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+WORKSPACE_EXECUTION_GATE = RESTORED; automatic approval review executed the resumed CI status check. Exact-head run 37369407921 is live with 1 successful job, 2 in progress and 24 queued at this observation. Next-wave specialist qualification has resumed; prior credit interruption is resolved for this check, not proof of CI acceptance.
+
 ## Mission
 
 ### Parent mobile completion wave — dependent release remains held
+
+Published source checkpoint: `37f75aacdb07121f877095ca927bb66bf3b1b8a4`. PUSH_RESULT = PASS; LOCAL_HEAD = REMOTE_HEAD = SERVER_HEAD; all 22 files verified through GitHub commit API. Exact-head Quality Gates run `37369407921` is QUEUED, not acceptance. These post-publication ledger updates will travel with the next substantive checkpoint.
 
 Parent continues its existing TODO-12/14/15/20 with coordinator-only edits and 7/7 specialist source approvals (5/5 required mobile), zero new checkpoint BLOCKER/MAJOR. The bounded uncommitted fixes and unfinished delivery/offline/crypto work are recorded in [mobile work matrix](PCA_MOBILE_COMPLETION_WORK_MATRIX.md). Final full backend passed 2928/2928; corrected attestation tests passed 53/53. Full disposable MySQL passed 701/711 in the first lane (10 explicit privilege-only skips, zero failures), then 276/276 populated certification (zero skips/failures); owned schema cleanup passed. Android lint, release Kotlin and instrumentation-test compilation passed; full unit suite passed 1471/1472 across 251 suites with one existing PcaAppGraphTest skip and zero failures/errors.
 
@@ -1410,3 +1414,7 @@ PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent acceptance, literal `LO
 PARENT_SOURCE = Published source checkpoint `1fb46c764a682b6d9c5596fd1cf1798f3c9411b2`; exact-head Quality Gates run `37359044803` passed 27/27. Backend full non-DB suite passed 2909/2909, Parent offline/reconnect Playwright passed 4/4, and iOS build/unit tests passed in CI.
 PARENT_LEDGER = The current master-TODO synchronization is docs-only and records the green source checkpoint, corrected CI findings, and current release/DB gates.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner acceptance, live schema/grant parity, API routing ownership, and production release evidence remain open; no Platform activation, deployment or live SQL occurred.
+
+## CI correction — saved-attempt recovery key retention
+
+Exact source run `37369407921` failed the iOS competing-enrollment XCTest at ProductionIntegrationTests.swift:439: the saved-attempt recovery path did not invoke bootstrap-only key cleanup. Both paths now call the same confirmed-root helper after successful seed capture. Existing behavioral expectations remain unchanged. Swift parsing and six backend source-guard tests pass; Apple XCTest execution is still pending on the correction checkpoint. Delivery-wave source qualification is 5/5 mobile USABLE; full signed-envelope transport, verified-session scope, outer/inner identity binding and durable inbox remain unfinished. No release or live mutation acceptance is inferred.

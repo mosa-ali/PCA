@@ -511,18 +511,7 @@ public final class PCAApplicationModel: ObservableObject {
             publishFirstDeviceRootRecord()
             pendingDeviceId = response.deviceId
             dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
-            // Attempt-scoped key hygiene: only this attempt AND the durable
-            // root record's attempt (if any) may keep key material -- the
-            // same keep-set union Android recorded as a Wave-6C Stage-B fix.
-            if let rootStore = dependencies.firstDeviceRootStore {
-                rootStore.withConfirmedCurrentRecord { retained in
-                    dependencies.keyDeletion?.deleteOrphanedAttemptKeys(
-                        keepAttemptIds: [attempt.attemptId, retained.seed.attemptId]
-                    )
-                }
-            } else {
-                dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: [attempt.attemptId])
-            }
+            cleanupConfirmedEnrollmentKeys(attempt: attempt)
             let profile = PCAEnrollmentProfile(childProfileId: response.childProfileId, ageUxTier: response.ageUxTier, initialPolicyProfile: response.initialPolicyProfile)
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
@@ -569,6 +558,19 @@ public final class PCAApplicationModel: ObservableObject {
         )
     }
 
+    /// Bootstrap and recovery use the same confirmed-root key retention barrier.
+    private func cleanupConfirmedEnrollmentKeys(attempt: PCAEnrollmentAttempt) {
+        if let rootStore = dependencies.firstDeviceRootStore {
+            rootStore.withConfirmedCurrentRecord { retained in
+                dependencies.keyDeletion?.deleteOrphanedAttemptKeys(
+                    keepAttemptIds: [attempt.attemptId, retained.seed.attemptId]
+                )
+            }
+        } else {
+            dependencies.keyDeletion?.deleteOrphanedAttemptKeys(keepAttemptIds: [attempt.attemptId])
+        }
+    }
+
     private func resumeEnrollmentIfPossible() async {
         guard authorization.permitsEnforcement,
               pendingDeviceId == nil,
@@ -592,6 +594,7 @@ public final class PCAApplicationModel: ObservableObject {
             publishFirstDeviceRootRecord()
             pendingDeviceId = response.deviceId
             dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            cleanupConfirmedEnrollmentKeys(attempt: attempt)
             let profile = PCAEnrollmentProfile(
                 childProfileId: response.childProfileId,
                 ageUxTier: response.ageUxTier,

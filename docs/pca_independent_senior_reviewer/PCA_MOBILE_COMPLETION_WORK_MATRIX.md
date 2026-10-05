@@ -1,5 +1,7 @@
 # PCA mobile completion work matrix
 
+WORKSPACE_EXECUTION_GATE = RESTORED; automatic approval review executed the resumed CI status check. Exact-head run 37369407921 is live with 1 successful job, 2 in progress and 24 queued at this observation. Next-wave specialist qualification has resumed; prior credit interruption is resolved for this check, not proof of CI acceptance.
+
 Coordinator owns all source edits. This matrix continues Parent TODO-12/14/15/20; it creates no new mission or canonical TODO. Platform Enrollment, Azure and live database mutation remain closed under the mobile-wave directive.
 
 ## Qualification and checkpoint
@@ -26,12 +28,18 @@ Stage A: Android hardware security, Android lifecycle, iOS key custody, iOS life
 | Schema and deployment | No new schema requested | No new schema requested | Disposable MySQL certification running through authorized migrations | Owned disposable schema only; retained manual UAT untouched | Migration 0064 requires explicit owner authorization; live pca_pro/Azure/Platform mutation prohibited in this wave | Owner gate |
 | Release and manual UAT | Signed release config and real Android hardware pending | Apple entitlements/signing and real iOS hardware pending | Public landing page selected; runtime activation gates retained | Source/local/CI/device/backend/live/owner evidence remain distinct | External acceptance remains; not evidence that repository work is complete | Owner/device/release gates |
 
+Published source checkpoint: `37f75aacdb07121f877095ca927bb66bf3b1b8a4`; push/fetch/server head equality and 22-file GitHub publication verified. Exact-head Quality Gates `37369407921` is QUEUED.
+
 ## Current validation and review state
 
 Final full backend `npm test`: PASS 2928/2928, zero skips/failures, after both minor corrections. Corrected focused attestation suites: PASS 53/53. Swift frontend parse: PASS for all eight edited source/test files; Windows typechecking lacks C SDK headers and does not prove Apple compilation. `git diff --check`: PASS. Full owned disposable MySQL: PASS 701/711 (10 explicit privilege-only skips, zero failures), then populated certification PASS 276/276 (zero skips/failures), owned schema removed. Android selected regression: PASS 20/20. Lint, release Kotlin and instrumentation-test compilation: PASS. Full Android unit suite: PASS 1471/1472 across 251 suites; one existing PcaAppGraphTest skip, zero failures/errors.
 
-Stage B source approvals received: Android security, Android lifecycle, iOS security, iOS lifecycle and cross-platform protocol (5/5), plus backend and independent adversarial QA (7/7 total), zero newly introduced BLOCKER/MAJOR in reviewed scope. Both minor DER/fixture findings were corrected and re-reviewed. Final backend and both MySQL certification lanes passed. Android lint, release Kotlin and instrumentation-test compilation passed; full unit suite passed 1471/1472 with one existing skip and zero failures/errors. These approvals cover the bounded current changes, not the unfinished delivery, crypto activation or offline scheduler rows. Exact-head CI and physical-device evidence remain unproven for this uncommitted wave.
+Stage B source approvals received: Android security, Android lifecycle, iOS security, iOS lifecycle and cross-platform protocol (5/5), plus backend and independent adversarial QA (7/7 total), zero newly introduced BLOCKER/MAJOR in reviewed scope. Both minor DER/fixture findings were corrected and re-reviewed. Final backend and both MySQL certification lanes passed. Android lint, release Kotlin and instrumentation-test compilation passed; full unit suite passed 1471/1472 with one existing skip and zero failures/errors. These approvals cover the bounded current changes, not the unfinished delivery, crypto activation or offline scheduler rows. Exact-head CI and physical-device evidence remain unproven for this published checkpoint (CI pending).
 
 REPOSITORY_WORK_REMAINING = YES
 
 READY_FOR_AZURE_DEPLOYMENT = NO
+
+## CI correction — saved-attempt recovery key retention
+
+Exact source run `37369407921` failed the iOS competing-enrollment XCTest at ProductionIntegrationTests.swift:439: the saved-attempt recovery path did not invoke bootstrap-only key cleanup. Both paths now call the same confirmed-root helper after successful seed capture. Existing behavioral expectations remain unchanged. Swift parsing and six backend source-guard tests pass; Apple XCTest execution is still pending on the correction checkpoint. Delivery-wave source qualification is 5/5 mobile USABLE; full signed-envelope transport, verified-session scope, outer/inner identity binding and durable inbox remain unfinished. No release or live mutation acceptance is inferred.

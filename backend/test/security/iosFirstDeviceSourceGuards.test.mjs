@@ -90,6 +90,19 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   assert.ok(request < bootstrap, 'the request must be built from prepared keys');
   assert.ok(bootstrap < seedCapture, 'the seed is captured from a successful bootstrap');
   assert.ok(seedCapture < sweep, 'over the freshly captured seed the sweep keeps this attempt');
+  assert.equal(
+    (composition.match(/cleanupConfirmedEnrollmentKeys\(attempt: attempt\)/g) ?? []).length,
+    2,
+    'bootstrap and saved-attempt recovery must share confirmed-root key cleanup',
+  );
+  for (const name of ['beginEnrollmentIfPossible', 'resumeEnrollmentIfPossible']) {
+    const start = composition.indexOf(`private func ${name}()`);
+    const end = composition.indexOf('private func ', start + 1);
+    const body = composition.slice(start, end);
+    const capture = body.indexOf('guard captureFirstDeviceSeed(attempt: attempt, response: response)');
+    const cleanup = body.indexOf('cleanupConfirmedEnrollmentKeys(attempt: attempt)');
+    assert.ok(capture >= 0 && cleanup > capture, `${name} must capture the retained seed before cleanup`);
+  }
   // The sweep keep-set is the UNION of this attempt and the durable root
   // record's attempt (the Wave-6C Stage-B parity fix): a committed root's
   // Secure Enclave keys can never be reclaimed by a later enrollment round.
