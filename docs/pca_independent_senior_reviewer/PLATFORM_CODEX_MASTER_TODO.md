@@ -5,11 +5,11 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-05 18:19 UTC (Parent iOS compile correction published; exact-head CI pending)
-VALIDATED_PARENT_SOURCE_HEAD = fb3376fd0ccbebbf6cdbe266750a049563d52afc (GitHub pca-dev head; exact-head Quality Gates run 37354858766 is pending; local Swift parser passed, XCTest unavailable without xcodebuild)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = fb3376fd0ccbebbf6cdbe266750a049563d52afc (post-push fetch and GitHub branch ref agree)
-CURRENT_CHECKPOINT_SHA = fb3376fd0ccbebbf6cdbe266750a049563d52afc (published Parent source checkpoint; Quality Gates pending)
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent source checkpoint fb3376fd0ccbebbf6cdbe266750a049563d52afc is published and matches the post-push fetched remote. It corrects the iOS initializer argument order reported by failed exact-head run 37354125784 at 60f08e2b. New Quality Gates run 37354858766 is pending; no iOS XCTest has run locally because xcodebuild is unavailable. Platform remains HOLD_PARENT_DEPENDENCY; no deployment or live database action occurred.
+LAST_UPDATED_UTC = 2026-10-05 18:58 UTC (Parent exact-head Quality Gates passed after CI corrections; Platform remains held)
+VALIDATED_PARENT_SOURCE_HEAD = 1fb46c764a682b6d9c5596fd1cf1798f3c9411b2 (exact-head Quality Gates run 37359044803 SUCCESS 27/27; ledger synchronization is docs-only)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 1fb46c764a682b6d9c5596fd1cf1798f3c9411b2 (published source commit, post-push fetch and GitHub branch ref agree; this ledger update adds a docs-only descendant)
+CURRENT_CHECKPOINT_SHA = 1fb46c764a682b6d9c5596fd1cf1798f3c9411b2 (published Parent source checkpoint; Quality Gates 27/27)
+LATEST_PARENT_LEDGER_CHECKPOINT = Parent source checkpoint 1fb46c764a682b6d9c5596fd1cf1798f3c9411b2 is published; exact-head run 37359044803 passed 27/27, including iOS build/unit tests, Parent/Platform browser E2E, Android, backend unit tests, and disposable MySQL lanes. Local backend npm test passed 2909/2909; Parent offline/reconnect browser tests passed 4/4. The source checkpoint repairs the CI-discovered compile, test-registration, malformed-epoch fixture, security-gate expectation, and offline-copy issues. Platform remains HOLD_PARENT_DEPENDENCY; no deployment or live DB action occurred.
 LATEST_SHARED_DB_CERTIFICATION = Fresh loopback-only MySQL 8.4.11 certification applied all 61 migrations through 0063. The inner lane passed 700/710 with 10 explicit privilege-only skips and zero failures; the populated production-path lane passed 276/276 with zero skips/failures and included the no-skip least-privilege runtime-grant/append-only checks. The wrapper/test hooks removed the owned schema and temporary probe principal. This is local certification; live `pca_pro` remains unverified because TCP/3306 is unreachable.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
@@ -1398,3 +1398,9 @@ NEXT = Publish the reviewed checkpoint to `pca-dev` as a fast-forward and inspec
 PARENT_SOURCE = Published Parent checkpoint `fb3376fd0ccbebbf6cdbe266750a049563d52afc`; post-push fetch and GitHub branch ref agree. It corrects the iOS initializer argument order identified by failed run `37354125784` at `60f08e2b`.
 CI = New exact-head Quality Gates run `37354858766` is PENDING with no jobs listed yet. Swift parse passed locally, but XCTest cannot run here because `xcodebuild` is unavailable.
 PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent acceptance, literal `LOCALHOST ACCEPTED=YES`, live schema/grant parity and production/API routing gates remain open; no Platform activation, deployment or live SQL occurred.
+
+### 2026-10-05 — Parent CI green; Platform dependency hold unchanged
+
+PARENT_SOURCE = Published source checkpoint `1fb46c764a682b6d9c5596fd1cf1798f3c9411b2`; exact-head Quality Gates run `37359044803` passed 27/27. Backend full non-DB suite passed 2909/2909, Parent offline/reconnect Playwright passed 4/4, and iOS build/unit tests passed in CI.
+PARENT_LEDGER = The current master-TODO synchronization is docs-only and records the green source checkpoint, corrected CI findings, and current release/DB gates.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent owner acceptance, live schema/grant parity, API routing ownership, and production release evidence remain open; no Platform activation, deployment or live SQL occurred.
