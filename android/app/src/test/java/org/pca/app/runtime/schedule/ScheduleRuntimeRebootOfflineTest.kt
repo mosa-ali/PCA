@@ -7,9 +7,8 @@ import java.time.Instant
 /**
  * Exercises mission section 12's reboot-offline contract: "policy accepted -> Internet lost ->
  * process/device restart -> policy reloaded from local persistence -> same schedule decision
- * still produced." Simulates a process restart by discarding the first [ScheduleRuntime]/store
- * pair and constructing a brand new one from only the persisted [SchedulePolicySnapshot] --
- * exactly the shape Agent 12's durable [SchedulePolicyStore] implementation must support.
+ * still produced." Simulates a process restart by reconstructing the backing store from its
+ * flushed bytes and decoding those bytes through [PersistentSchedulePolicyStore].
  */
 class ScheduleRuntimeRebootOfflineTest {
 
@@ -50,20 +49,15 @@ class ScheduleRuntimeRebootOfflineTest {
             deviceKeyEpoch = 1,
         )
 
-        val beforeRestart = run {
-            val store = InMemorySchedulePolicyStore()
-            store.save(snapshot)
-            ScheduleRuntime(store).evaluate(nowUtc, "app-a", EnforcementCapabilityState.ENFORCED, Connectivity.ONLINE)
-        }
+        val diskBeforeRestart = DiskBackedPersistentStateStore()
+        PersistentSchedulePolicyStore(diskBeforeRestart).save(snapshot)
+        val beforeRestart = ScheduleRuntime(PersistentSchedulePolicyStore(diskBeforeRestart))
+            .evaluate(nowUtc, "app-a", EnforcementCapabilityState.ENFORCED, Connectivity.ONLINE)
 
-        // Simulate: process restart, Internet lost, policy reloaded from durable persistence
-        // (here, a freshly-constructed store seeded only from the same snapshot bytes -- a real
-        // implementation reloads from disk).
-        val afterRestartOffline = run {
-            val reloadedStore = InMemorySchedulePolicyStore()
-            reloadedStore.save(snapshot)
-            ScheduleRuntime(reloadedStore).evaluate(nowUtc, "app-a", EnforcementCapabilityState.ENFORCED, Connectivity.OFFLINE)
-        }
+        // Simulate process death: only bytes committed by flush survive in the reconstructed store.
+        val afterRestartOffline = ScheduleRuntime(
+            PersistentSchedulePolicyStore(diskBeforeRestart.afterProcessDeath()),
+        ).evaluate(nowUtc, "app-a", EnforcementCapabilityState.ENFORCED, Connectivity.OFFLINE)
 
         assertEquals(beforeRestart.decision.decision, afterRestartOffline.decision.decision)
         assertEquals(beforeRestart.decision.matchedWindowId, afterRestartOffline.decision.matchedWindowId)
@@ -79,9 +73,9 @@ class ScheduleRuntimeRebootOfflineTest {
             deviceTrustSetEpoch = 1,
             deviceKeyEpoch = 1,
         )
-        val store = InMemorySchedulePolicyStore()
-        store.save(snapshot)
-        val runtime = ScheduleRuntime(store)
+        val disk = DiskBackedPersistentStateStore()
+        PersistentSchedulePolicyStore(disk).save(snapshot)
+        val runtime = ScheduleRuntime(PersistentSchedulePolicyStore(disk.afterProcessDeath()))
 
         val nowUtc = Instant.parse("2026-01-10T20:00:00Z") // 9 days offline, still 23:00 Riyadh bedtime
         val result = runtime.evaluate(nowUtc, "app-a", EnforcementCapabilityState.ENFORCED, Connectivity.OFFLINE)
@@ -92,8 +86,8 @@ class ScheduleRuntimeRebootOfflineTest {
 
     @Test
     fun `WELL-3 bedtime and quiet-context helpers reflect the same effective policy`() {
-        val store = InMemorySchedulePolicyStore()
-        store.save(
+        val disk = DiskBackedPersistentStateStore()
+        PersistentSchedulePolicyStore(disk).save(
             SchedulePolicySnapshot(
                 candidatePolicy = bedtimePolicy(),
                 lastKnownGoodPolicy = bedtimePolicy(),
@@ -102,7 +96,7 @@ class ScheduleRuntimeRebootOfflineTest {
                 deviceKeyEpoch = 1,
             ),
         )
-        val runtime = ScheduleRuntime(store)
+        val runtime = ScheduleRuntime(PersistentSchedulePolicyStore(disk.afterProcessDeath()))
 
         val duringBedtime = Instant.parse("2026-01-07T20:00:00Z") // 23:00 Riyadh
         val duringMidday = Instant.parse("2026-01-07T09:00:00Z") // 12:00 Riyadh
