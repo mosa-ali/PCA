@@ -320,9 +320,12 @@ test('ATTACK: a candidate epoch carrying an implausible epoch NUMBER is rejected
     ['zero trustSetEpoch', { trustSetEpoch: 0 }],
   ];
 
+  const signedCandidate = legitimateRecoveryEpoch();
   for (const [label, overrides] of candidates) {
-    const candidate = legitimateRecoveryEpoch(overrides);
-    const signed = { ...candidate, signature: signTestOnlyEpoch('new-owner-dsk-pub', canonicalizeTrustSetEpoch(candidate)) };
+    // Keep a previously valid signature and then mutate the epoch fields.
+    // Invalid numbers cannot be canonicalized or signed; the acceptance
+    // boundary must reject their shape before it reaches signature checking.
+    const signed = { ...signedCandidate, ...overrides };
     const verdict = await acceptRecoveryEpoch(signed, opened(), store, verifier, ledger);
     assert.deepEqual(verdict, { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' }, `${label} must be rejected`);
   }

@@ -30,6 +30,7 @@ import path from 'node:path';
 const backendRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const files = [
+  "test/alerts/MySqlOwnerParentDeviceResolver.test.mjs",
   "test/familyrbac/RemovalTargetResolver.test.mjs",
   "test/tooling/parentActorMigrationRecovery.test.mjs",
   "test/parentaccount/identityProfile.test.mjs",
@@ -41,6 +42,7 @@ const files = [
   "test/childprofiles/noReadableChildFieldsRegression.test.mjs",
   "test/http/childProfileRoutes.test.mjs",
   "test/invitation/iosEnrollmentUnavailable.test.mjs",
+  "test/invitation/androidEnrollmentAvailability.test.mjs",
   "test/device/publicKey.test.mjs",
   "test/device/service.test.mjs",
   "test/relay/policy.test.mjs",
@@ -68,6 +70,7 @@ const files = [
   "test/familyenvelope/protocolCompatibility.test.mjs",
   "test/familyenvelope/policy.test.mjs",
   "test/familyenvelope/verifier.test.mjs",
+  "test/familyepoch/bounds.test.mjs",
   "test/familytrustset/canonicalize.test.mjs",
   "test/familytrustset/parse.test.mjs",
   "test/familytrustset/engine.test.mjs",
@@ -207,6 +210,7 @@ const files = [
   "test/familycommercial/familyCommercialRoutes.test.mjs",
   "test/familycommercial/authority/canonicalize.test.mjs",
   "test/familycommercial/authority/FamilyOwnerAttestationChainEngine.test.mjs",
+  "test/familycommercial/authority/MySqlAttestationChainStore.bounds.test.mjs",
   "test/authz/commercialNotificationsPolicy.test.mjs",
   "test/commercialnotifications/publisher.test.mjs",
   "test/commercialnotifications/schemaPrivacy.test.mjs",

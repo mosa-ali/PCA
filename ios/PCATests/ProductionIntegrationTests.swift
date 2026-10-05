@@ -300,7 +300,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(failedRootStore.current())
     }
 
-    func testMissingDskOrDekPublicMaterialKeepsEnrollmentAttemptRecoverable() async throws {
+    func testMissingDskOrDekPublicMaterialKeepsEnrollmentAttemptBehindSecurityGate() async throws {
         let identityStore = RecordingDeviceIdentityStore()
         let attemptStore = InMemoryPCADeviceStateStore()
         let rootStore = InMemoryFirstDeviceRootStore()
@@ -313,7 +313,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
         model.start()
         XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "A", count: 43))")!))
-        await waitForRecoverableEnrollment(model)
+        await waitForEnrollmentSecurityGate(model)
 
         XCTAssertNil(rootStore.current())
         XCTAssertTrue(identityStore.savedDeviceIds.isEmpty)
@@ -525,6 +525,15 @@ final class ProductionIntegrationTests: XCTestCase {
         }
         XCTAssertEqual(model.applicationState, .error(.recoverable))
         XCTAssertEqual(model.lastError, .recoverable)
+    }
+
+    private func waitForEnrollmentSecurityGate(_ model: PCAApplicationModel) async {
+        for _ in 0..<100 {
+            if model.applicationState == .enrollmentBlockedBySecurityGate { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(model.applicationState, .enrollmentBlockedBySecurityGate)
+        XCTAssertEqual(model.lastError, .securityGate)
     }
 
     private func waitForEnrollmentInProgress(_ model: PCAApplicationModel) async {
