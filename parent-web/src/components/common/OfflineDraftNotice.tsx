@@ -18,7 +18,7 @@ export function OfflineDraftNotice() {
 
   return (
     <div className="offline-draft-notice card" role="status">
-      <p>{t('offline.editWillSyncWhenReconnected')}</p>
+      <p>{t('offline.changesNotSubmittedOffline')}</p>
       {isOfflinePolicySigningBlocked() && <p>{t('offline.requiresTrustedBrowser')}</p>}
     </div>
   );

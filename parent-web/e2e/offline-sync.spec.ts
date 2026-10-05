@@ -31,9 +31,12 @@ test.describe('offline / reconnect / policy status UX', () => {
     context,
   }) => {
     await page.goto('/children/child-amir/screen-time');
+    // Wait for the protected screen-time route to finish loading before taking
+    // the browser offline; otherwise its real data requests can fail first.
+    await expect(page.locator('#night-protection-title')).toBeVisible();
     await context.setOffline(true);
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await expect(page.getByText(/saved locally as a draft and will sync once you reconnect/i)).toBeVisible();
+    await expect(page.getByText(/policy changes aren't sent or applied; submit them after reconnecting/i)).toBeVisible();
     await expect(page.getByText(/requires a trusted browser/i)).toBeVisible();
     await context.setOffline(false);
   });

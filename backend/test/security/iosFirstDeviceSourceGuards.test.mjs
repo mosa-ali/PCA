@@ -96,17 +96,26 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   assert.match(composition, /keepAttemptIds\.insert\(persistedAttempt\)/);
   assert.match(composition, /firstDeviceRootStore\?\.current\(\)\?\.seed\.attemptId/);
   // The seed capture is blank-guarded (fail closed, never a wedged identity).
-  assert.match(composition, /guard !dskPublicKey\.isEmpty, !dekPublicKey\.isEmpty else \{ return \}/);
+  assert.match(composition, /guard !dskPublicKey\.isEmpty, !dekPublicKey\.isEmpty else \{ return false \}/);
+
+  // Seed persistence is owned by the root store: it writes, flushes and then
+  // reads back the exact candidate. The same store preserves an existing
+  // same-attempt ceremony and only replaces a different attempt at an
+  // explicitly allowed terminal state.
+  const rootStoreSource = await readSource(path.join('PCA', 'FirstDevice', 'FirstDeviceRootStore.swift'));
+  const keychainStore = rootStoreSource.slice(rootStoreSource.indexOf('public final class KeychainFirstDeviceRootStore'));
+  const captureStart = keychainStore.indexOf('public func captureSeed(_ candidate: FirstDeviceRootRecord');
+  const captureEnd = keychainStore.indexOf('public func confirmDurable', captureStart);
+  assert.ok(captureStart >= 0 && captureEnd > captureStart);
+  const captureBody = keychainStore.slice(captureStart, captureEnd);
+  assert.match(captureBody, /guard let existing else \{\s*return saveAndConfirmUnlocked\(candidate\)/);
+  assert.match(captureBody, /existing\.seed\.attemptId == candidate\.seed\.attemptId/);
+  assert.match(captureBody, /replacingTerminalStates\.contains\(existing\.state\)/);
+  const saveAndConfirm = keychainStore.slice(keychainStore.indexOf('private func saveAndConfirmUnlocked'));
+  assert.match(saveAndConfirm, /guard saveUnlocked\(record\) else \{ return false \}[\s\S]{0,80}flush\(\)[\s\S]{0,80}isCurrentUnlocked\(record\)/);
 
   const coordinator = await readSource(path.join('PCA', 'FirstDevice', 'FirstDeviceTrustRootCoordinator.swift'));
-  // The seed is durable before the pending-attempt clear can ever run: the
-  // capture path flushes synchronously (the capture executes at bootstrap
-  // success; `clearAttempt` exists only in the later child-confirmation
-  // step, so bootstrap -> capture always precedes confirm -> clear), and
-  // it also refuses to overwrite a DIFFERENT attempt's persisted root
-  // record (refuse-overwrite layer).
-  assert.match(composition, /rootStore\.save\(record\)[\s\S]{0,40}rootStore\.flush\(\)/);
-  assert.match(composition, /existing\.seed\.attemptId != attempt\.attemptId/);
+  // A successful capture precedes the single child-confirmation clear.
   assert.ok(composition.includes('captureFirstDeviceSeed(attempt: attempt, response: response)'));
   assert.equal(
     (composition.match(/dependencies\.attemptStore\.clearAttempt\(\)/g) ?? []).length,
@@ -134,8 +143,18 @@ test('coordinator iron rules are structurally enforced (no optimistic commit, no
   const resubmitBody = source.slice(resubmit, resubmit + 400);
   assert.ok(!resubmitBody.includes('buildPayload'), 'a replay must never rebuild the payload');
   assert.ok(!resubmitBody.includes('signCanonical'), 'a replay must never re-sign');
-  // Persist-before-send ordering inside submitLocked.
-  assert.match(source, /persistAndFlush\(submitting\)[\s\S]{0,200}?sendPayload\(refreshed/, 'the submission payload must be durably persisted BEFORE the first send');
+  // Persist, read back, and confirm durability before the first send.
+  const submit = source.indexOf('private func submitLocked()');
+  const submitEnd = source.indexOf('private func resubmitExactLocked');
+  assert.ok(submit >= 0 && submitEnd > submit);
+  const submitBody = source.slice(submit, submitEnd);
+  const persist = submitBody.indexOf('persistIfCurrent(expected: current, submitting)');
+  const durableReadback = submitBody.indexOf('rootStore.confirmDurable(refreshed)');
+  const send = submitBody.indexOf('await sendPayload(refreshed, payload: payload)');
+  assert.ok(persist >= 0 && durableReadback > persist && send > durableReadback, 'the submission payload must be durably persisted and read back BEFORE the first send');
+  assert.match(submitBody, /refreshed == submitting/);
+  assert.match(submitBody, /refreshed\.submission == payload/);
+  assert.match(submitBody, /rootStore\.current\(\) == refreshed/);
   // Never mints keys; signing goes through the injected material only.
   assert.doesNotMatch(source, /generateSigningKeyPair|generateEncryptionKeyPair/);
   assert.match(source, /keyMaterial\.signCanonical/);

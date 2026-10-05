@@ -808,7 +808,7 @@
     "pendingDeliveryNote": "A new policy change is pending delivery and will apply once the device reconnects.",
     "neverSynced": "Never synced",
     "unknown": "Unknown",
-    "editWillSyncWhenReconnected": "You're offline. This edit is saved locally as a draft and will sync once you reconnect.",
+    "changesNotSubmittedOffline": "You're offline. Policy changes aren't sent or applied; submit them after reconnecting.",
     "requiresTrustedBrowser": "Signing and queuing a policy change while offline requires a trusted browser and is not yet available (pending security review)."
   },
   "reconnect": {
