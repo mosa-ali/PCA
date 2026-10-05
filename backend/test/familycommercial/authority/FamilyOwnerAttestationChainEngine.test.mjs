@@ -14,6 +14,8 @@ import { signTestOnlyChallenge } from '../../support/testOnlyDeviceSignatureVeri
 import { InMemoryGenesisAnchorStore } from '../../../dist/familycommercial/authority/InMemoryGenesisAnchorStore.js';
 import { InMemoryAttestationChainStore } from '../../../dist/familycommercial/authority/InMemoryAttestationChainStore.js';
 import { FamilyOwnerAttestationChainEngine } from '../../../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import { canonicalizeOwnerAttestation } from '../../../dist/familycommercial/authority/canonicalize.js';
+import { MAX_FAMILY_EPOCH } from '../../../dist/familyepoch/bounds.js';
 import { buildGenesisAnchor, buildGenesisAttestation, buildTransferAttestation, signOwnerAttestation } from './fixtures.mjs';
 import { canonicalizeFamilyAuthorityRequestProof, digestAuthorityRequestBody } from '../../../dist/familycommercial/authority/requestProofProtocol.js';
 
@@ -206,6 +208,93 @@ test('tamper: genesis anchor signature invalid -> INVALID_PROOF', async () => {
   const anchor = { ...buildGenesisAnchor(), signature: 'not-a-real-signature' };
   const result = await engine.bootstrapFamilyAuthority({ anchor, genesisAttestation: buildGenesisAttestation(anchor) });
   assert.equal(result.status, 'INVALID_PROOF');
+});
+
+test('epoch bounds: oversized genesis attestation is rejected before any signature verification', async () => {
+  let verifyCalls = 0;
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    { async verify() { verifyCalls += 1; return true; } },
+    () => new Date('2026-01-03T00:00:00Z'),
+  );
+  const anchor = buildGenesisAnchor();
+  const attestation = { ...buildGenesisAttestation(anchor), trustSetEpoch: MAX_FAMILY_EPOCH + 1 };
+
+  const result = await engine.bootstrapFamilyAuthority({ anchor, genesisAttestation: attestation });
+  assert.deepEqual(result, { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' });
+  assert.equal(verifyCalls, 0);
+});
+
+test('epoch bounds: oversized transfer candidate is rejected before authority-store reads or crypto', async () => {
+  let storeReads = 0;
+  let verifyCalls = 0;
+  const genesisStore = {
+    async findByFamilyId() { storeReads += 1; return null; },
+    async createIfAbsent() { throw new Error('must not write'); },
+  };
+  const chainStore = {
+    async findHead() { storeReads += 1; return null; },
+    async findAttestationById() { storeReads += 1; return null; },
+    async appendIfCurrentRevision() { throw new Error('must not write'); },
+    async markHeadRevoked() { throw new Error('must not write'); },
+  };
+  const engine = new FamilyOwnerAttestationChainEngine(
+    genesisStore,
+    chainStore,
+    { async verify() { verifyCalls += 1; return true; } },
+    () => new Date('2026-01-03T00:00:00Z'),
+  );
+  const current = buildGenesisAttestation(buildGenesisAnchor());
+  const next = { ...buildTransferAttestation(current, 'head-1'), keyEpoch: MAX_FAMILY_EPOCH + 1 };
+
+  const result = await engine.transferOwnerAuthority(current.familyId, next);
+  assert.deepEqual(result, { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' });
+  assert.equal(storeReads, 0);
+  assert.equal(verifyCalls, 0);
+});
+
+test('epoch bounds: stored oversized head floors fail closed before signature verification', async () => {
+  const anchor = buildGenesisAnchor();
+  const attestation = buildGenesisAttestation(anchor);
+  let verifyCalls = 0;
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    {
+      async findHead() {
+        return {
+          familyId: anchor.familyId,
+          headAttestationId: 'head-1',
+          headRevision: 1,
+          requiredTrustSetEpoch: MAX_FAMILY_EPOCH + 1,
+          requiredKeyEpoch: 1,
+          status: 'ACTIVE',
+          updatedAt: new Date('2026-01-03T00:00:00Z'),
+        };
+      },
+      async findAttestationById() { return attestation; },
+      async appendIfCurrentRevision() { throw new Error('must not write'); },
+      async markHeadRevoked() { throw new Error('must not write'); },
+    },
+    { async verify() { verifyCalls += 1; return true; } },
+    () => new Date('2026-01-03T00:00:00Z'),
+  );
+
+  assert.deepEqual(await engine.resolveCurrentOwner(anchor.familyId, anchor.genesisDeviceId), { status: 'INVALID_PROOF' });
+  assert.equal(verifyCalls, 0);
+});
+
+test('epoch bounds: owner-attestation canonicalization rejects values outside the shared range', () => {
+  const anchor = buildGenesisAnchor();
+  const attestation = buildGenesisAttestation(anchor);
+  assert.doesNotThrow(() => canonicalizeOwnerAttestation({
+    ...attestation,
+    trustSetEpoch: MAX_FAMILY_EPOCH,
+    keyEpoch: MAX_FAMILY_EPOCH,
+  }));
+  assert.throws(() => canonicalizeOwnerAttestation({ ...attestation, trustSetEpoch: MAX_FAMILY_EPOCH + 1 }), RangeError);
+  assert.throws(() => canonicalizeOwnerAttestation({ ...attestation, keyEpoch: MAX_FAMILY_EPOCH + 1 }), RangeError);
+  assert.throws(() => canonicalizeOwnerAttestation({ ...attestation, keyEpoch: 0 }), RangeError);
 });
 
 test('tamper: genesis attestation signature invalid -> INVALID_PROOF', async () => {

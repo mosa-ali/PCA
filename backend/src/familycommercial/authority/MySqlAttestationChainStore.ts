@@ -1,4 +1,5 @@
 import { execute, isDuplicateEntry, runInTransaction, SoftFailure } from '../../db/pool.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { OWNER_ATTESTATION_DOMAIN } from './types.js';
 import type { AttestationId, FamilyAuthorityChainHead, FamilyAuthorityChainHeadStatus, FamilyOwnerAttestation } from './types.js';
 import type { OpaqueFamilyId } from '../../familytrustset/types.js';
@@ -11,8 +12,8 @@ interface AttestationRow {
   owner_device_id: string;
   owner_dsk_key_id: string;
   owner_dsk_public_key: string;
-  trust_set_epoch: number;
-  key_epoch: number;
+  trust_set_epoch: unknown;
+  key_epoch: unknown;
   issued_at: Date;
   expires_at: Date;
   previous_attestation_id: string | null;
@@ -26,10 +27,22 @@ interface ChainHeadRow {
   family_id: string;
   head_attestation_id: string;
   head_revision: number;
-  required_trust_set_epoch: number;
-  required_key_epoch: number;
+  required_trust_set_epoch: unknown;
+  required_key_epoch: unknown;
   status: FamilyAuthorityChainHeadStatus;
   updated_at: Date;
+}
+
+function ownerEpochFromStorage(value: unknown, field: string): number {
+  const epoch = familyEpochFromStorage(value);
+  if (epoch < 1) throw new Error(`Stored ${field} must be at least 1.`);
+  return epoch;
+}
+
+function assertOwnerEpochs(trustSetEpoch: unknown, keyEpoch: unknown): void {
+  if (!isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
+    throw new TypeError('Owner-attestation epochs are outside the supported protocol range.');
+  }
 }
 
 function mapAttestationRow(row: AttestationRow): FamilyOwnerAttestation {
@@ -40,8 +53,8 @@ function mapAttestationRow(row: AttestationRow): FamilyOwnerAttestation {
     ownerDeviceId: row.owner_device_id,
     ownerDskKeyId: row.owner_dsk_key_id,
     ownerDskPublicKey: row.owner_dsk_public_key,
-    trustSetEpoch: row.trust_set_epoch,
-    keyEpoch: row.key_epoch,
+    trustSetEpoch: ownerEpochFromStorage(row.trust_set_epoch, 'trust_set_epoch'),
+    keyEpoch: ownerEpochFromStorage(row.key_epoch, 'key_epoch'),
     issuedAt: row.issued_at,
     expiresAt: row.expires_at,
     previousAttestationId: row.previous_attestation_id,
@@ -57,8 +70,8 @@ function mapHeadRow(row: ChainHeadRow): FamilyAuthorityChainHead {
     familyId: row.family_id,
     headAttestationId: row.head_attestation_id,
     headRevision: row.head_revision,
-    requiredTrustSetEpoch: row.required_trust_set_epoch,
-    requiredKeyEpoch: row.required_key_epoch,
+    requiredTrustSetEpoch: ownerEpochFromStorage(row.required_trust_set_epoch, 'required_trust_set_epoch'),
+    requiredKeyEpoch: ownerEpochFromStorage(row.required_key_epoch, 'required_key_epoch'),
     status: row.status,
     updatedAt: row.updated_at,
   };
@@ -84,6 +97,9 @@ export class MySqlFamilyAuthorityAttestationChainStore implements FamilyAuthorit
     attestationId: AttestationId,
     expectedPreviousRevision: number,
   ): Promise<AppendAttestationResult> {
+    // Validate before opening a transaction so direct store callers cannot
+    // persist values the authority engine would refuse to canonicalize.
+    assertOwnerEpochs(attestation.trustSetEpoch, attestation.keyEpoch);
     try {
       return await runInTransaction(async (conn) => {
         try {

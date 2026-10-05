@@ -4,7 +4,7 @@ import test from 'node:test';
 import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
 import { encryptParentDisplayEmail, decryptParentDisplayEmail } from '../../dist/parentaccount/identityContact.js';
-import { MySqlParentIdentityReadRepository, ParentIdentityReadModel } from '../../dist/platformadmin/readmodels/ParentIdentityReadModel.js';
+import { MySqlParentIdentityReadRepository, ParentIdentityReadModel } from '../../dist/parentaccount/ParentIdentityProjection.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 

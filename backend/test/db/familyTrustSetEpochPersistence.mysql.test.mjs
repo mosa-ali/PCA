@@ -30,6 +30,7 @@ import { TrustSetEpochStoreError } from '../../dist/familytrustset/TrustSetEpoch
 import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
 import { MySqlKeyEpochStore } from '../../dist/familytrustset/MySqlKeyEpochStore.js';
 import { MySqlEpochFloorStore } from '../../dist/familytrustset/MySqlEpochFloorStore.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -482,9 +483,11 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
   await assertInvalidInput((record) => ({ ...record, trustSetEpoch: 0 }));
   await assertInvalidInput((record) => ({ ...record, trustSetEpoch: -1 }));
   await assertInvalidInput((record) => ({ ...record, trustSetEpoch: Number.NaN }));
+  await assertInvalidInput((record) => ({ ...record, trustSetEpoch: MAX_FAMILY_EPOCH + 1 }));
   await assertInvalidInput((record) => ({ ...record, keyEpoch: 0 }));
   await assertInvalidInput((record) => ({ ...record, keyEpoch: -2 }));
   await assertInvalidInput((record) => ({ ...record, keyEpoch: Number.NaN }));
+  await assertInvalidInput((record) => ({ ...record, keyEpoch: MAX_FAMILY_EPOCH + 1 }));
   await assertInvalidInput((record) => ({ ...record, signature: '' }));
   await assertInvalidInput((record) => ({ ...record, signature: 's'.repeat(513) }));
   await assertInvalidInput((record) => ({ ...record, signedEpochBytes: Buffer.alloc(300 * 1024, 7) }));
@@ -495,6 +498,7 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
   await assertInvalidInput((record) => ({ ...record, signerDeviceId: '' }));
   await assertInvalidInput((record) => ({ ...record, supersedesEpoch: 0 }));
   await assertInvalidInput((record) => ({ ...record, supersedesEpoch: 5 }));
+  await assertInvalidInput((record) => ({ ...record, supersedesEpoch: MAX_FAMILY_EPOCH + 1 }));
   await assertInvalidInput((record) => ({ ...record, issuedAt: new Date(Number.NaN) }));
   await assertInvalidInput((record) => ({ ...record, receivedAt: 'not-a-date' }));
 });
@@ -545,6 +549,48 @@ test('EXPECTED_HEAD_INVALID: malformed compare targets throw before creating epo
   );
   assert.equal(await countEpochRows(familyId), 0);
   assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+
+  await assert.rejects(
+    () => store.appendAcceptedEpoch(record, {
+      trustSetEpoch: MAX_FAMILY_EPOCH + 1,
+      keyEpoch: 1,
+      signedEpochBytes: Buffer.from('head'),
+      signature: 'sig',
+    }),
+    (error) => error instanceof TrustSetEpochStoreError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(await countEpochRows(familyId), 0);
+  assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
+});
+
+test('OUT-OF-RANGE STORED VALUES: epoch rows and floors fail closed without rewriting persisted data', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const floorStore = new MySqlEpochFloorStore();
+  const epochFamilyId = uniqueFamilyId();
+  const overRangeRecord = makeRecord(epochFamilyId, MAX_FAMILY_EPOCH + 1, 1);
+  await insertEpochWithoutFloors(overRangeRecord);
+
+  await assert.rejects(() => store.readLatestEpoch(epochFamilyId), /outside the supported protocol range/);
+  await assert.rejects(() => new MySqlKeyEpochStore().readCanonicalKeyEpoch(epochFamilyId), /outside the supported protocol range/);
+  const [persistedEpochRows] = await getPool().query(
+    'SELECT COUNT(*) AS count FROM family_trust_set_epochs WHERE family_id = ?',
+    [epochFamilyId],
+  );
+  assert.equal(Number(persistedEpochRows[0].count), 1, 'out-of-range existing row is preserved');
+
+  const floorFamilyId = uniqueFamilyId();
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, ?, 1, ?)`,
+    [floorFamilyId, MAX_FAMILY_EPOCH + 1, stamp()],
+  );
+  await assert.rejects(() => floorStore.readFloors(floorFamilyId), /outside the supported protocol range/);
+  const [persistedFloorRows] = await getPool().query(
+    'SELECT COUNT(*) AS count FROM family_epoch_floors WHERE family_id = ?',
+    [floorFamilyId],
+  );
+  assert.equal(Number(persistedFloorRows[0].count), 1, 'out-of-range existing floor is preserved');
 });
 
 test('STALE_AUTHORITY_ROLLBACK: a stale comparison leaves no recreated floors row when storage was already inconsistent', async () => {

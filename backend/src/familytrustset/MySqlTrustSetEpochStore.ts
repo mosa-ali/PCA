@@ -1,5 +1,6 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { execute, runInTransaction } from '../db/pool.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { isPlausibleOpaqueId, isPlausibleSignature, MIN_TRUST_SET_EPOCH } from './policy.js';
 import {
   TrustSetEpochStoreError,
@@ -67,16 +68,16 @@ function assertValidAppendRecord(record: TrustSetEpochRecord): void {
   if (!isPlausibleOpaqueId(record.familyId)) {
     throw invalidInput('familyId must be a non-empty string of at most 128 characters.');
   }
-  if (typeof record.trustSetEpoch !== 'number' || !Number.isInteger(record.trustSetEpoch) || record.trustSetEpoch < MIN_TRUST_SET_EPOCH) {
+  if (!isFamilyEpochNumber(record.trustSetEpoch, MIN_TRUST_SET_EPOCH)) {
     throw invalidInput('trustSetEpoch must be an integer >= 1.');
   }
-  if (typeof record.keyEpoch !== 'number' || !Number.isInteger(record.keyEpoch) || record.keyEpoch < 1) {
+  if (!isFamilyEpochNumber(record.keyEpoch, 1)) {
     throw invalidInput('keyEpoch must be an integer >= 1.');
   }
   const supersedes = record.supersedesEpoch;
   if (
     supersedes !== null &&
-    (typeof supersedes !== 'number' || !Number.isInteger(supersedes) || supersedes < 1 || supersedes > record.trustSetEpoch - 1)
+    (!isFamilyEpochNumber(supersedes, 1) || supersedes > record.trustSetEpoch - 1)
   ) {
     throw invalidInput('supersedesEpoch must be null or an integer in 1..trustSetEpoch-1.');
   }
@@ -108,13 +109,11 @@ function snapshotExpectedHead(
     throw invalidInput('expectedHead must be null or a valid accepted-epoch head.');
   }
   if (
-    typeof expectedHead.trustSetEpoch !== 'number' ||
-    !Number.isInteger(expectedHead.trustSetEpoch) ||
-    expectedHead.trustSetEpoch < MIN_TRUST_SET_EPOCH
+    !isFamilyEpochNumber(expectedHead.trustSetEpoch, MIN_TRUST_SET_EPOCH)
   ) {
     throw invalidInput('expectedHead.trustSetEpoch must be an integer >= 1.');
   }
-  if (typeof expectedHead.keyEpoch !== 'number' || !Number.isInteger(expectedHead.keyEpoch) || expectedHead.keyEpoch < 1) {
+  if (!isFamilyEpochNumber(expectedHead.keyEpoch, 1)) {
     throw invalidInput('expectedHead.keyEpoch must be an integer >= 1.');
   }
   if (
@@ -145,9 +144,9 @@ function toDate(value: Date | string): Date {
 function toRecord(row: EpochRow): TrustSetEpochRecord {
   return {
     familyId: row.family_id,
-    trustSetEpoch: Number(row.trust_set_epoch),
-    keyEpoch: Number(row.key_epoch),
-    supersedesEpoch: row.supersedes_epoch === null ? null : Number(row.supersedes_epoch),
+    trustSetEpoch: familyEpochFromStorage(row.trust_set_epoch),
+    keyEpoch: familyEpochFromStorage(row.key_epoch),
+    supersedesEpoch: row.supersedes_epoch === null ? null : familyEpochFromStorage(row.supersedes_epoch),
     // Copy the driver-returned buffer so no caller ever aliases (or mutates)
     // driver-internal state.
     signedEpochBytes: Buffer.from(row.signed_epoch_bytes),
@@ -194,7 +193,10 @@ export async function ensureAndLockFamilyFloors(
     // floors behind the append.
     throw new Error('family_epoch_floors row missing after ensure-insert; refusing to proceed without floors.');
   }
-  return { trustSetFloor: Number(floor.minimum_accepted_trust_set_epoch), keyFloor: Number(floor.minimum_accepted_key_epoch) };
+  return {
+    trustSetFloor: familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch),
+    keyFloor: familyEpochFromStorage(floor.minimum_accepted_key_epoch),
+  };
 }
 
 /**
@@ -309,13 +311,14 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     );
     const existing = existingRows[0];
     if (existing) {
+      const existingRecord = toRecord(existing);
       const storedBytes = Buffer.isBuffer(existing.signed_epoch_bytes)
         ? existing.signed_epoch_bytes
         : Buffer.from(existing.signed_epoch_bytes);
       if (
         storedBytes.equals(record.signedEpochBytes) &&
         existing.signature === record.signature &&
-        Number(existing.key_epoch) === record.keyEpoch
+        existingRecord.keyEpoch === record.keyEpoch
       ) {
         if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError({ outcome: 'IDEMPOTENT_MATCH' });
         return { outcome: 'IDEMPOTENT_MATCH' };
@@ -334,11 +337,12 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
       [record.familyId],
     );
     const currentHead = latestRows[0];
+    const currentHeadRecord = currentHead ? toRecord(currentHead) : null;
     const expectedHeadMatches = expectedHead === null
       ? currentHead === undefined
-      : currentHead !== undefined &&
-        Number(currentHead.trust_set_epoch) === expectedHead.trustSetEpoch &&
-        Number(currentHead.key_epoch) === expectedHead.keyEpoch &&
+      : currentHeadRecord !== null &&
+        currentHeadRecord.trustSetEpoch === expectedHead.trustSetEpoch &&
+        currentHeadRecord.keyEpoch === expectedHead.keyEpoch &&
         (Buffer.isBuffer(currentHead.signed_epoch_bytes)
           ? currentHead.signed_epoch_bytes
           : Buffer.from(currentHead.signed_epoch_bytes)).equals(expectedHead.signedEpochBytes) &&

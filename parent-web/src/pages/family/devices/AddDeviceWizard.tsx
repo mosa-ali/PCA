@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../../api/client';
+import { config } from '../../../config/env';
 import { useAsync } from '../../../hooks/useAsync';
 import { ActionNeededState, AsyncStates, ErrorState } from '../../../components/common/States';
 import { PermissionGate } from '../../../rbac/PermissionGate';
@@ -16,7 +17,7 @@ import {
   copyToClipboard,
   invitationStatusRamp,
   isTerminalInvitationStatus,
-  useAndroidAppDownloadUrl,
+  useChildAppDistributionUrl,
   useInvitationCreation,
   useInvitations,
 } from './enrollmentState';
@@ -239,6 +240,8 @@ export default function AddDeviceWizard({
   }, []);
 
   const submit = useCallback(async () => {
+    if (!config.deviceEnrollmentLinkBaseUrl || (config.production &&
+      (!config.childAppDistributionUrl || !config.childAppEnrollmentReady))) return;
     setStepUpError(false);
     // By 'review', child creation already happened (advanceFromChildStep, on
     // leaving step 0) -- selectedChild is always a real, server-minted id.
@@ -307,6 +310,23 @@ export default function AddDeviceWizard({
       // no 'ENDPOINT_NOT_TRUSTED'-shaped condition to special-case here.
       // "Something went wrong" is the honest thing to say: something is.
       return <AsyncStates error={childProfilesErrorCause ?? childProfilesError} onRetry={reloadChildProfiles} />;
+    }
+
+    if (!config.deviceEnrollmentLinkBaseUrl || (config.production &&
+      (!config.childAppDistributionUrl || !config.childAppEnrollmentReady))) {
+      return (
+        <PermissionGate action="CREATE_DEVICE_INVITATION" showDisabledFallback>
+          <ActionNeededState
+            titleKey={config.production && (!config.childAppDistributionUrl || !config.childAppEnrollmentReady)
+              ? 'deviceEnrollment.childAppDistributionNotConfiguredTitle'
+              : 'deviceEnrollment.enrollmentLinkNotConfiguredTitle'}
+            bodyKey={config.production && (!config.childAppDistributionUrl || !config.childAppEnrollmentReady)
+              ? 'deviceEnrollment.childAppDistributionNotConfiguredBody'
+              : 'deviceEnrollment.enrollmentLinkNotConfiguredBody'}
+            showReassurance={false}
+          />
+        </PermissionGate>
+      );
     }
 
     if (children.length === 0 && !addingNewChild && !justCreatedChild) {
@@ -729,14 +749,14 @@ export default function AddDeviceWizard({
 /**
  * Step 6 -- get the app.
  *
- * There is no app-store or APK URL anywhere in this repository. When the
- * install-specific `androidAppDownloadUrl` is unset this renders the honest
- * not-configured treatment. A dead "Download App" button and a fabricated
- * Play Store URL are both forbidden.
+ * The destination is supplied by the deployment after its distribution model
+ * is approved (direct signed package, store listing, or public landing page).
+ * When `childAppDistributionUrl` is unset this renders the honest not-configured
+ * treatment. A dead button and a fabricated store URL are both forbidden.
  */
 function GetTheAppStep() {
   const { t } = useTranslation();
-  const downloadUrl = useAndroidAppDownloadUrl();
+  const downloadUrl = useChildAppDistributionUrl();
 
   if (!downloadUrl) {
     return (
@@ -750,6 +770,9 @@ function GetTheAppStep() {
 
   return (
     <>
+      {config.childAppDistributionKind === 'local-test' && (
+        <p className="field-hint">{t('downloadApp.androidLocalTest')}</p>
+      )}
       <a className="btn btn-secondary btn-download-app" href={downloadUrl} rel="noreferrer">
         <DownloadIcon />
         {t('deviceEnrollment.stepApp')}

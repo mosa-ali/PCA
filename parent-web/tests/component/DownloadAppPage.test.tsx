@@ -17,7 +17,8 @@ import DownloadApp from '../../src/pages/download/DownloadApp';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
 const configHoisted = vi.hoisted(() => ({
-  androidAppDownloadUrl: null as string | null,
+  childAppDistributionUrl: null as string | null,
+  childAppDistributionKind: 'release' as 'release' | 'local-test',
 }));
 
 vi.mock('../../src/config/env', async (importOriginal) => {
@@ -25,8 +26,11 @@ vi.mock('../../src/config/env', async (importOriginal) => {
   return {
     config: {
       ...actual.config,
-      get androidAppDownloadUrl() {
-        return configHoisted.androidAppDownloadUrl;
+      get childAppDistributionUrl() {
+        return configHoisted.childAppDistributionUrl;
+      },
+      get childAppDistributionKind() {
+        return configHoisted.childAppDistributionKind;
       },
     },
   };
@@ -34,11 +38,12 @@ vi.mock('../../src/config/env', async (importOriginal) => {
 
 describe('Download PCA Child App page', () => {
   afterEach(() => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
+    configHoisted.childAppDistributionKind = 'release';
   });
 
   it('states the Android position honestly when no URL is configured', () => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
 
     renderWithProviders(<DownloadApp />, { route: '/download' });
 
@@ -47,6 +52,15 @@ describe('Download PCA Child App page', () => {
     // The exact V1 position, not a softened paraphrase.
     expect(i18n.t('downloadApp.androidNotConfigured')).toBe(
       'Android app download is not configured yet for this environment.',
+    );
+    expect(i18n.t('downloadApp.intro')).toBe(
+      "The PCA Child App is installed on your children's devices, not on this one. Check the installation status for each platform below.",
+    );
+    const arabic = i18n.getResourceBundle('ar', 'translation') as {
+      downloadApp: { intro: string };
+    };
+    expect(arabic.downloadApp.intro).toBe(
+      'يُثبَّت تطبيق حماية الطفل على أجهزة أطفالك، وليس على هذا الجهاز. تحقّق أدناه من حالة التثبيت لكل نظام تشغيل.',
     );
   });
 
@@ -66,7 +80,7 @@ describe('Download PCA Child App page', () => {
   });
 
   it('has ZERO hrefs of any kind when nothing is configured -- no store link, no dead link', () => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
 
     const { container } = renderWithProviders(<DownloadApp />, { route: '/download' });
 
@@ -75,15 +89,15 @@ describe('Download PCA Child App page', () => {
     expect(container.innerHTML).not.toMatch(/javascript:|data:/i);
   });
 
-  it('renders the configured URL verbatim as the ONLY link when one is set', () => {
-    configHoisted.androidAppDownloadUrl = 'https://downloads.example.test/pca-child.apk';
+  it('renders an approved installation-information URL verbatim as the ONLY link when one is set', () => {
+    configHoisted.childAppDistributionUrl = 'https://downloads.example.test/pca-child.apk';
 
     const { container } = renderWithProviders(<DownloadApp />, { route: '/download' });
 
     const links = [...container.querySelectorAll('a')];
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute('href')).toBe('https://downloads.example.test/pca-child.apk');
-    expect(links[0].textContent).toBe(i18n.t('shell.downloadAppAndroid'));
+    expect(links[0].textContent).toBe(i18n.t('downloadApp.viewInstallationOptions'));
     // Also shown as copyable text, LTR-isolated so an RTL paragraph cannot
     // reorder it.
     expect(container.querySelector('.copyable-value code')?.getAttribute('dir')).toBe('ltr');
@@ -92,8 +106,42 @@ describe('Download PCA Child App page', () => {
     );
   });
 
+  it('uses neutral installation-options copy for an approved external destination', () => {
+    configHoisted.childAppDistributionUrl = 'https://play.google.com/store/apps/details?id=org.pca.app';
+
+    const { container } = renderWithProviders(<DownloadApp />, { route: '/download' });
+
+    const links = [...container.querySelectorAll('a')];
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('https://play.google.com/store/apps/details?id=org.pca.app');
+    expect(links[0].textContent).toBe(i18n.t('downloadApp.viewInstallationOptions'));
+  });
+
+  it('accepts an approved public landing destination as the app distribution URL', () => {
+    configHoisted.childAppDistributionUrl = 'https://www.pcasafe.com/child-app/';
+
+    const { container } = renderWithProviders(<DownloadApp />, { route: '/download' });
+
+    const links = [...container.querySelectorAll('a')];
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('https://www.pcasafe.com/child-app/');
+    expect(screen.getByText(i18n.t('downloadApp.androidLandingPage'))).toBeTruthy();
+    expect(links[0].textContent).toBe(i18n.t('downloadApp.viewInstallationOptions'));
+  });
+
+  it('labels a configured local debug APK as a test build, not a release', () => {
+    configHoisted.childAppDistributionUrl = 'http://127.0.0.1:4002/app-debug.apk';
+    configHoisted.childAppDistributionKind = 'local-test';
+
+    renderWithProviders(<DownloadApp />, { route: '/download' });
+
+    expect(screen.getByText(i18n.t('downloadApp.androidLocalTest'))).toBeTruthy();
+    expect(screen.getByRole('link', { name: i18n.t('shell.downloadAppAndroid') }).getAttribute('href'))
+      .toBe('http://127.0.0.1:4002/app-debug.apk');
+  });
+
   it('presents both not-available cases as status, never as an error', () => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
 
     const { container } = renderWithProviders(<DownloadApp />, { route: '/download' });
 
@@ -108,18 +156,19 @@ describe('Download PCA Child App page', () => {
 // scheme other than http(s) is treated as UNSET, so it can never reach an href.
 // Asserted against the real config module (vi.importActual bypasses the mock
 // above), because that is the code the browser actually runs.
-describe('androidAppDownloadUrl scheme validation (real config/env)', () => {
+describe('Child App distribution URL scheme validation (real config/env)', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
   });
 
-  async function loadConfig(raw: string | undefined) {
+  async function loadConfig(raw: string | undefined, production = false) {
     vi.resetModules();
-    if (raw === undefined) vi.stubEnv('VITE_PCA_ANDROID_APP_DOWNLOAD_URL', '');
-    else vi.stubEnv('VITE_PCA_ANDROID_APP_DOWNLOAD_URL', raw);
+    if (raw === undefined) vi.stubEnv('VITE_PCA_CHILD_APP_DISTRIBUTION_URL', '');
+    else vi.stubEnv('VITE_PCA_CHILD_APP_DISTRIBUTION_URL', raw);
+    vi.stubEnv('PROD', production);
     const mod = await vi.importActual<typeof import('../../src/config/env')>('../../src/config/env');
-    return mod.config.androidAppDownloadUrl;
+    return mod.config.childAppDistributionUrl;
   }
 
   it.each([
@@ -134,6 +183,14 @@ describe('androidAppDownloadUrl scheme validation (real config/env)', () => {
 
   it('keeps a real https URL', async () => {
     expect(await loadConfig('https://downloads.example.test/pca-child.apk')).toBe(
+      'https://downloads.example.test/pca-child.apk',
+    );
+  });
+
+  it('rejects loopback or insecure http download URLs in production builds', async () => {
+    expect(await loadConfig('http://127.0.0.1:4002/app-debug.apk', true)).toBeNull();
+    expect(await loadConfig('http://downloads.example.test/pca-child.apk', true)).toBeNull();
+    expect(await loadConfig('https://downloads.example.test/pca-child.apk', true)).toBe(
       'https://downloads.example.test/pca-child.apk',
     );
   });

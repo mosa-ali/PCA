@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { securityHeadersPlugin } from './vite/securityHeadersPlugin';
+import { createRealBackendProxy } from './vite/realBackendProxy';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -30,14 +31,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 4100,
       strictPort: true,
-      proxy: e2eRealProxyTarget
-        ? {
-            '/platform-admin': {
-              target: e2eRealProxyTarget,
-              changeOrigin: true,
-            },
-          }
-        : undefined,
+      proxy: createRealBackendProxy(e2eRealProxyTarget),
     },
     preview: {
       port: 4100,

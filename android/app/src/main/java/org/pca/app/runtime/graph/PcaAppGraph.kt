@@ -145,6 +145,7 @@ import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
 import org.pca.app.runtime.usage.UsageSessionRecorder
+import org.pca.app.storage.CorruptLocalFamilyStateException
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.PendingEnrollmentAttemptStore
 import org.pca.app.storage.PersistentFamilyStateStore
@@ -370,6 +371,7 @@ class PcaAppGraph private constructor(
             expectedHost = EnrollmentDeepLinkConfig.EXPECTED_HOST,
             appLinkScheme = EnrollmentDeepLinkConfig.APP_LINK_SCHEME,
             appLinkHost = EnrollmentDeepLinkConfig.APP_LINK_HOST,
+            appLinkPathPrefix = EnrollmentDeepLinkConfig.APP_LINK_PATH_PREFIX,
         )
     /** PCA-ENROLLMENT-RUNTIME-2: durable pending-attempt state, backed by the same encrypted
      * [runtimeStateStore] as [familyStateStore] above -- survives process death/app restart/
@@ -498,12 +500,19 @@ class PcaAppGraph private constructor(
         engine = webFilterEngine,
         webVisits = persistence.webVisitRepository,
         enrollmentSafeSearchDefault = {
-            familyStateStore.currentState()?.let { state ->
+            try {
+                familyStateStore.currentState()?.let { state ->
+                    org.pca.app.feature.webprotection.policy.SafeSearchDirective(
+                        mode = when (contentFilterDefaultForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)) {
+                            ContentFilterDefault.MODERATE -> org.pca.app.feature.webprotection.policy.SafeSearchMode.MODERATE
+                            ContentFilterDefault.STRICT -> org.pca.app.feature.webprotection.policy.SafeSearchMode.STRICT
+                        },
+                        serviceSupportsSafeSearch = true,
+                    )
+                }
+            } catch (_: CorruptLocalFamilyStateException) {
                 org.pca.app.feature.webprotection.policy.SafeSearchDirective(
-                    mode = when (contentFilterDefaultForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)) {
-                        ContentFilterDefault.MODERATE -> org.pca.app.feature.webprotection.policy.SafeSearchMode.MODERATE
-                        ContentFilterDefault.STRICT -> org.pca.app.feature.webprotection.policy.SafeSearchMode.STRICT
-                    },
+                    mode = org.pca.app.feature.webprotection.policy.SafeSearchMode.STRICT,
                     serviceSupportsSafeSearch = true,
                 )
             }
@@ -566,9 +575,13 @@ class PcaAppGraph private constructor(
      * parent-authored policy-delivery path (gated on the same production-crypto review as every
      * other incoming signed policy) must call [ScreenTimePolicyApplier.apply] and persist its
      * result as the next `lastKnownGoodConfig`, never construct a [ScreenTimeConfig] directly. */
-    val screenTimeConfig: ScreenTimeConfig = familyStateStore.currentState()?.let { state ->
-        screenTimeConfigForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)
-    } ?: ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
+    val screenTimeConfig: ScreenTimeConfig = try {
+        familyStateStore.currentState()?.let { state ->
+            screenTimeConfigForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)
+        } ?: ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
+    } catch (_: CorruptLocalFamilyStateException) {
+        ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
+    }
 
     private val hardwareProximitySource = HardwareProximitySource(context, monotonicTimeSource)
     /** Tier 2 (doc 13 Section 4, PCA-FR-024): CameraX-backed foreground face-geometry fallback,
@@ -1022,7 +1035,11 @@ class PcaAppGraph private constructor(
     suspend fun runRetentionMaintenanceCycle() {
         executeRetentionMaintenanceCycle(
             engine = retentionEngine,
-            familyId = familyStateStore.currentState()?.familyId,
+            familyId = try {
+                familyStateStore.currentState()?.familyId
+            } catch (_: CorruptLocalFamilyStateException) {
+                null
+            },
             deviceId = enrolledDeviceIdOrNull(),
             zoneId = ZoneId.systemDefault(),
             // PCA-12 / doc 28: never judge expiry against a clock the tamper layer has already

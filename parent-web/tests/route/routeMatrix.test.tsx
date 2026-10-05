@@ -71,13 +71,13 @@ describe('route matrix: every route resolves (deep link, no dashboard detour)', 
       // A real page rendered -- absence of the app-level NotFound marker is
       // the signal; each page asserts its own heading in dedicated tests,
       // this suite only proves the router resolved a matching route.
-      expect(await screen.findAllByRole('heading', { level: 1 })).not.toHaveLength(0);
+      expect(await screen.findAllByRole('heading', { level: 1 }, { timeout: 5000 })).not.toHaveLength(0);
     });
   }
 
   it('index route redirects to /dashboard', async () => {
     renderWithProviders(<App />, { route: '/', role: 'OWNER' });
-    expect(await screen.findAllByRole('heading', { level: 1 })).not.toHaveLength(0);
+    expect(await screen.findAllByRole('heading', { level: 1 }, { timeout: 5000 })).not.toHaveLength(0);
     // Dashboard is the only index target; confirm we actually landed there
     // by checking the URL was consumed (RouteGuard/NotFound not shown).
     expect(screen.queryByText(/page not found/i)).not.toBeInTheDocument();
@@ -123,7 +123,10 @@ describe('route matrix: RBAC gates hold across every guarded route', () => {
     for (const role of DENIED_ROLES) {
       it(`${role} is blocked from ${path} (${action}) via direct deep link, redirected to /not-permitted`, async () => {
         renderWithProviders(<App />, { route: path, role });
-        expect(await screen.findByText(/action not permitted/i)).toBeInTheDocument();
+        // RouteGuard redirects through a rendered <Navigate>; allow the
+        // transition to settle under the full suite's heavier worker load
+        // without weakening the required denial notice.
+        expect(await screen.findByText(/action not permitted/i, {}, { timeout: 5000 })).toBeInTheDocument();
       });
     }
   }

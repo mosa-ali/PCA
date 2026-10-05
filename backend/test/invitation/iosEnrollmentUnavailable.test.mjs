@@ -58,6 +58,7 @@ function buildApp() {
   const app = Fastify();
   registerInvitationRoutes(app, {
     invitationService,
+    androidEnrollmentReady: true,
     authService,
     authzService,
     familyMembershipRepository,

@@ -44,6 +44,15 @@ test('round-trips a correlationId', () => {
   assert.equal(parsed.correlationId, 'child-request-msg-id');
 });
 
+test('wire JSON uses parsed-number semantics for integral numeric spellings', () => {
+  const wire = envelopeToRelayCiphertext(buildEnvelope()).toString('utf8')
+    .replace('"trustSetEpoch":1', '"trustSetEpoch":1.0')
+    .replace('"keyEpoch":1', '"keyEpoch":1e0');
+  const parsed = envelopeFromRelayCiphertext(Buffer.from(wire, 'utf8'));
+  assert.equal(parsed?.trustSetEpoch, 1);
+  assert.equal(parsed?.keyEpoch, 1);
+});
+
 test('the wire codec never inspects or transforms payload bytes', () => {
   const payload = Buffer.from([0, 1, 2, 255, 254, 253, 10, 13]);
   const envelope = buildEnvelope({ payload });

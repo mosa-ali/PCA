@@ -30,6 +30,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
@@ -81,7 +82,7 @@ function validSchedulePolicyBody(body: unknown): body is SchedulePolicyBody {
     typeof body.recipientDeviceId === 'string' && OPAQUE_TOKEN.test(body.recipientDeviceId) &&
     validOpaqueBase64(body.ciphertextB64, 87380) &&
     validOpaqueBase64(body.nonceB64, 88) &&
-    typeof body.keyEpoch === 'number' && Number.isInteger(body.keyEpoch) && body.keyEpoch > 0
+    isFamilyEpochNumber(body.keyEpoch, 1)
   );
 }
 
@@ -141,12 +142,7 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       if (!deps.parentActionAuthorization) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
-      if (await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) !== 'ADMINISTRATOR') {
-        return reply.code(403).send({ error: 'forbidden' });
-      }
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
@@ -156,6 +152,12 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(400).send({ error: 'invalid_request' });
       }
       const body = request.body;
+
+      if (await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) !== 'ADMINISTRATOR') {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
+      if (!actorDeviceId) return;
 
       // TRUE authority is the receiving device's own signed-envelope
       // verification against its own trust set -- this call is a pre-check

@@ -37,6 +37,12 @@ COPY docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAI
 
 WORKDIR /src/public-web
 
+# Optional owner-approved store/package destination for /child-app/. Empty is
+# a supported deployment state and keeps the page honest until distribution is
+# approved; never pass a signed temporary URL or any secret here.
+ARG PUBLIC_CHILD_APP_DISTRIBUTION_URL
+ENV PUBLIC_CHILD_APP_DISTRIBUTION_URL=${PUBLIC_CHILD_APP_DISTRIBUTION_URL}
+
 # The build IS the gate run: content parity, contrast, the claim register
 # cross-check, the 20 self-tested forbidden patterns, the CSP derivation, the
 # internal-metadata sweep. If any of them fails, no image is produced.

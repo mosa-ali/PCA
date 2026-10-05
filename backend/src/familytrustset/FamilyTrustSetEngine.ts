@@ -1,5 +1,5 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
-import { isDistinctKeyPair } from './policy.js';
+import { isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch } from './policy.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
@@ -9,6 +9,7 @@ export type FtsRejectionReason =
   | 'KEYS_NOT_DISTINCT'
   | 'DUPLICATE_ENTRY_IDENTITY'
   | 'FAMILY_MISMATCH'
+  | 'MALFORMED_EPOCH'
   | 'STALE_EPOCH'
   | 'STALE_KEY_EPOCH'
   | 'INVALID_SIGNATURE';
@@ -130,6 +131,11 @@ export async function acceptEpoch(
   store: FamilyTrustSetStore,
   verifier: TrustSetSignatureVerifier,
 ): Promise<FtsVerdict> {
+  // Direct typed callers must receive the same numeric-domain guard as the
+  // canonical decoder, before store reads, canonicalization, or signature work.
+  if (!isPlausibleEpochNumber(epoch.trustSetEpoch) || !isPlausibleKeyEpoch(epoch.keyEpoch)) {
+    return { accepted: false, reason: 'MALFORMED_EPOCH' };
+  }
   if (activeOwnerCount(epoch.entries) !== 1) {
     return { accepted: false, reason: 'NOT_EXACTLY_ONE_ACTIVE_OWNER' };
   }
@@ -150,6 +156,9 @@ export async function acceptEpoch(
   // just because it happens to carry a higher trustSetEpoch number.
   if (currentEpoch && epoch.familyId !== currentEpoch.familyId) {
     return { accepted: false, reason: 'FAMILY_MISMATCH' };
+  }
+  if (currentEpoch && (!isPlausibleEpochNumber(currentEpoch.trustSetEpoch) || !isPlausibleKeyEpoch(currentEpoch.keyEpoch))) {
+    return { accepted: false, reason: 'MALFORMED_EPOCH' };
   }
   if (currentEpoch && epoch.trustSetEpoch <= currentEpoch.trustSetEpoch) {
     return { accepted: false, reason: 'STALE_EPOCH' };

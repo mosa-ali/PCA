@@ -1,4 +1,5 @@
 import { execute, runInTransaction } from '../db/pool.js';
+import { familyEpochFromStorage } from '../familyepoch/bounds.js';
 import type { EpochFloorStore, FamilyEpochFloors } from './EpochFloorStore.js';
 import type { OpaqueFamilyId } from './types.js';
 
@@ -30,8 +31,8 @@ export class MySqlEpochFloorStore implements EpochFloorStore {
     const row = rows[0];
     return row
       ? {
-          minimumAcceptedTrustSetEpoch: Number(row.minimum_accepted_trust_set_epoch),
-          minimumAcceptedKeyEpoch: Number(row.minimum_accepted_key_epoch),
+          minimumAcceptedTrustSetEpoch: familyEpochFromStorage(row.minimum_accepted_trust_set_epoch),
+          minimumAcceptedKeyEpoch: familyEpochFromStorage(row.minimum_accepted_key_epoch),
         }
       : null;
   }

@@ -26,6 +26,8 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { validateAndroidAssetLinksManifest } from '../src/lib/assetLinks.mjs';
+import { CONTENT } from '../src/content/index.mjs';
 import { REQUIRED_RESPONSE_HEADERS } from '../src/lib/seo.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -60,6 +62,9 @@ async function walk(dir, prefix = '') {
 const files = await walk(DIST);
 const pages = files.filter((f) => f.endsWith('/index.html')).map((f) => f.replace(/index\.html$/, ''));
 const assets = files.filter((f) => !f.endsWith('.html'));
+const hasAssetLinks = files.includes('/.well-known/assetlinks.json');
+const enrollmentToken = 'A'.repeat(43);
+const enrollmentPath = `/enroll/${enrollmentToken}`;
 
 console.log(`verifying ${BASE}`);
 console.log(`artifact: ${files.length} file(s), ${pages.length} page(s)\n`);
@@ -76,18 +81,102 @@ console.log(`artifact: ${files.length} file(s), ${pages.length} page(s)\n`);
 // ---------------------------------------------------------------------------
 // 2. Security headers on EVERY page, and on the error pages
 // ---------------------------------------------------------------------------
-const headerTargets = [...pages, '/does-not-exist-' + Date.now(), '/robots.txt', '/sitemap.xml', '/assets/pca-public.css'];
+const malformedEnrollmentTargets = [
+  `${enrollmentPath}/extra`,
+  `${enrollmentPath}?source=test`,
+  `/ENROLL/${enrollmentToken}/extra`,
+];
+const headerTargets = [...pages, enrollmentPath, ...malformedEnrollmentTargets, '/does-not-exist-' + Date.now(), '/robots.txt', '/sitemap.xml', '/assets/pca-public.css'];
 
 for (const target of headerTargets) {
   const { res } = await get(target);
   for (const [header, expected] of Object.entries(REQUIRED_RESPONSE_HEADERS)) {
     const actual = res.headers.get(header);
+    const required = /^\/enroll/i.test(target) && header === 'Referrer-Policy' ? 'no-referrer' : expected;
     check(
       `${header} on ${target}`,
-      actual === expected,
+      actual === required,
       actual === null ? 'header absent' : `got "${actual}"`
     );
   }
+}
+
+{
+  const { res, body } = await get(enrollmentPath);
+  const local = await readFile(join(DIST, 'assets/enrollment-fallback.html'), 'utf8');
+  const childApp = await readFile(join(DIST, 'child-app/index.html'), 'utf8');
+  const distributionCta = CONTENT.en['childApp.downloadCta'];
+  const hasConfiguredDestination = childApp.includes(`>${distributionCta}</a>`);
+  check('canonical enrollment App Link serves the static fallback', res.status === 200 && body === local, `got ${res.status}`);
+  check('enrollment fallback never reflects the URL token', !body.includes(enrollmentToken));
+  check('enrollment fallback is bilingual and noindex', body.includes('lang="ar" dir="rtl"') && body.includes('noindex, nofollow'));
+  const hasInstallationOptionsCta = body.includes('href="/child-app/"') && body.includes(CONTENT.en['enrollmentFallback.downloadCta']) && body.includes(CONTENT.ar['enrollmentFallback.downloadCta']);
+  check('enrollment fallback state follows the configured distribution destination',
+    hasConfiguredDestination
+      ? body.includes(CONTENT.en['enrollmentFallback.availabilityAvailable']) &&
+        body.includes(CONTENT.ar['enrollmentFallback.availabilityAvailable']) && hasInstallationOptionsCta
+      : body.includes(CONTENT.en['enrollmentFallback.availabilityUnavailable']) &&
+        body.includes(CONTENT.ar['enrollmentFallback.availabilityUnavailable']) && !hasInstallationOptionsCta);
+  check('enrollment fallback makes no script or third-party request', !/<script\b|https?:\/\//i.test(body));
+  check('enrollment token is not sent in the Referrer header policy', res.headers.get('Referrer-Policy') === 'no-referrer');
+  check('enrollment response is explicitly non-indexable', res.headers.get('X-Robots-Tag') === 'noindex, nofollow');
+
+  const trailingSlash = await get(`${enrollmentPath}/`);
+  check('canonical enrollment App Link also accepts the Android parser trailing-slash form', trailingSlash.res.status === 200 && trailingSlash.body === local, `got ${trailingSlash.res.status}`);
+}
+
+{
+  const { res, body } = await get('/child-app/');
+  const local = await readFile(join(DIST, 'child-app/index.html'), 'utf8');
+  const unavailableMessage = CONTENT.en['childApp.unavailable'];
+  const hasDistributionCta = local.includes(`>${distributionCta}</a>`);
+  const hasUnavailableMessage = local.includes(unavailableMessage);
+  check('Child App landing route serves a real bilingual page', res.status === 200 && body.includes('lang="ar" dir="rtl"'), `got ${res.status}`);
+  check('Child App landing stays noindex until release acceptance', body.includes('name="robots" content="noindex, nofollow"'));
+  check('built Child App artifact exposes exactly one distribution state', hasDistributionCta !== hasUnavailableMessage);
+  check('served Child App landing matches its built distribution state',
+    hasDistributionCta
+      ? body.includes(`>${distributionCta}</a>`) && !body.includes(unavailableMessage)
+      : hasUnavailableMessage && body.includes(unavailableMessage) &&
+        !body.includes(`>${distributionCta}</a>`));
+}
+
+for (const malformed of [
+  '/enroll',
+  '/enroll/',
+  '/enroll/' + 'A'.repeat(42),
+  '/enroll/' + 'A'.repeat(44),
+  '/enroll/' + 'A'.repeat(42) + '/extra',
+  '/enroll/%41' + 'A'.repeat(42),
+  enrollmentPath + '?source=test',
+]) {
+  const { res } = await get(malformed);
+  check(`malformed enrollment path is a hard 404 (${malformed.slice(0, 32)})`, res.status === 404, `got ${res.status}`);
+  if (/^\/enroll/i.test(malformed) && malformed.length > '/enroll/'.length + 42) {
+    check('malformed token path remains non-referring and non-indexable',
+      res.headers.get('Referrer-Policy') === 'no-referrer' &&
+      res.headers.get('X-Robots-Tag') === 'noindex, nofollow');
+  }
+}
+
+{
+  const { res, body } = await get('/.well-known/assetlinks.json');
+  if (hasAssetLinks) {
+    const local = await readFile(join(DIST, '.well-known/assetlinks.json'), 'utf8');
+    let valid = false;
+    try {
+      validateAndroidAssetLinksManifest(body);
+      valid = true;
+    } catch {
+      valid = false;
+    }
+    check('owner-supplied assetlinks.json serves 200 application/json', res.status === 200 && (res.headers.get('Content-Type') ?? '').startsWith('application/json'), `got ${res.status} ${res.headers.get('Content-Type') ?? ''}`);
+    check('served assetlinks.json is byte-identical to validated build input', body === local && valid);
+  } else {
+    check('assetlinks.json stays a hard 404 until owner signing data exists', res.status === 404, `got ${res.status}`);
+  }
+  const otherWellKnown = await get('/.well-known/other-file');
+  check('other dot-directory files remain inaccessible', otherWellKnown.res.status === 403 || otherWellKnown.res.status === 404, `got ${otherWellKnown.res.status}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
 import { decodeCanonicalTrustSetEpoch } from './decode.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { activeOwnerCount, findActiveOwner, findDuplicateIdentity } from './FamilyTrustSetEngine.js';
 import {
   isDistinctKeyPair,
@@ -152,6 +153,16 @@ function describeStateInconsistency(
   canonicalKeyEpoch: { trustSetEpoch: number; keyEpoch: number } | null,
   floors: { minimumAcceptedTrustSetEpoch: number; minimumAcceptedKeyEpoch: number } | null,
 ): string | null {
+  if (
+    (latest !== null &&
+      (!isFamilyEpochNumber(latest.trustSetEpoch, MIN_TRUST_SET_EPOCH) || !isFamilyEpochNumber(latest.keyEpoch, MIN_KEY_EPOCH))) ||
+    (canonicalKeyEpoch !== null &&
+      (!isFamilyEpochNumber(canonicalKeyEpoch.trustSetEpoch, MIN_TRUST_SET_EPOCH) || !isFamilyEpochNumber(canonicalKeyEpoch.keyEpoch, MIN_KEY_EPOCH))) ||
+    (floors !== null &&
+      (!isFamilyEpochNumber(floors.minimumAcceptedTrustSetEpoch, MIN_TRUST_SET_EPOCH) || !isFamilyEpochNumber(floors.minimumAcceptedKeyEpoch, MIN_KEY_EPOCH)))
+  ) {
+    return 'a persisted epoch or acceptance floor is outside the supported family epoch range';
+  }
   if (latest === null) {
     if (canonicalKeyEpoch !== null) {
       return 'the canonical key-epoch view reports an accepted epoch while the epoch store reports none';
@@ -242,10 +253,10 @@ export class TrustSetEpochAcceptanceService {
       if (!isDistinctKeyPair(entry.dskPublicKey, entry.dekPublicKey)) return rejected('MALFORMED_CANDIDATE');
     }
     if (findDuplicateIdentity(epoch.entries)) return rejected('MALFORMED_CANDIDATE');
-    if (typeof epoch.trustSetEpoch !== 'number' || !Number.isInteger(epoch.trustSetEpoch)) {
+    if (!isFamilyEpochNumber(epoch.trustSetEpoch)) {
       return rejected('MALFORMED_CANDIDATE');
     }
-    if (typeof epoch.keyEpoch !== 'number' || !Number.isInteger(epoch.keyEpoch)) {
+    if (!isFamilyEpochNumber(epoch.keyEpoch)) {
       return rejected('MALFORMED_CANDIDATE');
     }
     if (!isValidDate(epoch.issuedAt)) return rejected('MALFORMED_CANDIDATE');

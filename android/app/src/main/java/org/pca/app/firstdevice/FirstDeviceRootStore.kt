@@ -86,10 +86,42 @@ data class FirstDeviceRootRecord(
     val committedAtMillis: Long? = null,
 )
 
+/** Distinguishes an empty slot from unreadable/corrupt root state. */
+sealed interface FirstDeviceRootReadResult {
+    data object Missing : FirstDeviceRootReadResult
+    data object Unreadable : FirstDeviceRootReadResult
+    data class Present(val record: FirstDeviceRootRecord) : FirstDeviceRootReadResult
+}
+
 interface FirstDeviceRootStore {
     fun current(): FirstDeviceRootRecord?
+    /** Typed health read for operations, such as key cleanup, that must fail closed on corruption. */
+    fun readState(): FirstDeviceRootReadResult
     fun save(record: FirstDeviceRootRecord)
     fun clear()
+
+    /**
+     * Atomically persist [record] only when the current full record still
+     * equals [expected]. Implementations include the durability barrier and
+     * read-back check in this operation. Coordinator snapshots taken before
+     * network awaits must use this instead of an unconditional save.
+     */
+    fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean
+
+    /**
+     * Captures a seed without erasing an existing ceremony. Same-attempt
+     * capture is idempotent and preserves the complete current record. A
+     * different attempt may replace an existing record only when its state
+     * is in [replaceableTerminalStates]. A preserved record is success: the
+     * caller must not overwrite it or discard its owner attempt's keys.
+     */
+    fun captureSeed(
+        candidate: FirstDeviceRootRecord,
+        replaceableTerminalStates: Set<FirstDeviceRootState>,
+    ): Boolean
+
+    /** Re-confirms durability before any replay of a persisted submission. */
+    fun confirmDurable(record: FirstDeviceRootRecord): Boolean
 
     /**
      * Synchronous durability barrier: returns only after everything written
@@ -102,10 +134,32 @@ interface FirstDeviceRootStore {
 
 /** In-memory reference implementation -- usable for tests/dev builds, NOT durable across process death. */
 class InMemoryFirstDeviceRootStore : FirstDeviceRootStore {
+    private val lock = Any()
     private var record: FirstDeviceRootRecord? = null
-    override fun current(): FirstDeviceRootRecord? = record
-    override fun save(record: FirstDeviceRootRecord) { this.record = record }
-    override fun clear() { record = null }
+    override fun current(): FirstDeviceRootRecord? = synchronized(lock) { record }
+    override fun readState(): FirstDeviceRootReadResult = synchronized(lock) {
+        record?.let(FirstDeviceRootReadResult::Present) ?: FirstDeviceRootReadResult.Missing
+    }
+    override fun save(record: FirstDeviceRootRecord) { synchronized(lock) { this.record = record } }
+    override fun clear() { synchronized(lock) { record = null } }
+    override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean = synchronized(lock) {
+        if (this.record != expected) return@synchronized false
+        this.record = record
+        true
+    }
+    override fun captureSeed(
+        candidate: FirstDeviceRootRecord,
+        replaceableTerminalStates: Set<FirstDeviceRootState>,
+    ): Boolean = synchronized(lock) {
+        val existing = record
+        if (existing == null) {
+            record = candidate
+        } else if (existing.seed.attemptId != candidate.seed.attemptId && existing.state in replaceableTerminalStates) {
+            record = candidate
+        }
+        true
+    }
+    override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = synchronized(lock) { this.record == record }
     override fun flush() { /* nothing to flush */ }
 }
 
@@ -123,21 +177,98 @@ class PersistentFirstDeviceRootStore(
     private val key: String = KEY,
 ) : FirstDeviceRootStore {
 
-    override fun current(): FirstDeviceRootRecord? {
-        val raw = store.getString(key) ?: return null
-        return decode(raw)
+    private sealed interface StoredRecord {
+        data object Missing : StoredRecord
+        data object Invalid : StoredRecord
+        data class Valid(val record: FirstDeviceRootRecord) : StoredRecord
     }
 
-    override fun save(record: FirstDeviceRootRecord) {
+    override fun current(): FirstDeviceRootRecord? = synchronized(store) {
+        (readStoredRecord() as? StoredRecord.Valid)?.record
+    }
+
+    override fun save(record: FirstDeviceRootRecord) = synchronized(store) {
         store.putString(key, encode(record))
     }
 
-    override fun clear() {
+    override fun clear() = synchronized(store) {
         store.remove(key)
     }
 
-    override fun flush() {
+    override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean = synchronized(store) {
+        when (val stored = readStoredRecord()) {
+            StoredRecord.Missing -> if (expected != null) return@synchronized false
+            StoredRecord.Invalid -> return@synchronized false
+            is StoredRecord.Valid -> if (stored.record != expected) return@synchronized false
+        }
+        writeDurably(record)
+    }
+
+    override fun captureSeed(
+        candidate: FirstDeviceRootRecord,
+        replaceableTerminalStates: Set<FirstDeviceRootState>,
+    ): Boolean = synchronized(store) {
+        val existing = when (val stored = readStoredRecord()) {
+            StoredRecord.Missing -> null
+            StoredRecord.Invalid -> return@synchronized false
+            is StoredRecord.Valid -> stored.record
+        }
+        if (existing != null) {
+            if (existing.seed.attemptId == candidate.seed.attemptId) {
+                // A prior write may have updated the in-memory preferences
+                // map before its synchronous commit failed. Re-flush and
+                // verify the exact full record before accepting same-attempt
+                // recovery, while preserving every progressed field.
+                return@synchronized confirmDurable(existing)
+            }
+            if (existing.state !in replaceableTerminalStates) {
+                // Preserve a different attempt's live ceremony only after
+                // confirming that the exact complete record is durable.
+                return@synchronized confirmDurable(existing)
+            }
+        }
+        writeDurably(candidate)
+    }
+
+    override fun readState(): FirstDeviceRootReadResult = synchronized(store) {
+        when (val stored = readStoredRecord()) {
+            StoredRecord.Missing -> FirstDeviceRootReadResult.Missing
+            StoredRecord.Invalid -> FirstDeviceRootReadResult.Unreadable
+            is StoredRecord.Valid -> FirstDeviceRootReadResult.Present(stored.record)
+        }
+    }
+
+    override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = synchronized(store) {
+        try {
+            store.flush()
+            (readStoredRecord() as? StoredRecord.Valid)?.record == record
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun flush() = synchronized(store) {
         store.flush()
+    }
+
+    private fun writeDurably(record: FirstDeviceRootRecord): Boolean {
+        return try {
+            store.putString(key, encode(record))
+            store.flush()
+            (readStoredRecord() as? StoredRecord.Valid)?.record == record
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun readStoredRecord(): StoredRecord {
+        val raw = try {
+            store.getString(key)
+        } catch (_: Exception) {
+            return StoredRecord.Invalid
+        } ?: return StoredRecord.Missing
+        val record = decode(raw) ?: return StoredRecord.Invalid
+        return StoredRecord.Valid(record)
     }
 
     internal fun encode(record: FirstDeviceRootRecord): String {

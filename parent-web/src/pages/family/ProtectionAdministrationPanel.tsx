@@ -44,6 +44,8 @@ export interface ProtectionPinStatus {
  * a hidden button or a caller-supplied role as authorization.
  */
 export interface ProtectionAdministrationActions {
+  /** Decision methods unavailable for this binding (for example, methods the real client fails closed with 501). */
+  readonly unavailableDecisionMethods?: readonly ProtectionDecisionMethod[];
   getPinStatus(): Promise<ProtectionPinStatus>;
   configurePin(pin: string, stepUpToken: string): Promise<ProtectionPinStatus>;
   listPendingApprovals(): Promise<ProtectionApprovalView[]>;
@@ -231,6 +233,9 @@ export default function ProtectionAdministrationPanel({ section, targets, action
           {t('protectionAdministration.bindingPending')}
         </p>
       )}
+      {actions?.unavailableDecisionMethods?.some((method) => method === 'REMOTE_PARENT' || method === 'AUTHORIZED_RECOVERY') && (
+        <p role="status">{t('protectionAdministration.unavailableDecisionMethods')}</p>
+      )}
       {error && <p className="field-error" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
     </>
@@ -387,13 +392,13 @@ export default function ProtectionAdministrationPanel({ section, targets, action
                           </label>
                         )}
                         <input aria-label={t('protectionAdministration.pinForDecision')} type="password" inputMode="numeric" autoComplete="off" maxLength={64} value={decisionPin} onChange={(event) => setDecisionPin(event.target.value)} disabled={!actions || busy} />
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'LOCAL_ADMINISTRATION_PIN')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'LOCAL_ADMINISTRATION_PIN')} disabled={!actions || busy || actions.unavailableDecisionMethods?.includes('LOCAL_ADMINISTRATION_PIN')}>
                           {t('protectionAdministration.applyPin')}
                         </button>
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'REMOTE_PARENT')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'REMOTE_PARENT')} disabled={!actions || busy || actions.unavailableDecisionMethods?.includes('REMOTE_PARENT')}>
                           {t('protectionAdministration.applyRemote')}
                         </button>
-                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'AUTHORIZED_RECOVERY')} disabled={!actions || busy}>
+                        <button type="button" className="btn" onClick={() => void applyDecision(approval, 'AUTHORIZED_RECOVERY')} disabled={!actions || busy || actions.unavailableDecisionMethods?.includes('AUTHORIZED_RECOVERY')}>
                           {t('protectionAdministration.applyRecovery')}
                         </button>
                       </>

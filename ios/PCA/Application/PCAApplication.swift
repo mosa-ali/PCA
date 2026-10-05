@@ -5,6 +5,9 @@ import SwiftUI
 import ManagedSettings
 import FamilyControls
 #endif
+#if canImport(DeviceCheck)
+import DeviceCheck
+#endif
 
 public enum PCAProtectionStatus: Equatable {
     case notReady
@@ -122,6 +125,10 @@ public struct PCAProductionDependencies {
     public let keyDeletion: FirstDeviceKeyPairDeletion?
     /// Wave 6D: durable first-device root store (nil disables seed capture).
     public let firstDeviceRootStore: FirstDeviceRootStoring?
+    /// Wave 6D: explicit UI-driven first-device trust-root ceremony. Nil is
+    /// the fail-closed posture when Secure Enclave/App Attest composition is
+    /// unavailable on this device.
+    public let firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating?
     public let policyRuntime: PCAProtectionPolicyRuntime
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
@@ -140,6 +147,7 @@ public struct PCAProductionDependencies {
         enrollmentKeys: FirstDeviceEnrollmentKeyPreparation? = nil,
         keyDeletion: FirstDeviceKeyPairDeletion? = nil,
         firstDeviceRootStore: FirstDeviceRootStoring? = nil,
+        firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating? = nil,
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
@@ -157,10 +165,46 @@ public struct PCAProductionDependencies {
         self.enrollmentKeys = enrollmentKeys
         self.keyDeletion = keyDeletion
         self.firstDeviceRootStore = firstDeviceRootStore
+        self.firstDeviceTrustRootCoordinator = firstDeviceTrustRootCoordinator
         self.policyRuntime = policyRuntime
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
         self.deviceId = deviceId
+    }
+}
+
+/// The app model uses this narrow seam so UI actions and status rendering can
+/// be integration-tested without substituting the production ceremony rules.
+public protocol FirstDeviceTrustRootCoordinating: AnyObject {
+    var record: FirstDeviceRootRecord? { get }
+    var onRecordChanged: ((FirstDeviceRootRecord?) -> Void)? { get set }
+    func beginCeremony() async
+    func refreshStatus() async
+    func submit() async
+    func resubmitExact() async
+}
+
+extension FirstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating {}
+
+enum PCAFirstDeviceTrustRootComposition {
+    static func makeCoordinator(
+        rootStore: FirstDeviceRootStoring?,
+        apiClient: FirstDeviceBootstrapApiClienting?,
+        keyMaterial: FirstDeviceDskKeyMaterial?,
+        evidenceBuilder: FirstDeviceEvidenceBuilding?,
+        appAttestIsSupported: Bool
+    ) -> FirstDeviceTrustRootCoordinator? {
+        guard appAttestIsSupported,
+              let rootStore,
+              let apiClient,
+              let keyMaterial,
+              let evidenceBuilder else { return nil }
+        return FirstDeviceTrustRootCoordinator(
+            rootStore: rootStore,
+            apiClient: apiClient,
+            keyMaterial: keyMaterial,
+            evidenceBuilder: evidenceBuilder
+        )
     }
 }
 
@@ -171,6 +215,9 @@ public final class PCAApplicationModel: ObservableObject {
     @Published public private(set) var pendingDisclosure: PCAEnrollmentDisclosure?
     @Published public private(set) var lastError: PCAApplicationErrorCategory?
     @Published public private(set) var syncConnectionState: SyncConnectionState = .stale
+    @Published public private(set) var firstDeviceRootRecord: FirstDeviceRootRecord?
+    @Published public private(set) var firstDeviceRootReadUnavailable = false
+    @Published public private(set) var isFirstDeviceRootActionInProgress = false
 
     public let dependencies: PCAProductionDependencies
     public let linkRouter: PCAEnrollmentLinkRouter
@@ -183,11 +230,21 @@ public final class PCAApplicationModel: ObservableObject {
         self.linkRouter = PCAEnrollmentLinkRouter()
         self.now = now
         self.pendingDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
+        self.firstDeviceRootRecord = dependencies.firstDeviceRootStore?.current()
+        dependencies.firstDeviceTrustRootCoordinator?.onRecordChanged = { [weak self] _ in
+            DispatchQueue.main.async {
+                // Coordinator callbacks are only a signal to re-read. The
+                // durable store is authoritative; never publish a stale or
+                // nil coordinator snapshot as if the ceremony were absent.
+                self?.publishFirstDeviceRootRecord()
+            }
+        }
     }
 
     public func start() {
         guard !started else { return }
         started = true
+        publishFirstDeviceRootRecord()
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
@@ -201,6 +258,7 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     public func sceneBecameActive() {
+        publishFirstDeviceRootRecord()
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
@@ -247,12 +305,80 @@ public final class PCAApplicationModel: ObservableObject {
             profileRuntimeState = controller.confirmChildProfile()
             pendingDisclosure = nil
             try? dependencies.attemptStore.clearAttempt()
+            publishFirstDeviceRootRecord()
             applicationState = stateForCurrentData()
             Task {
                 await self.establishSessionIfNeeded()
                 await self.synchronizeRuntime()
             }
         }
+    }
+
+    /// Requests the server ceremony only after the user explicitly taps the
+    /// corresponding action. No challenge or approval poll is started by
+    /// app launch, enrollment, or scene activation.
+    public func requestFirstDeviceParentApproval() async {
+        guard let record = dependencies.firstDeviceRootStore?.current() else { return }
+        let mayStart = record.state == .notStarted || record.state == .expired
+        let mayRetryAmbiguousChallenge = record.state == .unknown
+            && record.ceremonyId == nil
+            && record.submission == nil
+        guard mayStart || mayRetryAmbiguousChallenge else { return }
+        await performFirstDeviceRootAction { await $0.beginCeremony() }
+    }
+
+    /// Explicitly checks the server's current approval/commit status. A newly
+    /// observed APPROVED state never submits automatically; submission is a
+    /// separate user action.
+    public func checkFirstDeviceParentApproval() async {
+        guard let state = dependencies.firstDeviceRootStore?.current()?.state else { return }
+        switch state {
+        case .awaitingApproval, .approved, .submitting, .unknown:
+            await performFirstDeviceRootAction { await $0.refreshStatus() }
+        case .notStarted, .rootCommitted, .expired, .rejected:
+            return
+        }
+    }
+
+    /// The model repeats the coordinator's APPROVED guard so no UI path can
+    /// submit while approval is pending or unknown.
+    public func submitApprovedFirstDeviceRoot() async {
+        guard dependencies.firstDeviceRootStore?.current()?.state == .approved else { return }
+        await performFirstDeviceRootAction { await $0.submit() }
+    }
+
+    /// Retries only the byte-identical payload already durably persisted by
+    /// the coordinator. It never rebuilds evidence or signs a new payload.
+    public func retrySavedFirstDeviceRootSubmission() async {
+        guard let record = dependencies.firstDeviceRootStore?.current(),
+              record.submission != nil,
+              (record.state == .submitting || record.state == .unknown) else { return }
+        await performFirstDeviceRootAction { await $0.resubmitExact() }
+    }
+
+    private func performFirstDeviceRootAction(
+        _ action: (FirstDeviceTrustRootCoordinating) async -> Void
+    ) async {
+        guard !isFirstDeviceRootActionInProgress,
+              let coordinator = dependencies.firstDeviceTrustRootCoordinator else { return }
+        isFirstDeviceRootActionInProgress = true
+        await action(coordinator)
+        publishFirstDeviceRootRecord()
+        isFirstDeviceRootActionInProgress = false
+    }
+
+    private func publishFirstDeviceRootRecord() {
+        // `current()` is optional both when no seed exists yet and when a
+        // durable read fails. Preserve an already observed record on a nil
+        // read, but mark it unavailable so the UI cannot present stale state
+        // as current or successful.
+        guard let rootStore = dependencies.firstDeviceRootStore else { return }
+        guard let durableRecord = rootStore.current() else {
+            if firstDeviceRootRecord != nil { firstDeviceRootReadUnavailable = true }
+            return
+        }
+        firstDeviceRootReadUnavailable = false
+        firstDeviceRootRecord = durableRecord
     }
 
     public func recordPolicyApplication(_ status: PCAProtectionStatus) {
@@ -373,13 +499,18 @@ public final class PCAApplicationModel: ObservableObject {
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
             let response = try await dependencies.enrollmentClient.bootstrap(request)
-            pendingDeviceId = response.deviceId
-            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
             // Wave 6D seed capture: durably record the ceremony credentials
             // and the M1-minted key ids NOW (before any later clear), so a
             // process death can never strand a committed-capable device
             // with no way to reach its own first-device ceremony.
-            captureFirstDeviceSeed(attempt: attempt, response: response)
+            guard captureFirstDeviceSeed(attempt: attempt, response: response) else {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
+            publishFirstDeviceRootRecord()
+            pendingDeviceId = response.deviceId
+            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
             // Attempt-scoped key hygiene: only this attempt AND the durable
             // root record's attempt (if any) may keep key material -- the
             // same keep-set union Android recorded as a Wave-6C Stage-B fix.
@@ -408,11 +539,11 @@ public final class PCAApplicationModel: ObservableObject {
     /// FAIL CLOSED: a seed is persisted only when BOTH Secure Enclave public
     /// keys are actually readable (the Android blank-guard parity); an empty
     /// capture would wedge the ceremony with an unusable identity.
-    private func captureFirstDeviceSeed(attempt: PCAEnrollmentAttempt, response: PCAEnrollmentBootstrapResponse) {
-        guard let rootStore = dependencies.firstDeviceRootStore else { return }
+    private func captureFirstDeviceSeed(attempt: PCAEnrollmentAttempt, response: PCAEnrollmentBootstrapResponse) -> Bool {
+        guard let rootStore = dependencies.firstDeviceRootStore else { return true }
         let dskPublicKey = dependencies.proofProvider.signingPublicKey
         let dekPublicKey = dependencies.proofProvider.encryptionPublicKey
-        guard !dskPublicKey.isEmpty, !dekPublicKey.isEmpty else { return }
+        guard !dskPublicKey.isEmpty, !dekPublicKey.isEmpty else { return false }
         let seed = FirstDeviceCeremonySeed(
             attemptId: attempt.attemptId,
             attemptRecoveryToken: attempt.attemptRecoveryToken,
@@ -425,17 +556,13 @@ public final class PCAApplicationModel: ObservableObject {
             dskAlias: "pca.dsk.\(attempt.attemptId)",
             dekAlias: "pca.dek.\(attempt.attemptId)"
         )
-        let existing = rootStore.current()
-        if let existing = existing, existing.seed.attemptId != attempt.attemptId {
-            // A different attempt already owns the persisted root state:
-            // never overwrite it silently (that would orphan a committed
-            // root's identity). Lifecycle decisions belong to the ceremony
-            // coordinator, not this capture path.
-            return
-        }
-        let record = FirstDeviceRootRecord(seed: seed, state: existing?.state ?? .notStarted)
-        rootStore.save(record)
-        rootStore.flush()
+        // Same-attempt recovery is idempotent. Another attempt can replace
+        // only an authoritatively EXPIRED or REJECTED root; in-progress,
+        // ambiguous, and committed records remain owned by their attempt.
+        return rootStore.captureSeed(
+            FirstDeviceRootRecord(seed: seed),
+            replacingTerminalStates: [.expired, .rejected]
+        )
     }
 
     private func resumeEnrollmentIfPossible() async {
@@ -448,14 +575,19 @@ public final class PCAApplicationModel: ObservableObject {
                 attemptId: attempt.attemptId,
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
-            pendingDeviceId = response.deviceId
-            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
             // Wave 6D: the recovery path restores the SAME ceremony seed the
             // original bootstrap would have captured (idempotent capture).
             if let preparation = dependencies.enrollmentKeys {
                 try? preparation.prepareEnrollmentKeys(attemptId: attempt.attemptId)
             }
-            captureFirstDeviceSeed(attempt: attempt, response: response)
+            guard captureFirstDeviceSeed(attempt: attempt, response: response) else {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
+            publishFirstDeviceRootRecord()
+            pendingDeviceId = response.deviceId
+            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
             let profile = PCAEnrollmentProfile(
                 childProfileId: response.childProfileId,
                 ageUxTier: response.ageUxTier,
@@ -622,6 +754,24 @@ public enum PCAProductionCompositionRoot {
         let enrollmentKeyPreparation: FirstDeviceEnrollmentKeyPreparation? = nil
         let keyDeletion: FirstDeviceKeyPairDeletion? = nil
         #endif
+        let firstDeviceBootstrapApiClient = try? FirstDeviceBootstrapApiClient(
+            baseURL: productionAPIBaseURL,
+            transport: transport
+        )
+        let firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating?
+        #if canImport(Security) && canImport(CryptoKit) && canImport(DeviceCheck)
+        let appAttestService = DCAppAttestService.shared
+        let concreteCoordinator = PCAFirstDeviceTrustRootComposition.makeCoordinator(
+            rootStore: firstDeviceRootStore,
+            apiClient: firstDeviceBootstrapApiClient,
+            keyMaterial: secureEnclaveProvider,
+            evidenceBuilder: IosAppAttestAdapter(service: appAttestService),
+            appAttestIsSupported: appAttestService.isSupported
+        )
+        firstDeviceTrustRootCoordinator = concreteCoordinator
+        #else
+        firstDeviceTrustRootCoordinator = nil
+        #endif
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
         let profileStore = UserDefaultsPCAEnrollmentProfileStore()
@@ -646,6 +796,7 @@ public enum PCAProductionCompositionRoot {
             enrollmentKeys: enrollmentKeyPreparation,
             keyDeletion: keyDeletion,
             firstDeviceRootStore: firstDeviceRootStore,
+            firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()

@@ -20,6 +20,7 @@ import test from 'node:test';
 import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
 import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
 
@@ -108,6 +109,45 @@ function inputFor(candidate, overrides = {}) {
     receivedAt: RECEIVED_AT,
     ...overrides,
   };
+}
+
+function replaceCanonicalNumberField(bytes, fieldIndex, nextValue) {
+  const source = Buffer.from(bytes, 'utf8');
+  const fields = [
+    FAMILY_ID,
+    '1',
+    '1',
+    '1',
+    'owner-device',
+    'OWNER',
+    'owner-dsk-key',
+    'owner-dsk-public',
+    'owner-dek-key',
+    'owner-dek-public',
+    'ACTIVE',
+    ISSUED_AT.toISOString(),
+    'null',
+  ];
+  // This helper is used only to replace one of the first three numeric fields
+  // in a normal owner candidate while preserving the exact netstring format.
+  const prefixes = [];
+  let offset = 0;
+  for (let index = 0; index < fieldIndex; index += 1) {
+    const field = fields[index];
+    const encodedLength = `${Buffer.byteLength(field, 'utf8')}:`;
+    prefixes.push(`${encodedLength}${field}`);
+    offset += Buffer.byteLength(`${encodedLength}${field}`, 'utf8');
+  }
+  const oldField = fields[fieldIndex];
+  const oldEncoded = `${Buffer.byteLength(oldField, 'utf8')}:${oldField}`;
+  const encodedNext = `${Buffer.byteLength(String(nextValue), 'utf8')}:${String(nextValue)}`;
+  assert.equal(source.slice(0, offset).toString(), prefixes.join(''));
+  assert.equal(source.slice(offset, offset + Buffer.byteLength(oldEncoded, 'utf8')).toString(), oldEncoded);
+  return Buffer.concat([
+    Buffer.from(prefixes.join(''), 'utf8'),
+    Buffer.from(encodedNext, 'utf8'),
+    source.slice(offset + Buffer.byteLength(oldEncoded, 'utf8')),
+  ]).toString('utf8');
 }
 
 function advanceFloors(state, record) {
@@ -334,6 +374,46 @@ test('GENESIS_MALFORMED_PAYLOAD: bytes that fail strict decode are MALFORMED_CAN
     inputFor(candidate, { signedCanonicalBytes: candidate.bytes.slice(0, 12) }),
   );
   assertRejectedClean(truncatedResult, 'MALFORMED_CANDIDATE', truncated.state);
+});
+
+test('OUT_OF_RANGE_CANDIDATE: values above INT32_MAX are rejected before durable reads or signature verification', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(epochFields({ entries: [entryFor(owner)] }), owner.dskPrivateKey);
+
+  for (const [fieldIndex, value] of [[1, MAX_FAMILY_EPOCH + 1], [2, MAX_FAMILY_EPOCH + 1], [1, Number.MAX_SAFE_INTEGER + 1]]) {
+    const result = await harness.service.acceptCandidate(inputFor(candidate, {
+      signedCanonicalBytes: replaceCanonicalNumberField(candidate.bytes, fieldIndex, value),
+    }));
+    assertRejectedClean(result, 'MALFORMED_CANDIDATE', harness.state);
+  }
+
+  assert.equal(harness.state.reads.latest, 0);
+  assert.equal(harness.state.reads.canonical, 0);
+  assert.equal(harness.state.reads.floors, 0);
+  assert.equal(harness.state.reads.anchor, 0);
+  assert.equal(harness.state.verifyCalls.length, 0);
+  assert.equal(harness.state.appendCalls.length, 0);
+});
+
+test('CORRUPT_ZERO_DURABLE_EPOCH: persisted zero Trust Set/key epochs fail closed before candidate verification', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness();
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.trustSetEpoch = 0;
+  stored.keyEpoch = 0;
+  harness.state.floorsByFamily.set(FAMILY_ID, {
+    minimumAcceptedTrustSetEpoch: 0,
+    minimumAcceptedKeyEpoch: 0,
+  });
+  const candidate = signedCandidate(
+    epochFields({ trustSetEpoch: 2, keyEpoch: 2, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  await assert.rejects(harness.service.acceptCandidate(inputFor(candidate)), /inconsistent/i);
+  assert.equal(harness.state.verifyCalls.length, 0);
+  assert.equal(harness.state.appendCalls.length, 0);
 });
 
 test('INVALID_GENESIS_SIGNER: a candidate whose ACTIVE OWNER is not the anchored genesis device is rejected before signature verification', async () => {

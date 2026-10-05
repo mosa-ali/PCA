@@ -27,21 +27,29 @@ const ACCOUNT = {
   latestSubscription: null,
 };
 
-function mockFetchFor(accountsCalls: string[]) {
+function mockFetchFor(accountsCalls: string[], total = 1) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
     if (url.includes('/platform-admin/accounts')) {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {};
+      const requestUrl = new URL(url, 'http://localhost');
       accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
-      return Promise.resolve(jsonResponse(200, { items: [ACCOUNT], total: 1, limit: 20, offset: 0 }));
+      const offset = Number(requestUrl.searchParams.get('offset') ?? body.offset ?? 0);
+      const limit = Number(requestUrl.searchParams.get('limit') ?? body.limit ?? 20);
+      const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, index) => ({
+        ...ACCOUNT,
+        familyId: `fam-${offset + index + 1}`,
+      }));
+      return Promise.resolve(jsonResponse(200, { items, total, limit, offset }));
     }
     return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
   });
 }
 
-function renderPage(accountsCalls: string[]) {
+function renderPage(accountsCalls: string[], total = 1) {
   secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
-  vi.stubGlobal('fetch', mockFetchFor(accountsCalls));
+  vi.stubGlobal('fetch', mockFetchFor(accountsCalls, total));
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={['/accounts']}>
@@ -116,5 +124,48 @@ describe('AccountsList search and sort', () => {
 
     const familyIdHeader = screen.getByRole('columnheader', { name: 'Family ID' });
     expect(familyIdHeader).toHaveAttribute('aria-sort', 'none');
+  });
+
+  it('pages server results and resets the offset when filters are applied or cleared', async () => {
+    const calls: string[] = [];
+    renderPage(calls, 41);
+
+    expect(await screen.findByText('fam-1')).toBeInTheDocument();
+    expect(screen.getByText('1–20 of 41')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('fam-21')).toBeInTheDocument();
+    expect(screen.getByText('21–40 of 41')).toBeInTheDocument();
+    expect(calls.some((call) => call.includes('offset=20'))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(await screen.findByText('fam-1')).toBeInTheDocument();
+    expect(screen.getByText('1–20 of 41')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('fam-21')).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Email'), ' parent@example.com ');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(await screen.findByText('1–20 of 41')).toBeInTheDocument();
+    expect(calls.some((call) => call.includes('"offset":0') && call.includes('"parentEmail":"parent@example.com"'))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('fam-21')).toBeInTheDocument();
+    const beforeClear = calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByText('1–20 of 41')).toBeInTheDocument();
+    expect(calls.slice(beforeClear).some((call) => call.includes('offset=0'))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('21–40 of 41')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('fam-41')).toBeInTheDocument();
+    expect(screen.getByText('41–41 of 41')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+    const finalPageCallCount = calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(calls).toHaveLength(finalPageCallCount);
   });
 });

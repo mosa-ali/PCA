@@ -1,4 +1,5 @@
 import { execute, runInTransaction } from '../db/pool.js';
+import { familyEpochFromStorage } from '../familyepoch/bounds.js';
 import type { CanonicalKeyEpoch, KeyEpochStore } from './KeyEpochStore.js';
 import type { OpaqueFamilyId } from './types.js';
 
@@ -33,6 +34,11 @@ export class MySqlKeyEpochStore implements KeyEpochStore {
       ),
     );
     const row = rows[0];
-    return row ? { trustSetEpoch: Number(row.trust_set_epoch), keyEpoch: Number(row.key_epoch) } : null;
+    return row
+      ? {
+          trustSetEpoch: familyEpochFromStorage(row.trust_set_epoch),
+          keyEpoch: familyEpochFromStorage(row.key_epoch),
+        }
+      : null;
   }
 }

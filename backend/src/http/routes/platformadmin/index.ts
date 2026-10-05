@@ -38,6 +38,7 @@ import type { PaymentMethodService } from '../../../billing/paymentMethod.js';
 import type { SubscriptionService } from '../../../billing/subscription.js';
 import type { DisputeService } from '../../../billing/dispute.js';
 import type { createRateLimiter } from '../../rateLimit.js';
+import type { ParentIdentityProjection } from '../../../parentaccount/ParentIdentityProjection.js';
 
 export interface PlatformAdminOperationalRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
@@ -56,6 +57,7 @@ export interface PlatformAdminOperationalRoutesDeps {
   paymentMethodService: PaymentMethodService;
   subscriptionService: SubscriptionService;
   disputeService: DisputeService;
+  parentIdentityProjection: ParentIdentityProjection;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
@@ -71,7 +73,11 @@ export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, dep
   // happens (this mission does not deploy -- see
   // docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
   registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
-  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
+  registerPlatformAdminAccountsRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    parentIdentityProjection: deps.parentIdentityProjection,
+    rateLimiter: deps.rateLimiter,
+  });
   registerPlatformAdminEntitlementRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     platformAdminEntitlementService: deps.platformAdminEntitlementService,

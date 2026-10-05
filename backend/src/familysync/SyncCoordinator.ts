@@ -1,5 +1,6 @@
 import { canonicalizeEnvelope } from '../familyenvelope/canonicalize.js';
 import { evaluateEnvelope } from '../familyenvelope/FamilyEnvelopeVerifier.js';
+import { isPlausibleEpoch } from '../familyenvelope/policy.js';
 import type { EnvelopeAcceptanceContext } from '../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { DataVersionLedger } from '../familyenvelope/DataVersionLedger.js';
 import type { EnvelopeAcceptanceTransaction } from '../familyenvelope/EnvelopeAcceptanceTransaction.js';
@@ -154,6 +155,13 @@ export class SyncCoordinator {
   }
 
   async submit(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext): Promise<SubmitResult> {
+    // `submit` is a public typed entry point and must not assume its caller
+    // passed through parseFamilyEnvelope. Reject before canonicalization,
+    // in-flight deduplication/serialization maps, queue cleanup, or ledgers.
+    if (!isPlausibleEpoch(envelope.trustSetEpoch) || !isPlausibleEpoch(envelope.keyEpoch)) {
+      return { decision: { kind: 'REJECT', reason: 'INVALID_EPOCH' }, drained: [] };
+    }
+
     const canonicalBytes = canonicalizeEnvelope(envelope);
     // PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: keyed by context.familyId
     // (the caller's AUTHORITATIVE, session-derived family identity), never
@@ -426,6 +434,11 @@ export class SyncCoordinator {
     // at all (drainFamily only iterates one family's queue at a time), so
     // record.familyId and context.familyId are always equal in practice
     // here -- record.familyId is used as the unambiguous source of truth.
+    if (!isPlausibleEpoch(record.envelope.trustSetEpoch) || !isPlausibleEpoch(record.envelope.keyEpoch)) {
+      this.pendingStore.remove(record.familyId, record.messageId);
+      return { kind: 'REJECT', reason: 'INVALID_EPOCH' };
+    }
+
     const dependency = await this.resolveDependency(record.envelope, record.familyId);
     if (dependency === null) {
       this.pendingStore.remove(record.familyId, record.messageId);

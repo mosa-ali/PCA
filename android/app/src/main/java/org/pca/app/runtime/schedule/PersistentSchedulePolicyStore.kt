@@ -20,9 +20,19 @@ class PersistentSchedulePolicyStore(
         store.putString(key, SchedulePolicyJson.encodeSnapshot(snapshot).toString())
     }
 
-    override fun load(): SchedulePolicySnapshot? {
-        val raw = store.getString(key) ?: return null
-        return runCatching { SchedulePolicyJson.decodeSnapshot(JSONObject(raw)) }.getOrNull()
+    override fun load(): SchedulePolicySnapshot? = when (val result = read()) {
+        SchedulePolicyStoreRead.Absent, SchedulePolicyStoreRead.Corrupt -> null
+        is SchedulePolicyStoreRead.Present -> result.snapshot
+    }
+
+    override fun read(): SchedulePolicyStoreRead {
+        val raw = store.getString(key) ?: return SchedulePolicyStoreRead.Absent
+        return runCatching { SchedulePolicyJson.decodeSnapshot(JSONObject(raw)) }
+            .fold(
+                onSuccess = { SchedulePolicyStoreRead.Present(it) },
+                // Do not remove or rewrite the raw bytes. Keep them for diagnosis and recovery.
+                onFailure = { SchedulePolicyStoreRead.Corrupt },
+            )
     }
 
     private companion object {

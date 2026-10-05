@@ -18,6 +18,7 @@ import {
 } from '../../dist/enrollment/AdministrationPinService.js';
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 // Server-ciphertext TTL (migration 0034): the alert ledger now expires rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so fixtures dated in the past
@@ -314,6 +315,25 @@ test('a signed decision from a stale trust-set epoch is rejected before mutation
     (error) => error instanceof RemovalDecisionError && error.code === 'NOT_AUTHORIZED',
   );
   assert.equal((await authority.getRequest(FAMILY, request.requestId)).state, 'PARENT_APPROVAL_REQUIRED');
+});
+
+test('signed removal decisions reject oversized epochs before signature verification while preserving zero canonical compatibility', async () => {
+  let verifyCalls = 0;
+  const verifier = { async verify() { verifyCalls += 1; return true; } };
+  const { authority } = buildAuthority({ signatureVerifierOverride: verifier });
+  const request = await createPending(authority, { requestId: 'request-oversized-epoch' });
+  const invalid = {
+    ...unsignedDecision(request, { actionId: 'action-oversized-epoch' }),
+    trustSetEpoch: MAX_FAMILY_EPOCH + 1,
+    signature: 'unused-because-range-validation-precedes-crypto',
+  };
+
+  await assert.rejects(
+    authority.decideWithSignedRemoteParent(invalid),
+    (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(verifyCalls, 0);
+  assert.doesNotThrow(() => canonicalizeRemovalDecision({ ...invalid, trustSetEpoch: 0 }));
 });
 
 test('same signed action is idempotent, while replay on another request is rejected', async () => {

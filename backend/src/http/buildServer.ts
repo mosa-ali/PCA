@@ -99,6 +99,7 @@ import type { ComplimentaryEntitlementService } from '../entitlements/compliment
 // the existing Bearer-header requireServiceSession (fastifyAuthPlugin.ts).
 import { registerParentAccountRoutes } from './routes/parentAccountRoutes.js';
 import type { ParentAccountService } from '../parentaccount/ParentAccountService.js';
+import { ParentIdentityReadModel } from '../parentaccount/ParentIdentityProjection.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
 // authority HTTP surface -- a seventh structurally independent surface,
 // registered exactly like every other domain's registerXRoutes call. See
@@ -160,6 +161,7 @@ import type { ProtectionAlertLedger } from '../alerts/ProtectionAlertLedger.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
 import type { ChildProfileRegistryRepository } from '../childprofiles/ChildProfileRegistryRepository.js';
+import { resolveAndroidEnrollmentReady } from '../invitation/androidEnrollmentAvailability.js';
 // parentpanel family dashboard: a ninth structurally independent surface,
 // registered exactly like every other domain's registerXRoutes call --
 // see dashboardRoutes.ts's own header for why this is a plain
@@ -179,6 +181,8 @@ export interface ServerDependencies {
    * option existed.
    */
   trustProxy?: TrustProxyOption;
+  /** Optional test/composition override; production otherwise uses the fail-closed runtime resolver. */
+  androidEnrollmentReady?: boolean;
   authService: AuthService;
   authzService: AuthzService;
   authzRepository: AuthzRepository;
@@ -486,6 +490,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
 
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,
+    androidEnrollmentReady: deps.androidEnrollmentReady ?? resolveAndroidEnrollmentReady(),
     authService: deps.authService,
     parentAccountService: deps.parentAccountService,
     authzService: deps.authzService,
@@ -601,6 +606,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     paymentMethodService: deps.paymentMethodService,
     subscriptionService: deps.subscriptionService,
     disputeService: deps.disputeService,
+    parentIdentityProjection: new ParentIdentityReadModel(),
     rateLimiter,
   });
   registerFamilyCommercialRoutes(app, {

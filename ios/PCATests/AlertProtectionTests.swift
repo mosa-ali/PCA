@@ -26,6 +26,33 @@ final class AlertProtectionTests: XCTestCase {
         XCTAssertNil(alert)
     }
 
+    func testKeyEpochAcceptsInt32MaximumAndPreservesZero() throws {
+        let generator = ProtectionAlertGenerator()
+        let maximum = try generator.generate(
+            alertId: "alert-max", familyId: "family-1", deviceId: "device-1", parentDeviceId: "parent-1",
+            trigger: .timeTampering, keyEpoch: ProtectionAlertGenerator.maxSupportedKeyEpoch,
+            generatedAtUtc: now, encryptedPayload: Data([1]), nonce: Data([2]), alertsEnabled: true
+        )
+        let zero = try generator.generate(
+            alertId: "alert-zero", familyId: "family-1", deviceId: "device-1", parentDeviceId: "parent-1",
+            trigger: .timeTampering, keyEpoch: 0,
+            generatedAtUtc: now, encryptedPayload: Data([1]), nonce: Data([2]), alertsEnabled: true
+        )
+
+        XCTAssertEqual(maximum?.keyEpoch, Int(Int32.max))
+        XCTAssertEqual(zero?.keyEpoch, 0)
+    }
+
+    func testKeyEpochAboveInt32MaximumIsRejected() {
+        XCTAssertThrowsError(try ProtectionAlertGenerator().generate(
+            alertId: "alert-overflow", familyId: "family-1", deviceId: "device-1", parentDeviceId: "parent-1",
+            trigger: .timeTampering, keyEpoch: Int(Int32.max) + 1,
+            generatedAtUtc: now, encryptedPayload: Data([1]), nonce: Data([2]), alertsEnabled: true
+        )) { error in
+            XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidKeyEpoch)
+        }
+    }
+
     func testDeviceScopedTriggerRequiresDeviceIdentity() {
         XCTAssertThrowsError(try ProtectionAlertGenerator().generate(
             alertId: "alert-1", familyId: "family-1", deviceId: nil, parentDeviceId: "parent-1",

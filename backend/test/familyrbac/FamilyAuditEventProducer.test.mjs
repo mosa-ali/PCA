@@ -8,6 +8,7 @@ import test from 'node:test';
 import { FamilyAuditEventProducer } from '../../dist/familyrbac/FamilyAuditEventProducer.js';
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
 import { createRejectingOpaqueFamilyAuditEventComposer } from '../../dist/familyrbac/FamilyAuditEventComposer.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -112,6 +113,21 @@ test('a per-device composer failure is isolated -- other devices still receive d
   const byDevice = Object.fromEntries(outcomes.map((o) => [o.parentDeviceId, o.outcome]));
   assert.equal(byDevice['parent-device-fails'], 'FAILED');
   assert.equal(byDevice['parent-device-ok'], 'DELIVERED');
+});
+
+test('out-of-range resolved parent key epoch fails before composition or ledger write', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let composerCalls = 0;
+  const producer = new FamilyAuditEventProducer(ledger, async () => {
+    composerCalls += 1;
+    return { encryptedPayloadB64: 'x', nonceB64: 'y' };
+  }, async () => [{ deviceId: 'parent-device', keyEpoch: MAX_FAMILY_EPOCH + 1 }]);
+
+  const outcomes = await producer.deliver(sampleRecord());
+
+  assert.deepEqual(outcomes, [{ parentDeviceId: 'parent-device', outcome: 'FAILED' }]);
+  assert.equal(composerCalls, 0);
+  assert.deepEqual(await ledger.listForFamily('fam-1'), []);
 });
 
 test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array is discarded by the real caller, so silence would leave the failure existing only in a value nobody reads', async () => {
@@ -231,4 +247,46 @@ test('MySqlFamilyAuditEventLedger-shaped idempotency: a re-record of the exact s
   assert.deepEqual(await ledger.record(envelope), { outcome: 'RECORDED' });
   assert.deepEqual(await ledger.record(envelope), { outcome: 'IDEMPOTENT_MATCH' });
   assert.deepEqual(await ledger.record({ ...envelope, encryptedPayloadB64: 'different' }), { outcome: 'CONFLICT' });
+});
+
+test('ledger conflicts fail only the affected device while RECORDED and IDEMPOTENT_MATCH remain delivered', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  const ids = ['env-a', 'env-b', 'env-a', 'env-b'];
+  const compositionCount = new Map();
+  const producer = new FamilyAuditEventProducer(
+    ledger,
+    async ({ parentDeviceId }) => {
+      const count = (compositionCount.get(parentDeviceId) ?? 0) + 1;
+      compositionCount.set(parentDeviceId, count);
+      return {
+        encryptedPayloadB64: parentDeviceId === 'parent-device-a' ? `cipher-a-${count}` : 'cipher-b',
+        nonceB64: 'bm9uY2U',
+      };
+    },
+    async () => [
+      { deviceId: 'parent-device-a', keyEpoch: 1 },
+      { deviceId: 'parent-device-b', keyEpoch: 1 },
+    ],
+    () => ids.shift(),
+  );
+
+  const first = await producer.deliver(sampleRecord());
+  assert.deepEqual(first, [
+    { parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' },
+    { parentDeviceId: 'parent-device-b', outcome: 'DELIVERED' },
+  ]);
+
+  const { result: second, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+  assert.deepEqual(second, [
+    { parentDeviceId: 'parent-device-a', outcome: 'FAILED' },
+    { parentDeviceId: 'parent-device-b', outcome: 'DELIVERED' },
+  ]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
+  assert.match(warnings[0], /family audit envelope id conflicts with existing content/);
+
+  const envelopes = await ledger.listForFamily('fam-1');
+  assert.equal(envelopes.length, 2);
+  assert.equal(envelopes.find((entry) => entry.parentDeviceId === 'parent-device-a').encryptedPayloadB64, 'cipher-a-1');
+  assert.equal(envelopes.find((entry) => entry.parentDeviceId === 'parent-device-b').encryptedPayloadB64, 'cipher-b');
 });

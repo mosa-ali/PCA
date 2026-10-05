@@ -86,6 +86,8 @@ const MFA_STEP_UP_ROUTE = '/api/parent/mfa/step-up';
 const REMOVAL_LIST_ROUTE = '/api/parent/families/:familyId/removal-decisions';
 const REMOVAL_DETAIL_ROUTE = '/api/parent/families/:familyId/removal-decisions/:requestId';
 const LOCAL_PIN_ROUTE = '/api/parent/families/:familyId/removal-decisions/:requestId/decide/local-pin';
+const AUTHORIZED_RECOVERY_ROUTE = '/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery';
+const SIGNED_DECISION_ROUTE = '/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed';
 const ADMIN_PIN_ROUTE = '/api/parent/families/:familyId/administration-pin';
 
 const STEP_MS = 30 * 1000;
@@ -162,6 +164,7 @@ function buildApp() {
     // in-memory reference repository today.
     auditService: new FamilyAuditService(new InMemoryFamilyAuditRepository()),
     deviceRevocation: revocationRecorder,
+    now: clock.now,
   });
   const removalTargetResolver = new RemovalTargetResolver({
     bindings: new MySqlDeviceChildBindingRepository(),
@@ -547,6 +550,62 @@ test('MYSQL HTTP removal-decision detail: unknown 404 and cross-family 404 are i
     const own = await app.inject({ method: 'GET', url: `/api/parent/families/${other.familyId}/removal-decisions/${otherRequestId}`, headers: sessionHeaders(other) });
     assert.equal(own.statusCode, 200);
     void requestId;
+  } finally {
+    await app.close();
+  }
+});
+
+test('MYSQL HTTP signed and authorized-recovery decisions stay gated with real Parent session and pending request rows', async () => {
+  const app = buildApp();
+  try {
+    const owner = await registerVerifyLogin(app, uniqueEmail('audit-rem-crypto-gates'));
+    const target = await seedRemovalTarget(owner.familyId);
+    const requestId = await seedPendingRequest({ familyId: owner.familyId, deviceId: target.deviceId });
+    const pending = await removalDecisionAuthority.getRequest(owner.familyId, requestId);
+    assert.ok(pending, 'the pending removal request must be persisted before exercising either gated decision path');
+
+    const noSigningKey = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${owner.familyId}/removal-decisions/${requestId}/decide/signed`,
+      headers: mutationHeaders(owner),
+      payload: {
+        childId: pending.childId,
+        deviceId: pending.deviceId,
+        operation: pending.operation,
+        protectionLevel: pending.protectionLevel,
+        reasonCategory: pending.reasonCategory,
+        decision: 'KEEP_ACTIVE',
+        temporaryDisableUntil: null,
+        actorDeviceId: 'test-actor-without-signing-key',
+        actionId: randomUUID(),
+        idempotencyKey: randomUUID(),
+        trustSetEpoch: 1,
+        policyRevision: null,
+        issuedAt: clock.now().toISOString(),
+        expiresAt: pending.expiresAt.toISOString(),
+        stepUp: { state: 'UNSUPPORTED', assertedAt: null, freshUntil: null },
+        signature: 'unverified-test-signature',
+      },
+    });
+    assert.equal(noSigningKey.statusCode, 403, JSON.stringify(noSigningKey.json()));
+    assert.deepEqual(noSigningKey.json(), { error: 'not_authorized' });
+    recordParentRouteScenario({ method: 'POST', route: SIGNED_DECISION_ROUTE, scenarioId: 'mysql_signed_decision_no_signing_key', classification: 'CRYPTO_DEVICE_GATED', expectedStatus: 403, response: noSigningKey, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal((await readDecisionRow(requestId))?.state, 'PARENT_APPROVAL_REQUIRED', 'an unavailable signing key must leave the durable decision pending');
+
+    const unavailableRecovery = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${owner.familyId}/removal-decisions/${requestId}/decide/authorized-recovery`,
+      headers: mutationHeaders(owner),
+      payload: {
+        decision: 'KEEP_ACTIVE',
+        temporaryDisableUntil: null,
+        proof: { proof: 'unverified-test-recovery-proof', recoveryTransactionId: randomUUID() },
+      },
+    });
+    assert.equal(unavailableRecovery.statusCode, 403, JSON.stringify(unavailableRecovery.json()));
+    assert.deepEqual(unavailableRecovery.json(), { error: 'not_authorized' });
+    recordParentRouteScenario({ method: 'POST', route: AUTHORIZED_RECOVERY_ROUTE, scenarioId: 'mysql_recovery_decision_authority_unavailable', classification: 'CRYPTO_DEVICE_GATED', expectedStatus: 403, response: unavailableRecovery, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal((await readDecisionRow(requestId))?.state, 'PARENT_APPROVAL_REQUIRED', 'unavailable recovery verification must leave the durable decision pending');
   } finally {
     await app.close();
   }

@@ -1,4 +1,5 @@
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
 import type { ProtectionAlertLedger, ProtectionAlertListOptions, RecordProtectionAlertResult } from './ProtectionAlertLedger.js';
 import {
@@ -30,7 +31,7 @@ function toEvent(row: ProtectionAlertRow): ProtectionAlertEvent {
     deviceId: row.device_id,
     parentDeviceId: row.parent_device_id,
     trigger: row.trigger_type,
-    keyEpoch: row.key_epoch,
+    keyEpoch: familyEpochFromStorage(row.key_epoch),
     generatedAtUtc: toDate(row.generated_at_utc),
     encryptedPayloadB64: row.encrypted_payload_b64,
     nonceB64: row.nonce_b64,
@@ -68,6 +69,9 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
   }
 
   async record(event: ProtectionAlertEvent): Promise<RecordProtectionAlertResult> {
+    if (!isFamilyEpochNumber(event.keyEpoch)) {
+      throw new Error('Protection alert key epoch is outside the supported family epoch range.');
+    }
     // Best-effort housekeeping on the write path, exactly as RelayService
     // purges around each relay operation. A failed purge must never fail an
     // alert: the expiry filter on the reads below is what actually enforces

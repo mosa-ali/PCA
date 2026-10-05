@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import {
   decodeCanonicalTrustSetEpoch,
   MAX_CANONICAL_TRUST_SET_LENGTH,
@@ -120,6 +121,22 @@ test('decode round-trips a three-entry epoch with supersedesEpoch a number', () 
 test('decode round-trips keyEpoch 0 (policy.ts allows a zero key epoch)', () => {
   const value = epoch({ keyEpoch: 0 });
   assert.deepEqual(decodeCanonicalTrustSetEpoch(encode(value)), { ...value, signature: '' });
+});
+
+test('decode accepts INT32_MAX and rejects values above it without changing zero-key semantics', () => {
+  const maximum = epoch({ trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH });
+  assert.deepEqual(decodeCanonicalTrustSetEpoch(encode(maximum)), { ...maximum, signature: '' });
+
+  for (const value of [
+    epoch({ trustSetEpoch: MAX_FAMILY_EPOCH + 1 }),
+    epoch({ keyEpoch: MAX_FAMILY_EPOCH + 1 }),
+    epoch({ trustSetEpoch: Number.MAX_SAFE_INTEGER + 1 }),
+  ]) {
+    assertRejects(buildCanonical(canonicalFields(value)));
+  }
+
+  const zeroKey = epoch({ keyEpoch: 0 });
+  assert.deepEqual(decodeCanonicalTrustSetEpoch(encode(zeroKey)), { ...zeroKey, signature: '' });
 });
 
 test('decode honors UTF-8 BYTE lengths for multibyte fields', () => {

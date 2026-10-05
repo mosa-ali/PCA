@@ -37,7 +37,7 @@ describe('privacy disclosure mutation boundary', () => {
 
   it('NFR-060 exposes the disclosure page through the application route', () => {
     const app = read('src/App.tsx');
-    expect(app).toContain("import Transparency from './pages/privacy/Transparency'");
+    expect(app).toContain("lazy(() => import('./pages/privacy/Transparency'))");
     expect(app).toContain('path="privacy/transparency" element={<Transparency />}');
   });
 

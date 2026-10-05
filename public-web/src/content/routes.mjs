@@ -86,6 +86,10 @@ export const ROUTES = [
   // --- Utility (footer only, never primary nav) ----------------------------
   { id: 'contact',       path: 'contact',       kind: 'utility', release: 'A', build: true, indexable: true,  priority: '0.5' },
   { id: 'accessibility', path: 'accessibility', kind: 'utility', release: 'A', build: true, indexable: true,  priority: '0.4' },
+  // Parent Web may link here once an owner-approved Child App distribution
+  // destination is configured. The route exists while unavailable and stays
+  // noindex until the signed release and distribution model are accepted.
+  { id: 'childApp',      path: 'child-app',     kind: 'utility', release: 'D', build: true, indexable: false, priority: null },
 
   // --- Legal (route shells; PUBLICATION IS OWNER/LEGAL GATED) --------------
   // PPR1R-D035 (no privacy policy artifact) and OD-13 (legal entity/

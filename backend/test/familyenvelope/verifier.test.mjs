@@ -5,6 +5,7 @@ import { canonicalizeEnvelope } from '../../dist/familyenvelope/canonicalize.js'
 import { InMemoryReplayLedger } from '../../dist/familyenvelope/InMemoryReplayLedger.js';
 import { InMemoryDataVersionLedger } from '../../dist/familyenvelope/InMemoryDataVersionLedger.js';
 import { InMemoryMessageIdempotencyLedger } from '../../dist/familyenvelope/InMemoryMessageIdempotencyLedger.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import {
   createTestOnlyEnvelopeSignatureVerifier,
   signTestOnlyEnvelope,
@@ -69,10 +70,83 @@ async function evaluate(envelope, context, harness) {
   );
 }
 
+function observeAcceptanceEffects(harness) {
+  const effects = [];
+  const observe = (target, method, label) => {
+    const original = target[method].bind(target);
+    target[method] = (...args) => {
+      effects.push(label);
+      return original(...args);
+    };
+  };
+
+  observe(harness.verifier, 'verify', 'signature');
+  observe(harness.messageIdempotencyLedger, 'getAcceptedCanonicalBytes', 'idempotency-read');
+  observe(harness.messageIdempotencyLedger, 'recordAccepted', 'idempotency-write');
+  observe(harness.messageIdempotencyLedger, 'releaseAccepted', 'idempotency-release');
+  observe(harness.replayLedger, 'hasProcessed', 'replay-read');
+  observe(harness.replayLedger, 'claimProcessed', 'replay-claim');
+  observe(harness.replayLedger, 'recordProcessed', 'replay-write');
+  observe(harness.replayLedger, 'releaseClaim', 'replay-release');
+  observe(harness.versionLedger, 'getLastAcceptedVersion', 'version-read');
+  observe(harness.versionLedger, 'advancePolicyVersionIfNewer', 'version-write');
+  observe(harness.versionLedger, 'recordAuthorizedRollbackVersion', 'rollback-version-write');
+  return effects;
+}
+
 test('a valid POLICY_UPDATE envelope is accepted, not idempotent on first delivery', async () => {
   const harness = buildHarness();
   const verdict = await evaluate(buildEnvelope(), baseContext(), harness);
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('the shared maximum is inclusive and byte-identical retries remain idempotent at the maximum', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH });
+
+  assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: true, idempotent: false });
+  assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: true, idempotent: true });
+});
+
+test('direct verifier rejects over-bound epochs before canonicalization, idempotency, replay, version, or signature work', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ messageId: 'stored-high-epoch', trustSetEpoch: MAX_FAMILY_EPOCH + 1 });
+  const canonicalBytes = canonicalizeEnvelope(envelope);
+  await harness.messageIdempotencyLedger.recordAccepted('family-1', envelope.messageId, canonicalBytes);
+  const effects = observeAcceptanceEffects(harness);
+
+  assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: false, reason: 'INVALID_EPOCH' });
+  assert.deepEqual(effects, []);
+});
+
+test('direct verifier rejects an over-bound epoch before canonicalizing malformed typed payload data', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ trustSetEpoch: MAX_FAMILY_EPOCH + 1 });
+  // If canonicalization runs first, this null payload throws on toString.
+  envelope.payload = null;
+  const effects = observeAcceptanceEffects(harness);
+
+  assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: false, reason: 'INVALID_EPOCH' });
+  assert.deepEqual(effects, []);
+});
+
+test('direct verifier rejects unsafe, fractional, and coercible epoch values without acceptance side effects', async () => {
+  for (const field of ['trustSetEpoch', 'keyEpoch']) {
+    for (const invalidEpoch of [MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, '1', 1n]) {
+      const harness = buildHarness();
+      const envelope = buildEnvelope({ [field]: invalidEpoch });
+      const effects = observeAcceptanceEffects(harness);
+
+      assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: false, reason: 'INVALID_EPOCH' });
+      assert.deepEqual(effects, [], `unexpected effect for ${field}=${String(invalidEpoch)}`);
+    }
+  }
+});
+
+test('zero epochs remain acceptable when the trusted floors are zero', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ trustSetEpoch: 0, keyEpoch: 0 });
+  assert.deepEqual(await evaluate(envelope, baseContext(), harness), { accepted: true, idempotent: false });
 });
 
 test('an unsupported protocolMajor is rejected before anything else is checked', async () => {

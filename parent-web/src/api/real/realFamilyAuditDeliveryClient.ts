@@ -6,9 +6,9 @@
 // envelope to the injected FamilyAuditEnvelopeDecryptionBoundary. See
 // AUDIT_EVENT_MODEL in
 // docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md
-// for why PENDING_TRUSTED_DECRYPTION covers BOTH "no trusted browser yet"
-// and "envelopes exist but decryption is unavailable" -- Audit.tsx must
-// never distinguish these two honest-pending cases from each other.
+// for why PENDING_TRUSTED_DECRYPTION covers "no trusted browser yet",
+// unavailable envelope decryption, and incomplete feed evidence -- Audit.tsx
+// must never turn any of these into a false empty-history claim.
 import type { AuditTrailFeedResult, FamilyAuditDeliveryClient } from '../interfaces';
 import type { FamilyAuditEnvelopeDecryptionBoundary, OpaqueFamilyAuditEnvelope } from '../familyAuditDecryption';
 import { cookieSessionFamilyId } from './realBillingClient';
@@ -63,9 +63,10 @@ export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient 
     }
 
     if (envelopes.length === 0) {
-      // Genuinely nothing has ever been recorded for this family -- an
-      // honest empty state, never conflated with "can't decrypt yet".
-      return { status: 'READY', entries: [] };
+      // An empty transport response does not prove completeness: production
+      // event production/envelope delivery may be unavailable. Keep the UI
+      // pending until the backend can establish that the feed is complete.
+      return { status: 'PENDING_TRUSTED_DECRYPTION' };
     }
 
     try {

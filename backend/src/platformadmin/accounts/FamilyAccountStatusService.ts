@@ -25,7 +25,7 @@ export interface FamilyAccountStatusActor {
   readonly sessionId: PlatformAdminSessionId;
 }
 
-export type FamilyAccountStatusErrorCode = 'FORBIDDEN' | 'NOT_FOUND' | 'ALREADY_SUSPENDED' | 'ALREADY_ACTIVE' | 'INVALID_INPUT';
+export type FamilyAccountStatusErrorCode = 'FORBIDDEN' | 'NOT_FOUND' | 'ALREADY_SUSPENDED' | 'ALREADY_ACTIVE' | 'INVALID_INPUT' | 'DEVICE_SESSION_EPOCH_EXHAUSTED' | 'DEVICE_SESSION_EPOCH_INVALID';
 
 export class FamilyAccountStatusError extends Error {
   readonly code: FamilyAccountStatusErrorCode;
@@ -52,6 +52,10 @@ interface FamilyStatusRow {
   suspension_reason: string | null;
 }
 
+interface FamilyStatusMutationRow extends FamilyStatusRow {
+  device_session_epoch: number | bigint | string;
+}
+
 function toRecord(row: FamilyStatusRow): FamilyAccountStatusRecord {
   return {
     familyId: row.family_id,
@@ -63,6 +67,24 @@ function toRecord(row: FamilyStatusRow): FamilyAccountStatusRecord {
 }
 
 const REASON_MAX_LENGTH = 500;
+const MAX_DEVICE_SESSION_EPOCH = 0xffff_ffff;
+const MAX_DEVICE_SESSION_EPOCH_BIGINT = BigInt(MAX_DEVICE_SESSION_EPOCH);
+
+function readDeviceSessionEpoch(value: unknown): number {
+  let exact: bigint;
+  try {
+    if (typeof value === 'bigint') exact = value;
+    else if (typeof value === 'number' && Number.isSafeInteger(value)) exact = BigInt(value);
+    else if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) exact = BigInt(value);
+    else throw new Error('invalid');
+  } catch {
+    throw new FamilyAccountStatusError('DEVICE_SESSION_EPOCH_INVALID');
+  }
+  if (exact < 0n || exact > MAX_DEVICE_SESSION_EPOCH_BIGINT) {
+    throw new FamilyAccountStatusError('DEVICE_SESSION_EPOCH_INVALID');
+  }
+  return Number(exact);
+}
 
 async function revokeFamilyParentAccess(
   conn: import('mysql2/promise').PoolConnection,
@@ -143,19 +165,20 @@ export class FamilyAccountStatusService {
 
     const now = this.now();
     return this.runTx(async (conn) => {
-      const { rows: existingRows } = await execute<FamilyStatusRow>(
+      const { rows: existingRows } = await execute<FamilyStatusMutationRow>(
         conn,
-        `SELECT family_id, status, suspended_at, suspended_by_admin_id, suspension_reason FROM families WHERE family_id = ? AND deleted_at IS NULL FOR UPDATE`,
+        `SELECT family_id, status, suspended_at, suspended_by_admin_id, suspension_reason, device_session_epoch FROM families WHERE family_id = ? AND deleted_at IS NULL FOR UPDATE`,
         [familyId],
       );
       const existing = existingRows[0];
       if (!existing) throw new FamilyAccountStatusError('NOT_FOUND');
       if (existing.status === 'SUSPENDED') throw new FamilyAccountStatusError('ALREADY_SUSPENDED');
+      readDeviceSessionEpoch(existing.device_session_epoch);
 
       const { rowCount } = await execute(
         conn,
-        `UPDATE families SET status = 'SUSPENDED', suspended_at = ?, suspended_by_admin_id = ?, suspension_reason = ?, device_session_epoch = device_session_epoch + 1 WHERE family_id = ? AND status = 'ACTIVE'`,
-        [now, actor.adminId, reason, familyId],
+        `UPDATE families SET status = 'SUSPENDED', suspended_at = ?, suspended_by_admin_id = ?, suspension_reason = ?, device_session_epoch = CASE WHEN device_session_epoch < ? THEN device_session_epoch + 1 ELSE device_session_epoch END WHERE family_id = ? AND status = 'ACTIVE'`,
+        [now, actor.adminId, reason, MAX_DEVICE_SESSION_EPOCH, familyId],
       );
       if (rowCount !== 1) throw new FamilyAccountStatusError('ALREADY_SUSPENDED');
 
@@ -188,19 +211,22 @@ export class FamilyAccountStatusService {
 
     const now = this.now();
     return this.runTx(async (conn) => {
-      const { rows: existingRows } = await execute<FamilyStatusRow>(
+      const { rows: existingRows } = await execute<FamilyStatusMutationRow>(
         conn,
-        `SELECT family_id, status, suspended_at, suspended_by_admin_id, suspension_reason FROM families WHERE family_id = ? AND deleted_at IS NULL FOR UPDATE`,
+        `SELECT family_id, status, suspended_at, suspended_by_admin_id, suspension_reason, device_session_epoch FROM families WHERE family_id = ? AND deleted_at IS NULL FOR UPDATE`,
         [familyId],
       );
       const existing = existingRows[0];
       if (!existing) throw new FamilyAccountStatusError('NOT_FOUND');
       if (existing.status === 'ACTIVE') throw new FamilyAccountStatusError('ALREADY_ACTIVE');
+      if (readDeviceSessionEpoch(existing.device_session_epoch) === MAX_DEVICE_SESSION_EPOCH) {
+        throw new FamilyAccountStatusError('DEVICE_SESSION_EPOCH_EXHAUSTED');
+      }
 
       const { rowCount } = await execute(
         conn,
-        `UPDATE families SET status = 'ACTIVE', suspended_at = NULL, suspended_by_admin_id = NULL, suspension_reason = NULL, device_session_epoch = device_session_epoch + 1 WHERE family_id = ? AND status = 'SUSPENDED'`,
-        [familyId],
+        `UPDATE families SET status = 'ACTIVE', suspended_at = NULL, suspended_by_admin_id = NULL, suspension_reason = NULL, device_session_epoch = device_session_epoch + 1 WHERE family_id = ? AND status = 'SUSPENDED' AND device_session_epoch < ?`,
+        [familyId, MAX_DEVICE_SESSION_EPOCH],
       );
       if (rowCount !== 1) throw new FamilyAccountStatusError('ALREADY_ACTIVE');
 

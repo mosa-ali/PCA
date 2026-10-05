@@ -2,7 +2,8 @@
 // (dist/http/routes/firstDeviceBootstrapRoutes.js) on a bare Fastify app
 // with scripted services: wire vocabulary, bounds, H12 server-authoritative
 // context, per-route rate-limit buckets, the parent session/CSRF/step-up
-// ordering (PCA-STEPUP-ORDER-1), and the M1 approval-detail fingerprint.
+// ordering (PCA-STEPUP-ORDER-1), owner-only approval discovery, and the
+// privacy-minimal M1 fingerprint DTO.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
@@ -46,7 +47,7 @@ function ceremonyRecord(overrides = {}) {
     purpose: 'PCA_FIRST_DEVICE_BOOTSTRAP_V1',
     challengeId: randomUUID(),
     nonce: 'n'.repeat(43),
-    expiresAt: new Date('2026-10-02T00:10:00.000Z'),
+    expiresAt: new Date('2099-10-02T00:10:00.000Z'),
     status: 'PENDING',
     approvedByAccountId: null,
     approvedAt: null,
@@ -87,7 +88,7 @@ function buildApp(options = {}) {
     },
   };
 
-  const serviceCalls = { challenge: [], submit: [], status: [], approve: [], describe: [] };
+  const serviceCalls = { challenge: [], submit: [], status: [], approve: [], describe: [], list: [] };
   const bootstrapService = {
     async issueChallenge(input) {
       serviceCalls.challenge.push(input);
@@ -117,6 +118,11 @@ function buildApp(options = {}) {
     },
     async checkApprovalEligibility() {
       return eligibility;
+    },
+    async listForApproval(familyId, accountId) {
+      serviceCalls.list.push({ familyId, accountId });
+      if (!eligibility) return null;
+      return ceremony && ceremony.familyId === familyId ? [ceremony] : [];
     },
     async approve(input) {
       serviceCalls.approve.push(input);
@@ -275,9 +281,35 @@ test('status: exposes the stable state/outcome pair or the same one 404 vocabula
   }
 });
 
-test('parent detail: session, family scope and ADMINISTRATOR are all required; the DSK fingerprint is presented for comparison (M1)', async () => {
+test('parent list and detail: session, family scope, active ADMINISTRATOR and provisioned-owner eligibility are required; DTO contains only comparison metadata', async () => {
   const { app } = buildApp({ ceremony: ceremonyRecord() });
   try {
+    const listUrl = `/api/parent/families/${FAMILY}/first-device-bootstrap`;
+    const noListSession = await app.inject({ method: 'GET', url: listUrl });
+    assert.equal(noListSession.statusCode, 401);
+
+    const noFamilyList = await app.inject({ method: 'GET', url: listUrl, headers: sessionHeaders('session-no-family') });
+    assert.equal(noFamilyList.statusCode, 403);
+
+    const crossFamilyList = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${OTHER_FAMILY}/first-device-bootstrap`,
+      headers: sessionHeaders('session-owner'),
+    });
+    assert.equal(crossFamilyList.statusCode, 403);
+
+    const listed = await app.inject({ method: 'GET', url: listUrl, headers: sessionHeaders('session-owner') });
+    assert.equal(listed.statusCode, 200);
+    assert.equal(listed.json().ceremonies.length, 1);
+    const listedDto = listed.json().ceremonies[0];
+    assert.deepEqual(Object.keys(listedDto).sort(), ['approvedAt', 'ceremonyId', 'createdAt', 'deviceId', 'dskFingerprint', 'expiresAt', 'status']);
+    assert.equal(listedDto.deviceId, SS_DEVICE.deviceId);
+    assert.equal(listedDto.dskFingerprint, computeKeyFingerprint(SS_DEVICE.dskPublicKey));
+    assert.equal(listedDto.status, 'PENDING');
+    for (const forbidden of ['familyId', 'dskKeyId', 'dskPublicKey', 'nonce', 'challengeId', 'attemptId', 'attemptRecoveryToken', 'attestationEvidence', 'outcome', 'consumedAt']) {
+      assert.equal(Object.hasOwn(listedDto, forbidden), false, `response must not expose ${forbidden}`);
+    }
+
     const noSession = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/first-device-bootstrap/${CEREMONY_ID}` });
     assert.equal(noSession.statusCode, 401);
 
@@ -304,8 +336,8 @@ test('parent detail: session, family scope and ADMINISTRATOR are all required; t
     });
     assert.equal(ok.statusCode, 200);
     const detail = ok.json().ceremony;
+    assert.deepEqual(Object.keys(detail).sort(), ['approvedAt', 'ceremonyId', 'createdAt', 'deviceId', 'dskFingerprint', 'expiresAt', 'status']);
     assert.equal(detail.deviceId, SS_DEVICE.deviceId);
-    assert.equal(detail.dskKeyId, SS_DEVICE.dskKeyId);
     assert.equal(detail.dskFingerprint, computeKeyFingerprint(SS_DEVICE.dskPublicKey));
     assert.equal(detail.status, 'PENDING');
 
@@ -330,6 +362,29 @@ test('parent detail: session, family scope and ADMINISTRATOR are all required; t
     assert.equal(response.json().error, 'forbidden');
   } finally {
     await nonAdmin.app.close();
+  }
+
+  const notProvisionedOwner = buildApp({ eligibility: false, ceremony: ceremonyRecord() });
+  try {
+    const list = await notProvisionedOwner.app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/first-device-bootstrap`,
+      headers: sessionHeaders('session-owner'),
+    });
+    assert.equal(list.statusCode, 403);
+    assert.deepEqual(list.json(), { error: 'forbidden' });
+    assert.equal(notProvisionedOwner.serviceCalls.list.length, 1);
+
+    const detail = await notProvisionedOwner.app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/first-device-bootstrap/${CEREMONY_ID}`,
+      headers: sessionHeaders('session-owner'),
+    });
+    assert.equal(detail.statusCode, 403);
+    assert.deepEqual(detail.json(), { error: 'forbidden' });
+    assert.equal(notProvisionedOwner.serviceCalls.describe.length, 0, 'an ineligible administrator must not read ceremony details');
+  } finally {
+    await notProvisionedOwner.app.close();
   }
 });
 
@@ -361,10 +416,11 @@ test('approve enforces CSRF, then ceremony existence/eligibility, and only then 
     const ok = await app.inject({ method: 'POST', url: approveUrl, payload: body, headers: parentHeaders });
     assert.equal(ok.statusCode, 200);
     const responseBody = ok.json();
-    assert.equal(responseBody.status, 'APPROVED');
-    assert.equal(responseBody.deviceId, SS_DEVICE.deviceId);
-    assert.equal(responseBody.dskKeyId, SS_DEVICE.dskKeyId);
-    assert.equal(responseBody.dskFingerprint, computeKeyFingerprint(SS_DEVICE.dskPublicKey));
+    assert.deepEqual(Object.keys(responseBody), ['ceremony']);
+    assert.equal(responseBody.ceremony.status, 'APPROVED');
+    assert.equal(responseBody.ceremony.deviceId, SS_DEVICE.deviceId);
+    assert.equal(responseBody.ceremony.dskFingerprint, computeKeyFingerprint(SS_DEVICE.dskPublicKey));
+    assert.deepEqual(Object.keys(responseBody.ceremony).sort(), ['approvedAt', 'ceremonyId', 'createdAt', 'deviceId', 'dskFingerprint', 'expiresAt', 'status']);
     assert.equal(consumeCalls.length, 1);
     assert.deepEqual(consumeCalls[0], {
       sessionToken: 'session-owner',

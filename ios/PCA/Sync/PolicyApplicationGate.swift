@@ -24,11 +24,18 @@ public struct PolicyEpochStamp: Equatable {
 public enum PolicyApplicationDecision: Equatable {
     case apply
     case rejectMissingTrustedEpochFloor
+    case rejectInvalidCandidateEpoch
+    case rejectInvalidTrustedEpochFloor
     case rejectStaleTrustSetEpoch
     case rejectStaleKeyEpoch
 }
 
 public enum PolicyApplicationGate {
+    /// Family protocol epochs stay inside signed 32-bit range on every
+    /// platform. The lower bounds remain field-specific: trust-set epochs
+    /// start at 1, while keyEpoch 0 remains a supported initial/sentinel value.
+    public static let maximumEpoch = Int(Int32.max)
+
     /// `currentFloor` must come from a previously verified and durably
     /// accepted Trust Set/policy receipt. An absent floor is not authority
     /// to trust an arbitrary first epoch: the approved first-device root
@@ -37,8 +44,15 @@ public enum PolicyApplicationGate {
     /// must be >= the floor; EITHER one regressing is rejected independently.
     public static func evaluate(candidate: PolicyEpochStamp, currentFloor: PolicyEpochStamp?) -> PolicyApplicationDecision {
         guard let floor = currentFloor else { return .rejectMissingTrustedEpochFloor }
+        guard isValid(candidate) else { return .rejectInvalidCandidateEpoch }
+        guard isValid(floor) else { return .rejectInvalidTrustedEpochFloor }
         if candidate.trustSetEpoch < floor.trustSetEpoch { return .rejectStaleTrustSetEpoch }
         if candidate.keyEpoch < floor.keyEpoch { return .rejectStaleKeyEpoch }
         return .apply
+    }
+
+    private static func isValid(_ stamp: PolicyEpochStamp) -> Bool {
+        stamp.trustSetEpoch >= 1 && stamp.trustSetEpoch <= maximumEpoch &&
+        stamp.keyEpoch >= 0 && stamp.keyEpoch <= maximumEpoch
     }
 }

@@ -216,6 +216,24 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
     return runInTransaction((conn) => this.isOwnerEligibleOn(conn, familyId, accountId));
   }
 
+  async listApprovalCeremonies(
+    familyId: string,
+    now: Date,
+    limit: number,
+  ): Promise<FirstDeviceBootstrapCeremonyRecord[]> {
+    const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 25;
+    const boundedLimit = Math.max(1, Math.min(25, requestedLimit));
+    return runInTransaction(async (conn) => {
+      const [rows] = await conn.execute<CeremonyRow[]>(
+        `SELECT ${CEREMONY_COLUMNS} FROM family_first_device_bootstrap_ceremonies
+          WHERE family_id = ? AND status IN ('PENDING', 'APPROVED') AND expires_at > ?
+          ORDER BY created_at DESC LIMIT ?`,
+        [familyId, now, boundedLimit],
+      );
+      return rows.map(toCeremonyRecord);
+    });
+  }
+
   async createOrReuseCeremony(input: CreateOrReuseCeremonyInput): Promise<CreateOrReuseCeremonyOutcome> {
     return runInTransaction(async (conn) => {
       // Lock the device row so concurrent challenge requests for one device serialize on ceremony creation.

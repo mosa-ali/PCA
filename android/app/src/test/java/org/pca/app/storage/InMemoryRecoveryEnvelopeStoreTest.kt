@@ -2,6 +2,7 @@ package org.pca.app.storage
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class InMemoryRecoveryEnvelopeStoreTest {
@@ -41,6 +42,19 @@ class InMemoryRecoveryEnvelopeStoreTest {
         val store = InMemoryRecoveryEnvelopeStore()
         store.save(sampleEnvelope())
         store.clear()
+        assertNull(store.current())
+    }
+
+    @Test
+    fun `invalid non-positive recovery epochs are not stored`() {
+        val store = InMemoryRecoveryEnvelopeStore()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            store.save(sampleEnvelope().copy(trustSetEpoch = 0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            store.save(sampleEnvelope().copy(keyEpoch = -1))
+        }
         assertNull(store.current())
     }
 }

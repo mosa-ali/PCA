@@ -174,6 +174,7 @@ export class FakeFirstDeviceBootstrapStore {
   constructor({ attempt = null, ceremony = null } = {}) {
     this.attempt = attempt;
     this.ceremony = ceremony;
+    this.ceremonies = ceremony ? [ceremony] : [];
     this.eligibility = true;
     this.createOutcome = null;
     this.approveOutcome = null;
@@ -181,6 +182,7 @@ export class FakeFirstDeviceBootstrapStore {
     this.commitCalls = [];
     this.createCalls = [];
     this.approveCalls = [];
+    this.listCalls = [];
     /** When true, a successful commit transitions the fake ceremony to COMMITTED (durable replay semantics). */
     this.commitTransitions = true;
   }
@@ -195,6 +197,15 @@ export class FakeFirstDeviceBootstrapStore {
 
   async readOwnerEligibility(familyId, accountId) {
     return this.eligibility && typeof familyId === 'string' && typeof accountId === 'string';
+  }
+
+  async listApprovalCeremonies(familyId, now, limit) {
+    this.listCalls.push({ familyId, now, limit });
+    return this.ceremonies
+      .filter((ceremony) => ceremony.familyId === familyId && ['PENDING', 'APPROVED'].includes(ceremony.status) && ceremony.expiresAt > now)
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, limit)
+      .map((ceremony) => ({ ...ceremony }));
   }
 
   async createOrReuseCeremony(input) {

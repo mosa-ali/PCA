@@ -53,7 +53,7 @@ test('creating a family-member invitation through the real service delivers a de
     actorDeviceId: 'actor-device-owner-1',
   });
 
-  // The underlying plaintext audit record was durably appended, unaffected by delivery.
+  // The underlying plaintext audit record was appended to the in-memory reference repository, unaffected by delivery.
   const plaintextRecords = await auditRepository.listForFamily('fam-delivery-1');
   assert.equal(plaintextRecords.length, 1);
   assert.equal(plaintextRecords[0].actionType, 'ROLE_INVITATION');

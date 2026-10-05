@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { generateProtectionAlert } from './ProtectionAlertGenerator.js';
 import type { ProtectionAlertLedger, RecordProtectionAlertResult } from './ProtectionAlertLedger.js';
 import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
@@ -74,6 +75,9 @@ export class ProtectionAlertProducer {
 
   async produce(input: ProduceProtectionAlertInput): Promise<ProduceProtectionAlertResult> {
     if (!input.alertsEnabled) return { outcome: 'DISABLED', event: null };
+    if (!isFamilyEpochNumber(input.keyEpoch)) {
+      throw new Error('Protection alert key epoch is outside the supported family epoch range.');
+    }
 
     const alertId = input.alertId ?? this.nextAlertId();
     const generatedAtUtc = input.generatedAtUtc ?? this.now();

@@ -684,6 +684,114 @@
           }
         }
       }
+    },
+    "First-device security setup" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إعداد أمان الجهاز الأول" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "First-device security setup" } }
+      }
+    },
+    "Unable to confirm the saved secure setup state. Actions are disabled until it can be read again." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تعذّر تأكيد حالة الإعداد الآمن المحفوظ. أُوقفت الإجراءات إلى أن تتوفر إمكانية قراءتها مجددًا." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to confirm the saved secure setup state. Actions are disabled until it can be read again." } }
+      }
+    },
+    "Secure first-device setup is unavailable on this device." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إعداد الأمان الآمن للجهاز الأول غير متاح على هذا الجهاز." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Secure first-device setup is unavailable on this device." } }
+      }
+    },
+    "Request parent approval" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "طلب موافقة ولي الأمر" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Request parent approval" } }
+      }
+    },
+    "Check parent approval" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "التحقق من موافقة ولي الأمر" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check parent approval" } }
+      }
+    },
+    "Submit approved secure setup" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إرسال الإعداد الآمن بعد الموافقة" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Submit approved secure setup" } }
+      }
+    },
+    "Check secure setup status" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "التحقق من حالة الإعداد الآمن" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check secure setup status" } }
+      }
+    },
+    "Retry saved secure submission" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إعادة محاولة الإرسال الآمن المحفوظ" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry saved secure submission" } }
+      }
+    },
+    "Request parent approval again" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "طلب موافقة ولي الأمر مرة أخرى" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Request parent approval again" } }
+      }
+    },
+    "Retry parent approval request" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إعادة محاولة طلب موافقة ولي الأمر" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry parent approval request" } }
+      }
+    },
+    "Parent approval has not been requested." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "لم يُطلب بعد الحصول على موافقة ولي الأمر." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parent approval has not been requested." } }
+      }
+    },
+    "Waiting for parent approval." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "بانتظار موافقة ولي الأمر." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for parent approval." } }
+      }
+    },
+    "Parent approved this request. Submit it to ask the server to accept the family root." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "وافق ولي الأمر على هذا الطلب. أرسله لطلب قبول جذر العائلة من الخادم." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parent approved this request. Submit it to ask the server to accept the family root." } }
+      }
+    },
+    "The secure setup submission is in progress or needs status confirmation." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "جارٍ إرسال الإعداد الآمن أو يلزم التحقق من حالته." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The secure setup submission is in progress or needs status confirmation." } }
+      }
+    },
+    "The secure setup result could not be confirmed. Check status or retry the saved submission." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تعذّر تأكيد نتيجة الإعداد الآمن. تحقّق من الحالة أو أعد إرسال الطلب المحفوظ." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The secure setup result could not be confirmed. Check status or retry the saved submission." } }
+      }
+    },
+    "The server accepted the family root. Device activation and protection are separate steps." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "قبل الخادم جذر العائلة. تفعيل الجهاز والحماية خطوتان منفصلتان." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The server accepted the family root. Device activation and protection are separate steps." } }
+      }
+    },
+    "The parent approval request expired." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "انتهت صلاحية طلب موافقة ولي الأمر." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The parent approval request expired." } }
+      }
+    },
+    "The server did not accept this secure setup request. It cannot be reused." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "لم يقبل الخادم طلب الإعداد الآمن هذا. لا يمكن إعادة استخدامه." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The server did not accept this secure setup request. It cannot be reused." } }
+      }
     }
   },
   "version" : "1.0"

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { acceptEpoch, FTS_RECOVERY_ACCEPTANCE } from '../../dist/familytrustset/FamilyTrustSetEngine.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryFamilyTrustSetStore.js';
 import {
   createTestOnlyTrustSetSignatureVerifier,
@@ -38,6 +39,24 @@ function buildEpoch(signerPublicKey, overrides = {}) {
 function buildHarness() {
   return { store: new InMemoryFamilyTrustSetStore(), verifier: createTestOnlyTrustSetSignatureVerifier() };
 }
+
+test('out-of-range direct candidate is rejected before store, canonicalization, or signature effects', async () => {
+  let reads = 0;
+  let writes = 0;
+  let verifies = 0;
+  const store = {
+    getCurrentEpoch() { reads += 1; return null; },
+    setCurrentEpoch() { writes += 1; },
+  };
+  const verifier = { async verify() { verifies += 1; return true; } };
+  const candidate = {
+    ...buildEpoch('owner-dsk-pub'),
+    trustSetEpoch: MAX_FAMILY_EPOCH + 1,
+  };
+
+  assert.deepEqual(await acceptEpoch(candidate, store, verifier), { accepted: false, reason: 'MALFORMED_EPOCH' });
+  assert.deepEqual({ reads, writes, verifies }, { reads: 0, writes: 0, verifies: 0 });
+});
 
 // --- Genesis -----------------------------------------------------------
 

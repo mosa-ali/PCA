@@ -1,215 +1,49 @@
-// Proves RealWebRuleAdminClient.listRules/setRule/removeRule are genuinely
-// real HTTP calls once trust + crypto-review both pass (listRules was
-// previously a hardcoded throw with zero fetch logic at all; setRule/
-// removeRule were added in commit 1a93aa0) -- they resolve the current
-// family id, send the actor-device bearer token + CSRF header, hit the real
-// backend route (backend/src/http/routes/webRuleRoutes.ts), and parse the
-// returned rule list -- while still only ever reporting LOCAL_DRAFT/
-// PENDING_DELIVERY, never DELIVERED/APPLIED (doc 36: "parent saved != child
-// applied"), because actual device delivery remains behind the separate,
-// still-unresolved production family-envelope crypto gate (items D/E/G)
-// this class does not attempt to solve.
+// Generic family crypto readiness does not authorize readable Web Rules
+// DTOs. Force that shared gate READY to prove this adapter remains
+// unavailable until PCA-SEC-023-compliant encrypted storage/delivery exists.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// The crypto gate is a hardcoded, non-configurable `false` in source (see
-// parent-sdk/browser-runtime/src/cryptoGate.ts's own header comment) --
-// every real-mode test for a crypto-gated client must mock it explicitly to
-// exercise anything past that gate (see realRequestClient.test.ts's own
-// identical override). This does not touch production code: it only
-// overrides the imported module's behavior for this test file.
 vi.mock('@pca/parent-sdk-browser-runtime', async () => {
   const actual = await vi.importActual<typeof import('@pca/parent-sdk-browser-runtime')>('@pca/parent-sdk-browser-runtime');
   return { ...actual, getCryptoGateDecision: () => ({ status: 'READY' as const, reason: 'test override' }) };
 });
 
 const { RealWebRuleAdminClient } = await import('../../src/api/real/realWebRuleAdminClient');
-type TrustedBrowserProviderType = import('../../src/domain/trustedBrowser').TrustedBrowserProvider;
+const { ServiceUnavailableError } = await import('../../src/api/unavailable');
 
-const trustedBrowser = {
-  getSnapshot: vi.fn(async () => ({
-    state: 'TRUSTED' as const,
-    serviceAuthenticated: true,
-    browserEndpointId: 'endpoint-a',
-    trustSetEpoch: 5,
-    acceptedMinEpoch: 5,
-    pairingRequestedAtUtc: null,
-    lastFingerprint: null,
-    actorDeviceSessionToken: 'actor-device-session-token',
-  })),
-} as unknown as TrustedBrowserProviderType;
-
-function stubFamilySessionAndFetch(fetchImpl: (input: unknown, init?: RequestInit) => Promise<unknown>) {
-  const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
-    const url = String(input);
-    if (url.endsWith('/api/parent/session')) {
-      return { ok: true, json: async () => ({ familyId: 'family-1' }) };
-    }
-    return fetchImpl(input, init);
-  });
-  vi.stubGlobal('fetch', fetchMock);
-  return fetchMock;
-}
-
-describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
+describe('RealWebRuleAdminClient mutations (generic crypto gate READY)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('listRules GETs the real backend route and reports PENDING_DELIVERY for a non-empty result, with no fabricated revision', async () => {
-    const fetchMock = stubFamilySessionAndFetch(async () => ({
-      ok: true,
-      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }] }),
-    }));
-
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.listRules('child-1');
-
-    expect(result).toEqual({
-      rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }],
-      status: 'PENDING_DELIVERY',
-      revision: null,
-    });
-
-    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/children/child-1/web-rules'));
-    expect(call).toBeDefined();
-    const [url, init] = call as unknown as [string, RequestInit];
-    expect(url).toBe('https://pca.example/api/parent/families/family-1/children/child-1/web-rules');
-    expect(init.method).toBe('GET');
-    expect(init.credentials).toBe('include');
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer actor-device-session-token');
-  });
-
-  it('listRules reports LOCAL_DRAFT (never a fabricated delivered state) when the family has no stored rules yet', async () => {
-    stubFamilySessionAndFetch(async () => ({ ok: true, json: async () => ({ rules: [] }) }));
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.listRules('child-1');
-    expect(result).toEqual({ rules: [], status: 'LOCAL_DRAFT', revision: null });
-  });
-
-  it('listRules surfaces a real HTTP failure rather than pretending to succeed', async () => {
-    stubFamilySessionAndFetch(async () => ({ ok: false, status: 500, json: async () => ({ error: 'server_error' }) }));
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    await expect(client.listRules('child-1')).rejects.toThrow(/500/);
-  });
-
-  it('listRules surfaces a network-level fetch rejection rather than swallowing it', async () => {
-    const fetchMock = vi.fn(async (input: unknown) => {
-      const url = String(input);
-      if (url.endsWith('/api/parent/session')) return { ok: true, json: async () => ({ familyId: 'family-1' }) };
-      throw new TypeError('Failed to fetch');
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    await expect(client.listRules('child-1')).rejects.toThrow(/Failed to fetch/);
-  });
-
-  it('listRules discards a malformed rule element from the response rather than fabricating a rule', async () => {
-    stubFamilySessionAndFetch(async () => ({
-      ok: true,
-      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }, { domain: 123, listType: 'DENY' }] }),
-    }));
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.listRules('child-1');
-    expect(result.rules).toEqual([{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }]);
-  });
-
-  it('listRules no longer treats browser pairing as Parent authority', async () => {
+  it('listRules remains unavailable and sends no readable-rule request', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const notTrustedBrowser = {
-      getSnapshot: vi.fn(async () => ({
-        state: 'BROWSER_NOT_TRUSTED' as const,
-        serviceAuthenticated: true,
-        browserEndpointId: 'endpoint-a',
-        trustSetEpoch: 5,
-        acceptedMinEpoch: 5,
-        pairingRequestedAtUtc: null,
-        lastFingerprint: null,
-        actorDeviceSessionToken: null,
-      })),
-    } as unknown as TrustedBrowserProviderType;
-    const client = new RealWebRuleAdminClient('https://pca.example', notTrustedBrowser);
-    await expect(client.listRules('child-1')).rejects.toThrow();
-    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/parent/session'))).toBe(true);
+    const client = new RealWebRuleAdminClient();
+
+    await expect(client.listRules('child-1')).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('setRule POSTs {domain, listType} with the actor-device bearer token, never a self-reported device id', async () => {
-    const fetchMock = stubFamilySessionAndFetch(async () => ({
-      ok: true,
-      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }] }),
-    }));
-
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.setRule('child-1', 'example.com', 'DENY');
-
-    expect(result).toEqual({
-      rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }],
-      status: 'PENDING_DELIVERY',
-    });
-
-    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/web-rules') && !String(url).includes('/remove'));
-    expect(call).toBeDefined();
-    const [url, init] = call as unknown as [string, RequestInit];
-    expect(url).toBe('https://pca.example/api/parent/families/family-1/children/child-1/web-rules');
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('include');
-    expect(JSON.parse(String(init.body))).toEqual({ domain: 'example.com', listType: 'DENY' });
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer actor-device-session-token');
-  });
-
-  it('removeRule POSTs to the /remove sub-path with {domain, listType}', async () => {
-    const fetchMock = stubFamilySessionAndFetch(async () => ({
-      ok: true,
-      json: async () => ({ rules: [] }),
-    }));
-
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.removeRule('child-1', 'example.com', 'DENY');
-
-    expect(result).toEqual({ rules: [], status: 'PENDING_DELIVERY' });
-
-    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/web-rules/remove'));
-    expect(call).toBeDefined();
-    const [url, init] = call as unknown as [string, RequestInit];
-    expect(url).toBe('https://pca.example/api/parent/families/family-1/children/child-1/web-rules/remove');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ domain: 'example.com', listType: 'DENY' });
-  });
-
-  it('setRule surfaces a real HTTP failure rather than pretending to succeed', async () => {
-    const fetchMock = stubFamilySessionAndFetch(async () => ({ ok: false, status: 403, json: async () => ({ error: 'forbidden' }) }));
-    void fetchMock;
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    await expect(client.setRule('child-1', 'example.com', 'DENY')).rejects.toThrow(/403/);
-  });
-
-  it('setRule discards a malformed rule element from the response rather than fabricating a rule', async () => {
-    stubFamilySessionAndFetch(async () => ({
-      ok: true,
-      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }, { domain: 123, listType: 'DENY' }] }),
-    }));
-    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
-    const result = await client.setRule('child-1', 'example.com', 'DENY');
-    expect(result.rules).toEqual([{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }]);
-  });
-
-  it('setRule no longer treats browser pairing as Parent authority', async () => {
+  it('setRule cannot send a plaintext domain even when generic crypto is ready', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const notTrustedBrowser = {
-      getSnapshot: vi.fn(async () => ({
-        state: 'BROWSER_NOT_TRUSTED' as const,
-        serviceAuthenticated: true,
-        browserEndpointId: 'endpoint-a',
-        trustSetEpoch: 5,
-        acceptedMinEpoch: 5,
-        pairingRequestedAtUtc: null,
-        lastFingerprint: null,
-        actorDeviceSessionToken: null,
-      })),
-    } as unknown as TrustedBrowserProviderType;
-    const client = new RealWebRuleAdminClient('https://pca.example', notTrustedBrowser);
-    await expect(client.setRule('child-1', 'example.com', 'DENY')).rejects.toThrow();
-    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/parent/session'))).toBe(true);
+    const client = new RealWebRuleAdminClient();
+    const sensitiveDomain = 'sensitive-family-policy.example';
+
+    const error = await client.setRule('child-1', sensitiveDomain, 'DENY').catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect(String(error)).not.toContain(sensitiveDomain);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('removeRule cannot send a plaintext domain even when generic crypto is ready', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new RealWebRuleAdminClient();
+    const sensitiveDomain = 'sensitive-family-policy.example';
+
+    const error = await client.removeRule('child-1', sensitiveDomain, 'DENY').catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect(String(error)).not.toContain(sensitiveDomain);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

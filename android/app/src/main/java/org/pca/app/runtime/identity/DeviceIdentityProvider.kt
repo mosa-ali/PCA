@@ -1,5 +1,6 @@
 package org.pca.app.runtime.identity
 
+import org.pca.app.storage.CorruptLocalFamilyStateException
 import org.pca.app.storage.FamilyStateStore
 
 /**
@@ -12,14 +13,16 @@ import org.pca.app.storage.FamilyStateStore
  *
  * [DeviceIdentityState.NotEnrolled] is a first-class, honestly-surfaced outcome, not an error to
  * paper over with a fabricated id: a device that has not completed enrollment genuinely has no
- * PCA device identity yet. Callers that need one (usage/location ownership) must handle
- * [DeviceIdentityState.NotEnrolled] explicitly (skip recording under a made-up id) rather than
- * substitute a random UUID or a platform identifier -- doing so would silently misattribute
- * local records to an identity nothing on the family side actually recognizes.
+ * PCA device identity yet. [DeviceIdentityState.Unavailable] is separate and means persisted
+ * identity could not be trusted. Callers that need an identity (usage/location ownership) must
+ * handle both by skipping family-scoped work, never substituting a random UUID or a platform
+ * identifier that the family side does not recognize.
  */
 sealed interface DeviceIdentityState {
     data class Enrolled(val deviceId: String) : DeviceIdentityState
     data object NotEnrolled : DeviceIdentityState
+    /** A persisted record exists but is unreadable, so this device cannot safely claim an identity or first-install status. */
+    data object Unavailable : DeviceIdentityState
 }
 
 interface DeviceIdentityProvider {
@@ -31,7 +34,8 @@ interface DeviceIdentityProvider {
  * durably persisted from its own enrollment (via [FamilyStateStore]) and reports its `deviceId`
  * when present. This class does not perform enrollment itself and does not fabricate an id when
  * none has been persisted yet -- it only reads the one existing local authority for "am I
- * enrolled, and if so, as what."
+ * enrolled, and if so, as what." Corrupt persisted data is surfaced as [DeviceIdentityState.Unavailable],
+ * never as first-install [DeviceIdentityState.NotEnrolled].
  *
  * CLOSED (was KNOWN_ARCHITECTURE_GAP): `PcaAppGraph` now constructs a real
  * `org.pca.app.enrollment.HttpDeviceBootstrapApiClient` and wires it through
@@ -44,7 +48,12 @@ interface DeviceIdentityProvider {
  */
 class PersistentDeviceIdentityProvider(private val familyStateStore: FamilyStateStore) : DeviceIdentityProvider {
     override fun currentIdentity(): DeviceIdentityState {
-        val deviceId = familyStateStore.currentState()?.deviceId
+        val state = try {
+            familyStateStore.currentState()
+        } catch (_: CorruptLocalFamilyStateException) {
+            return DeviceIdentityState.Unavailable
+        }
+        val deviceId = state?.deviceId
         return if (deviceId != null) DeviceIdentityState.Enrolled(deviceId) else DeviceIdentityState.NotEnrolled
     }
 }

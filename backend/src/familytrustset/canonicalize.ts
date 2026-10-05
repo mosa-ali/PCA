@@ -1,4 +1,5 @@
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 /**
  * Same netstring-style length-prefixed scheme as
@@ -15,6 +16,9 @@ import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
  * the input object's own keys.
  */
 export function canonicalizeTrustSetEpoch(epoch: Omit<FamilyTrustSetEpoch, 'signature'>): string {
+  if (!isFamilyEpochNumber(epoch.trustSetEpoch, 1) || !isFamilyEpochNumber(epoch.keyEpoch, 0)) {
+    throw new Error('Trust Set epoch numbers must be exact integers within the supported family epoch range.');
+  }
   const fields = [
     epoch.familyId,
     String(epoch.trustSetEpoch),

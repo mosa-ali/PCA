@@ -3,6 +3,7 @@ import {
   applyServerCiphertextFeedWindow,
   isServerCiphertextExpired,
 } from '../retention/serverCiphertextTtl.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export type RecordProtectionAlertResult =
   | { readonly outcome: 'RECORDED' }
@@ -67,6 +68,9 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
   }
 
   async record(event: ProtectionAlertEvent): Promise<RecordProtectionAlertResult> {
+    if (!isFamilyEpochNumber(event.keyEpoch)) {
+      throw new Error('Protection alert key epoch is outside the supported family epoch range.');
+    }
     // Best-effort housekeeping on the write path, mirroring
     // RelayService's own purge-on-operation discipline.
     await this.purgeExpired(this.now());

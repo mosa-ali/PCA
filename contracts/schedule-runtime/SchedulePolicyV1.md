@@ -42,16 +42,20 @@ This resolution is deliberately trivial and lossless — it never re-derives or 
 
 New for this mission — no pre-existing TS production counterpart. Sits in front of the evaluator: given whatever `SchedulePolicyV1` record is currently persisted locally, decide which policy (if any) the evaluator should actually be fed for this tick, and what to honestly tell the parent-facing UI about freshness.
 
-States: `CURRENT` | `STALE_REMOTE` | `INVALID` | `EPOCH_STALE` | `NO_ACCEPTED_POLICY`.
+Policy-validator states: `CURRENT` | `STALE_REMOTE` | `INVALID` | `EPOCH_STALE` | `NO_ACCEPTED_POLICY`. The Android runtime also reports `CORRUPT_LOCAL_STATE` when its persisted snapshot key exists but cannot be decoded; this is a storage-integrity result, not a candidate-policy validation result.
 
 Full precedence and every case is captured as executable vectors in [`vectors/policy-acceptance-v1.json`](vectors/policy-acceptance-v1.json); in prose:
 
 1. **No candidate policy has ever been accepted locally** → `NO_ACCEPTED_POLICY`, `effectivePolicy = null`. At the evaluator this is behaviorally identical to an empty policy (`ALLOWED`, no restrictions ever configured) — there is no special-cased decision kind for it, matching the existing engine's own "offline restart with no policy sync yet" test.
 2. **The candidate fails structural validation** (malformed window fields, mirroring `validateScheduleWindow`) → `INVALID`. Fails safe onto `lastKnownGoodPolicy` if one exists; only resolves to `null` (again, evaluator-equivalent to no restrictions) when literally nothing has ever validated. Never crashes, never fabricates a restriction that was never configured.
 3. **The candidate's own `expiresAt` has passed** → `INVALID`. Fails safe onto `lastKnownGoodPolicy` — mission §11 explicitly forbids "expired ⇒ unrestricted"; an expired policy must not silently open access, it must fall back to whatever was last validly in force.
-4. **The candidate's `trustSetEpoch` or `keyEpoch` is strictly behind the device's current known epoch** (e.g. a device-revoke or key rotation happened since this policy was authored/signed) → `EPOCH_STALE`. Fails safe onto `lastKnownGoodPolicy` if available, else onto the candidate itself (it is not corrupted, only possibly trust-stale — still better than no enforcement at all).
+4. **The candidate's `trustSetEpoch` or `keyEpoch` is strictly behind the device's current known epoch** (e.g. a device-revoke or key rotation happened since this policy was authored/signed) → `EPOCH_STALE`. Fails safe onto `lastKnownGoodPolicy` only when that fallback is not itself behind either current device floor; otherwise it retains the candidate (which is not corrupted, only possibly trust-stale) rather than moving to an even older policy. This preserves enforcement without applying a fallback superseded by the device's known trust/key state.
 5. **Offline, and the last confirmed sync is missing or older than a staleness threshold** → `STALE_REMOTE`. `effectivePolicy` is still the candidate, fully enforced — this is a label for parent-facing UI honesty only (mission §11: "a stale remote connection does NOT automatically invalidate the local policy"). Connectivity is never itself an enforcement input.
 6. **Otherwise** → `CURRENT`.
+
+### Persisted snapshot corruption
+
+A genuinely absent snapshot remains `NO_ACCEPTED_POLICY` and retains the never-accepted behavior above. A present but undecodable Android snapshot is instead reported as `CORRUPT_LOCAL_STATE`: the runtime returns `ENFORCEMENT_UNAVAILABLE`, and the production port reports `UNAVAILABLE` without invoking the enforcement consumer. The store must preserve the original bytes for diagnosis/recovery and must not rewrite corruption as an empty snapshot. Schedule-derived wellbeing quiet-context helpers conservatively report a quiet context while the snapshot is corrupt so unreadable state does not widen behavior. This state is detected before policy validation and is not represented in the policy-acceptance vectors.
 
 ### Revision acceptance
 

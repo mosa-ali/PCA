@@ -42,6 +42,8 @@ import type { PlatformAdminAuditService } from '../../platformadmin/audit/Platfo
 import type { PaymentProviderRegistry } from '../../billing/provider/providerRegistry.js';
 import type { RefundOrchestrationService } from '../../billing/refundOrchestration/RefundOrchestrationService.js';
 import { createRateLimiter } from '../rateLimit.js';
+import { parsePageRequest } from '../../platformadmin/api/pagination.js';
+import { dateToJson } from '../../platformadmin/api/dto.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REASON_CODE_LENGTH = 32;
@@ -65,6 +67,41 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingRefundRoutesDeps): void {
   const requirePlatformAdminSession = createRequirePlatformAdminSession(deps.platformAdminAuthService);
   const refundAttemptLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'billing-refund' });
+  const refundRecoveryReadLimiter = deps.rateLimiter({ windowMs: 60_000, max: 120, bucket: 'billing-refund-recovery-read' });
+
+  app.get(
+    '/platform-admin/billing/refund-recoveries',
+    { preHandler: [refundRecoveryReadLimiter, requirePlatformAdminSession] },
+    async (request, reply) => {
+      const roles = request.platformAdminRoles ?? [];
+      try {
+        requireBillingOperation(roles, 'ISSUE_REFUND');
+      } catch (error) {
+        if (error instanceof BillingAuthorizationError) return reply.code(403).send({ error: 'forbidden' });
+        throw error;
+      }
+
+      const page = parsePageRequest((request.query ?? {}) as Record<string, unknown>);
+      const result = await deps.refundOrchestrationService.listRecoverableRefundOperations(roles, page);
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(200).send({
+        items: result.items.map((operation) => ({
+          refundOperationId: operation.refundOperationId,
+          paymentTransactionId: operation.paymentTransactionId,
+          amountMinor: operation.amountMinor,
+          currencyCode: operation.currencyCode,
+          reasonCode: operation.reasonCode,
+          idempotencyKey: operation.idempotencyKey,
+          state: operation.state,
+          createdAt: dateToJson(operation.createdAt),
+          updatedAt: dateToJson(operation.updatedAt),
+        })),
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+      });
+    },
+  );
 
   app.post(
     '/billing/admin/refund',

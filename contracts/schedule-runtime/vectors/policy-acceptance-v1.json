@@ -175,6 +175,20 @@
         "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
       },
       "expected": { "state": "EPOCH_STALE", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "epoch-stale-fallback-behind-device-floor-keeps-candidate",
+      "description": "An epoch-stale candidate does not fall back to a last-known-good policy that is itself behind the device's newer trust floor; the newer persisted candidate remains enforced.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "EPOCH_STALE", "effectivePolicy": "candidate" }
     }
   ],
   "revisionAcceptanceVectors": [

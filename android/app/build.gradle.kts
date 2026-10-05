@@ -1,9 +1,34 @@
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+// The Parent Web build consumes this same canonical origin as
+// VITE_PCA_CHILD_APP_PUBLIC_ORIGIN. Only the host is placed in Android's
+// App Link filter; the fixed /enroll/ path prevents taking over other public
+// website routes.
+val configuredChildAppPublicOrigin = System.getenv("PCA_CHILD_APP_PUBLIC_ORIGIN")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: "https://www.pcasafe.com"
+val parsedChildAppPublicOrigin = URI(configuredChildAppPublicOrigin)
+require(
+    parsedChildAppPublicOrigin.scheme.equals("https", ignoreCase = true) &&
+        !parsedChildAppPublicOrigin.host.isNullOrBlank() &&
+        parsedChildAppPublicOrigin.userInfo == null &&
+        (parsedChildAppPublicOrigin.rawPath.isNullOrEmpty() || parsedChildAppPublicOrigin.rawPath == "/") &&
+        parsedChildAppPublicOrigin.rawQuery == null &&
+        parsedChildAppPublicOrigin.rawFragment == null &&
+        (parsedChildAppPublicOrigin.port == -1 || parsedChildAppPublicOrigin.port == 443),
+) {
+    "PCA_CHILD_APP_PUBLIC_ORIGIN must be an HTTPS origin without path, credentials, query, fragment, or nonstandard port."
+}
+val childAppLinkHost = parsedChildAppPublicOrigin.host.lowercase()
+val childAppLinkPathPrefix = "/enroll/"
 
 android {
     namespace = "org.pca.app"
@@ -16,6 +41,10 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["pcaChildAppLinkHost"] = childAppLinkHost
+        manifestPlaceholders["pcaChildAppLinkPathPrefix"] = childAppLinkPathPrefix
+        buildConfigField("String", "PCA_CHILD_APP_LINK_HOST", "\"$childAppLinkHost\"")
+        buildConfigField("String", "PCA_CHILD_APP_LINK_PATH_PREFIX", "\"$childAppLinkPathPrefix\"")
     }
 
     // AGP 8+ no longer generates BuildConfig by default; the pre-existing
@@ -154,4 +183,3 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
-

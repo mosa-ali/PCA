@@ -193,7 +193,7 @@ public final class FirstDeviceTrustRootCoordinator {
         next.expiresAt = challenge.expiresAt
         next.familyId = challenge.familyId
         next.submission = nil
-        persistAndFlush(next)
+        persistIfCurrent(expected: current, next)
     }
 
     private func submitLocked() async throws {
@@ -213,14 +213,20 @@ public final class FirstDeviceTrustRootCoordinator {
         var submitting = current
         submitting.state = .submitting
         submitting.submission = payload
-        persistAndFlush(submitting)
-        guard let refreshed = rootStore.current() else { return }
+        guard persistIfCurrent(expected: current, submitting),
+              let refreshed = rootStore.current(),
+              refreshed == submitting,
+              refreshed.state == .submitting,
+              refreshed.submission == payload,
+              rootStore.confirmDurable(refreshed),
+              rootStore.current() == refreshed else { return }
         await sendPayload(refreshed, payload: payload)
     }
 
     private func resubmitExactLocked() async throws {
         guard let current = rootStore.current(), let payload = current.submission else { return }
         guard current.state == .submitting || current.state == .unknown else { return }
+        guard rootStore.confirmDurable(current), rootStore.current() == current else { return }
         await sendPayload(current, payload: payload)
     }
 
@@ -313,7 +319,7 @@ public final class FirstDeviceTrustRootCoordinator {
             // when no submission remains) actually works.
             var expired = current
             expired.submission = nil
-            persistAndFlush(withState(expired, .expired))
+            persistIfCurrent(expected: current, withState(expired, .expired))
         default:
             transition(current, state: .unknown)
         }
@@ -398,11 +404,11 @@ public final class FirstDeviceTrustRootCoordinator {
         committed.challengeId = nil
         committed.expiresAt = nil
         committed.committedAtMillis = Int64(now().timeIntervalSince1970 * 1000)
-        persistAndFlush(committed)
+        persistIfCurrent(expected: current, committed)
     }
 
     private func transition(_ current: FirstDeviceRootRecord, state: FirstDeviceRootState) {
-        persistAndFlush(withState(current, state))
+        persistIfCurrent(expected: current, withState(current, state))
     }
 
     private func withState(_ record: FirstDeviceRootRecord, _ state: FirstDeviceRootState) -> FirstDeviceRootRecord {
@@ -411,10 +417,13 @@ public final class FirstDeviceTrustRootCoordinator {
         return next
     }
 
-    private func persistAndFlush(_ record: FirstDeviceRootRecord) {
-        rootStore.save(record)
-        rootStore.flush()
+    @discardableResult private func persistIfCurrent(
+        expected: FirstDeviceRootRecord,
+        _ record: FirstDeviceRootRecord
+    ) -> Bool {
+        guard rootStore.writeIfCurrent(expected: expected, record: record) else { return false }
         self.record = record
         onRecordChanged?(record)
+        return true
     }
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyParentEmailFamilyLookup } from '../../dist/platformadmin/accounts/ParentEmailFamilyLookup.js';
-import { ParentIdentityReadModel } from '../../dist/platformadmin/readmodels/ParentIdentityReadModel.js';
+import { ParentIdentityReadModel } from '../../dist/parentaccount/ParentIdentityProjection.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 
 const activeParent = { status: 'VERIFIED', disabledAt: null };

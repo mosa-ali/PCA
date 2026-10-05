@@ -4,9 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.enrollment.PairingState
+import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.runtime.identity.PersistentDeviceIdentityProvider
 import org.pca.app.storage.InMemoryFamilyStateStore
 import org.pca.app.storage.LocalFamilyState
+import org.pca.app.storage.PersistentFamilyStateStore
 
 class WebProtectionIdentityContextTest {
 
@@ -18,6 +20,17 @@ class WebProtectionIdentityContextTest {
         val identity = provider.current()
 
         assertEquals(WebProtectionIdentity.TrustedFamilyContextUnavailable, identity)
+    }
+
+    @Test
+    fun `corrupt saved family state never produces trusted web identity`() {
+        val backing = InMemoryPersistentStateStore().apply {
+            putString("family_state_v1", "family|device|NOT_A_PAIRING_STATE|1|1")
+        }
+        val familyStateStore = PersistentFamilyStateStore(backing)
+        val provider = RealWebProtectionIdentityContextProvider(familyStateStore, PersistentDeviceIdentityProvider(familyStateStore))
+
+        assertEquals(WebProtectionIdentity.TrustedFamilyContextUnavailable, provider.current())
     }
 
     @Test

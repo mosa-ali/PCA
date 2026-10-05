@@ -12,6 +12,7 @@ describe('Requests page -- PCA-FR-130 Bonus Time', () => {
   });
   afterEach(() => {
     __resetDevRequestsForTests();
+    vi.restoreAllMocks();
   });
 
   it('shows the requested minutes for the pending BONUS_TIME fixture request', async () => {
@@ -70,11 +71,54 @@ describe('Requests page -- PCA-FR-130 Bonus Time', () => {
     renderWithProviders(<Requests />, { role: 'OWNER' });
     await screen.findByText('Grant bonus time');
     await screen.findByRole('option', { name: 'Lina (DEV)' });
+    const grantButton = screen.getByRole('button', { name: 'Grant' });
+    expect(grantButton).toBeDisabled();
+
     await userEvent.selectOptions(screen.getByLabelText('Child'), 'child-lina');
+    expect(grantButton).toBeEnabled();
     await userEvent.type(screen.getByLabelText('Minutes'), '20');
-    await userEvent.click(screen.getByRole('button', { name: 'Grant' }));
+    await userEvent.click(grantButton);
 
     await waitFor(() => expect(screen.getByText('20 min granted')).toBeInTheDocument());
+  });
+
+  it('keeps the grant action disabled while the child list is still loading', async () => {
+    vi.spyOn(getApiClients().parentFamilyData, 'getDashboard').mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('Grant bonus time');
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Loading the child list...');
+    expect(screen.getByLabelText('Child')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeDisabled();
+  });
+
+  it('distinguishes unavailable child data from an empty family and keeps grants disabled', async () => {
+    vi.spyOn(getApiClients().parentFamilyData, 'getDashboard').mockRejectedValue(new Error('child data unavailable'));
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('Grant bonus time');
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Child data is temporarily unavailable. Bonus time cannot be granted until the child list is verified.',
+    );
+    expect(screen.getByLabelText('Child')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeDisabled();
+  });
+
+  it('reports an empty family separately after the child list is successfully read', async () => {
+    vi.spyOn(getApiClients().parentFamilyData, 'getDashboard').mockResolvedValue({
+      children: [],
+      familyEpoch: { trustSetEpoch: 4, keyEpoch: 4, lastAcknowledgedPolicyRevision: 14 },
+      generatedAtUtc: new Date().toISOString(),
+      isFixtureData: true,
+    });
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('Grant bonus time');
+
+    expect(await screen.findByRole('status')).toHaveTextContent('No children are currently linked to this account.');
+    expect(screen.getByLabelText('Child')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeDisabled();
   });
 
 

@@ -8,6 +8,7 @@ export class PlatformAdminApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
+    public readonly refundOperationId?: string,
   ) {
     super(code);
     this.name = 'PlatformAdminApiError';

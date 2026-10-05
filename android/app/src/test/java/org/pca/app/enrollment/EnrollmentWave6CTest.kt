@@ -8,9 +8,11 @@ import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.firstdevice.FirstDeviceCeremonySeed
 import org.pca.app.firstdevice.FirstDeviceRootRecord
+import org.pca.app.firstdevice.FirstDeviceRootReadResult
 import org.pca.app.firstdevice.FirstDeviceRootState
 import org.pca.app.firstdevice.FirstDeviceSubmissionPayload
 import org.pca.app.firstdevice.InMemoryFirstDeviceRootStore
+import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
 import org.pca.app.security.DeviceKeyPairDeletion
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.GeneratedKeyPair
@@ -88,6 +90,23 @@ class EnrollmentWave6CTest {
         }
 
         override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult = result!!
+    }
+
+    private class SwitchableCaptureStore : org.pca.app.firstdevice.FirstDeviceRootStore {
+        private val delegate = InMemoryFirstDeviceRootStore()
+        var failCapture = true
+        override fun current(): FirstDeviceRootRecord? = delegate.current()
+        override fun readState(): FirstDeviceRootReadResult = delegate.readState()
+        override fun save(record: FirstDeviceRootRecord) = delegate.save(record)
+        override fun clear() = delegate.clear()
+        override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean =
+            delegate.writeIfCurrent(expected, record)
+        override fun captureSeed(
+            candidate: FirstDeviceRootRecord,
+            replaceableTerminalStates: Set<FirstDeviceRootState>,
+        ): Boolean = if (failCapture) false else delegate.captureSeed(candidate, replaceableTerminalStates)
+        override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = delegate.confirmDurable(record)
+        override fun flush() = delegate.flush()
     }
 
     private fun parser() = UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
@@ -182,6 +201,84 @@ class EnrollmentWave6CTest {
     }
 
     @Test
+    fun `same-attempt recapture preserves the complete progressed ceremony record`() = runTest {
+        val rootStore = InMemoryFirstDeviceRootStore()
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val generator = RecordingGenerator()
+        val coordinator = EnrollmentCoordinator(
+            parser(),
+            FixedApi(DeviceBootstrapResult("device-1", "PAIRING_PENDING", signingKeyId = "dsk-1", encryptionKeyId = "dek-1")),
+            generator,
+            PersistentFamilyStateStore(InMemoryPersistentStateStore()),
+            pendingAttemptStore,
+            firstDeviceRootStore = rootStore,
+        )
+        coordinator.submitInvitationLink(link)
+        coordinator.beginBootstrap()
+        val pending = pendingAttemptStore.current()!!
+        val progressed = FirstDeviceRootRecord(
+            seed = FirstDeviceCeremonySeed(
+                attemptId = pending.attemptId,
+                attemptRecoveryToken = pending.attemptRecoveryToken,
+                serverBaseUrl = pending.serverBaseUrl,
+                deviceId = "device-1",
+                signingKeyId = "dsk-1",
+                encryptionKeyId = "dek-1",
+                dskPublicKeyBase64 = pending.signingPublicKeyBase64,
+                dekPublicKeyBase64 = pending.encryptionPublicKeyBase64,
+                dskAlias = pending.signingPrivateKeyAlias,
+                dekAlias = pending.encryptionPrivateKeyAlias,
+            ),
+            state = FirstDeviceRootState.SUBMITTING,
+            ceremonyId = "ceremony-1",
+            challengeId = "challenge-1",
+            nonce = "n".repeat(43),
+            expiresAt = "2026-10-02T01:00:00.000Z",
+            familyId = "family-1",
+            submission = FirstDeviceSubmissionPayload("proof", "proof-sig", "epoch", "epoch-sig", "evidence"),
+        )
+        rootStore.save(progressed)
+
+        coordinator.confirmProfile()
+
+        assertEquals(EnrollmentState.PairingPending("device-1"), coordinator.state.value)
+        assertEquals(progressed, rootStore.current())
+        assertNull(pendingAttemptStore.current())
+    }
+
+    @Test
+    fun `failed seed durability keeps pending attempt and retry commits family state idempotently`() = runTest {
+        val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val rootStore = SwitchableCaptureStore()
+        val api = FixedApi(DeviceBootstrapResult("device-1", "PAIRING_PENDING", signingKeyId = "dsk-1", encryptionKeyId = "dek-1"))
+        val first = EnrollmentCoordinator(
+            parser(), api, RecordingGenerator(), familyStateStore, pendingAttemptStore,
+            firstDeviceRootStore = rootStore,
+        )
+        first.submitInvitationLink(link)
+        first.beginBootstrap()
+        val pendingBeforeFailure = pendingAttemptStore.current()!!
+
+        first.confirmProfile()
+
+        assertTrue(first.state.value is EnrollmentState.RecoveryPending)
+        assertNull(familyStateStore.currentState())
+        assertEquals(pendingBeforeFailure, pendingAttemptStore.current())
+
+        // An explicit recovery in the same process resolves the same server
+        // attempt and seed after durable storage returns.
+        rootStore.failCapture = false
+        first.recoverAttempt()
+        first.confirmProfile()
+
+        assertEquals(EnrollmentState.PairingPending("device-1"), first.state.value)
+        assertEquals("device-1", familyStateStore.currentState()?.deviceId)
+        assertEquals(pendingBeforeFailure.attemptId, rootStore.current()?.seed?.attemptId)
+        assertNull(pendingAttemptStore.current())
+    }
+
+    @Test
     fun `seed capture never overwrites a ROOT_COMMITTED record`() = runTest {
         val rootStore = InMemoryFirstDeviceRootStore()
         rootStore.save(
@@ -257,6 +354,34 @@ class EnrollmentWave6CTest {
         // root's attempt -- sweeping the root's aliases would destroy the
         // device's only family-root signing key.
         assertEquals("cleanup:${pending.attemptId},committed-attempt", events.first { it.startsWith("cleanup:") })
+    }
+
+    @Test
+    fun `unreadable trust root skips destructive orphan cleanup and retains pending attempt`() = runTest {
+        val events = mutableListOf<String>()
+        val generator = RecordingGenerator(events = events)
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val rootBacking = InMemoryPersistentStateStore()
+        rootBacking.putString("first_device_root_v1", "corrupt-root-state")
+        val rootStore = PersistentFirstDeviceRootStore(rootBacking)
+        val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val coordinator = EnrollmentCoordinator(
+            parser(),
+            FixedApi(DeviceBootstrapResult("device-4", "PAIRING_PENDING", signingKeyId = "dsk-4", encryptionKeyId = "dek-4")),
+            generator,
+            familyStateStore,
+            pendingAttemptStore,
+            firstDeviceRootStore = rootStore,
+        )
+        coordinator.submitInvitationLink(link)
+        coordinator.beginBootstrap()
+        coordinator.confirmProfile()
+
+        assertTrue("unreadable root state must not trigger deletion of possible live aliases", events.none { it.startsWith("cleanup:") })
+        assertTrue(coordinator.state.value is EnrollmentState.RecoveryPending)
+        assertNull(familyStateStore.currentState())
+        assertTrue(pendingAttemptStore.current() != null)
+        assertTrue(rootStore.readState() is FirstDeviceRootReadResult.Unreadable)
     }
 
     @Test

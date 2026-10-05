@@ -92,7 +92,11 @@ export function evaluatePolicyAcceptance(input) {
   }
 
   if (isEpochBehind(candidatePolicy, deviceTrustSetEpoch, deviceKeyEpoch)) {
-    return { state: ScheduleRuntimeState.EPOCH_STALE, effectivePolicy: lastKnownGoodPolicy ?? candidatePolicy };
+    const currentFallback = lastKnownGoodPolicy &&
+      !isEpochBehind(lastKnownGoodPolicy, deviceTrustSetEpoch, deviceKeyEpoch)
+      ? lastKnownGoodPolicy
+      : null;
+    return { state: ScheduleRuntimeState.EPOCH_STALE, effectivePolicy: currentFallback ?? candidatePolicy };
   }
 
   if (connectivity === 'OFFLINE') {

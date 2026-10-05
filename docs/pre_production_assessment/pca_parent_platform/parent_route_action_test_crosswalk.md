@@ -38,11 +38,11 @@ Parent removal-read hardening (local, awaiting CI): list/detail removal-decision
 - The remaining 12 declarations each carry exactly one reviewed disposition: 6 `KNOWN_FAIL_CLOSED_AUTHORITY_GATE`, 3 `KNOWN_FAIL_CLOSED_SERVICE_GATE`, 2 `KNOWN_CRYPTO_DEVICE_GATE`, 1 `OPTIONAL_ROUTE`. UNREVIEWED = 0; all 52 declarations reconcile.
 - `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN` by design: the 12 remaining declarations are intentionally gated by TODO-12/TODO-15 decisions rather than missing evidence.
 
-## Integrated evidence — Wave 4 (current)
+## Integrated evidence — Wave 4 baseline (historical)
 
 The refreshed run-owned disposable-MySQL campaign passes all 51 tests across its seven suites. Its status-only report proves 45/52 declarations across 137 scenarios: 50 allow, 75 expected denial, 1 protective-authority-not-applicable, and 11 validation/protocol; unexpected 401/403/other = 0. The five Parent-session child-request/bonus-time routes are integrated through real DB-backed Parent session/role rows and the opaque MySQL membership registry. Their request repository and grant ledger remain the documented process-local production stores; the test adds no plaintext persistence. The shared production membership resolver and Parent-session authorizer are pinned by the source-wiring test. Seven declarations remain without integrated success evidence: schedule-policy (Trust Set gate), three Web Rules service gates, two crypto-gated removal decisions, and the optional dashboard read. `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN`.
 
-### Declaration dispositions (current, after Wave 4)
+### Declaration dispositions (baseline, after Wave 4)
 
 | # | Declaration | Disposition | Integrated evidence / reason |
 |---:|---|---|---|
@@ -199,6 +199,12 @@ The assertion table now anchors direct HTTP status assertions for all 52 method/
 | 51 | POST | /api/parent/families/:familyId/children/:childProfileId/web-rules | backend/src/http/routes/webRuleRoutes.ts:183 | MAPPED_PARENT_WEB_CALL_PATH | backend/test/http/webRuleRoutes.test.mjs |
 | 52 | POST | /api/parent/families/:familyId/children/:childProfileId/web-rules/remove | backend/src/http/routes/webRuleRoutes.ts:227 | MAPPED_PARENT_WEB_CALL_PATH | backend/test/http/webRuleRoutes.test.mjs |
 
+## Integrated evidence — 2026-10-05 refresh (current)
+
+The fresh run-owned MySQL 8.4.11 route campaign passed 56/56 tests after applying all 61 migrations. Report `.agent-local-artifacts/qa_route_collector_20261005_web_rules_gates_86b2fac0.json` records 142 scenarios and status evidence for all 52/52 declaration keys: 48 allow-proven, 73 expected denials, 1 protective-authority-not-applicable, 3 authority-unavailable, 3 crypto/device-gated, 3 service-not-configured, 11 validation/protocol, and zero unexpected 401/403/other outcomes. `declarationsWithoutIntegratedEvidence` is empty; `GLOBAL_AGGREGATE_STATUS` remains `NOT_YET_PROVEN`.
+
+The three Web Rules declarations now have an explicit MySQL HTTP result: `503 not_configured` for GET/add/remove, without echoing the submitted domain. Requests included valid test Parent session/CSRF headers, but the missing-service guard returns before session, actor, or policy authorization; this is evidence of the current service gate only. Encrypted storage/delivery and functional Web Rules remain TODO-12 blockers. Schedule-policy and signed/recovery decisions retain their separate authority/crypto gates. The disposable schema was removed by the wrapper.
+
 ## Next evidence step
 
-Declaration coverage remains 52/52 in the bounded test-double collector slice; 45 declarations now also carry database-backed integrated evidence. The remaining seven are one schedule-policy authority gate, three Web Rules service gates, two signed/authorized-recovery crypto gates, and one optional dashboard read. Do not activate gated routes to increase coverage. Keep expected denials, unexpected 401/403, other failures, and named authority/service/crypto gates separate. `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` until the TODO-12/TODO-15 gates are separately resolved.
+All 52 declaration keys now have bounded and MySQL HTTP status evidence. The seven non-success/optional dispositions remain one schedule-policy authority gate, three Web Rules service gates, two signed/authorized-recovery crypto gates, and one optional dashboard read. Do not activate gated routes to increase coverage. Keep expected denials, unexpected 401/403, other failures, and named authority/service/crypto gates separate. `GLOBAL_AGGREGATE_STATUS` stays `NOT_YET_PROVEN` until TODO-12/TODO-15 behavior and authority gates are resolved.

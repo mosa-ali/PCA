@@ -59,10 +59,12 @@ class EncryptedSharedPreferencesStateStore(
      * Wave 6C: SYNCHRONOUS commit -- unlike every mutating call above (which
      * uses apply()), this returns only after the current in-memory map has
      * been written to disk (SharedPreferences.commit() persists pending
-     * applies as well). Reserved for the first-device ceremony's
+     * applies as well). A failed commit is surfaced as an exception so the
+     * first-device root store can refuse to submit bytes whose durable
+     * persistence was not confirmed. Reserved for the ceremony's
      * before-submit barrier; ordinary snapshot writes stay asynchronous.
      */
     override fun flush() {
-        prefs.edit().commit()
+        check(prefs.edit().commit()) { "EncryptedSharedPreferences durable commit failed" }
     }
 }

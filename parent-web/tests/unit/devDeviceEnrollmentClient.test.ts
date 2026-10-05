@@ -80,6 +80,12 @@ describe('DevDeviceEnrollmentClient (DEVELOPMENT_ONLY fixture)', () => {
     await expect(client.getPairingRequest('fam-1', deviceId)).resolves.toMatchObject({ status: 'PAIRING_PENDING' });
   });
 
+  it('does not fabricate a first-device root ceremony or approval in demo fixtures', async () => {
+    await expect(client.listFirstDeviceBootstrapCeremonies('fam-1')).resolves.toEqual([]);
+    await expect(client.approveFirstDeviceBootstrap('fam-1', 'ceremony-1', 'step-up-token'))
+      .rejects.toMatchObject({ code: 'UNKNOWN' });
+  });
+
   it('__devResolveFingerprints lets fingerprints "arrive" for a still-pending pairing request', async () => {
     await client.createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'step-up-token');
     const [deviceId] = __devKnownPairingDeviceIds();

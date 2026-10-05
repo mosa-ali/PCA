@@ -3,6 +3,8 @@ package org.pca.app.runtime.schedule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.json.JSONException
+import org.json.JSONObject
 import java.time.Instant
 
 class SchedulePolicyEnvelopePayloadTest {
@@ -110,4 +112,128 @@ class SchedulePolicyEnvelopePayloadTest {
     fun `malformed json is rejected without crashing the caller into an unhandled state`() {
         assertThrows(org.json.JSONException::class.java) { SchedulePolicyEnvelopePayload.decode("not json") }
     }
+
+    @Test
+    fun `envelope payload accepts the INT32 maximum exactly`() {
+        val maximum = samplePolicy().copy(trustSetEpoch = Int.MAX_VALUE, keyEpoch = Int.MAX_VALUE)
+
+        assertEquals(maximum, SchedulePolicyEnvelopePayload.decode(SchedulePolicyEnvelopePayload.encode(maximum)))
+    }
+
+    @Test
+    fun `envelope payload rejects an epoch above INT32 maximum before narrowing`() {
+        val json = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        json.getJSONObject("policy").put("trustSetEpoch", Int.MAX_VALUE.toLong() + 1L)
+
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(json.toString()) }
+    }
+
+    @Test
+    fun `envelope payload rejects string and fractional epochs instead of coercing them`() {
+        val stringEpoch = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        stringEpoch.getJSONObject("policy").put("keyEpoch", "1")
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(stringEpoch.toString()) }
+
+        val fractionalEpoch = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        fractionalEpoch.getJSONObject("policy").put("keyEpoch", 1.5)
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(fractionalEpoch.toString()) }
+    }
+
+    @Test
+    fun `envelope payload accepts integral decimal and exponent JSON number forms`() {
+        val encoded = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+        val decimalEpoch = encoded.replace("\"trustSetEpoch\":2", "\"trustSetEpoch\":2.0")
+        val exponentEpoch = encoded.replace("\"keyEpoch\":1", "\"keyEpoch\":1e0")
+
+        assertEquals(samplePolicy(), SchedulePolicyEnvelopePayload.decode(decimalEpoch))
+        assertEquals(samplePolicy(), SchedulePolicyEnvelopePayload.decode(exponentEpoch))
+    }
+
+    @Test
+    fun `persistent snapshot decoder keeps zero floors and exact maximum`() {
+        val encoded = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(
+                candidatePolicy = samplePolicy().copy(trustSetEpoch = Int.MAX_VALUE, keyEpoch = Int.MAX_VALUE),
+                lastKnownGoodPolicy = null,
+                lastPolicySyncAtUtc = null,
+                deviceTrustSetEpoch = 0,
+                deviceKeyEpoch = Int.MAX_VALUE,
+            ),
+        )
+
+        val decoded = SchedulePolicyJson.decodeSnapshot(encoded)
+
+        assertEquals(0, decoded.deviceTrustSetEpoch)
+        assertEquals(Int.MAX_VALUE, decoded.deviceKeyEpoch)
+        assertEquals(Int.MAX_VALUE, decoded.candidatePolicy?.trustSetEpoch)
+        assertEquals(Int.MAX_VALUE, decoded.candidatePolicy?.keyEpoch)
+    }
+
+    @Test
+    fun `persistent snapshot decoder rejects overflow string fractional and negative epoch values`() {
+        val overflow = SchedulePolicyJson.encodeSnapshot(emptySnapshot()).put("deviceTrustSetEpoch", Int.MAX_VALUE.toLong() + 1L)
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(overflow) }
+
+        val stringValue = SchedulePolicyJson.encodeSnapshot(emptySnapshot()).put("deviceKeyEpoch", "1")
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(stringValue) }
+
+        val fractional = SchedulePolicyJson.encodeSnapshot(emptySnapshot()).put("deviceKeyEpoch", 1.5)
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(fractional) }
+
+        val negative = SchedulePolicyJson.encodeSnapshot(emptySnapshot()).put("deviceKeyEpoch", -1)
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(negative) }
+    }
+
+    @Test
+    fun `persistent snapshot decoder accepts integral decimal and exponent JSON number forms`() {
+        val decimal = JSONObject("""{"candidatePolicy":null,"lastKnownGoodPolicy":null,"lastPolicySyncAtUtc":null,"deviceTrustSetEpoch":0.0,"deviceKeyEpoch":1e0}""")
+
+        val decoded = SchedulePolicyJson.decodeSnapshot(decimal)
+
+        assertEquals(0, decoded.deviceTrustSetEpoch)
+        assertEquals(1, decoded.deviceKeyEpoch)
+    }
+
+    @Test
+    fun `persistent snapshot decoder rejects overflowing nested policy epoch before narrowing`() {
+        val encoded = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(
+                candidatePolicy = samplePolicy(),
+                lastKnownGoodPolicy = null,
+                lastPolicySyncAtUtc = null,
+                deviceTrustSetEpoch = 0,
+                deviceKeyEpoch = 0,
+            ),
+        )
+        encoded.getJSONObject("candidatePolicy").put("keyEpoch", Int.MAX_VALUE.toLong() + 1L)
+
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(encoded) }
+    }
+
+    @Test
+    fun `schedule validator preserves zero unset floor and rejects negative candidate or floor`() {
+        val now = Instant.parse("2026-01-07T12:00:00Z")
+        fun input(policy: SchedulePolicyV1, trustFloor: Int = 0, keyFloor: Int = 0) = PolicyAcceptanceInput(
+            candidatePolicy = policy,
+            lastKnownGoodPolicy = null,
+            nowUtc = now,
+            deviceTrustSetEpoch = trustFloor,
+            deviceKeyEpoch = keyFloor,
+            connectivity = Connectivity.ONLINE,
+            lastPolicySyncAtUtc = now,
+        )
+
+        val zero = samplePolicy().copy(trustSetEpoch = 0, keyEpoch = 0)
+        assertEquals(ScheduleRuntimeState.CURRENT, SchedulePolicyValidator.evaluate(input(zero)).state)
+        assertEquals(ScheduleRuntimeState.INVALID, SchedulePolicyValidator.evaluate(input(zero.copy(keyEpoch = -1))).state)
+        assertEquals(ScheduleRuntimeState.INVALID, SchedulePolicyValidator.evaluate(input(zero, trustFloor = -1)).state)
+    }
+
+    private fun emptySnapshot() = SchedulePolicySnapshot(
+        candidatePolicy = null,
+        lastKnownGoodPolicy = null,
+        lastPolicySyncAtUtc = null,
+        deviceTrustSetEpoch = 0,
+        deviceKeyEpoch = 0,
+    )
 }

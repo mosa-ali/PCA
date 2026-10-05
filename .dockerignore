@@ -57,6 +57,9 @@ parent-web/node_modules
 parent-web/test-results
 parent-web/playwright-report
 parent-web/coverage
+# A debug APK is a local-test-only input and must never enter a production
+# image context, even when a parent-web-only .gitignore hides it.
+parent-web/public/local-test-build
 parent-sdk/*/dist
 parent-sdk/*/node_modules
 **/node_modules

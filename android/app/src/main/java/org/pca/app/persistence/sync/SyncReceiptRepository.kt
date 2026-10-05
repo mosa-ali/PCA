@@ -3,8 +3,9 @@ package org.pca.app.persistence.sync
 import org.pca.app.persistence.dao.SyncReceiptDao
 import org.pca.app.persistence.entity.SyncReceiptApplicationState
 import org.pca.app.persistence.entity.SyncReceiptRecordEntity
+import org.pca.app.runtime.EpochBounds
 
-enum class ReceiptOutcome { APPLIED, DUPLICATE_IGNORED, STALE_EPOCH_REJECTED, OUT_OF_ORDER_REJECTED }
+enum class ReceiptOutcome { APPLIED, DUPLICATE_IGNORED, STALE_EPOCH_REJECTED, OUT_OF_ORDER_REJECTED, INVALID_EPOCH_REJECTED }
 
 /**
  * doc 09 Section 5.1 / PCA-LOCAL-DB-1 Section 19. Protects against:
@@ -23,6 +24,19 @@ class SyncReceiptRepository(private val dao: SyncReceiptDao) {
         currentKeyEpoch: Long,
         receivedAtEpochMillis: Long,
     ): ReceiptOutcome {
+        // Reject before querying the sequence floor or inserting even a stale-attempt receipt.
+        if (!EpochBounds.isValid(keyEpoch) || !EpochBounds.isValid(currentKeyEpoch)) {
+            return ReceiptOutcome.INVALID_EPOCH_REJECTED
+        }
+        val existing = dao.getById(messageId)
+        if (existing != null && !EpochBounds.isValid(existing.keyEpoch)) {
+            return ReceiptOutcome.INVALID_EPOCH_REJECTED
+        }
+        // An unrelated corrupt row can still distort the durable sequence floor.
+        // Fail before consulting that floor or inserting any receipt for the family.
+        if (dao.hasOutOfRangeKeyEpoch(familyScope)) {
+            return ReceiptOutcome.INVALID_EPOCH_REJECTED
+        }
         if (keyEpoch < currentKeyEpoch) {
             dao.insertIfAbsent(
                 SyncReceiptRecordEntity(

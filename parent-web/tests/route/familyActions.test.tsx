@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { defaultSensitiveOperation, useFamilyAction } from '../../src/rbac/useFamilyAction';
+import { getApiClients } from '../../src/api/client';
+import type { FamilyAction } from '../../src/domain/roles';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
-function ActionButton({ label, run }: { label: string; run: () => Promise<unknown> }) {
+function ActionButton({ label, run, action = 'CHANGE_ANY_ROLE' }: { label: string; run: () => Promise<unknown>; action?: FamilyAction }) {
   const runFamilyAction = useFamilyAction();
   const [result, setResult] = useState<string>('idle');
   return (
@@ -14,7 +16,7 @@ function ActionButton({ label, run }: { label: string; run: () => Promise<unknow
         type="button"
         onClick={async () => {
           try {
-            await runFamilyAction('CHANGE_ANY_ROLE', run);
+            await runFamilyAction(action, run);
             setResult('success');
           } catch (e) {
             setResult(e instanceof Error ? e.message : 'error');
@@ -41,6 +43,50 @@ describe('useFamilyAction gateway enforcement', () => {
     await waitFor(() => expect(screen.getByTestId('result')).not.toHaveTextContent('idle'));
     expect(screen.getByTestId('result')).toHaveTextContent(/Administrator/i);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('consults the current session gateway before running an otherwise allowed action', async () => {
+    const checkPermission = vi.spyOn(getApiClients().familyAuthority, 'checkPermission').mockResolvedValue({ allowed: true, requiresStepUp: false });
+    const run = vi.fn().mockResolvedValue(undefined);
+    try {
+      renderWithProviders(<ActionButton label="Edit policy" action="EDIT_CHILD_POLICY" run={run} />, { role: 'OWNER' });
+      await userEvent.click(screen.getByText('Edit policy'));
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+      expect(checkPermission).toHaveBeenCalledExactlyOnceWith('EDIT_CHILD_POLICY');
+      expect(screen.getByTestId('result')).toHaveTextContent('success');
+    } finally {
+      checkPermission.mockRestore();
+    }
+  });
+
+  it('does not open step-up or run when the session gateway denies permission', async () => {
+    const checkPermission = vi.spyOn(getApiClients().familyAuthority, 'checkPermission').mockResolvedValue({ allowed: false, reason: 'Current membership revoked.' });
+    const run = vi.fn().mockResolvedValue(undefined);
+    try {
+      renderWithProviders(<ActionButton label="Change role" run={run} />, { role: 'OWNER' });
+      await userEvent.click(screen.getByText('Change role'));
+      await waitFor(() => expect(screen.getByTestId('result')).toHaveTextContent('Current membership revoked.'));
+      expect(checkPermission).toHaveBeenCalledExactlyOnceWith('CHANGE_ANY_ROLE');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      checkPermission.mockRestore();
+    }
+  });
+
+  it('fails closed before step-up or run when the session gateway is unavailable', async () => {
+    const checkPermission = vi.spyOn(getApiClients().familyAuthority, 'checkPermission').mockRejectedValue(new Error('network failure'));
+    const run = vi.fn().mockResolvedValue(undefined);
+    try {
+      renderWithProviders(<ActionButton label="Change role" run={run} />, { role: 'OWNER' });
+      await userEvent.click(screen.getByText('Change role'));
+      await waitFor(() => expect(screen.getByTestId('result')).toHaveTextContent('Parent family authority is unavailable.'));
+      expect(checkPermission).toHaveBeenCalledExactlyOnceWith('CHANGE_ANY_ROLE');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      checkPermission.mockRestore();
+    }
   });
 
   it('requires step-up before an Administrator performs normal role administration', async () => {

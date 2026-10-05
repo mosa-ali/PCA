@@ -50,9 +50,8 @@ function DownloadIcon() {
  *
  * DOWNLOAD APP IS ALWAYS RENDERED. It is a global, permanent header action and
  * is NEVER conditional on an env var: it previously disappeared entirely
- * whenever `config.androidAppDownloadUrl` was unset, which is every
- * environment in this repository, so the console's most prominent call to
- * action simply did not exist.
+ * whenever `config.childAppDistributionUrl` was unset, leaving no route to the
+ * honest availability page while a deployment destination was still pending.
  *
  * What it must never become is a fabricated link. It therefore does not point
  * at a store at all: it is an in-app `<Link>` to /download, an internal page

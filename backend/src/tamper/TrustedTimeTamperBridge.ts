@@ -1,4 +1,5 @@
 import { evaluateDeviceClock, advanceHighWaterMark, type ClockEvaluation } from './TrustedTimeHighWaterMark.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { detectTamperCondition } from './TamperStateEngine.js';
 import type { TamperEventLedger, RecordEventResult } from './TamperEventLedger.js';
 import type { OpaqueDeviceId, OpaqueFamilyId, TamperEvent } from './types.js';
@@ -34,6 +35,9 @@ export async function evaluateTrustedTimeAndRecordTamper(
   input: TrustedTimeTamperBridgeInput,
   ledger: TamperEventLedger,
 ): Promise<TrustedTimeTamperBridgeResult> {
+  if (!isFamilyEpochNumber(input.trustSetEpoch, 1) || !isFamilyEpochNumber(input.keyEpoch)) {
+    throw new Error('Tamper event epochs are outside the supported family epoch range.');
+  }
   const clockEvaluation = evaluateDeviceClock(input.persistedHighWaterMarkUtc, input.observedNowUtc);
   const nextHighWaterMarkUtc = advanceHighWaterMark(input.persistedHighWaterMarkUtc, clockEvaluation);
   if (!clockEvaluation.isRollbackDetected) {

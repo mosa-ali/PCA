@@ -4,6 +4,7 @@ import org.pca.app.feature.webprotection.policy.OpaqueFamilyId
 import org.pca.app.feature.webprotection.safebrowser.OpaqueProfileId
 import org.pca.app.runtime.identity.DeviceIdentityProvider
 import org.pca.app.runtime.identity.DeviceIdentityState
+import org.pca.app.storage.CorruptLocalFamilyStateException
 import org.pca.app.storage.FamilyStateStore
 
 /**
@@ -49,8 +50,11 @@ class RealWebProtectionIdentityContextProvider(
     private val deviceIdentityProvider: DeviceIdentityProvider,
 ) : WebProtectionIdentityContextProvider {
     override fun current(): WebProtectionIdentity {
-        val familyState = familyStateStore.currentState()
-            ?: return WebProtectionIdentity.TrustedFamilyContextUnavailable
+        val familyState = try {
+            familyStateStore.currentState()
+        } catch (_: CorruptLocalFamilyStateException) {
+            return WebProtectionIdentity.TrustedFamilyContextUnavailable
+        } ?: return WebProtectionIdentity.TrustedFamilyContextUnavailable
         // Coordinator correction: EnrollmentCoordinator.persistSuccess() currently persists
         // familyId = "" as an explicitly documented placeholder (the bootstrap response today
         // carries only deviceId/status, not a real family identifier) -- a non-null LocalFamilyState

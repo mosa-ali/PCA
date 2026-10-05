@@ -54,6 +54,29 @@ function makeRig({ ceremonyOverrides = {}, attemptOverrides = {}, verifier = new
   return { device, attemptId, rawRecoveryToken, attempt, store, ceremony, service, verifier, perfect };
 }
 
+test('listForApproval checks the provisioned-owner predicate before a family-scoped live-ceremony query', async () => {
+  const rig = makeRig({ ceremonyOverrides: { status: 'PENDING' } });
+  const newerApproved = { ...rig.ceremony, ceremonyId: randomUUID(), status: 'APPROVED', createdAt: stamp(2_000) };
+  const expired = { ...rig.ceremony, ceremonyId: randomUUID(), createdAt: stamp(2), expiresAt: stamp(-1) };
+  const committed = { ...rig.ceremony, ceremonyId: randomUUID(), status: 'COMMITTED', createdAt: stamp(3) };
+  const foreignFamily = { ...rig.ceremony, ceremonyId: randomUUID(), familyId: 'another-family', createdAt: stamp(4) };
+  rig.store.ceremonies = [rig.ceremony, newerApproved, expired, committed, foreignFamily];
+
+  rig.store.eligibility = false;
+  assert.equal(await rig.service.listForApproval(rig.attempt.familyId, 'owner-account'), null);
+  assert.equal(rig.store.listCalls.length, 0, 'ineligible accounts must not query ceremony metadata');
+
+  rig.store.eligibility = true;
+  const listed = await rig.service.listForApproval(rig.attempt.familyId, 'owner-account');
+  assert.deepEqual(listed.map((item) => item.ceremonyId), [newerApproved.ceremonyId, rig.ceremony.ceremonyId]);
+  assert.deepEqual(rig.store.listCalls[0], {
+    familyId: rig.attempt.familyId,
+    now: rig.store.listCalls[0].now,
+    limit: 25,
+  });
+  assert.equal(rig.store.listCalls[0].now instanceof Date, true);
+});
+
 test('issueChallenge mints a 10-minute PENDING ceremony bound to the attempt DSK and returns server context', async () => {
   const rig = makeRig({ ceremonyOverrides: { status: 'PENDING' } });
   rig.store.createOutcome = null;

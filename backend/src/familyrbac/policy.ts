@@ -6,6 +6,7 @@ import type {
   ParentOperation,
   TargetAcknowledgement,
 } from './types.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export const MAX_ACTION_ID_LENGTH = 128;
 export const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -192,7 +193,12 @@ export function deriveDeliveryStatus(
   now: Date,
   expiresAt: Date,
 ): DeliveryStatus {
-  const relevant = acknowledgements.filter((a) => a.acknowledgedActionId === actionId);
+  if (!isFamilyEpochNumber(trustSetEpoch, 1)) return 'FAILED';
+  const relevant = acknowledgements.filter(
+    // Epoch zero is retained for denial/audit sentinels. It cannot produce
+    // success because action epochs are required to start at one.
+    (a) => a.acknowledgedActionId === actionId && isFamilyEpochNumber(a.acknowledgedTrustSetEpoch, 0),
+  );
   const byDevice = new Map<string, TargetAcknowledgement>();
   for (const ack of relevant) byDevice.set(ack.deviceId, ack);
 

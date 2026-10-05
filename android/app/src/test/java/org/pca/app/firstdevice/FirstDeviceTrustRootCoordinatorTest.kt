@@ -30,8 +30,19 @@ class FirstDeviceTrustRootCoordinatorTest {
         var saves = 0
         var flushes = 0
         override fun current(): FirstDeviceRootRecord? = inner.current()
+        override fun readState(): FirstDeviceRootReadResult = inner.readState()
         override fun save(record: FirstDeviceRootRecord) { saves++; inner.save(record) }
         override fun clear() = inner.clear()
+        override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean {
+            val written = inner.writeIfCurrent(expected, record)
+            if (written) { saves++; flushes++ }
+            return written
+        }
+        override fun captureSeed(
+            candidate: FirstDeviceRootRecord,
+            replaceableTerminalStates: Set<FirstDeviceRootState>,
+        ): Boolean = inner.captureSeed(candidate, replaceableTerminalStates)
+        override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = inner.confirmDurable(record)
         override fun flush() { flushes++ }
     }
 
@@ -428,5 +439,94 @@ class FirstDeviceTrustRootCoordinatorTest {
         val second = async { rig.coordinator.submit() }
         first.await(); second.await()
         assertEquals(1, rig.api.submitCalls.size)
+    }
+
+    @Test
+    fun `a stale challenge response cannot overwrite a newer seed captured during the network wait`() = runTest {
+        val rig = Rig().withState(FirstDeviceRootState.EXPIRED)
+        val expired = rig.store.current()!!
+        val coordinator = FirstDeviceTrustRootCoordinator(
+            rootStore = rig.store,
+            apiClient = rig.api,
+            signatureEngine = rig.engine,
+            evidenceSource = rig.evidence,
+        )
+        val replacement = expired.copy(
+            seed = expired.seed.copy(
+                attemptId = "b".repeat(32),
+                attemptRecoveryToken = "s".repeat(43),
+                deviceId = "device-2",
+                dskAlias = "pca.dsk." + "b".repeat(32),
+                dekAlias = "pca.dek." + "b".repeat(32),
+            ),
+            state = FirstDeviceRootState.NOT_STARTED,
+            ceremonyId = null,
+            challengeId = null,
+            nonce = null,
+            expiresAt = null,
+            familyId = null,
+            submission = null,
+            committedAtMillis = null,
+        )
+        rig.api.onBeforeChallengeReturn = {
+            assertTrue(
+                rig.store.captureSeed(
+                    replacement,
+                    setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED),
+                ),
+            )
+        }
+
+        coordinator.beginCeremony()
+
+        assertEquals(1, rig.api.challengeCalls.size)
+        assertEquals(replacement, rig.store.current())
+        assertEquals(expired, coordinator.record.value)
+    }
+
+    @Test
+    fun `submit is not sent when durable flush fails`() = runTest {
+        val backing = FailingFlushStore()
+        val rootStore = PersistentFirstDeviceRootStore(backing)
+        val seed = Rig().seed
+        val approved = FirstDeviceRootRecord(
+            seed = seed,
+            state = FirstDeviceRootState.APPROVED,
+            ceremonyId = "ceremony-1",
+            challengeId = "challenge-1",
+            nonce = "n".repeat(43),
+            expiresAt = "2026-10-02T01:00:00.000Z",
+            familyId = "family-1",
+        )
+        rootStore.save(approved)
+        backing.failNextFlush = true
+        val api = FakeApi()
+        val coordinator = FirstDeviceTrustRootCoordinator(
+            rootStore = rootStore,
+            apiClient = api,
+            signatureEngine = FakeEngine(),
+            evidenceSource = FakeEvidenceSource(),
+        )
+
+        coordinator.submit()
+
+        assertTrue(api.submitCalls.isEmpty())
+        assertEquals(approved, coordinator.record.value)
+    }
+
+    private class FailingFlushStore : org.pca.app.foundation.PersistentStateStore {
+        private val values = mutableMapOf<String, String>()
+        var failNextFlush = false
+        override fun getString(key: String): String? = values[key]
+        override fun putString(key: String, value: String) { values[key] = value }
+        override fun remove(key: String) { values.remove(key) }
+        override fun contains(key: String): Boolean = values.containsKey(key)
+        override fun clear() { values.clear() }
+        override fun flush() {
+            if (failNextFlush) {
+                failNextFlush = false
+                throw IllegalStateException("injected durable commit failure")
+            }
+        }
     }
 }

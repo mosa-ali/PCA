@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { DeviceSignatureVerifier } from '../deviceauth/DeviceSignatureVerifier.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
 import type {
   OpaqueProtectionAlertComposer,
@@ -814,6 +815,11 @@ export class RemovalDecisionAuthority {
 }
 
 export function canonicalizeRemovalDecision(decision: Omit<SignedRemovalDecision, 'signature'>): string {
+  // Zero remains an allowed denial/audit sentinel; invalid protocol values
+  // must never be serialized into signed bytes.
+  if (!isFamilyEpochNumber(decision.trustSetEpoch, 0)) {
+    throw new RemovalDecisionError('INVALID_INPUT');
+  }
   const fields = [
     decision.requestId,
     decision.familyId,
@@ -887,8 +893,7 @@ function validateAndCanonicalizeDecision(
     !isPlausibleActionId(decision.actionId) ||
     !isPlausibleIdempotencyKey(decision.idempotencyKey) ||
     !isStepUpAssertion(decision.stepUp) ||
-    !Number.isInteger(decision.trustSetEpoch) ||
-    decision.trustSetEpoch < 0 ||
+    !isFamilyEpochNumber(decision.trustSetEpoch, 0) ||
     (decision.policyRevision !== null && (!Number.isInteger(decision.policyRevision) || decision.policyRevision < 0)) ||
     !REMOVAL_DECISIONS.has(decision.decision) ||
     !REMOVAL_PROTECTION_LEVELS.has(decision.protectionLevel) ||

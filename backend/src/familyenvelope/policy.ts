@@ -1,4 +1,7 @@
 import type { FamilyEnvelopeMessageType } from './types.js';
+import { isFamilyEpochNumber, MAX_FAMILY_EPOCH } from '../familyepoch/bounds.js';
+
+export { MAX_FAMILY_EPOCH };
 
 /**
  * Structural bounds for the envelope wrapper fields, independent of
@@ -104,7 +107,7 @@ export function isPlausibleProtocolMinor(candidate: unknown): candidate is numbe
 }
 
 export function isPlausibleEpoch(candidate: unknown): candidate is number {
-  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return isFamilyEpochNumber(candidate, 0);
 }
 
 const SEMANTIC_VERSION_SHAPE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;

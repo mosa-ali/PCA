@@ -17,6 +17,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import type { FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 
 export interface FamilyAuditEventRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -29,6 +30,9 @@ function readSessionCookie(request: FastifyRequest): string | null {
 }
 
 function toEnvelopeDto(envelope: { envelopeId: string; keyEpoch: number; generatedAtUtc: Date; encryptedPayloadB64: string; nonceB64: string }): Record<string, unknown> {
+  if (!isFamilyEpochNumber(envelope.keyEpoch)) {
+    throw new Error('Family audit key epoch is outside the supported family epoch range.');
+  }
   return {
     envelopeId: envelope.envelopeId,
     keyEpoch: envelope.keyEpoch,
@@ -43,6 +47,7 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
   const { parentAccountService, familyAuditEventLedger } = deps;
 
   app.get('/api/parent/families/:familyId/audit-events', async (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Cache-Control', 'private, no-store');
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     let familyIdFromSession: string;

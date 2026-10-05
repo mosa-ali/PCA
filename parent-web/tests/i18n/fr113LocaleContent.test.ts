@@ -32,6 +32,8 @@ const TARGET_KEYS = [
   'privacy.serverNotice',
   'privacy.notAUniversalView',
   'deviceEnrollment.invitationSecurityNotice',
+  'deviceEnrollment.childAppDistributionNotConfiguredTitle',
+  'deviceEnrollment.childAppDistributionNotConfiguredBody',
   'deviceEnrollment.pairingSecurityNotice',
   'location.safeZoneBoundaryNotice',
   'youtube.modeA',

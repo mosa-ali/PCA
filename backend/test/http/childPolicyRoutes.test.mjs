@@ -9,6 +9,7 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 const FAMILY = 'family-schedule-http-1';
@@ -56,13 +57,17 @@ function trustedRoleResolver() {
 
 function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR' } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
+  const callCounts = { activeFamilyRole: 0, actorDevice: 0 };
   const parentAccountService = {
     async readSession(token) {
       const session = sessions.get(token);
       if (!session) throw new Error('unauthorized');
       return session;
     },
-    async activeFamilyRole() { return parentRole; },
+    async activeFamilyRole() {
+      callCounts.activeFamilyRole += 1;
+      return parentRole;
+    },
   };
   const deviceTokens = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
@@ -70,6 +75,7 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
+      callCounts.actorDevice += 1;
       const identity = deviceTokens.get(token);
       if (!identity || identity.familyId !== expectedFamilyId) {
         const err = new Error('unauthorized');
@@ -96,7 +102,7 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     outboundRelayService,
     now: () => T0,
   });
-  return { app, submittedBatches };
+  return { app, submittedBatches, callCounts };
 }
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
@@ -124,6 +130,23 @@ test('an Owner can submit a schedule-policy envelope: authorized, relayed, and P
     assert.equal(submittedBatches[0].familyId, FAMILY);
     assert.equal(submittedBatches[0].items[0].recipientDeviceId, 'dev-child');
     assert.equal(submittedBatches[0].items[0].messageType, 'SCHEDULE_POLICY_V1');
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy accepts the maximum supported key epoch', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app, submittedBatches } = buildApp({ authorization });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, keyEpoch: MAX_FAMILY_EPOCH },
+    });
+    assert.equal(response.statusCode, 202);
+    assert.equal(submittedBatches.length, 1);
   } finally {
     await app.close();
   }
@@ -292,6 +315,34 @@ test('a malformed envelope body (missing keyEpoch) is rejected with 400 before a
     });
     assert.equal(response.statusCode, 400);
     recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_malformed_envelope', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy rejects malformed envelopes before role, actor-device, authority, or relay work', async () => {
+  let authorizationCalls = 0;
+  const authorization = {
+    async authorize() {
+      authorizationCalls += 1;
+      return { verdict: 'ALLOW' };
+    },
+  };
+  const { app, submittedBatches, callCounts } = buildApp({ authorization });
+  try {
+    for (const keyEpoch of [MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, '3', 0, -1]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: { ...VALID_ENVELOPE, keyEpoch },
+      });
+      assert.equal(response.statusCode, 400, `keyEpoch=${keyEpoch}`);
+    }
+    assert.equal(callCounts.activeFamilyRole, 0);
+    assert.equal(callCounts.actorDevice, 0);
+    assert.equal(authorizationCalls, 0);
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();

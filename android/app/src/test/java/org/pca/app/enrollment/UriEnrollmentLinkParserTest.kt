@@ -70,19 +70,33 @@ class UriEnrollmentLinkParserTest {
         expectedScheme = "pca",
         expectedHost = "enroll",
         appLinkScheme = "https",
-        appLinkHost = "enroll.pca.app",
+        appLinkHost = "www.pcasafe.com",
+        appLinkPathPrefix = "/enroll/",
     )
+    private val appLinkToken = "A".repeat(43)
 
     @Test
-    fun `App Link form -- parses the token as the final path segment, matching exactly what parent-web generates`() {
-        val result = appLinkParser.parse("https://enroll.pca.app/abc123")
-        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "https://enroll.pca.app", rawInvitationToken = "abc123"), result)
+    fun `App Link form -- parses one canonical token under the public enroll path`() {
+        val result = appLinkParser.parse("https://www.pcasafe.com/enroll/$appLinkToken")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "https://www.pcasafe.com", rawInvitationToken = appLinkToken), result)
     }
 
     @Test
     fun `App Link form -- a trailing slash does not produce an empty token`() {
-        val result = appLinkParser.parse("https://enroll.pca.app/abc123/")
-        assertEquals("abc123", result?.rawInvitationToken)
+        val result = appLinkParser.parse("https://www.pcasafe.com/enroll/$appLinkToken/")
+        assertEquals(appLinkToken, result?.rawInvitationToken)
+    }
+
+    @Test
+    fun `App Link form -- rejects unrelated public site paths and additional path segments`() {
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/privacy/$appLinkToken"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/$appLinkToken/extra"))
+    }
+
+    @Test
+    fun `App Link form -- rejects noncanonical or encoded token path segments`() {
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/abc123"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/${"A".repeat(42)}%2F"))
     }
 
     @Test
@@ -93,28 +107,37 @@ class UriEnrollmentLinkParserTest {
 
     @Test
     fun `App Link form -- rejects a wrong host even with the right App Link scheme`() {
-        assertNull(appLinkParser.parse("https://not-enroll.pca.app/abc123"))
+        assertNull(appLinkParser.parse("https://not-public.pcasafe.com/enroll/$appLinkToken"))
     }
 
     @Test
     fun `App Link form -- rejects the http (non-https) scheme`() {
-        assertNull(appLinkParser.parse("http://enroll.pca.app/abc123"))
+        assertNull(appLinkParser.parse("http://www.pcasafe.com/enroll/$appLinkToken"))
+    }
+
+    @Test
+    fun `App Link form -- accepts only the default HTTPS port`() {
+        assertEquals(
+            appLinkToken,
+            appLinkParser.parse("https://www.pcasafe.com:443/enroll/$appLinkToken")?.rawInvitationToken,
+        )
+        assertNull(appLinkParser.parse("https://www.pcasafe.com:8443/enroll/$appLinkToken"))
     }
 
     @Test
     fun `App Link form -- rejects a bare host with no path at all`() {
-        assertNull(appLinkParser.parse("https://enroll.pca.app"))
-        assertNull(appLinkParser.parse("https://enroll.pca.app/"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/"))
     }
 
     @Test
     fun `App Link form -- when the parser was constructed WITHOUT app-link params, https links are rejected outright (no accidental broadening of the original construction)`() {
-        assertNull(parser.parse("https://enroll.pca.app/abc123"))
+        assertNull(parser.parse("https://www.pcasafe.com/enroll/$appLinkToken"))
     }
 
     @Test
-    fun `App Link form -- an unrelated query string on the App Link form is never treated as trusted`() {
-        val result = appLinkParser.parse("https://enroll.pca.app/abc123?familyId=attacker-controlled&role=OWNER")
-        assertEquals("abc123", result?.rawInvitationToken)
+    fun `App Link form -- rejects query strings and fragments to match the canonical public route`() {
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/$appLinkToken?familyId=attacker-controlled&role=OWNER"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/$appLinkToken#fragment"))
     }
 }

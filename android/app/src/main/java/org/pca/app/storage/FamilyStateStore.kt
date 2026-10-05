@@ -22,10 +22,14 @@ data class LocalFamilyState(
 )
 
 interface FamilyStateStore {
+    /** Returns null only when no record exists; a present unreadable record must throw [CorruptLocalFamilyStateException]. */
     fun currentState(): LocalFamilyState?
     fun save(state: LocalFamilyState)
     fun clear()
 }
+
+/** The saved family record exists but cannot be trusted or decoded. It must never be treated as a first install. */
+class CorruptLocalFamilyStateException : IllegalStateException("Persisted local family state is corrupt")
 
 /** In-memory reference FamilyStateStore -- real and usable for composition/dev builds, not durable across process death. */
 class InMemoryFamilyStateStore : FamilyStateStore {

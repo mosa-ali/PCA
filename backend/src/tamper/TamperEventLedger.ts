@@ -1,4 +1,5 @@
 import type { OpaqueDeviceId, OpaqueFamilyId, TamperEvent } from './types.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export type RecordEventResult = { outcome: 'RECORDED' } | { outcome: 'IDEMPOTENT_MATCH' } | { outcome: 'CONFLICT' };
 
@@ -30,6 +31,9 @@ export class InMemoryTamperEventLedger implements TamperEventLedger {
   private readonly events = new Map<string, TamperEvent>();
 
   async recordEvent(event: TamperEvent): Promise<RecordEventResult> {
+    if (!isFamilyEpochNumber(event.trustSetEpoch, 1) || !isFamilyEpochNumber(event.keyEpoch)) {
+      throw new Error('Tamper event epochs are outside the supported family epoch range.');
+    }
     const existing = this.events.get(event.eventId);
     if (existing) {
       return isSameEvent(existing, event) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };

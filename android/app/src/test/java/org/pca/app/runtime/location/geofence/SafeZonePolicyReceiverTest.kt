@@ -2,6 +2,8 @@ package org.pca.app.runtime.location.geofence
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
@@ -158,6 +160,50 @@ class SafeZonePolicyReceiverTest {
             receiver.receive(envelope().copy(keyEpoch = 4L), nowEpochMillis = 2_000L),
         )
         assertEquals(0, verifierCalls)
+    }
+
+    @Test
+    fun `out of range trust and key epochs are rejected before crypto`() = runTest {
+        var verifierCalls = 0
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = object : SafeZoneEnvelopeSignatureVerifier {
+                override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                    verifierCalls += 1
+                    return true
+                }
+            },
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray? =
+                    error("out of range epochs must never reach decrypt")
+            },
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+        )
+        val aboveInt32 = Int.MAX_VALUE.toLong() + 1L
+
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope().copy(trustSetEpoch = aboveInt32), 2_000L))
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope().copy(keyEpoch = aboveInt32), 2_000L))
+        assertEquals(0, verifierCalls)
+    }
+
+    @Test
+    fun `payload key epoch codec bounds values and accepts integral JSON number forms`() {
+        val payload = SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone)
+        val envelope = envelope()
+        val encoded = String(SafeZonePolicyPayloadCodec.encode(payload), Charsets.UTF_8)
+        val decimal = encoded.replace("\"keyEpoch\":3", "\"keyEpoch\":3.0")
+        val exponent = encoded.replace("\"keyEpoch\":3", "\"keyEpoch\":3e0")
+        val aboveInt32 = encoded.replace("\"keyEpoch\":3", "\"keyEpoch\":2147483648")
+
+        assertEquals(payload, SafeZonePolicyPayloadCodec.decode(decimal.toByteArray(), envelope))
+        assertEquals(payload, SafeZonePolicyPayloadCodec.decode(exponent.toByteArray(), envelope))
+        assertNull(SafeZonePolicyPayloadCodec.decode(aboveInt32.toByteArray(), envelope))
+        assertThrows(IllegalArgumentException::class.java) {
+            SafeZonePolicyPayloadCodec.encode(payload.copy(keyEpoch = Int.MAX_VALUE.toLong() + 1L))
+        }
     }
 
     @Test

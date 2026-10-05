@@ -122,6 +122,8 @@ export interface FirstDeviceBootstrapStore {
   readCeremony(ceremonyId: string): Promise<FirstDeviceBootstrapCeremonyRecord | null>;
   /** The owner-eligibility predicate: unique provisioned owner + ACTIVE Administrator + verified/enabled account + unsuspended family. */
   readOwnerEligibility(familyId: string, accountId: string): Promise<boolean>;
+  /** Open, unexpired approval ceremonies for exactly one family. */
+  listApprovalCeremonies(familyId: string, now: Date, limit: number): Promise<FirstDeviceBootstrapCeremonyRecord[]>;
   createOrReuseCeremony(input: CreateOrReuseCeremonyInput): Promise<CreateOrReuseCeremonyOutcome>;
   approveCeremony(input: { ceremonyId: string; accountId: string; familyId: string; now: Date }): Promise<ApproveCeremonyOutcome>;
   commitBootstrap(input: CommitBootstrapInput): Promise<CommitBootstrapOutcome>;

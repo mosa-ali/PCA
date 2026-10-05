@@ -40,7 +40,11 @@ export default function Requests() {
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
   const { data, loading, error, reload } = useAsync(() => clients.requests.listRequests(), []);
-  const { data: dashboard } = useAsync(() => clients.parentFamilyData.getDashboard(), []);
+  const {
+    data: dashboard,
+    loading: childListLoading,
+    error: childListError,
+  } = useAsync(() => clients.parentFamilyData.getDashboard(), []);
 
   const [counterOfferByRequest, setCounterOfferByRequest] = useState<Record<string, string>>({});
   const [counterOfferError, setCounterOfferError] = useState<string | null>(null);
@@ -49,6 +53,18 @@ export default function Requests() {
   const [grantError, setGrantError] = useState<string | null>(null);
   const [granting, setGranting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const childListAvailable =
+    !childListLoading && !childListError && dashboard !== null && Array.isArray(dashboard.children);
+  const verifiedChildren = childListAvailable ? dashboard.children : [];
+  const selectedChildIsVerified = verifiedChildren.some((child) => child.childId === grantChildId);
+  const childListStatusKey = childListLoading
+    ? 'childListLoading'
+    : childListError || !dashboard || !Array.isArray(dashboard.children)
+      ? 'childListUnavailable'
+      : verifiedChildren.length === 0
+        ? 'emptyFamily'
+        : null;
 
   const decide = async (requestId: string, decision: 'APPROVED' | 'DENIED') => {
     setActionError(null);
@@ -80,7 +96,7 @@ export default function Requests() {
 
   const grantDirectly = async () => {
     setGrantError(null);
-    if (!grantChildId) {
+    if (!selectedChildIsVerified) {
       setGrantError(t('requestsPage.bonusTime.grantErrorNoChild'));
       return;
     }
@@ -113,11 +129,17 @@ export default function Requests() {
         <section aria-labelledby="bonus-time-grant-title" className="card field">
           <h2 id="bonus-time-grant-title">{t('requestsPage.bonusTime.grantTitle')}</h2>
           <p>{t('requestsPage.bonusTime.grantExplanation', { max: MAX_BONUS_GRANT_MINUTES })}</p>
+          {childListStatusKey && <p role="status">{t(`requestsPage.bonusTime.${childListStatusKey}`)}</p>}
           <div className="field">
             <label htmlFor="grant-child">{t('requestsPage.child')}</label>
-            <select id="grant-child" value={grantChildId} onChange={(e) => setGrantChildId(e.target.value)}>
+            <select
+              id="grant-child"
+              value={grantChildId}
+              onChange={(e) => setGrantChildId(e.target.value)}
+              disabled={!childListAvailable || verifiedChildren.length === 0}
+            >
               <option value="">{t('requestsPage.bonusTime.selectChild')}</option>
-              {(dashboard?.children ?? []).map((c) => (
+              {verifiedChildren.map((c) => (
                 <option key={c.childId} value={c.childId}>
                   {c.displayName}
                 </option>
@@ -140,7 +162,12 @@ export default function Requests() {
               {grantError}
             </p>
           )}
-          <button type="button" className="btn btn-primary" onClick={grantDirectly} disabled={granting}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={grantDirectly}
+            disabled={granting || !selectedChildIsVerified}
+          >
             {t('requestsPage.bonusTime.grantAction')}
           </button>
         </section>

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { FamilyAuditEventLedger } from './FamilyAuditEventLedger.js';
 import type { OpaqueFamilyAuditEventComposer } from './FamilyAuditEventComposer.js';
 import type { FamilyAuditRecord } from './FamilyAuditStore.js';
@@ -104,12 +105,15 @@ export class FamilyAuditEventProducer {
     const outcomes: FamilyAuditEventDeliveryOutcome[] = [];
     for (const parentDevice of parentDevices) {
       try {
+        if (!isFamilyEpochNumber(parentDevice.keyEpoch)) {
+          throw new Error('resolved parent key epoch is outside the supported family epoch range');
+        }
         const opaquePayload = await this.composeOpaquePayload({
           record,
           parentDeviceId: parentDevice.deviceId,
           keyEpoch: parentDevice.keyEpoch,
         });
-        await this.ledger.record({
+        const recordResult = await this.ledger.record({
           envelopeId: this.nextEnvelopeId(),
           familyId: record.familyId,
           parentDeviceId: parentDevice.deviceId,
@@ -117,6 +121,12 @@ export class FamilyAuditEventProducer {
           generatedAtUtc: record.occurredAtUtc,
           ...opaquePayload,
         });
+        if (recordResult.outcome === 'CONFLICT') {
+          throw new Error('family audit envelope id conflicts with existing content');
+        }
+        if (recordResult.outcome !== 'RECORDED' && recordResult.outcome !== 'IDEMPOTENT_MATCH') {
+          throw new Error('family audit ledger returned an unsupported record outcome');
+        }
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'DELIVERED' });
       } catch (error) {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });

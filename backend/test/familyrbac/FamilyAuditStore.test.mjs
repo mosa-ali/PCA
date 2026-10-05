@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FamilyAuditService, InMemoryFamilyAuditRepository, MAX_AUDIT_NOTE_LENGTH } from '../../dist/familyrbac/FamilyAuditStore.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 function baseInput(overrides = {}) {
   return {
@@ -53,6 +54,15 @@ test('an absent free text note is stored as null, not an empty string', async ()
   const service = new FamilyAuditService(repo);
   const record = await service.record(baseInput());
   assert.equal(record.freeTextNote, null);
+});
+
+test('audit epoch keeps the zero sentinel and rejects values outside the SQL INT range before append', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo);
+  const sentinel = await service.record(baseInput({ trustSetEpoch: 0 }));
+  assert.equal(sentinel.trustSetEpoch, 0);
+  await assert.rejects(service.record(baseInput({ trustSetEpoch: MAX_FAMILY_EPOCH + 1 })), /invalid trust set epoch/);
+  assert.equal((await repo.listForFamily('fam-1')).length, 1);
 });
 
 test('the audit record type carries no URL, location, or activity-detail field -- only safe metadata', async () => {

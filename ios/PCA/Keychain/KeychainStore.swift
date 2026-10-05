@@ -54,8 +54,20 @@ public enum KeychainStoreError: Error, Equatable {
 /// query) without needing the real API.
 public protocol KeychainStoreProtocol {
     func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws
+    /// Replaces an existing item without deleting it first. Production
+    /// Keychain implementations should update in place and add only when
+    /// absent, so a failed update/add never destroys the prior value.
+    func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws
     func retrieve(forAccount account: String, service: String) throws -> Data
     func delete(forAccount account: String, service: String) throws
+}
+
+public extension KeychainStoreProtocol {
+    /// Compatibility default for existing adapters. The system adapter
+    /// below overrides this with SecItemUpdate/SecItemAdd semantics.
+    func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        try store(data, forAccount: account, service: service, accessibility: accessibility)
+    }
 }
 
 #if canImport(Security)
@@ -83,6 +95,39 @@ public final class SystemKeychainStore: KeychainStoreProtocol {
         guard status == errSecSuccess else {
             throw KeychainStoreError.unexpectedStatus(status)
         }
+    }
+
+    public func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        let identityQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrAccount: account,
+            kSecAttrService: service,
+            kSecAttrSynchronizable: accessibility.isSynchronizable,
+        ]
+        let attributes: [CFString: Any] = [
+            kSecValueData: data,
+            kSecAttrAccessible: accessibility.secAttribute,
+        ]
+
+        let updateStatus = SecItemUpdate(identityQuery as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainStoreError.unexpectedStatus(updateStatus)
+        }
+
+        var addQuery = identityQuery
+        addQuery[kSecValueData] = data
+        addQuery[kSecAttrAccessible] = accessibility.secAttribute
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecSuccess { return }
+        // Another writer may have added the same identity between update
+        // and add. Retry update once; neither path removes the existing row.
+        if addStatus == errSecDuplicateItem {
+            let retryStatus = SecItemUpdate(identityQuery as CFDictionary, attributes as CFDictionary)
+            if retryStatus == errSecSuccess { return }
+            throw KeychainStoreError.unexpectedStatus(retryStatus)
+        }
+        throw KeychainStoreError.unexpectedStatus(addStatus)
     }
 
     public func retrieve(forAccount account: String, service: String) throws -> Data {

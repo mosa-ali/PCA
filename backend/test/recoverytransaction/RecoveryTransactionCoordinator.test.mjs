@@ -6,6 +6,7 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { InMemoryRecoveryTransactionLedger } from '../../dist/familytrustset/RecoveryTransactionLedger.js';
 import { RecoveryTransactionCoordinator } from '../../dist/recoverytransaction/RecoveryTransactionCoordinator.js';
 import { InMemoryRecoveryTransactionStore } from '../../dist/recoverytransaction/RecoveryTransactionStore.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import {
   createTestOnlyTrustSetSignatureVerifier,
   signTestOnlyEpoch,
@@ -110,6 +111,50 @@ test('finalize on a valid recovery completes the transaction and applies the epo
   assert.equal(outcome.outcome, 'COMPLETE');
   assert.equal(outcome.record.status, 'COMPLETE');
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 2);
+});
+
+test('out-of-range recovery candidate is rejected before creating a transaction record or verifying', async () => {
+  const { store, verifier, ledger, coordinator, transactions } = await harness();
+  const valid = buildRecoveryEpoch();
+  const overRange = { ...valid, trustSetEpoch: MAX_FAMILY_EPOCH + 1 };
+
+  await assert.rejects(
+    () => coordinator.finalize('txn-1', overRange, opened(), store, verifier, ledger, NOW),
+    /within the supported family epoch range/,
+  );
+  assert.equal(await transactions.get('txn-1'), null);
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
+});
+
+test('opened recovery envelope must match transaction id and family before a lifecycle record is created', async () => {
+  const { store, verifier, ledger, coordinator, transactions } = await harness();
+  const epoch = buildRecoveryEpoch();
+
+  await assert.rejects(
+    () => coordinator.finalize('txn-1', epoch, opened({ recoveryTransactionId: 'txn-other' }), store, verifier, ledger, NOW),
+    /does not match the requested transaction/,
+  );
+  await assert.rejects(
+    () => coordinator.finalize('txn-1', buildRecoveryEpoch({ familyId: 'family-other' }), opened(), store, verifier, ledger, NOW),
+    /does not match the requested transaction/,
+  );
+  assert.equal(await transactions.get('txn-1'), null);
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
+});
+
+test('a resumed transaction cannot finalize a different family or epoch proposal', async () => {
+  const { store, verifier, ledger, coordinator, transactions } = await harness();
+  const firstProposal = buildRecoveryEpoch();
+  await coordinator.beginOrResume('txn-1', firstProposal, NOW);
+  const changedProposal = buildRecoveryEpoch({ trustSetEpoch: 3, keyEpoch: 3 });
+
+  const outcome = await coordinator.finalize('txn-1', changedProposal, opened(), store, verifier, ledger, NOW);
+
+  assert.equal(outcome.outcome, 'REJECTED');
+  assert.equal(outcome.reason, 'ENVELOPE_EPOCH_MISMATCH');
+  assert.equal(outcome.record.status, 'INITIATED', 'mismatched attempts do not consume or alter the valid transaction');
+  assert.equal((await transactions.get('txn-1')).proposedTrustSetEpoch, 2);
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
 });
 
 test('finalize on an invalid recovery marks the transaction FAILED with the rejection reason', async () => {

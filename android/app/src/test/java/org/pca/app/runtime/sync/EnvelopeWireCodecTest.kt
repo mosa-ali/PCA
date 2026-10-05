@@ -2,6 +2,7 @@ package org.pca.app.runtime.sync
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 import org.pca.app.runtime.sync.envelope.RecipientBinding
@@ -77,5 +78,38 @@ class EnvelopeWireCodecTest {
     @Test
     fun `structurally invalid JSON is rejected as null`() {
         assertNull(envelopeFromRelayCiphertext("{\"foo\":\"bar\"}".toByteArray()))
+    }
+
+    @Test
+    fun `epoch fields reject negative and above INT32_MAX values on decode`() {
+        val encoded = String(envelopeToRelayCiphertext(buildEnvelope()), Charsets.UTF_8)
+        for (field in listOf("trustSetEpoch", "keyEpoch")) {
+            for (value in listOf("-1", "2147483648")) {
+                val invalid = encoded.replace("\"$field\":1", "\"$field\":$value")
+                assertNull("$field=$value", envelopeFromRelayCiphertext(invalid.toByteArray()))
+            }
+        }
+    }
+
+    @Test
+    fun `epoch fields accept integral JSON decimal and exponent forms`() {
+        val encoded = String(envelopeToRelayCiphertext(buildEnvelope()), Charsets.UTF_8)
+            .replace("\"trustSetEpoch\":1", "\"trustSetEpoch\":1.0")
+            .replace("\"keyEpoch\":1", "\"keyEpoch\":1e0")
+
+        val parsed = envelopeFromRelayCiphertext(encoded.toByteArray())
+
+        assertEquals(1L, parsed?.trustSetEpoch)
+        assertEquals(1L, parsed?.keyEpoch)
+    }
+
+    @Test
+    fun `encoder rejects invalid epoch fields`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(buildEnvelope().copy(trustSetEpoch = Int.MAX_VALUE.toLong() + 1L))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(buildEnvelope().copy(keyEpoch = -1L))
+        }
     }
 }

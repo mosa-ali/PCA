@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseFamilyEnvelope } from '../../dist/familyenvelope/parse.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 function rawEnvelope(overrides = {}) {
   return {
@@ -136,9 +137,16 @@ test('parseFamilyEnvelope accepts a payload exactly at the 64 KiB ceiling', () =
   assert.equal(parsed.payload.length, 64 * 1024);
 });
 
-test('parseFamilyEnvelope rejects negative or non-integer epochs', () => {
-  assert.equal(parseFamilyEnvelope(rawEnvelope({ trustSetEpoch: -1 })), null);
-  assert.equal(parseFamilyEnvelope(rawEnvelope({ keyEpoch: 1.5 })), null);
+test('parseFamilyEnvelope keeps zero valid and accepts the inclusive shared epoch maximum', () => {
+  assert.ok(parseFamilyEnvelope(rawEnvelope({ trustSetEpoch: 0, keyEpoch: 0 })));
+  assert.ok(parseFamilyEnvelope(rawEnvelope({ trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH })));
+});
+
+test('parseFamilyEnvelope rejects epochs outside the exact shared numeric domain without coercion', () => {
+  for (const invalidEpoch of [-1, MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, NaN, Infinity, '1', 1n]) {
+    assert.equal(parseFamilyEnvelope(rawEnvelope({ trustSetEpoch: invalidEpoch })), null, `trustSetEpoch=${String(invalidEpoch)}`);
+    assert.equal(parseFamilyEnvelope(rawEnvelope({ keyEpoch: invalidEpoch })), null, `keyEpoch=${String(invalidEpoch)}`);
+  }
 });
 
 test('parseFamilyEnvelope rejects an oversized or empty opaque id', () => {

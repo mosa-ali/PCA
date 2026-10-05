@@ -1,5 +1,7 @@
 package org.pca.app.storage
 
+import org.pca.app.runtime.EpochBounds
+
 /**
  * Client-side mirror of the opaque recovery envelope the backend relays
  * (doc 09 Section 3.4/PCA-SEC-018, backend/src/recovery). This app treats
@@ -45,6 +47,10 @@ class InMemoryRecoveryEnvelopeStore : RecoveryEnvelopeStore {
     private var envelope: RecoveryEnvelope? = null
 
     override fun current(): RecoveryEnvelope? = envelope
-    override fun save(envelope: RecoveryEnvelope) { this.envelope = envelope }
+    override fun save(envelope: RecoveryEnvelope) {
+        require(envelope.trustSetEpoch > 0 && EpochBounds.isValid(envelope.trustSetEpoch))
+        require(envelope.keyEpoch > 0 && EpochBounds.isValid(envelope.keyEpoch))
+        this.envelope = envelope
+    }
     override fun clear() { envelope = null }
 }

@@ -70,7 +70,7 @@ class FirstDeviceTrustRootCoordinator(
      * could mint a parallel ceremony while the server already holds the
      * committed root under the ORIGINAL ceremony id.
      */
-    suspend fun beginCeremony() = singleFlight.withLock {
+    suspend fun beginCeremony(): Unit = singleFlight.withLock {
         val current = rootStore.current() ?: return
         when (current.state) {
             FirstDeviceRootState.SUBMITTING,
@@ -117,8 +117,9 @@ class FirstDeviceTrustRootCoordinator(
             transition(current, FirstDeviceRootState.UNKNOWN)
             return
         }
-        persistAndFlush(
-            current.copy(
+        persistIfCurrent(
+            expected = current,
+            record = current.copy(
                 state = FirstDeviceRootState.AWAITING_APPROVAL,
                 ceremonyId = challenge.ceremonyId,
                 challengeId = challenge.challengeId,
@@ -131,10 +132,10 @@ class FirstDeviceTrustRootCoordinator(
     }
 
     /** Resolves the ceremony's authoritative state. The ONLY legal post-submission ambiguity resolver. */
-    suspend fun refreshStatus() = singleFlight.withLock { refreshStatusLocked() }
+    suspend fun refreshStatus(): Unit = singleFlight.withLock { refreshStatusLocked() }
 
     /** Signs + submits (payload built once and persisted first). Callable from APPROVED only. */
-    suspend fun submit() = singleFlight.withLock {
+    suspend fun submit(): Unit = singleFlight.withLock {
         val current = rootStore.current() ?: return
         if (current.state != FirstDeviceRootState.APPROVED) return
         val payload = current.submission ?: buildPayload(current) ?: run {
@@ -143,15 +144,18 @@ class FirstDeviceTrustRootCoordinator(
         }
         // Persist BEFORE the first send: byte-identical replay after a lost
         // response is the only accepted retry shape.
-        persistAndFlush(current.copy(state = FirstDeviceRootState.SUBMITTING, submission = payload))
-        sendPayload(rootStore.current() ?: return, payload)
+        val submitting = current.copy(state = FirstDeviceRootState.SUBMITTING, submission = payload)
+        if (!persistIfCurrent(expected = current, record = submitting)) return
+        if (!rootStore.confirmDurable(submitting) || rootStore.current() != submitting) return
+        sendPayload(submitting, payload)
     }
 
     /** Replays the EXACT persisted payload (never re-signs). For SUBMITTING/UNKNOWN after ambiguity. */
-    suspend fun resubmitExact() = singleFlight.withLock {
+    suspend fun resubmitExact(): Unit = singleFlight.withLock {
         val current = rootStore.current() ?: return
         val payload = current.submission ?: return
         if (current.state != FirstDeviceRootState.SUBMITTING && current.state != FirstDeviceRootState.UNKNOWN) return
+        if (!rootStore.confirmDurable(current) || rootStore.current() != current) return
         sendPayload(current, payload)
     }
 
@@ -234,7 +238,10 @@ class FirstDeviceTrustRootCoordinator(
                 // need. Trim it here -- exactly like commit does -- so the
                 // documented restart path ([beginCeremony], legal when no
                 // submission remains) actually works.
-                transition(current.copy(submission = null), FirstDeviceRootState.EXPIRED)
+                persistIfCurrent(
+                    expected = current,
+                    record = current.copy(submission = null, state = FirstDeviceRootState.EXPIRED),
+                )
             }
             else -> transition(current, FirstDeviceRootState.UNKNOWN)
         }
@@ -325,7 +332,7 @@ class FirstDeviceTrustRootCoordinator(
             expiresAt = null,
             committedAtMillis = now().time,
         )
-        persistAndFlush(committed)
+        persistIfCurrent(expected = current, record = committed)
         // payload intentionally dropped; referenced only so the trimming
         // intent is explicit at the call site.
         @Suppress("UNUSED_EXPRESSION")
@@ -333,13 +340,13 @@ class FirstDeviceTrustRootCoordinator(
     }
 
     private fun transition(current: FirstDeviceRootRecord, state: FirstDeviceRootState) {
-        persistAndFlush(current.copy(state = state))
+        persistIfCurrent(expected = current, record = current.copy(state = state))
     }
 
-    private fun persistAndFlush(record: FirstDeviceRootRecord) {
-        rootStore.save(record)
-        rootStore.flush()
+    private fun persistIfCurrent(expected: FirstDeviceRootRecord, record: FirstDeviceRootRecord): Boolean {
+        if (!rootStore.writeIfCurrent(expected, record)) return false
         _record.value = record
+        return true
     }
 
     private companion object {

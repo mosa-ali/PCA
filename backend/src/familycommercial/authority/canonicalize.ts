@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { GENESIS_ANCHOR_DOMAIN, OWNER_ATTESTATION_DOMAIN } from './types.js';
 import type { AttestationId, FamilyAuthorityGenesisAnchor, FamilyOwnerAttestation } from './types.js';
 
@@ -29,6 +30,12 @@ export function canonicalizeGenesisAnchor(anchor: Omit<FamilyAuthorityGenesisAnc
 }
 
 export function canonicalizeOwnerAttestation(attestation: Omit<FamilyOwnerAttestation, 'signature'>): string {
+  if (
+    !isFamilyEpochNumber(attestation.trustSetEpoch, 1) ||
+    !isFamilyEpochNumber(attestation.keyEpoch, 1)
+  ) {
+    throw new RangeError('Owner-attestation epochs are outside the supported protocol range.');
+  }
   return netstring([
     OWNER_ATTESTATION_DOMAIN,
     attestation.familyId,

@@ -1,4 +1,5 @@
 import type { TamperCondition, TamperSeverity, TamperState } from './types.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export const MAX_OPAQUE_ID_LENGTH = 128;
 /** Bounds an opaque encrypted detail payload -- a tamper event carries a detail reference, not bulk data (mirrors src/recovery/policy.ts's MAX_ENVELOPE_BYTES rationale). */
@@ -90,11 +91,11 @@ export function isPlausibleOpaqueId(candidate: unknown): candidate is string {
 }
 
 export function isPlausibleEpochNumber(candidate: unknown): candidate is number {
-  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= MIN_TRUST_SET_EPOCH;
+  return isFamilyEpochNumber(candidate, MIN_TRUST_SET_EPOCH);
 }
 
 export function isPlausibleKeyEpoch(candidate: unknown): candidate is number {
-  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0;
+  return isFamilyEpochNumber(candidate, 0);
 }
 
 export function isPlausibleLocalSequence(candidate: unknown): candidate is number {

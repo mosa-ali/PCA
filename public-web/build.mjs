@@ -53,6 +53,9 @@ import {
 } from './src/content/routes.mjs';
 import { VIDEOS } from './src/content/videos.mjs';
 import { CLAIMS, STATUS_CSS, labelKeyForClaim, PROPOSED_CLAIMS } from './src/content/claims.mjs';
+import { validateAndroidAssetLinksManifest } from './src/lib/assetLinks.mjs';
+import { renderEnrollmentFallbackPage } from './src/pages/enrollmentFallback.mjs';
+import { resolveChildAppDistributionUrl } from './src/config/childAppDistribution.mjs';
 import { auditArabicContent, auditArabicPages } from './scripts/lib/arabic-latin.mjs';
 import {
   siteOrigin,
@@ -70,10 +73,12 @@ import * as accessibilityPage from './src/pages/accessibility.mjs';
 import * as privacyPolicyPage from './src/pages/privacyPolicy.mjs';
 import * as termsPage from './src/pages/terms.mjs';
 import * as signInPage from './src/pages/signIn.mjs';
+import * as childAppPage from './src/pages/childApp.mjs';
 import { configuredAuthHandoffOrigins } from './src/config/handoffs.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
+const CHILD_APP_DISTRIBUTION_URL = resolveChildAppDistributionUrl();
 
 /**
  * Reports live OUTSIDE the deploy root.
@@ -101,6 +106,7 @@ const PAGES = {
   privacyPolicy: privacyPolicyPage,
   terms: termsPage,
   signIn: signInPage,
+  childApp: childAppPage,
 };
 
 const IMPLEMENTED = new Set(Object.keys(PAGES));
@@ -499,6 +505,16 @@ function assertNoForbiddenText(pageId, htmlText) {
   }
 }
 
+function removeConfiguredChildAppDestinationForCopyReview(pageId, htmlText) {
+  if (!pageId.startsWith('childApp:') || !CHILD_APP_DISTRIBUTION_URL) return htmlText;
+  // The distribution destination is an owner-supplied href, not public copy.
+  // Keep it subject to the strict HTTPS/exact-target URL gate while excluding
+  // store hostnames such as play.google.com from customer-claim and Arabic-copy
+  // scans. Visible page text remains fully scanned.
+  const attributeValue = CHILD_APP_DISTRIBUTION_URL.replace(/&/g, '&amp;');
+  return htmlText.replace(`href="${attributeValue}"`, 'href="[configured destination]"');
+}
+
 function assertClaimLabels(pageId, htmlText, locale) {
   const re = /<span class="pw-status ([^"]+)" data-claim="([^"]+)">([^<]*)<\/span>/g;
   let match;
@@ -802,6 +818,8 @@ function assertNoExternalRefs(pageId, htmlText, origin) {
     if (!/^https?:\/\//i.test(value)) continue;
     // canonical / hreflang / og:url legitimately name the canonical origin.
     if (value.startsWith(origin)) continue;
+    if (pageId.startsWith('childApp:') && CHILD_APP_DISTRIBUTION_URL &&
+        value.replace(/&amp;/g, '&') === CHILD_APP_DISTRIBUTION_URL) continue;
     try {
       const parsed = new URL(value);
       if (
@@ -1181,6 +1199,7 @@ function renderPages(origin, registeredClaimIds = null) {
         dir: LOCALE_META[locale].dir,
         routeId: route.id,
         origin,
+        childAppDistributionUrl: route.id === 'childApp' ? CHILD_APP_DISTRIBUTION_URL : null,
         t: makeTranslator(locale),
         // Routes that actually have a renderer. Components link only to these,
         // so an approved-but-unimplemented route never becomes a 404 link.
@@ -1189,7 +1208,7 @@ function renderPages(origin, registeredClaimIds = null) {
       const htmlText = PAGES[route.id].render(ctx);
       const pageId = `${route.id}:${locale}`;
 
-      assertNoForbiddenText(pageId, htmlText);
+      assertNoForbiddenText(pageId, removeConfiguredChildAppDestinationForCopyReview(pageId, htmlText));
       assertClaimLabels(pageId, htmlText, locale);
       if (registeredClaimIds) assertRenderedClaimsAreRegistered(pageId, htmlText, registeredClaimIds);
       assertNoExternalRefs(pageId, htmlText, origin);
@@ -1265,6 +1284,36 @@ function notFoundPage() {
 `;
 }
 
+function enrollmentFallbackPage() {
+  return renderEnrollmentFallbackPage(
+    makeTranslator('en'),
+    makeTranslator('ar'),
+    Boolean(CHILD_APP_DISTRIBUTION_URL),
+  );
+}
+
+async function emitOptionalAndroidAssetLinks() {
+  const sourcePath = join(ROOT, 'src/assets/assetlinks.json');
+  let source;
+  try {
+    source = await readFile(sourcePath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+
+  try {
+    const manifest = validateAndroidAssetLinksManifest(source);
+    const destination = join(DIST, '.well-known/assetlinks.json');
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, manifest, 'utf8');
+    return true;
+  } catch (error) {
+    fail('android-app-links', error.message);
+    return false;
+  }
+}
+
 function sitemapXml(origin) {
   const entries = [];
   for (const route of buildableRoutes()) {
@@ -1322,7 +1371,10 @@ async function main() {
   const pages = renderPages(origin, claimRegister.ids);
 
   const arabicContentLatin = auditArabicContent(CONTENT.ar);
-  const arabicRenderedLatin = auditArabicPages(pages);
+  const arabicRenderedLatin = auditArabicPages(pages.map((page) => ({
+    ...page,
+    html: removeConfiguredChildAppDestinationForCopyReview(`${page.routeId}:${page.locale}`, page.html),
+  })));
   for (const occurrence of [...arabicContentLatin.unapproved, ...arabicRenderedLatin.unapproved]) {
     const location = occurrence.key ?? occurrence.route;
     fail('arabic-latin', `${location}: unapproved Latin token "${occurrence.token}" (${occurrence.classification}).`);
@@ -1360,6 +1412,7 @@ async function main() {
     generatedFrom: 'public-web/build.mjs',
     origin,
     release: RELEASE,
+    childAppDistributionConfigured: Boolean(CHILD_APP_DISTRIBUTION_URL),
     locales: [...LOCALES],
     contentKeys: parity,
     primaryPublicPages: mainIds,
@@ -1491,6 +1544,10 @@ async function main() {
   }
 
   await writeFile(join(DIST, '404.html'), notFoundPage(), 'utf8');
+  const enrollmentFallbackPath = join(DIST, 'assets/enrollment-fallback.html');
+  await mkdir(dirname(enrollmentFallbackPath), { recursive: true });
+  await writeFile(enrollmentFallbackPath, enrollmentFallbackPage(), 'utf8');
+  await emitOptionalAndroidAssetLinks();
   await writeFile(join(DIST, 'robots.txt'), robotsTxt(origin), 'utf8');
   await writeFile(join(DIST, 'sitemap.xml'), sitemapXml(origin), 'utf8');
   await mkdir(REPORTS, { recursive: true });
@@ -1541,7 +1598,7 @@ async function main() {
  * build uses, rather than from a second copy that can drift. The pack asserts
  * that stripping its own render reproduces the emitted dist/ file byte for byte.
  */
-export { renderPages, makeTranslator, stripInternalClaimMetadata, CONTENT, CLAIMS };
+export { renderPages, makeTranslator, stripInternalClaimMetadata, enrollmentFallbackPage, CONTENT, CLAIMS };
 
 // Only build when invoked as a program. Importing this module for its exports
 // must not write dist/.

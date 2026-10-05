@@ -48,7 +48,7 @@ function buildApp(sessions, parentIdentityReadModel) {
   registerPlatformAdminAccountsRoutes(app, {
     platformAdminAuthService: authService,
     rateLimiter: createRateLimiter(),
-    parentIdentityReadModel,
+    parentIdentityProjection: parentIdentityReadModel,
   });
   return app;
 }
@@ -124,7 +124,7 @@ test('authorized Platform identity route is exact-family scoped, no-store, and w
 test('ambiguous family authority fails closed without exposing candidate identities', async () => {
   const parentIdentityReadModel = {
     async getByFamilyId() {
-      const { ParentIdentityAmbiguousError } = await import('../../dist/platformadmin/readmodels/ParentIdentityReadModel.js');
+      const { ParentIdentityAmbiguousError } = await import('../../dist/parentaccount/ParentIdentityProjection.js');
       throw new ParentIdentityAmbiguousError();
     },
   };

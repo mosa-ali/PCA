@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { getApiClients } from '../../api/client';
 import { FamilyMemberInvitationError } from '../../api/interfaces';
 import { useAsync } from '../../hooks/useAsync';
-import { LoadingState, ErrorState } from '../../components/common/States';
+import { AsyncStates, ErrorState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
@@ -15,12 +15,11 @@ import { invitationErrorKey } from './familyMemberInvitationErrorKey';
  * Preserves the existing fallback (raw Error.message) for any rejection that
  * is NOT a FamilyMemberInvitationError -- e.g. useFamilyAction's own
  * pre-flight permission/trust-epoch/step-up checks, or FamilyAuthorityGateway
- * (a separate client `remove()` below calls -- its removeMember is real and
- * HTTP-backed, see ../../api/real/realFamilyAuthorityGateway.ts, but every
- * other FamilyAuthorityGateway method, including checkPermission, is still
- * genuinely unimplemented). Only the FamilyMemberInvitationClient-specific
- * rejections this file actually triggers (invite/revoke/changeRole) get the
- * clear, translated mapping above.
+ * (the separate client `remove()` below calls -- removeMember is real and
+ * HTTP-backed, see ../../api/real/realFamilyAuthorityGateway.ts; listMembers
+ * is not yet available in real mode). Only the FamilyMemberInvitationClient-
+ * specific rejections this file actually triggers (invite/revoke/changeRole)
+ * get the clear, translated mapping above.
  */
 function describeInvitationError(t: (key: string) => string, err: unknown): string {
   if (err instanceof FamilyMemberInvitationError) return t(invitationErrorKey(err));
@@ -32,11 +31,18 @@ export default function Members() {
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
   const { session } = useAuth();
-  const { data: members, loading: membersLoading, error: membersError, reload: reloadMembers } = useAsync(() => clients.familyAuthority.listMembers(), []);
+  const {
+    data: members,
+    loading: membersLoading,
+    error: membersError,
+    errorCause: membersErrorCause,
+    reload: reloadMembers,
+  } = useAsync(() => clients.familyAuthority.listMembers(), []);
   const {
     data: invitations,
     loading: invitationsLoading,
     error: invitationsError,
+    errorCause: invitationsErrorCause,
     reload: reloadInvitations,
   } = useAsync(() => clients.familyMemberInvitations.list(), []);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -44,11 +50,6 @@ export default function Members() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'ADMINISTRATOR' | 'VIEWER'>('VIEWER');
   const [inviting, setInviting] = useState(false);
-
-  if (membersLoading || invitationsLoading) return <LoadingState />;
-  if (membersError) return <ErrorState message={membersError} onRetry={reloadMembers} />;
-  if (invitationsError) return <ErrorState message={invitationsError} onRetry={reloadInvitations} />;
-  if (!members || !invitations) return null;
 
   const submitInvite = async (event: FormEvent) => {
     event.preventDefault();
@@ -136,99 +137,115 @@ export default function Members() {
       </PermissionGate>
 
       <h2>{t('family.invitations.title')}</h2>
-      {invitations.length === 0 ? (
-        <p>{t('family.invitations.empty')}</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="data-table responsive-cards">
-            <thead>
-              <tr>
-                <th scope="col">{t('family.role')}</th>
-                <th scope="col">{t('family.status')}</th>
-                <th scope="col">{t('family.invitations.expiresAt')}</th>
-                <th scope="col" aria-label={t('common.actions')} />
-              </tr>
-            </thead>
-            <tbody>
-              {invitations.map((invitation) => (
-                <tr key={invitation.invitationId}>
-                  <td data-label={t('family.role')}>{t(`roles.${invitation.role.toLowerCase()}`)}</td>
-                  <td data-label={t('family.status')}>{t(`family.invitations.statuses.${invitation.status}`)}</td>
-                  <td data-label={t('family.invitations.expiresAt')}>
-                    {/* Was `toLocaleString()` with no locale argument, so an
-                        Arabic parent read an English date inside an Arabic
-                        table. All formatting goes through i18n/formatters.ts,
-                        which takes the language explicitly. */}
-                    <bdi className="iso">{formatDateTime(invitation.expiresAt, i18n.language)}</bdi>
-                  </td>
-                  <td>
-                    {invitation.status === 'PENDING' && (
-                      <PermissionGate action="REMOVE_NON_OWNER_PARENT" showDisabledFallback>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            onClick={() => changeInvitationRole(invitation.invitationId, invitation.role === 'ADMINISTRATOR' ? 'VIEWER' : 'ADMINISTRATOR')}
-                          >
-                            {invitation.role === 'ADMINISTRATOR' ? t('family.invitations.changeToViewer') : t('family.invitations.changeToAdministrator')}
-                          </button>
-                          <button type="button" className="btn btn-sm" onClick={() => revokeInvitation(invitation.invitationId)}>
-                            {t('family.invitations.revoke')}
-                          </button>
-                        </div>
-                      </PermissionGate>
-                    )}
-                  </td>
+      <AsyncStates
+        loading={invitationsLoading}
+        error={invitationsErrorCause ?? invitationsError}
+        onRetry={reloadInvitations}
+      >
+        {invitations && (invitations.length === 0 ? (
+          <p>{t('family.invitations.empty')}</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="data-table responsive-cards">
+              <thead>
+                <tr>
+                  <th scope="col">{t('family.role')}</th>
+                  <th scope="col">{t('family.status')}</th>
+                  <th scope="col">{t('family.invitations.expiresAt')}</th>
+                  <th scope="col" aria-label={t('common.actions')} />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {invitations.map((invitation) => (
+                  <tr key={invitation.invitationId}>
+                    <td data-label={t('family.role')}>{t(`roles.${invitation.role.toLowerCase()}`)}</td>
+                    <td data-label={t('family.status')}>{t(`family.invitations.statuses.${invitation.status}`)}</td>
+                    <td data-label={t('family.invitations.expiresAt')}>
+                      {/* Was `toLocaleString()` with no locale argument, so an
+                          Arabic parent read an English date inside an Arabic
+                          table. All formatting goes through i18n/formatters.ts,
+                          which takes the language explicitly. */}
+                      <bdi className="iso">{formatDateTime(invitation.expiresAt, i18n.language)}</bdi>
+                    </td>
+                    <td>
+                      {invitation.status === 'PENDING' && (
+                        <PermissionGate action="REMOVE_NON_OWNER_PARENT" showDisabledFallback>
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => changeInvitationRole(invitation.invitationId, invitation.role === 'ADMINISTRATOR' ? 'VIEWER' : 'ADMINISTRATOR')}
+                            >
+                              {invitation.role === 'ADMINISTRATOR' ? t('family.invitations.changeToViewer') : t('family.invitations.changeToAdministrator')}
+                            </button>
+                            <button type="button" className="btn btn-sm" onClick={() => revokeInvitation(invitation.invitationId)}>
+                              {t('family.invitations.revoke')}
+                            </button>
+                          </div>
+                        </PermissionGate>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </AsyncStates>
 
       <h2>{t('family.activeMembersTitle')}</h2>
-      <p style={{ color: 'var(--color-text-muted)' }}>{t('family.removeMemberNotice')}</p>
-      <div className="table-scroll">
-        <table className="data-table responsive-cards">
-          <thead>
-            <tr>
-              <th scope="col">{t('family.member')}</th>
-              <th scope="col">{t('family.role')}</th>
-              <th scope="col">{t('family.endpoint')}</th>
-              <th scope="col">{t('family.status')}</th>
-              <th scope="col">{t('family.lastAcknowledged')}</th>
-              <th scope="col" aria-label={t('common.actions')} />
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => (
-              <tr key={m.memberId}>
-                <td data-label={t('family.member')}>{m.displayName}</td>
-                <td data-label={t('family.role')}>{t(`roles.${m.role.toLowerCase()}`)}</td>
-                <td data-label={t('family.endpoint')}>{m.endpointLabel}</td>
-                <td data-label={t('family.status')}>
-                  <StatusBadge state={m.status} />
-                </td>
-                <td data-label={t('family.lastAcknowledged')}>{m.lastAcknowledgedPolicyRevision ?? '--'}</td>
-                <td>
-                  {/* Client-side convenience only -- never the real boundary. The
-                      server independently refuses removing the Owner
-                      (CANNOT_REMOVE_OWNER) and removing yourself
-                      (CANNOT_REMOVE_SELF); see
-                      backend/src/familymembers/FamilyMemberInvitationService.removeMember. */}
-                  {m.role !== 'OWNER' && m.memberId !== session?.accountId && (
-                    <PermissionGate action="REMOVE_NON_OWNER_PARENT" showDisabledFallback>
-                      <button type="button" className="btn" onClick={() => remove(m.memberId)}>
-                        {t('family.removeMember')}
-                      </button>
-                    </PermissionGate>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AsyncStates
+        loading={membersLoading}
+        error={membersErrorCause ?? membersError}
+        onRetry={reloadMembers}
+      >
+        {members && (
+          <>
+            <p style={{ color: 'var(--color-text-muted)' }}>{t('family.removeMemberNotice')}</p>
+            <div className="table-scroll">
+              <table className="data-table responsive-cards">
+                <thead>
+                  <tr>
+                    <th scope="col">{t('family.member')}</th>
+                    <th scope="col">{t('family.role')}</th>
+                    <th scope="col">{t('family.endpoint')}</th>
+                    <th scope="col">{t('family.status')}</th>
+                    <th scope="col">{t('family.lastAcknowledged')}</th>
+                    <th scope="col" aria-label={t('common.actions')} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((m) => (
+                    <tr key={m.memberId}>
+                      <td data-label={t('family.member')}>{m.displayName}</td>
+                      <td data-label={t('family.role')}>{t(`roles.${m.role.toLowerCase()}`)}</td>
+                      <td data-label={t('family.endpoint')}>{m.endpointLabel}</td>
+                      <td data-label={t('family.status')}>
+                        <StatusBadge state={m.status} />
+                      </td>
+                      <td data-label={t('family.lastAcknowledged')}>{m.lastAcknowledgedPolicyRevision ?? '--'}</td>
+                      <td>
+                        {/* Client-side convenience only -- never the real boundary. The
+                            server independently refuses removing the Owner
+                            (CANNOT_REMOVE_OWNER) and removing yourself
+                            (CANNOT_REMOVE_SELF); see
+                            backend/src/familymembers/FamilyMemberInvitationService.removeMember. */}
+                        {m.role !== 'OWNER' && m.memberId !== session?.accountId && (
+                          <PermissionGate action="REMOVE_NON_OWNER_PARENT" showDisabledFallback>
+                            <button type="button" className="btn" onClick={() => remove(m.memberId)}>
+                              {t('family.removeMember')}
+                            </button>
+                          </PermissionGate>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </AsyncStates>
       <p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>
         {t('family.noRecoverySecretsNotice')}
       </p>

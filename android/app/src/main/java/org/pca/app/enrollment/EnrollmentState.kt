@@ -15,6 +15,9 @@ sealed interface EnrollmentState {
     /** No local family state persisted yet -- the honest default, matching [org.pca.app.runtime.identity.DeviceIdentityState.NotEnrolled]. */
     data object NotEnrolled : EnrollmentState
 
+    /** Persisted enrollment data exists but is corrupt; do not offer first-device enrollment or recovery actions. */
+    data object LocalStateCorrupt : EnrollmentState
+
     /** A syntactically valid invitation link has been parsed and its opaque token is held in memory; nothing has been sent to the server yet. */
     data class InvitationReady(val serverBaseUrl: String) : EnrollmentState
 

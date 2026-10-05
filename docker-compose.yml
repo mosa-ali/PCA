@@ -1,15 +1,18 @@
 # PCA — LOCAL DEVELOPMENT AND INTEGRATION ONLY.
 #
 # This file is NOT the Azure production topology and must never be treated as
-# one. Production runs one App Service per surface with no shared container and
-# no compose network:
+# one. The 2026-10-05 read-only Azure binding inventory found these separate
+# running, HTTPS-only production apps:
 #
-#   www.pcasafe.com       -> pcaSafe App Service   (public-web/deploy/Dockerfile)
-#   api.pcasafe.com       -> pca App Service       (backend/Dockerfile)
-#   platform.pcasafe.com  -> pca App Service       (platform-admin-web/Dockerfile)
-#   app / parent          -> pca App Service       (parent-web/Dockerfile, built
-#                                                   from the REPOSITORY ROOT --
-#                                                   it needs parent-sdk/ siblings)
+#   www.pcasafe.com       -> pcaSafe     (public-web/deploy/Dockerfile)
+#   parent.pcasafe.com    -> pcaParent   (parent-web/Dockerfile, built from the
+#                                         REPOSITORY ROOT; it needs parent-sdk/)
+#   platform.pcasafe.com  -> pcaPlatform (platform-admin-web/Dockerfile)
+#
+# api.pcasafe.com currently resolves to an Azure App Service hostname, but no
+# matching API App Service or custom-domain binding was visible in the
+# accessible subscription. Do not infer API resource ownership or runtime
+# routing from this local compose file.
 #
 # The database below is DISPOSABLE. It exists so the backend has something to
 # talk to on a laptop. It is not a model of the production database, it holds no

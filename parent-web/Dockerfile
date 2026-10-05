@@ -16,6 +16,9 @@
 # REPOSITORY ROOT, built as:
 #
 #   docker build --build-arg VITE_PCA_API_BASE_URL=https://parent.example.invalid \
+#     --build-arg PCA_CHILD_APP_PUBLIC_ORIGIN=https://<owner-approved-public-origin> \
+#     --build-arg VITE_PCA_CHILD_APP_DISTRIBUTION_URL=https://www.pcasafe.com/child-app/ \
+#     --build-arg VITE_PCA_CHILD_APP_ENROLLMENT_READY=false \
 #     --build-arg PCA_BUILD_SOURCE_SHA=<exact-commit-sha> \
 #     -f parent-web/Dockerfile -t pca-parent-web:local .
 #   docker run --rm -p 8082:8080 pca-parent-web:local
@@ -77,6 +80,21 @@ ARG VITE_PCA_API_BASE_URL
 RUN test -n "$VITE_PCA_API_BASE_URL" || \
     (echo "FATAL: VITE_PCA_API_BASE_URL is required for a Parent Web production image" >&2; exit 1)
 ENV VITE_PCA_API_BASE_URL=${VITE_PCA_API_BASE_URL}
+
+# These are public build-time values, never credentials. The single public
+# origin supplies Parent's /enroll/<token> links and is also consumed by the
+# Android build as PCA_CHILD_APP_PUBLIC_ORIGIN. Omission deliberately keeps
+# enrollment unavailable. The owner-selected installation-information
+# destination is the public landing page https://www.pcasafe.com/child-app/.
+# Deploy and verify that route before deploying this Parent image. A separate
+# enrollment-ready build flag stays false until the signed installer and live
+# App Link association are verified. No debug APK or invented store URL ships.
+ARG PCA_CHILD_APP_PUBLIC_ORIGIN
+ENV VITE_PCA_CHILD_APP_PUBLIC_ORIGIN=${PCA_CHILD_APP_PUBLIC_ORIGIN}
+ARG VITE_PCA_CHILD_APP_DISTRIBUTION_URL=https://www.pcasafe.com/child-app/
+ENV VITE_PCA_CHILD_APP_DISTRIBUTION_URL=${VITE_PCA_CHILD_APP_DISTRIBUTION_URL}
+ARG VITE_PCA_CHILD_APP_ENROLLMENT_READY=false
+ENV VITE_PCA_CHILD_APP_ENROLLMENT_READY=${VITE_PCA_CHILD_APP_ENROLLMENT_READY}
 
 # `npm run build` is `tsc --noEmit -p tsconfig.json && vite build`, so the type
 # check gates the bundle. securityHeadersPlugin (vite/securityHeadersPlugin.ts)

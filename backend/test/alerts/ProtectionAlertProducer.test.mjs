@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -102,6 +103,27 @@ test('disabled alerting does not invoke the composer or create a ledger event', 
   });
 
   assert.deepEqual(result, { outcome: 'DISABLED', event: null });
+  assert.equal(composerCalls, 0);
+  assert.deepEqual(await ledger.listForFamily('family-1'), []);
+});
+
+test('out-of-range key epoch is rejected before encryption composition or ledger effects', async () => {
+  let composerCalls = 0;
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const producer = createProducer(async () => {
+    composerCalls += 1;
+    return OPAQUE;
+  }, { ledger });
+
+  await assert.rejects(() => producer.produce({
+    familyId: 'family-1',
+    deviceId: 'device-1',
+    parentDeviceId: 'parent-1',
+    trigger: 'REPEATED_INVALID_PIN',
+    keyEpoch: MAX_FAMILY_EPOCH + 1,
+    alertsEnabled: true,
+  }), /outside the supported family epoch range/);
+
   assert.equal(composerCalls, 0);
   assert.deepEqual(await ledger.listForFamily('family-1'), []);
 });

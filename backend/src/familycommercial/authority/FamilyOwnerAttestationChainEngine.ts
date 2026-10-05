@@ -1,4 +1,5 @@
 import type { DeviceSignatureVerifier } from '../../deviceauth/DeviceSignatureVerifier.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from '../../familytrustset/types.js';
 import { canonicalizeGenesisAnchor, canonicalizeOwnerAttestation, computeAttestationId } from './canonicalize.js';
 import { MAX_ATTESTATION_TTL_MS, MIN_ATTESTATION_TTL_MS } from './policy.js';
@@ -103,6 +104,9 @@ export class FamilyOwnerAttestationChainEngine {
   async bootstrapFamilyAuthority(input: BootstrapFamilyAuthorityInput): Promise<BootstrapFamilyAuthorityResult> {
     const { anchor, genesisAttestation } = input;
 
+    if (!hasValidOwnerEpochs(genesisAttestation)) {
+      return { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' };
+    }
     if (anchor.protocolVersion !== FAMILY_AUTHORITY_PROTOCOL_VERSION) {
       return { status: 'INVALID_PROOF', reason: 'UNSUPPORTED_PROTOCOL_VERSION' };
     }
@@ -125,9 +129,6 @@ export class FamilyOwnerAttestationChainEngine {
     if (attestationReason !== null) return { status: 'INVALID_PROOF', reason: attestationReason };
     if (!hasSaneTtl(genesisAttestation.issuedAt, genesisAttestation.expiresAt)) {
       return { status: 'INVALID_PROOF', reason: 'IMPLAUSIBLE_VALIDITY_WINDOW' };
-    }
-    if (genesisAttestation.trustSetEpoch < 1 || genesisAttestation.keyEpoch < 1) {
-      return { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' };
     }
     const attestationValid = await this.signatureVerifier.verify(
       genesisAttestation.signerDskPublicKey,
@@ -158,6 +159,9 @@ export class FamilyOwnerAttestationChainEngine {
     familyId: OpaqueFamilyId,
     nextAttestation: FamilyOwnerAttestation,
   ): Promise<TransferOwnerAuthorityResult> {
+    if (!hasValidOwnerEpochs(nextAttestation)) {
+      return { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' };
+    }
     const anchor = await this.genesisStore.findByFamilyId(familyId);
     if (anchor === null) return { status: 'AUTHORITY_UNAVAILABLE' };
 
@@ -167,6 +171,13 @@ export class FamilyOwnerAttestationChainEngine {
 
     const currentAttestation = await this.chainStore.findAttestationById(familyId, head.headAttestationId);
     if (currentAttestation === null) return { status: 'AUTHORITY_UNAVAILABLE' };
+    if (
+      !hasValidOwnerEpochs(currentAttestation) ||
+      !isFamilyEpochNumber(head.requiredTrustSetEpoch, 1) ||
+      !isFamilyEpochNumber(head.requiredKeyEpoch, 1)
+    ) {
+      return { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' };
+    }
     if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
       familyId,
       deviceId: currentAttestation.signerDeviceId,
@@ -286,6 +297,13 @@ export class FamilyOwnerAttestationChainEngine {
 
     const attestation = await this.chainStore.findAttestationById(familyId, head.headAttestationId);
     if (attestation === null) return { status: 'AUTHORITY_UNAVAILABLE' };
+    if (
+      !hasValidOwnerEpochs(attestation) ||
+      !isFamilyEpochNumber(head.requiredTrustSetEpoch, 1) ||
+      !isFamilyEpochNumber(head.requiredKeyEpoch, 1)
+    ) {
+      return { status: 'INVALID_PROOF' };
+    }
     if (attestation.familyId !== familyId || attestation.purpose !== OWNER_ATTESTATION_DOMAIN) {
       return { status: 'INVALID_PROOF' };
     }
@@ -372,4 +390,8 @@ export class FamilyOwnerAttestationChainEngine {
     if (nextAttestation.signerDskPublicKey !== currentAttestation.ownerDskPublicKey) return 'SIGNER_KEY_MISMATCH';
     return null;
   }
+}
+
+function hasValidOwnerEpochs(value: { trustSetEpoch: unknown; keyEpoch: unknown }): boolean {
+  return isFamilyEpochNumber(value.trustSetEpoch, 1) && isFamilyEpochNumber(value.keyEpoch, 1);
 }

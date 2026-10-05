@@ -5,6 +5,7 @@ import {
   validateNewSafeZone,
   validateSafeZonePatch,
 } from '../../dist/location/SafeZoneRepository.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 const valid = {
   familyId: 'family-a',
@@ -35,6 +36,16 @@ test('repository patch validation rejects plaintext fields and unsafe epochs', (
   );
   assert.throws(
     () => validateSafeZonePatch({ keyEpoch: 0 }),
+    (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
+  );
+  assert.doesNotThrow(() => validateNewSafeZone({ ...valid, keyEpoch: MAX_FAMILY_EPOCH }));
+  assert.doesNotThrow(() => validateSafeZonePatch({ keyEpoch: MAX_FAMILY_EPOCH }));
+  assert.throws(
+    () => validateSafeZonePatch({ keyEpoch: MAX_FAMILY_EPOCH + 1 }),
+    (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => validateNewSafeZone({ ...valid, keyEpoch: Number.MAX_SAFE_INTEGER + 1 }),
     (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
   );
 });

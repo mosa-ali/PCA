@@ -38,6 +38,7 @@ public enum ProtectionAlertGenerationError: Error, Equatable {
 public struct ProtectionAlertGenerator {
     public static let maxEncryptedPayloadBytes = 16 * 1024
     public static let maxNonceBytes = 64
+    public static let maxSupportedKeyEpoch = Int(Int32.max)
 
     public init() {}
 
@@ -60,7 +61,9 @@ public struct ProtectionAlertGenerator {
         guard !alertId.isEmpty, !familyId.isEmpty, !parentDeviceId.isEmpty else {
             throw ProtectionAlertGenerationError.invalidOpaqueIdentifier
         }
-        guard keyEpoch >= 0 else { throw ProtectionAlertGenerationError.invalidKeyEpoch }
+        guard (0...Self.maxSupportedKeyEpoch).contains(keyEpoch) else {
+            throw ProtectionAlertGenerationError.invalidKeyEpoch
+        }
         guard !encryptedPayload.isEmpty, encryptedPayload.count <= Self.maxEncryptedPayloadBytes,
               !nonce.isEmpty, nonce.count <= Self.maxNonceBytes else {
             throw ProtectionAlertGenerationError.invalidEncryptedPayload

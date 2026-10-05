@@ -1,3 +1,5 @@
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+
 export type SafeZoneDeliveryState = 'PENDING_OFFLINE' | 'READY';
 
 export interface SafeZone {
@@ -60,7 +62,7 @@ export function validateNewSafeZone(input: NewSafeZone): void {
   assertOpaqueToken(input.recipientEndpointId);
   assertCanonicalBase64Url(input.ciphertextB64, 1, 65_535);
   assertCanonicalBase64Url(input.nonceB64, 12, 64);
-  if (!Number.isSafeInteger(input.keyEpoch) || input.keyEpoch <= 0 || input.keyEpoch > 0xffff_ffff) {
+  if (!isFamilyEpochNumber(input.keyEpoch, 1)) {
     throw new SafeZoneError('INVALID_INPUT');
   }
 }
@@ -74,7 +76,7 @@ export function validateSafeZonePatch(patch: SafeZonePatch): void {
   }
   if (patch.ciphertextB64 !== undefined) assertCanonicalBase64Url(patch.ciphertextB64, 1, 65_535);
   if (patch.nonceB64 !== undefined) assertCanonicalBase64Url(patch.nonceB64, 12, 64);
-  if (patch.keyEpoch !== undefined && (!Number.isSafeInteger(patch.keyEpoch) || patch.keyEpoch <= 0 || patch.keyEpoch > 0xffff_ffff)) {
+  if (patch.keyEpoch !== undefined && !isFamilyEpochNumber(patch.keyEpoch, 1)) {
     throw new SafeZoneError('INVALID_INPUT');
   }
 }

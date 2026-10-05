@@ -116,10 +116,13 @@ export default function DevicesTabs() {
     () =>
       clients.isFixtureBacked
         ? undefined
-        : new RealProtectionAdministrationActions(
-            config.apiBaseUrl,
-            () => cookieSessionFamilyId(config.apiBaseUrl),
-            () => targetsRef.current,
+        : Object.assign(
+            new RealProtectionAdministrationActions(
+              config.apiBaseUrl,
+              () => cookieSessionFamilyId(config.apiBaseUrl),
+              () => targetsRef.current,
+            ),
+            { unavailableDecisionMethods: ['REMOTE_PARENT', 'AUTHORIZED_RECOVERY'] as const },
           ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [clients.isFixtureBacked],

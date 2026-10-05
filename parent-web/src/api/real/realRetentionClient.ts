@@ -26,11 +26,12 @@
 // SERVICE_SESSION_UNAVAILABLE error before ever calling fetch rather than
 // silently omitting credentials.
 //
-// AUTHORITY: retentionRoutes deliberately stops at "authenticated account
-// with ACTIVE family scope" and performs NO server-side role check (see
-// its own `createRequireActiveFamilyScope` doc comment for the
-// architectural reason). This client asserts no authority of its own and
-// never infers one from a response.
+// AUTHORITY: retentionRoutes checks the authenticated account's ACTIVE
+// family scope. Each sensitive mutation also consumes an operation-bound
+// TOTP step-up through ParentAccountService, which re-resolves active
+// ADMINISTRATOR membership in that family. This client asserts no authority
+// of its own and never infers one from a response; the server remains the
+// enforcement point.
 import type { RetentionClient } from '../interfaces';
 import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, RetentionPolicySettings, RetentionPolicySubmitResult } from '../../domain/retention';
 

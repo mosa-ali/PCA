@@ -154,6 +154,22 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
+    fun `corrupt persisted family state blocks invitation enrollment`() = runTest {
+        val backing = InMemoryPersistentStateStore().apply {
+            putString("family_state_v1", "family|device|NOT_A_PAIRING_STATE|1|1")
+        }
+        val familyStateStore = PersistentFamilyStateStore(backing)
+        val c = coordinator(NeverCalledBootstrapApiClient(), familyStateStore = familyStateStore)
+
+        assertEquals(EnrollmentState.LocalStateCorrupt, c.state.value)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+
+        assertEquals(EnrollmentState.LocalStateCorrupt, c.state.value)
+        assertEquals("family|device|NOT_A_PAIRING_STATE|1|1", backing.getString("family_state_v1"))
+    }
+
+    @Test
     fun `submitting a valid link moves to InvitationReady and never calls the network`() {
         val c = coordinator(NeverCalledBootstrapApiClient())
         c.submitInvitationLink(LINK)

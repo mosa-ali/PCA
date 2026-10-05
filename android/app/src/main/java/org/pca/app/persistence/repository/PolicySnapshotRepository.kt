@@ -5,6 +5,7 @@ import org.pca.app.persistence.crypto.decryptFromColumns
 import org.pca.app.persistence.crypto.encryptToColumns
 import org.pca.app.persistence.dao.PolicySnapshotDao
 import org.pca.app.persistence.entity.PolicySnapshotEntity
+import org.pca.app.runtime.EpochBounds
 
 /** Plaintext view of an accepted [PolicySnapshotEntity] -- the repository is the only place ciphertext round-trips to plaintext. */
 data class AcceptedPolicy(
@@ -26,6 +27,7 @@ sealed class SavePolicyResult {
     data class Accepted(val policy: AcceptedPolicy) : SavePolicyResult()
     data class DuplicateIgnored(val version: Long) : SavePolicyResult()
     data class RolledBackRejected(val attemptedVersion: Long, val currentVersion: Long) : SavePolicyResult()
+    object InvalidEpochRejected : SavePolicyResult()
 }
 
 /**
@@ -69,6 +71,12 @@ class PolicySnapshotRepository(
         appliedAtEpochMillis: Long?,
         applicationResult: String = "APPLIED",
     ): SavePolicyResult {
+        if (!EpochBounds.isValid(trustSetEpoch) || !EpochBounds.isValid(keyEpoch)) {
+            return SavePolicyResult.InvalidEpochRejected
+        }
+
+        // A corrupt persisted head must not be bypassed by a duplicate or higher-version write.
+        dao.getLatestValid(childDeviceId)?.requireValidEpochs()
         val currentMax = dao.getMaxVersion(childDeviceId) ?: -1L
         if (version == currentMax) return SavePolicyResult.DuplicateIgnored(version)
         if (version < currentMax) {
@@ -128,6 +136,8 @@ class PolicySnapshotRepository(
         receivedAtEpochMillis: Long,
         outcome: String,
     ) {
+        EpochBounds.requireValid(trustSetEpoch, "trustSetEpoch")
+        EpochBounds.requireValid(keyEpoch, "keyEpoch")
         val (payloadEnc, payloadIv) = cipher.encryptToColumns(payload)
         dao.insertIgnoreConflict(
             PolicySnapshotEntity(
@@ -150,7 +160,7 @@ class PolicySnapshotRepository(
     }
 
     suspend fun loadLatestAccepted(childDeviceId: String): AcceptedPolicy? =
-        dao.getLatestValid(childDeviceId)?.toDomain(cipher)
+        dao.getLatestValid(childDeviceId)?.also { it.requireValidEpochs() }?.toDomain(cipher)
 
     suspend fun currentRevision(childDeviceId: String): Long? = dao.getMaxVersion(childDeviceId)
 
@@ -180,18 +190,27 @@ class PolicySnapshotRepository(
 
     suspend fun deleteSchedulePolicy(childDeviceId: String): Int = deleteForDevice(childDeviceId)
 
-    private fun PolicySnapshotEntity.toDomain(cipher: LocalRecordCipher): AcceptedPolicy = AcceptedPolicy(
-        policyId = policyId,
-        childDeviceId = childDeviceId,
-        version = version,
-        effectiveFromEpochMillis = effectiveFromEpochMillis,
-        expiresAtEpochMillis = expiresAtEpochMillis,
-        payload = cipher.decryptFromColumns(encryptedPayloadEnc, encryptedPayloadIv),
-        trustSetEpoch = trustSetEpoch,
-        keyEpoch = keyEpoch,
-        signedByKeyId = signedByKeyId,
-        receivedAtEpochMillis = receivedAtEpochMillis,
-        appliedAtEpochMillis = appliedAtEpochMillis,
-        applicationResult = applicationResult,
-    )
+    private fun PolicySnapshotEntity.requireValidEpochs() {
+        check(EpochBounds.isValid(trustSetEpoch) && EpochBounds.isValid(keyEpoch)) {
+            "Persisted policy epoch is outside the supported range."
+        }
+    }
+
+    private fun PolicySnapshotEntity.toDomain(cipher: LocalRecordCipher): AcceptedPolicy {
+        requireValidEpochs()
+        return AcceptedPolicy(
+            policyId = policyId,
+            childDeviceId = childDeviceId,
+            version = version,
+            effectiveFromEpochMillis = effectiveFromEpochMillis,
+            expiresAtEpochMillis = expiresAtEpochMillis,
+            payload = cipher.decryptFromColumns(encryptedPayloadEnc, encryptedPayloadIv),
+            trustSetEpoch = trustSetEpoch,
+            keyEpoch = keyEpoch,
+            signedByKeyId = signedByKeyId,
+            receivedAtEpochMillis = receivedAtEpochMillis,
+            appliedAtEpochMillis = appliedAtEpochMillis,
+            applicationResult = applicationResult,
+        )
+    }
 }

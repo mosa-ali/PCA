@@ -2,6 +2,7 @@ package org.pca.app.runtime.location.geofence
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.pca.app.runtime.EpochBounds
 
 /**
  * Opaque Safe Zone envelope as received from the family relay/storage path.
@@ -99,7 +100,7 @@ object SafeZonePolicyPayloadCodec {
         require(isValidToken(payload.recipientEndpointId))
         require(isValidToken(payload.zoneId))
         require(payload.revision > 0L)
-        require(payload.keyEpoch > 0L)
+        require(payload.keyEpoch > 0L && EpochBounds.isValid(payload.keyEpoch))
         val json = JSONObject()
             .put("familyId", payload.familyId)
             .put("recipientEndpointId", payload.recipientEndpointId)
@@ -129,9 +130,12 @@ object SafeZonePolicyPayloadCodec {
         val recipientEndpointId = json.opt("recipientEndpointId") as? String ?: return null
         val zoneId = json.opt("zoneId") as? String ?: return null
         val revisionNumber = json.opt("revision") as? Number ?: return null
-        val keyEpochNumber = json.opt("keyEpoch") as? Number ?: return null
+        val keyEpoch = try {
+            EpochBounds.decodeJson(json, "keyEpoch").toLong()
+        } catch (_: Exception) {
+            return null
+        }
         val revision = revisionNumber.toLong()
-        val keyEpoch = keyEpochNumber.toLong()
         if (
             !isValidToken(familyId) ||
             !isValidToken(recipientEndpointId) ||
@@ -142,7 +146,7 @@ object SafeZonePolicyPayloadCodec {
             revision != envelope.revision ||
             keyEpoch != envelope.keyEpoch ||
             revisionNumber.toDouble() != revision.toDouble() ||
-            keyEpochNumber.toDouble() != keyEpoch.toDouble()
+            keyEpoch <= 0L
         ) return null
 
         val label = json.opt("label") as? String ?: return null
@@ -321,8 +325,8 @@ class SafeZonePolicyReceiver(
             token.matches(envelope.senderDeviceId) &&
             token.matches(envelope.senderKeyId) &&
             token.matches(envelope.zoneId) &&
-            envelope.trustSetEpoch > 0L &&
-            envelope.keyEpoch > 0L &&
+            envelope.trustSetEpoch > 0L && EpochBounds.isValid(envelope.trustSetEpoch) &&
+            envelope.keyEpoch > 0L && EpochBounds.isValid(envelope.keyEpoch) &&
             envelope.revision > 0L &&
             envelope.ciphertext.isNotEmpty() &&
             envelope.nonce.isNotEmpty() &&

@@ -72,6 +72,15 @@ describe('RealDeviceEnrollmentClient', () => {
   // was accepted.
   describe('cookie-session transport (the browser wiring)', () => {
     const cookieClient = () => new RealDeviceEnrollmentClient(apiBaseUrl, undefined, true);
+    const ceremonyDto = {
+      ceremonyId: 'ceremony-1',
+      deviceId: 'device-1',
+      dskFingerprint: 'sha256:abc123',
+      status: 'PENDING',
+      createdAt: '2026-10-05T10:00:00.000Z',
+      expiresAt: '2026-10-05T10:10:00.000Z',
+      approvedAt: null,
+    };
 
     beforeEach(() => {
       document.cookie = 'pca_family_csrf=; Max-Age=0; path=/';
@@ -93,6 +102,43 @@ describe('RealDeviceEnrollmentClient', () => {
       const headers = init.headers as Record<string, string>;
       expect(headers.Authorization).toBeUndefined();
       expect(headers['X-PCA-CSRF-Token']).toBeUndefined();
+    });
+
+    it('lists only the allowlisted first-device ceremony DTO through the family session cookie', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { ceremonies: [ceremonyDto] }));
+
+      await expect(cookieClient().listFirstDeviceBootstrapCeremonies('family/one')).resolves.toEqual([ceremonyDto]);
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/api/parent/families/family%2Fone/first-device-bootstrap`);
+      expect(init.method).toBe('GET');
+      expect(init.credentials).toBe('include');
+      expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    });
+
+    it('rejects unexpected ceremony fields instead of propagating private metadata to Parent UI state', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+        ceremonies: [{ ...ceremonyDto, dskPublicKey: 'must-not-be-here' }],
+      }));
+
+      await expect(cookieClient().listFirstDeviceBootstrapCeremonies('fam-1')).rejects.toMatchObject({ code: 'UNKNOWN' });
+    });
+
+    it('approves with the family-scoped route, double-submit CSRF and exact operation token', async () => {
+      document.cookie = 'pca_family_csrf=csrf-approval; path=/';
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+        ceremony: { ...ceremonyDto, status: 'APPROVED', approvedAt: '2026-10-05T10:01:00.000Z' },
+      }));
+
+      await expect(cookieClient().approveFirstDeviceBootstrap('fam-1', 'ceremony-1', 'operation-bound-token'))
+        .resolves.toMatchObject({ status: 'APPROVED', ceremonyId: 'ceremony-1' });
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/api/parent/families/fam-1/first-device-bootstrap/approve`);
+      expect(init.method).toBe('POST');
+      expect(init.credentials).toBe('include');
+      expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-approval');
+      expect(JSON.parse(init.body as string)).toEqual({ ceremonyId: 'ceremony-1', stepUpToken: 'operation-bound-token' });
     });
 
     it('a mutating call sends the double-submit CSRF header carrying the pca_family_csrf cookie value', async () => {
@@ -272,6 +318,20 @@ describe('RealDeviceEnrollmentClient', () => {
       await expect(
         client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
       ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    });
+
+    it('preserves the server release-readiness code on 503', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(503, {
+        error: 'service_unavailable',
+        code: 'PLATFORM_ENROLLMENT_UNAVAILABLE',
+      }));
+      await expect(
+        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'fresh-create-grant'),
+      ).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+        serverCode: 'PLATFORM_ENROLLMENT_UNAVAILABLE',
+        httpStatus: 503,
+      });
     });
 
     it('maps a network failure (offline) to NETWORK_ERROR, not an unhandled rejection type', async () => {

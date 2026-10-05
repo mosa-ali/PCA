@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.pca.app.firstdevice.FirstDeviceCeremonySeed
+import org.pca.app.firstdevice.FirstDeviceRootReadResult
 import org.pca.app.firstdevice.FirstDeviceRootRecord
 import org.pca.app.firstdevice.FirstDeviceRootState
 import org.pca.app.firstdevice.FirstDeviceRootStore
@@ -12,6 +13,7 @@ import org.pca.app.security.DeviceKeyPairDeletion
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.GeneratedKeyPair
 import org.pca.app.security.SecureKeyUnavailableException
+import org.pca.app.storage.CorruptLocalFamilyStateException
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.LocalFamilyState
 import org.pca.app.storage.PendingEnrollmentAttempt
@@ -97,7 +99,12 @@ class EnrollmentCoordinator(
     private var pendingProfileConfirmation: DeviceBootstrapResult? = null
 
     private fun restoreInitialState(): EnrollmentState {
-        val persisted = familyStateStore.currentState()
+        val persisted = try {
+            familyStateStore.currentState()
+        } catch (_: CorruptLocalFamilyStateException) {
+            // Do not inspect/recover a pending attempt against an unreadable identity record.
+            return EnrollmentState.LocalStateCorrupt
+        }
         if (persisted != null) {
             return if (persisted.pairingState == PairingState.REVOKED) {
                 EnrollmentState.Revoked
@@ -123,6 +130,7 @@ class EnrollmentCoordinator(
      * server-side 404, so this client never becomes a token/link validity oracle either.
      */
     fun submitInvitationLink(uri: String) {
+        if (blockIfLocalStateCorrupt()) return
         if (pendingProfileConfirmation != null) return
         val parsed = linkParser.parse(uri)
         if (parsed == null) {
@@ -146,6 +154,7 @@ class EnrollmentCoordinator(
      * ([retryBootstrap], [recoverAttempt]) reuses what this call persists.
      */
     suspend fun beginBootstrap() {
+        if (blockIfLocalStateCorrupt()) return
         val token = rawInvitationToken
         val readyState = _state.value as? EnrollmentState.InvitationReady
         if (token == null || readyState == null) {
@@ -164,10 +173,18 @@ class EnrollmentCoordinator(
         // (Agents 1/5/7): the keep set MUST also include the first-device
         // trust root's attempt -- a committed (or in-flight) root's DSK/DEK
         // are LIVE key material, and sweeping them would irreversibly
-        // destroy the device's only family-root signing key.
+        // destroy the device's only family-root signing key. A corrupt or
+        // unavailable root read is not proof that the slot is empty; skip
+        // the destructive sweep until its owner attempt can be identified.
         val keepAttemptIds = mutableSetOf(attemptId)
-        firstDeviceRootStore?.current()?.seed?.attemptId?.let { keepAttemptIds.add(it) }
-        (keyPairGenerator as? DeviceKeyPairDeletion)?.deleteOrphanedAttemptKeys(keepAttemptIds)
+        val rootRead = firstDeviceRootStore?.readState()
+        val rootStateReadable = rootRead !is FirstDeviceRootReadResult.Unreadable
+        if (rootRead is FirstDeviceRootReadResult.Present) {
+            keepAttemptIds.add(rootRead.record.seed.attemptId)
+        }
+        if (rootStateReadable) {
+            (keyPairGenerator as? DeviceKeyPairDeletion)?.deleteOrphanedAttemptKeys(keepAttemptIds)
+        }
         val signingKey: GeneratedKeyPair
         val encryptionKey: GeneratedKeyPair
         try {
@@ -225,6 +242,7 @@ class EnrollmentCoordinator(
      * [EnrollmentState.FailedInvitationInvalid] (a caller-sequencing bug, not a network outcome).
      */
     suspend fun retryBootstrap() {
+        if (blockIfLocalStateCorrupt()) return
         val token = rawInvitationToken
         val pending = pendingAttemptStore.current()
         val validState = _state.value is EnrollmentState.BootstrapResultUnknown || _state.value is EnrollmentState.FailedRetryable
@@ -307,6 +325,7 @@ class EnrollmentCoordinator(
      * this again, giving a bounded, explicit resume rather than a retry storm.
      */
     suspend fun recoverAttempt() {
+        if (blockIfLocalStateCorrupt()) return
         val pending = pendingAttemptStore.current()
         val validState = _state.value is EnrollmentState.RecoveryPending || _state.value is EnrollmentState.BootstrapResultUnknown
         if (pending == null || !validState) {
@@ -382,6 +401,7 @@ class EnrollmentCoordinator(
      * method accepts no profile input; it confirms the exact values returned by the invitation.
      */
     fun confirmProfile() {
+        if (blockIfLocalStateCorrupt()) return
         val result = pendingProfileConfirmation
         if (result == null || _state.value !is EnrollmentState.ProfileConfirmation) {
             _state.value = EnrollmentState.FailedInvitationInvalid
@@ -393,7 +413,14 @@ class EnrollmentCoordinator(
         // problem, mirroring iOS's EnrollmentLifecycleMachine (invalid transitions never mutate
         // state or append a record).
         if (!persistSuccess(result)) {
-            _state.value = EnrollmentState.FailedInvitationInvalid
+            if (_state.value is EnrollmentState.LocalStateCorrupt) return
+            // The server accepted the bootstrap, but a required local seed
+            // durability step failed. Preserve an actionable state so the
+            // same attempt can be explicitly recovered; do not classify it
+            // as an invalid invitation and strand its recovery credentials.
+            val pending = pendingAttemptStore.current()
+            _state.value = pending?.let { EnrollmentState.RecoveryPending(it.serverBaseUrl) }
+                ?: EnrollmentState.FailedInvitationInvalid
             return
         }
         pendingAttemptStore.clear()
@@ -421,7 +448,17 @@ class EnrollmentCoordinator(
     private fun persistSuccess(result: DeviceBootstrapResult): Boolean {
         if (result.status != PairingState.PAIRING_PENDING.name) return false
         val serverPairingState = PairingState.PAIRING_PENDING
-        val previousPairingState = familyStateStore.currentState()?.pairingState
+        val previousPairingState = try {
+            familyStateStore.currentState()?.pairingState
+        } catch (_: CorruptLocalFamilyStateException) {
+            _state.value = EnrollmentState.LocalStateCorrupt
+            return false
+        }
+        // Seed persistence is part of the enrollment commit boundary. Capture
+        // it before committing LocalFamilyState or its lifecycle audit so a
+        // durable-write failure leaves the persisted attempt available for
+        // idempotent recovery rather than reporting a partial enrollment.
+        if (!captureFirstDeviceCeremonySeed(result)) return false
         val auditor = EnrollmentLifecycleAuditor(
             // KNOWN_GAP (same one documented on LocalFamilyState.familyId below): the bootstrap
             // response is {deviceId, status} only -- the server deliberately never discloses
@@ -472,13 +509,20 @@ class EnrollmentCoordinator(
                 initialPolicyProfile = result.initialPolicyProfile,
             ),
         )
-        // Wave 6C: capture the first-device ceremony seed BEFORE the pending
-        // attempt record is cleared (confirmProfile's clear() happens after
-        // this method returns true). The ceremony authenticates with the
-        // attempt credential pair and is M1-bound to this enrollment's DSK;
-        // a missing capture would strand a bootstrappable device.
-        captureFirstDeviceCeremonySeed(result)
+        // confirmProfile clears the durable pending attempt only after this
+        // local commit succeeds; the seed was already captured above.
         return true
+    }
+
+    /** Keep all public enrollment actions blocked if persisted identity data becomes unreadable. */
+    private fun blockIfLocalStateCorrupt(): Boolean = try {
+        familyStateStore.currentState()
+        false
+    } catch (_: CorruptLocalFamilyStateException) {
+        rawInvitationToken = null
+        pendingProfileConfirmation = null
+        _state.value = EnrollmentState.LocalStateCorrupt
+        true
     }
 
     /**
@@ -492,19 +536,11 @@ class EnrollmentCoordinator(
      * Only a definitively terminal-dead record (EXPIRED/REJECTED) may be
      * replaced by a new enrollment's seed (Stage-B fix, Agent 5 MINOR-2).
      */
-    private fun captureFirstDeviceCeremonySeed(result: DeviceBootstrapResult) {
-        val rootStore = firstDeviceRootStore ?: return
-        val pending = pendingAttemptStore.current() ?: return
-        if (result.signingKeyId.isBlank() || result.encryptionKeyId.isBlank()) return
-        val existing = rootStore.current()
-        if (
-            existing != null &&
-            existing.state != FirstDeviceRootState.EXPIRED &&
-            existing.state != FirstDeviceRootState.REJECTED
-        ) {
-            return
-        }
-        rootStore.save(
+    private fun captureFirstDeviceCeremonySeed(result: DeviceBootstrapResult): Boolean {
+        val rootStore = firstDeviceRootStore ?: return true
+        val pending = pendingAttemptStore.current() ?: return false
+        if (result.signingKeyId.isBlank() || result.encryptionKeyId.isBlank()) return false
+        return rootStore.captureSeed(
             FirstDeviceRootRecord(
                 seed = FirstDeviceCeremonySeed(
                     attemptId = pending.attemptId,
@@ -519,7 +555,7 @@ class EnrollmentCoordinator(
                     dekAlias = pending.encryptionPrivateKeyAlias,
                 ),
             ),
+            replaceableTerminalStates = setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED),
         )
-        rootStore.flush()
     }
 }

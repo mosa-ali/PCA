@@ -4,6 +4,7 @@ import org.pca.app.enrollment.PairingState
 import org.pca.app.enrollment.AgeUxTier
 import org.pca.app.enrollment.InitialPolicyProfile
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.EpochBounds
 
 /**
  * PCA-RUNTIME-2R1: durable binding for [FamilyStateStore], backed by the same generic
@@ -28,6 +29,8 @@ class PersistentFamilyStateStore(
     }
 
     override fun save(state: LocalFamilyState) {
+        EpochBounds.requireValid(state.trustSetEpoch, "trustSetEpoch")
+        EpochBounds.requireValid(state.keyEpoch, "keyEpoch")
         store.putString(key, encode(state))
     }
 
@@ -46,26 +49,32 @@ class PersistentFamilyStateStore(
         state.initialPolicyProfile.name,
     ).joinToString(FIELD_SEPARATOR)
 
-    internal fun decode(raw: String): LocalFamilyState? {
+    internal fun decode(raw: String): LocalFamilyState {
         val parts = raw.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) {
+            throw CorruptLocalFamilyStateException()
+        }
         return try {
             val legacy = parts.size == LEGACY_FIELD_COUNT
+            val trustSetEpoch = parts[3].toInt()
+            val keyEpoch = parts[4].toInt()
+            if (!EpochBounds.isValid(trustSetEpoch) || !EpochBounds.isValid(keyEpoch)) {
+                throw CorruptLocalFamilyStateException()
+            }
             LocalFamilyState(
                 familyId = parts[0],
                 deviceId = parts[1],
                 pairingState = PairingState.valueOf(parts[2]),
-                trustSetEpoch = parts[3].toInt(),
-                keyEpoch = parts[4].toInt(),
+                trustSetEpoch = trustSetEpoch,
+                keyEpoch = keyEpoch,
                 childProfileId = if (legacy || parts[5].isBlank()) null else parts[5],
                 ageUxTier = if (legacy) AgeUxTier.YOUNG_CHILD else AgeUxTier.valueOf(parts[6]),
                 initialPolicyProfile = if (legacy) InitialPolicyProfile.BALANCED else InitialPolicyProfile.valueOf(parts[7]),
             )
         } catch (_: IllegalArgumentException) {
-            // Malformed/corrupt persisted value -- fail safe to "no local family state" rather
-            // than crash or fabricate an enrolled identity; callers (DeviceIdentityProvider) fall
-            // back to their own NotEnrolled/unavailable handling from there.
-            null
+            // Preserve the distinction between an absent first-install value and data that exists
+            // but cannot establish a trustworthy local identity. Never erase or rewrite it here.
+            throw CorruptLocalFamilyStateException()
         }
     }
 

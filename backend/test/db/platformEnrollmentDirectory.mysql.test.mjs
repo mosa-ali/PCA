@@ -72,7 +72,7 @@ test('MySQL local Platform directory read models support server pagination, cale
     return { adminId: randomUUID(), roles: ['APP_OWNER'], sessionId: randomUUID(), sessionExpiresAt: new Date(Date.now() + 60_000) };
   } };
   const rateLimiter = createRateLimiter();
-  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: authService, rateLimiter });
+  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: authService, parentIdentityProjection: { async getByFamilyId() { return null; } }, rateLimiter });
   registerPlatformAdminEntitlementRoutes(app, { platformAdminAuthService: authService, platformAdminEntitlementService: {}, changeRequestRepository: {}, rateLimiter });
   registerComplimentaryGrantRoutes(app, { platformAdminAuthService: authService, platformAdminComplimentaryGrantService: {}, rateLimiter });
   await app.ready();

@@ -30,9 +30,10 @@ import { createRateLimiter } from '../rateLimit.js';
  * removalDecisionRoutes.ts established (PCA-STEPUP-ORDER-1: every check not
  * dependent on the step-up token runs BEFORE the token is consumed) and
  * consumes the dedicated 'family.device.bootstrap.root' step-up operation.
- * The approval surface presents the device id, DSK key id and a DSK
- * fingerprint so the owner can compare them against the candidate device
- * (amendment M1).
+ * The approval surface is limited to the unique provisioned, verified,
+ * enabled owner with an active Administrator membership. Its DTO presents
+ * only the device id, DSK fingerprint, status and timestamps so the owner
+ * can compare the key against the candidate device (amendment M1).
  */
 
 const MAX_BODY_BYTES = 8 * 1024;
@@ -46,6 +47,37 @@ const MAX_KEY_MATERIAL_LENGTH = 128;
 const MAX_SIGNATURE_LENGTH = 200;
 const MAX_CEREMONY_ID_LENGTH = 64;
 const BOOTSTRAP_STEP_UP_OPERATION: SensitiveParentStepUpOperation = 'family.device.bootstrap.root';
+
+/** Browser-facing approval metadata only. Never serialize the ceremony record itself. */
+type ParentBootstrapCeremonyDto = {
+  ceremonyId: string;
+  deviceId: string;
+  dskFingerprint: string;
+  status: 'PENDING' | 'APPROVED' | 'COMMITTED';
+  createdAt: string;
+  expiresAt: string;
+  approvedAt: string | null;
+};
+
+function toParentBootstrapCeremonyDto(ceremony: {
+  ceremonyId: string;
+  deviceId: string;
+  dskPublicKey: string;
+  status: ParentBootstrapCeremonyDto['status'];
+  createdAt: Date;
+  expiresAt: Date;
+  approvedAt: Date | null;
+}): ParentBootstrapCeremonyDto {
+  return {
+    ceremonyId: ceremony.ceremonyId,
+    deviceId: ceremony.deviceId,
+    dskFingerprint: computeKeyFingerprint(ceremony.dskPublicKey),
+    status: ceremony.status,
+    createdAt: ceremony.createdAt.toISOString(),
+    expiresAt: ceremony.expiresAt.toISOString(),
+    approvedAt: ceremony.approvedAt?.toISOString() ?? null,
+  };
+}
 
 export interface FirstDeviceBootstrapRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -226,29 +258,33 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
   }
 
   app.get(
+    '/api/parent/families/:familyId/first-device-bootstrap',
+    {
+      preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'first-device-bootstrap-parent-list' })],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const session = await familySession(request, reply);
+      if (!session) return;
+      if (!(await requireActiveAdministrator(session, reply))) return;
+      const ceremonies = await bootstrapService.listForApproval(session.familyId, session.accountId);
+      if (ceremonies === null) return reply.code(403).send({ error: 'forbidden' });
+      return reply.header('Cache-Control', 'private, no-store').code(200).send({ ceremonies: ceremonies.map(toParentBootstrapCeremonyDto) });
+    },
+  );
+
+  app.get(
     '/api/parent/families/:familyId/first-device-bootstrap/:ceremonyId',
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
       if (!(await requireActiveAdministrator(session, reply))) return;
+      if (!(await bootstrapService.checkApprovalEligibility(session.familyId, session.accountId))) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       const { ceremonyId } = request.params as { ceremonyId: string };
       const ceremony = await bootstrapService.describeForApproval(session.familyId, ceremonyId);
       if (ceremony === null) return reply.code(404).send({ error: 'not_found' });
-      return reply.code(200).send({
-        ceremony: {
-          ceremonyId: ceremony.ceremonyId,
-          deviceId: ceremony.deviceId,
-          dskKeyId: ceremony.dskKeyId,
-          dskFingerprint: computeKeyFingerprint(ceremony.dskPublicKey),
-          dskAlgorithm: ceremony.dskAlgorithm,
-          status: ceremony.status,
-          expiresAt: ceremony.expiresAt.toISOString(),
-          createdAt: ceremony.createdAt.toISOString(),
-          approvedAt: ceremony.approvedAt?.toISOString() ?? null,
-          outcome: ceremony.outcome,
-          consumedAt: ceremony.consumedAt?.toISOString() ?? null,
-        },
-      });
+      return reply.header('Cache-Control', 'private, no-store').code(200).send({ ceremony: toParentBootstrapCeremonyDto(ceremony) });
     },
   );
 
@@ -269,11 +305,11 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
       }
 
       // PCA-STEPUP-ORDER-1: every rejection not dependent on the step-up token runs first.
-      const ceremony = await bootstrapService.describeForApproval(session.familyId, ceremonyId);
-      if (ceremony === null) return reply.code(404).send({ error: 'not_found' });
       if (!(await bootstrapService.checkApprovalEligibility(session.familyId, session.accountId))) {
         return reply.code(403).send({ error: 'forbidden' });
       }
+      const ceremony = await bootstrapService.describeForApproval(session.familyId, ceremonyId);
+      if (ceremony === null) return reply.code(404).send({ error: 'not_found' });
       if (!(await parentAccountService.consumeSensitiveStepUpForSession(
         session.rawSessionToken,
         session.familyId,
@@ -290,13 +326,7 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
       });
       switch (outcome.status) {
         case 'APPROVED':
-          return reply.code(200).send({
-            status: 'APPROVED',
-            ceremonyId: outcome.ceremony.ceremonyId,
-            deviceId: outcome.ceremony.deviceId,
-            dskKeyId: outcome.ceremony.dskKeyId,
-            dskFingerprint: computeKeyFingerprint(outcome.ceremony.dskPublicKey),
-          });
+          return reply.code(200).send({ ceremony: toParentBootstrapCeremonyDto(outcome.ceremony) });
         case 'NOT_FOUND':
           return reply.code(404).send({ error: 'not_found' });
         case 'NOT_ELIGIBLE':

@@ -24,5 +24,5 @@ test('rendered Arabic pages have no unapproved Latin text', () => {
   assert.deepEqual(audit.unapproved, []);
   assert.deepEqual(audit.terminologyViolations, []);
   assert.equal(audit.retained.length, 1);
-  assert.equal(pages.filter((page) => page.locale === 'ar').length, 9);
+  assert.equal(pages.filter((page) => page.locale === 'ar').length, 10);
 });

@@ -49,6 +49,7 @@ const GENERIC_UNAVAILABLE_CODES = new Set(['NOT_FOUND', 'EXPIRED', 'REVOKED', 'A
 
 export interface InvitationRoutesDeps {
   invitationService: InvitationService;
+  androidEnrollmentReady: boolean;
   authService: AuthService;
   authzService: AuthzService;
   parentAccountService?: Pick<ParentAccountService, 'consumeSensitiveStepUp'>;
@@ -131,6 +132,13 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       }
       if (ttlMs !== undefined && typeof ttlMs !== 'number') {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+      // The Parent public landing page is information-only until the signed
+      // installer and Android App Link association are live. Keep this server
+      // gate independent from the URL shown by Parent Web, and before step-up
+      // consumption, slot reservation, or invitation persistence.
+      if (platform === 'ANDROID' && !deps.androidEnrollmentReady) {
+        return reply.code(503).send({ error: 'service_unavailable', code: 'PLATFORM_ENROLLMENT_UNAVAILABLE' });
       }
       if (
         typeof stepUpToken !== 'string' ||

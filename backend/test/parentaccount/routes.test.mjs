@@ -319,6 +319,7 @@ test('GET /api/parent/session returns the session when the cookie is present, 40
 
   const ok = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: `pca_family_session=${sessionToken}` } });
   assert.equal(ok.statusCode, 200);
+  assert.equal(ok.headers['cache-control'], 'private, no-store');
   recordParentRouteScenario({ method: 'GET', route: '/api/parent/session', scenarioId: 'session_read_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: ok });
   const session = ok.json();
   assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'mfa', 'role'], 'no genesisAvailable or other client-trusted flag');

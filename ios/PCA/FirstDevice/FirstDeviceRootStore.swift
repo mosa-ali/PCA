@@ -134,8 +134,23 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
 
 public protocol FirstDeviceRootStoring {
     func current() -> FirstDeviceRootRecord?
-    func save(_ record: FirstDeviceRootRecord)
+    @discardableResult func save(_ record: FirstDeviceRootRecord) -> Bool
     func clear()
+
+    /// Atomic compare-and-write with a durability/read-back barrier. An
+    /// expected nil means the store must still be empty. Coordinator writes
+    /// based on snapshots taken before network awaits use this to avoid
+    /// overwriting a newer root or enrollment seed.
+    func writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord) -> Bool
+
+    /// Idempotently captures an enrollment seed. A same-attempt recapture
+    /// preserves the entire existing ceremony record. A different attempt
+    /// replaces an existing record only when its state is explicitly listed
+    /// by the platform's established terminal-replacement policy.
+    func captureSeed(_ candidate: FirstDeviceRootRecord, replacingTerminalStates: [FirstDeviceRootState]) -> Bool
+
+    /// Re-confirms persistence before replaying an already stored submission.
+    func confirmDurable(_ record: FirstDeviceRootRecord) -> Bool
 
     /// Synchronous durability barrier: returns only after everything written
     /// so far is durably stored. The first submit MUST be preceded by
@@ -148,15 +163,53 @@ public protocol FirstDeviceRootStoring {
 /// durable across process death.
 public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
     private var record: FirstDeviceRootRecord?
+    private let lock = NSRecursiveLock()
 
     public init(record: FirstDeviceRootRecord? = nil) {
         self.record = record
     }
 
-    public func current() -> FirstDeviceRootRecord? { record }
-    public func save(_ record: FirstDeviceRootRecord) { self.record = record }
-    public func clear() { record = nil }
+    public func current() -> FirstDeviceRootRecord? { synchronized { record } }
+    @discardableResult public func save(_ record: FirstDeviceRootRecord) -> Bool {
+        synchronized {
+            self.record = record
+            return true
+        }
+    }
+    public func clear() { synchronized { record = nil } }
+    public func writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord) -> Bool {
+        synchronized {
+            guard self.record == expected else { return false }
+            self.record = record
+            return true
+        }
+    }
+    public func captureSeed(_ candidate: FirstDeviceRootRecord, replacingTerminalStates: [FirstDeviceRootState]) -> Bool {
+        synchronized {
+            guard let existing = record else {
+                record = candidate
+                return true
+            }
+            if existing.seed.attemptId == candidate.seed.attemptId {
+                // Confirm the complete same-attempt record is still readable
+                // before recovery accepts it; never rebuild it from the new
+                // seed-only candidate.
+                return confirmDurable(existing)
+            }
+            if replacingTerminalStates.contains(existing.state) { record = candidate }
+            return true
+        }
+    }
+    public func confirmDurable(_ record: FirstDeviceRootRecord) -> Bool {
+        synchronized { self.record == record }
+    }
     public func flush() { /* nothing to flush */ }
+
+    private func synchronized<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
 }
 
 /// Durable binding over the OS Keychain ([KeychainStoreProtocol], the same
@@ -164,12 +217,19 @@ public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
 /// JSON encoding; malformed or legacy records decode to nil (fail safe to
 /// "no ceremony", never a fabricated state).
 public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
+    private enum StoredRecord {
+        case missing
+        case invalid
+        case valid(FirstDeviceRootRecord)
+    }
+
     public static let defaultAccount = "first-device-root"
     public static let defaultServiceSuffix = "first-device-root"
 
     private let keychain: KeychainStoreProtocol
     private let account: String
     private let service: String
+    private let lock = NSRecursiveLock()
 
     public init(
         keychain: KeychainStoreProtocol,
@@ -182,22 +242,63 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
     }
 
     public func current() -> FirstDeviceRootRecord? {
-        guard let data = try? keychain.retrieve(forAccount: account, service: service) else { return nil }
-        return try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data)
+        synchronized { currentUnlocked() }
     }
 
-    public func save(_ record: FirstDeviceRootRecord) {
-        guard let data = try? JSONEncoder().encode(record) else { return }
-        try? keychain.store(
-            data,
-            forAccount: account,
-            service: service,
-            accessibility: .whenUnlockedThisDeviceOnly
-        )
+    @discardableResult public func save(_ record: FirstDeviceRootRecord) -> Bool {
+        synchronized { saveUnlocked(record) }
     }
 
     public func clear() {
-        try? keychain.delete(forAccount: account, service: service)
+        synchronized { try? keychain.delete(forAccount: account, service: service) }
+    }
+
+    public func writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord) -> Bool {
+        synchronized {
+            switch readStoredRecordUnlocked() {
+            case .missing:
+                guard expected == nil else { return false }
+            case .invalid:
+                return false
+            case .valid(let current):
+                guard current == expected else { return false }
+            }
+            guard saveUnlocked(record) else { return false }
+            flush()
+            return isCurrentUnlocked(record)
+        }
+    }
+
+    public func captureSeed(_ candidate: FirstDeviceRootRecord, replacingTerminalStates: [FirstDeviceRootState]) -> Bool {
+        synchronized {
+            let existing: FirstDeviceRootRecord?
+            switch readStoredRecordUnlocked() {
+            case .missing:
+                existing = nil
+            case .invalid:
+                return false
+            case .valid(let record):
+                existing = record
+            }
+            guard let existing else {
+                return saveAndConfirmUnlocked(candidate)
+            }
+            if existing.seed.attemptId == candidate.seed.attemptId { return confirmDurable(existing) }
+            guard replacingTerminalStates.contains(existing.state) else {
+                // A competing enrollment cannot replace this ceremony, and
+                // must verify the exact retained record before treating the
+                // preservation as successful.
+                return confirmDurable(existing)
+            }
+            return saveAndConfirmUnlocked(candidate)
+        }
+    }
+
+    public func confirmDurable(_ record: FirstDeviceRootRecord) -> Bool {
+        synchronized {
+            flush()
+            return isCurrentUnlocked(record)
+        }
     }
 
     public func flush() {
@@ -205,5 +306,57 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
         // returned, the item is durably placed by the platform. This method
         // exists to keep the caller-visible durability contract explicit
         // and identical to Android's flush barrier.
+    }
+
+    private func readStoredRecordUnlocked() -> StoredRecord {
+        let data: Data
+        do {
+            data = try keychain.retrieve(forAccount: account, service: service)
+        } catch KeychainStoreError.itemNotFound {
+            return .missing
+        } catch {
+            return .invalid
+        }
+        guard let record = try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data) else {
+            return .invalid
+        }
+        return .valid(record)
+    }
+
+    private func currentUnlocked() -> FirstDeviceRootRecord? {
+        guard case .valid(let record) = readStoredRecordUnlocked() else { return nil }
+        return record
+    }
+
+    private func isCurrentUnlocked(_ expected: FirstDeviceRootRecord) -> Bool {
+        guard case .valid(let current) = readStoredRecordUnlocked() else { return false }
+        return current == expected
+    }
+
+    private func saveUnlocked(_ record: FirstDeviceRootRecord) -> Bool {
+        guard let data = try? JSONEncoder().encode(record) else { return false }
+        do {
+            try keychain.storeReplacingAtomically(
+                data,
+                forAccount: account,
+                service: service,
+                accessibility: .whenUnlockedThisDeviceOnly
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func saveAndConfirmUnlocked(_ record: FirstDeviceRootRecord) -> Bool {
+        guard saveUnlocked(record) else { return false }
+        flush()
+        return isCurrentUnlocked(record)
+    }
+
+    private func synchronized<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
     }
 }

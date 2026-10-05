@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { evaluatePermission, type FamilyAction } from '../domain/roles';
+import { getApiClients } from '../api/client';
 import type { SensitiveParentStepUpOperation } from '../api/interfaces';
 import { useCurrentRole } from '../state/AuthContext';
 import { useStepUp } from '../state/StepUpContext';
@@ -35,6 +36,7 @@ export function defaultSensitiveOperation(action: FamilyAction): SensitiveParent
 export function useFamilyAction() {
   const role = useCurrentRole();
   const { requestSensitiveStepUp } = useStepUp();
+  const familyAuthority = getApiClients().familyAuthority;
 
   return useCallback(
     async <T,>(action: FamilyAction, run: (stepUpToken?: string) => Promise<T>, sensitiveOperation?: SensitiveParentStepUpOperation): Promise<T> => {
@@ -42,6 +44,13 @@ export function useFamilyAction() {
       if (!permission.allowed) {
         throw new Error(permission.reason);
       }
+      let currentPermission;
+      try {
+        currentPermission = await familyAuthority.checkPermission(action);
+      } catch {
+        throw new Error('Parent family authority is unavailable.');
+      }
+      if (!currentPermission.allowed) throw new Error(currentPermission.reason);
       const operation = sensitiveOperation ?? defaultSensitiveOperation(action);
       if (operation) {
         const stepUpToken = await requestSensitiveStepUp(operation);
@@ -50,6 +59,6 @@ export function useFamilyAction() {
       }
       return run();
     },
-    [role, requestSensitiveStepUp],
+    [role, familyAuthority, requestSensitiveStepUp],
   );
 }

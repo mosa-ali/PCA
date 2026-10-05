@@ -1,4 +1,5 @@
 import { acceptRecoveryEpoch } from '../familytrustset/FamilyTrustSetRecoveryEngine.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { RecoveryFtsRejectionReason } from '../familytrustset/FamilyTrustSetRecoveryEngine.js';
 import type { FamilyTrustSetStore } from '../familytrustset/FamilyTrustSetStore.js';
 import type { RecoveryTransactionLedger } from '../familytrustset/RecoveryTransactionLedger.js';
@@ -11,6 +12,38 @@ import type { RecoveryTransactionRecord } from './types.js';
 export type FinalizeRecoveryOutcome =
   | { outcome: 'COMPLETE'; record: RecoveryTransactionRecord }
   | { outcome: 'REJECTED'; reason: RecoveryFtsRejectionReason; record: RecoveryTransactionRecord };
+
+function assertCandidateEpoch(candidateEpoch: Pick<FamilyTrustSetEpoch, 'trustSetEpoch' | 'keyEpoch'>): void {
+  if (!isFamilyEpochNumber(candidateEpoch.trustSetEpoch, 1) || !isFamilyEpochNumber(candidateEpoch.keyEpoch, 1)) {
+    throw new Error('Recovery candidate epochs must be exact integers within the supported family epoch range.');
+  }
+}
+
+function isBoundOpenedEnvelope(
+  recoveryTransactionId: string,
+  familyId: string,
+  opened: OpenedRecoveryEnvelope,
+): boolean {
+  return (
+    opened.recoveryTransactionId === recoveryTransactionId &&
+    opened.familyId === familyId &&
+    isFamilyEpochNumber(opened.boundTrustSetEpoch, 1) &&
+    isFamilyEpochNumber(opened.boundKeyEpoch, 0)
+  );
+}
+
+function transactionMatchesCandidate(
+  existing: RecoveryTransactionRecord,
+  recoveryTransactionId: string,
+  candidateEpoch: Pick<FamilyTrustSetEpoch, 'familyId' | 'trustSetEpoch' | 'keyEpoch'>,
+): boolean {
+  return (
+    existing.recoveryTransactionId === recoveryTransactionId &&
+    existing.familyId === candidateEpoch.familyId &&
+    existing.proposedTrustSetEpoch === candidateEpoch.trustSetEpoch &&
+    existing.proposedKeyEpoch === candidateEpoch.keyEpoch
+  );
+}
 
 /**
  * Composes FamilyTrustSetRecoveryEngine with resumable local lifecycle
@@ -46,6 +79,7 @@ export class RecoveryTransactionCoordinator {
     candidateEpoch: Pick<FamilyTrustSetEpoch, 'familyId' | 'trustSetEpoch' | 'keyEpoch'>,
     now: Date,
   ): Promise<RecoveryTransactionRecord> {
+    assertCandidateEpoch(candidateEpoch);
     return this.transactions.beginOrGetExisting({
       recoveryTransactionId,
       familyId: candidateEpoch.familyId,
@@ -64,6 +98,14 @@ export class RecoveryTransactionCoordinator {
     ledger: RecoveryTransactionLedger,
     now: Date,
   ): Promise<FinalizeRecoveryOutcome> {
+    assertCandidateEpoch(candidateEpoch);
+    // The opened value is the recovery authority. Check its immutable
+    // transaction/family binding before creating or retrieving lifecycle
+    // state, so an unrelated envelope cannot create or consume a record.
+    if (!isBoundOpenedEnvelope(recoveryTransactionId, candidateEpoch.familyId, opened)) {
+      throw new Error('Opened recovery envelope does not match the requested transaction and candidate family.');
+    }
+
     const existing = await this.transactions.beginOrGetExisting({
       recoveryTransactionId,
       familyId: candidateEpoch.familyId,
@@ -71,6 +113,10 @@ export class RecoveryTransactionCoordinator {
       proposedKeyEpoch: candidateEpoch.keyEpoch,
       now,
     });
+
+    if (!transactionMatchesCandidate(existing, recoveryTransactionId, candidateEpoch)) {
+      return { outcome: 'REJECTED', reason: 'ENVELOPE_EPOCH_MISMATCH', record: existing };
+    }
 
     if (existing.status === 'COMPLETE') {
       return { outcome: 'COMPLETE', record: existing };

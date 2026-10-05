@@ -1,8 +1,8 @@
 // TODO-14 Wave 2: DATABASE-BACKED INTEGRATED Parent route evidence.
 //
 // This suite boots REAL Fastify routes (registerParentAccountRoutes,
-// registerFamilyAuditEventRoutes, registerProtectionAlertRoutes) over REAL
-// MySQL repositories for the Parent account/session/identity/preferences/
+// registerFamilyAuditEventRoutes, registerProtectionAlertRoutes,
+// registerWebRuleRoutes) over REAL MySQL repositories for the Parent account/session/identity/preferences/
 // safe-zone/MFA/audit/alert surfaces and emits status-only MYSQL_HTTP
 // collector rows. Every account it uses is registered -> verified -> signed
 // in through the real HTTP routes (or a real service-issued session bound to
@@ -15,10 +15,21 @@
 //   - createTestClock: drives TOTP counter steps deterministically; it is
 //     anchored at the real wall clock so DB NOW(3) timestamps and service
 //     timestamps stay aligned within seconds.
-//   - Device/Trust Set cryptographic material is NOT exercised here: the
-//     safe-zone routes' actor binding is session + active family role +
-//     device-directory membership (no device bearer), so no device
-//     signature verifier is needed for these declarations.
+//   - This harness does not mint verified device-session bearers or compose
+//     the Trust Set-backed Safe Zone policy authorizer. Safe Zone mutations
+//     therefore must classify as AUTHORITY_UNAVAILABLE (503) and leave rows
+//     unchanged. Positive actor/policy-ordering behavior is covered by the
+//     focused route tests with explicit test collaborators; those tests do
+//     not certify production cryptography or activate a missing service.
+//   - The schedule-policy gate case below uses the real MySQL-backed Parent
+//     session/role path, StoreBackedTrustSetRoleResolver, and durable action
+//     idempotency ledger. Its device-session identity is an explicit test
+//     collaborator; the result is classified CRYPTO_DEVICE_GATED and does
+//     not certify device signatures or successful policy delivery.
+//   - WebRuleRoutes is registered with its production webRuleService omitted.
+//     The route audit records the resulting 503s through the disposable MySQL
+//     HTTP harness, but the service-presence guard returns before session,
+//     actor, or policy authorization. No Web Rules functionality is enabled.
 // No production credential, host, or database is used; the database name is
 // the run-owned disposable pca_test_codex_<uuid> created by
 // scripts/with-disposable-db.mjs (enforced by require-owned-disposable-db).
@@ -38,9 +49,25 @@ import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.j
 import { MySqlFreeAccessAccountRepository } from '../../dist/parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
 import { MySqlFamilyAuditEventLedger } from '../../dist/familyrbac/MySqlFamilyAuditEventLedger.js';
 import { MySqlProtectionAlertLedger } from '../../dist/alerts/MySqlProtectionAlertLedger.js';
+import { MySqlActionIdempotencyLedger } from '../../dist/familyrbac/MySqlActionIdempotencyLedger.js';
+import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
+import { defaultFamilyRbacPolicyConfig } from '../../dist/familyrbac/types.js';
+import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
+import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
+import { registerDashboardRoutes } from '../../dist/http/routes/dashboardRoutes.js';
+import { registerChildPolicyRoutes } from '../../dist/http/routes/childPolicyRoutes.js';
 import { registerFamilyAuditEventRoutes } from '../../dist/http/routes/familyAuditEventRoutes.js';
 import { registerProtectionAlertRoutes } from '../../dist/http/routes/protectionAlertRoutes.js';
+import { registerWebRuleRoutes } from '../../dist/http/routes/webRuleRoutes.js';
+import { DashboardAggregatorService } from '../../dist/parentpanel/DashboardAggregatorService.js';
+import { WebFilteringDashboardCardProvider } from '../../dist/parentpanel/WebFilteringDashboardCardProvider.js';
+import { YouTubeDashboardCardProvider, UnavailableModeAUsageEvidenceSource } from '../../dist/parentpanel/YouTubeDashboardCardProvider.js';
+import { InMemoryBlockDecisionStateRepository } from '../../dist/safebrowser/BlockDecisionStateStore.js';
+import { MySqlProfileModeRepository } from '../../dist/youtube/MySqlProfileModeRepository.js';
+import { ModeTransitionService } from '../../dist/youtube/ModeTransitionService.js';
+import { InMemoryModeBFeatureFlagRepository } from '../../dist/youtube/ModeBFeatureFlagStore.js';
+import { ModeAUsageReportService } from '../../dist/youtube/ModeAUsageReportService.js';
 import { sessionCookieName, csrfCookieName, mfaEnrollmentTicketCookieName } from '../../dist/parentaccount/cookies.js';
 import { PARENT_MFA_GRACE_MS } from '../../dist/parentaccount/policy.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
@@ -70,6 +97,8 @@ const SAFE_ZONES_ROUTE = '/api/parent/families/:familyId/safe-zones';
 const SAFE_ZONE_DETAIL_ROUTE = '/api/parent/families/:familyId/safe-zones/:zoneId';
 const AUDIT_EVENTS_ROUTE = '/api/parent/families/:familyId/audit-events';
 const PROTECTION_ALERTS_ROUTE = '/api/parent/families/:familyId/protection-alerts';
+const DASHBOARD_ROUTE = '/api/parent/families/:familyId/dashboard';
+const SCHEDULE_POLICY_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/schedule-policy';
 
 const STEP_MS = 30 * 1000;
 
@@ -105,12 +134,20 @@ const parentAccountRepository = new MySqlParentAccountRepository();
 const safeZoneRepository = new MySqlSafeZoneRepository();
 const familyAuditEventLedger = new MySqlFamilyAuditEventLedger();
 const protectionAlertLedger = new MySqlProtectionAlertLedger();
+const dashboardAggregatorService = new DashboardAggregatorService([
+  new WebFilteringDashboardCardProvider(new InMemoryBlockDecisionStateRepository(), 'INCOMPLETE_EPHEMERAL'),
+  new YouTubeDashboardCardProvider(
+    new ModeTransitionService(new MySqlProfileModeRepository(), new InMemoryModeBFeatureFlagRepository()),
+    new ModeAUsageReportService(),
+    new UnavailableModeAUsageEvidenceSource(),
+  ),
+]);
 const clock = createTestClock(new Date(Date.now() - 1000).toISOString());
 
 let emailSender;
 let parentAccountService;
 
-function buildApp() {
+function buildApp({ schedulePolicyHarness } = {}) {
   emailSender = new RecordingEmailSender();
   const { service } = createParentAccountTestKit({
     repository: parentAccountRepository,
@@ -129,13 +166,170 @@ function buildApp() {
     deviceRepository: new MySqlDeviceRepository(),
     freeAccessAccountRepository: new MySqlFreeAccessAccountRepository(),
   });
+  registerDashboardRoutes(app, { parentAccountService, dashboardAggregatorService });
   registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger });
   registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger });
+  registerWebRuleRoutes(app, {
+    parentAccountService,
+    deviceSessionService: {
+      async requireActorDeviceInFamily() {
+        throw new Error('the unconfigured Web Rules gate must return before device authorization');
+      },
+    },
+    // Intentionally omit webRuleService, matching production composition.
+  });
+  if (schedulePolicyHarness) {
+    const { epochStore, actorSessions } = schedulePolicyHarness;
+    const parentActionAuthorization = new ParentActionAuthorizationService(
+      new StoreBackedTrustSetRoleResolver({ epochStore }),
+      defaultFamilyRbacPolicyConfig,
+      new MySqlActionIdempotencyLedger(),
+    );
+    registerChildPolicyRoutes(app, {
+      parentAccountService,
+      deviceSessionService: {
+        async requireActorDeviceInFamily(token, familyId) {
+          const identity = actorSessions.get(token);
+          if (!identity || identity.familyId !== familyId) {
+            const error = new Error('test actor session unavailable');
+            error.name = 'RuntimeSyncAuthError';
+            throw error;
+          }
+          return identity;
+        },
+      },
+      parentActionAuthorization,
+      outboundRelayService: {
+        async submitBatch() {
+          schedulePolicyHarness.relayCalls += 1;
+          throw new Error('schedule-policy must not relay without an accepted Trust Set');
+        },
+      },
+    });
+  }
   return app;
 }
 
 after(async () => {
   await writeParentRouteScenarioReport();
+});
+
+test('family dashboard read uses a real Parent session and reports incomplete capabilities honestly', async () => {
+  const app = buildApp();
+  try {
+    const session = await registerVerifyLogin(app, `route-audit-dashboard-${randomUUID()}@example.test`);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${session.familyId}/dashboard`,
+      headers: sessionHeaders(session),
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.json()));
+    recordParentRouteScenario({ method: 'GET', route: DASHBOARD_ROUTE, scenarioId: 'mysql_dashboard_parent_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response, evidenceTier: 'MYSQL_HTTP' });
+    const cards = response.json().cards;
+    assert.deepEqual(cards.map(({ kind }) => kind).sort(), ['WEB_FILTERING', 'YOUTUBE']);
+    assert.deepEqual(cards.find(({ kind }) => kind === 'WEB_FILTERING'), {
+      kind: 'WEB_FILTERING',
+      capabilityState: 'UNAVAILABLE',
+      lastAcknowledgedPolicyRevision: null,
+      pendingOrOfflineStatus: 'NONE',
+      summaryLabel: 'Site block history unavailable',
+    });
+    assert.deepEqual(cards.find(({ kind }) => kind === 'YOUTUBE'), {
+      kind: 'YOUTUBE',
+      capabilityState: 'LIMITED',
+      lastAcknowledgedPolicyRevision: null,
+      pendingOrOfflineStatus: 'NONE',
+      summaryLabel: null,
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy route denies a real Parent session until a signed Trust Set epoch is accepted', async () => {
+  const schedulePolicyHarness = { epochStore: new MySqlTrustSetEpochStore(), actorSessions: new Map(), relayCalls: 0 };
+  const app = buildApp({ schedulePolicyHarness });
+  try {
+    const session = await registerVerifyLogin(app, `route-audit-schedule-policy-${randomUUID()}@example.test`);
+    const { epochStore, actorSessions } = schedulePolicyHarness;
+    actorSessions.set('test-only-actor-session', { deviceId: 'test-parent-actor', familyId: session.familyId });
+    assert.equal(await epochStore.readLatestEpoch(session.familyId), null, 'the disposable family has no accepted signed epoch');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${session.familyId}/children/child-audit-schedule/schedule-policy`,
+      headers: { ...mutationHeaders(session), authorization: 'Bearer test-only-actor-session' },
+      payload: { recipientDeviceId: 'test-recipient', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    });
+
+    assert.equal(response.statusCode, 403, JSON.stringify(response.json()));
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'mysql_schedule_policy_no_accepted_trust_set', classification: 'CRYPTO_DEVICE_GATED', expectedStatus: 403, response, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal(schedulePolicyHarness.relayCalls, 0, 'no encrypted schedule policy may be relayed without accepted authority');
+    assert.equal(await epochStore.readLatestEpoch(session.familyId), null, 'the request must not create or alter Trust Set authority');
+  } finally {
+    await app.close();
+  }
+});
+
+const WEB_RULES_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/web-rules';
+const WEB_RULES_REMOVE_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/web-rules/remove';
+
+test('MYSQL HTTP Web Rules declarations remain explicitly service-gated with a real Parent session and no domain echo', async () => {
+  const app = buildApp();
+  const domain = `mysql-web-rules-no-echo-${randomUUID()}.example`;
+  try {
+    const session = await registerVerifyLogin(app, `route-audit-web-rules-${randomUUID()}@example.test`);
+    const scenarios = [
+      {
+        method: 'GET',
+        route: WEB_RULES_ROUTE,
+        scenarioId: 'mysql_web_rules_read_not_configured',
+        url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules`,
+        headers: sessionHeaders(session),
+      },
+      {
+        method: 'POST',
+        route: WEB_RULES_ROUTE,
+        scenarioId: 'mysql_web_rules_add_not_configured',
+        url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules`,
+        headers: mutationHeaders(session),
+        payload: { domain, listType: 'DENY' },
+      },
+      {
+        method: 'POST',
+        route: WEB_RULES_REMOVE_ROUTE,
+        scenarioId: 'mysql_web_rules_remove_not_configured',
+        url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules/remove`,
+        headers: mutationHeaders(session),
+        payload: { domain, listType: 'DENY' },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const response = await app.inject({
+        method: scenario.method,
+        url: scenario.url,
+        headers: scenario.headers,
+        ...(scenario.payload ? { payload: scenario.payload } : {}),
+      });
+      assert.equal(response.statusCode, 503, `${scenario.scenarioId}: ${JSON.stringify(response.json())}`);
+      assert.deepEqual(response.json(), { error: 'not_configured' });
+      assert.equal(response.body.includes(domain), false, `${scenario.scenarioId} must not echo the domain`);
+      recordParentRouteScenario({
+        method: scenario.method,
+        route: scenario.route,
+        scenarioId: scenario.scenarioId,
+        classification: 'SERVICE_NOT_CONFIGURED',
+        expectedStatus: 503,
+        response,
+        evidenceTier: 'MYSQL_HTTP',
+      });
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 function setCookieJar(response) {
@@ -628,7 +822,7 @@ test('MYSQL HTTP MFA step-up: CSRF 403, unknown operation 400, pre-enrollment 40
   }
 });
 
-test('MYSQL HTTP safe zones: role/CSRF/validation/opaque-recipient boundaries with durable create-patch-delete', async () => {
+test('MYSQL HTTP safe zones: role/CSRF/validation boundaries and missing actor authority fail closed without writes', async () => {
   const app = buildApp();
   try {
     const owner = await registerVerifyLogin(app, uniqueEmail('audit-safezone'));
@@ -656,41 +850,30 @@ test('MYSQL HTTP safe zones: role/CSRF/validation/opaque-recipient boundaries wi
     assert.equal(viewerMutation.statusCode, 403);
     recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: viewerMutation, evidenceTier: 'MYSQL_HTTP' });
 
-    const created = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: mutationHeaders(owner), payload: opaquePayload });
-    assert.equal(created.statusCode, 201);
-    recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 201, response: created, evidenceTier: 'MYSQL_HTTP' });
-    const zoneId = created.json().safeZone.zoneId;
+    const createUnavailable = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: mutationHeaders(owner), payload: opaquePayload });
+    assert.equal(createUnavailable.statusCode, 503);
+    recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: createUnavailable, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal((await safeZoneRepository.list(owner.familyId)).length, 0, 'the unavailable actor authority must prevent a Safe Zone insert');
 
-    const list = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: sessionHeaders(owner) });
-    assert.equal(list.statusCode, 200);
-    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: list, evidenceTier: 'MYSQL_HTTP' });
-    assert.equal(list.json().safeZones.length, 1);
+    // A disposable fixture lets PATCH/DELETE reach the same missing-authority
+    // gate. It is never treated as proof that an unauthenticated actor may
+    // mutate a production row.
+    const fixture = await safeZoneRepository.create({ familyId: owner.familyId, recipientEndpointId: deviceId, ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 });
+    const patchUnavailable = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: mutationHeaders(owner), payload: { ciphertextB64: 'BAUG' } });
+    assert.equal(patchUnavailable.statusCode, 503);
+    recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_update_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: patchUnavailable, evidenceTier: 'MYSQL_HTTP' });
 
-    const patched = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${zoneId}`, headers: mutationHeaders(owner), payload: { ciphertextB64: 'BAUG' } });
-    assert.equal(patched.statusCode, 200);
-    recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_update_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: patched, evidenceTier: 'MYSQL_HTTP' });
+    const deleteUnavailable = await app.inject({ method: 'DELETE', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: mutationHeaders(owner) });
+    assert.equal(deleteUnavailable.statusCode, 503);
+    recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_delete_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: deleteUnavailable, evidenceTier: 'MYSQL_HTTP' });
 
-    // Wrong-recipient zone (recipient device does not exist in this family):
-    // seeded straight through the repository so the route's device check is
-    // the thing under test.
-    const orphan = await safeZoneRepository.create({ familyId: owner.familyId, recipientEndpointId: 'missing-device-audit', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 });
-    const wrongUpdate = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${orphan.zoneId}`, headers: mutationHeaders(owner), payload: { ciphertextB64: 'BAUG' } });
-    assert.equal(wrongUpdate.statusCode, 404);
-    recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_update_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: wrongUpdate, evidenceTier: 'MYSQL_HTTP' });
-
-    const wrongDelete = await app.inject({ method: 'DELETE', url: `/api/parent/families/${owner.familyId}/safe-zones/${orphan.zoneId}`, headers: mutationHeaders(owner) });
-    assert.equal(wrongDelete.statusCode, 404);
-    recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_delete_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: wrongDelete, evidenceTier: 'MYSQL_HTTP' });
-
-    // Persistence readback: the PATCH actually updated the stored envelope.
     const readBack = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: sessionHeaders(owner) });
-    const stored = readBack.json().safeZones.find((zone) => zone.zoneId === zoneId);
-    assert.equal(stored.ciphertextB64, 'BAUG');
-    assert.equal(stored.revision, 2);
-
-    const removed = await app.inject({ method: 'DELETE', url: `/api/parent/families/${owner.familyId}/safe-zones/${zoneId}`, headers: mutationHeaders(owner) });
-    assert.equal(removed.statusCode, 204);
-    recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_delete_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 204, response: removed, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal(readBack.statusCode, 200);
+    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: readBack, evidenceTier: 'MYSQL_HTTP' });
+    assert.equal(readBack.json().safeZones.length, 1);
+    assert.equal(readBack.json().safeZones[0].zoneId, fixture.zoneId);
+    assert.equal(readBack.json().safeZones[0].ciphertextB64, 'AQID');
+    assert.equal(readBack.json().safeZones[0].revision, 1);
   } finally {
     await app.close();
   }

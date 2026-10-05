@@ -9,6 +9,7 @@ import {
   resolveOperationAuthorization,
 } from '../../dist/familyrbac/policy.js';
 import { defaultFamilyRbacPolicyConfig } from '../../dist/familyrbac/types.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 const CONFIGURED = { administratorCanManageViewers: true, administratorCanRevokeDeviceOrDisableProtection: true };
 
@@ -227,4 +228,19 @@ test('deliveryStatus: unacked target known offline -> DEVICE_OFFLINE', () => {
 test('deliveryStatus: unrelated acks for a different actionId are ignored', () => {
   const acks = [{ deviceId: 'dev-1', acknowledgedActionId: 'other-action', acknowledgedTrustSetEpoch: 5, acknowledgedAt: T0, outcome: 'ACK_SUCCESS' }];
   assert.equal(deriveDeliveryStatus('act-1', 5, ['dev-1'], acks, [], T0, EXPIRES), 'PENDING_DELIVERY');
+});
+
+test('deliveryStatus: maximum signed INT32 epoch remains valid for action and acknowledgement', () => {
+  const acks = [{ deviceId: 'dev-1', acknowledgedActionId: 'act-1', acknowledgedTrustSetEpoch: MAX_FAMILY_EPOCH, acknowledgedAt: T0, outcome: 'ACK_SUCCESS' }];
+  assert.equal(deriveDeliveryStatus('act-1', MAX_FAMILY_EPOCH, ['dev-1'], acks, [], T0, EXPIRES), 'APPLIED');
+});
+
+test('deliveryStatus: oversized action epoch fails and oversized or zero acknowledgement cannot produce success', () => {
+  const oversizedAck = [{ deviceId: 'dev-1', acknowledgedActionId: 'act-1', acknowledgedTrustSetEpoch: MAX_FAMILY_EPOCH + 1, acknowledgedAt: T0, outcome: 'ACK_SUCCESS' }];
+  const zeroAck = [{ deviceId: 'dev-1', acknowledgedActionId: 'act-1', acknowledgedTrustSetEpoch: 0, acknowledgedAt: T0, outcome: 'ACK_SUCCESS' }];
+  const zeroDenial = [{ deviceId: 'dev-1', acknowledgedActionId: 'act-1', acknowledgedTrustSetEpoch: 0, acknowledgedAt: T0, outcome: 'ACK_REJECTED_REVOKED' }];
+  assert.equal(deriveDeliveryStatus('act-1', MAX_FAMILY_EPOCH + 1, ['dev-1'], [], [], T0, EXPIRES), 'FAILED');
+  assert.equal(deriveDeliveryStatus('act-1', MAX_FAMILY_EPOCH, ['dev-1'], oversizedAck, [], T0, EXPIRES), 'PENDING_DELIVERY');
+  assert.equal(deriveDeliveryStatus('act-1', 1, ['dev-1'], zeroAck, [], T0, EXPIRES), 'FAILED');
+  assert.equal(deriveDeliveryStatus('act-1', 1, ['dev-1'], zeroDenial, [], T0, EXPIRES), 'REVOKED');
 });

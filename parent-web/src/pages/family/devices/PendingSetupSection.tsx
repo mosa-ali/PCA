@@ -9,6 +9,7 @@ import { PairingConfirmation, RampPill } from '../DeviceEnrollmentPanel';
 import { errorMessageKey, invitationStatusRamp, useInvitations } from './enrollmentState';
 import type { DevicesSectionId } from './DevicesTabs';
 import { useFamilyAction } from '../../../rbac/useFamilyAction';
+import FirstDeviceBootstrapApprovalPanel from './FirstDeviceBootstrapApprovalPanel';
 
 /**
  * Section 3 -- every enrollment that has been started but is not finished, in
@@ -123,6 +124,8 @@ export default function PendingSetupSection({
           {actionError}
         </p>
       )}
+
+      <FirstDeviceBootstrapApprovalPanel familyId={familyId} />
 
       <div className="wizard-actions">
         <button type="button" className="btn btn-secondary" onClick={() => onGoToSection('add')}>

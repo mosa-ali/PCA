@@ -21,25 +21,24 @@ interface EnrollmentLinkParser {
 }
 
 /**
- * Only the `token` query parameter (custom-scheme form) or the final non-empty path segment
- * (App Link form) is ever extracted -- any other parameter/segment present in the URI is silently
- * ignored, never interpreted as an authority claim.
+ * Only the `token` query parameter (custom-scheme form) or a canonical 43-character token directly
+ * below the configured App Link path prefix is extracted -- any other parameter/segment present
+ * in the URI is silently ignored, never interpreted as an authority claim.
  *
  * Accepts TWO link shapes, both leading to the exact same [ParsedEnrollmentLink] outcome:
  *  - `pca://enroll?token=<token>` (custom scheme; always supported, works even on a device where
  *    Android App Links have not been set up/verified for any domain).
- *  - `https://<appLinkHost>/<token>` (PCA-ADD-ENR-008 Android App Link continuation form,
- *    only when [appLinkScheme]/[appLinkHost] are supplied -- see
- *    [EnrollmentDeepLinkConfig.APP_LINK_HOST]'s own doc for why this shape exists). This is also
- *    exactly the link shape parent-web actually generates (`${baseUrl}/${token}`, a path segment,
- *    never a `token=` query parameter) -- see parent-web/src/pages/family/
- *    DeviceEnrollmentPanel.tsx's `enrollmentLink` construction.
+ *  - `https://<appLinkHost>/enroll/<token>` (PCA-ADD-ENR-008 Android App Link continuation form,
+ *    only when [appLinkScheme]/[appLinkHost]/[appLinkPathPrefix] are supplied). The path must use
+ *    the canonical HTTPS host, default port, token segment, and no query or fragment so it matches
+ *    Public Web's token-safe route and server-side request logging policy.
  */
 class UriEnrollmentLinkParser(
     private val expectedScheme: String,
     private val expectedHost: String,
     private val appLinkScheme: String? = null,
     private val appLinkHost: String? = null,
+    private val appLinkPathPrefix: String? = null,
 ) : EnrollmentLinkParser {
 
     override fun parse(uri: String): ParsedEnrollmentLink? {
@@ -54,10 +53,14 @@ class UriEnrollmentLinkParser(
         if (expectedScheme.equals(parsed.scheme, ignoreCase = true) && parsed.host == expectedHost) {
             return parseQueryParamToken(parsed, expectedScheme, expectedHost)
         }
-        if (appLinkScheme != null && appLinkHost != null &&
-            appLinkScheme.equals(parsed.scheme, ignoreCase = true) && parsed.host == appLinkHost
+        if (appLinkScheme != null && appLinkHost != null && appLinkPathPrefix != null &&
+            appLinkScheme.equals(parsed.scheme, ignoreCase = true) &&
+            parsed.host == appLinkHost &&
+            (parsed.port == -1 || parsed.port == 443) &&
+            parsed.rawQuery == null &&
+            parsed.rawFragment == null
         ) {
-            return parsePathSegmentToken(parsed, appLinkScheme, appLinkHost)
+            return parsePathSegmentToken(parsed, appLinkScheme, appLinkHost, appLinkPathPrefix)
         }
         return null
     }
@@ -73,9 +76,23 @@ class UriEnrollmentLinkParser(
         return ParsedEnrollmentLink(serverBaseUrl = "$scheme://$host", rawInvitationToken = token)
     }
 
-    private fun parsePathSegmentToken(parsed: URI, scheme: String, host: String): ParsedEnrollmentLink? {
-        val token = (parsed.path ?: "").split("/").lastOrNull { it.isNotEmpty() }
-        if (token.isNullOrEmpty()) return null
+    private fun parsePathSegmentToken(
+        parsed: URI,
+        scheme: String,
+        host: String,
+        pathPrefix: String,
+    ): ParsedEnrollmentLink? {
+        val rawPath = parsed.rawPath ?: return null
+        if (!rawPath.startsWith(pathPrefix)) return null
+        val token = rawPath.removePrefix(pathPrefix).removeSuffix("/")
+        // Invitation tokens are randomBytes(32).toString('base64url'): exactly
+        // 43 URL-safe characters. Keep the token in one path segment and reject
+        // encoded separators or alternate path shapes before bootstrap.
+        if (!CANONICAL_INVITATION_TOKEN.matches(token)) return null
         return ParsedEnrollmentLink(serverBaseUrl = "$scheme://$host", rawInvitationToken = token)
+    }
+
+    private companion object {
+        val CANONICAL_INVITATION_TOKEN = Regex("^[A-Za-z0-9_-]{43}$")
     }
 }

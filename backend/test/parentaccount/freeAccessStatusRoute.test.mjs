@@ -113,6 +113,7 @@ test('GET /api/parent/free-access-status: 200 with the derived FreeAccessStatus 
 
   const response = await app.inject({ method: 'GET', url: '/api/parent/free-access-status', headers: { cookie } });
   assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['cache-control'], 'private, no-store');
   recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_verified_account_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
   const body = response.json();
   assert.ok(['TIME_LIMITED', 'PERPETUAL'].includes(body.mode));

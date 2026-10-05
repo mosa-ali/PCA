@@ -35,7 +35,7 @@ function invitationRecord(familyId = FAMILY, overrides = {}) {
   };
 }
 
-function buildApp() {
+function buildApp({ androidEnrollmentReady = true } = {}) {
   const scopes = createInMemoryAuthzRepository();
   scopes._grantScope('svc-admin', FAMILY, 'ACTIVE');
   scopes._grantScope('svc-viewer', FAMILY, 'ACTIVE');
@@ -75,6 +75,7 @@ function buildApp() {
   };
 
   const calls = [];
+  const stepUpCalls = [];
   const record = invitationRecord();
   const invitationService = {
     async createInvitation(input) {
@@ -102,15 +103,17 @@ function buildApp() {
     invitationService,
     authService,
     parentAccountService: { async consumeSensitiveStepUp(_accountId, _familyId, operation, token) {
+      stepUpCalls.push({ operation, token });
       return (operation === 'family.device.enrollment.revoke' && token === 'single-use-test-grant') ||
         (operation === 'family.device.enrollment.create' && token === 'single-use-create-grant');
     } },
+    androidEnrollmentReady,
     authzService,
     familyMembershipRepository,
     rateLimiter,
     authAttemptLimiter,
   });
-  return { app, calls };
+  return { app, calls, stepUpCalls };
 }
 
 const auth = (token) => ({ authorization: `Bearer ${token}` });
@@ -135,6 +138,27 @@ test('active same-family Administrator can create a child-device invitation with
     assert.equal(response.statusCode, 201);
     assert.equal(response.json().rawInvitationToken, 'one-time-enrollment-token');
     assert.deepEqual(calls.map((call) => call.operation), ['create']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Android enrollment readiness gate rejects before consuming step-up or creating an invitation', async () => {
+  const { app, calls, stepUpCalls } = buildApp({ androidEnrollmentReady: false });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${FAMILY}/invitations`,
+      headers: auth('admin-token'),
+      payload: createBody,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), {
+      error: 'service_unavailable',
+      code: 'PLATFORM_ENROLLMENT_UNAVAILABLE',
+    });
+    assert.equal(stepUpCalls.length, 0);
+    assert.deepEqual(calls, []);
   } finally {
     await app.close();
   }

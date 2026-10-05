@@ -25,7 +25,20 @@ data class SchedulePolicySnapshot(
 
 interface SchedulePolicyStore {
     fun save(snapshot: SchedulePolicySnapshot)
+
+    /** Compatibility convenience; use [read] at any policy-enforcement boundary. */
     fun load(): SchedulePolicySnapshot?
+
+    /** Distinguishes a first-run empty store from a present but unreadable snapshot. */
+    fun read(): SchedulePolicyStoreRead = load()?.let { SchedulePolicyStoreRead.Present(it) }
+        ?: SchedulePolicyStoreRead.Absent
+}
+
+/** Integrity-aware result for a persisted schedule snapshot. Corrupt bytes remain in storage. */
+sealed interface SchedulePolicyStoreRead {
+    data object Absent : SchedulePolicyStoreRead
+    data object Corrupt : SchedulePolicyStoreRead
+    data class Present(val snapshot: SchedulePolicySnapshot) : SchedulePolicyStoreRead
 }
 
 /** In-memory reference implementation, useful for tests and as a default before a durable

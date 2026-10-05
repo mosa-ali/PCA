@@ -1,7 +1,33 @@
 import { defineConfig, loadEnv } from 'vite';
+import type { Plugin } from 'vite';
+import { rm } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { securityHeadersPlugin } from './vite/securityHeadersPlugin';
+
+/**
+ * The local debug APK is intentionally kept under public/ for manual testing,
+ * but it must not be included in any built web artifact (including non-Docker
+ * ZIP/static-host builds that do not apply the repository .dockerignore).
+ */
+function excludeLocalTestBuildFromProductionOutput(): Plugin {
+  let outputDirectory: string;
+  return {
+    name: 'pca-exclude-local-test-build-from-output',
+    apply: 'build',
+    configResolved(config) {
+      outputDirectory = config.build.outDir;
+    },
+    closeBundle: {
+      sequential: true,
+      order: 'post',
+      async handler() {
+        await rm(resolve(outputDirectory, 'local-test-build'), { recursive: true, force: true });
+      },
+    },
+  };
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -88,7 +114,18 @@ export default defineConfig(({ mode }) => {
           enabled: false,
         },
       }),
+      excludeLocalTestBuildFromProductionOutput(),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) return 'vendor';
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       port: 4000,
       strictPort: true,

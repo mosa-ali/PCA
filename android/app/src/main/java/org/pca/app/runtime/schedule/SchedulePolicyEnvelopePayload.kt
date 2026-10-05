@@ -2,6 +2,7 @@ package org.pca.app.runtime.schedule
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.pca.app.runtime.EpochBounds
 import java.time.Instant
 
 /**
@@ -20,6 +21,8 @@ object SchedulePolicyEnvelopePayload {
     const val KIND = "SCHEDULE_POLICY_V1"
 
     fun encode(policy: SchedulePolicyV1): String {
+        EpochBounds.requireValid(policy.trustSetEpoch, "trustSetEpoch")
+        EpochBounds.requireValid(policy.keyEpoch, "keyEpoch")
         val root = JSONObject()
         root.put("kind", KIND)
         root.put("policy", encodePolicy(policy))
@@ -67,8 +70,8 @@ object SchedulePolicyEnvelopePayload {
         bonusGrants = json.getJSONArray("bonusGrants").let { array -> (0 until array.length()).map { decodeBonusGrant(array.getJSONObject(it)) } },
         parentExceptions = json.getJSONArray("parentExceptions").let { array -> (0 until array.length()).map { decodeException(array.getJSONObject(it)) } },
         dailyLimits = json.getJSONArray("dailyLimits").let { array -> (0 until array.length()).map { decodeDailyLimit(array.getJSONObject(it)) } },
-        trustSetEpoch = json.getInt("trustSetEpoch"),
-        keyEpoch = json.getInt("keyEpoch"),
+        trustSetEpoch = EpochBounds.decodeJson(json, "trustSetEpoch"),
+        keyEpoch = EpochBounds.decodeJson(json, "keyEpoch"),
         issuedAt = Instant.parse(json.getString("issuedAt")),
         effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
         expiresAt = json.optString("expiresAt", "").takeIf { it.isNotEmpty() }?.let { Instant.parse(it) },

@@ -2,6 +2,7 @@ import {
   applyServerCiphertextFeedWindow,
   isServerCiphertextExpired,
 } from '../retention/serverCiphertextTtl.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export interface FamilyAuditEventEnvelope {
   readonly envelopeId: string;
@@ -64,6 +65,9 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
   }
 
   async record(envelope: FamilyAuditEventEnvelope): Promise<RecordFamilyAuditEventResult> {
+    if (!isFamilyEpochNumber(envelope.keyEpoch)) {
+      throw new Error('Family audit key epoch is outside the supported family epoch range.');
+    }
     await this.purgeExpired(this.now());
     const existing = this.envelopes.get(envelope.envelopeId);
     if (existing) return sameEnvelope(existing, envelope) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };

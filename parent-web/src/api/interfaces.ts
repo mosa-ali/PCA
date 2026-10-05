@@ -160,6 +160,7 @@ export type SensitiveParentStepUpOperation =
   | 'family.member.invitation.revoke'
   | 'family.device.enrollment.create'
   | 'family.device.enrollment.revoke'
+  | 'family.device.bootstrap.root'
   | 'family.retention.update'
   | 'family.history.export'
   | 'family.history.delete'
@@ -410,11 +411,10 @@ export class FamilyMemberInvitationError extends Error {
  * return decrypted content itself. Decryption happens only via the
  * injected `decryption` boundary (see AUDIT_EVENT_MODEL in
  * docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md);
- * `list()`'s PENDING_TRUSTED_DECRYPTION result covers BOTH "no
- * actor-device-session available yet" and "envelopes were fetched but the
- * decryption boundary itself is unavailable" -- Audit.tsx must render both
- * as the same honest pending state, exactly like ProtectionAlertPanel.tsx's
- * existing precedent, never a fabricated empty list.
+ * `list()`'s PENDING_TRUSTED_DECRYPTION result covers "no
+ * actor-device-session available yet", unavailable envelope decryption, and
+ * an envelope response whose completeness is not established -- Audit.tsx
+ * renders each as the same honest pending state, never a fabricated empty list.
  */
 export type AuditTrailFeedResult =
   | { status: 'PENDING_TRUSTED_DECRYPTION' }

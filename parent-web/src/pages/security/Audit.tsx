@@ -15,8 +15,8 @@ type ResultFilter = '' | AuditEntrySummary['resultStatus'];
  * browser -- see AUDIT_EVENT_MODEL in
  * docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md.
  * `PENDING_TRUSTED_DECRYPTION` is the honest state until a real production
- * decryption boundary exists, mirroring ProtectionAlertPanel.tsx's
- * established pattern exactly -- never a fabricated empty list. Every
+ * decryption boundary and complete delivery signal exist, mirroring
+ * ProtectionAlertPanel.tsx's established pattern -- never a fabricated empty list. Every
  * actionType/targetScope value is rendered through a real i18n label
  * (audit.actionTypes / audit.targetScopeKinds), never a raw enum dump --
  * the exact anti-pattern already fixed once this session in

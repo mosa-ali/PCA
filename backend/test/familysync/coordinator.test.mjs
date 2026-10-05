@@ -7,6 +7,7 @@ import { canonicalizeEnvelope } from '../../dist/familyenvelope/canonicalize.js'
 import { InMemoryReplayLedger } from '../../dist/familyenvelope/InMemoryReplayLedger.js';
 import { InMemoryDataVersionLedger } from '../../dist/familyenvelope/InMemoryDataVersionLedger.js';
 import { InMemoryMessageIdempotencyLedger } from '../../dist/familyenvelope/InMemoryMessageIdempotencyLedger.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import {
   createTestOnlyEnvelopeSignatureVerifier,
   signTestOnlyEnvelope,
@@ -56,6 +57,29 @@ function buildHarness(options = {}) {
   );
 }
 
+function observeCoordinatorEffects(coordinator) {
+  const effects = [];
+  const observe = (target, method, label) => {
+    const original = target[method].bind(target);
+    target[method] = (...args) => {
+      effects.push(label);
+      return original(...args);
+    };
+  };
+
+  for (const [target, methods, prefix] of [
+    [coordinator.pendingStore, ['listExpired', 'get', 'insert', 'remove', 'listForFamily', 'countForSender', 'countForFamily', 'countGlobal'], 'pending'],
+    [coordinator.sequenceLedger, ['getLastAppliedSequence', 'recordAppliedSequence'], 'sequence'],
+    [coordinator.replayLedger, ['hasProcessed', 'claimProcessed', 'recordProcessed', 'releaseClaim'], 'replay'],
+    [coordinator.versionLedger, ['getLastAcceptedVersion', 'advancePolicyVersionIfNewer', 'recordAuthorizedRollbackVersion'], 'version'],
+    [coordinator.messageIdempotencyLedger, ['getAcceptedCanonicalBytes', 'recordAccepted', 'releaseAccepted'], 'idempotency'],
+    [coordinator.verifier, ['verify'], 'signature'],
+  ]) {
+    for (const method of methods) observe(target, method, `${prefix}:${method}`);
+  }
+  return effects;
+}
+
 function baseContext(overrides = {}) {
   return {
     senderPublicKey: SENDER_PUBLIC_KEY,
@@ -73,6 +97,89 @@ test('N arrives -> applies', async () => {
   const coordinator = buildHarness();
   const result = await coordinator.submit(buildEnvelope({ sequenceOrNonce: '1' }), baseContext());
   assert.deepEqual(result.decision, { kind: 'APPLY_NOW', idempotent: false });
+});
+
+test('the shared maximum is inclusive and a byte-identical coordinator retry remains idempotent', async () => {
+  const coordinator = buildHarness();
+  const envelope = buildEnvelope({ trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH });
+
+  assert.deepEqual((await coordinator.submit(envelope, baseContext())).decision, { kind: 'APPLY_NOW', idempotent: false });
+  assert.deepEqual((await coordinator.submit(envelope, baseContext())).decision, { kind: 'APPLY_NOW', idempotent: true });
+});
+
+test('direct submit rejects invalid epoch representations before canonicalization, maps, queue, ledgers, or crypto', async () => {
+  for (const field of ['trustSetEpoch', 'keyEpoch']) {
+    for (const invalidEpoch of [MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, '1', 1n]) {
+      const coordinator = buildHarness();
+      const envelope = buildEnvelope({ [field]: invalidEpoch });
+      if (invalidEpoch === MAX_FAMILY_EPOCH + 1) {
+        // A canonicalizer-first implementation would throw on this payload.
+        envelope.payload = null;
+      }
+      const effects = observeCoordinatorEffects(coordinator);
+
+      const result = await coordinator.submit(envelope, baseContext());
+      assert.deepEqual(result, { decision: { kind: 'REJECT', reason: 'INVALID_EPOCH' }, drained: [] });
+      assert.deepEqual(effects, [], `unexpected effect for ${field}=${String(invalidEpoch)}`);
+      assert.equal(coordinator.inFlightIdenticalByKey.size, 0);
+      assert.equal(coordinator.chainByKey.size, 0);
+    }
+  }
+});
+
+test('pending candidates loaded before the bound change are rejected before dependency reads or signature work', async () => {
+  const coordinator = buildHarness();
+  const badPending = buildEnvelope({
+    messageId: 'legacy-over-bound-pending',
+    senderKeyId: 'legacy-over-bound-key',
+    sequenceOrNonce: '2',
+    trustSetEpoch: MAX_FAMILY_EPOCH + 1,
+  });
+  const now = baseContext().now;
+  assert.equal(coordinator.pendingStore.insert({
+    familyId: 'family-1',
+    senderKeyId: badPending.senderKeyId,
+    messageId: badPending.messageId,
+    envelope: badPending,
+    canonicalBytes: canonicalizeEnvelope(badPending),
+    receivedAt: new Date(now.getTime() - 1_000),
+    effectiveExpiresAt: new Date(now.getTime() + 60_000),
+    reason: 'MISSING_SEQUENCE_PREDECESSOR',
+    waitingOnMessageId: null,
+    waitingOnSequence: 1,
+  }), true);
+
+  const sequenceLookups = [];
+  const acceptedIdLookups = [];
+  let signatureCalls = 0;
+  const getLastAppliedSequence = coordinator.sequenceLedger.getLastAppliedSequence.bind(coordinator.sequenceLedger);
+  coordinator.sequenceLedger.getLastAppliedSequence = async (...args) => {
+    sequenceLookups.push(args[1]);
+    return getLastAppliedSequence(...args);
+  };
+  const getAcceptedCanonicalBytes = coordinator.messageIdempotencyLedger.getAcceptedCanonicalBytes.bind(coordinator.messageIdempotencyLedger);
+  coordinator.messageIdempotencyLedger.getAcceptedCanonicalBytes = async (...args) => {
+    acceptedIdLookups.push(args[1]);
+    return getAcceptedCanonicalBytes(...args);
+  };
+  const verify = coordinator.verifier.verify.bind(coordinator.verifier);
+  coordinator.verifier.verify = async (...args) => {
+    signatureCalls += 1;
+    return verify(...args);
+  };
+
+  const trigger = buildEnvelope({ senderKeyId: 'valid-trigger-key', sequenceOrNonce: '1' });
+  const result = await coordinator.submit(trigger, baseContext());
+
+  assert.equal(result.decision.kind, 'APPLY_NOW');
+  assert.equal(coordinator.pendingStore.get('family-1', badPending.messageId), null);
+  assert.equal(sequenceLookups.includes(badPending.senderKeyId), false);
+  assert.equal(acceptedIdLookups.includes(badPending.messageId), false);
+  assert.equal(signatureCalls, 1, 'only the valid triggering envelope should be verified');
+  assert.deepEqual(result.drained, [{
+    messageId: badPending.messageId,
+    decision: { kind: 'REJECT', reason: 'INVALID_EPOCH' },
+  }]);
 });
 
 test('N duplicate -> idempotent', async () => {

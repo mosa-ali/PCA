@@ -295,6 +295,49 @@ async function runCeremonyToApproved(service, seed, evidence = TEST_EVIDENCE) {
   return { issued, ceremony, submission, input: submissionInput({ attemptId: seed.attemptId }, seed.rawRecoveryToken, ceremony, submission) };
 }
 
+test('OWNER DISCOVERY: approval list is family-scoped and excludes expired ceremonies', async () => {
+  const family = await seedBootstrappableFamily({ label: 'list-family' });
+  const secondDevice = await seedAdditionalDeviceForFamily(family.familyId, 'list-approved');
+  const foreignFamily = await seedBootstrappableFamily({ label: 'list-foreign' });
+  const service = makeService();
+
+  const pending = await service.issueChallenge({
+    attemptId: family.attemptId,
+    attemptRecoveryToken: family.rawRecoveryToken,
+    dskKeyId: family.device.dskKeyId,
+    dskPublicKey: family.device.dskPublicKey,
+  });
+  const approved = await service.issueChallenge({
+    attemptId: secondDevice.attemptId,
+    attemptRecoveryToken: secondDevice.rawRecoveryToken,
+    dskKeyId: secondDevice.device.dskKeyId,
+    dskPublicKey: secondDevice.device.dskPublicKey,
+  });
+  const foreign = await service.issueChallenge({
+    attemptId: foreignFamily.attemptId,
+    attemptRecoveryToken: foreignFamily.rawRecoveryToken,
+    dskKeyId: foreignFamily.device.dskKeyId,
+    dskPublicKey: foreignFamily.device.dskPublicKey,
+  });
+  assert.equal(pending.status, 'PENDING');
+  assert.equal(approved.status, 'PENDING');
+  assert.equal(foreign.status, 'PENDING');
+  assert.equal((await service.approve({ ceremonyId: approved.ceremonyId, familyId: family.familyId, accountId: family.accountId })).status, 'APPROVED');
+  await getPool().execute(
+    `UPDATE family_first_device_bootstrap_ceremonies
+        SET created_at = DATE_SUB(NOW(3), INTERVAL 2 MINUTE),
+            expires_at = DATE_SUB(NOW(3), INTERVAL 1 MINUTE)
+      WHERE ceremony_id = ?`,
+    [pending.ceremonyId],
+  );
+
+  const store = new MySqlFirstDeviceBootstrapStore({ epochStore: new MySqlTrustSetEpochStore() });
+  const listed = await store.listApprovalCeremonies(family.familyId, new Date(), 25);
+  assert.deepEqual(listed.map((row) => row.ceremonyId), [approved.ceremonyId]);
+  assert.equal(listed[0].status, 'APPROVED');
+  assert.equal(listed.some((row) => row.ceremonyId === foreign.ceremonyId), false);
+});
+
 test('VALID FIRST ROOT: a provisioned-owner approval commits exactly one anchor + byte-exact epoch 1 + floors (1,1); retries replay idempotently', async () => {
   const seed = await seedBootstrappableFamily({ label: 'valid' });
   const service = makeService();

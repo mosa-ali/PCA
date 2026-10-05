@@ -26,6 +26,7 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 
 const authRepository = new MySqlPlatformAdminAuthRepository();
 const accountService = new PlatformAdminAccountService(authRepository);
+const MAX_DEVICE_SESSION_EPOCH = 0xffff_ffff;
 let clockOffsetMs = 0;
 const clock = () => new Date(Date.now() + clockOffsetMs);
 const authService = new PlatformAdminAuthService(authRepository, new LoggingAlertAdapter(), clock);
@@ -174,7 +175,7 @@ test('HTTP: POST /platform-admin/accounts/:id/suspend then /reactivate round-tri
   const familyId = await createFamily();
 
   const app = Fastify({ logger: false });
-  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: authService, rateLimiter: createRateLimiter() });
+  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: authService, parentIdentityProjection: { async getByFamilyId() { return null; } }, rateLimiter: createRateLimiter() });
   await app.ready();
   try {
     const suspendStepUp = await stepUpFor(admin, 'FAMILY_ACCOUNT_SUSPEND');
@@ -205,6 +206,48 @@ test('HTTP: POST /platform-admin/accounts/:id/suspend then /reactivate round-tri
     });
     assert.equal(reactivateResponse.statusCode, 200);
     assert.equal(reactivateResponse.json().status, 'ACTIVE');
+  } finally {
+    await app.close();
+  }
+});
+
+test('HTTP: suspending at UINT32_MAX preserves suspension and reactivation fails closed instead of reusing the device-session epoch', async () => {
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  const familyId = await createFamily();
+  await getPool().query('UPDATE families SET device_session_epoch = ? WHERE family_id = ?', [MAX_DEVICE_SESSION_EPOCH, familyId]);
+
+  const app = Fastify({ logger: false });
+  registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: authService, parentIdentityProjection: { async getByFamilyId() { return null; } }, rateLimiter: createRateLimiter() });
+  await app.ready();
+  try {
+    const suspendStepUp = await stepUpFor(admin, 'FAMILY_ACCOUNT_SUSPEND');
+    const suspendResponse = await app.inject({
+      method: 'POST',
+      url: `/platform-admin/accounts/${familyId}/suspend`,
+      headers: { authorization: `Bearer ${admin.rawToken}` },
+      payload: { reason: 'device-session epoch boundary', stepUpId: suspendStepUp },
+    });
+    assert.equal(suspendResponse.statusCode, 200);
+    assert.equal(suspendResponse.json().status, 'SUSPENDED');
+    const [suspendedRows] = await getPool().query('SELECT status, device_session_epoch FROM families WHERE family_id = ?', [familyId]);
+    assert.equal(suspendedRows[0].status, 'SUSPENDED');
+    assert.equal(suspendedRows[0].device_session_epoch, MAX_DEVICE_SESSION_EPOCH, 'suspension must not wrap or reduce the session generation');
+
+    const reactivateStepUp = await stepUpFor(admin, 'FAMILY_ACCOUNT_REACTIVATE');
+    const reactivateResponse = await app.inject({
+      method: 'POST',
+      url: `/platform-admin/accounts/${familyId}/reactivate`,
+      headers: { authorization: `Bearer ${admin.rawToken}` },
+      payload: { stepUpId: reactivateStepUp },
+    });
+    assert.equal(reactivateResponse.statusCode, 409);
+    assert.deepEqual(reactivateResponse.json(), { error: 'device_session_epoch_exhausted' });
+
+    const [finalRows] = await getPool().query('SELECT status, device_session_epoch FROM families WHERE family_id = ?', [familyId]);
+    assert.equal(finalRows[0].status, 'SUSPENDED');
+    assert.equal(finalRows[0].device_session_epoch, MAX_DEVICE_SESSION_EPOCH);
+    assert.equal(await countAuditEvents('ACCOUNT_SUSPENDED', `family:${familyId}`), 1);
+    assert.equal(await countAuditEvents('ACCOUNT_REACTIVATED', `family:${familyId}`), 0);
   } finally {
     await app.close();
   }

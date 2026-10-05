@@ -380,6 +380,42 @@ test('the mutation route fails closed with 503 when not configured, rather than 
   }
 });
 
+test('the remove route fails closed without echoing or logging the submitted domain', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const sideEffectCalls = [];
+  const logs = [];
+  const unapprovedService = {
+    async setParentRule() { sideEffectCalls.push('set'); },
+    async removeParentRule() { sideEffectCalls.push('remove'); },
+    async listParentRules() { sideEffectCalls.push('list'); return []; },
+  };
+  const { app } = buildApp({ webRuleService: unapprovedService, authorization, configured: false, sideEffectCalls, logs });
+  const sentinel = 'remove-not-configured-never-persisted.invalid';
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/web-rules/remove`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { domain: sentinel, listType: 'DENY' },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.body.includes(sentinel), false);
+    assert.deepEqual(response.json(), { error: 'not_configured' });
+    assert.deepEqual(sideEffectCalls, [], 'unconfigured removal must not reach persistence, authorization, audit, or telemetry');
+    assert.equal(logs.some((entry) => entry.includes(sentinel)), false, 'Fastify logs must not contain the parent-authored domain');
+    recordParentRouteScenario({
+      method: 'POST',
+      route: WEB_RULES_REMOVE_ROUTE,
+      scenarioId: 'web_rules_remove_not_configured',
+      classification: 'SERVICE_NOT_CONFIGURED',
+      expectedStatus: 503,
+      response,
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test('production fail-closed boundary does not persist, log, audit, or echo a synthetic domain', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
   const sideEffectCalls = [];

@@ -188,9 +188,9 @@ export interface PcaApiClients {
    * same cookie-session transport as `billing` above -- see
    * ./real/realRetentionClient.ts's header. Reads (getDefaults) work for
    * any signed-in family session; writes additionally pass through the
-   * client-side ../rbac/useFamilyAction pre-gate, which is the only WHO
-   * control for these operations because retentionRoutes deliberately
-   * performs no server-side role check.
+   * client-side ../rbac/useFamilyAction pre-gate, which improves UX but is
+   * not the authority boundary: sensitive writes consume operation-bound
+   * TOTP and ParentAccountService revalidates active Administrator membership.
    */
   retention: RetentionClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
@@ -318,7 +318,7 @@ function buildRealClients(): PcaApiClients {
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
     parentIdentity: new RealParentIdentityClient(config.apiBaseUrl),
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
-    safeZones: new RealSafeZoneClient(config.apiBaseUrl),
+    safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     schedulePolicyAuthoring: new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     // Browser retention uses the same cookie transport as billing above:
@@ -328,11 +328,11 @@ function buildRealClients(): PcaApiClients {
     // (cookieSessionFamilyId), not a second mechanism. Mutations carry the
     // double-submit CSRF header. The bearer/no-family placeholders stay
     // wired as the explicit non-browser fallbacks and are never consulted in
-    // cookie mode. NOTE: retentionRoutes performs NO server-side role check
-    // (deliberately -- see its own createRequireActiveFamilyScope doc
-    // comment), so the client-side ../rbac/useFamilyAction pre-gate remains
-    // the only control over WHO may perform retention writes and must not be
-    // relaxed; retention READS (getDefaults) do not go through it.
+    // cookie mode. Sensitive writes consume operation-bound TOTP and
+    // ParentAccountService revalidates active Administrator membership in
+    // the selected family; this client pre-gate improves UX but is not the
+    // authority boundary. Retention READS (getDefaults) require active family
+    // scope and do not go through the client pre-gate.
     retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     isFixtureBacked: false,
   };

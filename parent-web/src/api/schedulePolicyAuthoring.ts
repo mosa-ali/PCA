@@ -55,6 +55,8 @@ export class SchedulePolicyAuthoringError extends Error {
 
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 const OPAQUE_BASE64 = /^[A-Za-z0-9_-]{2,87380}$/;
+// Shared family epoch protocol bound (INT32_MAX), matching backend and mobile.
+const MAX_FAMILY_EPOCH = 2_147_483_647;
 
 /** Validates readable input while it is still inside the parent-only boundary. Does not encrypt, persist, log, or send it. */
 export function validateSchedulePolicyPlaintextDefinition(definition: SchedulePolicyPlaintextDefinition): void {
@@ -105,8 +107,9 @@ export function validateOpaqueSchedulePolicyInput(value: unknown, expectedRecipi
     typeof value.nonceB64 !== 'string' ||
     !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64) ||
     typeof value.keyEpoch !== 'number' ||
-    !Number.isInteger(value.keyEpoch) ||
-    value.keyEpoch <= 0
+    !Number.isSafeInteger(value.keyEpoch) ||
+    value.keyEpoch <= 0 ||
+    value.keyEpoch > MAX_FAMILY_EPOCH
   ) {
     throw new SchedulePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
   }

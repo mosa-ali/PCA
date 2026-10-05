@@ -3,8 +3,10 @@ package org.pca.app.runtime.identity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.pca.app.enrollment.PairingState
+import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.storage.InMemoryFamilyStateStore
 import org.pca.app.storage.LocalFamilyState
+import org.pca.app.storage.PersistentFamilyStateStore
 
 class DeviceIdentityProviderTest {
 
@@ -13,6 +15,16 @@ class DeviceIdentityProviderTest {
         val provider = PersistentDeviceIdentityProvider(InMemoryFamilyStateStore())
 
         assertEquals(DeviceIdentityState.NotEnrolled, provider.currentIdentity())
+    }
+
+    @Test
+    fun `corrupt saved family state reports unavailable rather than NotEnrolled`() {
+        val backing = InMemoryPersistentStateStore().apply {
+            putString("family_state_v1", "family|device|NOT_A_PAIRING_STATE|1|1")
+        }
+        val provider = PersistentDeviceIdentityProvider(PersistentFamilyStateStore(backing))
+
+        assertEquals(DeviceIdentityState.Unavailable, provider.currentIdentity())
     }
 
     @Test

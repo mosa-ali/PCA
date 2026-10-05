@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,10 +28,61 @@ import org.pca.app.R
 import org.pca.app.enrollment.DeviceKeyFingerprints
 import org.pca.app.i18n.BidiUtils
 import org.pca.app.enrollment.EnrollmentState
+import org.pca.app.firstdevice.FirstDeviceRootRecord
+import org.pca.app.firstdevice.FirstDeviceRootState
 
 /** PCA-16B: shared modifier marking a screen's main title as an accessibility heading, so
  * TalkBack/switch-access users can navigate the enrollment flow by heading. */
 private val headingModifier = Modifier.semantics { heading() }
+
+/** Actions rendered for the persisted server-authoritative first-device ceremony state. */
+internal enum class FirstDeviceRootReviewAction {
+    START_REVIEW,
+    REFRESH_STATUS,
+    SUBMIT_PROOF,
+    REPLAY_EXACT_SUBMISSION,
+}
+
+/** Pure UI policy, also pinned by tests: submit is exposed only for APPROVED. */
+internal fun firstDeviceRootReviewActions(
+    record: FirstDeviceRootRecord?,
+    deviceId: String,
+): Set<FirstDeviceRootReviewAction> {
+    if (record == null || record.seed.deviceId != deviceId) return emptySet()
+    return when (record.state) {
+        FirstDeviceRootState.NOT_STARTED -> if (record.submission == null) {
+            setOf(FirstDeviceRootReviewAction.START_REVIEW)
+        } else {
+            setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
+        }
+        FirstDeviceRootState.AWAITING_APPROVAL -> setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
+        FirstDeviceRootState.APPROVED -> setOf(
+            FirstDeviceRootReviewAction.REFRESH_STATUS,
+            FirstDeviceRootReviewAction.SUBMIT_PROOF,
+        )
+        FirstDeviceRootState.UNKNOWN -> if (record.ceremonyId == null && record.submission == null) {
+            // The server challenge did not produce a ceremony id, so status() cannot make
+            // progress. Keep retry explicit: UNKNOWN never starts another challenge implicitly.
+            setOf(FirstDeviceRootReviewAction.START_REVIEW)
+        } else {
+            buildSet {
+                add(FirstDeviceRootReviewAction.REFRESH_STATUS)
+                if (record.submission != null) add(FirstDeviceRootReviewAction.REPLAY_EXACT_SUBMISSION)
+            }
+        }
+        FirstDeviceRootState.SUBMITTING -> buildSet {
+            add(FirstDeviceRootReviewAction.REFRESH_STATUS)
+            if (record.submission != null) add(FirstDeviceRootReviewAction.REPLAY_EXACT_SUBMISSION)
+        }
+        FirstDeviceRootState.EXPIRED -> if (record.submission == null) {
+            setOf(FirstDeviceRootReviewAction.START_REVIEW)
+        } else {
+            setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
+        }
+        FirstDeviceRootState.REJECTED -> setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
+        FirstDeviceRootState.ROOT_COMMITTED -> emptySet()
+    }
+}
 
 /**
  * Honest, minimal setup UI (mission Section 9): every state this composable renders reflects only
@@ -43,6 +97,11 @@ fun EnrollmentScreen(
     onContinue: () -> Unit,
     onProfileConfirmed: () -> Unit = {},
     onCheckStatus: () -> Unit = {},
+    firstDeviceRootRecord: FirstDeviceRootRecord? = null,
+    onStartFirstDeviceRootReview: () -> Unit = {},
+    onRefreshFirstDeviceRootStatus: () -> Unit = {},
+    onSubmitFirstDeviceRootProof: () -> Unit = {},
+    onReplayFirstDeviceRootProof: () -> Unit = {},
     /** PCA-FR-140/141: this device's own DSK/DEK fingerprints (org.pca.app.enrollment.EnrollmentCoordinator.keyFingerprints), shown once available so the parent can visually compare them against the parent app's own display of the same device's fingerprints. */
     keyFingerprints: DeviceKeyFingerprints? = null,
 ) {
@@ -51,6 +110,15 @@ fun EnrollmentScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (state) {
+            is EnrollmentState.LocalStateCorrupt -> {
+                Text(
+                    stringResource(R.string.enrollment_local_state_corrupt_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = headingModifier,
+                )
+                Text(stringResource(R.string.enrollment_local_state_corrupt_body))
+            }
+
             is EnrollmentState.NotEnrolled -> {
                 var link by remember { mutableStateOf("") }
                 Text(stringResource(R.string.enrollment_entry_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
@@ -91,6 +159,17 @@ fun EnrollmentScreen(
             is EnrollmentState.PairingPending -> {
                 Text(stringResource(R.string.enrollment_pairing_pending_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
                 Text(stringResource(R.string.enrollment_pairing_pending_body))
+                // EnrollmentCoordinator enters PairingPending only after the ceremony seed has
+                // passed its durable capture/readback gate. Match the seed to this device before
+                // exposing root-review actions; a different saved device record is not actionable.
+                FirstDeviceRootReviewPanel(
+                    deviceId = state.deviceId,
+                    record = firstDeviceRootRecord,
+                    onStartReview = onStartFirstDeviceRootReview,
+                    onRefreshStatus = onRefreshFirstDeviceRootStatus,
+                    onSubmitProof = onSubmitFirstDeviceRootProof,
+                    onReplayExactSubmission = onReplayFirstDeviceRootProof,
+                )
                 if (keyFingerprints != null) {
                     KeyFingerprintConfirmation(keyFingerprints)
                 }
@@ -137,6 +216,63 @@ fun EnrollmentScreen(
                 Text(stringResource(R.string.enrollment_recovery_pending_body))
                 Button(onClick = onCheckStatus) {
                     Text(stringResource(R.string.enrollment_check_status_button))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FirstDeviceRootReviewPanel(
+    deviceId: String,
+    record: FirstDeviceRootRecord?,
+    onStartReview: () -> Unit,
+    onRefreshStatus: () -> Unit,
+    onSubmitProof: () -> Unit,
+    onReplayExactSubmission: () -> Unit,
+) {
+    val actions = firstDeviceRootReviewActions(record, deviceId)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.enrollment_root_review_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(stringResource(R.string.enrollment_root_review_intro))
+            if (record == null || record.seed.deviceId != deviceId) {
+                Text(stringResource(R.string.enrollment_root_review_unavailable))
+            } else {
+                val statusText = when (record.state) {
+                    FirstDeviceRootState.NOT_STARTED -> R.string.enrollment_root_status_not_started
+                    FirstDeviceRootState.AWAITING_APPROVAL -> R.string.enrollment_root_status_awaiting_approval
+                    FirstDeviceRootState.APPROVED -> R.string.enrollment_root_status_approved
+                    FirstDeviceRootState.SUBMITTING -> R.string.enrollment_root_status_submitting
+                    FirstDeviceRootState.ROOT_COMMITTED -> R.string.enrollment_root_status_committed
+                    FirstDeviceRootState.EXPIRED -> R.string.enrollment_root_status_expired
+                    FirstDeviceRootState.REJECTED -> R.string.enrollment_root_status_rejected
+                    FirstDeviceRootState.UNKNOWN -> R.string.enrollment_root_status_unknown
+                }
+                Text(stringResource(statusText))
+                if (FirstDeviceRootReviewAction.START_REVIEW in actions) {
+                    Button(onClick = onStartReview) {
+                        Text(stringResource(R.string.enrollment_root_review_start_button))
+                    }
+                }
+                if (FirstDeviceRootReviewAction.REFRESH_STATUS in actions) {
+                    OutlinedButton(onClick = onRefreshStatus) {
+                        Text(stringResource(R.string.enrollment_root_review_refresh_button))
+                    }
+                }
+                if (FirstDeviceRootReviewAction.SUBMIT_PROOF in actions) {
+                    Button(onClick = onSubmitProof) {
+                        Text(stringResource(R.string.enrollment_root_review_submit_button))
+                    }
+                }
+                if (FirstDeviceRootReviewAction.REPLAY_EXACT_SUBMISSION in actions) {
+                    OutlinedButton(onClick = onReplayExactSubmission) {
+                        Text(stringResource(R.string.enrollment_root_review_replay_button))
+                    }
                 }
             }
         }

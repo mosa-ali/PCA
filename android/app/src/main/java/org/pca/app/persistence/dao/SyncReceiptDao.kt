@@ -25,6 +25,9 @@ interface SyncReceiptDao {
     @Query("SELECT MAX(sequence) FROM sync_receipt_records WHERE familyScope = :familyScope")
     suspend fun getMaxSequence(familyScope: String): Long?
 
+    @Query("SELECT EXISTS(SELECT 1 FROM sync_receipt_records WHERE familyScope = :familyScope AND (keyEpoch < 0 OR keyEpoch > 2147483647))")
+    suspend fun hasOutOfRangeKeyEpoch(familyScope: String): Boolean
+
     @Query("UPDATE sync_receipt_records SET applicationState = :state, appliedAtEpochMillis = :appliedAtEpochMillis WHERE messageId = :messageId")
     suspend fun markApplied(messageId: String, state: SyncReceiptApplicationState, appliedAtEpochMillis: Long): Int
 

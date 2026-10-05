@@ -59,7 +59,7 @@ describe('Audit renders real human-readable labels, and the honest pending-decry
     try {
       renderWithProviders(<Audit />, { role: 'OWNER' });
 
-      expect(await screen.findByText('Audit entries are waiting to be verified by a trusted parent device.')).toBeInTheDocument();
+      expect(await screen.findByText('The audit history cannot be confirmed yet, so entries remain hidden until secure delivery is available.')).toBeInTheDocument();
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
     } finally {
       clients.familyAuditDelivery = original;

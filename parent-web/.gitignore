@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-e2e
 dist-ssr
 *.local
 .env
@@ -9,3 +10,4 @@ playwright-report
 test-results
 .vite
 qa-coordinator-b-results.json
+/public/local-test-build/

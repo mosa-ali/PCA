@@ -1,10 +1,8 @@
 // PCA product-completion programme, Writer P0-D: proves RealFamilyAuditDeliveryClient
 // genuinely fetches opaque envelopes and hands them to the injected
 // decryption boundary -- honestly reporting PENDING_TRUSTED_DECRYPTION
-// whenever the Parent session, network, or decryption boundary is unavailable,
-// and READY with real entries only once every link succeeds. A genuinely
-// empty envelope list is reported as READY/empty, never conflated with a
-// pending-decryption state.
+// whenever the Parent session, network, decryption boundary, or feed completeness
+// is unavailable, and READY with real entries only once every link succeeds.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RealFamilyAuditDeliveryClient } from '../../src/api/real/realFamilyAuditDeliveryClient';
 import type { TrustedBrowserProvider, TrustedBrowserSnapshot } from '../../src/domain/trustedBrowser';
@@ -118,7 +116,7 @@ describe('RealFamilyAuditDeliveryClient', () => {
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
-  it('reports READY with an empty list when the family genuinely has zero envelopes -- never conflated with pending', async () => {
+  it('reports pending for an empty envelope list until feed completeness is established', async () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
@@ -135,7 +133,7 @@ describe('RealFamilyAuditDeliveryClient', () => {
       }),
     );
     const result = await client.list();
-    expect(result).toEqual({ status: 'READY', entries: [] });
+    expect(result).toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
   });
 
   it('reports PENDING_TRUSTED_DECRYPTION (never a partial/crashed result) when the decryption boundary itself rejects', async () => {

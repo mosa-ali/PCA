@@ -5,15 +5,73 @@
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-05 UTC (published Parent CAS checkpoint, exact-head CI result and comment-only correction)
-VALIDATED_PARENT_SOURCE_HEAD = 6f983f6c (Parent compare-and-append checkpoint and ledger sync; backend build and focused checks passed; exact-head CI run 37237189482 failed 1/27 on a static wiring comment assertion; correction passes the focused 3/3 guard suite and awaits exact-head CI)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 6f983f6c97a08511028e7bc8613adfc0591e69a8 (fresh fetch; local = origin)
-CURRENT_CHECKPOINT_SHA = 6f983f6c (Parent checkpoint; comment-only correction pending publication and exact-head CI)
-LATEST_PARENT_LEDGER_CHECKPOINT = Parent compare-and-append implementation remains commit 23487319; evidence sync is published as 6f983f6c. No Platform source changed. Local schema 0063 and runtime/append-only grants were refreshed on disposable MySQL; live parity remains unverified and untouched. Parent epoch-bound hardening and ordinary ingestion remain the next authorized code work; security-wave mutation awaits the required seven specialist approvals. Platform Enrollment remains held pending Parent identity projection and formal gates.
+LAST_UPDATED_UTC = 2026-10-05 UTC (Parent distribution/build validation and Platform terminal-page pagination regression verified)
+VALIDATED_PARENT_SOURCE_HEAD = 86b2fac0 (last published Parent source checkpoint; exact-head Quality Gates run 37238320816 passed 27/27; current worktree is uncommitted and not CI-certified)
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 86b2fac0bde15b22570b636acc865713f108c369 (last successful live `ls-remote` in the prior continuation; this refresh could not reach GitHub through the workstation proxy; cached `origin/pca-dev` still equals local)
+CURRENT_CHECKPOINT_SHA = 86b2fac0 (last published source checkpoint; local production-readiness changes are not committed)
+LATEST_PARENT_LEDGER_CHECKPOINT = Published base 86b2fac0 passed exact-head Quality Gates 27/27. Local Parent full serial suite passes 154/154 files and 1106/1106 tests; route matrix passed 73/73. Route-level lazy loading and vendor chunking reduce the production entry to 401 kB plus 296 kB vendor, with no chunk-size warning; the selected `https://www.pcasafe.com/child-app/` destination is built with enrollment readiness false. Download App/header/Add Device tests passed 23/23 and Chromium E2E passed 6/6. Backend build and focused first-device bootstrap/attestation/production-wiring tests passed 56/56. The latest disposable-MySQL Parent route audit passed 56/56 and reports MySQL HTTP status evidence for all 52/52 declaration keys across 142 scenarios, with zero unexpected status outcomes. The three Web Rules declarations are explicit `503 not_configured` service gates only; no encrypted storage/delivery or successful write path is proven. Signed and authorized-recovery decision routes prove unavailable authorities return 403 and preserve pending state; verification/authorization and success paths remain unproven. The schedule-policy case proves only denial without an accepted signed epoch, not device signatures or successful policy delivery. The latest full disposable-MySQL certification applied 61 migrations and passed 700/710 inner tests (10 explicit privilege-only skips, zero failures) plus 276/276 populated production-path tests with no skips/failures; the latter exercised the local least-privilege grant/append-only boundary. First-device ceremony and Android/iOS source remain behind production attestation; pinned roots and physical-device evidence remain open, as do ordinary epoch-N acceptance and receiving-device enforcement. `pca_pro` exists, but TCP/3306 remains unreachable, so live schema/grant parity is unproven. No commit/push/deployment occurred. Parent projection, literal LOCALHOST acceptance, live DB parity, signer/installer, API ownership and runtime gates remain open.
+LATEST_SHARED_DB_CERTIFICATION = Fresh loopback-only MySQL 8.4.11 certification applied all 61 migrations through 0063. The inner lane passed 700/710 with 10 explicit privilege-only skips and zero failures; the populated production-path lane passed 276/276 with zero skips/failures and included the no-skip least-privilege runtime-grant/append-only checks. The wrapper/test hooks removed the owned schema and temporary probe principal. This is local certification; live `pca_pro` remains unverified because TCP/3306 is unreachable.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY`. The current Parent CAS change has no Platform product impact. Continue only the owner-authorized Parent Trust Set repository work; keep Platform Enrollment, deployment, production smoke, and owner UAT on hold until Parent identity projection, Parent TODO gates, and literal `LOCALHOST ACCEPTED=YES` are satisfied.
+NEXT_ACTION = Preserve `HOLD_PARENT_DEPENDENCY` and continue owner-directed production-readiness across Parent, Public Web, Platform and API. Resolve read-only visibility to the API App Service DNS target and verify live proxy routing before claiming Platform API reachability; re-establish a safe route to live `pca_pro` schema/grant inspection. Keep Platform Enrollment, deployment, production smoke and owner UAT on hold until Parent gates, projection and literal `LOCALHOST ACCEPTED=YES` are satisfied. Parent first-device source is implemented, while production roots/device proof and ordinary policy-epoch enforcement remain open.
+
+### 2026-10-05 — Parent identity projection current-source validation
+
+PARENT_IDENTITY_DB = Parent disposable-MySQL authentication target applied all 61 migrations and passed 62 tests, with 3 explicit privilege-only skips and no failures; its family projection regression passed for provisioning precedence, family scope, nullable phone, and ambiguous-authority fail-closed behavior. The wrapper removed its uniquely named test schema.
+PLATFORM_IDENTITY_UI = The focused current Account Detail identity projection test passed 3/3.
+PLATFORM_GATE = Parent-owned projection remains PASS and Platform continues consuming only the four approved fields. Enrollment Name/Email/Phone directory work remains held at Parent TODO-18 and literal `LOCALHOST ACCEPTED=YES`; no Platform identity logic or Enrollment UI was changed.
+
+### 2026-10-05 — Parent projection ownership and integration refresh
+
+SOURCE_BOUNDARY = Family identity selection, repository access, and email opening now live in Parent-owned `backend/src/parentaccount/ParentIdentityProjection.ts`. Platform's existing RBAC-protected account identity route consumes that model and retains its exact four-field whitelist and no-store response.
+VALIDATION = Backend build passed; Parent disposable-MySQL auth/identity target passed 62 tests with 3 explicit privilege-only skips and zero failures after all 61 migrations. Platform route/family lookup tests passed 16/16 and Account Detail projection UI test passed 3/3.
+PLATFORM_GATE = Parent projection is validated; Enrollment Name/Email/Phone and Enrollment tests remain held pending Parent TODO gates and literal `LOCALHOST ACCEPTED=YES`. No Enrollment UI, live system, deployment, or external Git state changed.
+
+### 2026-10-05 — Parent TODO-19/20 reachability recheck
+
+GIT = Fresh `git ls-remote origin refs/heads/pca-dev` could not connect through the workstation proxy. Local HEAD and cached origin remain 86b2fac0; this projection change and ledger refresh are uncommitted.
+LIVE_DB = TCP-only reachability to live MySQL `4.161.89.178:3306` timed out; no SQL ran.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No commit/push, live DB access, Enrollment activation, deployment, or owner acceptance occurred.
+
+### 2026-10-05 — Parent evidence refresh; Platform remains held
+
+PARENT_WEB = Full Parent serial suite passed 154/154 files and 1106/1106 tests; route matrix passed 73/73. Parent production build passed using the selected public landing page with enrollment readiness false, with route chunks and vendor separated and no chunk-size warning. Chromium Download App E2E passed 6/6.
+FIRST_DEVICE = Backend build and focused ceremony/attestation tests passed 56/56. Android/iOS implementation source exists; physical-device proof and production pinned-root configuration are still open. Ordinary epoch-N submission and receiving-device policy application remain separate gates.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Parent projection acceptance, TODO-18 literal `LOCALHOST ACCEPTED=YES`, live schema/grant parity, API resource ownership, and deployment/production gates remain open. No Platform Enrollment activation, live DB access/mutation, commit/push, deployment, or owner acceptance occurred.
+
+### 2026-10-05 — Parent TODO-14 decision-gate disposable-MySQL evidence refresh
+
+PARENT_EVIDENCE = The Parent disposable-MySQL route-audit campaign passed 55/55 tests and emitted 139 scenarios across 49/52 declarations, including the authenticated family dashboard, a no-accepted-Trust-Set schedule-policy denial, and signed/authorized-recovery decision denials against real pending rows. The schedule actor session is a test collaborator; no device signature or successful policy delivery was tested. Signed/recovery decision regressions prove unavailable-authority 403 responses and pending-state preservation only. The three Web Rules declarations remain without integrated evidence; `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains unchanged. No Parent projection acceptance, literal `LOCALHOST ACCEPTED=YES`, live DB query/mutation, Platform Enrollment activation, commit/push, deployment, or owner acceptance occurred.
+
+### 2026-10-05 — Platform current-source validation and Git access refresh
+
+PLATFORM_WEB = Focused Platform refund-recovery and API-proxy tests passed 21/21; current `platform-admin-web` typecheck, production build, and lint passed. The build emitted a non-fatal 501.69 kB chunk-size notice. PLATFORM-10 is PASS for the current local source scope; Enrollment UI remains gated and has no Enrollment-specific acceptance evidence.
+CHILD_APP = The owner-selected Parent information page is `https://www.pcasafe.com/child-app/`; the prior Edge observation was Not Found. Parent's production link remains unset until Public route deployment and verification. The signed installer/store destination, signer fingerprint, and assetlinks publication remain separate enrollment gates.
+RUNTIME = Docker Linux Engine access is denied by the local Docker Desktop pipe, so nginx/container runtime behavior remains unverified. Direct HTTPS probes remain blocked by the workstation proxy.
+GIT = Local HEAD and cached `origin/pca-dev` are `86b2fac0bde15b22570b636acc865713f108c369`. This turn's `git ls-remote` could not connect to GitHub through `127.0.0.1`; the last successful live remote check was in the prior continuation and reported the same SHA. The broad worktree remains dirty and unstaged; no commit or push occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Enrollment activation, live DB query/mutation, deployment, or owner acceptance occurred.
+
+### 2026-10-05 — Parent Child App landing-page release gate and audit-feed checkpoint
+
+PARENT = Owner selected `https://www.pcasafe.com/child-app/` as the public installation-information page. Parent Download App now describes installation options, while a separate production readiness value keeps Add Device closed until a signed installer and live Android enrollment association are verified. Backend independently returns 503 before step-up consumption or invitation writes when readiness is false. Empty audit-envelope responses remain pending until feed completeness can be proven. Parent focused validation passed 83/83; typecheck and full lint passed; backend build and focused availability/authorization tests passed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No Platform identity projection, Enrollment activation, Azure change, live DB access, deployment, or owner acceptance occurred. Shared Parent source changes are local-only without exact-head CI; live API resource routing remains unverified.
+NEXT_ACTION = Continue Parent TODO-12/14/15 within protocol gates. Keep Platform Enrollment queued behind Parent TODOs, projection, exact-head CI, and literal `LOCALHOST ACCEPTED=YES`.
+
+### 2026-10-05 — Child App landing choice confirmed and live route checked
+
+PARENT = Owner confirmed the public landing-page distribution model, with `https://www.pcasafe.com/child-app/` as the selected Parent destination. Edge displayed a not-found response for the live route. Local Public Web includes the bilingual route, while production distribution URL and enrollment readiness remain closed pending route deployment, a signed installer, signer fingerprint, enrollment association, and matching assetlinks statement.
+PLATFORM_API = The read-only `https://platform.pcasafe.com/platform-admin/auth/whoami` navigation was blocked by the browser client, so this provides no HTTP status or content-type evidence. API routing and ownership remain unverified.
+PARENT_VALIDATION = Backend TypeScript build passed. The schedule-policy route regression passed 12/12 in single-process test mode after the default runner failed before test loading with Windows `spawn EPERM`. No Platform source changed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. No enrollment activation, live DB query/mutation, commit, push, exact-head CI, deployment, or owner acceptance occurred. Live MySQL TCP/3306 remained unreachable with no SQL query.
+
+### 2026-10-05 — Shared Parent schedule-policy fallback conformance
+
+PARENT = Android schedule acceptance now skips a last-known-good fallback when it is behind current device epoch floors; the shared contract/vector/reference model match. Backend route ordering rejects invalid opaque envelopes before role/device lookup. Backend vectors passed 17/17, route regression passed 12/12, and Android conformance passed 2/2 methods with no failures/errors/skips.
+CHILD_APP = Owner confirmed the public landing-page model at `https://www.pcasafe.com/child-app/`; Edge showed the current route is not found. No signed installer or signer fingerprint is supplied, so Parent/backend production enrollment remains closed.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. The live Platform API browser request was blocked before an HTTP response, and live MySQL TCP/3306 is unreachable. No Platform source change, exact-head CI, live SQL, commit, push, deployment, or owner acceptance occurred.
+PARENT_FOLLOWUP = Parent's Android schedule store still conflates corrupted persisted snapshots with no accepted policy; recovery and enforcement semantics remain open for explicit definition. No Platform Enrollment dependency is cleared by the schedule-policy conformance tests.
 
 ### 2026-09-30 — Parent re-entry assessment refreshed
 
@@ -402,7 +460,7 @@ DONE_WHEN = latest Parent-complete remote state safely reconciled
 
 STATUS = PASS  
 OWNER = Coordinator; Platform specialist integration remains held  
-FILES = `backend/src/platformadmin/readmodels/ParentIdentityReadModel.ts`, `backend/src/http/routes/platformadmin/accountsRoutes.ts`, `platform-admin-web/src/pages/accounts/AccountDetail.tsx`  
+FILES = `backend/src/parentaccount/ParentIdentityProjection.ts`, `backend/src/http/routes/platformadmin/accountsRoutes.ts`, `platform-admin-web/src/pages/accounts/AccountDetail.tsx`
 EVIDENCE = Existing Platform Account Detail calls the Parent-owned family-scoped projection; exact whitelist is First Name, Last Name, Email, nullable Phone. Prior backend projection/route 11/11 and MySQL 61/61 evidence is recorded in the Parent ledger. A read-only retained local 0061 family probe selected the explicit verified Parent, opened current-key encrypted email, and produced exactly the approved four-field DTO with NULL phone. The Parent Email resolver found one already-entitled family, and the Platform Entitlements UI rendered that status in a fresh authenticated Chromium session.
 BLOCKER = Enrollment-specific integration is separately held by the Parent gate.  
 DONE_WHEN = Platform consumes Parent-owned family projection without duplicating identity logic
@@ -475,15 +533,15 @@ DONE_WHEN = required Platform automated suite PASS
 
 ### PLATFORM-10 — Typecheck / lint / build
 
-STATUS = IN_PROGRESS  
+STATUS = PASS (current local Platform source scope)
 OWNER = Agent 7 + coordinator after activation  
 FILES = `platform-admin-web/**`  
-EVIDENCE = Platform Web typecheck PASS in this checkpoint. Lint and production build are NOT RUN for the new/combined Enrollment package.  
-BLOCKER = Complete remaining checks after activation and integration.  
+EVIDENCE = Current Platform Web typecheck, lint, and production build passed; focused refund-recovery/API-proxy tests passed 21/21. This evidence covers the current Platform source, not the held Enrollment package.
+BLOCKER = None for current source scope; Enrollment-specific validation remains gated by Parent dependencies.
 DONE_WHEN = typecheck, lint and build all PASS  
 TYPECHECK = PASS  
-LINT = NOT RUN  
-BUILD = NOT RUN
+LINT = PASS
+BUILD = PASS
 
 ### PLATFORM-11 — Clean-snapshot validation
 
@@ -1242,4 +1300,95 @@ NEXT_ACTION = Preserve the hold. Wave 6D is code+CI ACCEPTED at `a8c98fbc` (exac
 
 PARENT_ACCEPTANCE = The owner accepted the repository-side Wave 6D implementation and its exact-head CI after an independent GitHub refresh (`pca-dev` = `a8c98fbcc74b1f2e3c6878cdb8f5e97c0e1b366f`; run 37171171191 SUCCESS 27/27, full job list inspected): WAVE_6D_CODE_COMPLETE = YES; WAVE_6D_CI_CERTIFIED = YES; REAL_IOS_DEVICE_PROVEN = NO; PRODUCTION_APP_ATTEST_PROVEN = NO; REAL_IOS_DEVICE_GATE = OPEN; PRODUCTION_APP_ATTEST_GATE = OPEN; WAVE_6D_100_PERCENT_CLOSED = NO. Stage B disposition: STAGE_B_SECURITY_RESULT = ACCEPTED; BLOCKERS = 0; MAJORS = 0; DOUBLECHECK_TOOLING_EXCEPTION = ACCEPTED_WITH_FOLLOWUP (artifact-access limitation, not a falsity or defect finding; preserved verbatim). Mutations: ACTUAL_BEHAVIORAL_MUTANTS = 14/14 KILLED; D_SEC_018 = CI BEHAVIORAL CONCURRENCY COVERAGE; SURVIVORS = 0.
 PLATFORM_GATE = Unchanged: `HOLD_PARENT_DEPENDENCY`; PLATFORM-03…05 remain blocked; no Platform file was touched by Wave 6D or by this ledger reconciliation. REAL_ANDROID_DEVICE_GATE = OPEN; REAL_IOS_DEVICE_GATE = OPEN; PRODUCTION_ANDROID_ATTESTATION_GATE = OPEN; PRODUCTION_APP_ATTEST_GATE = OPEN; LIVE_DB = 0059 / HOLD; AZURE = HOLD.
-NEXT = Physical-device certification / owner decision (Parent); Platform hold preserved until the Parent gates close.
+NEXT = Continue per-production Parent/Platform/API route readiness while preserving the dependency hold; Platform Enrollment remains blocked pending Parent projection, Parent gate closure and literal owner `LOCALHOST ACCEPTED=YES`.
+
+### 2026-10-05 — Parent/Public Web distribution checkpoint and Platform recovery status
+
+PARENT_DOMAIN_DECISION = The Child App uses existing `https://www.pcasafe.com` as the proposed enrollment/App Link host; no new hostname is required. Parent distribution configuration accepts direct signed APK, approved store listing or landing destination. Parent source implements `/child-app/`, `/enroll/` and exact assetlinks route, but the new route configuration is not deployed or runtime-verified.
+PLATFORM_SCOPE = Platform refund recovery GET/API and retry UI work is present in the current local-only worktree. Focused Platform refund/proxy suite passed 21/21; Platform typecheck, production build and lint passed in this continuation. Exact live nginx/API proxy behavior remains unverified because Docker's Linux engine is inaccessible, and there is no current exact-head CI result.
+PARENT_GATE = The isolated fixture Playwright suite passed 101/101, including six Download App scenarios. The local version supports the global download page and fails closed in production until the configured model-neutral distribution destination and enrollment origin exist. Current Parent work has not been committed or pushed.
+PARENT_TODO12 = Safe Zone POST/PATCH/DELETE routes now require a verified device-session bearer plus an `ALLOW` policy decision before writes; Parent mutations send the actor token only from a trusted browser snapshot. The route now shares repository canonical ciphertext/nonce and key-epoch validation, rejects unknown plaintext-shaped fields, and returns 400 for repository `INVALID_INPUT`. Backend build passed; focused route tests passed 9/9 and repository tests 2/2. Earlier full Parent Web suite passed 153/153 files (1103/1103 tests), with Parent typecheck/lint green. TODO-12 remains open for Trust Set, audit attribution and encrypted policy-delivery gaps.
+PARENT_TODO15 = iOS first-device Keychain save now reports failure, coordinator persistence verifies exact readback before state publication or submit, and seed capture is verified before device identity persistence. Swift syntax parsing passed for changed files/tests. XCTest/typecheck are not run: `xcodebuild` is unavailable and local Swift typecheck lacks required Windows C headers. This does not wire the coordinator into production or close device/root gates.
+PUBLIC_WEB = Tests 24/24 and static production build passed. The container verifier now compares distribution state to the built Child App artifact rather than its own environment. Live pages were inaccessible from this session and the new routes remain unconfirmed until runtime verification; Docker nginx behavior is still unverified.
+DATABASE_AND_RELEASE = Live `pca_pro` last verified at 0059 while repository/local schema is 0063; current TCP/3306 preflight timed out and no live SQL ran. Android package is `org.pca.app`; release signing and assetlinks fingerprint are not configured. Distribution model remains OWNER_DECISION_REQUIRED. No live DB mutation, Azure deployment, Platform Enrollment activation or production release occurred.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY`; Parent identity projection, Parent TODO gates and literal `LOCALHOST ACCEPTED=YES` remain required. Keep Platform Enrollment activation, production smoke and deployment on hold while continuing permitted API/UI/runtime readiness work.
+
+E2E_HARNESS_UPDATE = Parent's regular Playwright config now builds and serves fixture mode on a dedicated port/output directory without reusing the existing Parent localhost preview. Standard Download App browser run passed 6/6; generated output was removed. This does not change Platform's dependency gate or certify nginx runtime routing.
+
+### 2026-10-05 — Azure host ownership and live DB preflight refresh
+
+HOST_BINDINGS = Azure ARM confirms Public `www.pcasafe.com`→`pcaSafe`, Parent `parent.pcasafe.com`→`pcaParent`, and Platform `platform.pcasafe.com`→`pcaPlatform`; all three apps are Running and HTTPS-only. Current images are `pca-public:latest`, `pca-parent-web:d3759d896aa3ff4804147ef80864dff1beb54ad6`, and `pca-platform-admin:9496fb19dc29217b4e515305fe68ab70a48981e1` respectively. The App Link host remains the existing Public domain; no new hostname is needed.
+API_ROUTE = DNS points `api.pcasafe.com` to `pca-bngqeqahgdfvf8ak.uaenorth-01.azurewebsites.net`; that App Service is absent from the sole accessible Azure subscription/tenant. The repository says the API is a separate `pca` App Service placeholder. Its resource ownership and current runtime route remain unproven. Web-tool and direct HTTPS probes could not connect because the configured workstation proxy refused `127.0.0.1:9`; last recorded HTTP statuses are historical only.
+LIVE_DB = Azure ARM confirms `pca-mysql` Ready (MySQL 8.4), public access enabled, and `pca_pro` present. No delegated subnet/private DNS zone or App Service VNet integration is configured among the visible resources; the server has two exact-IP firewall rules. A bounded workstation TCP/3306 probe timed out at 6 seconds. No live SQL, schema/grant query, or mutation occurred; TODO-20 live certification remains OPEN.
+PLATFORM_GATE = Unchanged: `HOLD_PARENT_DEPENDENCY`. No Platform source was modified by this access/topology refresh; exact-head CI, Parent projection, owner localhost acceptance, live DB parity, API runtime proof, deployment and production smoke remain open.
+
+### 2026-10-05 — Parent Safe Zone input and iOS durability hardening
+
+PARENT_SOURCE = Safe Zone route validators now use the repository's canonical byte/range checks and reject extra payload fields; repository validation failures return 400. Backend build and focused tests passed (route 9/9; repository 2/2). iOS root-store persistence now reports errors, checks exact readback before submit/state publication, and prevents saving the device identity until the ceremony seed is durable. Added failure regressions; changed files parse, but iOS XCTest/typecheck have no local evidence and await compatible CI.
+PLATFORM_SOURCE = No Platform source changes. Platform API proxy and refund recovery code remain local-only; API App Service ownership/runtime and actual nginx behavior are unverified. Platform remains `HOLD_PARENT_DEPENDENCY`.
+GATES = No commit, push, exact-head CI, deployment, live SQL, or production mutation occurred. Keep API ownership, live schema/grants, distribution/signing, Parent projection, literal owner localhost acceptance, mobile physical-device/attestation, and release gates open.
+
+### 2026-10-05 — Parent report and local database parity evidence
+
+PARENT_AND_CHILD_APP = The reviewed owner report confirms reuse of the existing Public Web host `https://www.pcasafe.com`; Parent creates/displays enrollment links, API owns enrollment authority, and Platform has no Child App distribution role. Source-level `/child-app/`, `/enroll/`, and assetlinks support is present but has no new live-route verification. Distribution choice and production signing remain owner/release gates.
+TODO20_LOCAL = A fresh repository migration replay applied all 61 migrations into a random loopback test schema; all 95 tables and table DDL matched the existing local `pca_test` exactly, and the owned schema was dropped and verified absent. No seed data or existing-row mutation occurred. This is local schema parity only; live `pca_pro` schema and runtime grants remain uncertified.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains unchanged. No live DB query/mutation, Platform Enrollment activation, commit, push, deployment, or production release occurred.
+
+### 2026-10-05 — Accounts directory pagination validation and Parent cache policy
+
+PLATFORM_DIRECTORY = Added a focused regression for Accounts List paging; `AccountsListSearchAndSort.test.tsx` passed 5/5 and `npm run typecheck` passed. It proves next/previous server offsets, displayed ranges, and offset reset when filters are applied or cleared. No Enrollment Name/Email/Phone fields or Parent identity selector logic changed.
+PARENT_API_PRIVACY = Authenticated Parent session, preferences, free-access, Safe Zone, and FamilyAudit responses now use `Cache-Control: private, no-store`; backend build and associated route tests passed 43/43.
+DATABASE_AND_RELEASE = Latest disposable MySQL 8.4.11 campaign applied migrations 0001–0063 and passed its environment gate; shared Parent/Platform DB suite was 696/706 passed with 10 explicit privilege-only skips, populated production-path suite 276/276, and focused grants 7/7. The local servers are stopped and owned schemas/users removed. Live DNS resolved `pca-mysql` to `4.161.89.178`, but TCP/3306 was unreachable; no live SQL ran. Platform Enrollment `PLATFORM-03..05`/tests remain held for Parent TODO-18 and literal `LOCALHOST ACCEPTED=YES`; no identity UI activation or production gate changed.
+GIT = Local and cached remote remain at `86b2fac0`; 235 dirty paths preserved, zero staged. Fresh live `ls-remote` failed through the workstation proxy. No commit, push, exact-head CI, deployment or production acceptance occurred; Platform remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-10-05 — Parent Child App landing-page model confirmed
+
+PARENT_DISTRIBUTION = Owner confirmed the public landing-page model and `https://www.pcasafe.com/child-app/` as Parent's destination. The local Public Web route exists, but its live availability remains unverified. The installer/store URL, release signer/fingerprint, and App Links association remain separate gates; Platform has no Child App distribution authority.
+PLATFORM_VALIDATION = Accounts directory pagination passed 5/5, and Platform typecheck passed. Parent backend private-response cache-header coverage passed 43/43; iOS source/test parsing passed, while XCTest remains unavailable on this host.
+GIT_AND_GATE = Local/cached `origin/pca-dev` remain `86b2fac0bde15b22570b636acc865713f108c369`; live `ls-remote` failed through the workstation proxy. The shared worktree remains broadly dirty and unstaged. No commit/push, live SQL, deployment, or owner localhost acceptance occurred. `HOLD_PARENT_DEPENDENCY` remains.
+
+### 2026-10-05 — Parent and Platform disposable-MySQL certification
+
+SHARED_DATABASE_VALIDATION = Fresh local MySQL 8.4.11 applied all 61 migrations through 0063. The full Parent/Platform inner DB suite passed 696/706 tests with 10 explicit privilege-only skips and no failures; the populated production-path suite passed 276/276 with no skips/failures; the independent runtime-grant/append-only gate passed 7/7. All disposable schemas and generated principals were cleaned, and the two temporary loopback servers were stopped with datadirs retained.
+PLATFORM_STATUS = Platform DB regressions are locally green for this checkpoint. This does not clear Enrollment identity projection or Parent acceptance dependencies: `PLATFORM-03..05` remain held under `HOLD_PARENT_DEPENDENCY`; Parent TODO-14 route evidence remains 45/52. Live `pca_pro` TCP/3306 is unreachable; no live SQL, deployment, commit, push, or owner acceptance occurred.
+
+### 2026-10-05 — Parent local persisted epoch-row preflight
+
+PARENT_EVIDENCE = Parent's latest disposable MySQL route audit passed 55/55 and reports 49/52 integrated declarations across 139 scenarios; `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`. A read-only loopback MySQL 8.4.11 scan of `pca_test` checked 13 numeric epoch columns across 6,680 column cells; no value was negative or exceeded INT32_MAX. The scan connection used `root@%` global administrative grants and does not certify the application's runtime grants.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. A fresh bounded TCP probe to live `pca_pro` at `4.161.89.178:3306` timed out; no live SQL, Platform activation, deployment, commit, push, or owner acceptance occurred.
+
+### 2026-10-05 — Family account status epoch boundary
+
+ACCOUNT_STATUS = Platform family suspension/reactivation now enforce the MySQL `INT UNSIGNED` device-session epoch boundary. Suspension remains available at `UINT32_MAX`, preserves the saturated epoch, and records the suspended status; reactivation returns HTTP 409 `device_session_epoch_exhausted` and leaves the account suspended rather than risking generation wrap/reuse. Invalid persisted values fail closed with 503. The disposable-MySQL HTTP regression checks final database state and audit records.
+VALIDATION = Backend TypeScript build passed. The focused Parent route campaign passed 55/55 on a fresh disposable MySQL 8.4.11 schema. Full certified MySQL validation completed: all 61 migrations applied; inner lane 710 tests (700 passed, 10 explicit privilege-only skips, 0 failed); populated production-path lane 276/276 passed without skips or failures. That production-path lane included the seven least-privilege grant/append-only assertions with the run-owned temporary runtime principal; the probe user and schema were removed. This certifies local grants through 0063, not live grants.
+PLATFORM_GATE = Enrollment identity projection and Parent localhost acceptance remain pending; `HOLD_PARENT_DEPENDENCY` is unchanged. Live `pca_pro` remains unreachable at TCP/3306. No Platform activation, commit/push, deployment, or owner acceptance occurred.
+
+### 2026-10-05 — Parent route evidence refresh
+
+PARENT_EVIDENCE = Parent's focused disposable-MySQL HTTP route audit now passes 56/56 and represents all 52/52 declaration keys across 142 scenarios. The three Web Rules declarations are explicit `503 not_configured` outcomes without domain echo; the missing-service guard returns before session/actor authorization, so functional encrypted storage/delivery remains open. Global Parent aggregate remains `NOT_YET_PROVEN`.
+PLATFORM_GATE = Parent TODO-12/14 remain in progress; Parent acceptance/projection dependencies remain open. `HOLD_PARENT_DEPENDENCY` remains; no Platform activation, deployment, live SQL, commit/push, or owner acceptance occurred.
+
+### 2026-10-05 — Parent projection dependency injection and certified regression
+
+PARENT_SOURCE_BOUNDARY = Platform's account identity endpoint now requires a `ParentIdentityProjection` dependency supplied through backend composition. The implementation and family identity selection stay in Parent-owned `backend/src/parentaccount/ParentIdentityProjection.ts`; Platform does not construct its own Parent identity model. Existing RBAC, four-field DTO allowlist and no-store response remain enforced.
+VALIDATION = Backend build passed; focused Parent identity and Platform route/auth-boundary tests passed 50/50. The certified disposable-MySQL campaign applied all 61 migrations, passed the inner lane at 701/711 with 10 explicit privilege-only skips and zero failures, and passed the populated production-path lane 276/276 with no skips/failures. Backend server composition smoke passed 1/1; the wrapper removed its owned schema.
+PLATFORM_GATE = `HOLD_PARENT_DEPENDENCY` remains. Enrollment Name/Email/Phone implementation and activation still await the applicable Parent TODO gates and literal `LOCALHOST ACCEPTED=YES`; this local projection wiring does not satisfy live deployment or owner acceptance.
+GIT_AND_DATABASE = Parent source and ledger changes remain local-only on `86b2fac0`; no commit/push, exact-head CI, deployment, live SQL, or owner acceptance occurred. Live `pca_pro` TCP/3306 remains unreachable. The selected Child App public landing page is `https://www.pcasafe.com/child-app/`; its route must be live-verified before Parent deployment, and it does not change Platform scope.
+
+### 2026-10-05 — Parent Download App destination configured for production builds
+
+PARENT_DISTRIBUTION = Parent's production Docker build defaults to the owner-selected `https://www.pcasafe.com/child-app/` page. The local production bundle includes that URL with enrollment readiness false; Download App/header/Add Device tests passed 23/23 and `gate:demo-mode` passed. Public Web Child App, asset-links and enrollment-route tests passed 8/8; its production build emits `/child-app/` within 20 localized pages at exact 219/219 EN/AR key parity. This provides the Parent installation-information destination without opening invitation or device enrollment.
+LIVE_GATE = Public `/child-app/` and Android assetlinks could not be reached through the web checker. Publish and verify Public Web first, then deploy Parent. Signed installer, signing fingerprint, App Links association and literal Parent acceptance remain open; Platform remains `HOLD_PARENT_DEPENDENCY`.
+GIT = This configuration and ledger update remain uncommitted on local/cached `86b2fac0`; no deployment, live SQL, commit, push, or exact-head CI occurred.
+
+### 2026-10-05 — Accounts directory terminal-page boundary regression
+
+PLATFORM_DIRECTORY = Extended `AccountsListSearchAndSort.test.tsx` to page through 41 server results, assert the final `41–41 of 41` row, verify Next is disabled, and prove an extra Next click issues no request. This changes only test coverage; no Enrollment identity fields or Parent projection logic changed.
+VALIDATION = The focused Platform test passed 5/5, including the final one-row page and no-extra-request assertions. `npm run typecheck` passed. `git diff --check` was rerun as part of the current checkpoint; only pre-existing CRLF normalization warnings remain.
+GATES = Platform Enrollment remains `HOLD_PARENT_DEPENDENCY` pending Parent TODO gates and literal `LOCALHOST ACCEPTED=YES`. No commit, push, exact-head CI, deployment, live database query or owner acceptance occurred.
+
+### 2026-10-05 — TODO-19 Git preflight and scoped mission staging
+
+REMOTE_PREFLIGHT = Successful fetch and GitHub API both confirmed live `pca-dev` at `86b2fac0bde15b22570b636acc865713f108c369`; the exact-head run has 27/27 successful check-runs at that SHA. A subsequent direct CLI `ls-remote` returned a Windows SChannel no-credentials error; branch state was confirmed through the fetch and GitHub API.
+STAGING = 250 mission-related tracked paths are staged for the checkpoint; `.vscode/`, root `0`, and `PARENT_FIRST_DEVICE_TRUST_SET_PROTOCOL_REVIEW.md` remain excluded and untouched. Platform pagination regression is included. Platform Enrollment remains held pending Parent acceptance gates.
+NEXT = Publish the reviewed checkpoint to `pca-dev` as a fast-forward and inspect the new exact-head CI; deployment and production acceptance remain separate gates.

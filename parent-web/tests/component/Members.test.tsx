@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import Members from '../../src/pages/family/Members';
 import { __resetDevFamilyMemberInvitationsForTests } from '../../src/api/dev/devFamilyMemberInvitationClient';
+import { getApiClients } from '../../src/api/client';
+import { ServiceUnavailableError } from '../../src/api/unavailable';
 
 /**
  * ADD_VIEWER/ADD_ADMINISTRATOR/REMOVE_NON_OWNER_PARENT/CHANGE_ANY_ROLE are
@@ -90,6 +92,32 @@ describe('Members', () => {
       await screen.findByText("Removing a non-owner parent ends that person's access. It is separate from removing a child device and from Delete Now."),
     ).toBeInTheDocument();
   });
+
+  it('keeps invitation creation and the invitation list available when the accepted-member directory is unavailable', async () => {
+    const listMembers = vi
+      .spyOn(getApiClients().familyAuthority, 'listMembers')
+      .mockRejectedValue(new ServiceUnavailableError('FamilyAuthorityGateway.listMembers'));
+
+    try {
+      renderWithProviders(<Members />, { role: 'OWNER' });
+
+      expect(await screen.findByRole('heading', { name: 'Not connected yet' })).toBeInTheDocument();
+      expect(
+        screen.getByText("This feature is not connected to PCA's service yet, so there is nothing to show here. No data was hidden or lost."),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+
+      await sendInvite('member@example.com');
+
+      expect(await screen.findByText('Pending')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Revoke invitation' })).toBeInTheDocument();
+      expect(screen.queryByText('Sara (Administrator, DEV)')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
+      expect(listMembers).toHaveBeenCalledOnce();
+    } finally {
+      listMembers.mockRestore();
+    }
+  }, STEP_UP_FLOW_TIMEOUT_MS);
 
   it('a Viewer cannot see the invite-a-member form (client-side UX gate; the real gate is server-side)', async () => {
     renderWithProviders(<Members />, { role: 'VIEWER' });

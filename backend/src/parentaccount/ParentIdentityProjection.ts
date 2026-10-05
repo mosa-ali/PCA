@@ -1,21 +1,22 @@
 /**
- * Authorized Platform projection of the display identity selected for one
- * family. The family provisioning marker has precedence; legacy families
- * resolve only when exactly one enabled, verified ACTIVE Administrator is
+ * Parent-owned projection of the display identity selected for one family.
+ * The family provisioning marker has precedence; legacy families resolve
+ * only when exactly one enabled, verified ACTIVE Administrator is
  * identifiable. The public projection contains names, email, and nullable
  * phone only.
  *
- * Callers MUST pass the dedicated Platform RBAC gate before invoking this
- * read model. Email is opened only inside this backend boundary using the
- * account-bound identity encryption contract.
+ * Downstream callers MUST pass their dedicated authorization gate before
+ * invoking this read model. Platform's route applies its RBAC gate first.
+ * Email is opened only inside this backend boundary using the account-bound
+ * identity encryption contract.
  */
-import { execute, runInTransaction } from '../../db/pool.js';
+import { execute, runInTransaction } from '../db/pool.js';
 import {
   encryptParentDisplayEmail,
   openParentDisplayEmail,
   type EncryptedParentDisplayEmail,
   type OpenedParentDisplayEmail,
-} from '../../parentaccount/identityContact.js';
+} from './identityContact.js';
 
 export interface ParentIdentityDto {
   readonly firstName: string | null;
@@ -49,6 +50,11 @@ export interface ParentIdentityReadRepository {
     expected: EncryptedParentDisplayEmail,
     replacement: EncryptedParentDisplayEmail,
   ): Promise<boolean>;
+}
+
+/** Capability contract consumed by authenticated downstream identity routes. */
+export interface ParentIdentityProjection {
+  getByFamilyId(familyId: string): Promise<ParentIdentityDto | null>;
 }
 
 interface ParentIdentitySqlRow {
@@ -172,7 +178,7 @@ export function toParentIdentityDto(
   };
 }
 
-export class ParentIdentityReadModel {
+export class ParentIdentityReadModel implements ParentIdentityProjection {
   private readonly repository: ParentIdentityReadRepository;
   private readonly openDisplayEmail: (accountId: string, encrypted: EncryptedParentDisplayEmail | null) => OpenedParentDisplayEmail | null;
   private readonly sealDisplayEmail: (accountId: string, email: string) => EncryptedParentDisplayEmail;

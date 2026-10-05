@@ -21,14 +21,15 @@ import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
 import { resolveParentEmailFamilyLookup } from '../../../platformadmin/accounts/ParentEmailFamilyLookup.js';
-import { ParentIdentityAmbiguousError, ParentIdentityReadModel } from '../../../platformadmin/readmodels/ParentIdentityReadModel.js';
+import { ParentIdentityAmbiguousError } from '../../../parentaccount/ParentIdentityProjection.js';
+import type { ParentIdentityProjection } from '../../../parentaccount/ParentIdentityProjection.js';
 import type { PlatformAdminRole } from '../../../platformadmin/auth/types.js';
 
 export interface PlatformAdminAccountsRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
-  /** Injectable persistence seam for route contract tests; production uses the MySQL-backed default. */
-  parentIdentityReadModel?: ParentIdentityReadModel;
+  /** Required Parent-owned family projection, wired by the application composition root. */
+  parentIdentityProjection: ParentIdentityProjection;
 }
 
 const FAMILY_ID_MAX_LENGTH = 128;
@@ -63,6 +64,14 @@ function mapFamilyAccountStatusError(error: unknown, reply: FastifyReply): boole
     }
     if (error.code === 'ALREADY_SUSPENDED' || error.code === 'ALREADY_ACTIVE') {
       reply.code(409).send({ error: error.code.toLowerCase() });
+      return true;
+    }
+    if (error.code === 'DEVICE_SESSION_EPOCH_EXHAUSTED') {
+      reply.code(409).send({ error: 'device_session_epoch_exhausted' });
+      return true;
+    }
+    if (error.code === 'DEVICE_SESSION_EPOCH_INVALID') {
+      reply.code(503).send({ error: 'device_session_epoch_unavailable' });
       return true;
     }
     reply.code(400).send({ error: 'invalid_request' });
@@ -137,7 +146,10 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'platform-admin-accounts-mutate' });
   const emailLookupLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'platform-admin-parent-email-lookup' });
   const readModel = new AccountsReadModel();
-  const parentIdentityReadModel = deps.parentIdentityReadModel ?? new ParentIdentityReadModel();
+  const parentIdentityProjection = deps.parentIdentityProjection;
+  if (typeof parentIdentityProjection?.getByFamilyId !== 'function') {
+    throw new Error('Platform Admin accounts routes require the Parent-owned identity projection.');
+  }
   const familyStatusService = new FamilyAccountStatusService(deps.platformAdminAuthService);
 
   app.post(
@@ -246,7 +258,7 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       }
       let identity;
       try {
-        identity = await parentIdentityReadModel.getByFamilyId(familyId);
+        identity = await parentIdentityProjection.getByFamilyId(familyId);
       } catch (error) {
         if (error instanceof ParentIdentityAmbiguousError) {
           return reply.code(409).send({ error: 'identity_unavailable' });

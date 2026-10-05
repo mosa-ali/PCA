@@ -1,60 +1,63 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { LoadingState } from './components/common/States';
 import { AppLayout } from './components/shell/AppLayout';
-import Dashboard from './pages/Dashboard';
-import ChildrenList from './pages/children/ChildrenList';
-import ChildLayout from './pages/children/ChildLayout';
-import ChildOverview from './pages/children/ChildOverview';
-import ScreenTimePage from './pages/children/ScreenTimePage';
-import AppsPage from './pages/children/AppsPage';
-import WebProtectionPage from './pages/children/WebProtectionPage';
-import YouTubePage from './pages/children/YouTubePage';
-import LocationPage from './pages/children/LocationPage';
-import EyeProtectionPage from './pages/children/EyeProtectionPage';
-import PrayerPage from './pages/children/PrayerPage';
-import ChildWellbeingPage from './pages/children/ChildWellbeingPage';
-import Requests from './pages/Requests';
-import Members from './pages/family/Members';
-import RolesMatrix from './pages/family/RolesMatrix';
-import Devices from './pages/family/Devices';
-import PrivacyHub from './pages/privacy/PrivacyHub';
-import Retention from './pages/privacy/Retention';
-import Export from './pages/privacy/Export';
-import DeleteNow from './pages/privacy/DeleteNow';
-import Transparency from './pages/privacy/Transparency';
-import PermissionsPolicy from './pages/privacy/PermissionsPolicy';
-import ActivityTimelinePage from './pages/children/ActivityTimelinePage';
-import ProtectionStatus from './pages/security/ProtectionStatus';
-import Recovery from './pages/security/Recovery';
-import Audit from './pages/security/Audit';
-import TrustedBrowser from './pages/security/TrustedBrowser';
-import Alerts from './pages/safety/Alerts';
-import { ChildPickerIndex } from './pages/protection/ChildPickerIndex';
-import WellbeingAdmin from './pages/wellbeing/WellbeingAdmin';
-import Notifications from './pages/Notifications';
-import Subscription from './pages/Subscription';
-import DeviceIncreaseRequest from './pages/billing/DeviceIncreaseRequest';
-import ParentMemberIncreaseRequest from './pages/billing/ParentMemberIncreaseRequest';
-import Invoices from './pages/billing/Invoices';
-import InvoiceDetail from './pages/billing/InvoiceDetail';
-import CheckoutReturn from './pages/billing/CheckoutReturn';
-import DownloadApp from './pages/download/DownloadApp';
-import Settings from './pages/Settings';
-import ParentGuide from './pages/guide/ParentGuide';
-import NotPermitted from './pages/NotPermitted';
-import NotFound from './pages/NotFound';
-import Register from './pages/auth/Register';
-import VerifyEmail from './pages/auth/VerifyEmail';
-import Login from './pages/auth/Login';
-import ForgotPassword from './pages/auth/ForgotPassword';
-import ResetPassword from './pages/auth/ResetPassword';
-import MfaSetup from './pages/auth/MfaSetup';
-import MfaRecover from './pages/auth/MfaRecover';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ChildrenList = lazy(() => import('./pages/children/ChildrenList'));
+const ChildLayout = lazy(() => import('./pages/children/ChildLayout'));
+const ChildOverview = lazy(() => import('./pages/children/ChildOverview'));
+const ScreenTimePage = lazy(() => import('./pages/children/ScreenTimePage'));
+const AppsPage = lazy(() => import('./pages/children/AppsPage'));
+const WebProtectionPage = lazy(() => import('./pages/children/WebProtectionPage'));
+const YouTubePage = lazy(() => import('./pages/children/YouTubePage'));
+const LocationPage = lazy(() => import('./pages/children/LocationPage'));
+const EyeProtectionPage = lazy(() => import('./pages/children/EyeProtectionPage'));
+const PrayerPage = lazy(() => import('./pages/children/PrayerPage'));
+const ChildWellbeingPage = lazy(() => import('./pages/children/ChildWellbeingPage'));
+const ActivityTimelinePage = lazy(() => import('./pages/children/ActivityTimelinePage'));
+const Requests = lazy(() => import('./pages/Requests'));
+const Members = lazy(() => import('./pages/family/Members'));
+const RolesMatrix = lazy(() => import('./pages/family/RolesMatrix'));
+const Devices = lazy(() => import('./pages/family/Devices'));
+const PrivacyHub = lazy(() => import('./pages/privacy/PrivacyHub'));
+const Retention = lazy(() => import('./pages/privacy/Retention'));
+const Export = lazy(() => import('./pages/privacy/Export'));
+const DeleteNow = lazy(() => import('./pages/privacy/DeleteNow'));
+const Transparency = lazy(() => import('./pages/privacy/Transparency'));
+const PermissionsPolicy = lazy(() => import('./pages/privacy/PermissionsPolicy'));
+const ProtectionStatus = lazy(() => import('./pages/security/ProtectionStatus'));
+const Recovery = lazy(() => import('./pages/security/Recovery'));
+const Audit = lazy(() => import('./pages/security/Audit'));
+const TrustedBrowser = lazy(() => import('./pages/security/TrustedBrowser'));
+const Alerts = lazy(() => import('./pages/safety/Alerts'));
+const ChildPickerIndex = lazy(() => import('./pages/protection/ChildPickerIndex').then((module) => ({ default: module.ChildPickerIndex })));
+const WellbeingAdmin = lazy(() => import('./pages/wellbeing/WellbeingAdmin'));
+const Notifications = lazy(() => import('./pages/Notifications'));
+const Subscription = lazy(() => import('./pages/Subscription'));
+const DeviceIncreaseRequest = lazy(() => import('./pages/billing/DeviceIncreaseRequest'));
+const ParentMemberIncreaseRequest = lazy(() => import('./pages/billing/ParentMemberIncreaseRequest'));
+const Invoices = lazy(() => import('./pages/billing/Invoices'));
+const InvoiceDetail = lazy(() => import('./pages/billing/InvoiceDetail'));
+const CheckoutReturn = lazy(() => import('./pages/billing/CheckoutReturn'));
+const DownloadApp = lazy(() => import('./pages/download/DownloadApp'));
+const Settings = lazy(() => import('./pages/Settings'));
+const ParentGuide = lazy(() => import('./pages/guide/ParentGuide'));
+const NotPermitted = lazy(() => import('./pages/NotPermitted'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'));
+const Login = lazy(() => import('./pages/auth/Login'));
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
+const MfaSetup = lazy(() => import('./pages/auth/MfaSetup'));
+const MfaRecover = lazy(() => import('./pages/auth/MfaRecover'));
 import { RouteGuard } from './rbac/RouteGuard';
 import { AuthLayout } from './components/auth/AuthLayout';
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<LoadingState />}>
+      <Routes>
       {/* PCA-AUTH-SESSION-1: unauthenticated auth pages, deliberately outside
           AppLayout's chrome (no family-scoped nav/shell makes sense before a
           session exists). */}
@@ -264,6 +267,7 @@ export default function App() {
         <Route path="not-permitted" element={<NotPermitted />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

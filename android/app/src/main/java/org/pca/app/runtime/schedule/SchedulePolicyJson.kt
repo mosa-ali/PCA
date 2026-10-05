@@ -1,7 +1,9 @@
 package org.pca.app.runtime.schedule
 
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+import org.pca.app.runtime.EpochBounds
 import java.time.Instant
 
 /**
@@ -14,61 +16,102 @@ import java.time.Instant
  */
 internal object SchedulePolicyJson {
 
-    fun encodeSnapshot(snapshot: SchedulePolicySnapshot): JSONObject = JSONObject().apply {
-        put("candidatePolicy", snapshot.candidatePolicy?.let { encodePolicy(it) } ?: JSONObject.NULL)
-        put("lastKnownGoodPolicy", snapshot.lastKnownGoodPolicy?.let { encodePolicy(it) } ?: JSONObject.NULL)
-        put("lastPolicySyncAtUtc", snapshot.lastPolicySyncAtUtc?.toString() ?: JSONObject.NULL)
-        put("deviceTrustSetEpoch", snapshot.deviceTrustSetEpoch)
-        put("deviceKeyEpoch", snapshot.deviceKeyEpoch)
+    fun encodeSnapshot(snapshot: SchedulePolicySnapshot): JSONObject {
+        EpochBounds.requireValid(snapshot.deviceTrustSetEpoch, "deviceTrustSetEpoch")
+        EpochBounds.requireValid(snapshot.deviceKeyEpoch, "deviceKeyEpoch")
+        snapshot.candidatePolicy?.let(::requireValidPolicyEpochs)
+        snapshot.lastKnownGoodPolicy?.let(::requireValidPolicyEpochs)
+        return JSONObject().apply {
+            put("candidatePolicy", snapshot.candidatePolicy?.let { encodePolicy(it) } ?: JSONObject.NULL)
+            put("lastKnownGoodPolicy", snapshot.lastKnownGoodPolicy?.let { encodePolicy(it) } ?: JSONObject.NULL)
+            put("lastPolicySyncAtUtc", snapshot.lastPolicySyncAtUtc?.toString() ?: JSONObject.NULL)
+            put("deviceTrustSetEpoch", snapshot.deviceTrustSetEpoch)
+            put("deviceKeyEpoch", snapshot.deviceKeyEpoch)
+        }
     }
 
     fun decodeSnapshot(json: JSONObject): SchedulePolicySnapshot = SchedulePolicySnapshot(
-        candidatePolicy = json.optJSONObject("candidatePolicy")?.let { decodePolicy(it) },
-        lastKnownGoodPolicy = json.optJSONObject("lastKnownGoodPolicy")?.let { decodePolicy(it) },
-        lastPolicySyncAtUtc = json.optString("lastPolicySyncAtUtc", null)?.let { Instant.parse(it) },
-        deviceTrustSetEpoch = json.getInt("deviceTrustSetEpoch"),
-        deviceKeyEpoch = json.getInt("deviceKeyEpoch"),
+        candidatePolicy = requiredNullableObject(json, "candidatePolicy")?.let { decodePolicy(it) },
+        lastKnownGoodPolicy = requiredNullableObject(json, "lastKnownGoodPolicy")?.let { decodePolicy(it) },
+        lastPolicySyncAtUtc = requiredNullableInstant(json, "lastPolicySyncAtUtc"),
+        deviceTrustSetEpoch = EpochBounds.decodeJson(json, "deviceTrustSetEpoch"),
+        deviceKeyEpoch = EpochBounds.decodeJson(json, "deviceKeyEpoch"),
     )
 
-    private fun encodePolicy(policy: SchedulePolicyV1): JSONObject = JSONObject().apply {
-        put("version", policy.version)
-        put("policyId", policy.policyId)
-        put("policyRevision", policy.policyRevision)
-        put("familyId", policy.familyId)
-        put("childProfileId", policy.childProfileId)
-        put("timezone", policy.timezone)
-        put("windows", JSONArray().apply { policy.windows.forEach { put(encodeWindow(it)) } })
-        put("bonusGrants", JSONArray().apply { policy.bonusGrants.forEach { put(encodeBonus(it)) } })
-        put("parentExceptions", JSONArray().apply { policy.parentExceptions.forEach { put(encodeException(it)) } })
-        put("dailyLimits", JSONArray().apply { policy.dailyLimits.forEach { put(encodeDailyLimit(it)) } })
-        put("trustSetEpoch", policy.trustSetEpoch)
-        put("keyEpoch", policy.keyEpoch)
-        put("issuedAt", policy.issuedAt.toString())
-        put("effectiveFrom", policy.effectiveFrom.toString())
-        put("expiresAt", policy.expiresAt?.toString() ?: JSONObject.NULL)
-        put("continuousUseLimitMinutes", policy.continuousUseLimitMinutes ?: JSONObject.NULL)
-        put("breakDurationMinutes", policy.breakDurationMinutes ?: JSONObject.NULL)
+    private fun encodePolicy(policy: SchedulePolicyV1): JSONObject {
+        requireValidPolicyEpochs(policy)
+        return JSONObject().apply {
+            put("version", policy.version)
+            put("policyId", policy.policyId)
+            put("policyRevision", policy.policyRevision)
+            put("familyId", policy.familyId)
+            put("childProfileId", policy.childProfileId)
+            put("timezone", policy.timezone)
+            put("windows", JSONArray().apply { policy.windows.forEach { put(encodeWindow(it)) } })
+            put("bonusGrants", JSONArray().apply { policy.bonusGrants.forEach { put(encodeBonus(it)) } })
+            put("parentExceptions", JSONArray().apply { policy.parentExceptions.forEach { put(encodeException(it)) } })
+            put("dailyLimits", JSONArray().apply { policy.dailyLimits.forEach { put(encodeDailyLimit(it)) } })
+            put("trustSetEpoch", policy.trustSetEpoch)
+            put("keyEpoch", policy.keyEpoch)
+            put("issuedAt", policy.issuedAt.toString())
+            put("effectiveFrom", policy.effectiveFrom.toString())
+            put("expiresAt", policy.expiresAt?.toString() ?: JSONObject.NULL)
+            put("continuousUseLimitMinutes", policy.continuousUseLimitMinutes ?: JSONObject.NULL)
+            put("breakDurationMinutes", policy.breakDurationMinutes ?: JSONObject.NULL)
+        }
     }
 
-    private fun decodePolicy(json: JSONObject): SchedulePolicyV1 = SchedulePolicyV1(
-        version = json.optString("version", "1"),
-        policyId = json.getString("policyId"),
-        policyRevision = json.getInt("policyRevision"),
-        familyId = json.getString("familyId"),
-        childProfileId = json.getString("childProfileId"),
-        timezone = json.getString("timezone"),
-        windows = json.getJSONArray("windows").let { arr -> (0 until arr.length()).map { decodeWindow(arr.getJSONObject(it)) } },
-        bonusGrants = json.getJSONArray("bonusGrants").let { arr -> (0 until arr.length()).map { decodeBonus(arr.getJSONObject(it)) } },
-        parentExceptions = json.getJSONArray("parentExceptions").let { arr -> (0 until arr.length()).map { decodeException(arr.getJSONObject(it)) } },
-        dailyLimits = json.getJSONArray("dailyLimits").let { arr -> (0 until arr.length()).map { decodeDailyLimit(arr.getJSONObject(it)) } },
-        trustSetEpoch = json.getInt("trustSetEpoch"),
-        keyEpoch = json.getInt("keyEpoch"),
-        issuedAt = Instant.parse(json.getString("issuedAt")),
-        effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
-        expiresAt = json.optString("expiresAt", null)?.let { Instant.parse(it) },
-        continuousUseLimitMinutes = if (json.isNull("continuousUseLimitMinutes")) null else json.getInt("continuousUseLimitMinutes"),
-        breakDurationMinutes = if (json.isNull("breakDurationMinutes")) null else json.getInt("breakDurationMinutes"),
-    )
+    private fun decodePolicy(json: JSONObject): SchedulePolicyV1 {
+        val version = json.getString("version")
+        if (version != "1") throw JSONException("Unsupported schedule policy version: $version")
+        return SchedulePolicyV1(
+            version = version,
+            policyId = json.getString("policyId"),
+            policyRevision = json.getInt("policyRevision"),
+            familyId = json.getString("familyId"),
+            childProfileId = json.getString("childProfileId"),
+            timezone = json.getString("timezone"),
+            windows = json.getJSONArray("windows").let { arr -> (0 until arr.length()).map { decodeWindow(arr.getJSONObject(it)) } },
+            bonusGrants = json.getJSONArray("bonusGrants").let { arr -> (0 until arr.length()).map { decodeBonus(arr.getJSONObject(it)) } },
+            parentExceptions = json.getJSONArray("parentExceptions").let { arr -> (0 until arr.length()).map { decodeException(arr.getJSONObject(it)) } },
+            dailyLimits = json.getJSONArray("dailyLimits").let { arr -> (0 until arr.length()).map { decodeDailyLimit(arr.getJSONObject(it)) } },
+            trustSetEpoch = EpochBounds.decodeJson(json, "trustSetEpoch"),
+            keyEpoch = EpochBounds.decodeJson(json, "keyEpoch"),
+            issuedAt = Instant.parse(json.getString("issuedAt")),
+            effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
+            expiresAt = optionalNullableInstant(json, "expiresAt"),
+            continuousUseLimitMinutes = if (json.isNull("continuousUseLimitMinutes")) null else json.getInt("continuousUseLimitMinutes"),
+            breakDurationMinutes = if (json.isNull("breakDurationMinutes")) null else json.getInt("breakDurationMinutes"),
+        )
+    }
+
+    private fun requiredNullableObject(json: JSONObject, key: String): JSONObject? {
+        if (!json.has(key)) throw JSONException("Missing required field: $key")
+        return when (val value = json.get(key)) {
+            JSONObject.NULL -> null
+            is JSONObject -> value
+            else -> throw JSONException("Field $key must be an object or null")
+        }
+    }
+
+    private fun requiredNullableInstant(json: JSONObject, key: String): Instant? {
+        if (!json.has(key)) throw JSONException("Missing required field: $key")
+        return decodeNullableInstant(json.get(key), key)
+    }
+
+    private fun optionalNullableInstant(json: JSONObject, key: String): Instant? =
+        if (json.has(key)) decodeNullableInstant(json.get(key), key) else null
+
+    private fun decodeNullableInstant(value: Any, key: String): Instant? = when (value) {
+        JSONObject.NULL -> null
+        is String -> Instant.parse(value)
+        else -> throw JSONException("Field $key must be a timestamp string or null")
+    }
+
+    private fun requireValidPolicyEpochs(policy: SchedulePolicyV1) {
+        EpochBounds.requireValid(policy.trustSetEpoch, "trustSetEpoch")
+        EpochBounds.requireValid(policy.keyEpoch, "keyEpoch")
+    }
 
     private fun encodeAppScope(scope: AppScope): JSONObject = when (scope) {
         is AppScope.All -> JSONObject().put("mode", "ALL")

@@ -8,6 +8,7 @@ import {
 } from '../../dist/tamper/TamperStateEngine.js';
 import { CONDITION_POLICY } from '../../dist/tamper/policy.js';
 import { InMemoryTamperEventLedger } from '../../dist/tamper/TamperEventLedger.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 function baseInput(overrides = {}) {
   return {
@@ -85,6 +86,23 @@ test('a detected condition records exactly the doc 21 event contract fields, not
     'status',
     'trustSetEpoch',
   ]);
+});
+
+test('out-of-range event and convergence epochs fail before ledger writes or state classification', async () => {
+  const ledger = new InMemoryTamperEventLedger();
+  await assert.rejects(
+    () => detectTamperCondition(baseInput({ keyEpoch: MAX_FAMILY_EPOCH + 1 }), ledger),
+    /outside the supported family epoch range/,
+  );
+  assert.equal(await ledger.getEvent('event-1'), null);
+  assert.throws(() => computeConvergenceState({
+    isTransportConnected: true,
+    localTrustSetEpoch: 1,
+    localKeyEpoch: 1,
+    latestKnownTrustSetEpoch: MAX_FAMILY_EPOCH + 1,
+    latestKnownKeyEpoch: 1,
+    isDeviceRevokedInLatestKnownEpoch: false,
+  }), /outside the supported family epoch range/);
 });
 
 test('recording the same eventId twice with identical content is idempotent (retried local write)', async () => {

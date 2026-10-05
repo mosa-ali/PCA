@@ -20,6 +20,7 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         private(set) var statusCeremonyIds: [String] = []
         /// Test barrier: when true, `submit` suspends until `releaseSubmit()`.
         var holdSubmit = false
+        var beforeChallengeReturn: (() -> Void)?
         private(set) var submitEntered = false
         private var submitBarrier: CheckedContinuation<Void, Never>?
 
@@ -30,6 +31,7 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
 
         func challenge(attemptId: String, attemptRecoveryToken: String, dskKeyId: String, dskPublicKeyBase64: String) async throws -> FirstDeviceChallengeResponse {
             challengeCalls += 1
+            beforeChallengeReturn?()
             switch challengeResult {
             case .success(let value): return value
             case .failure(let error): throw error
@@ -102,6 +104,48 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
             callCount += 1
             lastTranscript = transcript
             return IosAppAttestEvidence(json: evidence, keyIdBase64Url: "keyid")
+        }
+    }
+
+    private final class FailingOverwriteKeychainStore: KeychainStoreProtocol {
+        private enum StoreFailure: Error { case injected }
+        var storedData: Data?
+        var failNextStore = false
+        var failNextRetrieve = false
+        var failRetrieveOnCall: Int?
+        private(set) var retrieveCalls = 0
+        private(set) var atomicReplaceCalls = 0
+
+        func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+            if failNextStore {
+                failNextStore = false
+                throw StoreFailure.injected
+            }
+            storedData = data
+        }
+
+        func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+            atomicReplaceCalls += 1
+            // This fake models update/add semantics: failure leaves the old
+            // item untouched, as the production SecItemUpdate path must.
+            try store(data, forAccount: account, service: service, accessibility: accessibility)
+        }
+
+        func retrieve(forAccount account: String, service: String) throws -> Data {
+            retrieveCalls += 1
+            if failRetrieveOnCall == retrieveCalls {
+                throw StoreFailure.injected
+            }
+            if failNextRetrieve {
+                failNextRetrieve = false
+                throw StoreFailure.injected
+            }
+            guard let storedData else { throw KeychainStoreError.itemNotFound }
+            return storedData
+        }
+
+        func delete(forAccount account: String, service: String) throws {
+            storedData = nil
         }
     }
 
@@ -368,5 +412,153 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(api.statusCalls, 1, "the queued operation runs AFTER the first completes -- FIFO, not interleaved")
         XCTAssertEqual(store.current()?.state, .rootCommitted)
+    }
+
+    func testStaleChallengeResponseCannotOverwriteARecordWrittenDuringNetworkAwait() async {
+        let original = FirstDeviceRootRecord(seed: makeSeed())
+        let api = FakeApiClient()
+        api.challengeResult = .success(FirstDeviceChallengeResponse(
+            ceremonyId: "c-1", challengeId: "ch-1", nonce: "n-1",
+            expiresAt: "2026-10-02T00:00:00.000Z", familyId: "family-1", deviceId: "device-1"
+        ))
+        let store = InMemoryFirstDeviceRootStore(record: original)
+        let coordinator = FirstDeviceTrustRootCoordinator(
+            rootStore: store,
+            apiClient: api,
+            keyMaterial: FakeKeyMaterial(),
+            evidenceBuilder: FakeEvidenceBuilder()
+        )
+        var concurrentRecord = original
+        concurrentRecord.state = .unknown
+        concurrentRecord.ceremonyId = "newer-ceremony"
+        api.beforeChallengeReturn = {
+            XCTAssertTrue(store.writeIfCurrent(expected: original, record: concurrentRecord))
+        }
+
+        await coordinator.beginCeremony()
+
+        XCTAssertEqual(api.challengeCalls, 1)
+        XCTAssertEqual(store.current(), concurrentRecord)
+        XCTAssertEqual(coordinator.record, original, "the stale challenge result must not be published")
+    }
+
+    func testKeychainRootStoreReportsFailedOverwriteDespiteOlderReadableRecord() throws {
+        let previous = approvedRecord()
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(previous)
+        keychain.failNextStore = true
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+
+        var submitting = previous
+        submitting.state = .submitting
+        submitting.submission = FirstDeviceSubmissionPayload(
+            proofBytes: "proof",
+            proofSignature: "signature",
+            epoch1Bytes: "epoch",
+            epoch1Signature: "signature",
+            attestationEvidence: "evidence"
+        )
+
+        XCTAssertFalse(store.save(submitting))
+        XCTAssertEqual(store.current(), previous)
+        XCTAssertEqual(keychain.atomicReplaceCalls, 1)
+    }
+
+    func testCoordinatorDoesNotSubmitWhenFailedKeychainOverwriteLeavesOldApprovedRecord() async throws {
+        let previous = approvedRecord()
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(previous)
+        keychain.failNextStore = true
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let api = FakeApiClient()
+        let coordinator = FirstDeviceTrustRootCoordinator(
+            rootStore: store,
+            apiClient: api,
+            keyMaterial: FakeKeyMaterial(),
+            evidenceBuilder: FakeEvidenceBuilder(),
+            now: { Date(timeIntervalSince1970: 1_759_766_400) }
+        )
+
+        await coordinator.submit()
+
+        XCTAssertEqual(api.submitCalls.count, 0)
+        XCTAssertEqual(store.current(), previous)
+        XCTAssertEqual(coordinator.record, previous)
+        XCTAssertEqual(keychain.atomicReplaceCalls, 1)
+    }
+
+    func testConditionalWriteAndSeedCaptureFailClosedOnMalformedKeychainValue() throws {
+        let malformed = Data("not-json".utf8)
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = malformed
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let candidate = FirstDeviceRootRecord(seed: makeSeed())
+
+        XCTAssertNil(store.current())
+        XCTAssertFalse(store.writeIfCurrent(expected: nil, record: candidate))
+        XCTAssertFalse(store.captureSeed(candidate, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(keychain.storedData, malformed, "an unreadable root must not be replaced as if the slot were empty")
+    }
+
+    func testConditionalWriteAndSeedCaptureFailClosedOnKeychainReadError() {
+        let keychain = FailingOverwriteKeychainStore()
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let candidate = FirstDeviceRootRecord(seed: makeSeed())
+
+        // A transport/keychain error is not evidence that the slot is empty;
+        // only itemNotFound is absence.
+        keychain.failNextRetrieve = true
+        XCTAssertFalse(store.writeIfCurrent(expected: nil, record: candidate))
+        keychain.failNextRetrieve = true
+        XCTAssertFalse(store.captureSeed(candidate, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertNil(keychain.storedData)
+    }
+
+    func testSameAttemptKeychainCaptureRequiresDurabilityReadbackAndPreservesCompleteRecord() throws {
+        let previous = approvedRecord()
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(previous)
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+
+        keychain.failRetrieveOnCall = 2 // Existing-record read succeeds; confirmation read fails.
+        XCTAssertFalse(store.captureSeed(FirstDeviceRootRecord(seed: previous.seed), replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(store.current(), previous)
+
+        keychain.failRetrieveOnCall = nil
+        XCTAssertTrue(store.captureSeed(FirstDeviceRootRecord(seed: previous.seed), replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(store.current(), previous)
+    }
+
+    func testCompetingKeychainCaptureConfirmsRetainedNonterminalRecord() throws {
+        let previous = approvedRecord()
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = try JSONEncoder().encode(previous)
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let competitor = FirstDeviceRootRecord(seed: makeSeed().replacingAttemptId("different-attempt"))
+
+        keychain.failRetrieveOnCall = 2 // Existing read succeeds; exact retained-record check fails.
+        XCTAssertFalse(store.captureSeed(competitor, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(store.current(), previous)
+
+        keychain.failRetrieveOnCall = nil
+        XCTAssertTrue(store.captureSeed(competitor, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(store.current(), previous)
+    }
+}
+
+private extension FirstDeviceCeremonySeed {
+    func replacingAttemptId(_ attemptId: String) -> FirstDeviceCeremonySeed {
+        FirstDeviceCeremonySeed(
+            attemptId: attemptId,
+            attemptRecoveryToken: attemptRecoveryToken,
+            serverBaseUrl: serverBaseUrl,
+            deviceId: deviceId,
+            signingKeyId: signingKeyId,
+            encryptionKeyId: encryptionKeyId,
+            dskPublicKeyBase64: dskPublicKeyBase64,
+            dekPublicKeyBase64: dekPublicKeyBase64,
+            dskAlias: dskAlias,
+            dekAlias: dekAlias
+        )
     }
 }

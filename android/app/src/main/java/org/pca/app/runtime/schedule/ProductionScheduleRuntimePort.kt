@@ -42,6 +42,7 @@ class ProductionScheduleRuntimePort(
                 }
             ScheduleRuntimeState.EPOCH_STALE -> ScheduleRuntimeStatus.EPOCH_STALE
             ScheduleRuntimeState.NO_ACCEPTED_POLICY, ScheduleRuntimeState.INVALID -> ScheduleRuntimeStatus.NOT_READY
+            ScheduleRuntimeState.CORRUPT_LOCAL_STATE -> ScheduleRuntimeStatus.UNAVAILABLE
         }
     }
 

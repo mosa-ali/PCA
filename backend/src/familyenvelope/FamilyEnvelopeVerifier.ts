@@ -1,6 +1,6 @@
 import { canonicalizeEnvelope } from './canonicalize.js';
 import { isProtocolCompatible } from './protocolCompatibility.js';
-import { compareSemanticVersions, requiresStrictVersionIncrease } from './policy.js';
+import { compareSemanticVersions, isPlausibleEpoch, requiresStrictVersionIncrease } from './policy.js';
 import type { DataVersionLedger } from './DataVersionLedger.js';
 import type { EnvelopeAcceptanceTransaction } from './EnvelopeAcceptanceTransaction.js';
 import type { EnvelopeSignatureVerifier } from './EnvelopeSignatureVerifier.js';
@@ -10,6 +10,7 @@ import type { FamilyEnvelope, OpaqueFamilyId } from './types.js';
 
 export type EnvelopeRejectionReason =
   | 'UNSUPPORTED_PROTOCOL_MAJOR'
+  | 'INVALID_EPOCH'
   | 'FAMILY_ID_MISMATCH'
   | 'MESSAGE_ID_CONFLICT'
   | 'EXPIRED'
@@ -203,6 +204,13 @@ export async function evaluateEnvelope(
   messageIdempotencyLedger: MessageIdempotencyLedger,
   options: EvaluateEnvelopeOptions = {},
 ): Promise<EnvelopeVerdict> {
+  // This verifier is also called directly by the coordinator's pending-drain
+  // path and by other typed callers. Keep the protocol range check here,
+  // before canonicalization, idempotency/replay reads, or signature work.
+  if (!isPlausibleEpoch(envelope.trustSetEpoch) || !isPlausibleEpoch(envelope.keyEpoch)) {
+    return { accepted: false, reason: 'INVALID_EPOCH' };
+  }
+
   if (!isProtocolCompatible(envelope.protocolMajor)) {
     return { accepted: false, reason: 'UNSUPPORTED_PROTOCOL_MAJOR' };
   }

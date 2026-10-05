@@ -1,4 +1,5 @@
 import type { FamilyAuthorityAttestationChainStore } from '../familycommercial/authority/AttestationChainStore.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 /**
  * PCA-ADD-ENR-020's `RemovalDecisionAlerting.resolveParentDevices` real
@@ -10,15 +11,12 @@ import type { FamilyAuthorityAttestationChainStore } from '../familycommercial/a
  * device_id/public_key/key_epoch columns; the Family Trust Set is
  * explicitly device-local-only, never server-queryable -- see
  * FamilyTrustSetStore's own "device-local, never server-side source of
- * truth" header). The one genuinely real, server-queryable, signature-verified
- * per-device parent record in this codebase is the family's current Owner,
- * via `FamilyAuthorityAttestationChainStore` (PCA-FAMILY-AUTH-1-R1) -- a
- * different bounded context (commercial-authority verification, not family
- * E2EE trust), reused here only because it is the one honest, non-fabricated
- * source available. `findHead` -> `findAttestationById` yields the current
- * Owner's `ownerDeviceId` plus the `keyEpoch` that attestation was issued
- * against (a lineage/freshness snapshot, not a guaranteed-live FTS epoch --
- * see FamilyOwnerAttestation's own doc comment).
+ * truth" header). The available per-device Parent record is the family's
+ * current Owner, read via `FamilyAuthorityAttestationChainStore`
+ * (PCA-FAMILY-AUTH-1-R1). This resolver is routing metadata only: it does not
+ * invoke the attestation engine or independently verify the stored signature.
+ * Its returned keyEpoch is the attestation's lineage/freshness snapshot, not
+ * a guaranteed-live FTS epoch (see FamilyOwnerAttestation's own doc comment).
  *
  * KNOWN GAP, not fabricated around: this resolves the Owner device only.
  * ADMINISTRATOR-role parent devices are never included, because no table or
@@ -35,8 +33,13 @@ export class MySqlOwnerParentDeviceResolver {
   async resolveParentDevices(familyId: string): Promise<Array<{ deviceId: string; keyEpoch: number }>> {
     const head = await this.chainStore.findHead(familyId);
     if (head === null || head.status !== 'ACTIVE') return [];
+    if (!isFamilyEpochNumber(head.requiredTrustSetEpoch, 1) || !isFamilyEpochNumber(head.requiredKeyEpoch, 1)) return [];
     const attestation = await this.chainStore.findAttestationById(familyId, head.headAttestationId);
-    if (attestation === null) return [];
+    if (
+      attestation === null ||
+      !isFamilyEpochNumber(attestation.trustSetEpoch, 1) ||
+      !isFamilyEpochNumber(attestation.keyEpoch, 1)
+    ) return [];
     return [{ deviceId: attestation.ownerDeviceId, keyEpoch: attestation.keyEpoch }];
   }
 }

@@ -61,6 +61,17 @@ export interface PairingRequestDto {
   dekFingerprint: string | null;
 }
 
+/** Allowlisted Parent-facing first-device ceremony metadata. No key material or attempt credentials. */
+export interface FirstDeviceBootstrapCeremonyDto {
+  ceremonyId: string;
+  deviceId: string;
+  dskFingerprint: string;
+  status: 'PENDING' | 'APPROVED' | 'COMMITTED';
+  createdAt: string;
+  expiresAt: string;
+  approvedAt: string | null;
+}
+
 export interface CreateInvitationInput {
   platform: InvitationPlatform;
   requestedProtectionMode: RequestedProtectionMode;
@@ -78,6 +89,7 @@ export type DeviceEnrollmentErrorCode =
   | 'NOT_FOUND' // 404
   | 'CONFLICT' // 409 -- e.g. confirming an already-PAIRED or REVOKED pairing target
   | 'RATE_LIMITED' // 429
+  | 'SERVICE_UNAVAILABLE' // 503 -- e.g. Android release readiness is closed
   | 'NETWORK_ERROR' // fetch threw / offline
   | 'SERVICE_SESSION_UNAVAILABLE' // no bearer token available to attach -- see realDeviceEnrollmentClient.ts
   | 'UNKNOWN';
@@ -124,4 +136,8 @@ export interface DeviceEnrollmentClient {
    * must be rendered as PAIRED, never as ACTIVE.
    */
   confirmPairing(familyId: string, deviceId: string, stepUpToken: string): Promise<PairingRequestDto>;
+  /** Lists only live first-device ceremonies for the current family; the server additionally restricts this to its provisioned owner. */
+  listFirstDeviceBootstrapCeremonies(familyId: string): Promise<FirstDeviceBootstrapCeremonyDto[]>;
+  /** Approves one ceremony with a fresh, operation-scoped Parent TOTP grant. This never activates the device. */
+  approveFirstDeviceBootstrap(familyId: string, ceremonyId: string, stepUpToken: string): Promise<FirstDeviceBootstrapCeremonyDto>;
 }

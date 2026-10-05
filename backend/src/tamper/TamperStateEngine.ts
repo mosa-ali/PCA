@@ -1,4 +1,5 @@
 import { CONDITION_POLICY } from './policy.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { TamperEventLedger, RecordEventResult } from './TamperEventLedger.js';
 import type { OpaqueDeviceId, OpaqueFamilyId, TamperCondition, TamperEvent, TamperEvidenceClass, TamperState } from './types.js';
 
@@ -46,6 +47,14 @@ export interface EpochConvergenceInput {
  * duplicates).
  */
 export function computeConvergenceState(input: EpochConvergenceInput): 'HEALTHY' | 'EPOCH_STALE' | 'DEVICE_OFFLINE' | 'REVOKED' {
+  if (
+    !isFamilyEpochNumber(input.localTrustSetEpoch, 1) ||
+    !isFamilyEpochNumber(input.latestKnownTrustSetEpoch, 1) ||
+    !isFamilyEpochNumber(input.localKeyEpoch) ||
+    !isFamilyEpochNumber(input.latestKnownKeyEpoch)
+  ) {
+    throw new Error('Tamper convergence epochs are outside the supported family epoch range.');
+  }
   if (input.isDeviceRevokedInLatestKnownEpoch) return 'REVOKED';
   const isBehind =
     input.localTrustSetEpoch < input.latestKnownTrustSetEpoch || input.localKeyEpoch < input.latestKnownKeyEpoch;
@@ -105,6 +114,9 @@ export async function detectTamperCondition(
   input: DetectTamperConditionInput,
   ledger: TamperEventLedger,
 ): Promise<{ event: TamperEvent; recordResult: RecordEventResult }> {
+  if (!isFamilyEpochNumber(input.trustSetEpoch, 1) || !isFamilyEpochNumber(input.keyEpoch)) {
+    throw new Error('Tamper event epochs are outside the supported family epoch range.');
+  }
   const policy = CONDITION_POLICY[input.condition];
   const event: TamperEvent = {
     eventId: input.eventId,

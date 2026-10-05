@@ -11,14 +11,22 @@ import { PlatformAdminApiError } from './platformAdminAuthClient';
 
 export { PlatformAdminApiError };
 
-async function parseErrorBody(response: Response): Promise<string> {
+interface ParsedApiError {
+  code: string;
+  refundOperationId?: string;
+}
+
+async function parseErrorBody(response: Response): Promise<ParsedApiError> {
   try {
-    const body = (await response.json()) as { error?: unknown };
-    if (typeof body?.error === 'string') return body.error;
+    const body = (await response.json()) as { error?: unknown; refundOperationId?: unknown };
+    const code = typeof body?.error === 'string' ? body.error : response.status >= 500 ? 'server_error' : 'unknown_error';
+    const refundOperationId = typeof body?.refundOperationId === 'string' && body.refundOperationId.length <= 128
+      ? body.refundOperationId
+      : undefined;
+    return { code, refundOperationId };
   } catch {
-    // fall through
+    return { code: response.status >= 500 ? 'server_error' : 'unknown_error' };
   }
-  return response.status >= 500 ? 'server_error' : 'unknown_error';
 }
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -47,7 +55,10 @@ function buildUrl(path: string, query?: Record<string, string | number | boolean
 export const platformAdminApi = {
   async get<T>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
     const response = await fetch(buildUrl(path, query), { headers: authHeaders() });
-    if (!response.ok) throw new PlatformAdminApiError(response.status, await parseErrorBody(response));
+    if (!response.ok) {
+      const error = await parseErrorBody(response);
+      throw new PlatformAdminApiError(response.status, error.code, error.refundOperationId);
+    }
     return (await response.json()) as T;
   },
 
@@ -66,7 +77,10 @@ export const platformAdminApi = {
       // the body entirely or validates named fields it would reject anyway.
       body: body === undefined ? '{}' : JSON.stringify(body),
     });
-    if (!response.ok) throw new PlatformAdminApiError(response.status, await parseErrorBody(response));
+    if (!response.ok) {
+      const error = await parseErrorBody(response);
+      throw new PlatformAdminApiError(response.status, error.code, error.refundOperationId);
+    }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   },
@@ -77,7 +91,10 @@ export const platformAdminApi = {
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
-    if (!response.ok) throw new PlatformAdminApiError(response.status, await parseErrorBody(response));
+    if (!response.ok) {
+      const error = await parseErrorBody(response);
+      throw new PlatformAdminApiError(response.status, error.code, error.refundOperationId);
+    }
     return (await response.json()) as T;
   },
 };

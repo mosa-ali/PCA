@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { ActionId, CorrelationId, FamilyRole, OpaqueMemberId, ParentOperation, ReasonCategory, TargetScope } from './types.js';
 
 export type AuditResultStatus = 'SUCCESS' | 'DENIED' | 'FAILED' | 'PENDING';
@@ -91,6 +92,9 @@ export class FamilyAuditService {
   }
 
   async record(input: Omit<FamilyAuditRecord, 'eventId' | 'occurredAtUtc' | 'freeTextNote'> & { freeTextNote?: string | null }): Promise<FamilyAuditRecord> {
+    // Zero is retained as the existing unresolved-actor sentinel. Reject
+    // values outside the SQL INT epoch range before append or delivery.
+    if (!isFamilyEpochNumber(input.trustSetEpoch, 0)) throw new TypeError('invalid trust set epoch');
     const freeTextNote =
       input.freeTextNote != null && input.freeTextNote.length > 0
         ? input.freeTextNote.slice(0, MAX_AUDIT_NOTE_LENGTH)

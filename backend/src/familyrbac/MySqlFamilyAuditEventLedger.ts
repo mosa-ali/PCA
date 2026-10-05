@@ -1,4 +1,5 @@
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type {
   FamilyAuditEventEnvelope,
   FamilyAuditEventLedger,
@@ -30,7 +31,7 @@ function toEnvelope(row: FamilyAuditEventRow): FamilyAuditEventEnvelope {
     envelopeId: row.envelope_id,
     familyId: row.family_id,
     parentDeviceId: row.parent_device_id,
-    keyEpoch: row.key_epoch,
+    keyEpoch: familyEpochFromStorage(row.key_epoch),
     generatedAtUtc: toDate(row.generated_at_utc),
     encryptedPayloadB64: row.encrypted_payload_b64,
     nonceB64: row.nonce_b64,
@@ -64,6 +65,9 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
   }
 
   async record(envelope: FamilyAuditEventEnvelope): Promise<RecordFamilyAuditEventResult> {
+    if (!isFamilyEpochNumber(envelope.keyEpoch)) {
+      throw new Error('Family audit key epoch is outside the supported family epoch range.');
+    }
     // Best-effort housekeeping, exactly as RelayService purges around each
     // relay operation. The expiry filter on the reads is what enforces the
     // TTL; this only stops expired ciphertext accumulating on disk, so a

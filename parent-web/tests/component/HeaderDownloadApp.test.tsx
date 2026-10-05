@@ -1,6 +1,6 @@
 // PPR-2: the header's "Download App" action.
 //
-// It used to be rendered ONLY when `config.androidAppDownloadUrl` held a real
+// It used to be rendered ONLY when `config.childAppDistributionUrl` held a real
 // URL. No environment in this repository sets that variable, so in practice the
 // control did not exist at all -- the header carried the language switch,
 // Notifications and "Your account", and nothing else. That honoured "never
@@ -23,7 +23,7 @@ import { AppLayout } from '../../src/components/shell/AppLayout';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
 const configHoisted = vi.hoisted(() => ({
-  androidAppDownloadUrl: null as string | null,
+  childAppDistributionUrl: null as string | null,
 }));
 
 vi.mock('../../src/config/env', async (importOriginal) => {
@@ -31,8 +31,8 @@ vi.mock('../../src/config/env', async (importOriginal) => {
   return {
     config: {
       ...actual.config,
-      get androidAppDownloadUrl() {
-        return configHoisted.androidAppDownloadUrl;
+      get childAppDistributionUrl() {
+        return configHoisted.childAppDistributionUrl;
       },
     },
   };
@@ -51,11 +51,11 @@ function Shell() {
 
 describe('header Download App action', () => {
   afterEach(() => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
   });
 
   it('is rendered with NO download URL configured -- the unconfigured case is the normal one', async () => {
-    configHoisted.androidAppDownloadUrl = null;
+    configHoisted.childAppDistributionUrl = null;
 
     renderWithProviders(<Shell />, { route: '/dashboard' });
     await screen.findByText('Dashboard content');
@@ -67,7 +67,7 @@ describe('header Download App action', () => {
   });
 
   it('still points at the internal page -- never at the env URL -- when one IS configured', async () => {
-    configHoisted.androidAppDownloadUrl = 'https://example.test/pca-android';
+    configHoisted.childAppDistributionUrl = 'https://example.test/pca-android';
 
     renderWithProviders(<Shell />, { route: '/dashboard' });
     await screen.findByText('Dashboard content');
@@ -78,7 +78,7 @@ describe('header Download App action', () => {
 
   it('has no href in the whole header that leaves the app, configured or not', async () => {
     for (const url of [null, 'https://example.test/pca-android']) {
-      configHoisted.androidAppDownloadUrl = url;
+      configHoisted.childAppDistributionUrl = url;
       const { container, unmount } = renderWithProviders(<Shell />, { route: '/dashboard' });
       await screen.findByText('Dashboard content');
 

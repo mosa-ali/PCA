@@ -47,6 +47,7 @@ import org.pca.app.foundation.SystemWallClockTimeSource
 import org.pca.app.persistence.PcaLocalPersistence
 import org.pca.app.persistence.retention.DeleteNowCoordinator
 import org.pca.app.runtime.identity.DeviceIdentityState
+import org.pca.app.storage.CorruptLocalFamilyStateException
 import org.pca.app.security.BiometricAuthReason
 import org.pca.app.security.BiometricAuthResult
 import org.pca.app.security.Pbkdf2AdminPinVerifier
@@ -222,8 +223,12 @@ class AdminSecurityActivity : FragmentActivity() {
                             // condition; a bare `!= null` check would render working-looking
                             // Delete Now / Audit Export controls on an enrolled-but-unpaired device
                             // that always fail closed with a generic error underneath.
-                            val currentFamilyId = (application as PcaApplication).graph.familyStateStore.currentState()?.familyId
-                                ?.takeIf { it.isNotBlank() }
+                            val currentFamilyId = try {
+                                (application as PcaApplication).graph.familyStateStore.currentState()?.familyId
+                                    ?.takeIf { it.isNotBlank() }
+                            } catch (_: CorruptLocalFamilyStateException) {
+                                null
+                            }
                             if (enrolledIdentity != null && currentFamilyId != null) {
                                 var deleteNowResult by remember { mutableStateOf<DeleteNowUiResult?>(null) }
                                 DeleteNowScreen(

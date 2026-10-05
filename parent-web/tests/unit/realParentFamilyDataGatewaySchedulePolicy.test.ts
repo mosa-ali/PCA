@@ -24,6 +24,7 @@ vi.mock('@pca/parent-sdk-browser-runtime', async () => {
 
 const { RealParentFamilyDataGateway } = await import('../../src/api/real/realParentFamilyDataGateway');
 const { createLocalFamilyDataStore } = await import('../../src/security/localFamilyDataStore');
+const { validateOpaqueSchedulePolicyInput } = await import('../../src/api/schedulePolicyAuthoring');
 type DeviceStatusClient = import('../../src/api/interfaces').DeviceStatusClient;
 type DeviceProtectionStatus = import('../../src/domain/types').DeviceProtectionStatus;
 type SchedulePolicyAuthoring = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyAuthoring;
@@ -182,6 +183,16 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('schedule-policy authoring epoch bound', () => {
+  it('accepts INT32_MAX and rejects key epochs above the shared family protocol bound', () => {
+    const maxEpochEnvelope = { ...OPAQUE_ENVELOPE, keyEpoch: 2_147_483_647 };
+    expect(() => validateOpaqueSchedulePolicyInput(maxEpochEnvelope, REAL_DEVICE_ID)).not.toThrow();
+
+    const outOfRangeEnvelope = { ...OPAQUE_ENVELOPE, keyEpoch: 2_147_483_648 };
+    expect(() => validateOpaqueSchedulePolicyInput(outOfRangeEnvelope, REAL_DEVICE_ID)).toThrow('ENCRYPTION_UNAVAILABLE');
   });
 });
 

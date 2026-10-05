@@ -89,6 +89,26 @@ export interface InitiateRefundInput {
   readonly provider: string;
 }
 
+/** A deliberately minimal projection used only to resume an existing refund operation. */
+export interface RecoverableRefundOperation {
+  readonly refundOperationId: string;
+  readonly paymentTransactionId: string;
+  readonly amountMinor: string;
+  readonly currencyCode: CurrencyCode;
+  readonly reasonCode: string;
+  readonly idempotencyKey: string;
+  readonly state: 'CREATED' | 'PROVIDER_CONFIRMED';
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface RefundRecoveryPage {
+  readonly items: readonly RecoverableRefundOperation[];
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+}
+
 interface RefundOperationSqlRow {
   refund_operation_id: string;
   payment_transaction_id: string;
@@ -103,6 +123,18 @@ interface RefundOperationSqlRow {
   provider_refund_ref: string | null;
   state: string;
   refund_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface RecoverableRefundOperationSqlRow {
+  refund_operation_id: string;
+  payment_transaction_id: string;
+  amount_minor: number | string;
+  currency_code: string;
+  reason_code: string;
+  idempotency_key: string;
+  state: 'CREATED' | 'PROVIDER_CONFIRMED';
   created_at: Date;
   updated_at: Date;
 }
@@ -148,6 +180,45 @@ export class RefundOperationRepository {
   async findById(refundOperationId: string): Promise<RefundOperationRow | null> {
     const { rows } = await runInTransaction((conn) => execute<RefundOperationSqlRow>(conn, `SELECT * FROM billing_refund_operations WHERE refund_operation_id = ?`, [refundOperationId]));
     return rows[0] ? toDomain(rows[0]) : null;
+  }
+
+  /**
+   * Returns only fields a currently authorized operator needs to resume the
+   * exact same refund attempt. In particular, step-up session IDs, provider
+   * references, actor IDs, and free-form reason notes are never selected.
+   */
+  async listRecoverable(limit: number, offset: number): Promise<RefundRecoveryPage> {
+    return runInTransaction(async (conn) => {
+      const { rows } = await execute<RecoverableRefundOperationSqlRow>(
+        conn,
+        `SELECT refund_operation_id, payment_transaction_id, amount_minor, currency_code, reason_code, idempotency_key, state, created_at, updated_at
+         FROM billing_refund_operations
+         WHERE state IN ('CREATED', 'PROVIDER_CONFIRMED')
+         ORDER BY updated_at DESC, refund_operation_id DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset],
+      );
+      const { rows: countRows } = await execute<{ total: number | string }>(
+        conn,
+        `SELECT COUNT(*) AS total FROM billing_refund_operations WHERE state IN ('CREATED', 'PROVIDER_CONFIRMED')`,
+      );
+      return {
+        items: rows.map((row) => ({
+          refundOperationId: row.refund_operation_id,
+          paymentTransactionId: row.payment_transaction_id,
+          amountMinor: sqlAmountMinorToBigInt(row.amount_minor).toString(),
+          currencyCode: row.currency_code as CurrencyCode,
+          reasonCode: row.reason_code,
+          idempotencyKey: row.idempotency_key,
+          state: row.state,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })),
+        total: Number(countRows[0]?.total ?? 0),
+        limit,
+        offset,
+      };
+    });
   }
 
   /**
@@ -291,6 +362,18 @@ export class RefundOrchestrationService {
     private readonly providerRegistry: PaymentProviderRegistry,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  /**
+   * List bounded recovery intents for operators allowed to issue refunds.
+   * Each subsequent POST still requires a new, operation-scoped step-up ID.
+   */
+  async listRecoverableRefundOperations(
+    roles: readonly PlatformAdminRole[],
+    page: { readonly limit: number; readonly offset: number },
+  ): Promise<RefundRecoveryPage> {
+    requireBillingOperation(roles, 'ISSUE_REFUND');
+    return this.repository.listRecoverable(page.limit, page.offset);
+  }
 
   async initiateRefund(input: InitiateRefundInput, actor: BillingAuditActor, roles: readonly PlatformAdminRole[]): Promise<RefundOrchestrationOutcome> {
     requireBillingOperation(roles, 'ISSUE_REFUND');

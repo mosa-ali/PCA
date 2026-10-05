@@ -107,6 +107,28 @@ test('MySQL: refund orchestration -- CREATED row exists BEFORE the provider is e
   assert.equal(claimOnly.isNew, true);
   assert.equal(claimOnly.operation.state, 'CREATED');
 
+  const recoveryPage = await refundOrchestrationService.listRecoverableRefundOperations(['FINANCE_ADMIN'], { limit: 100, offset: 0 });
+  const recoverable = recoveryPage.items.find((item) => item.refundOperationId === claimOnly.operation.refundOperationId);
+  assert.ok(recoverable, 'CREATED operations must appear in the authenticated recovery projection');
+  assert.equal(recoverable.state, 'CREATED');
+  assert.equal(recoverable.idempotencyKey, idempotencyKey);
+  assert.deepEqual(Object.keys(recoverable).sort(), [
+    'amountMinor',
+    'createdAt',
+    'currencyCode',
+    'idempotencyKey',
+    'paymentTransactionId',
+    'reasonCode',
+    'refundOperationId',
+    'state',
+    'updatedAt',
+  ]);
+  await assert.rejects(
+    refundOrchestrationService.listRecoverableRefundOperations(['AUDITOR_READ_ONLY'], { limit: 20, offset: 0 }),
+    /ISSUE_REFUND/,
+    'read-only billing authority must not query retryable refund operations',
+  );
+
   const [rows] = await getPool().query(`SELECT state FROM billing_refund_operations WHERE refund_operation_id = ?`, [claimOnly.operation.refundOperationId]);
   assert.equal(rows[0].state, 'CREATED', 'a durable CREATED row must exist even before provider.refund is ever called');
   assert.equal(sandboxProvider.getRefundCallCountForTest(providerPaymentRef), 0);
@@ -142,6 +164,15 @@ test('MySQL: refund recovery -- provider confirms, RefundService.issueRefund is 
   assert.equal(first.operation.state, 'PROVIDER_CONFIRMED');
   assert.ok(first.operation.providerRefundRef, 'the provider refund ref must already be durably recorded');
 
+  const pendingPage = await refundOrchestrationService.listRecoverableRefundOperations(roles, { limit: 100, offset: 0 });
+  const pendingRecovery = pendingPage.items.find((item) => item.refundOperationId === first.operation.refundOperationId);
+  assert.ok(pendingRecovery, 'PROVIDER_CONFIRMED operations must remain available for recovery');
+  assert.equal(pendingRecovery.state, 'PROVIDER_CONFIRMED');
+  assert.equal(pendingRecovery.idempotencyKey, idempotencyKey);
+  assert.equal('stepUpSessionId' in pendingRecovery, false, 'the old step-up grant must not be exposed');
+  assert.equal('providerRefundRef' in pendingRecovery, false, 'provider references must not be exposed');
+  assert.equal('reasonNote' in pendingRecovery, false, 'free-form notes must not be exposed');
+
   const [rowsAfterFailure] = await getPool().query(`SELECT state, provider_refund_ref FROM billing_refund_operations WHERE refund_operation_id = ?`, [first.operation.refundOperationId]);
   assert.equal(rowsAfterFailure[0].state, 'PROVIDER_CONFIRMED', 'the operation must NOT be lost -- it stays PROVIDER_CONFIRMED, durable');
   const refundCallCountAfterFirst = sandboxProvider.getRefundCallCountForTest(providerPaymentRef);
@@ -166,6 +197,8 @@ test('MySQL: refund recovery -- provider confirms, RefundService.issueRefund is 
   const [rowsAfterRetry] = await getPool().query(`SELECT state, refund_id FROM billing_refund_operations WHERE refund_operation_id = ?`, [first.operation.refundOperationId]);
   assert.equal(rowsAfterRetry[0].state, 'FINALIZED');
   assert.equal(rowsAfterRetry[0].refund_id, second.refund.refundId);
+  const finalizedPage = await refundOrchestrationService.listRecoverableRefundOperations(roles, { limit: 100, offset: 0 });
+  assert.equal(finalizedPage.items.some((item) => item.refundOperationId === first.operation.refundOperationId), false, 'FINALIZED operations must leave the recoverable queue');
 });
 
 test('MySQL: refund orchestration idempotency -- a duplicate idempotencyKey after FINALIZED returns the same result, never a second billing_refunds row', async () => {

@@ -1,5 +1,6 @@
 import type { NewSafeZoneInput, SafeZone, SafeZoneClient, SafeZonePatch } from '../interfaces';
 import { validateOpaqueSafeZoneInput, validateOpaqueSafeZonePatch } from '../safeZonePolicyAuthoring';
+import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
 const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
@@ -82,7 +83,7 @@ function parseSafeZone(value: unknown, familyId: string): SafeZone {
 }
 
 export class RealSafeZoneClient implements SafeZoneClient {
-  constructor(private readonly apiBaseUrl: string) {}
+  constructor(private readonly apiBaseUrl: string, private readonly trustedBrowser: TrustedBrowserProvider) {}
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
@@ -117,18 +118,40 @@ export class RealSafeZoneClient implements SafeZoneClient {
     assertSafeZoneIdentifier(familyId);
     assertSafeZoneIdentifier(zoneId);
     const csrf = readCsrfCookie();
-    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones/${encodeURIComponent(zoneId)}`), { method: 'DELETE', credentials: 'include', headers: { ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) } });
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones/${encodeURIComponent(zoneId)}`), {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { ...(await this.actorHeaders()), ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) },
+    });
     if (!response.ok) throw new Error(`Safe-zone deletion failed (${response.status})`);
   }
 
   private async mutate(familyId: string, zoneId: string, method: 'POST' | 'PATCH', body: unknown): Promise<SafeZone> {
     const csrf = readCsrfCookie();
     const suffix = zoneId ? `/${encodeURIComponent(zoneId)}` : '';
-    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones${suffix}`), { method, credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) }, body: JSON.stringify(body) });
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones${suffix}`), {
+      method,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(await this.actorHeaders()),
+        ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}),
+      },
+      body: JSON.stringify(body),
+    });
     if (!response.ok) throw new Error(`Safe-zone update failed (${response.status})`);
     const responseBody = await json(response);
     if (!isRecord(responseBody)) throw new Error('SAFE_ZONE_RESPONSE_INVALID');
     return parseSafeZone(responseBody.safeZone, familyId);
+  }
+
+  /** Mutations identify the actor only through a verified browser device session. */
+  private async actorHeaders(): Promise<Record<string, string>> {
+    const snapshot = await this.trustedBrowser.getSnapshot();
+    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
+    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 
 }

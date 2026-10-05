@@ -1,5 +1,6 @@
 package org.pca.app.runtime.schedule
 
+import org.pca.app.runtime.EpochBounds
 import java.time.Instant
 
 /**
@@ -9,7 +10,7 @@ import java.time.Instant
  * (`backend/test/runtime-schedule-conformance/policyAcceptanceReference.mjs`) purely via the
  * shared vectors in `contracts/schedule-runtime/vectors/policy-acceptance-v1.json`.
  */
-enum class ScheduleRuntimeState { CURRENT, STALE_REMOTE, INVALID, EPOCH_STALE, NO_ACCEPTED_POLICY }
+enum class ScheduleRuntimeState { CURRENT, STALE_REMOTE, INVALID, EPOCH_STALE, NO_ACCEPTED_POLICY, CORRUPT_LOCAL_STATE }
 
 data class PolicyAcceptanceResult(
     val state: ScheduleRuntimeState,
@@ -47,16 +48,29 @@ object SchedulePolicyValidator {
         val candidate = input.candidatePolicy
             ?: return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
 
-        if (!isStructurallyValid(candidate)) {
-            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, input.lastKnownGoodPolicy)
+        // A corrupt or out-of-domain persisted floor cannot authorize policy application.
+        if (!EpochBounds.isValid(input.deviceTrustSetEpoch) || !EpochBounds.isValid(input.deviceKeyEpoch)) {
+            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
+        }
+
+        val safeFallback = input.lastKnownGoodPolicy?.takeIf(::hasValidEpochs)
+
+        if (!hasValidEpochs(candidate) || !isStructurallyValid(candidate)) {
+            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
         }
 
         if (isExpired(candidate, input.nowUtc)) {
-            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, input.lastKnownGoodPolicy)
+            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
         }
 
         if (isEpochBehind(candidate, input.deviceTrustSetEpoch, input.deviceKeyEpoch)) {
-            return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, input.lastKnownGoodPolicy ?: candidate)
+            // A last-known-good snapshot cannot supersede a newer device floor. If both
+            // policies are behind, retain the newest persisted candidate rather than
+            // selecting an even older fallback.
+            val currentFallback = safeFallback?.takeIf {
+                !isEpochBehind(it, input.deviceTrustSetEpoch, input.deviceKeyEpoch)
+            }
+            return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, currentFallback ?: candidate)
         }
 
         if (input.connectivity == Connectivity.OFFLINE) {
@@ -74,6 +88,9 @@ object SchedulePolicyValidator {
         if (policy.policyRevision <= 0) return false
         return policy.windows.all { validateScheduleWindow(it).isEmpty() }
     }
+
+    private fun hasValidEpochs(policy: SchedulePolicyV1): Boolean =
+        EpochBounds.isValid(policy.trustSetEpoch) && EpochBounds.isValid(policy.keyEpoch)
 
     private fun isExpired(policy: SchedulePolicyV1, nowUtc: Instant): Boolean {
         val expiresAt = policy.expiresAt ?: return false

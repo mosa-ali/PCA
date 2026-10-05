@@ -351,6 +351,7 @@ async function buildAccountsApp(sessions) {
   const { registerPlatformAdminAccountsRoutes } = await import('../../../dist/http/routes/platformadmin/accountsRoutes.js');
   registerPlatformAdminAccountsRoutes(app, {
     platformAdminAuthService: buildFakeAuthService(sessions),
+    parentIdentityProjection: { async getByFamilyId() { return null; } },
     rateLimiter: createRateLimiter(),
   });
   return app;
@@ -805,10 +806,11 @@ function validRefundBody(overrides = {}) {
   };
 }
 
-async function buildRefundApp(authService, { transaction = REFUND_TRANSACTION, resolveThrows = false, orchestration } = {}) {
+async function buildRefundApp(authService, { transaction = REFUND_TRANSACTION, resolveThrows = false, orchestration, recoveryPage } = {}) {
   const app = Fastify({ logger: false });
   const { registerBillingRefundRoutes } = await import('../../../dist/http/routes/billingRefundRoutes.js');
   const order = [];
+  const recoveryCalls = [];
   registerBillingRefundRoutes(app, {
     platformAdminAuthService: authService,
     providerRegistry: {
@@ -826,6 +828,10 @@ async function buildRefundApp(authService, { transaction = REFUND_TRANSACTION, r
           operation: { providerRefundRef: 'prov-1', refundOperationId: 'op-1' },
         };
       },
+      async listRecoverableRefundOperations(roles, page) {
+        recoveryCalls.push({ roles, page });
+        return recoveryPage ?? { items: [], total: 0, limit: page.limit, offset: page.offset };
+      },
     },
     paymentRepository: {
       async findTransactionById() {
@@ -835,7 +841,7 @@ async function buildRefundApp(authService, { transaction = REFUND_TRANSACTION, r
     auditService: { async record() {} },
     rateLimiter: createRateLimiter(),
   });
-  return { app, order };
+  return { app, order, recoveryCalls };
 }
 
 /**
@@ -939,4 +945,69 @@ test('POST /billing/admin/refund: a rejected step-up still blocks the refund out
     assert.deepEqual(order, [], 'no refund may be initiated without a valid step-up');
     await app.close();
   });
+});
+
+test('GET /platform-admin/billing/refund-recoveries requires ISSUE_REFUND and returns only the safe paginated retry projection', async () => {
+  const item = {
+    refundOperationId: 'operation-1',
+    paymentTransactionId: 'txn-1',
+    amountMinor: '500',
+    currencyCode: 'USD',
+    reasonCode: 'GOODWILL',
+    idempotencyKey: 'idem-1',
+    state: 'PROVIDER_CONFIRMED',
+    createdAt: new Date('2026-10-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-10-02T00:00:00.000Z'),
+    // The route must explicitly project fields rather than forwarding a row.
+    reasonNote: 'private note',
+    providerRefundRef: 'provider-secret-ref',
+    initiatedByAdminId: 'admin-private',
+    stepUpSessionId: 'step-up-secret',
+  };
+  const sessions = new Map();
+  const financeToken = registerSession(sessions, ['FINANCE_ADMIN']);
+  const platformToken = registerSession(sessions, ['PLATFORM_ADMIN']);
+  const auditorToken = registerSession(sessions, ['AUDITOR_READ_ONLY']);
+  const { app, recoveryCalls } = await buildRefundApp(buildFakeAuthService(sessions), {
+    recoveryPage: { items: [item], total: 1, limit: 7, offset: 11 },
+  });
+
+  const unauthenticated = await app.inject({ method: 'GET', url: '/platform-admin/billing/refund-recoveries' });
+  assert.equal(unauthenticated.statusCode, 401);
+
+  for (const token of [platformToken, auditorToken]) {
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: '/platform-admin/billing/refund-recoveries',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(forbidden.statusCode, 403);
+  }
+  assert.equal(recoveryCalls.length, 0, 'unauthorized roles must not reach the recovery query');
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/platform-admin/billing/refund-recoveries?limit=7&offset=11',
+    headers: { authorization: `Bearer ${financeToken}` },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['cache-control'], 'no-store');
+  assert.deepEqual(response.json(), {
+    items: [{
+      refundOperationId: 'operation-1',
+      paymentTransactionId: 'txn-1',
+      amountMinor: '500',
+      currencyCode: 'USD',
+      reasonCode: 'GOODWILL',
+      idempotencyKey: 'idem-1',
+      state: 'PROVIDER_CONFIRMED',
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-02T00:00:00.000Z',
+    }],
+    total: 1,
+    limit: 7,
+    offset: 11,
+  });
+  assert.deepEqual(recoveryCalls, [{ roles: ['FINANCE_ADMIN'], page: { limit: 7, offset: 11 } }]);
+  await app.close();
 });

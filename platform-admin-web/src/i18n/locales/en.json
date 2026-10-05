@@ -683,6 +683,20 @@
     },
     "issueRefund": "Issue refund",
     "refundIssued": "Refund issued.",
+    "refundPendingFinalization": "The payment provider confirmed this refund, but local recording is unfinished. Retry here with the same amount and reason; the same request key will be reused. Do not start a new refund. A fresh verification code may be requested.",
+    "refundOutcomeUnknown": "The result of this refund attempt could not be confirmed. Keep the amount and reason unchanged and retry with the same request key. Unresolved attempts are also listed below after you return to this page.",
+    "retryRefundFinalization": "Retry recording refund",
+    "retryRefundOperation": "Retry refund safely",
+    "retryingRefund": "Checking refund status…",
+    "refundOperationId": "Refund operation",
+    "refundRecoveriesTitle": "Unresolved refund operations",
+    "refundRecoveriesDescription": "These refund attempts have a durable request record but are not finalized. Choose an operation to retry it with the same request key and a fresh verification code.",
+    "noRefundRecoveries": "There are no unresolved refund operations.",
+    "refundOperationOutcomeUnknown": "The provider result is not confirmed. Retrying reuses this exact operation key.",
+    "refundOperationStates": {
+      "CREATED": "Outcome not confirmed",
+      "PROVIDER_CONFIRMED": "Provider confirmed; local recording pending"
+    },
     "refundReasonRequired": "A reason code is required to issue a refund.",
     "noRefundPermission": "Your role cannot issue refunds."
   },

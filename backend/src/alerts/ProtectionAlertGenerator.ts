@@ -1,4 +1,5 @@
 import { PROTECTION_ALERT_POLICY, isPlausibleEncryptedPayload, isPlausibleNonce, isPlausibleOpaqueId } from './policy.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
 
 export class InvalidProtectionAlertInputError extends Error {}
@@ -33,7 +34,7 @@ export function generateProtectionAlert(input: GenerateProtectionAlertInput): Pr
   if (input.deviceId !== null && !isPlausibleOpaqueId(input.deviceId)) {
     throw new InvalidProtectionAlertInputError('invalid deviceId');
   }
-  if (!Number.isInteger(input.keyEpoch) || input.keyEpoch < 0) {
+  if (!isFamilyEpochNumber(input.keyEpoch)) {
     throw new InvalidProtectionAlertInputError('invalid keyEpoch');
   }
   if (!(input.generatedAtUtc instanceof Date) || Number.isNaN(input.generatedAtUtc.getTime())) {

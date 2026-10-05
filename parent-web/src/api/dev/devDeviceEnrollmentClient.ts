@@ -1,6 +1,7 @@
 import type {
   CreateInvitationInput,
   DeviceEnrollmentClient,
+  FirstDeviceBootstrapCeremonyDto,
   InvitationCreatedDto,
   InvitationDto,
   PairingRequestDto,
@@ -176,6 +177,20 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
     };
     pairingRequests.set(deviceId, { ...entry, request: resolved });
     return { ...resolved };
+  }
+
+  /** Demo mode has no cryptographic root ceremony; it must never fabricate one. */
+  async listFirstDeviceBootstrapCeremonies(_familyId: string): Promise<FirstDeviceBootstrapCeremonyDto[]> {
+    await delay();
+    return [];
+  }
+
+  async approveFirstDeviceBootstrap(
+    _familyId: string,
+    _ceremonyId: string,
+    _stepUpToken: string,
+  ): Promise<FirstDeviceBootstrapCeremonyDto> {
+    throw new DeviceEnrollmentError('UNKNOWN', 'First-device trust-root approval is unavailable in demo fixtures.');
   }
 
   /** Dev-only convenience so the UI/tests can watch fingerprints "arrive" for a pending pairing request. */

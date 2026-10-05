@@ -109,6 +109,7 @@ export interface FirstDeviceBootstrapServiceDeps {
 
 const MAX_ATTEMPT_CREDENTIAL_LENGTH = 512;
 const MAX_ATTESTATION_EVIDENCE_BYTES = 16_384;
+const MAX_APPROVAL_CEREMONIES = 25;
 
 export class FirstDeviceBootstrapService {
   private readonly store: FirstDeviceBootstrapStore;
@@ -138,6 +139,16 @@ export class FirstDeviceBootstrapService {
   async checkApprovalEligibility(familyId: string, accountId: string): Promise<boolean> {
     if (typeof familyId !== 'string' || typeof accountId !== 'string') return false;
     return this.store.readOwnerEligibility(familyId, accountId);
+  }
+
+  /** Owner-only discovery surface; never query another family's ceremony rows. */
+  async listForApproval(
+    familyId: string,
+    accountId: string,
+  ): Promise<FirstDeviceBootstrapCeremonyRecord[] | null> {
+    if (typeof familyId !== 'string' || typeof accountId !== 'string') return null;
+    if (!(await this.store.readOwnerEligibility(familyId, accountId))) return null;
+    return this.store.listApprovalCeremonies(familyId, this.now(), MAX_APPROVAL_CEREMONIES);
   }
 
   async approve(input: {

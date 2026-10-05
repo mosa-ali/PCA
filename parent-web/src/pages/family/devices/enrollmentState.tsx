@@ -39,6 +39,10 @@ export function errorMessageKey(err: unknown): string {
         return 'deviceEnrollment.errors.network';
       case 'SERVICE_SESSION_UNAVAILABLE':
         return 'deviceEnrollment.errors.sessionUnavailable';
+      case 'SERVICE_UNAVAILABLE':
+        return err.serverCode === 'PLATFORM_ENROLLMENT_UNAVAILABLE'
+          ? 'deviceEnrollment.errors.platformEnrollmentUnavailable'
+          : 'deviceEnrollment.errors.serviceUnavailable';
       case 'INVALID_REQUEST':
         return 'deviceEnrollment.errors.invalidRequest';
       default:
@@ -188,8 +192,8 @@ export function useInvitationCreation(familyId: string, onCreated?: () => void):
 
   const clearJustCreated = useCallback(() => setJustCreated(null), []);
 
-  const enrollmentLink = justCreated
-    ? `${config.deviceEnrollmentLinkBaseUrl.replace(/\/+$/, '')}/${encodeURIComponent(justCreated.rawInvitationToken)}`
+  const enrollmentLink = justCreated && config.deviceEnrollmentLinkBaseUrl
+    ? `${config.deviceEnrollmentLinkBaseUrl}/${encodeURIComponent(justCreated.rawInvitationToken)}`
     : null;
 
   return {
@@ -266,19 +270,21 @@ export function usePairing(familyId: string): PairingState {
 }
 
 /**
- * The Android download URL for the wizard's "Get the app" step.
+ * The Android installation-information destination for the wizard's
+ * "Get the app" step. Production cannot reach this step until the separate
+ * enrollment-ready release gate is enabled.
  *
- * `config.androidAppDownloadUrl` is `null` unless a real URL is configured for
- * this deployment -- deliberately, with no default and no fallback. When it is
- * null the step shows the honest not-configured treatment. A dead button and a
- * fabricated Play Store URL are both forbidden; there is no app-store or APK
- * URL anywhere in this repository. Android only: iOS enrollment is refused
+ * When `config.childAppDistributionUrl` is unset this renders the honest
+ * not-configured treatment. The selected public landing page may still report
+ * that no signed installer is available. A dead button and a fabricated store
+ * URL are forbidden; the destination must be an owner-approved deployment input.
+ * Android only: iOS enrollment is refused
  * server-side, so an iOS download would lead a parent to an app that cannot be
  * enrolled.
  */
-export function useAndroidAppDownloadUrl(): string | null {
+export function useChildAppDistributionUrl(): string | null {
   return useMemo(() => {
-    const value = config.androidAppDownloadUrl;
+    const value = config.childAppDistributionUrl;
     return typeof value === 'string' && value.trim() !== '' ? value : null;
   }, []);
 }

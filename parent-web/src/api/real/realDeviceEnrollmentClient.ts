@@ -33,6 +33,7 @@
 import type {
   CreateInvitationInput,
   DeviceEnrollmentClient,
+  FirstDeviceBootstrapCeremonyDto,
   InvitationCreatedDto,
   InvitationDto,
   PairingRequestDto,
@@ -82,6 +83,44 @@ function readBrowserCookie(name: string): string | null {
 
 function isMutationMethod(method: string): boolean {
   return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+}
+
+const FIRST_DEVICE_CEREMONY_KEYS = [
+  'approvedAt',
+  'ceremonyId',
+  'createdAt',
+  'deviceId',
+  'dskFingerprint',
+  'expiresAt',
+  'status',
+] as const;
+
+function isIsoTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
+/** Runtime allowlist: unexpected server fields (especially secret ceremony fields) are rejected, never propagated to UI state. */
+function parseFirstDeviceBootstrapCeremony(value: unknown): FirstDeviceBootstrapCeremonyDto | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join('|') !== [...FIRST_DEVICE_CEREMONY_KEYS].sort().join('|')) return null;
+  if (
+    typeof record.ceremonyId !== 'string' || record.ceremonyId.length === 0 ||
+    typeof record.deviceId !== 'string' || record.deviceId.length === 0 ||
+    typeof record.dskFingerprint !== 'string' || record.dskFingerprint.length === 0 ||
+    !['PENDING', 'APPROVED', 'COMMITTED'].includes(String(record.status)) ||
+    !isIsoTimestamp(record.createdAt) || !isIsoTimestamp(record.expiresAt) ||
+    (record.approvedAt !== null && !isIsoTimestamp(record.approvedAt))
+  ) return null;
+  return {
+    ceremonyId: record.ceremonyId,
+    deviceId: record.deviceId,
+    dskFingerprint: record.dskFingerprint,
+    status: record.status as FirstDeviceBootstrapCeremonyDto['status'],
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt,
+    approvedAt: record.approvedAt as string | null,
+  };
 }
 
 export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
@@ -163,6 +202,10 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
     }
     if (status === 429) {
       throw new DeviceEnrollmentError('RATE_LIMITED', `${operation}: too many requests -- please wait and retry.`, 429);
+    }
+    if (status === 503) {
+      const body = await parseJsonSafe<{ code?: string }>(response);
+      throw new DeviceEnrollmentError('SERVICE_UNAVAILABLE', `${operation}: service unavailable.`, 503, body?.code ?? null);
     }
     throw new DeviceEnrollmentError('UNKNOWN', `${operation}: unexpected status ${status}.`, status);
   }
@@ -250,5 +293,44 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
       );
     }
     return body;
+  }
+
+  async listFirstDeviceBootstrapCeremonies(familyId: string): Promise<FirstDeviceBootstrapCeremonyDto[]> {
+    const operation = 'listFirstDeviceBootstrapCeremonies';
+    const response = await this.request(
+      operation,
+      `/api/parent/families/${encodeURIComponent(familyId)}/first-device-bootstrap`,
+      { method: 'GET' },
+    );
+    if (!response.ok) return this.fail(operation, response);
+    const body = await parseJsonSafe<{ ceremonies?: unknown }>(response);
+    if (!body || !Array.isArray(body.ceremonies)) {
+      throw new DeviceEnrollmentError('UNKNOWN', `${operation}: response did not match the allowlisted ceremony contract.`);
+    }
+    const ceremonies = body.ceremonies.map(parseFirstDeviceBootstrapCeremony);
+    if (ceremonies.some((ceremony) => ceremony === null)) {
+      throw new DeviceEnrollmentError('UNKNOWN', `${operation}: response contained invalid or private ceremony fields.`);
+    }
+    return ceremonies as FirstDeviceBootstrapCeremonyDto[];
+  }
+
+  async approveFirstDeviceBootstrap(
+    familyId: string,
+    ceremonyId: string,
+    stepUpToken: string,
+  ): Promise<FirstDeviceBootstrapCeremonyDto> {
+    const operation = 'approveFirstDeviceBootstrap';
+    const response = await this.request(
+      operation,
+      `/api/parent/families/${encodeURIComponent(familyId)}/first-device-bootstrap/approve`,
+      { method: 'POST', body: JSON.stringify({ ceremonyId, stepUpToken }) },
+    );
+    if (!response.ok) return this.fail(operation, response);
+    const body = await parseJsonSafe<{ ceremony?: unknown }>(response);
+    const ceremony = body ? parseFirstDeviceBootstrapCeremony(body.ceremony) : null;
+    if (!ceremony || ceremony.status !== 'APPROVED') {
+      throw new DeviceEnrollmentError('UNKNOWN', `${operation}: response did not confirm an approved ceremony.`);
+    }
+    return ceremony;
   }
 }

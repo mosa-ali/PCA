@@ -9,9 +9,11 @@ import { useTranslation } from 'react-i18next';
 export function RecoverySecretLossDisclosure({
   acknowledged,
   onAcknowledgedChange,
+  showAcknowledgement = true,
 }: {
-  acknowledged: boolean;
-  onAcknowledgedChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  acknowledged?: boolean;
+  onAcknowledgedChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  showAcknowledgement?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -26,10 +28,12 @@ export function RecoverySecretLossDisclosure({
       <h2 id="recovery-secret-loss-title">{t('recovery.secretDisclosureTitle')}</h2>
       <p>{t('recovery.secretDisclosureBody')}</p>
       <p>{t('recovery.secretDisclosureWarning')}</p>
-      <label className="checkbox-row">
-        <input type="checkbox" checked={acknowledged} onChange={onAcknowledgedChange} />
-        {t('recovery.secretDisclosureAcknowledgement')}
-      </label>
+      {showAcknowledgement && onAcknowledgedChange && (
+        <label className="checkbox-row">
+          <input type="checkbox" checked={acknowledged ?? false} onChange={onAcknowledgedChange} />
+          {t('recovery.secretDisclosureAcknowledgement')}
+        </label>
+      )}
     </div>
   );
 }

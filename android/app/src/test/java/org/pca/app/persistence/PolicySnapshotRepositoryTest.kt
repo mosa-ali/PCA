@@ -10,6 +10,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.persistence.repository.PolicySnapshotRepository
 import org.pca.app.persistence.repository.SavePolicyResult
+import org.pca.app.persistence.entity.PolicySnapshotEntity
 import org.robolectric.RobolectricTestRunner
 
 /**
@@ -122,5 +123,84 @@ class PolicySnapshotRepositoryTest {
 
         repo.deleteSchedulePolicy("device-1")
         assertNull(repo.loadLatestAccepted("device-1"))
+    }
+
+    @Test
+    fun `INT32 maximum epochs persist and an overflow duplicate is rejected before deduplication`() = runTest {
+        accept(1L)
+
+        val invalidDuplicate = repo.save(
+            "policy-1", "device-1", 1L, 1000L, null, "must-not-replace", Int.MAX_VALUE.toLong() + 1L,
+            1L, "sk", 2000L, 2000L,
+        )
+        assertEquals(SavePolicyResult.InvalidEpochRejected, invalidDuplicate)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals("policy-payload-v1", repo.loadLatestAccepted("device-1")!!.payload)
+
+        val atMaximum = repo.save(
+            "policy-max", "device-1", 2L, 1000L, null, "maximum-epoch", Int.MAX_VALUE.toLong(),
+            Int.MAX_VALUE.toLong(), "sk", 3000L, 3000L,
+        )
+        assertTrue(atMaximum is SavePolicyResult.Accepted)
+        assertEquals(Int.MAX_VALUE.toLong(), repo.loadLatestAccepted("device-1")!!.trustSetEpoch)
+        assertEquals(Int.MAX_VALUE.toLong(), repo.loadLatestAccepted("device-1")!!.keyEpoch)
+    }
+
+    @Test
+    fun `invalid rejected-attempt epochs do not create history rows`() = runTest {
+        accept(1L)
+        val historyBefore = db.policySnapshotDao().getHistory("device-1").size
+
+        var rejected = false
+        try {
+            repo.recordRejectedOrStaleAttempt(
+                "policy-invalid", "device-1", 2L, 1000L, null, "payload", 1L,
+                Int.MAX_VALUE.toLong() + 1L, "sk", 2000L, "STALE_EPOCH_REJECTED",
+            )
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+
+        assertTrue(rejected)
+        assertEquals(historyBefore, db.policySnapshotDao().getHistory("device-1").size)
+    }
+
+    @Test
+    fun `out-of-range persisted head fails closed before a later policy write`() = runTest {
+        db.policySnapshotDao().insert(
+            PolicySnapshotEntity(
+                policyId = "corrupt-head",
+                childDeviceId = "device-1",
+                version = 1L,
+                effectiveFromEpochMillis = 1000L,
+                expiresAtEpochMillis = null,
+                encryptedPayloadEnc = "unused",
+                encryptedPayloadIv = "unused",
+                trustSetEpoch = Int.MAX_VALUE.toLong() + 1L,
+                keyEpoch = 1L,
+                signedByKeyId = "sk",
+                receivedAtEpochMillis = 1000L,
+                appliedAtEpochMillis = 1000L,
+                applicationResult = "APPLIED",
+                isLatestValid = true,
+            ),
+        )
+
+        var writeRejected = false
+        try {
+            accept(2L)
+        } catch (_: IllegalStateException) {
+            writeRejected = true
+        }
+        assertTrue(writeRejected)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals("corrupt-head", db.policySnapshotDao().getLatestValid("device-1")!!.policyId)
+        var readRejected = false
+        try {
+            repo.loadLatestAccepted("device-1")
+        } catch (_: IllegalStateException) {
+            readRejected = true
+        }
+        assertTrue(readRejected)
     }
 }

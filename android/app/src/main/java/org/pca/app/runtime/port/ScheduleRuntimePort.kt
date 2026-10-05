@@ -19,8 +19,9 @@ enum class ScheduleEnforcementOutcome {
 enum class ScheduleRuntimeStatus {
     /** A schedule is loaded and currently evaluable; its verdict can be trusted. */
     AVAILABLE,
-    /** A schedule exists but is not currently applicable/enforcing (e.g. outside any configured
-     * window) -- distinct from [NOT_READY] (no schedule at all) and [EPOCH_STALE] (stale data). */
+    /** Schedule enforcement cannot currently be trusted (e.g. outside a configured window, or a
+     * persisted policy snapshot is corrupt) -- distinct from [NOT_READY] (no policy ever accepted)
+     * and [EPOCH_STALE] (stale data). */
     UNAVAILABLE,
     /** No schedule has been loaded yet (first run, not yet synced, or still initializing) --
      * distinct from a schedule that was loaded and evaluated to "not applicable right now". */

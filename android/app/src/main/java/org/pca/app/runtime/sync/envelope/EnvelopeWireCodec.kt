@@ -5,6 +5,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import org.json.JSONException
 import org.json.JSONObject
+import org.pca.app.runtime.EpochBounds
 
 /**
  * Runtime adapter around the SAME wire shape
@@ -79,6 +80,8 @@ private fun base64Decode(base64: String): ByteArray {
 }
 
 fun envelopeToRelayCiphertext(envelope: FamilyEnvelope): ByteArray {
+    EpochBounds.requireValid(envelope.trustSetEpoch, "trustSetEpoch")
+    EpochBounds.requireValid(envelope.keyEpoch, "keyEpoch")
     val json = JSONObject()
     json.put("protocolMajor", envelope.protocolMajor)
     json.put("protocolMinor", envelope.protocolMinor)
@@ -128,6 +131,8 @@ fun envelopeFromRelayCiphertext(ciphertext: ByteArray): FamilyEnvelope? {
         val payload = base64Decode(json.getString("payload"))
         if (payload.isEmpty()) return null
 
+        val trustSetEpoch = EpochBounds.decodeJson(json, "trustSetEpoch").toLong()
+        val keyEpoch = EpochBounds.decodeJson(json, "keyEpoch").toLong()
         FamilyEnvelope(
             protocolMajor = json.getInt("protocolMajor"),
             protocolMinor = json.getInt("protocolMinor"),
@@ -137,8 +142,8 @@ fun envelopeFromRelayCiphertext(ciphertext: ByteArray): FamilyEnvelope? {
             recipient = recipient,
             senderKeyId = json.getString("senderKeyId"),
             messageType = json.getString("messageType"),
-            trustSetEpoch = json.getLong("trustSetEpoch"),
-            keyEpoch = json.getLong("keyEpoch"),
+            trustSetEpoch = trustSetEpoch,
+            keyEpoch = keyEpoch,
             sequenceOrNonce = json.getString("sequenceOrNonce"),
             issuedAtEpochMillis = issuedAt,
             expiresAtEpochMillis = expiresAt,

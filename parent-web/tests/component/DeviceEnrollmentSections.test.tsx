@@ -7,6 +7,9 @@ import userEvent from '@testing-library/user-event';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import Devices from '../../src/pages/family/Devices';
+import ProtectionAdministrationPanel, {
+  type ProtectionAdministrationActions,
+} from '../../src/pages/family/ProtectionAdministrationPanel';
 import { getApiClients } from '../../src/api/client';
 import { EndpointNotTrustedError } from '../../src/api/familyDataAccessErrors';
 import { ChildProfileError } from '../../src/api/childProfileClient';
@@ -394,5 +397,73 @@ describe('VIEW_DEVICE_ENROLLMENT gate scope (regression: re-sectioning must not 
     renderWithProviders(<Devices />, { role: 'CHILD', route: '/family/devices?section=pending' });
     await screen.findAllByRole('heading', { name: 'Devices' });
     expect(screen.queryByRole('heading', { name: 'Invitations' })).toBeNull();
+  });
+});
+
+describe('real-mode protection decision availability', () => {
+  const pendingApproval = {
+    requestId: 'approval-1',
+    childId: 'child-1',
+    childLabel: 'Child',
+    deviceId: 'device-1',
+    deviceLabel: 'Device',
+    requestedAtUtc: '2026-10-05T12:00:00.000Z',
+    expiresAtUtc: '2026-10-05T12:05:00.000Z',
+    protectionLevel: 'STANDARD' as const,
+    operation: 'REMOVE_REVOKE_DEVICE' as const,
+    reasonCategory: null,
+    state: 'PARENT_APPROVAL_REQUIRED' as const,
+  };
+
+  function actions(unavailableDecisionMethods?: readonly ('REMOTE_PARENT' | 'LOCAL_ADMINISTRATION_PIN' | 'AUTHORIZED_RECOVERY')[]) {
+    return {
+      getPinStatus: vi.fn().mockResolvedValue({
+        configured: true,
+        minimumRecommendedLength: 6,
+        offlineFallbackExplanation: 'Local PIN fallback.',
+        lockedUntilUtc: null,
+      }),
+      configurePin: vi.fn(),
+      listPendingApprovals: vi.fn().mockResolvedValue([pendingApproval]),
+      requestApproval: vi.fn(),
+      decideApproval: vi.fn(),
+      ...(unavailableDecisionMethods ? { unavailableDecisionMethods } : {}),
+    } satisfies ProtectionAdministrationActions;
+  }
+
+  it('disables only real-mode remote/recovery decisions, keeps local PIN available, and explains the limitation', async () => {
+    renderWithProviders(
+      <ProtectionAdministrationPanel
+        section="protection"
+        targets={[]}
+        actions={actions(['REMOTE_PARENT', 'AUTHORIZED_RECOVERY'])}
+      />,
+      { role: 'OWNER' },
+    );
+
+    expect(await screen.findByRole('button', { name: 'Apply with PIN' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Use approved parent device' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Use authorized recovery' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Remote parent-device and authorized-recovery decisions are not available in this version.',
+    );
+  });
+
+  it('leaves fixture-provided decision methods available when no real-mode restriction is supplied', async () => {
+    renderWithProviders(
+      <ProtectionAdministrationPanel section="protection" targets={[]} actions={actions()} />,
+      { role: 'OWNER' },
+    );
+
+    expect(await screen.findByRole('button', { name: 'Apply with PIN' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Use approved parent device' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Use authorized recovery' })).toBeEnabled();
+    expect(screen.queryByText(/Remote parent-device and authorized-recovery decisions are not available/)).toBeNull();
+  });
+
+  it('marks only remote-parent and authorized-recovery methods unavailable on the real Devices binding', () => {
+    const source = readFileSync(resolve(SRC, 'pages/family/devices/DevicesTabs.tsx'), 'utf8');
+    expect(source).toContain("unavailableDecisionMethods: ['REMOTE_PARENT', 'AUTHORIZED_RECOVERY'] as const");
+    expect(source).toContain('clients.isFixtureBacked\n        ? undefined');
   });
 });

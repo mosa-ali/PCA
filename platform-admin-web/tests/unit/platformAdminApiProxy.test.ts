@@ -22,6 +22,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRealBackendProxy } from '../../vite/realBackendProxy';
 
 // vitest runs with cwd = platform-admin-web (package.json's `test` script and
 // the CI job's `working-directory` both guarantee it), so deploy artifacts are
@@ -44,6 +45,8 @@ const NAV_CONFIG = readProjectFile('src/nav/navConfig.ts');
 const API_HOST = 'api.pcasafe.com';
 /** A real API path this console calls -- src/api/platformAdminAuthClient.ts. */
 const PROBE_API_PATH = '/platform-admin/auth/whoami';
+/** Legacy, exact-match billing mutation outside the /platform-admin/ prefix. */
+const REFUND_API_PATH = '/billing/admin/refund';
 
 interface LocationBlock {
   readonly spec: string;
@@ -229,6 +232,18 @@ describe('platform-admin-web nginx: /platform-admin/ is proxied to the API', () 
     expect(selected?.spec).toBe('/platform-admin/');
     expect(selected?.body).toContain(`proxy_pass https://${API_HOST}`);
     expect(selected?.body).not.toContain('try_files');
+  });
+
+  it('proxies only the exact legacy refund endpoint to the API with SNI and an explicit Host', () => {
+    const blocks = parseLocationBlocks(stripComments(NGINX_CONF));
+    const selected = selectLocation(blocks, REFUND_API_PATH);
+    expect(selected?.spec).toBe(`= ${REFUND_API_PATH}`);
+    expect(selected?.body).toContain(`proxy_pass https://${API_HOST}`);
+    expect(selected?.body).toContain('proxy_ssl_server_name on;');
+    expect(selected?.body).toContain(`proxy_set_header Host ${API_HOST};`);
+    expect(selected?.body).toContain('limit_except POST { deny all; }');
+    expect(selected?.body).not.toContain('try_files');
+    expect(selectLocation(blocks, '/billing/admin/other-action')?.spec).toBe('/');
   });
 
   it('the SPA still resolves its own client routes and the health endpoint is untouched', () => {
@@ -421,5 +436,25 @@ server {
       expect(result.ok).toBe(false);
       expect(result.problems.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('platform-admin-web opt-in real-backend Vite proxy', () => {
+  it('remains disabled unless a real backend target is explicitly supplied', () => {
+    expect(createRealBackendProxy()).toBeUndefined();
+    expect(createRealBackendProxy('')).toBeUndefined();
+  });
+
+  it('uses the same explicit target for Platform Admin APIs and exact refund POST path', () => {
+    const target = 'http://127.0.0.1:4001';
+    const proxy = createRealBackendProxy(target);
+    expect(proxy).toEqual({
+      '/platform-admin': { target, changeOrigin: true },
+      '^/billing/admin/refund$': { target, changeOrigin: true },
+    });
+
+    const refundMatcher = new RegExp(Object.keys(proxy ?? {}).find((key) => key.startsWith('^/billing/admin/refund')) ?? 'a^');
+    expect(refundMatcher.test('/billing/admin/refund')).toBe(true);
+    expect(refundMatcher.test('/billing/admin/refund/extra')).toBe(false);
   });
 });

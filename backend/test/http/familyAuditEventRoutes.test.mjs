@@ -68,6 +68,7 @@ test('an active Parent session receives family-scoped opaque envelopes -- never 
       headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     recordParentRouteScenario({ method: 'GET', route: '/api/parent/families/:familyId/audit-events', scenarioId: 'audit_events_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
     assert.equal(body.envelopes.length, 2);
@@ -94,7 +95,7 @@ test('Parent session reads do not require an actor-device-session bearer token',
   }
 });
 
-test('a device from a different family cannot read this family’s queue', async () => {
+test('a Parent session from another family cannot read this family’s queue', async () => {
   const { app } = buildApp();
   try {
     const response = await app.inject({
