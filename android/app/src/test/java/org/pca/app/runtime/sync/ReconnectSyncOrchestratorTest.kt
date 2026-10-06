@@ -48,6 +48,39 @@ private fun inbound(id: String): InboundAppliedEnvelope {
 }
 
 class ReconnectSyncOrchestratorTest {
+    @Test fun `server continuation keeps empty inbound page pending without paging or acknowledgement`() = runTest {
+        val relay = FakeRelayHttpClient().apply { inboundHasMore = true }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay)
+
+        orchestrator.syncNow()
+
+        assertEquals(SyncConnectionState.SYNC_PENDING, orchestrator.connectionState.value)
+        assertEquals(1, relay.inboundListCalls)
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+
+        relay.inboundHasMore = false
+        orchestrator.syncNow()
+
+        assertEquals(SyncConnectionState.LIVE, orchestrator.connectionState.value)
+        assertEquals(2, relay.inboundListCalls)
+    }
+
+    @Test fun `failed pull after observed continuation keeps relay work pending`() = runTest {
+        val relay = FakeRelayHttpClient().apply { inboundHasMore = true }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay)
+
+        orchestrator.syncNow()
+        assertEquals(SyncConnectionState.SYNC_PENDING, orchestrator.connectionState.value)
+
+        relay.inboundHasMore = false
+        relay.failNextList = true
+        orchestrator.syncNow()
+
+        assertEquals(SyncConnectionState.SYNC_PENDING, orchestrator.connectionState.value)
+        assertEquals(2, relay.inboundListCalls)
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+    }
+
     @Test fun `key loss after pull retains ciphertext without acknowledgement`() = runTest {
         val relay = FakeRelayHttpClient()
         relay.enqueueInbound(inbound("message-1"))

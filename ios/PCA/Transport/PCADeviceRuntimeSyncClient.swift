@@ -61,6 +61,36 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
     public let applied: [PCAInboundEnvelope]
     public let unparseableMessageIds: [String]
     public let droppedForListBound: [String]
+    /// Bounded-page continuation hint; it affects pending visibility only.
+    public let hasMore: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case scope, applied, unparseableMessageIds, droppedForListBound, hasMore
+    }
+
+    public init(scope: PCAInboundScope, applied: [PCAInboundEnvelope], unparseableMessageIds: [String],
+                droppedForListBound: [String], hasMore: Bool? = nil) {
+        self.scope = scope
+        self.applied = applied
+        self.unparseableMessageIds = unparseableMessageIds
+        self.droppedForListBound = droppedForListBound
+        self.hasMore = hasMore ?? !droppedForListBound.isEmpty
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try container.decode(PCAInboundScope.self, forKey: .scope)
+        applied = try container.decode([PCAInboundEnvelope].self, forKey: .applied)
+        unparseableMessageIds = try container.decode([String].self, forKey: .unparseableMessageIds)
+        droppedForListBound = try container.decode([String].self, forKey: .droppedForListBound)
+        if container.contains(.hasMore) {
+            // `contains` distinguishes an absent legacy field from explicit
+            // null; present values must be actual JSON booleans.
+            hasMore = try container.decode(Bool.self, forKey: .hasMore)
+        } else {
+            hasMore = !droppedForListBound.isEmpty
+        }
+    }
 }
 
 public enum PCAReportedProtectionLevel: String, Encodable {

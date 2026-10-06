@@ -133,6 +133,15 @@ class HttpUrlConnectionRelayHttpClient(
         val droppedArray = response.getJSONArray("droppedForListBound")
         for (i in 0 until droppedArray.length()) dropped.add(droppedArray.getString(i))
 
+        // Older servers may omit the explicit continuation bit. Preserve their
+        // deferred-work signal from the bounded diagnostic IDs. When present,
+        // require a JSON boolean instead of JSONObject's coercing getBoolean.
+        val hasMore = when {
+            !response.has("hasMore") -> dropped.isNotEmpty()
+            response.get("hasMore") is Boolean -> response.getBoolean("hasMore")
+            else -> throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound continuation flag")
+        }
+
         val scopeJson = response.getJSONObject("scope")
         if (scopeJson.get("familyId") !is String || scopeJson.get("recipientDeviceId") !is String) {
             throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound scope")
@@ -140,7 +149,7 @@ class HttpUrlConnectionRelayHttpClient(
         val scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope(
             scopeJson.getString("familyId"), scopeJson.getString("recipientDeviceId"),
         )
-        return InboundListResult(applied, unparseable, dropped, scope)
+        return InboundListResult(applied, unparseable, dropped, scope, hasMore)
     }
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {

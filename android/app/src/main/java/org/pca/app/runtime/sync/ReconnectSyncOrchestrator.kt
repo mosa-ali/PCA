@@ -185,7 +185,11 @@ class ReconnectSyncOrchestrator(
         val inbox = ciphertextInbox ?: return false
         val scope = result.scope ?: return false
         if (scope.recipientDeviceId != sessionManager.configuredDeviceId) return false
-        pendingRelayWorkCount = result.unparseableMessageIds.size + result.droppedForListBound.size
+        // `hasMore` is a continuation hint, not an exact queue count. It only
+        // keeps connection state pending; the normal bounded retry trigger
+        // fetches the next page. Capture/ACK and policy paths remain unchanged.
+        pendingRelayWorkCount = result.unparseableMessageIds.size + result.droppedForListBound.size +
+            (if (result.hasMore) 1 else 0)
         return try {
             // Capture the complete bounded response before ANY acknowledgement.
             // This is transport custody, never verification or OS application.

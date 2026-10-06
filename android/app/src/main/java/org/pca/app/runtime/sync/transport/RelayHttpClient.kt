@@ -31,6 +31,8 @@ data class InboundListResult(
     val droppedForListBound: List<String>,
     /** Only the authenticated server response supplies this scope. */
     val scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope? = null,
+    /** Advisory bounded-page continuation; affects pending visibility only, never authority or ACK. */
+    val hasMore: Boolean = false,
 )
 
 /**

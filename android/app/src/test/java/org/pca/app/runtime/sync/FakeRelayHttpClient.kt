@@ -23,6 +23,8 @@ class FakeRelayHttpClient(
     var failNextSubmit = false
     var failNextList = false
     var failNextAck = false
+    var inboundHasMore = false
+    var inboundListCalls = 0
 
     fun enqueueInbound(envelope: InboundAppliedEnvelope) {
         recipientQueue.add(envelope)
@@ -49,13 +51,14 @@ class FakeRelayHttpClient(
     }
 
     override suspend fun listInbound(sessionToken: String): InboundListResult {
+        inboundListCalls++
         if (failNextList) {
             failNextList = false
             throw RelayHttpException(RelayHttpErrorCode.Network, "simulated network failure")
         }
         val snapshot = recipientQueue.toList()
         return InboundListResult(applied = snapshot, unparseableMessageIds = emptyList(), droppedForListBound = emptyList(),
-            scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope("family-1", "device-1"))
+            scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope("family-1", "device-1"), hasMore = inboundHasMore)
     }
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {

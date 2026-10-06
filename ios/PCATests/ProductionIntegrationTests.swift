@@ -615,6 +615,32 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
     }
 
+    @MainActor func testRuntimeHostKeepsEmptyContinuationPagePendingWithoutAckOrExtraPull() async throws {
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        let response = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[],"hasMore":true}"#.utf8)
+        var pulls = 0
+        var acks = 0
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.httpMethod == "GET" {
+                pulls += 1
+                return PCAHTTPResponse(statusCode: 200, data: response)
+            }
+            if request.url?.path.hasSuffix("/ack") == true { acks += 1 }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "has-more-host"))
+
+        await model.synchronizeRuntime()
+
+        XCTAssertEqual(model.syncConnectionState, .syncPending)
+        XCTAssertEqual(pulls, 1)
+        XCTAssertEqual(acks, 0)
+        XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
+
     @MainActor func testRuntimeHostSessionReplacementDuringPullNeverAcksOrDeletesNewSession() async throws {
         for responseStatus in [200, 401] {
             let attempts = InMemoryPCADeviceStateStore()
@@ -892,18 +918,40 @@ final class ProductionIntegrationTests: XCTestCase {
         try await client.reportProtectionStatus(.active, session: session)
     }
 
-    func testRuntimePullDecodesBackendOverflowIdentifierArrays() async throws {
-        for overflow in ["[]", "[\"overflow-message\"]"] {
+    func testRuntimePullDecodesContinuationAndUsesDeferredIdsForLegacyResponses() async throws {
+        let cases: [(dropped: String, continuation: String?, expected: Bool)] = [
+            ("[]", nil, false),
+            ("[\"deferred-message\"]", nil, true),
+            ("[]", "true", true),
+            ("[]", "false", false),
+        ]
+        for value in cases {
+            let continuationField = value.continuation.map { ",\"hasMore\":\($0)" } ?? ""
             let transport = InMemoryPCAHTTPTransport { request in
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
-                return PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(overflow)}".utf8))
+                return PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(value.dropped)\(continuationField)}".utf8))
             }
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
             let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
             let result = try await client.pull(session: session)
-            XCTAssertEqual(result.droppedForListBound, overflow == "[]" ? [] : ["overflow-message"])
+            XCTAssertEqual(result.droppedForListBound, value.dropped == "[]" ? [] : ["deferred-message"])
+            XCTAssertEqual(result.hasMore, value.expected)
+        }
+
+        for malformed in ["null", "\"true\"", "1"] {
+            let transport = InMemoryPCAHTTPTransport { _ in
+                PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":[],\"hasMore\":\(malformed)}".utf8))
+            }
+            let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+            do {
+                _ = try await client.pull(session: session)
+                XCTFail("Expected malformed hasMore value \(malformed) to be rejected")
+            } catch {
+                XCTAssertEqual(error as? PCAAPIError, .malformedResponse)
+            }
         }
         XCTAssertThrowsError(try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self,
             from: Data(#"{"applied":[],"unparseableMessageIds":[],"droppedForListBound":false}"#.utf8)))

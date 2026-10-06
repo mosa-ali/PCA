@@ -4,6 +4,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.pca.app.runtime.sync.transport.HttpUrlConnectionRelayHttpClient
+import org.pca.app.runtime.sync.transport.InboundListResult
+import org.pca.app.runtime.sync.transport.RelayHttpErrorCode
+import org.pca.app.runtime.sync.transport.RelayHttpException
 
 /**
  * The relay transport carries device session tokens and family-sync envelopes, so its base URL
@@ -14,6 +17,26 @@ import org.pca.app.runtime.sync.transport.HttpUrlConnectionRelayHttpClient
  * at composition time instead of on the wire.
  */
 class HttpUrlConnectionRelayHttpClientTest {
+    @Test
+    fun `inbound continuation parses as boolean and legacy deferred ids remain pending`() = kotlinx.coroutines.test.runTest {
+        val base = """{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]"""
+
+        org.junit.Assert.assertTrue(readInboundResponse("$base,\"hasMore\":true}").hasMore)
+        org.junit.Assert.assertFalse(readInboundResponse("$base,\"hasMore\":false}").hasMore)
+        org.junit.Assert.assertFalse(readInboundResponse("$base}").hasMore)
+        val legacyDeferred = base.replace("\"droppedForListBound\":[]", "\"droppedForListBound\":[\"deferred-1\"]")
+        org.junit.Assert.assertTrue(readInboundResponse("$legacyDeferred}").hasMore)
+
+        for (value in listOf("null", "\"true\"", "1")) {
+            try {
+                readInboundResponse("$base,\"hasMore\":$value}")
+                fail("Expected malformed continuation value '$value' to be rejected")
+            } catch (e: RelayHttpException) {
+                org.junit.Assert.assertTrue(e.errorCode is RelayHttpErrorCode.InvalidRequest)
+            }
+        }
+    }
+
     @Test
     fun `ack encodes protocol legal opaque id as one HTTP path component`() = kotlinx.coroutines.test.runTest {
         val server = java.net.ServerSocket(0, 3, java.net.InetAddress.getByName("127.0.0.1"))
@@ -39,6 +62,32 @@ class HttpUrlConnectionRelayHttpClientTest {
                 org.junit.Assert.assertEquals("/v1/runtime-sync/inbound/$encoded/ack", paths.last())
             }
         } finally { server.close(); thread.join(1000) }
+    }
+
+    private suspend fun readInboundResponse(body: String): InboundListResult {
+        val server = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
+        val thread = Thread {
+            server.accept().use { socket ->
+                socket.soTimeout = 5000
+                val reader = socket.getInputStream().bufferedReader()
+                reader.readLine()
+                while (!reader.readLine().isNullOrEmpty()) { }
+                val payload = body.toByteArray(Charsets.UTF_8)
+                val output = socket.getOutputStream()
+                output.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                output.write(payload)
+                output.flush()
+            }
+        }
+        thread.isDaemon = true
+        thread.start()
+        return try {
+            HttpUrlConnectionRelayHttpClient("http://127.0.0.1:${server.localPort}", allowInsecureHttp = true)
+                .listInbound("session-token")
+        } finally {
+            server.close()
+            thread.join(1000)
+        }
     }
     @Test
     fun `response streaming stops at byte bound before JSON parsing`() {

@@ -685,7 +685,8 @@ public final class PCAApplicationModel: ObservableObject {
             syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
                 isTransportConnected: true,
                 isSyncing: false,
-                hasPendingLocalWork: !pendingCrypto.isEmpty || !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
+                hasPendingLocalWork: !pendingCrypto.isEmpty || response.hasMore ||
+                    !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
                 lastSuccessfulSyncAtUtc: now(),
                 nowUtc: now(),
                 staleThresholdSeconds: 24 * 60 * 60
