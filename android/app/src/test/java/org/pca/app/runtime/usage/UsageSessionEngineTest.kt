@@ -8,6 +8,29 @@ import org.pca.app.platform.UsageEventType
 
 class UsageSessionEngineTest {
 
+    @Test
+    fun `duration uses elapsed endpoints despite forward or backward wall clock changes`() {
+        for (wallEnd in listOf(50L, 3_600_000L, Long.MAX_VALUE)) {
+            val result = UsageSessionEngine.apply(UsageSessionEngineState.INITIAL, listOf(
+                event("app-a", UsageEventType.FOREGROUND, 100L, 10_000L),
+                event("app-a", UsageEventType.BACKGROUND, 1_100L, wallEnd),
+            ))
+            val session = result.completedSessions.single()
+            assertEquals(1_000L, session.durationMillis)
+            assertEquals(10_000L, session.startedAtEpochMillis)
+            assertEquals(wallEnd, session.endedAtEpochMillis)
+        }
+    }
+
+    @Test
+    fun `invalid elapsed endpoints cannot create usage duration`() {
+        for ((start, end) in listOf(-1L to 1_000L, 1_000L to -1L, 1_000L to 999L)) {
+            val session = CompletedUsageSession("app-a", start, end, 0L, 3_600_000L)
+            assertEquals(0L, session.durationMillis)
+        }
+        assertEquals(Long.MAX_VALUE, CompletedUsageSession("app-a", 0L, Long.MAX_VALUE, 0L, 0L).durationMillis)
+    }
+
     private fun event(token: String, type: UsageEventType, elapsedMillis: Long, epochMillis: Long = elapsedMillis) =
         TimestampedUsageEvent(token, type, elapsedMillis, epochMillis)
 

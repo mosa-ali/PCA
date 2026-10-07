@@ -1,5 +1,14 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current duration / source-guard correction draft - 2026-10-07
+
+BASE = 91a63dae5cec44fbd8cbcf63f62a0e44291be32e. No new corrective commit or push is claimed.
+CI_RESULT = Exact-head Quality Gates 37591973612 completed FAILURE: 26 jobs SUCCESS, backend build/unit job FAILURE. The sole failed test was an obsolete source assertion requiring normalized Swift same-attempt equality. Apple build/XCTest PASS: 334 tests / 6 skips / 0 failures; inspected logs prove all five new Unicode custody/root continuity regressions executed and passed. Browser, Android, disposable-DB and other jobs passed; overall checkpoint acceptance remains closed until corrected exact-head CI is wholly green.
+CORRECTION = Backend source guard now requires UTF-8 elementsEqual and rejects normalized equality, with a real mutation negative control. Android CompletedUsageSession duration now uses ordered nonnegative elapsed endpoints, preserving wall timestamps for provenance; regressions cover independent wall changes and invalid elapsed endpoints. This does not certify StandardUsageObservationSource wall-to-elapsed projection across clock changes, calendar attribution, or completed usage integration.
+LOCAL_VALIDATION = Focused source guards 6/6 PASS and Android usage engine/recorder 21/21 PASS. Full current backend campaign terminal exit 0: 2973/2973 PASS, zero failures/skips. Full Android campaign terminal exit 0: 1533 tests / zero failures/errors / one existing skip; lintDebug, compileReleaseKotlin and compileDebugAndroidTestKotlin PASS. Disposable/local/live DB schema is unchanged.
+NEXT_ACTION = Freeze the validated correction and obtain five required specialist final approvals plus independent QA before publication. Continue single-application iOS threshold lower-bound attribution with exact generation/day/timezone/selection bindings, then remaining receiving-device trust and policy ingress. Aggregate/logical-token mapping and physical/production evidence are separate unresolved dependencies.
+
+
 ## Published relay / candidate Trust Set checkpoint - 2026-10-07
 
 SOURCE_CHECKPOINT = 31935664865f83bdebbf651d1f193afbfb02ea62; 57 reviewed files published to origin/pca-dev by ordinary fast-forward. Fresh fetch and direct server lookup proved LOCAL_HEAD = REMOTE_HEAD; all 57 committed path blobs match origin/pca-dev. No tracked source diff or unpushed commit remained after push. Owner-excluded untracked files remain preserved.

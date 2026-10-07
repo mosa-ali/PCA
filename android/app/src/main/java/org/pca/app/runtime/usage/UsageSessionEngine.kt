@@ -23,7 +23,12 @@ data class CompletedUsageSession(
     val startedAtEpochMillis: Long,
     val endedAtEpochMillis: Long,
 ) {
-    val durationMillis: Long get() = (endedAtEpochMillis - startedAtEpochMillis).coerceAtLeast(0L)
+    // Wall timestamps retain calendar provenance; elapsed endpoints determine duration.
+    // Negative or reversed endpoints confer no positive duration and cannot overflow.
+    val durationMillis: Long get() =
+        if (startedAtElapsedMillis >= 0L && endedAtElapsedMillis >= startedAtElapsedMillis)
+            endedAtElapsedMillis - startedAtElapsedMillis
+        else 0L
 }
 
 /**

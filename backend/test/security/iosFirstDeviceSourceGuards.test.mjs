@@ -122,7 +122,16 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   assert.ok(captureStart >= 0 && captureEnd > captureStart);
   const captureBody = keychainStore.slice(captureStart, captureEnd);
   assert.match(captureBody, /guard let existing else \{\s*return saveAndConfirmUnlocked\(candidate\)/);
-  assert.match(captureBody, /existing\.seed\.attemptId == candidate\.seed\.attemptId/);
+  const exactAttemptComparison = /existing\.seed\.attemptId\.utf8\.elementsEqual\(candidate\.seed\.attemptId\.utf8\)/;
+  assert.match(captureBody, exactAttemptComparison, 'same-attempt recovery must preserve exact UTF-8 identity');
+  assert.doesNotMatch(captureBody, /existing\.seed\.attemptId\s*==\s*candidate\.seed\.attemptId/,
+    'Swift normalized equality must not authorize same-attempt recovery');
+  const normalizedMutation = captureBody.replace(
+    'existing.seed.attemptId.utf8.elementsEqual(candidate.seed.attemptId.utf8)',
+    'existing.seed.attemptId == candidate.seed.attemptId');
+  assert.notEqual(normalizedMutation, captureBody, 'negative control must actually mutate the comparison');
+  assert.throws(() => assert.match(normalizedMutation, exactAttemptComparison),
+    'negative control must reject the former normalized equality');
   assert.match(captureBody, /replacingTerminalStates\.contains\(existing\.state\)/);
   const saveAndConfirm = keychainStore.slice(keychainStore.indexOf('private func saveAndConfirmUnlocked'));
   assert.match(saveAndConfirm, /guard saveUnlocked\(record\) else \{ return false \}[\s\S]{0,80}flush\(\)[\s\S]{0,80}isCurrentUnlocked\(record\)/);
