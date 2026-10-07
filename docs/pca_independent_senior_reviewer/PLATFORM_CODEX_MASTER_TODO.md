@@ -1,8 +1,8 @@
 # PCA Platform Web — Codex Master TODO
 
-## Latest Parent dependency re-entry — 2026-10-07 20:28 UTC
+## Latest validated Parent mobile dependency checkpoint — 2026-10-07 20:54 UTC
 
-PARENT_SOURCE = Local Parent source checkpoint `d7fa375255255543457b56cb172e630b19eb03e8` is 4 commits / 31 tracked paths ahead of cached `origin/pca-dev` at `d150a41b7923a8e58072affd4b3c3fa3f91127df`; cached remote is an ancestor, but direct remote lookup failed through the configured proxy. Backend focused suites passed 46/46, backend build passed, Swift frontend parsing and `git diff --check` passed. Exact-head CI and Git publication are not available for the local checkpoint.
+PARENT_SOURCE = Reviewed source checkpoint b79f429e514960bc44581121914326e1c4e1628c preserves enrollment attempts and key custody. Full Android validation passed 1625 tests with zero failures/errors and one existing skip; backend passed 2982/2982; all seven outgoing Swift files passed parsing. Five mobile specialists, independent QA and backend review approved scoped source with zero blockers or majors. Apple XCTest, physical devices and production composition remain separate gates.
 PLATFORM_SOURCE = No Platform source, Parent identity projection, Enrollment UI, Platform database, deployment or owner-acceptance change occurred in this checkpoint. PLATFORM-03…05 and PLATFORM-08…09 remain held behind Parent authority/projection and literal `LOCALHOST ACCEPTED=YES`; Platform remains `HOLD_PARENT_DEPENDENCY`.
 PARENT_TODO20 = Fresh disposable MySQL 8.4.11 replay through migration 0063 verified local schema creation and actual least-privilege runtime grants; retained UAT remains stopped/unavailable and live `pca_pro` remains unverified beyond 0059. No Platform or live database was changed. See the Parent ledger for grant and test evidence.
 GATES = Exact-head CI, live database parity, physical-device evidence, owner localhost acceptance, Azure deployment and production acceptance remain distinct. `READY_FOR_AZURE_DEPLOYMENT = NO`.
@@ -695,8 +695,8 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Current Parent source checkpoint is local `d7fa375255255543457b56cb172e630b19eb03e8`; cached `origin/pca-dev` is `d150a41b7923a8e58072affd4b3c3fa3f91127df`. Local was 4 commits ahead with origin as ancestor; direct `git ls-remote` failed through the configured proxy. Parent focused validation is recorded in the latest re-entry checkpoint, but no exact-head CI or current remote equality is proven. No Platform source changed.
-BLOCKER = Fresh remote verification, directly authorized publication, and exact-head CI remain pending. Parent authority/owner gates still hold Enrollment.
+EVIDENCE = Reviewed source checkpoint b79f429e514960bc44581121914326e1c4e1628c is six commits / 38 tracked paths ahead of freshly fetched and directly verified origin/pca-dev at d150a41b7923a8e58072affd4b3c3fa3f91127df without divergence. No Platform source changed. Publication and exact-head CI remain pending at this ledger checkpoint.
+BLOCKER = Publication and exact-head CI remain pending. The existing owner Git amendment authorizes safe ordinary fast-forward publication to origin/pca-dev; the earlier blanket requirement for renewed SHA-specific permission was incorrect. Parent authority/owner gates still hold Enrollment.
 DONE_WHEN = local=remote and exact-head CI PASS
 
 ### PLATFORM-14 — Refresh rollback baseline
