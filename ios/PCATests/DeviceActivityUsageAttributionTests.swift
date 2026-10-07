@@ -3,12 +3,22 @@ import Foundation
 @testable import PCA
 
 final class DeviceActivityUsageAttributionTests: XCTestCase {
-    private final class Store: OpaqueBlobStore {
+    private final class Store: OpaqueBlobStore, DeviceActivityUsageAssociationSnapshotPersistence {
         var values: [String: Data] = [:]
         var ignoreWrites = false
-        func write(_ data: Data, forKey key: String) throws { if !ignoreWrites { values[key] = data } }
+        var failingKey: String?
+        var ignoredRemoveKeys = Set<String>()
+        var ignoredWriteKeys = Set<String>()
+        func writeAtomically(_ data: Data, forKey key: String) throws {
+            if key == failingKey { throw DeviceActivityUsageAssociationError.persistenceFailed }
+            if !ignoreWrites && !ignoredWriteKeys.contains(key) { values[key] = data }
+        }
+        func write(_ data: Data, forKey key: String) throws { try writeAtomically(data, forKey: key) }
         func read(forKey key: String) -> Data? { values[key] }
-        func remove(forKey key: String) { values.removeValue(forKey: key) }
+        func remove(forKey key: String) {
+            guard !ignoredRemoveKeys.contains(key) else { return }
+            values.removeValue(forKey: key)
+        }
     }
     private struct PersistedRecordFixture: Codable {
         let binding: DeviceActivityUsageSelectionBinding
@@ -24,6 +34,492 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
     }
     private struct Token: Hashable, Codable { let value: String }
     private let now = Date(timeIntervalSince1970: 1_760_011_200)
+
+    private func associationBinding(_ token: Token, logicalAppToken: String = "logical-app") throws -> DeviceActivityUsageSelectionBinding {
+        DeviceActivityUsageSelectionBinding(logicalAppToken: logicalAppToken,
+            applicationTokenData: try PropertyListEncoder().encode(token))
+    }
+
+    func testUsageAssociationRequiresExplicitScopedBindingAndSurvivesStoreRecreation() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let binding = try associationBinding(Token(value: "selected"))
+        let authority = Data("accepted-authority-epoch-4".utf8)
+        let first = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        XCTAssertNil(try first.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+
+        try first.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+        try first.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+        let restored = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        XCTAssertEqual(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), binding)
+        XCTAssertNil(try restored.resolveAcceptedAssociation(
+            scope: DeviceActivityUsageAssociationScope(familyId: "family-b", deviceId: "device-a"),
+            logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
+            currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(
+            scope: DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-b"),
+            logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
+            currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertNotEqual(DeviceActivityUsageAssociationScope(familyId: "fam-é", deviceId: "device"),
+            DeviceActivityUsageAssociationScope(familyId: "fam-e\u{301}", deviceId: "device"))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "other")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: Data("stale".utf8), revalidateAuthority: { _ in }))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected"), Token(value: "extra")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in }))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-e\u{301}",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+    }
+
+    func testUsageAssociationRevocationCannotBeUndoneByStaleRevision() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        try associations.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 3, revalidateAuthority: { _ in })
+        var revocationContexts: [DeviceActivityUsageAssociationAuthorityContext] = []
+        try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 4, revalidateAuthority: { revocationContexts.append($0) })
+        XCTAssertEqual(revocationContexts.count, 3)
+        XCTAssertNil(revocationContexts[0].binding)
+        XCTAssertEqual(revocationContexts[1].binding, binding)
+        XCTAssertEqual(revocationContexts[2].binding, binding)
+        XCTAssertEqual(revocationContexts[1].logicalAppToken, "logical-app")
+        XCTAssertEqual(revocationContexts[1].revision, 4)
+        try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 4, revalidateAuthority: { _ in })
+        XCTAssertThrowsError(try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 3, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .staleRevision)
+        }
+        try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 5, revalidateAuthority: { _ in })
+        try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 5, revalidateAuthority: { _ in })
+        XCTAssertNil(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope, binding: binding,
+            authorityBinding: authority, revision: 5, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .staleRevision)
+        }
+        try associations.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 6, revalidateAuthority: { _ in })
+        XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), binding)
+    }
+
+    func testUsageAssociationUsesByteExactFamilyAndDeviceScopeDuringResolution() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "fam-é", deviceId: "device-é")
+        let binding = try associationBinding(Token(value: "selected"))
+        let authority = Data("accepted-authority".utf8)
+        try associations.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+        XCTAssertNil(try associations.resolveAcceptedAssociation(
+            scope: DeviceActivityUsageAssociationScope(familyId: "fam-e\u{301}", deviceId: "device-é"),
+            logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
+            currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertNil(try associations.resolveAcceptedAssociation(
+            scope: DeviceActivityUsageAssociationScope(familyId: "fam-é", deviceId: "device-e\u{301}"),
+            logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
+            currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+        XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in }), binding)
+    }
+
+    func testUsageAssociationRetainsTombstoneWhenPostRevokeAuthorityCheckFails() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        try associations.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+        var validations = 0
+        XCTAssertThrowsError(try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            authorityBinding: authority, revision: 2, revalidateAuthority: { context in
+                validations += 1
+                if validations == 3 { throw DeviceActivityUsageAssociationError.authorityRejected }
+                if validations > 1 {
+                    XCTAssertEqual(context.binding, binding)
+                    XCTAssertEqual(context.revision, 2)
+                }
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertEqual(validations, 3)
+        let restarted = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        XCTAssertThrowsError(try restarted.installAcceptedAssociation(scope: scope, binding: binding,
+            authorityBinding: authority, revision: 1, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .staleRevision)
+        }
+        XCTAssertNil(try restarted.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in }))
+    }
+
+    func testUsageAssociationRejectsConflictingRevisionAndPreservesPriorSnapshotOnWriteFailure() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let original = try associationBinding(Token(value: "selected"))
+        try associations.installAcceptedAssociation(scope: scope, binding: original, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "conflict")), authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .conflictingReplay)
+        }
+        backing.failingKey = "com.pca.app.deviceactivity.usage-associations.v1"
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "new")), authorityBinding: authority,
+            revision: 2, revalidateAuthority: { _ in }))
+        backing.failingKey = nil
+        backing.ignoreWrites = true
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "readback-mismatch")), authorityBinding: authority,
+            revision: 2, revalidateAuthority: { _ in }))
+        backing.ignoreWrites = false
+        XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), original)
+    }
+
+    func testUsageAssociationTreatsOwnedCorruptionAsUnavailableAndRevalidatesAuthority() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        try associations.installAcceptedAssociation(scope: scope, binding: associationBinding(Token(value: "selected")),
+            authorityBinding: authority, revision: 1, revalidateAuthority: { _ in })
+        XCTAssertThrowsError(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in throw DeviceActivityUsageAssociationError.authorityRejected })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        backing.values["com.pca.app.deviceactivity.usage-associations.v1"] = Data("corrupt".utf8)
+        XCTAssertThrowsError(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+        }
+    }
+
+    func testUsageAssociationPrecheckRejectionDoesNotPersistState() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "selected")), authorityBinding: authority, revision: 1,
+            revalidateAuthority: { _ in throw DeviceActivityUsageAssociationError.authorityRejected })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertTrue(backing.values.isEmpty)
+    }
+
+    func testUsageAssociationFirstSnapshotWriteFailureLeavesOwnedStateUnavailable() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        backing.failingKey = "com.pca.app.deviceactivity.usage-associations.v1"
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "selected")), authorityBinding: authority, revision: 1,
+            revalidateAuthority: { _ in }))
+        XCTAssertEqual(backing.values["com.pca.app.deviceactivity.usage-associations.owner.v1"],
+            Data("pca-usage-associations-v1".utf8))
+        XCTAssertNil(backing.values["com.pca.app.deviceactivity.usage-associations.v1"])
+        backing.failingKey = nil
+        let restarted = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        XCTAssertThrowsError(try restarted.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+        }
+    }
+
+    func testUsageAssociationPostWriteAuthorityRejectionPersistsPoisonLatch() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        var validations = 0
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: binding, authorityBinding: authority, revision: 1,
+            revalidateAuthority: { context in
+                XCTAssertEqual(context.scope, scope)
+                XCTAssertEqual(context.logicalAppToken, "logical-app")
+                XCTAssertEqual(context.binding, binding)
+                XCTAssertEqual(context.authorityBinding, authority)
+                XCTAssertEqual(context.revision, 1)
+                validations += 1
+                if validations == 2 { throw DeviceActivityUsageAssociationError.authorityRejected }
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertEqual(validations, 2)
+        XCTAssertEqual(backing.values["com.pca.app.deviceactivity.usage-associations.unavailable.v1"],
+            Data("association-authority-changed-during-write".utf8))
+        for candidate in [associations, DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)] {
+            XCTAssertThrowsError(try candidate.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+                revalidateAuthority: { _ in })) {
+                XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+            }
+        }
+    }
+
+    func testUsageAssociationPostWriteAuthorityRejectionFallsBackToRemovingOwnershipMarker() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        var validations = 0
+        backing.failingKey = "com.pca.app.deviceactivity.usage-associations.unavailable.v1"
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: binding, authorityBinding: authority, revision: 1,
+            revalidateAuthority: { context in
+                XCTAssertEqual(context.scope, scope)
+                XCTAssertEqual(context.logicalAppToken, "logical-app")
+                XCTAssertEqual(context.binding, binding)
+                XCTAssertEqual(context.authorityBinding, authority)
+                XCTAssertEqual(context.revision, 1)
+                validations += 1
+                if validations == 2 { throw DeviceActivityUsageAssociationError.authorityRejected }
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertEqual(validations, 2)
+        XCTAssertNil(backing.values["com.pca.app.deviceactivity.usage-associations.owner.v1"])
+        XCTAssertNotNil(backing.values["com.pca.app.deviceactivity.usage-associations.v1"])
+        for candidate in [associations, DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)] {
+            XCTAssertThrowsError(try candidate.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+                revalidateAuthority: { _ in })) {
+                XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+            }
+        }
+    }
+
+    func testUsageAssociationPostWriteRejectionReplacesSnapshotWhenLatchAndMarkerRemovalFail() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        var validations = 0
+        backing.failingKey = "com.pca.app.deviceactivity.usage-associations.unavailable.v1"
+        backing.ignoredRemoveKeys.insert("com.pca.app.deviceactivity.usage-associations.owner.v1")
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "selected")), authorityBinding: authority, revision: 1,
+            revalidateAuthority: { _ in
+                validations += 1
+                if validations == 2 { throw DeviceActivityUsageAssociationError.authorityRejected }
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertEqual(validations, 2)
+        XCTAssertEqual(backing.values["com.pca.app.deviceactivity.usage-associations.owner.v1"],
+            Data("pca-usage-associations-v1".utf8))
+        XCTAssertEqual(backing.values["com.pca.app.deviceactivity.usage-associations.v1"],
+            Data("association-authority-changed-during-write".utf8))
+        let restarted = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        XCTAssertThrowsError(try restarted.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+        }
+    }
+
+    func testUsageAssociationRevalidatesAuthorityAfterEveryDurableInvalidationPathFails() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        backing.ignoredRemoveKeys.insert("com.pca.app.deviceactivity.usage-associations.owner.v1")
+        var validations = 0
+        XCTAssertThrowsError(try associations.installAcceptedAssociation(scope: scope, binding: binding,
+            authorityBinding: authority, revision: 1, revalidateAuthority: { context in
+                validations += 1
+                if validations == 2 {
+                    backing.failingKey = "com.pca.app.deviceactivity.usage-associations.unavailable.v1"
+                    backing.ignoredWriteKeys.insert("com.pca.app.deviceactivity.usage-associations.v1")
+                    throw DeviceActivityUsageAssociationError.authorityRejected
+                }
+                XCTAssertEqual(context.binding, binding)
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .persistenceFailed)
+        }
+        XCTAssertEqual(validations, 2)
+        XCTAssertEqual(backing.values["com.pca.app.deviceactivity.usage-associations.owner.v1"],
+            Data("pca-usage-associations-v1".utf8))
+        XCTAssertNotNil(backing.values["com.pca.app.deviceactivity.usage-associations.v1"])
+        let restarted = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        var resolutionChecks = 0
+        XCTAssertThrowsError(try restarted.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { context in
+                resolutionChecks += 1
+                XCTAssertEqual(context.scope, scope)
+                XCTAssertEqual(context.logicalAppToken, "logical-app")
+                XCTAssertEqual(context.authorityBinding, authority)
+                if resolutionChecks == 1 {
+                    XCTAssertNil(context.binding)
+                    XCTAssertNil(context.revision)
+                    return
+                }
+                XCTAssertEqual(context.binding, binding)
+                XCTAssertEqual(context.revision, 1)
+                throw DeviceActivityUsageAssociationError.authorityRejected
+            })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .authorityRejected)
+        }
+        XCTAssertEqual(resolutionChecks, 2)
+    }
+
+    func testUsageAssociationConcurrentStoreInstancesSerializeConflictingWriters() throws {
+        #if canImport(Darwin)
+        let backing = Store()
+        let lockFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pca-usage-association-\(UUID().uuidString).lock")
+        defer { try? FileManager.default.removeItem(at: lockFile) }
+        let first = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let second = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let requests: [(DeviceActivityUsageAssociationStore<Token>, DeviceActivityUsageSelectionBinding)] = [
+            (first, try associationBinding(Token(value: "first"))),
+            (second, try associationBinding(Token(value: "second")))
+        ]
+        let group = DispatchGroup()
+        let resultLock = NSLock()
+        var outcomes: [String] = []
+        for (associationStore, binding) in requests {
+            group.enter()
+            DispatchQueue.global().async {
+                let outcome: String
+                do {
+                    try associationStore.installAcceptedAssociation(scope: scope,
+                        binding: binding, authorityBinding: authority, revision: 1,
+                        revalidateAuthority: { _ in })
+                    outcome = "installed"
+                } catch let error as DeviceActivityUsageAssociationError where error == .conflictingReplay {
+                    outcome = "conflict"
+                } catch {
+                    outcome = "unexpected: \(error)"
+                }
+                resultLock.lock()
+                outcomes.append(outcome)
+                resultLock.unlock()
+                group.leave()
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+        resultLock.lock()
+        let completedOutcomes = outcomes
+        resultLock.unlock()
+        XCTAssertEqual(completedOutcomes.filter { $0 == "installed" }.count, 1)
+        XCTAssertEqual(completedOutcomes.filter { $0 == "conflict" }.count, 1)
+        XCTAssertEqual(completedOutcomes.count, 2)
+        let restored = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let firstResolution = try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "first")], currentAuthorityBinding: authority, revalidateAuthority: { _ in })
+        let secondResolution = try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "second")], currentAuthorityBinding: authority, revalidateAuthority: { _ in })
+        XCTAssertEqual([firstResolution, secondResolution].compactMap { $0 }.count, 1)
+        #endif
+    }
+
+    func testUsageAssociationRevokeWinsRaceWithStaleInstallAcrossLockHandles() throws {
+        #if canImport(Darwin)
+        let backing = Store()
+        let lockFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pca-usage-revocation-\(UUID().uuidString).lock")
+        defer { try? FileManager.default.removeItem(at: lockFile) }
+        let first = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let second = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        let binding = try associationBinding(Token(value: "selected"))
+        try first.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+
+        let group = DispatchGroup()
+        let ready = DispatchSemaphore(value: 0)
+        let start = DispatchSemaphore(value: 0)
+        let resultLock = NSLock()
+        var outcomes: [String] = []
+        group.enter()
+        DispatchQueue.global().async {
+            ready.signal()
+            start.wait()
+            let outcome: String
+            do {
+                try first.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                    authorityBinding: authority, revision: 2, revalidateAuthority: { _ in })
+                outcome = "revoked"
+            } catch {
+                outcome = "unexpected revoke: \(error)"
+            }
+            resultLock.lock()
+            outcomes.append(outcome)
+            resultLock.unlock()
+            group.leave()
+        }
+        group.enter()
+        DispatchQueue.global().async {
+            ready.signal()
+            start.wait()
+            let outcome: String
+            do {
+                try second.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
+                    revision: 1, revalidateAuthority: { _ in })
+                outcome = "installed"
+            } catch let error as DeviceActivityUsageAssociationError where error == .staleRevision {
+                outcome = "stale"
+            } catch {
+                outcome = "unexpected install: \(error)"
+            }
+            resultLock.lock()
+            outcomes.append(outcome)
+            resultLock.unlock()
+            group.leave()
+        }
+        ready.wait()
+        ready.wait()
+        start.signal()
+        start.signal()
+        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+        resultLock.lock()
+        let completedOutcomes = outcomes
+        resultLock.unlock()
+        let outcomeSet = Set(completedOutcomes)
+        XCTAssertTrue(outcomeSet == Set(["revoked", "installed"]) || outcomeSet == Set(["revoked", "stale"]),
+            "outcomes: \(completedOutcomes)")
+        let restored = DeviceActivityUsageAssociationStore<Token>(store: backing,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            revalidateAuthority: { _ in }))
+        #endif
+    }
     func testScopeDecodingPreservesDistinctOpaqueUnicodeIdentities() throws {
         let original = StoredAppScope.apps(["é", "e\u{301}"])
         let decoded = try JSONDecoder().decode(StoredAppScope.self, from: JSONEncoder().encode(original))

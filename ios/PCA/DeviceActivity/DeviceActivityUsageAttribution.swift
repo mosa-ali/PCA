@@ -177,6 +177,373 @@ public enum DeviceActivityUsagePlanner {
     }
 }
 
+/// The association snapshot adapter must replace one key atomically. The
+/// AppGroupDeviceActivityFileStore adapter below satisfies this contract.
+public protocol DeviceActivityUsageAssociationSnapshotPersistence {
+    func writeAtomically(_ data: Data, forKey key: String) throws
+    func read(forKey key: String) -> Data?
+    func remove(forKey key: String)
+}
+
+#if canImport(Darwin)
+extension AppGroupDeviceActivityFileStore: DeviceActivityUsageAssociationSnapshotPersistence {
+    public func writeAtomically(_ data: Data, forKey key: String) throws {
+        try write(data, forKey: key)
+    }
+}
+#endif
+
+/// Caller supplied family/device identity. This value scopes a stored picker-token
+/// association; it is never derived from the policy payload or token serialization.
+public struct DeviceActivityUsageAssociationScope: Codable, Equatable {
+    public let familyId: String
+    public let deviceId: String
+
+    public init(familyId: String, deviceId: String) {
+        self.familyId = familyId
+        self.deviceId = deviceId
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.familyId.utf8.elementsEqual(rhs.familyId.utf8) &&
+            lhs.deviceId.utf8.elementsEqual(rhs.deviceId.utf8)
+    }
+
+    fileprivate var isValid: Bool {
+        !familyId.isEmpty && familyId.utf8.count <= 256 &&
+            !deviceId.isEmpty && deviceId.utf8.count <= 256
+    }
+}
+
+public enum DeviceActivityUsageAssociationError: Error, Equatable {
+    case invalidAssociation, staleRevision, conflictingReplay, unavailableState
+    case persistenceFailed, authorityRejected
+}
+
+/// Exact context a trusted caller must compare with its current authority
+/// source. A recreated store may retain an old snapshot after total persistence
+/// failure, so a successful revalidation must independently establish that this
+/// scope/app/binding/revision is still accepted.
+public struct DeviceActivityUsageAssociationAuthorityContext {
+    public let scope: DeviceActivityUsageAssociationScope
+    public let logicalAppToken: String
+    public let binding: DeviceActivityUsageSelectionBinding?
+    public let authorityBinding: Data
+    public let revision: UInt64?
+
+    fileprivate init(scope: DeviceActivityUsageAssociationScope, logicalAppToken: String,
+                     binding: DeviceActivityUsageSelectionBinding?, authorityBinding: Data,
+                     revision: UInt64?) {
+        self.scope = scope
+        self.logicalAppToken = logicalAppToken
+        self.binding = binding
+        self.authorityBinding = authorityBinding
+        self.revision = revision
+    }
+}
+
+public typealias DeviceActivityUsageAssociationAuthorityRevalidator =
+    (DeviceActivityUsageAssociationAuthorityContext) throws -> Void
+
+/// Durable custody for an already-authorized logical-app to Family Controls
+/// token mapping. The producer must verify the association before calling this
+/// API. Production resolution stays unavailable unless a caller supplies the
+/// current family/device scope, accepted authority binding, and revalidator.
+/// The App Group adapter stores token bytes and authority bytes as opaque local
+/// data without encryption at this layer. Authority bindings must be non-secret
+/// revisions or fingerprints; never pass credentials or bearer tokens.
+///
+/// Every operation uses the caller's shared DeviceActivity policy lock. Any
+/// authority mutation that changes the accepted mapping must serialize against
+/// this same lock. Revalidation receives the exact scope, opaque accepted
+/// authority binding, and (when known) record revision. A separate ownership
+/// marker distinguishes a never-created store from a lost,
+/// partially written, or corrupt snapshot; established state is never silently
+/// reconstructed as empty.
+public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable> {
+    private struct Record: Codable {
+        let scope: DeviceActivityUsageAssociationScope
+        let logicalAppToken: String
+        let binding: DeviceActivityUsageSelectionBinding?
+        let authorityBinding: Data
+        let revision: UInt64
+        let revoked: Bool
+    }
+    private struct State: Codable {
+        let schemaVersion: Int
+        var records: [Record]
+    }
+
+    private static var stateKey: String { "com.pca.app.deviceactivity.usage-associations.v1" }
+    private static var ownershipKey: String { "com.pca.app.deviceactivity.usage-associations.owner.v1" }
+    private static var unavailableKey: String { "com.pca.app.deviceactivity.usage-associations.unavailable.v1" }
+    private static var ownershipValue: Data { Data("pca-usage-associations-v1".utf8) }
+    private static var unavailableValue: Data { Data("association-authority-changed-during-write".utf8) }
+    // The encoded 1 MiB cap is authoritative; large token/authority values can
+    // exhaust it before reaching the 256-record ceiling. Revocation tombstones
+    // remain to block stale reinstallation, so trusted pruning/rebuild is a
+    // production lifecycle requirement rather than an implicit eviction.
+    private static var maximumStateBytes: Int { 1_048_576 }
+    private static var maximumRecords: Int { 256 }
+
+    private let store: DeviceActivityUsageAssociationSnapshotPersistence
+    private let coordination: DeviceActivityPolicyCoordination
+    private let tokenDecoder = PropertyListDecoder()
+    private var locallyUnavailable = false
+
+    public init(store: DeviceActivityUsageAssociationSnapshotPersistence,
+                coordination: DeviceActivityPolicyCoordination) {
+        self.store = store
+        self.coordination = coordination
+    }
+
+    /// Persists a mapping only after the caller's authority check succeeds.
+    /// Revisions are caller supplied monotonic generations for this exact
+    /// (family, device, logical-app) identity.
+    public func installAcceptedAssociation(
+        scope: DeviceActivityUsageAssociationScope,
+        binding: DeviceActivityUsageSelectionBinding,
+        authorityBinding: Data,
+        revision: UInt64,
+        revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+    ) throws {
+        try coordination.withExclusiveAccess {
+            try revalidateAuthority(.init(scope: scope, logicalAppToken: binding.logicalAppToken,
+                binding: binding, authorityBinding: authorityBinding, revision: revision))
+            guard scope.isValid, binding.isValid, binding.logicalAppToken.utf8.count <= 256,
+                  authorityBinding.count > 0, authorityBinding.count <= 8_192, revision > 0,
+                  let token = try? tokenDecoder.decode(Token.self, from: binding.applicationTokenData),
+                  binding.matches(Set([token]), logicalAppToken: binding.logicalAppToken) else {
+                throw DeviceActivityUsageAssociationError.invalidAssociation
+            }
+
+            var state = try load()
+            let matches = state.records.indices.filter {
+                sameIdentity(state.records[$0], scope: scope, logicalAppToken: binding.logicalAppToken)
+            }
+            guard matches.count <= 1 else { throw DeviceActivityUsageAssociationError.unavailableState }
+            if let index = matches.first {
+                let current = state.records[index]
+                if current.revoked {
+                    guard revision > current.revision else { throw DeviceActivityUsageAssociationError.staleRevision }
+                } else {
+                    guard let currentBinding = current.binding else {
+                        throw DeviceActivityUsageAssociationError.unavailableState
+                    }
+                    if revision == current.revision {
+                        guard currentBinding == binding, current.authorityBinding == authorityBinding else {
+                            throw DeviceActivityUsageAssociationError.conflictingReplay
+                        }
+                        try revalidateAuthority(.init(scope: scope, logicalAppToken: binding.logicalAppToken,
+                            binding: binding, authorityBinding: authorityBinding, revision: revision))
+                        return
+                    }
+                    guard revision > current.revision else { throw DeviceActivityUsageAssociationError.staleRevision }
+                }
+                state.records[index] = Record(scope: scope, logicalAppToken: binding.logicalAppToken,
+                    binding: binding, authorityBinding: authorityBinding, revision: revision, revoked: false)
+            } else {
+                guard state.records.count < Self.maximumRecords else {
+                    throw DeviceActivityUsageAssociationError.unavailableState
+                }
+                state.records.append(Record(scope: scope, logicalAppToken: binding.logicalAppToken,
+                    binding: binding, authorityBinding: authorityBinding, revision: revision, revoked: false))
+            }
+            try persist(state)
+            do {
+                try revalidateAuthority(.init(scope: scope, logicalAppToken: binding.logicalAppToken,
+                    binding: binding, authorityBinding: authorityBinding, revision: revision))
+            } catch {
+                try persistUnavailableLatch()
+                throw error
+            }
+        }
+    }
+
+    /// Writes a monotonic tombstone. A later explicit re-authorization must
+    /// advance the revision; stale writers cannot resurrect a revoked mapping.
+    public func revokeAcceptedAssociation(
+        scope: DeviceActivityUsageAssociationScope,
+        logicalAppToken: String,
+        authorityBinding: Data,
+        revision: UInt64,
+        revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+    ) throws {
+        try coordination.withExclusiveAccess {
+            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+                binding: nil, authorityBinding: authorityBinding, revision: revision))
+            guard scope.isValid, !logicalAppToken.isEmpty, logicalAppToken.utf8.count <= 256,
+                  authorityBinding.count > 0, authorityBinding.count <= 8_192, revision > 0 else {
+                throw DeviceActivityUsageAssociationError.invalidAssociation
+            }
+            var state = try load()
+            let matches = state.records.indices.filter {
+                sameIdentity(state.records[$0], scope: scope, logicalAppToken: logicalAppToken)
+            }
+            guard matches.count == 1, let index = matches.first else {
+                throw DeviceActivityUsageAssociationError.unavailableState
+            }
+            let current = state.records[index]
+            guard current.authorityBinding == authorityBinding else {
+                throw DeviceActivityUsageAssociationError.authorityRejected
+            }
+            if current.revoked && revision == current.revision {
+                try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+                    binding: nil, authorityBinding: authorityBinding, revision: revision))
+                return
+            }
+            guard revision > current.revision else {
+                throw DeviceActivityUsageAssociationError.staleRevision
+            }
+            let revocationContext = DeviceActivityUsageAssociationAuthorityContext(
+                scope: scope, logicalAppToken: logicalAppToken, binding: current.binding,
+                authorityBinding: authorityBinding, revision: revision)
+            try revalidateAuthority(revocationContext)
+            state.records[index] = Record(scope: scope, logicalAppToken: logicalAppToken,
+                binding: nil, authorityBinding: authorityBinding, revision: revision, revoked: true)
+            try persist(state)
+            try revalidateAuthority(revocationContext)
+        }
+    }
+
+    /// Returns a binding only for the explicitly supplied current scope and
+    /// authority. Missing, corrupt, revoked, stale, or ambiguous records never
+    /// synthesize a mapping from a singleton picker selection.
+    public func resolveAcceptedAssociation(
+        scope: DeviceActivityUsageAssociationScope,
+        logicalAppToken: String,
+        selectedTokens: Set<Token>,
+        currentAuthorityBinding: Data,
+        revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+    ) throws -> DeviceActivityUsageSelectionBinding? {
+        try coordination.withExclusiveAccess {
+            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+                binding: nil, authorityBinding: currentAuthorityBinding, revision: nil))
+            guard scope.isValid, !logicalAppToken.isEmpty, logicalAppToken.utf8.count <= 256,
+                  currentAuthorityBinding.count > 0, currentAuthorityBinding.count <= 8_192 else {
+                throw DeviceActivityUsageAssociationError.invalidAssociation
+            }
+            let state = try load()
+            let matches = state.records.filter {
+                sameIdentity($0, scope: scope, logicalAppToken: logicalAppToken)
+            }
+            guard matches.count <= 1 else { throw DeviceActivityUsageAssociationError.unavailableState }
+            guard let record = matches.first else { return nil }
+            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+                binding: record.binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
+            guard !record.revoked, record.authorityBinding == currentAuthorityBinding,
+                  let binding = record.binding,
+                  binding.matches(selectedTokens, logicalAppToken: logicalAppToken) else { return nil }
+            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+                binding: binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
+            return binding
+        }
+    }
+
+    private func sameIdentity(_ record: Record, scope: DeviceActivityUsageAssociationScope,
+                              logicalAppToken: String) -> Bool {
+        record.scope.familyId.utf8.elementsEqual(scope.familyId.utf8) &&
+            record.scope.deviceId.utf8.elementsEqual(scope.deviceId.utf8) &&
+            record.logicalAppToken.utf8.elementsEqual(logicalAppToken.utf8)
+    }
+
+    private func load() throws -> State {
+        guard !locallyUnavailable, store.read(forKey: Self.unavailableKey) == nil else {
+            throw DeviceActivityUsageAssociationError.unavailableState
+        }
+        let owner = store.read(forKey: Self.ownershipKey)
+        let data = store.read(forKey: Self.stateKey)
+        if owner == nil && data == nil { return State(schemaVersion: 1, records: []) }
+        guard owner == Self.ownershipValue, let data, data.count <= Self.maximumStateBytes,
+              store.read(forKey: Self.ownershipKey) == Self.ownershipValue,
+              store.read(forKey: Self.stateKey) == data,
+              let state = try? JSONDecoder().decode(State.self, from: data),
+              state.schemaVersion == 1, state.records.count <= Self.maximumRecords else {
+            throw DeviceActivityUsageAssociationError.unavailableState
+        }
+        for record in state.records {
+            guard record.scope.isValid, !record.logicalAppToken.isEmpty,
+                  record.logicalAppToken.utf8.count <= 256, record.revision > 0,
+                  record.authorityBinding.count > 0, record.authorityBinding.count <= 8_192 else {
+                throw DeviceActivityUsageAssociationError.unavailableState
+            }
+            if record.revoked {
+                guard record.binding == nil else { throw DeviceActivityUsageAssociationError.unavailableState }
+            } else {
+                guard let binding = record.binding, binding.isValid,
+                      binding.logicalAppToken.utf8.elementsEqual(record.logicalAppToken.utf8),
+                      (try? tokenDecoder.decode(Token.self, from: binding.applicationTokenData)) != nil else {
+                    throw DeviceActivityUsageAssociationError.unavailableState
+                }
+            }
+        }
+        for index in state.records.indices {
+            for other in state.records.indices where other > index {
+                guard !sameIdentity(state.records[index], scope: state.records[other].scope,
+                                    logicalAppToken: state.records[other].logicalAppToken) else {
+                    throw DeviceActivityUsageAssociationError.unavailableState
+                }
+            }
+        }
+        return state
+    }
+
+    private func persist(_ state: State) throws {
+        let data: Data
+        do { data = try JSONEncoder().encode(state) }
+        catch { throw DeviceActivityUsageAssociationError.persistenceFailed }
+        guard data.count <= Self.maximumStateBytes else { throw DeviceActivityUsageAssociationError.unavailableState }
+        do {
+            try store.writeAtomically(Self.ownershipValue, forKey: Self.ownershipKey)
+            guard store.read(forKey: Self.ownershipKey) == Self.ownershipValue else {
+                throw DeviceActivityUsageAssociationError.persistenceFailed
+            }
+            try store.writeAtomically(data, forKey: Self.stateKey)
+            guard store.read(forKey: Self.stateKey) == data,
+                  store.read(forKey: Self.ownershipKey) == Self.ownershipValue else {
+                throw DeviceActivityUsageAssociationError.persistenceFailed
+            }
+        } catch {
+            if error is DeviceActivityUsageAssociationError { throw error }
+            throw DeviceActivityUsageAssociationError.persistenceFailed
+        }
+    }
+
+    /// A failed post-write authority check attempts durable invalidation in
+    /// order: poison key, ownership-marker removal, then invalid snapshot
+    /// replacement. If every storage path fails, this instance stays
+    /// unavailable; recreated readers must reject the exact old authority
+    /// context through their required trusted revalidator.
+    private func persistUnavailableLatch() throws {
+        locallyUnavailable = true
+        do {
+            try store.writeAtomically(Self.unavailableValue, forKey: Self.unavailableKey)
+            guard store.read(forKey: Self.unavailableKey) == Self.unavailableValue else {
+                throw DeviceActivityUsageAssociationError.persistenceFailed
+            }
+        } catch {
+            store.remove(forKey: Self.ownershipKey)
+            if store.read(forKey: Self.ownershipKey) == nil {
+                guard store.read(forKey: Self.stateKey) != nil else {
+                    throw DeviceActivityUsageAssociationError.persistenceFailed
+                }
+                return
+            }
+            // If the marker cannot be removed, replace the active snapshot with
+            // an invalid fail-closed value using the same atomic key operation.
+            do {
+                try store.writeAtomically(Self.unavailableValue, forKey: Self.stateKey)
+            } catch {
+                throw DeviceActivityUsageAssociationError.persistenceFailed
+            }
+            guard store.read(forKey: Self.stateKey) == Self.unavailableValue,
+                  store.read(forKey: Self.ownershipKey) == Self.ownershipValue else {
+                throw DeviceActivityUsageAssociationError.persistenceFailed
+            }
+        }
+    }
+}
+
 /// Separate from diagnostic callback history. All operations must run under the shared
 /// policy coordination lock; no nested flock acquisition or in-memory authority fallback.
 public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable> {
