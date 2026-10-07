@@ -1,6 +1,16 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
-WORKSPACE_EXECUTION_GATE = RESTORED. Published Android/iOS bounded hasMore checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. The preceding Android schedule checkpoint 36a1a655e89117f387ff1410771e1612567c4839 also passed its exact-head CI.
+## Current correction checkpoint — 2026-10-07
+
+PUBLISHED_SOURCE_HEAD = 65f05f01cd54c014dd370aa2694da526463b81d8; ordinary push/fetch/direct-server equality and all twelve remote paths verified.
+EXACT_HEAD_CI = 37570786292, terminal FAILURE: 27/27 completed, 25 success, iOS build/unit tests and dependency vulnerability audit failed. Last fully green source remains 3ef103fe0d85dc0c7563edeefc09caabbd056454 (37393457495 SUCCESS 27/27).
+CORRECTION = Guarded XCTest imports ManagedSettings for ApplicationToken. Both web workspaces upgrade Vitest to 4.1.11 and source-map-js to 1.2.2; Parent DOMPurify upgrades to 3.4.16. Vite 6.4.3 retained; Node 22 supported. No audit suppression, test removal or authority changes.
+LOCAL_VALIDATION = Both production builds PASS; both installed dependency audits report zero vulnerabilities. Platform full suite PASS 46 files / 236 tests. Parent initial unrestricted campaign had one Guide accessibility timeout (1105/1106); controlled direct Vitest run with two workers PASS 154 files / 1106 tests, unchanged tests. Swift frontend parse and diff check PASS; local parsing is not Apple compilation.
+REVIEW = Five required mobile specialists APPROVE source corrections, zero blockers/majors/minors; independent QA also APPROVE; final eight-path ledger/source review complete. New committed-source CI, including Apple build/XCTest, is required before acceptance.
+COMPLETION_SCOPE = Complete all implementable repository work. Physical Android/iOS, live pca_pro, Azure and production configuration evidence remain external; no evidence is fabricated or external mutation forced. Repository work remains YES; canonical board retained at 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform HOLD_PARENT_DEPENDENCY retained.
+
+
+WORKSPACE_EXECUTION_GATE = RESTORED. Current published source 65f05f01cd54c014dd370aa2694da526463b81d8 has terminal CI 37570786292 FAILURE (25/27 jobs success); local correction awaits publication and fresh CI. Published Android/iOS bounded hasMore checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. The preceding Android schedule checkpoint 36a1a655e89117f387ff1410771e1612567c4839 also passed its exact-head CI.
 
 ## Mission
 
@@ -17,13 +27,13 @@ Checkpoint 3ef103fe exact-head Quality Gates run 37393457495 is terminal SUCCESS
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-07 04:16 UTC (iOS callback-health corrected freeze approved by five mobile specialists and independent QA)
+LAST_UPDATED_UTC = 2026-10-07 04:33 UTC (published CI failure corrected locally; both web regressions pass)
 WAVE_BASE_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (published hasMore checkpoint; Quality Gates 37393457495 SUCCESS 27/27)
 LAST_GREEN_REMOTE_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (Quality Gates 37393457495 SUCCESS 27/27)
-CURRENT_WAVE_STATUS = iOS callback-health installation isolation and evidence semantics are locally implemented. Unique monitor/generation, fail-closed replacement and unambiguous first-occurrence delivery; absent/recurring ambiguous receipts UNKNOWN. Five mobile Stage B and independent QA APPROVE, zero blockers/majors/minors. Swift parse eight files and diff check PASS; Apple build/XCTest and current-source exact-head CI pending.
-WAVE_CONTENT_SHA = Uncommitted iOS source/test checkpoint based on 3ef103fe0d85dc0c7563edeefc09caabbd056454.
-EXACT_HEAD_CI_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454, Quality Gates 37393457495 SUCCESS 27/27; all 27 job conclusions were inspected.
-LOCAL_STATE = Local HEAD, origin/pca-dev and fresh direct server ref equal 3ef103fe0d85dc0c7563edeefc09caabbd056454. Twelve reviewed tracked iOS/source/test/architecture/ledger paths await commit. .vscode/, root 0 and owner protocol artifact remain excluded.
+CURRENT_WAVE_STATUS = Published iOS callback-health checkpoint failed Apple test compilation and dependency audit. Local import and web security dependency corrections validated; fresh exact-head CI required.
+WAVE_CONTENT_SHA = Uncommitted correction based on 65f05f01cd54c014dd370aa2694da526463b81d8.
+EXACT_HEAD_CI_SHA = 65f05f01cd54c014dd370aa2694da526463b81d8, Quality Gates 37570786292 FAILURE: 27 completed, 25 success, two failed.
+LOCAL_STATE = Published HEAD 65f05f01cd54c014dd370aa2694da526463b81d8 verified equal to origin and server. Five correction source paths and three ledgers await reviewed commit; unrelated untracked paths excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12, TODO-14 (52/52 declarations now have MySQL HTTP status evidence; three remain service-gated, aggregate NOT_YET_PROVEN), TODO-15, TODO-19 and TODO-20 remain IN_PROGRESS; TODO-18/21/22/23 remain owner/release gated. Formal board is 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform remains `HOLD_PARENT_DEPENDENCY`.
 CHILD_APP_RELEASE_STATE = Owner confirmed `PUBLIC_LANDING_PAGE` at `https://www.pcasafe.com/child-app/`; Parent production build defaults to this URL. Deploy and verify the Public route before deploying Parent; downstream signed installer/store destination and signing fingerprint remain unconfigured; Add Device/backend enrollment readiness = CLOSED. A current live route request could not connect because the configured proxy refused `127.0.0.1:9`; live availability remains unverified.
@@ -36,7 +46,7 @@ LATEST_ANDROID_SCHEDULE_VALIDATION = Schedule snapshots now use generation-tagge
 LATEST_IOS_ROOT_STORE_CHECKPOINT = Keychain first-device seed recapture for the same attempt now verifies the exact retained record with `confirmDurable`, matching the existing regression and Android durability behavior. `swiftc -frontend -parse` passed for the store and test files; XCTest was not run because `xcodebuild` is unavailable on this Windows host.
 LATEST_PLATFORM_DIRECTORY_VALIDATION = `AccountsListSearchAndSort.test.tsx` passed 5/5 including next/previous server offsets and offset reset on applying/clearing filters; Platform `npm run typecheck` passed. No Enrollment Name/Email/Phone UI or identity selector was changed.
 TODO20_LOCAL = Fresh wrapper-owned MySQL 8.4.11 schema on loopback passed the environment gate and applied all 61 migrations through 0063. The latest `test:db:full-certified` run passed its 710-test inner lane (700 passed, 10 explicit privilege-only skips, 0 failed) and its populated production-path lane (276/276, 0 skips/failures). The latter included the least-privilege runtime grant/append-only tests with the wrapper's local migration credential; temporary probe principal and owned database were removed. The inner lane intentionally omits the migration credential and its ten privilege-only tests skip there. A separate read-only scan of existing loopback `pca_test` found 13 numeric epoch columns / 6,680 column cells, with zero negatives or values above INT32_MAX; it made no writes. That scan used `root@%` and is not itself runtime-grant evidence. LIVE_TODO20 = NOT CERTIFIED: live `pca_pro` TCP/3306 timed out, so no live SQL query or mutation occurred.
-NEXT_ACTION = Publish the reviewed iOS callback-health checkpoint by normal fast-forward; fetch and prove local/origin/server equality; inspect all exact-head Quality Gates jobs. Continue the earliest implementable repository item after acceptance; preserve external gates.
+NEXT_ACTION = Finish frozen correction review, commit/push, verify remote equality and require new exact-head CI SUCCESS. Continue implementable mobile repository work; retain owner/live/device gates.
 
 ### 2026-10-05 — TODO-16 current-source identity projection regression refresh
 

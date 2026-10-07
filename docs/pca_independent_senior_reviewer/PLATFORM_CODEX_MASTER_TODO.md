@@ -1,6 +1,16 @@
 # PCA Platform Web — Codex Master TODO
 
-WORKSPACE_EXECUTION_GATE = RESTORED. Published Parent checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. Parent hasMore visibility and failed-inbound-list regression are published; Platform remains held.
+## Current correction checkpoint — 2026-10-07
+
+PUBLISHED_SOURCE_HEAD = 65f05f01cd54c014dd370aa2694da526463b81d8; ordinary push/fetch/direct-server equality and all twelve remote paths verified.
+EXACT_HEAD_CI = 37570786292, terminal FAILURE: 27/27 completed, 25 success, iOS build/unit tests and dependency vulnerability audit failed. Last fully green source remains 3ef103fe0d85dc0c7563edeefc09caabbd056454 (37393457495 SUCCESS 27/27).
+CORRECTION = Guarded XCTest imports ManagedSettings for ApplicationToken. Both web workspaces upgrade Vitest to 4.1.11 and source-map-js to 1.2.2; Parent DOMPurify upgrades to 3.4.16. Vite 6.4.3 retained; Node 22 supported. No audit suppression, test removal or authority changes.
+LOCAL_VALIDATION = Both production builds PASS; both installed dependency audits report zero vulnerabilities. Platform full suite PASS 46 files / 236 tests. Parent initial unrestricted campaign had one Guide accessibility timeout (1105/1106); controlled direct Vitest run with two workers PASS 154 files / 1106 tests, unchanged tests. Swift frontend parse and diff check PASS; local parsing is not Apple compilation.
+REVIEW = Five required mobile specialists APPROVE source corrections, zero blockers/majors/minors; independent QA also APPROVE; final eight-path ledger/source review complete. New committed-source CI, including Apple build/XCTest, is required before acceptance.
+COMPLETION_SCOPE = Complete all implementable repository work. Physical Android/iOS, live pca_pro, Azure and production configuration evidence remain external; no evidence is fabricated or external mutation forced. Repository work remains YES; canonical board retained at 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform HOLD_PARENT_DEPENDENCY retained.
+
+
+WORKSPACE_EXECUTION_GATE = RESTORED. Current published source 65f05f01cd54c014dd370aa2694da526463b81d8 has terminal CI 37570786292 FAILURE (25/27 jobs success); local correction awaits publication and fresh CI. Published Parent checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. Parent hasMore visibility and failed-inbound-list regression are published; Platform remains held.
 
 ## Mission
 
@@ -15,16 +25,16 @@ Published Parent checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 has termina
 PURSUING_GOAL = Complete the Parent-dependent Platform Enrollment integration and combined PCA release without duplicating Parent identity authority  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS (Platform Enrollment work package is held)  
-LAST_UPDATED_UTC = 2026-10-07 04:16 UTC (Parent iOS callback-health source approved; Platform held)
+LAST_UPDATED_UTC = 2026-10-07 04:33 UTC (published CI failure corrected locally; both web regressions pass)
 VALIDATED_PARENT_SOURCE_HEAD = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (published, Quality Gates 37393457495 SUCCESS 27/27)
-VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 3ef103fe0d85dc0c7563edeefc09caabbd056454 confirmed after push by fresh fetch and direct server ref lookup
-CURRENT_CHECKPOINT_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (published Parent Android/iOS hasMore visibility checkpoint; exact-head CI passed)
-LATEST_PARENT_LEDGER_CHECKPOINT = Published 3ef103fe added Android/iOS hasMore pending-state visibility and the Android failed-inbound-list regression; exact-head CI 37393457495 passed 27/27. Android validation reports 1507 tests across 253 suites, 0 failures/errors and 1 existing skip, plus lint/compile and Swift parse. Apple build/XCTest passed in exact-head CI. No Platform source, Parent projection, or Enrollment dependencies changed.
+VERIFIED_PARENT_SOURCE_REMOTE_HEAD = 65f05f01cd54c014dd370aa2694da526463b81d8 (push/fetch/server equality verified; CI failed)
+CURRENT_CHECKPOINT_SHA = 65f05f01cd54c014dd370aa2694da526463b81d8 (published callback-health source; exact-head CI failed)
+LATEST_PARENT_LEDGER_CHECKPOINT = Published 65f05f01cd54c014dd370aa2694da526463b81d8; current Apple import and web dependency audit corrections pass local web tests/builds, fresh CI required.
 LATEST_SHARED_DB_CERTIFICATION = Fresh loopback-only MySQL 8.4.11 certification applied all 61 migrations through 0063. The inner lane passed 700/710 with 10 explicit privilege-only skips and zero failures; the populated production-path lane passed 276/276 with zero skips/failures and included the no-skip least-privilege runtime-grant/append-only checks. The wrapper/test hooks removed the owned schema and temporary probe principal. This is prior local certification on the pre-paging baseline; the current custody-wave rerun completed its inner lane but was interrupted before the populated certification phase, so fresh exact-head CI certification remains required. Live `pca_pro` remains unverified because TCP/3306 is unreachable.
 COORDINATOR = Current Codex agent  
 PLATFORM_ACTIVATION_GATE = HOLD_PARENT_DEPENDENCY until Parent TODO-01…17 PASS, Parent projection PASS, TODO-18 PASS, and literal `LOCALHOST ACCEPTED=YES`  
 CURRENT_ACTIVE_PLATFORM_TODO = PLATFORM-03…PLATFORM-05 remain blocked at the dependent Enrollment UI gate  
-NEXT_ACTION = Preserve HOLD_PARENT_DEPENDENCY. Parent iOS callback-health source passed five mobile Stage B and independent QA; publication and exact-head CI pending. Continue Parent implementation after acceptance and retain Platform/owner/live/release gates.
+NEXT_ACTION = Finish frozen correction review, commit/push, verify remote equality and require new exact-head CI SUCCESS. Continue implementable mobile repository work; retain owner/live/device gates.
 
 ### 2026-10-06 — Parent Android schedule snapshot durability follow-on
 

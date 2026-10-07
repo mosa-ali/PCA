@@ -96,6 +96,7 @@ final class DeviceActivityCallbackHealthTests: XCTestCase {
 }
 #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
 import FamilyControls
+import ManagedSettings
 
 final class DeviceActivityCallbackRuntimeTests: XCTestCase {
     private let installedAt = ISO8601DateFormatter().date(from: "2025-06-03T12:00:00Z")!

@@ -22,7 +22,7 @@
   "dependencies": {
     "@pca/parent-sdk-browser-runtime": "file:../parent-sdk/browser-runtime",
     "@pca/parent-sdk-wellbeing-control": "file:../parent-sdk/wellbeing-control",
-    "dompurify": "3.4.13",
+    "dompurify": "3.4.16",
     "i18next": "23.15.1",
     "i18next-browser-languagedetector": "8.0.0",
     "qrcode": "1.5.4",
@@ -54,7 +54,7 @@
     "typescript": "5.5.4",
     "vite": "6.4.3",
     "vite-plugin-pwa": "0.21.2",
-    "vitest": "3.2.7",
+    "vitest": "4.1.11",
     "vitest-axe": "0.1.0"
   }
 }

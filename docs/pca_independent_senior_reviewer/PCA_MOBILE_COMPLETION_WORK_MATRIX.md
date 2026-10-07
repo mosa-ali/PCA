@@ -1,6 +1,16 @@
 # PCA mobile completion work matrix
 
-WORKSPACE_EXECUTION_GATE = RESTORED. Published Parent Android/iOS hasMore checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. The preceding Android schedule checkpoint 36a1a655e89117f387ff1410771e1612567c4839 also passed exact-head CI.
+## Current correction checkpoint — 2026-10-07
+
+PUBLISHED_SOURCE_HEAD = 65f05f01cd54c014dd370aa2694da526463b81d8; ordinary push/fetch/direct-server equality and all twelve remote paths verified.
+EXACT_HEAD_CI = 37570786292, terminal FAILURE: 27/27 completed, 25 success, iOS build/unit tests and dependency vulnerability audit failed. Last fully green source remains 3ef103fe0d85dc0c7563edeefc09caabbd056454 (37393457495 SUCCESS 27/27).
+CORRECTION = Guarded XCTest imports ManagedSettings for ApplicationToken. Both web workspaces upgrade Vitest to 4.1.11 and source-map-js to 1.2.2; Parent DOMPurify upgrades to 3.4.16. Vite 6.4.3 retained; Node 22 supported. No audit suppression, test removal or authority changes.
+LOCAL_VALIDATION = Both production builds PASS; both installed dependency audits report zero vulnerabilities. Platform full suite PASS 46 files / 236 tests. Parent initial unrestricted campaign had one Guide accessibility timeout (1105/1106); controlled direct Vitest run with two workers PASS 154 files / 1106 tests, unchanged tests. Swift frontend parse and diff check PASS; local parsing is not Apple compilation.
+REVIEW = Five required mobile specialists APPROVE source corrections, zero blockers/majors/minors; independent QA also APPROVE; final eight-path ledger/source review complete. New committed-source CI, including Apple build/XCTest, is required before acceptance.
+COMPLETION_SCOPE = Complete all implementable repository work. Physical Android/iOS, live pca_pro, Azure and production configuration evidence remain external; no evidence is fabricated or external mutation forced. Repository work remains YES; canonical board retained at 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform HOLD_PARENT_DEPENDENCY retained.
+
+
+WORKSPACE_EXECUTION_GATE = RESTORED. Current published source 65f05f01cd54c014dd370aa2694da526463b81d8 has terminal CI 37570786292 FAILURE (25/27 jobs success); local correction awaits publication and fresh CI. Published Parent Android/iOS hasMore checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. The preceding Android schedule checkpoint 36a1a655e89117f387ff1410771e1612567c4839 also passed exact-head CI.
 
 Coordinator owns all source edits. This matrix continues Parent TODO-12/14/15/20; it creates no new mission or canonical TODO. Platform Enrollment, Azure and live database mutation remain closed under the mobile-wave directive.
 
@@ -93,4 +103,4 @@ TEST_SOURCE = Added activity/generation isolation, stale/future receipts, legiti
 LOCAL_VALIDATION = Swift frontend parse PASS for all eight changed Swift files; git diff --check PASS. Local Swift typecheck could not execute because the Windows C SDK headers are absent (stdlib.h); Apple build/XCTest must run in the forthcoming exact-head Quality Gates.
 REVIEW = Stage A five required mobile specialists USABLE on the current base. Reviewers identified legacy partial-publication, runtime-test and Apple use-triggered delivery semantics gaps. Corrections are implemented; the earlier freeze was withdrawn. Final Stage B for the corrected evidence semantics = five required mobile specialists APPROVE and independent adversarial QA APPROVE; BLOCKERS=0, MAJORS=0, MINORS=0. Earlier approvals are superseded.
 GATES = REAL_ANDROID_DEVICE_GATE OPEN; REAL_IOS_DEVICE_GATE OPEN; no live pca_pro/Azure/Platform or retained manual UAT mutation. TODO-12/14/15 remain IN_PROGRESS; READY_FOR_AZURE_DEPLOYMENT = NO.
-NEXT_ACTION = Freeze the scoped iOS source/tests, architecture explanation and three ledgers; five mobile Stage B approvals and independent QA are complete with zero blockers/majors/minors; commit/push, verify local/origin/server equality and inspect every exact-head Quality Gates job. Continue remaining implementable repository work after acceptance.
+NEXT_ACTION = Finish frozen correction review, commit/push, verify remote equality and require new exact-head CI SUCCESS. Continue implementable mobile repository work; retain owner/live/device gates.
