@@ -1,5 +1,13 @@
 # PCA Platform Web — Codex Master TODO
 
+## Published Android usage-provenance checkpoint - 2026-10-07
+
+SOURCE_CHECKPOINT = 2090a91da8bbd67565d7964538ec75e3f555b4db; 15 frozen approved paths pushed by ordinary fast-forward to origin/pca-dev. Fetch and direct server lookup proved LOCAL = ORIGIN = SERVER; all 15 committed blobs match remotely, tracked diff empty, unpushed commits 0. Owner-excluded untracked paths preserved.
+REVIEW = Frozen revision 1 approved by all five required mobile specialists and independent adversarial QA; 0 blockers / 0 majors / 0 minors. The malformed persisted original-wall start finding was fixed and its encoded-payload mutation regressions executed before approval.
+VALIDATION = Android 1568 tests / 0 failures/errors / 1 existing skip; lintDebug, compileReleaseKotlin and compileDebugAndroidTestKotlin PASS. Backend 2973/2973 PASS, 0 failures/skips. Usage sampling preserves explicit uncertainty; no exact event-time, gapless history, cryptographic authority or physical-device proof is claimed.
+CI = Source Quality Gates run 37601258816 queued when inspected: https://github.com/mosa-ali/PCA/actions/runs/37601258816 . Require all jobs on the latest published head before accepting this checkpoint. Ledger publication may produce a newer exact-head run; inspect that run rather than relying on older green CI.
+NEXT_AND_GATES = Continue the existing TODO-01..TODO-23 board and singleton iOS lower-bound threshold attribution package, then remaining receiving-device trust and authenticated policy ingress. Parent 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; Platform HOLD_PARENT_DEPENDENCY; REAL_ANDROID_DEVICE_GATE OPEN; REAL_IOS_DEVICE_GATE OPEN; READY_FOR_AZURE_DEPLOYMENT = NO. No live pca_pro, migration-0064, production configuration or Azure mutation.
+
 ## Current clock-provenance validated checkpoint draft - 2026-10-07
 
 BASE = 745a22529fafe505300b09c68f46192448933978; its exact-head Quality Gates run 37594969116 completed SUCCESS, all 27/27 jobs SUCCESS. This certifies that published base only. New local source is validated but unpublished pending frozen Stage B review.
