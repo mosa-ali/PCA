@@ -146,10 +146,10 @@ import type { ChildRequestService } from '../childrequests/ChildRequestService.j
 // "no new plaintext policy store" posture.
 import { registerEyeProtectionRoutes } from './routes/eyeProtectionRoutes.js';
 import type { EyeProtectionSettingsService } from '../eyeprotection/EyeProtectionSettingsService.js';
-// WEB_RULE parent authoring: a per-family, plaintext (never E2EE) rule
-// DEFINITION -- see webRuleRoutes.ts's own header comment for why this is
-// the same reviewed exception eyeProtectionRoutes.ts already establishes,
-// and why it never attempts the still-crypto-gated device-delivery step.
+// WEB_RULE parent authoring remains unavailable in production. Parent-authored
+// domain rules must not be stored in readable form on PCA infrastructure
+// (PCA-SEC-023); production omits WebRuleService until reviewed encrypted
+// policy storage and delivery are implemented.
 import { registerWebRuleRoutes } from './routes/webRuleRoutes.js';
 import type { WebRuleService } from '../web/WebRuleStore.js';
 import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
