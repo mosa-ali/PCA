@@ -1,5 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+## Latest Parent dependency re-entry — 2026-10-07 20:28 UTC
+
+PARENT_SOURCE = Local Parent source checkpoint `d7fa375255255543457b56cb172e630b19eb03e8` is 4 commits / 31 tracked paths ahead of cached `origin/pca-dev` at `d150a41b7923a8e58072affd4b3c3fa3f91127df`; cached remote is an ancestor, but direct remote lookup failed through the configured proxy. Backend focused suites passed 46/46, backend build passed, Swift frontend parsing and `git diff --check` passed. Exact-head CI and Git publication are not available for the local checkpoint.
+PLATFORM_SOURCE = No Platform source, Parent identity projection, Enrollment UI, Platform database, deployment or owner-acceptance change occurred in this checkpoint. PLATFORM-03…05 and PLATFORM-08…09 remain held behind Parent authority/projection and literal `LOCALHOST ACCEPTED=YES`; Platform remains `HOLD_PARENT_DEPENDENCY`.
+PARENT_TODO20 = Fresh disposable MySQL 8.4.11 replay through migration 0063 verified local schema creation and actual least-privilege runtime grants; retained UAT remains stopped/unavailable and live `pca_pro` remains unverified beyond 0059. No Platform or live database was changed. See the Parent ledger for grant and test evidence.
+GATES = Exact-head CI, live database parity, physical-device evidence, owner localhost acceptance, Azure deployment and production acceptance remain distinct. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Published Android usage-provenance checkpoint - 2026-10-07
 
 SOURCE_CHECKPOINT = 2090a91da8bbd67565d7964538ec75e3f555b4db; 15 frozen approved paths pushed by ordinary fast-forward to origin/pca-dev. Fetch and direct server lookup proved LOCAL = ORIGIN = SERVER; all 15 committed blobs match remotely, tracked diff empty, unpushed commits 0. Owner-excluded untracked paths preserved.
@@ -688,8 +695,8 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 STATUS = IN_PROGRESS  
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Ledger-sync checkpoint `47d564c4` is pushed and local/remote aligned; exact-head Quality Gates run `36348596733` failed. Parent corrections are underway. Previous run `36338197362` failed; Platform Enrollment changes are still held.  
-BLOCKER = Fresh exact-head CI and Parent owner gates remain pending; Platform Enrollment changes are still held.  
+EVIDENCE = Current Parent source checkpoint is local `d7fa375255255543457b56cb172e630b19eb03e8`; cached `origin/pca-dev` is `d150a41b7923a8e58072affd4b3c3fa3f91127df`. Local was 4 commits ahead with origin as ancestor; direct `git ls-remote` failed through the configured proxy. Parent focused validation is recorded in the latest re-entry checkpoint, but no exact-head CI or current remote equality is proven. No Platform source changed.
+BLOCKER = Fresh remote verification, directly authorized publication, and exact-head CI remain pending. Parent authority/owner gates still hold Enrollment.
 DONE_WHEN = local=remote and exact-head CI PASS
 
 ### PLATFORM-14 — Refresh rollback baseline
@@ -1614,3 +1621,10 @@ PLATFORM_GATE = The cached origin tracking ref remains at the prior base; no fre
 
 PARENT_GIT = A fresh fetch confirmed `origin/pca-dev` at `d150a41b7923a8e58072affd4b3c3fa3f91127df`; local Parent/mobile commits were ahead by two with no divergence at the check. No Platform files changed.
 PLATFORM_GATE = No push or exact-head CI has occurred. Parent TODO-12/14/15/20 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`; no live SQL, deployment, Azure mutation, or owner acceptance occurred.
+
+### 2026-10-07 20:28 UTC — Parent source and disposable MySQL re-entry checkpoint
+
+PARENT_CHECKPOINT = Local Parent source head `d7fa375255255543457b56cb172e630b19eb03e8` contains a source-scoped Web Rules in-memory store correction and iOS zero-minute persisted-state rejection. Backend build and focused backend suites passed 46/46; Swift frontend parsing and `git diff --check` passed. Exact-head CI and current remote server head are not verified.
+GIT = Cached `origin/pca-dev` is `d150a41b7923a8e58072affd4b3c3fa3f91127df`; local source checkpoint was 4 commits ahead. Direct remote lookup failed through the configured proxy. No push occurred.
+PLATFORM_GATE = No Platform source, identity projection, Enrollment behavior, schema, deployment or acceptance changed. `HOLD_PARENT_DEPENDENCY` remains; PLATFORM-03…05 and PLATFORM-08…09 remain dependent on Parent completion and owner `LOCALHOST ACCEPTED=YES`.
+TODO20_AND_RELEASE = Disposable MySQL 8.4.11 runtime grants are validated locally through migration 0063; retained UAT and live `pca_pro` remain unverified. No deployment, production, physical-device or owner acceptance is claimed; `READY_FOR_AZURE_DEPLOYMENT = NO`.
