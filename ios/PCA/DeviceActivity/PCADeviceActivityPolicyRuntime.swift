@@ -3,6 +3,16 @@ import Foundation
 import DeviceActivity
 import FamilyControls
 import ManagedSettings
+
+/// Synchronous binding lookup called while the runtime holds policy
+/// coordination. Store-backed resolvers must use the supplied access token.
+public typealias PCADeviceActivityUsageBindingProvider =
+    (DecodedSchedulePolicy, Set<ApplicationToken>, DeviceActivityPolicyLockAccess) -> DeviceActivityUsageSelectionBinding?
+
+/// The factory receives the exact runtime store and coordinator. Keep usage
+/// binding unavailable by leaving this nil until trusted authority is composed.
+public typealias PCADeviceActivityUsageBindingProviderFactory =
+    (AppGroupDeviceActivityFileStore, DeviceActivityPolicyCoordination) -> PCADeviceActivityUsageBindingProvider
 #endif
 
 /// The result of the host-side policy handoff. `applied` means the validated
@@ -165,7 +175,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let installationClock: () -> Date
     private let mutationLock = NSRecursiveLock()
     private let policyCoordination: DeviceActivityPolicyCoordination
-    private let usageBindingProvider: (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding?
+    private let usageBindingProvider: PCADeviceActivityUsageBindingProvider
     private let deviceTimeZone: () -> TimeZone
     private let shieldEnforcer: PCADeviceActivityShieldEnforcing
 
@@ -176,7 +186,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         callbackLog: CallbackObservationLog? = nil,
         installationClock: @escaping () -> Date = Date.init,
         policyCoordination: DeviceActivityPolicyCoordination = LocalDeviceActivityPolicyCoordination(),
-        usageBindingProvider: @escaping (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding? = { _, _ in nil },
+        usageBindingProvider: @escaping PCADeviceActivityUsageBindingProvider = { _, _, _ in nil },
         deviceTimeZone: @escaping () -> TimeZone = { .current },
         shieldEnforcer: PCADeviceActivityShieldEnforcing = SystemPCADeviceActivityShieldEnforcer()
     ) {
@@ -203,14 +213,17 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         now: Date
     ) throws -> PCAProtectionPolicyApplicationResult {
         do {
-            return try policyCoordination.withExclusiveAccess {
-                try applyPolicyUnderLock(scheduleData: scheduleData, applicationTokenData: applicationTokenData, protectedApplicationTokenData: protectedApplicationTokenData, now: now)
+            return try policyCoordination.withExclusiveAccessContext { access in
+                try applyPolicyUnderLock(scheduleData: scheduleData, applicationTokenData: applicationTokenData,
+                    protectedApplicationTokenData: protectedApplicationTokenData, now: now, lockAccess: access)
             }
         } catch let error as PCAProtectionPolicyApplicationError { throw error }
         catch { throw PCAProtectionPolicyApplicationError.persistenceFailed }
     }
 
-    private func applyPolicyUnderLock(scheduleData: Data, applicationTokenData: Data, protectedApplicationTokenData: Data?, now: Date) throws -> PCAProtectionPolicyApplicationResult {
+    private func applyPolicyUnderLock(scheduleData: Data, applicationTokenData: Data,
+                                      protectedApplicationTokenData: Data?, now: Date,
+                                      lockAccess: DeviceActivityPolicyLockAccess) throws -> PCAProtectionPolicyApplicationResult {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         guard authorizationIsApproved() else {
@@ -253,7 +266,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         let generation = UUID().uuidString.lowercased()
         let boundaries = triggers.map { DeviceActivityBoundaryMonitor(activityId: "pca-monitor-\(UUID().uuidString.lowercased())", trigger: $0) }
         let usagePlan: DeviceActivityUsageDayPlan?
-        if policy.dailyLimit != nil, let binding = usageBindingProvider(policy, applicationTokens),
+        if policy.dailyLimit != nil, let binding = usageBindingProvider(policy, applicationTokens, lockAccess),
            binding.matches(applicationTokens, logicalAppToken: policy.appToken) {
             if #available(iOS 17.4, *) {
                 do {
@@ -402,7 +415,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     /// execution; a recurring health monitor cannot renew this finite usage plan.
     /// The explicit binding provider and all registration checks run again.
     public func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
-        try policyCoordination.withExclusiveAccess {
+        try policyCoordination.withExclusiveAccessContext { access in
             guard let installation = currentInstallation(), installation.state == .active,
                   currentActiveActivityId() == installation.policyActivityId else {
                 throw PCAProtectionPolicyApplicationError.malformedPolicy
@@ -416,7 +429,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 throw PCAProtectionPolicyApplicationError.malformedPolicy
             }
             return try applyPolicyUnderLock(scheduleData: schedule, applicationTokenData: tokens,
-                protectedApplicationTokenData: floor, now: now)
+                protectedApplicationTokenData: floor, now: now, lockAccess: access)
         }
     }
 
@@ -532,10 +545,11 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     public static func production(
         authorizationIsApproved: @escaping () -> Bool,
         appGroupIdentifier: String,
-        usageBindingProvider: @escaping (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding? = { _, _ in nil }
+        usageBindingProviderFactory: PCADeviceActivityUsageBindingProviderFactory? = nil
     ) throws -> PCAProductionProtectionPolicyRuntime {
         let blobStore = try AppGroupDeviceActivityFileStore(appGroupIdentifier: appGroupIdentifier)
         let coordination = try AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: appGroupIdentifier)
+        let usageBindingProvider = usageBindingProviderFactory?(blobStore, coordination) ?? { _, _, _ in nil }
         let callbackLog = try? AppGroupCallbackObservationLog(appGroupIdentifier: appGroupIdentifier, installationReader: { blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) })
         return PCAProductionProtectionPolicyRuntime(
             authorizationIsApproved: authorizationIsApproved,

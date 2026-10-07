@@ -99,12 +99,66 @@ import FamilyControls
 import ManagedSettings
 
 final class DeviceActivityCallbackRuntimeTests: XCTestCase {
+    private final class NonReentrantCoordination: DeviceActivityPolicyCoordination {
+        private enum TestError: Error { case nestedAcquisition }
+        private let lock = NSRecursiveLock()
+        private var depth = 0
+        private(set) var acquisitions = 0
+
+        func withExclusiveAccess<T>(_ operation: () throws -> T) throws -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            guard depth == 0 else { throw TestError.nestedAcquisition }
+            depth += 1
+            acquisitions += 1
+            defer { depth -= 1 }
+            return try operation()
+        }
+
+        func resetAcquisitions() {
+            lock.lock()
+            acquisitions = 0
+            lock.unlock()
+        }
+    }
+
     private final class ShieldRecorder: PCADeviceActivityShieldEnforcing {
         var applyCount = 0
         var removeCount = 0
         func apply(applications: Set<ApplicationToken>, protectedApplications: Set<ApplicationToken>) throws { applyCount += 1 }
         func removeAll() { removeCount += 1 }
     }
+
+    func testUsageBindingProviderReceivesHeldAccessForApplyAndRenewal() throws {
+        let coordination = NonReentrantCoordination()
+        let store = CallbackRuntimeBlobStore()
+        var providerAccesses: [DeviceActivityPolicyLockAccess] = []
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: CallbackRuntimeScheduler(), blobStore: store,
+            installationClock: { self.installedAt }, policyCoordination: coordination,
+            usageBindingProvider: { _, _, access in
+                providerAccesses.append(access)
+                XCTAssertTrue(access.isActive(for: coordination))
+                return nil
+            })
+
+        coordination.resetAcquisitions()
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        let dailyPolicy = try boundaryPolicy(daily: true)
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(scheduleData: dailyPolicy,
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt), .degraded)
+        XCTAssertEqual(try runtime.renewInstalledUsageMonitor(now: installedAt.addingTimeInterval(60)), .degraded)
+
+        XCTAssertEqual(providerAccesses.count, 2)
+        XCTAssertEqual(coordination.acquisitions, 2, "apply and renewal each acquire the coordinator once")
+        XCTAssertTrue(providerAccesses.allSatisfy { !$0.isActive(for: coordination) },
+            "access must expire before the coordinator lock is released")
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
+            try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+        XCTAssertEqual(installation.schemaVersion, 2)
+        XCTAssertNil(installation.usageDayPlan, "a nil provider must not fabricate usage coverage")
+    }
+
     func testRegistrationAndPublicationFailuresDoNotMutateExistingShields() throws {
         for failure in ["payload", "schedule", "publication"] {
             let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler(), shields = ShieldRecorder()

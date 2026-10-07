@@ -1,5 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent dependency and exact-head CI refresh — 2026-10-08
+
+PARENT_PUBLISHED_HEAD = `0efe7cadaab97b448bf1486e9fb9900313347e77` was published to `origin/pca-dev` by ordinary fast-forward; direct GitHub ref lookup matches local HEAD and committed Parent test/ledger blobs were confirmed. Fresh fetch is blocked by `.git/FETCH_HEAD` permissions, leaving cached `origin/pca-dev` stale.
+PARENT_EXACT_HEAD_CI = Quality Gates run `37694228562` completed SUCCESS, 27/27 jobs. iOS build/unit tests, Android, backend/disposable MySQL, Parent/Platform web shards and browser E2E all succeeded. This certifies the published Parent checkpoint only; local draft changes are not included.
+PLATFORM_SCOPE = A fresh read-only audit found no Platform source task ready to advance without crossing Parent TODO-18 / owner acceptance gates. Parent-owned identity projection and Platform consumer remain in place. PLATFORM-03…05 and PLATFORM-08…09 remain held by Parent dependency plus literal `LOCALHOST ACCEPTED=YES`; Platform remains `HOLD_PARENT_DEPENDENCY`.
+GATES = No Platform source, Parent identity projection, live database, deployment, Azure or owner acceptance changed. Live `pca_pro`, physical-device evidence and owner acceptance remain separate; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Latest validated Parent mobile dependency checkpoint — 2026-10-07 20:54 UTC
 
 PARENT_SOURCE = Reviewed source checkpoint b79f429e514960bc44581121914326e1c4e1628c preserves enrollment attempts and key custody. Full Android validation passed 1625 tests with zero failures/errors and one existing skip; backend passed 2982/2982; all seven outgoing Swift files passed parsing. Five mobile specialists, independent QA and backend review approved scoped source with zero blockers or majors. Apple XCTest, physical devices and production composition remain separate gates.

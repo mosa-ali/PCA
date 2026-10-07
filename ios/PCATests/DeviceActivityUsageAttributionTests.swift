@@ -33,6 +33,28 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         let records: [PersistedRecordFixture]
     }
     private struct Token: Hashable, Codable { let value: String }
+    private final class NonReentrantCoordination: DeviceActivityPolicyCoordination {
+        private enum TestError: Error { case nestedAcquisition }
+        private let lock = NSRecursiveLock()
+        private var depth = 0
+        private(set) var acquisitions = 0
+
+        func withExclusiveAccess<T>(_ operation: () throws -> T) throws -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            guard depth == 0 else { throw TestError.nestedAcquisition }
+            depth += 1
+            acquisitions += 1
+            defer { depth -= 1 }
+            return try operation()
+        }
+
+        func resetAcquisitions() {
+            lock.lock()
+            acquisitions = 0
+            lock.unlock()
+        }
+    }
     private let now = Date(timeIntervalSince1970: 1_760_011_200)
 
     private func associationBinding(_ token: Token, logicalAppToken: String = "logical-app") throws -> DeviceActivityUsageSelectionBinding {
@@ -75,6 +97,49 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             revalidateAuthority: { _ in }))
         XCTAssertNil(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-e\u{301}",
             selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
+    }
+
+    func testResolverUsesActiveLockAccessWithoutReentryAndRejectsForeignOrExpiredAccess() throws {
+        let backing = Store(), coordination = NonReentrantCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let binding = try associationBinding(Token(value: "selected"))
+        let authority = Data("accepted-authority-epoch-4".utf8)
+        try associations.installAcceptedAssociation(scope: scope, binding: binding,
+            authorityBinding: authority, revision: 1, revalidateAuthority: { _ in })
+
+        coordination.resetAcquisitions()
+        let resolved = try coordination.withExclusiveAccessContext { access in
+            try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+                under: access, revalidateAuthority: { _ in })
+        }
+        XCTAssertEqual(resolved, binding)
+        XCTAssertEqual(coordination.acquisitions, 1, "resolution must use the held lock, not reacquire it")
+
+        let staleAuthority = try coordination.withExclusiveAccessContext { access in
+            try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                selectedTokens: [Token(value: "selected")], currentAuthorityBinding: Data("stale".utf8),
+                under: access, revalidateAuthority: { _ in })
+        }
+        XCTAssertNil(staleAuthority)
+
+        var expiredAccess: DeviceActivityPolicyLockAccess!
+        try coordination.withExclusiveAccessContext { access in expiredAccess = access }
+        XCTAssertThrowsError(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+            under: expiredAccess, revalidateAuthority: { _ in })) {
+            XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .invalidLockAccess)
+        }
+
+        let foreignCoordination = NonReentrantCoordination()
+        try foreignCoordination.withExclusiveAccessContext { access in
+            XCTAssertThrowsError(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
+                selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
+                under: access, revalidateAuthority: { _ in })) {
+                XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .invalidLockAccess)
+            }
+        }
     }
 
     func testUsageAssociationRevocationCannotBeUndoneByStaleRevision() throws {

@@ -217,7 +217,7 @@ public struct DeviceActivityUsageAssociationScope: Codable, Equatable {
 
 public enum DeviceActivityUsageAssociationError: Error, Equatable {
     case invalidAssociation, staleRevision, conflictingReplay, unavailableState
-    case persistenceFailed, authorityRejected
+    case persistenceFailed, authorityRejected, invalidLockAccess
 }
 
 /// Exact context a trusted caller must compare with its current authority
@@ -416,28 +416,61 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
         currentAuthorityBinding: Data,
         revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
     ) throws -> DeviceActivityUsageSelectionBinding? {
-        try coordination.withExclusiveAccess {
-            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
-                binding: nil, authorityBinding: currentAuthorityBinding, revision: nil))
-            guard scope.isValid, !logicalAppToken.isEmpty, logicalAppToken.utf8.count <= 256,
-                  currentAuthorityBinding.count > 0, currentAuthorityBinding.count <= 8_192 else {
-                throw DeviceActivityUsageAssociationError.invalidAssociation
-            }
-            let state = try load()
-            let matches = state.records.filter {
-                sameIdentity($0, scope: scope, logicalAppToken: logicalAppToken)
-            }
-            guard matches.count <= 1 else { throw DeviceActivityUsageAssociationError.unavailableState }
-            guard let record = matches.first else { return nil }
-            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
-                binding: record.binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
-            guard !record.revoked, record.authorityBinding == currentAuthorityBinding,
-                  let binding = record.binding,
-                  binding.matches(selectedTokens, logicalAppToken: logicalAppToken) else { return nil }
-            try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
-                binding: binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
-            return binding
+        try coordination.withExclusiveAccessContext { access in
+            try resolveAcceptedAssociation(scope: scope, logicalAppToken: logicalAppToken,
+                selectedTokens: selectedTokens, currentAuthorityBinding: currentAuthorityBinding,
+                under: access, revalidateAuthority: revalidateAuthority)
         }
+    }
+
+    /// Resolves without reacquiring the coordinator, for synchronous callers
+    /// already holding the same shared lock (such as policy installation).
+    /// A foreign or expired access token is rejected before reading the store.
+    public func resolveAcceptedAssociation(
+        scope: DeviceActivityUsageAssociationScope,
+        logicalAppToken: String,
+        selectedTokens: Set<Token>,
+        currentAuthorityBinding: Data,
+        under access: DeviceActivityPolicyLockAccess,
+        revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+    ) throws -> DeviceActivityUsageSelectionBinding? {
+        guard let result = try access.withActiveUse(for: coordination, {
+            try resolveAcceptedAssociationUnderActiveAccess(scope: scope, logicalAppToken: logicalAppToken,
+                selectedTokens: selectedTokens, currentAuthorityBinding: currentAuthorityBinding,
+                revalidateAuthority: revalidateAuthority)
+        }) else {
+            throw DeviceActivityUsageAssociationError.invalidLockAccess
+        }
+        return result
+    }
+
+    private func resolveAcceptedAssociationUnderActiveAccess(
+        scope: DeviceActivityUsageAssociationScope,
+        logicalAppToken: String,
+        selectedTokens: Set<Token>,
+        currentAuthorityBinding: Data,
+        revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+    ) throws -> DeviceActivityUsageSelectionBinding? {
+        try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+            binding: nil, authorityBinding: currentAuthorityBinding, revision: nil))
+        guard scope.isValid, !logicalAppToken.isEmpty, logicalAppToken.utf8.count <= 256,
+              currentAuthorityBinding.count > 0, currentAuthorityBinding.count <= 8_192 else {
+            throw DeviceActivityUsageAssociationError.invalidAssociation
+        }
+        let state = try load()
+        let matches = state.records.filter {
+            sameIdentity($0, scope: scope, logicalAppToken: logicalAppToken)
+        }
+        guard matches.count <= 1 else { throw DeviceActivityUsageAssociationError.unavailableState }
+        guard let record = matches.first else { return nil }
+        try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+            binding: record.binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
+        guard !record.revoked, record.authorityBinding == currentAuthorityBinding,
+              let binding = record.binding,
+              binding.matches(selectedTokens, logicalAppToken: logicalAppToken) else { return nil }
+        try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
+            binding: binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
+        return binding
     }
 
     private func sameIdentity(_ record: Record, scope: DeviceActivityUsageAssociationScope,

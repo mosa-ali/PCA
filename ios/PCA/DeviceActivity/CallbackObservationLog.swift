@@ -273,9 +273,70 @@ public final class InMemoryCallbackObservationLog: CallbackObservationLog {
 
 /// Serializes host replacement and extension decision/shield mutation across
 /// processes. Lock failure preserves existing shields; it has no local fallback.
-public protocol DeviceActivityPolicyCoordination {
+public protocol DeviceActivityPolicyCoordination: AnyObject {
     func withExclusiveAccess<T>(_ operation: () throws -> T) throws -> T
 }
+
+/// A short-lived proof that the caller is already executing inside this exact
+/// policy coordination boundary. Pass it to synchronous storage reads that
+/// must participate in the held boundary instead of acquiring the lock again.
+public final class DeviceActivityPolicyLockAccess {
+    private let coordinationIdentifier: ObjectIdentifier
+    private let stateCondition = NSCondition()
+    private var active = true
+    private var activeUses = 0
+
+    fileprivate init(coordination: DeviceActivityPolicyCoordination) {
+        coordinationIdentifier = ObjectIdentifier(coordination)
+    }
+
+    func isActive(for coordination: DeviceActivityPolicyCoordination) -> Bool {
+        stateCondition.lock()
+        defer { stateCondition.unlock() }
+        return active && coordinationIdentifier == ObjectIdentifier(coordination)
+    }
+
+    func withActiveUse<T>(for coordination: DeviceActivityPolicyCoordination,
+                          _ operation: () throws -> T) rethrows -> T? {
+        stateCondition.lock()
+        guard active, coordinationIdentifier == ObjectIdentifier(coordination) else {
+            stateCondition.unlock()
+            return nil
+        }
+        activeUses += 1
+        stateCondition.unlock()
+        defer {
+            stateCondition.lock()
+            activeUses -= 1
+            if activeUses == 0 { stateCondition.broadcast() }
+            stateCondition.unlock()
+        }
+        return try operation()
+    }
+
+    fileprivate func invalidate() {
+        stateCondition.lock()
+        active = false
+        while activeUses > 0 { stateCondition.wait() }
+        stateCondition.unlock()
+    }
+}
+
+public extension DeviceActivityPolicyCoordination {
+    /// Runs with a short-lived access token tied to this coordinator. The
+    /// token becomes invalid, and in-flight token uses finish, before the
+    /// underlying lock is released.
+    func withExclusiveAccessContext<T>(
+        _ operation: (DeviceActivityPolicyLockAccess) throws -> T
+    ) throws -> T {
+        try withExclusiveAccess {
+            let access = DeviceActivityPolicyLockAccess(coordination: self)
+            defer { access.invalidate() }
+            return try operation(access)
+        }
+    }
+}
+
 public final class LocalDeviceActivityPolicyCoordination: DeviceActivityPolicyCoordination {
     private let lock = NSRecursiveLock()
     public init() {}
