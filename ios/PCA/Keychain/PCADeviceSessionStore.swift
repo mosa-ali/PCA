@@ -238,10 +238,11 @@ public enum PCAInboundRetirementVerification {
     private let verifier: PCAInboundRetirementVerifying
     private let coordinator: PCAInboundApplicationCoordinator
     public init(journal: PCAInboundApplicationJournal, inbox: PCAKeychainInboundInboxStore,
-                denial: PCAInboundReplayDenialLedger, verifier: PCAInboundRetirementVerifying = PCAUnavailableInboundRetirementVerifier()) throws {
+                denial: PCAInboundReplayDenialLedger, verifier: PCAInboundRetirementVerifying? = nil) throws {
         guard denial.matchesJournal(journal), inbox.backingIdentity === journal.backingIdentity,
               pcaOpaqueEqual(inbox.applicationCoordinationService, journal.coordinationService) else { throw PCAInboundInboxError.unavailable }
-        self.journal = journal; self.inbox = inbox; self.denial = denial; self.verifier = verifier
+        self.journal = journal; self.inbox = inbox; self.denial = denial
+        self.verifier = verifier ?? PCAUnavailableInboundRetirementVerifier()
         coordinator = PCAInboundApplicationCoordinator.shared(service: journal.coordinationService)
     }
     /// Returns retired journal records and inbox-only entries, never application completion or custody acknowledgement evidence.
