@@ -208,3 +208,13 @@ Backend full regression completed PASS: 2975/2975 tests, zero failures/skips, ex
 ## Corrected Unicode scope review candidate
 
 Protocol Stage B rejected version1 (1major): Swift Set<String> collapsed byte-distinct canonically equivalent app identities. Both stored/domain app scopes now preserve arrays and compare membership/equality using exact UTF8/Data identities; added decode/singleton-planner rejection regression. Prior version1 approvals are superseded and freeze withdrawn. Swift parse/callsite inspection/diff checks passed; Apple execution remains pending. Full Android campaign completed BUILD SUCCESSFUL (unit/lint/release/instrumentation compilation); XML1568 tests, zero failures/errors,1existing skip. Backend full2975/2975PASS. Corrected version2 requires all five specialist approvals plus independent QA before commit/push. One Android reviewer failed with workspace out-of-credits; this is an environment limit, not approval. No production/physical/live gates changed.
+
+## Published iOS usage checkpoint — 6a503973
+
+SOURCE_CHECKPOINT = 6a503973c076977956bd838977334c7815f85fcf
+PUSH_RESULT = PASS; LOCAL_HEAD = REMOTE_HEAD = SERVER_HEAD; REMOTE_SOURCE_VERIFIED = YES (21/21 committed blobs equal fetched origin).
+REVIEW = corrected freezev2 five required specialists APPROVE + independent QA APPROVE; blockers=0/majors=0/minors=0. Earlier v1 approvals superseded following Unicode scope correction.
+VALIDATION = backend2975/2975PASS; Android1568tests/0failures/0errors/1existingSkip, lintDebug/compileReleaseKotlin/compileDebugAndroidTestKotlinPASS; all12 changedSwiftfilesparsePASS. Apple compilation/XCTest not yet proven.
+CI = Quality gates37617553060 queued for exact source SHA at inspection. Re-poll this run; do not infer Apple acceptance.
+WORKTREE = no tracked unpublished implementation; excluded .vscode/, root0, PARENT_FIRST_DEVICE_TRUST_SET_PROTOCOL_REVIEW.md and ios/scripts/__pycache__/ preserved.
+REMAINING = verified policy inbox/crypto orchestration, durable explicit scoped app associations and producer/composition, recovery/source tests, remaining Parent/Platform TODOs; physical-device evidence, PCA-DEC-020, live migration0064/pca_pro, Azure and Platform activation gates unchanged. TODO12/14/15 remain unfinished; deployment readiness NO. Continue implementation after any exact-head CI corrections.
