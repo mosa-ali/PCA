@@ -22,6 +22,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     private let policyStore: DeviceActivityPolicySource
     private let callbackLog: CallbackObservationLog
     private let managedSettings: ManagedSettingsStore
+    private let policyCoordination: DeviceActivityPolicyCoordination?
 
     override init() {
         // `DeviceActivityMonitor` is instantiated by the OS, not by this
@@ -33,8 +34,10 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         // process (PCA-15 correction F1: "return nil / degraded state
         // only when policy genuinely unavailable").
         self.policyStore = AppGroupDeviceActivityPolicySource(appGroupIdentifier: AppGroup.identifier)
-        self.callbackLog = (try? AppGroupCallbackObservationLog(appGroupIdentifier: AppGroup.identifier)) ?? InMemoryCallbackObservationLog()
+        let callbackState = try? AppGroupDeviceActivityFileStore(appGroupIdentifier: AppGroup.identifier)
+        self.callbackLog = (try? AppGroupCallbackObservationLog(appGroupIdentifier: AppGroup.identifier, installationReader: { callbackState?.read(forKey: deviceActivityMonitorInstallationStorageKey) })) ?? InMemoryCallbackObservationLog()
         self.managedSettings = ManagedSettingsStore()
+        self.policyCoordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
         super.init()
     }
 
@@ -69,6 +72,13 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     /// engine at the moment of the callback, not baked into the schedule
     /// mapping ahead of time.
     private func applyCurrentDecision(for activity: DeviceActivityName) {
+        // The shared OS file lock spans load, evaluation and shield mutation;
+        // an old callback cannot clear a replacement's restrictive decision.
+        guard let coordination = policyCoordination else { return }
+        try? coordination.withExclusiveAccess { applyCurrentDecisionUnderLock(for: activity) }
+    }
+
+    private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName) {
         guard let policy = policyStore.currentPolicy(for: activity) else {
             // Policy genuinely unavailable (never synced yet, App Group
             // unreachable, or malformed/rejected by PolicySyncDecoder) --
@@ -143,41 +153,15 @@ struct AppGroupDeviceActivityPolicySource: DeviceActivityPolicySource {
     private let tokenBlobStore: OpaqueBlobStore?
 
     init(appGroupIdentifier: String) {
-        self.scheduleBlobStore = try? AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
-        self.tokenBlobStore = try? AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
+        self.scheduleBlobStore = try? AppGroupDeviceActivityFileStore(appGroupIdentifier: appGroupIdentifier)
+        self.tokenBlobStore = try? AppGroupDeviceActivityFileStore(appGroupIdentifier: appGroupIdentifier)
     }
 
     func currentPolicy(for activity: DeviceActivityName) -> DeviceActivityAppliedPolicy? {
-        guard let scheduleStore = scheduleBlobStore, let tokenStore = tokenBlobStore else { return nil }
-
-        if let installationData = scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) {
-            // Generation-tagged monitor names are resolved to their policy
-            // activity only while the matching installation record exists.
-            // A callback from an old or partially-installed monitor therefore
-            // cannot load a newly-written policy under a reused identifier.
-            guard let installation = DeviceActivityMonitorInstallation.decodeValidated(installationData),
-                  installation.monitorActivityId == activity.rawValue,
-                  installation.state == .starting || installation.state == .active else {
-                return nil
-            }
-            guard let loaded = StoredDeviceActivityPolicyLoader<ApplicationToken>(
+        guard let scheduleStore = scheduleBlobStore, let tokenStore = tokenBlobStore,
+              let loaded = InstalledDeviceActivityPolicyLoader<ApplicationToken>(
                 scheduleStore: scheduleStore, tokenStore: tokenStore
-            ).load(activityId: installation.policyActivityId) else { return nil }
-            return DeviceActivityAppliedPolicy(
-                schedule: loaded.schedule, applicationTokens: loaded.applicationTokens,
-                protectedApplicationTokens: loaded.protectedApplicationTokens
-            )
-        }
-
-        // Existing monitors created before generation-tagged names used the
-        // policy activity ID directly. Keep their policy application intact;
-        // callback health remains `.unknown` until the host installs a fresh
-        // generation and records its successful start.
-        guard let activeId = scheduleStore.read(forKey: "activeActivityId"),
-              String(data: activeId, encoding: .utf8) == activity.rawValue else { return nil }
-        guard let loaded = StoredDeviceActivityPolicyLoader<ApplicationToken>(
-            scheduleStore: scheduleStore, tokenStore: tokenStore
-        ).load(activityId: activity.rawValue) else { return nil }
+              ).load(monitorActivityId: activity.rawValue) else { return nil }
         return DeviceActivityAppliedPolicy(
             schedule: loaded.schedule, applicationTokens: loaded.applicationTokens,
             protectedApplicationTokens: loaded.protectedApplicationTokens

@@ -162,7 +162,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         try seed(store)
         store.failKey = "applicationTokens.policy"
         store.onWrite = { key in
-            if key == "schedule.policy" {
+            if key.hasPrefix("schedule.policy") {
                 XCTAssertNil(store.read(forKey: "activeActivityId"))
                 XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
             }
@@ -204,33 +204,180 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         store.remove(forKey: deviceActivityMonitorInstallationStorageKey)
         XCTAssertEqual(runtime.callbackHealth(now: now), .unknown)
     }
+    private func boundaryPolicy(windowCount: Int = 1, daily: Bool = false) throws -> Data {
+        let windows = (0..<windowCount).map { StoredScheduleWindow(id: "w\($0)", kind: .bedtime, daysOfWeek: [1,2,3,4,5,6,7], start: .init(hour: $0, minute: 0), end: .init(hour: $0, minute: 1), appScope: .all, timezone: "UTC") }
+        let limit = daily ? StoredDailyAppLimit(appScope: .all, limitMinutes: 60, usedMinutesToday: 0, anchorLocalDate: "2025-06-03") : nil
+        let policy = StoredDeviceActivityPolicy(schemaVersion: 1, activityId: "policy", appToken: "opaque", timeZoneIdentifier: "Asia/Riyadh", windows: windows, bonusGrants: [], exceptions: [], dailyLimit: limit, enforcementCapability: .enforced)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(policy)
+    }
+    func testBoundaryGroupBecomesActiveOnlyAfterEveryRegistration() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+        scheduler.onStart = { _, _ in
+            XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!)?.state, .starting)
+            XCTAssertNil(store.read(forKey: "activeActivityId"))
+        }
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+        _ = try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
+        let manifest = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
+        XCTAssertEqual(manifest.schemaVersion, 2)
+        XCTAssertEqual(manifest.state, .active)
+        XCTAssertEqual(manifest.boundaryMonitors?.count, 2)
+        XCTAssertEqual(Set(scheduler.started), Set(manifest.allMonitorActivityIds))
+        XCTAssertNotNil(store.read(forKey: "protectedApplicationTokens.\(manifest.generation)"))
+        XCTAssertNotNil(InstalledDeviceActivityPolicyLoader<ApplicationToken>(scheduleStore: store, tokenStore: store).load(monitorActivityId: manifest.boundaryMonitors![0].activityId))
+        runtime.clearPolicy(activityId: "unrelated")
+        XCTAssertTrue(scheduler.stopped.isEmpty)
+        runtime.clearPolicy(activityId: "policy")
+        XCTAssertEqual(Set(scheduler.stopped), Set(manifest.allMonitorActivityIds))
+        XCTAssertNil(store.read(forKey: "activeActivityId"))
+    }
+    func testEveryRegistrationFailurePositionStopsEntireStagedSet() throws {
+        for failAt in 1...3 {
+            let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+            scheduler.failAtStart = failAt
+            var stagedIds: [String] = []
+            scheduler.onStart = { _, _ in
+                stagedIds = DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!)!.allMonitorActivityIds
+            }
+            let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+            XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)) {
+                XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .schedulingFailed)
+            }
+            XCTAssertEqual(Set(scheduler.stopped), Set(stagedIds))
+            XCTAssertNil(store.read(forKey: "activeActivityId"))
+            XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        }
+    }
+    func testTwentyMonitorCeilingSucceedsAndLastRegistrationFailureRetiresAll() throws {
+        for failLast in [false, true] {
+            let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+            if failLast { scheduler.failAtStart = 20 }
+            let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+            let data = try boundaryPolicy(windowCount: 9, daily: true)
+            let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+            if failLast {
+                XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: data, applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt))
+                XCTAssertEqual(Set(scheduler.stopped), Set(scheduler.started))
+                XCTAssertNil(store.read(forKey: "activeActivityId"))
+            } else {
+                _ = try runtime.applyVerifiedPolicy(scheduleData: data, applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt)
+                let manifest = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
+                XCTAssertEqual(manifest.boundaryMonitors?.count, 19)
+                XCTAssertEqual(manifest.allMonitorActivityIds.count, 20)
+            }
+            XCTAssertEqual(scheduler.started.count, 20)
+        }
+    }
+    func testExcessBoundariesRejectBeforeReplacingPriorState() throws {
+        let store = CallbackRuntimeBlobStore(); try seed(store)
+        let before = store.read(forKey: deviceActivityMonitorInstallationStorageKey)
+        let scheduler = CallbackRuntimeScheduler()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(windowCount: 10), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .unsupportedSchedule)
+        }
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), before)
+        XCTAssertTrue(scheduler.started.isEmpty && scheduler.stopped.isEmpty)
+    }
+    func testRestartRetiresIncompleteGroupAndReplacementStopsPreviousGroup() throws {
+        let store = CallbackRuntimeBlobStore(), firstScheduler = CallbackRuntimeScheduler()
+        let first = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: firstScheduler, blobStore: store, installationClock: { self.installedAt })
+        _ = try first.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
+        let old = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
+        let secondScheduler = CallbackRuntimeScheduler()
+        let second = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: secondScheduler, blobStore: store, installationClock: { self.installedAt })
+        _ = try second.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
+        XCTAssertTrue(Set(old.allMonitorActivityIds).isSubset(of: Set(secondScheduler.stopped)))
+        XCTAssertNil(store.read(forKey: "schedule.policy.\(old.generation)"))
+        let current = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
+        let incomplete = DeviceActivityMonitorInstallation(policyActivityId: current.policyActivityId, monitorActivityId: current.monitorActivityId, generation: current.generation, installedAtUtc: current.installedAtUtc, timeZoneIdentifier: current.timeZoneIdentifier, state: .starting, schemaVersion: 2, boundaryMonitors: current.boundaryMonitors)
+        try store.write(JSONEncoder().encode(incomplete), forKey: deviceActivityMonitorInstallationStorageKey)
+        let restartScheduler = CallbackRuntimeScheduler()
+        _ = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: restartScheduler, blobStore: store)
+        XCTAssertEqual(Set(restartScheduler.stopped), Set(current.allMonitorActivityIds))
+        XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+    }
+    func testFailedActivationVerificationAndRemovalRetainsNonActiveTombstone() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+        store.ignoreRemovals = true
+        store.failActivationVerification = true
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .persistenceFailed)
+        }
+        let manifest = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
+        XCTAssertEqual(manifest.state, .invalidated)
+        XCTAssertEqual(store.read(forKey: "activeActivityId"), Data("policy".utf8))
+        XCTAssertEqual(Set(scheduler.stopped), Set(manifest.allMonitorActivityIds))
+        for id in manifest.allMonitorActivityIds {
+            XCTAssertNil(InstalledDeviceActivityPolicyLoader<ApplicationToken>(scheduleStore: store, tokenStore: store).load(monitorActivityId: id))
+        }
+    }
+    func testFailedClearInvalidationPreservesActiveStateAndDoesNotRetireMonitors() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+        _ = try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
+        let manifest = store.read(forKey: deviceActivityMonitorInstallationStorageKey)
+        store.ignoreRemovals = true
+        runtime.clearPolicy(activityId: "policy")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifest)
+        XCTAssertEqual(store.read(forKey: "activeActivityId"), Data("policy".utf8))
+        XCTAssertTrue(scheduler.stopped.isEmpty)
+    }
+    func testLostManifestReclaimsOnlyOwnedGeneratedMonitorNames() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()
+        scheduler.orphanIds = [monitor]
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+        _ = try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
+        XCTAssertEqual(scheduler.stopped, [monitor])
+    }
+
 }
 
 private enum CallbackRuntimeFailure: Error { case injected }
 private final class CallbackRuntimeBlobStore: OpaqueBlobStore {
     private var values: [String: Data] = [:]
+    var ignoreRemovals = false
+    var failActivationVerification = false
+    private var activationWritten = false
     var failActiveWrite = false
     var failKey: String?
     var onWrite: ((String) -> Void)?
     func write(_ data: Data, forKey key: String) throws {
         onWrite?(key)
-        if key == failKey { throw CallbackRuntimeFailure.injected }
+        if key == failKey || (failKey != nil && key.hasPrefix(failKey! + ".")) { throw CallbackRuntimeFailure.injected }
         if failActiveWrite && key == deviceActivityMonitorInstallationStorageKey && DeviceActivityMonitorInstallation.decodeValidated(data)?.state == .active { throw CallbackRuntimeFailure.injected }
         values[key] = data
+        if key == "activeActivityId" { activationWritten = true }
     }
-    func read(forKey key: String) -> Data? { values[key] }
-    func remove(forKey key: String) { values.removeValue(forKey: key) }
+    func read(forKey key: String) -> Data? {
+        if key == "activeActivityId" && activationWritten && failActivationVerification {
+            failActivationVerification = false
+            return Data("verification mismatch".utf8)
+        }
+        return values[key]
+    }
+    func remove(forKey key: String) { if !ignoreRemovals { values.removeValue(forKey: key) } }
 }
 private final class CallbackRuntimeScheduler: PCADeviceActivityScheduler {
     var failStart = false
+    var failAtStart: Int?
+    var orphanIds: [String] = []
     var onStart: ((String, Calendar) -> Void)?
     var started: [String] = []
     var stopped: [String] = []
     func start(activityId: String, calendar: Calendar) throws {
         started.append(activityId)
         onStart?(activityId, calendar)
-        if failStart { throw CallbackRuntimeFailure.injected }
+        if failStart || failAtStart == started.count { throw CallbackRuntimeFailure.injected }
     }
+    func startBoundary(activityId: String, trigger: DeviceActivityBoundaryTrigger) throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        try start(activityId: activityId, calendar: calendar)
+    }
+    func ownedMonitorActivityIds() -> [String] { orphanIds }
     func stop(activityId: String) { stopped.append(activityId) }
 }
 private final class CallbackRuntimeLog: CallbackObservationLog {

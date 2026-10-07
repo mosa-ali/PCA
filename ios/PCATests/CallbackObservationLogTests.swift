@@ -107,7 +107,10 @@ final class CallbackObservationLogTests: XCTestCase {
         log.record(kind: .intervalDidStart, activityId: "monitor-old", at: now)
         let records = log.readAll()
         XCTAssertEqual(records.first?.installationGeneration, generation)
-        XCTAssertNil(records.last?.installationGeneration)
+        XCTAssertEqual(records.count, 1)
+        let diagnosticData = try XCTUnwrap(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"))
+        let diagnostic = try JSONDecoder().decode([PersistedCallbackObservation].self, from: diagnosticData)
+        XCTAssertNil(diagnostic.last?.installationGeneration)
         XCTAssertEqual(records.first?.asObservedCallback.activityId, monitor)
         XCTAssertEqual(records.first?.asObservedCallback.installationGeneration, generation)
         defaults.set(try JSONEncoder().encode(installation.confirmingActive()), forKey: deviceActivityMonitorInstallationStorageKey)
@@ -131,3 +134,91 @@ final class CallbackObservationLogTests: XCTestCase {
         XCTAssertNil(decoded.installationGeneration)
     }
 }
+
+final class BoundaryCallbackIsolationTests: XCTestCase {
+    func testAuxiliaryFloodCannotEvictAnchorHealthEvidence() throws {
+        let suite = "org.pca.tests.boundaries.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let anchor = "pca-monitor-\(UUID().uuidString.lowercased())"
+        let auxiliary = "pca-monitor-\(UUID().uuidString.lowercased())"
+        let generation = UUID().uuidString.lowercased(), now = Date()
+        let installation = DeviceActivityMonitorInstallation(policyActivityId: "policy", monitorActivityId: anchor, generation: generation, installedAtUtc: now, timeZoneIdentifier: "UTC", state: .active, schemaVersion: 2, boundaryMonitors: [.init(activityId: auxiliary, trigger: .recurring(timeZoneIdentifier: "UTC", hour: 22, minute: 0))])
+        defaults.set(try JSONEncoder().encode(installation), forKey: deviceActivityMonitorInstallationStorageKey)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite, capacity: 3)
+        log.record(kind: .intervalDidStart, activityId: anchor, at: now)
+        for _ in 0..<10 { log.record(kind: .intervalDidStart, activityId: auxiliary, at: now) }
+        XCTAssertEqual(log.readAll().count, 1)
+        XCTAssertEqual(log.readAll().first?.activityId, anchor)
+        let data = try XCTUnwrap(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"))
+        let diagnostics = try JSONDecoder().decode([PersistedCallbackObservation].self, from: data)
+        XCTAssertEqual(diagnostics.count, 3)
+        XCTAssertTrue(diagnostics.allSatisfy { $0.installationGeneration == generation })
+    }
+    func testManifestRejectsDuplicateIdsTriggersAndMissingV2Collection() throws {
+        let anchor = "pca-monitor-\(UUID().uuidString.lowercased())"
+        let generation = UUID().uuidString.lowercased()
+        let repeated = DeviceActivityBoundaryMonitor(activityId: anchor, trigger: .recurring(timeZoneIdentifier: "UTC", hour: 1, minute: 0))
+        for boundaries: [DeviceActivityBoundaryMonitor]? in [nil, [repeated]] {
+            let manifest = DeviceActivityMonitorInstallation(policyActivityId: "policy", monitorActivityId: anchor, generation: generation, installedAtUtc: Date(), timeZoneIdentifier: "UTC", state: .active, schemaVersion: 2, boundaryMonitors: boundaries)
+            XCTAssertNil(DeviceActivityMonitorInstallation.decodeValidated(try JSONEncoder().encode(manifest)))
+        }
+    }
+}
+
+#if canImport(Darwin)
+final class DeviceActivityFileStorageTests: XCTestCase {
+    func testFileOwnershipNeverFallsBackAfterInvalidationOrCorruption() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-policy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let legacy = InMemoryBlobStore()
+        try legacy.write(Data("old".utf8), forKey: "manifest")
+        let store = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: legacy)
+        XCTAssertEqual(store.read(forKey: "manifest"), Data("old".utf8))
+        try store.write(Data("new".utf8), forKey: "manifest")
+        let restarted = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: legacy)
+        XCTAssertEqual(restarted.read(forKey: "manifest"), Data("new".utf8))
+        restarted.remove(forKey: "manifest")
+        try legacy.write(Data("tempting-old".utf8), forKey: "manifest")
+        XCTAssertNil(restarted.read(forKey: "manifest"))
+        let marker = directory.appendingPathComponent("file-storage-owner")
+        try Data("corrupt marker".utf8).write(to: marker)
+        XCTAssertNil(restarted.read(forKey: "manifest"))
+    }
+    func testSeparateLockHandlesSerializeDecisionAndReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-coordination-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("policy.lock")
+        let oldCallback = AppGroupDeviceActivityPolicyCoordination(lockFile: url)
+        let replacement = AppGroupDeviceActivityPolicyCoordination(lockFile: url)
+        let callbackEntered = DispatchSemaphore(value: 0), releaseCallback = DispatchSemaphore(value: 0)
+        let replacementAttempted = DispatchSemaphore(value: 0), replacementEntered = DispatchSemaphore(value: 0)
+        let callbackDone = expectation(description: "callback finishes")
+        let replacementDone = expectation(description: "replacement finishes")
+        DispatchQueue.global().async {
+            do {
+                try oldCallback.withExclusiveAccess {
+                    callbackEntered.signal()
+                    _ = releaseCallback.wait(timeout: .now() + 5)
+                }
+            } catch { XCTFail("callback lock failed: \(error)") }
+            callbackDone.fulfill()
+        }
+        XCTAssertEqual(callbackEntered.wait(timeout: .now() + 5), .success)
+        DispatchQueue.global().async {
+            replacementAttempted.signal()
+            do { try replacement.withExclusiveAccess { replacementEntered.signal() } }
+            catch { XCTFail("replacement lock failed: \(error)") }
+            replacementDone.fulfill()
+        }
+        XCTAssertEqual(replacementAttempted.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(replacementEntered.wait(timeout: .now() + 0.1), .timedOut)
+        releaseCallback.signal()
+        XCTAssertEqual(replacementEntered.wait(timeout: .now() + 5), .success)
+        wait(for: [callbackDone, replacementDone], timeout: 5)
+        // Separate handles exercise OS advisory locking, not physical App Group
+        // entitlement, extension lifecycle or DeviceActivity delivery evidence.
+    }
+}
+#endif

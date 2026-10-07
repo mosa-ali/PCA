@@ -34,22 +34,50 @@ public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
         self.tokenStore = tokenStore
     }
 
-    public func load(activityId: String) -> StoredDeviceActivityPolicySnapshot<Token>? {
-        guard let scheduleData = scheduleStore.read(forKey: "schedule.\(activityId)"),
+    public func load(activityId: String, storageGeneration: String? = nil) -> StoredDeviceActivityPolicySnapshot<Token>? {
+        if let generation = storageGeneration, UUID(uuidString: generation) == nil { return nil }
+        let suffix = storageGeneration.map { "." + $0 } ?? ""
+        guard let scheduleData = scheduleStore.read(forKey: "schedule.\(activityId)\(suffix)"),
               case .success(let schedule) = PolicySyncDecoder.decode(scheduleData),
               schedule.activityId == activityId,
-              let tokenData = tokenStore.read(forKey: "applicationTokens.\(activityId)"),
+              let tokenData = tokenStore.read(forKey: "applicationTokens.\(activityId)\(suffix)"),
               let tokens = try? PropertyListDecoder().decode(Set<Token>.self, from: tokenData) else { return nil }
         let protectedTokens: Set<Token>
-        if let data = tokenStore.read(forKey: "protectedApplicationTokens") {
+        if let data = tokenStore.read(forKey: "protectedApplicationTokens\(suffix)") {
             guard let decoded = try? PropertyListDecoder().decode(Set<Token>.self, from: data) else { return nil }
             protectedTokens = decoded
         } else {
+            guard storageGeneration == nil else { return nil }
             protectedTokens = []
         }
         return StoredDeviceActivityPolicySnapshot(
             schedule: schedule, applicationTokens: tokens, protectedApplicationTokens: protectedTokens
         )
+    }
+}
+
+/// Active manifest resolution shared by extension and tests. A present
+/// malformed/starting installation never downgrades to legacy policy slots.
+public struct InstalledDeviceActivityPolicyLoader<Token: Hashable & Codable> {
+    private let scheduleStore: OpaqueBlobStore
+    private let tokenStore: OpaqueBlobStore
+    public init(scheduleStore: OpaqueBlobStore, tokenStore: OpaqueBlobStore) {
+        self.scheduleStore = scheduleStore; self.tokenStore = tokenStore
+    }
+    public func load(monitorActivityId: String) -> StoredDeviceActivityPolicySnapshot<Token>? {
+        let loader = StoredDeviceActivityPolicyLoader<Token>(scheduleStore: scheduleStore, tokenStore: tokenStore)
+        if let data = scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) {
+            guard let installation = DeviceActivityMonitorInstallation.decodeValidated(data),
+                  installation.state == .active,
+                  installation.containsMonitor(monitorActivityId),
+                  scheduleStore.read(forKey: "activeActivityId") == Data(installation.policyActivityId.utf8),
+                  let snapshot = loader.load(activityId: installation.policyActivityId, storageGeneration: installation.payloadStorageGeneration),
+                  scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == data,
+                  scheduleStore.read(forKey: "activeActivityId") == Data(installation.policyActivityId.utf8) else { return nil }
+            return snapshot
+        }
+        guard scheduleStore.read(forKey: "activeActivityId") == Data(monitorActivityId.utf8) else { return nil }
+        return loader.load(activityId: monitorActivityId)
     }
 }
 
@@ -65,6 +93,9 @@ public enum StoredAppScope: Codable, Equatable {
 }
 
 public struct StoredScheduleWindow: Codable, Equatable {
+    /// Optional only for legacy stored snapshots. New explicit per-window
+    /// timezone uses the shared policy field name; malformed zones reject.
+    public let timezone: String?
     public let id: String
     public let kind: ScheduleWindowKind
     public let daysOfWeek: Set<Int>
@@ -72,7 +103,8 @@ public struct StoredScheduleWindow: Codable, Equatable {
     public let end: StoredTimeOfDay
     public let appScope: StoredAppScope
 
-    public init(id: String, kind: ScheduleWindowKind, daysOfWeek: Set<Int>, start: StoredTimeOfDay, end: StoredTimeOfDay, appScope: StoredAppScope) {
+    public init(id: String, kind: ScheduleWindowKind, daysOfWeek: Set<Int>, start: StoredTimeOfDay, end: StoredTimeOfDay, appScope: StoredAppScope, timezone: String? = nil) {
+        self.timezone = timezone
         self.id = id; self.kind = kind; self.daysOfWeek = daysOfWeek; self.start = start; self.end = end; self.appScope = appScope
     }
 }
@@ -186,7 +218,15 @@ public enum PolicySyncDecoder {
             return .failure(.unrecognizedTimeZone(stored.timeZoneIdentifier))
         }
 
-        let windows = stored.windows.map { toDomainWindow($0, timeZone: timeZone) }
+        var windows: [ScheduleWindow] = []
+        for window in stored.windows {
+            let windowZone: TimeZone
+            if let identifier = window.timezone {
+                guard let explicitZone = TimeZone(identifier: identifier) else { return .failure(.unrecognizedTimeZone(identifier)) }
+                windowZone = explicitZone
+            } else { windowZone = timeZone } // Deliberate legacy snapshot compatibility.
+            windows.append(toDomainWindow(window, timeZone: windowZone))
+        }
         let configErrors = windows.flatMap(ScheduleEngine.validate)
         guard configErrors.isEmpty else {
             return .failure(.invalidWindowConfig(configErrors))

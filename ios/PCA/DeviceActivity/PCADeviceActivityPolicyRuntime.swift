@@ -22,6 +22,7 @@ public enum PCAProtectionPolicyApplicationError: Error, Equatable {
     case frameworkUnavailable
     case persistenceFailed
     case schedulingFailed
+    case unsupportedSchedule
 }
 
 /// This is the post-crypto application boundary. Callers may pass data here
@@ -62,7 +63,9 @@ public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime 
 /// without invoking Apple's process-bound DeviceActivity center.
 public protocol PCADeviceActivityScheduler {
     func start(activityId: String, calendar: Calendar) throws
+    func startBoundary(activityId: String, trigger: DeviceActivityBoundaryTrigger) throws
     func stop(activityId: String)
+    func ownedMonitorActivityIds() -> [String]
 }
 
 public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler {
@@ -83,6 +86,13 @@ public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler 
         )
     }
 
+    public func startBoundary(activityId: String, trigger: DeviceActivityBoundaryTrigger) throws {
+        try center.startMonitoring(DeviceActivityName(activityId), during: DeviceActivityScheduleMapper.boundarySchedule(for: trigger), events: [:])
+    }
+
+    public func ownedMonitorActivityIds() -> [String] {
+        center.activities.map(\.rawValue).filter { $0.hasPrefix("pca-monitor-") && UUID(uuidString: String($0.dropFirst("pca-monitor-".count))) != nil }
+    }
     public func stop(activityId: String) {
         center.stopMonitoring([DeviceActivityName(activityId)])
     }
@@ -96,19 +106,28 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let plistDecoder = PropertyListDecoder()
     private let installationEncoder = JSONEncoder()
     private let installationClock: () -> Date
+    private let mutationLock = NSRecursiveLock()
+    private let policyCoordination: DeviceActivityPolicyCoordination
 
     public init(
         authorizationIsApproved: @escaping () -> Bool,
         scheduler: PCADeviceActivityScheduler = SystemPCADeviceActivityScheduler(),
         blobStore: OpaqueBlobStore,
         callbackLog: CallbackObservationLog? = nil,
-        installationClock: @escaping () -> Date = Date.init
+        installationClock: @escaping () -> Date = Date.init,
+        policyCoordination: DeviceActivityPolicyCoordination = LocalDeviceActivityPolicyCoordination()
     ) {
         self.authorizationIsApproved = authorizationIsApproved
         self.scheduler = scheduler
         self.blobStore = blobStore
         self.callbackLog = callbackLog
         self.installationClock = installationClock
+        self.policyCoordination = policyCoordination
+        // Process death during registration must not leave a partially owned
+        // set consuming slots or claiming health after host reconstruction.
+        try? policyCoordination.withExclusiveAccess {
+            if let incomplete = currentInstallation(), incomplete.state != .active { invalidate(incomplete) }
+        }
     }
 
     public func applyVerifiedPolicy(
@@ -117,6 +136,17 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         protectedApplicationTokenData: Data?,
         now: Date
     ) throws -> PCAProtectionPolicyApplicationResult {
+        do {
+            return try policyCoordination.withExclusiveAccess {
+                try applyPolicyUnderLock(scheduleData: scheduleData, applicationTokenData: applicationTokenData, protectedApplicationTokenData: protectedApplicationTokenData, now: now)
+            }
+        } catch let error as PCAProtectionPolicyApplicationError { throw error }
+        catch { throw PCAProtectionPolicyApplicationError.persistenceFailed }
+    }
+
+    private func applyPolicyUnderLock(scheduleData: Data, applicationTokenData: Data, protectedApplicationTokenData: Data?, now: Date) throws -> PCAProtectionPolicyApplicationResult {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         guard authorizationIsApproved() else {
             throw PCAProtectionPolicyApplicationError.authorizationRequired
         }
@@ -145,72 +175,89 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.unsafePolicy
         }
 
-        // Invalidate the prior installation before replacing the policy or
-        // schedule. A failed replacement must not let old callbacks certify
-        // the new policy. Per-install monitor names also keep late callbacks
-        // from a previous schedule distinct, including same-policy reinstall.
+        let planningTime = installationClock()
+        let triggers: [DeviceActivityBoundaryTrigger]
+        do {
+            triggers = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy, now: planningTime)
+        } catch {
+            // Reject before invalidating a working generation. No partial
+            // coverage or older policy is relabeled as this new application.
+            throw PCAProtectionPolicyApplicationError.unsupportedSchedule
+        }
+        let generation = UUID().uuidString.lowercased()
+        let boundaries = triggers.map { DeviceActivityBoundaryMonitor(activityId: "pca-monitor-\(UUID().uuidString.lowercased())", trigger: $0) }
+        let monitoringCalendar = DeviceActivityScheduleMapper.monitoringCalendar()
         let previousInstallation = currentInstallation()
         let previousActiveId = currentActiveActivityId()
         blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
         blobStore.remove(forKey: "activeActivityId")
+        guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == nil,
+              blobStore.read(forKey: "activeActivityId") == nil else { throw PCAProtectionPolicyApplicationError.persistenceFailed }
         if let previousInstallation {
-            scheduler.stop(activityId: previousInstallation.monitorActivityId)
+            retire(previousInstallation)
         } else if let previousActiveId {
-            // Stop a legacy monitor from before generation-tagged names were
-            // introduced. Its callback cannot qualify health without metadata.
             scheduler.stop(activityId: previousActiveId)
+            removePayloads(policyActivityId: previousActiveId, generation: nil)
         }
 
-        let monitoringCalendar = DeviceActivityScheduleMapper.monitoringCalendar()
+        // Immutable generation slots prevent a callback that already read an
+        // old manifest from mixing a new policy with an older token safety floor.
+        // Reclaim orphaned generated OS names when metadata was lost/corrupt.
+        // Other app activities are preserved; no broad stopMonitoring([]).
+        for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
+        let suffix = "." + generation
         do {
-            try blobStore.write(scheduleData, forKey: "schedule.\(policy.activityId)")
-            try blobStore.write(applicationTokenData, forKey: "applicationTokens.\(policy.activityId)")
-            if let protectedApplicationTokenData = protectedApplicationTokenData {
-                try blobStore.write(protectedApplicationTokenData, forKey: "protectedApplicationTokens")
-            } else {
-                blobStore.remove(forKey: "protectedApplicationTokens")
+            try blobStore.write(scheduleData, forKey: "schedule.\(policy.activityId)\(suffix)")
+            try blobStore.write(applicationTokenData, forKey: "applicationTokens.\(policy.activityId)\(suffix)")
+            let floor = try protectedApplicationTokenData ?? PropertyListEncoder().encode(Set<ApplicationToken>())
+            try blobStore.write(floor, forKey: "protectedApplicationTokens\(suffix)")
+            guard blobStore.read(forKey: "schedule.\(policy.activityId)\(suffix)") == scheduleData,
+                  blobStore.read(forKey: "applicationTokens.\(policy.activityId)\(suffix)") == applicationTokenData,
+                  blobStore.read(forKey: "protectedApplicationTokens\(suffix)") == floor else {
+                throw PCAProtectionPolicyApplicationError.persistenceFailed
             }
         } catch {
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-            blobStore.remove(forKey: "activeActivityId")
+            removePayloads(policyActivityId: policy.activityId, generation: generation)
             throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
-
         let installation = DeviceActivityMonitorInstallation(
             policyActivityId: policy.activityId,
             monitorActivityId: "pca-monitor-\(UUID().uuidString.lowercased())",
-            generation: UUID().uuidString.lowercased(),
+            generation: generation,
             installedAtUtc: installationClock(),
             timeZoneIdentifier: monitoringCalendar.timeZone.identifier,
-            state: .starting
+            state: .starting,
+            schemaVersion: 2,
+            boundaryMonitors: boundaries
         )
         do {
-            // Publish the active policy only after every payload and the
-            // starting record are present. Legacy callbacks are gated on this
-            // key and cannot observe a partial replacement.
             try writeInstallation(installation)
-            try blobStore.write(Data(policy.activityId.utf8), forKey: "activeActivityId")
         } catch {
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-            blobStore.remove(forKey: "activeActivityId")
+            invalidate(installation)
             throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
-
         do {
             try scheduler.start(activityId: installation.monitorActivityId, calendar: monitoringCalendar)
+            for boundary in boundaries {
+                try scheduler.startBoundary(activityId: boundary.activityId, trigger: boundary.trigger)
+            }
         } catch {
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-            blobStore.remove(forKey: "activeActivityId")
-            scheduler.stop(activityId: installation.monitorActivityId)
+            // Stop every staged name, including a throwing registration that
+            // may have partially reached the OS. stop is idempotent per name.
+            invalidate(installation)
             throw PCAProtectionPolicyApplicationError.schedulingFailed
         }
-
         do {
+            // Publish the active pointer last. Until both writes succeed,
+            // extension callbacks cannot mutate shields under this generation.
             try writeInstallation(installation.confirmingActive())
+            try blobStore.write(Data(policy.activityId.utf8), forKey: "activeActivityId")
+            guard blobStore.read(forKey: "activeActivityId") == Data(policy.activityId.utf8),
+                  currentInstallation() == installation.confirmingActive() else {
+                throw PCAProtectionPolicyApplicationError.persistenceFailed
+            }
         } catch {
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-            blobStore.remove(forKey: "activeActivityId")
-            scheduler.stop(activityId: installation.monitorActivityId)
+            invalidate(installation)
             throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
 
@@ -219,7 +266,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             protectedCategoryTokens: []
         )
         let decision = ScheduleEngine.evaluate(ScheduleEvaluationInput(
-            nowUtc: now,
+            nowUtc: installationClock(),
             timeZone: policy.timeZone,
             appToken: policy.appToken,
             windows: policy.windows,
@@ -244,32 +291,68 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     }
 
     public func clearPolicy(activityId: String) {
+        try? policyCoordination.withExclusiveAccess { clearPolicyUnderLock(activityId: activityId) }
+    }
+
+    private func clearPolicyUnderLock(activityId: String) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         let installation = currentInstallation()
         let activeActivityId = currentActiveActivityId()
-        if let installation, installation.policyActivityId == activityId {
-            scheduler.stop(activityId: installation.monitorActivityId)
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-        } else if activeActivityId == activityId {
+        guard installation?.policyActivityId == activityId || activeActivityId == activityId else { return }
+        blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+        blobStore.remove(forKey: "activeActivityId")
+        guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == nil,
+              blobStore.read(forKey: "activeActivityId") == nil else { return }
+        if let installation { retire(installation) }
+        else {
             scheduler.stop(activityId: activityId)
-            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-        }
-        blobStore.remove(forKey: "schedule.\(activityId)")
-        blobStore.remove(forKey: "applicationTokens.\(activityId)")
-        if activeActivityId == activityId {
-            blobStore.remove(forKey: "activeActivityId")
+            removePayloads(policyActivityId: activityId, generation: nil)
+            for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
         }
         ManagedSettingsStore().shield.applications = nil
         ManagedSettingsStore().shield.applicationCategories = nil
         ManagedSettingsStore().shield.webDomains = nil
     }
 
+    private func removePayloads(policyActivityId: String, generation: String?) {
+        let suffix = generation.map { "." + $0 } ?? ""
+        blobStore.remove(forKey: "schedule.\(policyActivityId)\(suffix)")
+        blobStore.remove(forKey: "applicationTokens.\(policyActivityId)\(suffix)")
+        blobStore.remove(forKey: "protectedApplicationTokens\(suffix)")
+    }
+
+    private func retire(_ installation: DeviceActivityMonitorInstallation) {
+        for id in installation.allMonitorActivityIds { scheduler.stop(activityId: id) }
+        removePayloads(policyActivityId: installation.policyActivityId, generation: installation.payloadStorageGeneration)
+    }
+
+    private func invalidate(_ installation: DeviceActivityMonitorInstallation) {
+        // Persist non-active evidence before deletion. A failed unlink must not
+        // expose the previously published active generation to queued callbacks.
+        try? writeInstallation(installation.invalidating())
+        blobStore.remove(forKey: "activeActivityId")
+        let pointerAbsent = blobStore.read(forKey: "activeActivityId") == nil
+        let data = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey)
+        let decoded = data.flatMap { DeviceActivityMonitorInstallation.decodeValidated($0) }
+        let nonActive = data == nil || decoded?.state != .active
+        if pointerAbsent && nonActive {
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+        }
+        // Retain a verified invalidated tombstone if the pointer cannot be
+        // removed. Active-only loading rejects it even when payload unlink fails.
+        retire(installation)
+    }
+
     public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         guard let callbackLog = callbackLog,
               let installation = currentInstallation(),
               installation.state == .active,
               currentActiveActivityId() == installation.policyActivityId,
               let timeZone = TimeZone(identifier: installation.timeZoneIdentifier),
-              let policyData = blobStore.read(forKey: "schedule.\(installation.policyActivityId)"),
+              let policyData = blobStore.read(forKey: "schedule.\(installation.policyActivityId)\(installation.payloadStorageGeneration.map { "." + $0 } ?? "")"),
               case .success(let policy) = PolicySyncDecoder.decode(policyData),
               policy.activityId == installation.policyActivityId else {
             return .unknown
@@ -312,18 +395,23 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private func writeInstallation(_ installation: DeviceActivityMonitorInstallation) throws {
         let data = try installationEncoder.encode(installation)
         try blobStore.write(data, forKey: deviceActivityMonitorInstallationStorageKey)
+        guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == data else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
     }
 
     public static func production(
         authorizationIsApproved: @escaping () -> Bool,
         appGroupIdentifier: String
     ) throws -> PCAProductionProtectionPolicyRuntime {
-        let blobStore = try AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
-        let callbackLog = try? AppGroupCallbackObservationLog(appGroupIdentifier: appGroupIdentifier)
+        let blobStore = try AppGroupDeviceActivityFileStore(appGroupIdentifier: appGroupIdentifier)
+        let coordination = try AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: appGroupIdentifier)
+        let callbackLog = try? AppGroupCallbackObservationLog(appGroupIdentifier: appGroupIdentifier, installationReader: { blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) })
         return PCAProductionProtectionPolicyRuntime(
             authorizationIsApproved: authorizationIsApproved,
             blobStore: blobStore,
-            callbackLog: callbackLog
+            callbackLog: callbackLog,
+            policyCoordination: coordination
         )
     }
 }

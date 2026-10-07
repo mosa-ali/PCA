@@ -347,3 +347,60 @@ final class PCARecoverySecretDisclosureGateTests: XCTestCase {
         XCTAssertTrue(gate.authorizeGeneration())
     }
 }
+
+final class DeviceActivityBoundaryPlannerTests: XCTestCase {
+    private let now = ISO8601DateFormatter().date(from: "2025-03-08T12:00:00Z")!
+    private func window(_ id: String, _ start: TimeOfDay, _ end: TimeOfDay, zone: String = "UTC", kind: ScheduleWindowKind = .bedtime) -> ScheduleWindow {
+        ScheduleWindow(id: id, kind: kind, daysOfWeek: [7], start: start, end: end, appScope: .all, timeZone: TimeZone(identifier: zone)!)
+    }
+    private func policy(windows: [ScheduleWindow] = [], exceptions: [ParentException] = [], bonus: [BonusGrant] = [], daily: DailyAppLimit? = nil) -> DecodedSchedulePolicy {
+        DecodedSchedulePolicy(activityId: "policy", appToken: "opaque", timeZone: TimeZone(identifier: "Asia/Riyadh")!, windows: windows, bonusGrants: bonus, exceptions: exceptions, dailyLimit: daily, enforcementCapability: .enforced)
+    }
+    func testEdgesDeduplicateAcrossKindsAndPreserveTimezone() throws {
+        let a = window("short", .init(hour: 23, minute: 58), .init(hour: 0, minute: 3))
+        let b = window("allow", a.start, a.end, kind: .allowPeriod)
+        let c = window("other-zone", a.start, a.end, zone: "America/New_York", kind: .schoolMode)
+        let result = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [a,b,c]), now: now)
+        XCTAssertEqual(result.count, 4)
+        XCTAssertTrue(result.contains(.recurring(timeZoneIdentifier: TimeZone(identifier: "UTC")!.identifier, hour: 0, minute: 3)))
+        XCTAssertTrue(result.contains(.recurring(timeZoneIdentifier: "America/New_York", hour: 23, minute: 58)))
+        XCTAssertEqual(result, try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [c,b,a]), now: now))
+    }
+    func testEqualEdgesRemainOneRecurringTriggerNotZeroLengthPolicy() throws {
+        let result = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [window("full", .init(hour: 4, minute: 0), .init(hour: 4, minute: 0))]), now: now)
+        XCTAssertEqual(result, [.recurring(timeZoneIdentifier: TimeZone(identifier: "UTC")!.identifier, hour: 4, minute: 0)])
+    }
+    func testMidnightUsesPolicyTimezoneOnlyWhenDailyLimitPresent() throws {
+        let daily = DailyAppLimit(appScope: .all, limitMinutes: 60, usedMinutesToday: 20, anchorLocalDate: "2025-03-08")
+        XCTAssertEqual(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(daily: daily), now: now), [.recurring(timeZoneIdentifier: "Asia/Riyadh", hour: 0, minute: 0)])
+        XCTAssertTrue(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(), now: now).isEmpty)
+    }
+    func testAbsoluteEdgesStayUTCAndExpiredEdgesAreOmitted() throws {
+        let start = now.addingTimeInterval(123.5), end = now.addingTimeInterval(456.5)
+        let exception = ParentException(id: "exception", appScope: .all, startAt: start, endAt: end)
+        let bonus = BonusGrant(id: "bonus", appScope: .all, extraMinutes: 10, grantedAt: now.addingTimeInterval(-10), expiresAt: end)
+        let result = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(exceptions: [exception], bonus: [bonus]), now: now)
+        XCTAssertEqual(Set(result), [.absolute(utc: start), .absolute(utc: end)])
+    }
+    func testCapacityRejectsWholePlanNeverTruncates() {
+        let windows = (0..<10).map { window("w\($0)", .init(hour: $0, minute: 0), .init(hour: $0, minute: 1)) }
+        XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: windows), now: now)) {
+            XCTAssertEqual($0 as? DeviceActivityBoundaryPlanError, .excessiveMonitors)
+        }
+    }
+    func testMalformedBoundaryRejected() {
+        let bad = window("bad", .init(hour: 25, minute: 0), .init(hour: 2, minute: 0))
+        XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [bad]), now: now))
+        XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(), now: Date(timeIntervalSince1970: .infinity)))
+    }
+    func testDSTEdgesRetainWallClockZoneRatherThanFixedUTCOffset() throws {
+        for date in ["2025-03-08T12:00:00Z", "2025-11-01T12:00:00Z"] {
+            let at = ISO8601DateFormatter().date(from: date)!
+            let result = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [window("dst", .init(hour: 1, minute: 30), .init(hour: 2, minute: 30), zone: "America/New_York")]), now: at)
+            XCTAssertTrue(result.contains(.recurring(timeZoneIdentifier: "America/New_York", hour: 2, minute: 30)))
+            XCTAssertEqual(result.count, 2)
+        }
+        // This proves representation only. Apple's gap/fold delivery is not
+        // simulated here and remains a real-OS validation requirement.
+    }
+}

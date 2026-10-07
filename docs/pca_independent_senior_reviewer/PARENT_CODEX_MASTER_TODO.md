@@ -1,6 +1,18 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
-## Current correction checkpoint — 2026-10-07
+## Current iOS boundary registration wave — 2026-10-07
+
+PUBLISHED_GREEN_BASE = 366fda997ed57239533c56a4d115c2799207783e; ordinary push/fetch/direct-server equality verified. Quality Gates 37572120232 is terminal SUCCESS: every one of 27 jobs succeeded, including Apple build/XCTest, Android, both browser jobs, dependency audit and disposable-MySQL certification. This validates the published correction, not the following uncommitted source.
+IMPLEMENTATION = Nine Swift source/test paths now plan deduplicated window timezone edges, policy midnight when a daily limit exists, and future absolute UTC exception/bonus boundaries. Each auxiliary monitor is a twelve-hour reevaluation envelope; it never independently allows or blocks. Nineteen auxiliary monitors plus one health anchor is the ceiling; overflow rejects the whole plan before replacement.
+INSTALLATION = One schema-v2 generation owns the complete monitor set and immutable policy/application/emergency-floor payloads. All registrations must succeed before active publication. Failures retire all staged names; non-active tombstones prevent failed unlink from exposing active evidence. Restart retires incomplete groups; clear verifies invalidation before relaxing shields; lost manifests recover generated OS monitor names. Legacy singleton cleanup remains supported.
+CONSISTENCY = Production host replacement/current decision and extension load/evaluation/shield mutation share an App Group OS file lock. Atomic file-backed state plus a permanent ownership marker prevents cached UserDefaults or deleted/corrupt new state from resurrecting legacy policy. Auxiliary callback diagnostics cannot evict anchor health evidence. Explicit per-window timezone survives stored-policy decoding; legacy absence deliberately uses the policy timezone.
+VALIDATION = Swift frontend parsing of nine changed files and git diff check PASS. Added source tests cover group failure positions, restart/replacement, capacity, corrupt/missing generation/floor, invalidation during payload reads, failed clear, failed activation verification plus failed unlink, shared lock handles, file ownership and anchor isolation. These added XCTest cases have not yet executed; new committed-source Apple build/XCTest and complete exact-head CI are mandatory.
+REVIEW = Final frozen twelve-path Stage B: five required mobile specialists and independent QA APPROVE, zero blockers/majors/minors, including the latest tombstone, capacity/timezone tests and three ledgers. Source is approved for publication; no current-wave Apple execution or CI acceptance is claimed.
+REMAINING = Daily usage measurement/threshold attribution, authenticated policy ingress, Trust Set/receiving-device crypto and bounded relay continuation remain repository requirements. Physical-device timing, App Group lifecycle, power-loss proof, live pca_pro and Azure remain distinct external gates. Canonical board remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; Platform HOLD_PARENT_DEPENDENCY; repository work remains YES.
+NEXT_ACTION = Publish the approved source/ledger freeze by ordinary fast-forward, verify all remote paths and require the new exact-head CI; continue the earliest implementable mobile requirement. No live DB or deployment mutation.
+
+
+## Published correction checkpoint — 2026-10-07
 
 PUBLISHED_SOURCE_HEAD = 65f05f01cd54c014dd370aa2694da526463b81d8; ordinary push/fetch/direct-server equality and all twelve remote paths verified.
 EXACT_HEAD_CI = 37570786292, terminal FAILURE: 27/27 completed, 25 success, iOS build/unit tests and dependency vulnerability audit failed. Last fully green source remains 3ef103fe0d85dc0c7563edeefc09caabbd056454 (37393457495 SUCCESS 27/27).
@@ -10,7 +22,7 @@ REVIEW = Five required mobile specialists APPROVE source corrections, zero block
 COMPLETION_SCOPE = Complete all implementable repository work. Physical Android/iOS, live pca_pro, Azure and production configuration evidence remain external; no evidence is fabricated or external mutation forced. Repository work remains YES; canonical board retained at 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform HOLD_PARENT_DEPENDENCY retained.
 
 
-WORKSPACE_EXECUTION_GATE = RESTORED. Current published source 65f05f01cd54c014dd370aa2694da526463b81d8 has terminal CI 37570786292 FAILURE (25/27 jobs success); local correction awaits publication and fresh CI. Published Android/iOS bounded hasMore checkpoint 3ef103fe0d85dc0c7563edeefc09caabbd056454 passed exact-head Quality Gates 37393457495, SUCCESS 27/27. The preceding Android schedule checkpoint 36a1a655e89117f387ff1410771e1612567c4839 also passed its exact-head CI.
+WORKSPACE_EXECUTION_GATE = RESTORED. Published 366fda997ed57239533c56a4d115c2799207783e passed Quality Gates 37572120232 SUCCESS 27/27; next iOS boundary registration source is uncommitted and requires new CI.
 
 ## Mission
 
@@ -27,13 +39,13 @@ Checkpoint 3ef103fe exact-head Quality Gates run 37393457495 is terminal SUCCESS
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-07 04:33 UTC (published CI failure corrected locally; both web regressions pass)
+LAST_UPDATED_UTC = 2026-10-07 05:01 UTC (published correction green; local iOS boundary registration wave)
 WAVE_BASE_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (published hasMore checkpoint; Quality Gates 37393457495 SUCCESS 27/27)
-LAST_GREEN_REMOTE_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (Quality Gates 37393457495 SUCCESS 27/27)
-CURRENT_WAVE_STATUS = Published iOS callback-health checkpoint failed Apple test compilation and dependency audit. Local import and web security dependency corrections validated; fresh exact-head CI required.
-WAVE_CONTENT_SHA = Uncommitted correction based on 65f05f01cd54c014dd370aa2694da526463b81d8.
-EXACT_HEAD_CI_SHA = 65f05f01cd54c014dd370aa2694da526463b81d8, Quality Gates 37570786292 FAILURE: 27 completed, 25 success, two failed.
-LOCAL_STATE = Published HEAD 65f05f01cd54c014dd370aa2694da526463b81d8 verified equal to origin and server. Five correction source paths and three ledgers await reviewed commit; unrelated untracked paths excluded.
+LAST_GREEN_REMOTE_SHA = 366fda997ed57239533c56a4d115c2799207783e (Quality Gates 37572120232 SUCCESS 27/27)
+CURRENT_WAVE_STATUS = iOS boundary registration and coherent generation storage implemented locally; final frozen review/publication/new Apple CI pending.
+WAVE_CONTENT_SHA = Uncommitted iOS boundary source/test/ledger checkpoint based on 366fda997ed57239533c56a4d115c2799207783e.
+EXACT_HEAD_CI_SHA = 366fda997ed57239533c56a4d115c2799207783e, Quality Gates 37572120232 SUCCESS 27/27; all job conclusions inspected.
+LOCAL_STATE = HEAD, origin/pca-dev, FETCH_HEAD and direct server agree at 366fda997ed57239533c56a4d115c2799207783e. Nine Swift paths plus three ledgers are locally modified; unrelated untracked paths excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12, TODO-14 (52/52 declarations now have MySQL HTTP status evidence; three remain service-gated, aggregate NOT_YET_PROVEN), TODO-15, TODO-19 and TODO-20 remain IN_PROGRESS; TODO-18/21/22/23 remain owner/release gated. Formal board is 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform remains `HOLD_PARENT_DEPENDENCY`.
 CHILD_APP_RELEASE_STATE = Owner confirmed `PUBLIC_LANDING_PAGE` at `https://www.pcasafe.com/child-app/`; Parent production build defaults to this URL. Deploy and verify the Public route before deploying Parent; downstream signed installer/store destination and signing fingerprint remain unconfigured; Add Device/backend enrollment readiness = CLOSED. A current live route request could not connect because the configured proxy refused `127.0.0.1:9`; live availability remains unverified.
