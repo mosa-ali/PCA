@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(Security)
+import Security
+#endif
 @testable import PCA
 
 final class KeychainStoreTests: XCTestCase {
@@ -82,3 +85,108 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertEqual(try keyMaterial.retrieve(kind: .deviceEncryptionKey, deviceId: "device-1"), Data("dek".utf8))
     }
 }
+
+#if canImport(Security)
+private final class KeychainReplacementProbe {
+    var stored: Data? = Data("enrolled-secret".utf8)
+    var concurrentInsertionBeforeAdd: Data?
+    var updateQueries: [NSDictionary] = []
+    var updateAttributes: [NSDictionary] = []
+    var addQueries: [NSDictionary] = []
+    var updateStatuses: [OSStatus] = []
+    var addStatus: OSStatus = errSecSuccess
+    var calls: [String] = []
+
+    func makeStore() -> SystemKeychainStore {
+        SystemKeychainStore(updateItem: { [self] query, attributes in
+            calls.append("update")
+            updateQueries.append(query as NSDictionary)
+            updateAttributes.append(attributes as NSDictionary)
+            let status = updateStatuses.removeFirst()
+            if status == errSecItemNotFound { XCTAssertNil(stored) }
+            if status == errSecSuccess {
+                stored = (attributes as NSDictionary)[kSecValueData] as! Data
+            }
+            return status
+        }, addItem: { [self] query in
+            calls.append("add")
+            addQueries.append(query as NSDictionary)
+            if let concurrentInsertionBeforeAdd { stored = concurrentInsertionBeforeAdd }
+            if addStatus == errSecSuccess {
+                stored = (query as NSDictionary)[kSecValueData] as! Data
+            }
+            return addStatus
+        }, deleteItem: { [self] _ in
+            calls.append("delete")
+            stored = nil
+            return errSecSuccess
+        })
+    }
+}
+
+extension KeychainStoreTests {
+    private func assertReplacementQueries(_ probe: KeychainReplacementProbe, file: StaticString = #filePath, line: UInt = #line) {
+        for query in probe.updateQueries + probe.addQueries {
+            XCTAssertEqual(query[kSecClass] as? String, kSecClassGenericPassword as String, file: file, line: line)
+            XCTAssertEqual(query[kSecAttrAccount] as? String, "device", file: file, line: line)
+            XCTAssertEqual(query[kSecAttrService] as? String, "session", file: file, line: line)
+            XCTAssertEqual(query[kSecAttrSynchronizable] as? Bool, false, file: file, line: line)
+        }
+        for attributes in probe.updateAttributes + probe.addQueries {
+            XCTAssertEqual(attributes[kSecValueData] as? Data, Data("replacement".utf8), file: file, line: line)
+            XCTAssertEqual(attributes[kSecAttrAccessible] as? String, kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String, file: file, line: line)
+        }
+    }
+
+    func testSystemStorePreservesEnrolledSecretWhenUpdateFails() {
+        let probe = KeychainReplacementProbe()
+        probe.updateStatuses = [errSecInteractionNotAllowed]
+        XCTAssertThrowsError(try probe.makeStore().store(Data("replacement".utf8), forAccount: "device", service: "session", accessibility: .whenUnlockedThisDeviceOnly)) {
+            XCTAssertEqual($0 as? KeychainStoreError, .unexpectedStatus(errSecInteractionNotAllowed))
+        }
+        XCTAssertEqual(probe.stored, Data("enrolled-secret".utf8))
+        XCTAssertEqual(probe.calls, ["update"])
+        assertReplacementQueries(probe)
+    }
+
+    func testSystemStorePreservesConcurrentInsertionWhenAddFails() {
+        let probe = KeychainReplacementProbe()
+        probe.stored = nil
+        probe.concurrentInsertionBeforeAdd = Data("enrolled-secret".utf8)
+        probe.updateStatuses = [errSecItemNotFound]
+        probe.addStatus = errSecNotAvailable
+        XCTAssertThrowsError(try probe.makeStore().store(Data("replacement".utf8), forAccount: "device", service: "session", accessibility: .whenUnlockedThisDeviceOnly)) {
+            XCTAssertEqual($0 as? KeychainStoreError, .unexpectedStatus(errSecNotAvailable))
+        }
+        XCTAssertEqual(probe.stored, Data("enrolled-secret".utf8))
+        XCTAssertEqual(probe.calls, ["update", "add"])
+        assertReplacementQueries(probe)
+    }
+
+    func testSystemStoreRetriesConcurrentInsertionWithoutDeleting() throws {
+        let probe = KeychainReplacementProbe()
+        probe.stored = nil
+        probe.concurrentInsertionBeforeAdd = Data("enrolled-secret".utf8)
+        probe.updateStatuses = [errSecItemNotFound, errSecSuccess]
+        probe.addStatus = errSecDuplicateItem
+        try probe.makeStore().store(Data("replacement".utf8), forAccount: "device", service: "session", accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertEqual(probe.stored, Data("replacement".utf8))
+        XCTAssertEqual(probe.calls, ["update", "add", "update"])
+        assertReplacementQueries(probe)
+    }
+
+    func testSystemStorePreservesConcurrentItemWhenRetryFails() {
+        let probe = KeychainReplacementProbe()
+        probe.stored = nil
+        probe.concurrentInsertionBeforeAdd = Data("enrolled-secret".utf8)
+        probe.updateStatuses = [errSecItemNotFound, errSecInteractionNotAllowed]
+        probe.addStatus = errSecDuplicateItem
+        XCTAssertThrowsError(try probe.makeStore().store(Data("replacement".utf8), forAccount: "device", service: "session", accessibility: .whenUnlockedThisDeviceOnly)) {
+            XCTAssertEqual($0 as? KeychainStoreError, .unexpectedStatus(errSecInteractionNotAllowed))
+        }
+        XCTAssertEqual(probe.stored, Data("enrolled-secret".utf8))
+        XCTAssertEqual(probe.calls, ["update", "add", "update"])
+        assertReplacementQueries(probe)
+    }
+}
+#endif

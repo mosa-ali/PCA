@@ -2,6 +2,10 @@ package org.pca.app.enrollment
 
 import org.junit.Assert.assertNotNull
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -137,6 +141,7 @@ private class CountingKeyPairGenerator(private val delegate: DeviceKeyPairGenera
     }
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class EnrollmentCoordinatorTest {
     private fun parser() = UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
 
@@ -698,4 +703,193 @@ class EnrollmentCoordinatorTest {
         assertEquals(2, apiClient.attemptIdsSeen.size)
         assertNotEquals(firstAttemptId, apiClient.attemptIdsSeen[1])
     }
+
+    private fun retainedAttempt() = org.pca.app.storage.PendingEnrollmentAttempt(
+        "retained", "secret", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias",
+        "dek", "dek-alias", org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
+    )
+
+    private class SuspendedApi : DeviceBootstrapApiClient {
+        val response = CompletableDeferred<DeviceBootstrapResult>()
+        var bootstrapCalls = 0
+        var recoveryCalls = 0
+        override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String,
+            encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+            bootstrapCalls++
+            return response.await()
+        }
+        override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+            recoveryCalls++
+            return response.await()
+        }
+    }
+
+    @Test
+    fun `suspended bootstrap rejects replacement duplicate operations and confirmation`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), family, pending)
+        c.submitInvitationLink(LINK)
+        val job = launch { c.beginBootstrap() }
+        runCurrent()
+        val original = pending.current()
+        c.submitInvitationLink("pca://enroll?token=replacement")
+        c.beginBootstrap()
+        c.retryBootstrap()
+        c.recoverAttempt()
+        c.confirmProfile()
+        assertEquals(1, api.bootstrapCalls)
+        assertEquals(0, api.recoveryCalls)
+        assertEquals(original, pending.current())
+        assertEquals(EnrollmentState.Bootstrapping, c.state.value)
+        assertNull(family.currentState())
+        api.response.complete(DeviceBootstrapResult("original-device", "PAIRING_PENDING"))
+        job.join()
+        c.confirmProfile()
+        assertEquals("original-device", family.currentState()?.deviceId)
+        assertNull(pending.current())
+    }
+
+    @Test
+    fun `restart unresolved attempt rejects new invitation and key generation`() = runTest {
+        val original = retainedAttempt()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val keys = CountingKeyPairGenerator(TestConformanceDeviceKeyPairGenerator())
+        val c = coordinator(NeverCalledBootstrapApiClient(), keys, pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertEquals(original, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        assertEquals(0, keys.signingCallCount)
+        assertEquals(0, keys.encryptionCallCount)
+    }
+
+    @Test
+    fun `suspended recovery admits only one request and preserves original identity`() = runTest {
+        val api = SuspendedApi()
+        val original = retainedAttempt()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val c = coordinator(api, familyStateStore = family, pendingAttemptStore = pending)
+        val job = launch { c.recoverAttempt() }
+        runCurrent()
+        c.submitInvitationLink(LINK)
+        c.recoverAttempt()
+        c.confirmProfile()
+        assertEquals(1, api.recoveryCalls)
+        assertEquals(original, pending.current())
+        api.response.complete(DeviceBootstrapResult("recovered-device", "PAIRING_PENDING"))
+        job.join()
+        c.confirmProfile()
+        assertEquals("recovered-device", family.currentState()?.deviceId)
+    }
+
+    @Test
+    fun `cancelled bootstrap retains actionable durable recovery and releases operation admission`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        val job = launch { c.beginBootstrap() }
+        runCurrent()
+        val original = pending.current()!!
+        job.cancelAndJoin()
+        assertEquals(original, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        api.response.complete(DeviceBootstrapResult("recovered-device", "PAIRING_PENDING"))
+        c.recoverAttempt()
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+        assertEquals(1, api.recoveryCalls)
+    }
+
+    @Test
+    fun `late bootstrap result cannot authorize replacement pending record`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), family, pending)
+        c.submitInvitationLink(LINK)
+        val job = launch { c.beginBootstrap() }
+        runCurrent()
+        assertNotNull(c.keyFingerprints.value)
+        val replacement = retainedAttempt()
+        pending.save(replacement)
+        api.response.complete(DeviceBootstrapResult("late-device", "PAIRING_PENDING"))
+        job.join()
+        assertNull(c.keyFingerprints.value)
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
+        assertEquals(replacement, pending.current())
+        assertNull(family.currentState())
+    }
+
+    @Test
+    fun `late definitive failure does not clear replacement recovery credentials`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        val job = launch { c.beginBootstrap() }
+        runCurrent()
+        val replacement = retainedAttempt()
+        pending.save(replacement)
+        api.response.completeExceptionally(BootstrapError.InvitationUnavailable)
+        job.join()
+        assertEquals(replacement, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
+    }
+
+    @Test
+    fun `profile confirmation is bound to the exact attempt`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val c = coordinator(FakeBootstrapApiClient { DeviceBootstrapResult("old-device", "PAIRING_PENDING") },
+            TestConformanceDeviceKeyPairGenerator(), family, pending)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertNotNull(c.keyFingerprints.value)
+        val replacement = retainedAttempt().copy(attemptId = "replacement")
+        pending.save(replacement)
+        c.confirmProfile()
+        assertNull(c.keyFingerprints.value)
+        assertEquals(replacement, pending.current())
+        assertNull(family.currentState())
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
+    }
+
+    @Test
+    fun `cancelled recovery preserves credentials and admits explicit retry`() = runTest {
+        val api = SuspendedApi()
+        val original = retainedAttempt()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val c = coordinator(api, pendingAttemptStore = pending)
+        val job = launch { c.recoverAttempt() }
+        runCurrent()
+        job.cancelAndJoin()
+        assertEquals(original, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        api.response.complete(DeviceBootstrapResult("recovered", "PAIRING_PENDING"))
+        c.recoverAttempt()
+        assertEquals(2, api.recoveryCalls)
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+    }
+
+    @Test
+    fun `late recovery success cannot confirm another pending attempt`() = runTest {
+        val api = SuspendedApi()
+        val original = retainedAttempt()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val c = coordinator(api, familyStateStore = family, pendingAttemptStore = pending)
+        val job = launch { c.recoverAttempt() }
+        runCurrent()
+        val replacement = original.copy(attemptId = "replacement")
+        pending.save(replacement)
+        api.response.complete(DeviceBootstrapResult("late", "PAIRING_PENDING"))
+        job.join()
+        assertNull(family.currentState())
+        assertEquals(replacement, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
+    }
+
 }

@@ -1,5 +1,9 @@
 package org.pca.app.enrollment
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -96,7 +100,28 @@ class EnrollmentCoordinator(
     val keyFingerprints: StateFlow<DeviceKeyFingerprints?> = _keyFingerprints.asStateFlow()
 
     private var rawInvitationToken: String? = null
-    private var pendingProfileConfirmation: DeviceBootstrapResult? = null
+    private data class ProfileConfirmation(val result: DeviceBootstrapResult, val attempt: PendingEnrollmentAttempt)
+    private var pendingProfileConfirmation: ProfileConfirmation? = null
+    private val operationMutex = Mutex()
+
+    /** Concurrent callers are rejected rather than queued against a later attempt. */
+    private suspend fun runOperation(action: suspend () -> Unit) {
+        if (!operationMutex.tryLock()) return
+        try { currentCoroutineContext().ensureActive(); action() } catch (cancelled: CancellationException) {
+            pendingProfileConfirmation = null
+            pendingAttemptStore.current()?.let { _state.value = EnrollmentState.RecoveryPending(it.serverBaseUrl) }
+            throw cancelled
+        } finally { operationMutex.unlock() }
+    }
+
+    private fun matchesAttempt(attempt: PendingEnrollmentAttempt): Boolean {
+        if (pendingAttemptStore.current() == attempt) return true
+        _keyFingerprints.value = null
+        pendingProfileConfirmation = null
+        rawInvitationToken = null
+        _state.value = restoreInitialState()
+        return false
+    }
 
     private fun restoreInitialState(): EnrollmentState {
         val persisted = try {
@@ -128,33 +153,42 @@ class EnrollmentCoordinator(
      * [EnrollmentState.InvitationReady]. Any parse failure (wrong scheme/host, missing token) is
      * reported as [EnrollmentState.FailedInvitationInvalid] -- the same generic outcome as a
      * server-side 404, so this client never becomes a token/link validity oracle either.
+     * An active operation, pending confirmation, or durable unresolved attempt preserves its
+     * current state and credentials instead of accepting a replacement invitation.
      */
     fun submitInvitationLink(uri: String) {
-        if (blockIfLocalStateCorrupt()) return
-        if (pendingProfileConfirmation != null) return
-        val parsed = linkParser.parse(uri)
-        if (parsed == null) {
-            rawInvitationToken = null
-            _state.value = EnrollmentState.FailedInvitationInvalid
-            return
-        }
-        rawInvitationToken = parsed.rawInvitationToken
-        pendingProfileConfirmation = null
-        // A fresh attempt (including the add-another-device path) must never show a stale
-        // fingerprint from a PRIOR device's key pair while this one is still being prepared.
-        _keyFingerprints.value = null
-        _state.value = EnrollmentState.InvitationReady(parsed.serverBaseUrl)
+        if (!operationMutex.tryLock()) return
+        try {
+            if (blockIfLocalStateCorrupt()) return
+            if (pendingProfileConfirmation != null || pendingAttemptStore.current() != null) return
+            val parsed = linkParser.parse(uri)
+            if (parsed == null) {
+                rawInvitationToken = null
+                _state.value = EnrollmentState.FailedInvitationInvalid
+                return
+            }
+            rawInvitationToken = parsed.rawInvitationToken
+            pendingProfileConfirmation = null
+            // A fresh attempt (including the add-another-device path) must never show a stale
+            // fingerprint from a PRIOR device's key pair while this one is still being prepared.
+            _keyFingerprints.value = null
+            _state.value = EnrollmentState.InvitationReady(parsed.serverBaseUrl)
+        } finally { operationMutex.unlock() }
     }
 
     /**
-     * Runs key preparation + bootstrap from [EnrollmentState.InvitationReady]. No-op (reports
-     * [EnrollmentState.FailedInvitationInvalid]) if called from any other state -- a caller bug,
-     * not a network/crypto outcome. Generates a NEW attemptId/attemptRecoveryToken and a NEW
+     * Runs key preparation + bootstrap from [EnrollmentState.InvitationReady]. Calls during an
+     * active operation or with a durable unresolved attempt preserve the existing state and
+     * credentials. Otherwise an invalid caller state reports [EnrollmentState.FailedInvitationInvalid].
+     * Generates a NEW attemptId/attemptRecoveryToken and a NEW
      * DSK/DEK key pair -- this is the only place either is minted; every retry
      * ([retryBootstrap], [recoverAttempt]) reuses what this call persists.
      */
-    suspend fun beginBootstrap() {
+    suspend fun beginBootstrap() = runOperation { beginBootstrapLocked() }
+
+    private suspend fun beginBootstrapLocked() {
         if (blockIfLocalStateCorrupt()) return
+        if (pendingAttemptStore.current() != null) return
         val token = rawInvitationToken
         val readyState = _state.value as? EnrollmentState.InvitationReady
         if (token == null || readyState == null) {
@@ -177,6 +211,7 @@ class EnrollmentCoordinator(
         // unavailable root read is not proof that the slot is empty; skip
         // the destructive sweep until its owner attempt can be identified.
         val keepAttemptIds = mutableSetOf(attemptId)
+        pendingAttemptStore.current()?.let { keepAttemptIds.add(it.attemptId) }
         val rootRead = firstDeviceRootStore?.readState()
         val rootStateReadable = rootRead !is FirstDeviceRootReadResult.Unreadable
         if (rootRead is FirstDeviceRootReadResult.Present) {
@@ -241,7 +276,9 @@ class EnrollmentCoordinator(
      * with a still-durably-persisted pending attempt; otherwise a no-op reporting
      * [EnrollmentState.FailedInvitationInvalid] (a caller-sequencing bug, not a network outcome).
      */
-    suspend fun retryBootstrap() {
+    suspend fun retryBootstrap() = runOperation { retryBootstrapLocked() }
+
+    private suspend fun retryBootstrapLocked() {
         if (blockIfLocalStateCorrupt()) return
         val token = rawInvitationToken
         val pending = pendingAttemptStore.current()
@@ -265,26 +302,34 @@ class EnrollmentCoordinator(
                 attemptRecoveryToken = pending.attemptRecoveryToken,
             )
         } catch (e: BootstrapError.InvitationUnavailable) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // Definitive: this invitation (or attempt id) is unusable. Section 12: abandon the
             // pending attempt -- its key material is unused and safe to stop tracking. A fresh
             // invitation from the parent is required.
             rawInvitationToken = null
-            abandonPendingAttempt()
+            abandonPendingAttempt(pending)
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: BootstrapError.InvalidRequest) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // Our own request shape was malformed (should not happen from a correct client) --
             // retrying with the same malformed shape cannot help.
             rawInvitationToken = null
-            abandonPendingAttempt()
+            abandonPendingAttempt(pending)
             _state.value = EnrollmentState.FailedRetryable
             return
         } catch (e: BootstrapError.UnexpectedServerError) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // Ordinary transient failure -- token AND pending-attempt state are both preserved so
             // a later retryBootstrap() can safely try again.
             _state.value = EnrollmentState.FailedRetryable
             return
         } catch (e: BootstrapError.AmbiguousOutcome) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP -- see EnrollmentState.BootstrapResultUnknown.
             // Deliberately does NOT clear rawInvitationToken or pendingAttemptStore, and does NOT
             // retry automatically.
@@ -292,6 +337,8 @@ class EnrollmentCoordinator(
             return
         }
 
+        currentCoroutineContext().ensureActive()
+        if (!matchesAttempt(pending)) return
         if (result.status != PairingState.PAIRING_PENDING.name) {
             // The server contract permits bootstrap to establish only
             // PAIRING_PENDING. A different status means the response cannot
@@ -302,7 +349,7 @@ class EnrollmentCoordinator(
         }
 
         rawInvitationToken = null
-        pendingProfileConfirmation = result
+        pendingProfileConfirmation = ProfileConfirmation(result, pending)
         _state.value = EnrollmentState.ProfileConfirmation(
             deviceId = result.deviceId,
             ageUxTier = result.ageUxTier,
@@ -324,7 +371,9 @@ class EnrollmentCoordinator(
      * auto-retries in a loop; the caller (UI / connectivity-change handler) decides when to call
      * this again, giving a bounded, explicit resume rather than a retry storm.
      */
-    suspend fun recoverAttempt() {
+    suspend fun recoverAttempt() = runOperation { recoverAttemptLocked() }
+
+    private suspend fun recoverAttemptLocked() {
         if (blockIfLocalStateCorrupt()) return
         val pending = pendingAttemptStore.current()
         val validState = _state.value is EnrollmentState.RecoveryPending || _state.value is EnrollmentState.BootstrapResultUnknown
@@ -339,27 +388,37 @@ class EnrollmentCoordinator(
                 attemptRecoveryToken = pending.attemptRecoveryToken,
             )
         } catch (e: RecoveryError.NotFound) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // DEFINITIVE: the server actually answered -- no completed attempt exists under this
             // (attemptId, attemptRecoveryToken) pair. Section 12: abandon; this attempt's key
             // material is unused and safe to stop tracking. The one-time invitation token itself
             // is unrecoverable by design (never persisted) -- a fresh invitation is required.
-            abandonPendingAttempt()
+            abandonPendingAttempt(pending)
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: RecoveryError.InvalidRequest) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             // Our own persisted attempt state is malformed (should not normally happen) --
             // retrying the same malformed request cannot help.
-            abandonPendingAttempt()
+            abandonPendingAttempt(pending)
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: RecoveryError.AmbiguousOutcome) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             _state.value = EnrollmentState.RecoveryPending(pending.serverBaseUrl)
             return
         } catch (e: RecoveryError.UnexpectedServerError) {
+            currentCoroutineContext().ensureActive()
+            if (!matchesAttempt(pending)) return
             _state.value = EnrollmentState.RecoveryPending(pending.serverBaseUrl)
             return
         }
 
+        currentCoroutineContext().ensureActive()
+        if (!matchesAttempt(pending)) return
         if (result.status != PairingState.PAIRING_PENDING.name) {
             // The recovery endpoint returns the original bootstrap result,
             // whose only valid status is PAIRING_PENDING. Preserve the
@@ -369,7 +428,7 @@ class EnrollmentCoordinator(
             return
         }
 
-        pendingProfileConfirmation = result
+        pendingProfileConfirmation = ProfileConfirmation(result, pending)
         _state.value = EnrollmentState.ProfileConfirmation(
             deviceId = result.deviceId,
             ageUxTier = result.ageUxTier,
@@ -385,13 +444,11 @@ class EnrollmentCoordinator(
      * Never called on a merely-ambiguous outcome; never called after a
      * successful [persistSuccess] (whose keys back the ceremony).
      */
-    private fun abandonPendingAttempt() {
-        val pending = pendingAttemptStore.current()
-        if (pending != null) {
-            val deleter = keyPairGenerator as? DeviceKeyPairDeletion
-            deleter?.deleteKeyPair(pending.signingPrivateKeyAlias)
-            deleter?.deleteKeyPair(pending.encryptionPrivateKeyAlias)
-        }
+    private fun abandonPendingAttempt(pending: PendingEnrollmentAttempt) {
+        if (!matchesAttempt(pending)) return
+        val deleter = keyPairGenerator as? DeviceKeyPairDeletion
+        deleter?.deleteKeyPair(pending.signingPrivateKeyAlias)
+        deleter?.deleteKeyPair(pending.encryptionPrivateKeyAlias)
         pendingAttemptStore.clear()
     }
 
@@ -401,31 +458,36 @@ class EnrollmentCoordinator(
      * method accepts no profile input; it confirms the exact values returned by the invitation.
      */
     fun confirmProfile() {
-        if (blockIfLocalStateCorrupt()) return
-        val result = pendingProfileConfirmation
-        if (result == null || _state.value !is EnrollmentState.ProfileConfirmation) {
-            _state.value = EnrollmentState.FailedInvitationInvalid
-            return
-        }
-        // PCA-FR-140: fail-closed -- if the lifecycle auditor rejects this transition (see
-        // EnrollmentLifecycleAuditor.isAllowed), local state is NEVER committed and this
-        // coordinator reports the same generic failure it uses for any other caller-sequencing
-        // problem, mirroring iOS's EnrollmentLifecycleMachine (invalid transitions never mutate
-        // state or append a record).
-        if (!persistSuccess(result)) {
-            if (_state.value is EnrollmentState.LocalStateCorrupt) return
-            // The server accepted the bootstrap, but a required local seed
-            // durability step failed. Preserve an actionable state so the
-            // same attempt can be explicitly recovered; do not classify it
-            // as an invalid invitation and strand its recovery credentials.
-            val pending = pendingAttemptStore.current()
-            _state.value = pending?.let { EnrollmentState.RecoveryPending(it.serverBaseUrl) }
-                ?: EnrollmentState.FailedInvitationInvalid
-            return
-        }
-        pendingAttemptStore.clear()
-        pendingProfileConfirmation = null
-        _state.value = EnrollmentState.PairingPending(result.deviceId)
+        if (!operationMutex.tryLock()) return
+        try {
+            if (blockIfLocalStateCorrupt()) return
+            val confirmation = pendingProfileConfirmation
+            if (confirmation == null || _state.value !is EnrollmentState.ProfileConfirmation) {
+                _state.value = EnrollmentState.FailedInvitationInvalid
+                return
+            }
+            val result = confirmation.result
+            if (!matchesAttempt(confirmation.attempt)) return
+            // PCA-FR-140: fail-closed -- if the lifecycle auditor rejects this transition (see
+            // EnrollmentLifecycleAuditor.isAllowed), local state is NEVER committed and this
+            // coordinator reports the same generic failure it uses for any other caller-sequencing
+            // problem, mirroring iOS's EnrollmentLifecycleMachine (invalid transitions never mutate
+            // state or append a record).
+            if (!persistSuccess(result, confirmation.attempt)) {
+                if (_state.value is EnrollmentState.LocalStateCorrupt) return
+                // The server accepted the bootstrap, but a required local seed
+                // durability step failed. Preserve an actionable state so the
+                // same attempt can be explicitly recovered; do not classify it
+                // as an invalid invitation and strand its recovery credentials.
+                val pending = pendingAttemptStore.current()
+                _state.value = pending?.let { EnrollmentState.RecoveryPending(it.serverBaseUrl) }
+                    ?: EnrollmentState.FailedInvitationInvalid
+                return
+            }
+            pendingAttemptStore.clear()
+            pendingProfileConfirmation = null
+            _state.value = EnrollmentState.PairingPending(result.deviceId)
+        } finally { operationMutex.unlock() }
     }
 
     /**
@@ -445,7 +507,8 @@ class EnrollmentCoordinator(
      * [PairingState] transition -- see [EnrollmentLifecycleAuditor]. Returns false (and performs
      * NO save) if the auditor's fail-closed guard rejects the transition.
      */
-    private fun persistSuccess(result: DeviceBootstrapResult): Boolean {
+    private fun persistSuccess(result: DeviceBootstrapResult, pending: PendingEnrollmentAttempt): Boolean {
+        if (!matchesAttempt(pending)) return false
         if (result.status != PairingState.PAIRING_PENDING.name) return false
         val serverPairingState = PairingState.PAIRING_PENDING
         val previousPairingState = try {
@@ -458,7 +521,7 @@ class EnrollmentCoordinator(
         // it before committing LocalFamilyState or its lifecycle audit so a
         // durable-write failure leaves the persisted attempt available for
         // idempotent recovery rather than reporting a partial enrollment.
-        if (!captureFirstDeviceCeremonySeed(result)) return false
+        if (!captureFirstDeviceCeremonySeed(result, pending)) return false
         val auditor = EnrollmentLifecycleAuditor(
             // KNOWN_GAP (same one documented on LocalFamilyState.familyId below): the bootstrap
             // response is {deviceId, status} only -- the server deliberately never discloses
@@ -536,9 +599,9 @@ class EnrollmentCoordinator(
      * Only a definitively terminal-dead record (EXPIRED/REJECTED) may be
      * replaced by a new enrollment's seed (Stage-B fix, Agent 5 MINOR-2).
      */
-    private fun captureFirstDeviceCeremonySeed(result: DeviceBootstrapResult): Boolean {
+    private fun captureFirstDeviceCeremonySeed(result: DeviceBootstrapResult, pending: PendingEnrollmentAttempt): Boolean {
+        if (!matchesAttempt(pending)) return false
         val rootStore = firstDeviceRootStore ?: return true
-        val pending = pendingAttemptStore.current() ?: return false
         if (result.signingKeyId.isBlank() || result.encryptionKeyId.isBlank()) return false
         return rootStore.captureSeed(
             FirstDeviceRootRecord(

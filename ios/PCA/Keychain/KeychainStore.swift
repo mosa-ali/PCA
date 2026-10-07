@@ -72,29 +72,28 @@ public extension KeychainStoreProtocol {
 
 #if canImport(Security)
 public final class SystemKeychainStore: KeychainStoreProtocol {
-    public init() {}
+    private let updateItem: (CFDictionary, CFDictionary) -> OSStatus
+    private let addItem: (CFDictionary) -> OSStatus
+    private let deleteItem: (CFDictionary) -> OSStatus
+
+    public convenience init() {
+        self.init(updateItem: { SecItemUpdate($0, $1) },
+                  addItem: { SecItemAdd($0, nil) },
+                  deleteItem: { SecItemDelete($0) })
+    }
+
+    /// Internal seam for exercising platform failures without modifying the real Keychain.
+    init(updateItem: @escaping (CFDictionary, CFDictionary) -> OSStatus,
+         addItem: @escaping (CFDictionary) -> OSStatus,
+         deleteItem: @escaping (CFDictionary) -> OSStatus) {
+        self.updateItem = updateItem
+        self.addItem = addItem
+        self.deleteItem = deleteItem
+    }
 
     public func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
-        // Remove any existing item first -- SecItemAdd fails on a
-        // duplicate; this makes `store` idempotently overwrite rather than
-        // erroring on a second call for the same identity, matching how a
-        // key-rotation flow would naturally re-store under the same
-        // account/service pair.
-        try? delete(forAccount: account, service: service)
-
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrAccount: account,
-            kSecAttrService: service,
-            kSecValueData: data,
-            kSecAttrAccessible: accessibility.secAttribute,
-        ]
-        query[kSecAttrSynchronizable] = accessibility.isSynchronizable
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainStoreError.unexpectedStatus(status)
-        }
+        // Failed replacement must preserve enrolled credentials and recovery material.
+        try storeReplacingAtomically(data, forAccount: account, service: service, accessibility: accessibility)
     }
 
     public func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
@@ -109,7 +108,7 @@ public final class SystemKeychainStore: KeychainStoreProtocol {
             kSecAttrAccessible: accessibility.secAttribute,
         ]
 
-        let updateStatus = SecItemUpdate(identityQuery as CFDictionary, attributes as CFDictionary)
+        let updateStatus = updateItem(identityQuery as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
             throw KeychainStoreError.unexpectedStatus(updateStatus)
@@ -118,12 +117,12 @@ public final class SystemKeychainStore: KeychainStoreProtocol {
         var addQuery = identityQuery
         addQuery[kSecValueData] = data
         addQuery[kSecAttrAccessible] = accessibility.secAttribute
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = addItem(addQuery as CFDictionary)
         if addStatus == errSecSuccess { return }
         // Another writer may have added the same identity between update
         // and add. Retry update once; neither path removes the existing row.
         if addStatus == errSecDuplicateItem {
-            let retryStatus = SecItemUpdate(identityQuery as CFDictionary, attributes as CFDictionary)
+            let retryStatus = updateItem(identityQuery as CFDictionary, attributes as CFDictionary)
             if retryStatus == errSecSuccess { return }
             throw KeychainStoreError.unexpectedStatus(retryStatus)
         }
@@ -155,7 +154,7 @@ public final class SystemKeychainStore: KeychainStoreProtocol {
             kSecAttrAccount: account,
             kSecAttrService: service,
         ]
-        let status = SecItemDelete(query as CFDictionary)
+        let status = deleteItem(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainStoreError.unexpectedStatus(status)
         }

@@ -106,6 +106,7 @@ class AndroidKeystoreDskProvider(
                     throw fallbackFailure
                 }
             } else {
+                deleteEntryQuietly(alias)
                 throw e
             }
         } catch (e: Throwable) {
