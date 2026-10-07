@@ -40,6 +40,15 @@ public protocol PCAProtectionPolicyRuntime {
 
     func clearPolicy(activityId: String)
     func callbackHealth(now: Date) -> DeviceActivityCallbackHealth
+    func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus
+    func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult
+}
+
+public extension PCAProtectionPolicyRuntime {
+    func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus { .unavailable }
+    func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
+        throw PCAProtectionPolicyApplicationError.frameworkUnavailable
+    }
 }
 
 public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime {
@@ -59,6 +68,22 @@ public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime 
 }
 
 #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
+public protocol PCADeviceActivityShieldEnforcing {
+    func apply(applications: Set<ApplicationToken>, protectedApplications: Set<ApplicationToken>) throws
+    func removeAll()
+}
+
+public struct SystemPCADeviceActivityShieldEnforcer: PCADeviceActivityShieldEnforcing {
+    public init() {}
+    public func apply(applications: Set<ApplicationToken>, protectedApplications: Set<ApplicationToken>) throws {
+        try ManagedSettingsAdapter(protectedApplicationTokens: protectedApplications,
+            protectedCategoryTokens: []).apply(applications: applications, categories: [])
+    }
+    public func removeAll() {
+        ManagedSettingsAdapter(protectedApplicationTokens: [], protectedCategoryTokens: []).removeAll()
+    }
+}
+
 /// Narrow scheduler port so policy persistence/application can be tested
 /// without invoking Apple's process-bound DeviceActivity center.
 public protocol PCADeviceActivityScheduler {
@@ -66,6 +91,12 @@ public protocol PCADeviceActivityScheduler {
     func startBoundary(activityId: String, trigger: DeviceActivityBoundaryTrigger) throws
     func stop(activityId: String)
     func ownedMonitorActivityIds() -> [String]
+    func startUsage(plan: DeviceActivityUsageDayPlan, applications: Set<ApplicationToken>) throws
+}
+public extension PCADeviceActivityScheduler {
+    func startUsage(plan: DeviceActivityUsageDayPlan, applications: Set<ApplicationToken>) throws {
+        throw DeviceActivityUsageError.unsupportedHistoricalActivity
+    }
 }
 
 public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler {
@@ -90,6 +121,32 @@ public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler 
         try center.startMonitoring(DeviceActivityName(activityId), during: DeviceActivityScheduleMapper.boundarySchedule(for: trigger), events: [:])
     }
 
+    public func startUsage(plan: DeviceActivityUsageDayPlan, applications: Set<ApplicationToken>) throws {
+        guard #available(iOS 17.4, *), plan.isValid,
+              plan.binding.matches(applications, logicalAppToken: plan.binding.logicalAppToken),
+              plan.deviceTimeZoneIdentifier.utf8.elementsEqual(TimeZone.current.identifier.utf8),
+              let zone = TimeZone(identifier: plan.deviceTimeZoneIdentifier) else {
+            throw DeviceActivityUsageError.unsupportedHistoricalActivity
+        }
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
+        func components(_ date: Date) -> DateComponents {
+            var value = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+            value.calendar = calendar; value.timeZone = zone; return value
+        }
+        let start = components(plan.accountingStartUtc), end = components(plan.dayEndUtc)
+        guard calendar.date(from: start) == plan.accountingStartUtc, calendar.date(from: end) == plan.dayEndUtc else {
+            throw DeviceActivityUsageError.malformedPlan
+        }
+        var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
+        for threshold in plan.thresholds {
+            events[DeviceActivityEvent.Name(threshold.eventId)] = DeviceActivityEvent(
+                applications: applications, categories: [], webDomains: [],
+                threshold: DateComponents(minute: threshold.minutes), includesPastActivity: true)
+        }
+        try center.startMonitoring(DeviceActivityName(plan.monitorActivityId),
+            during: DeviceActivitySchedule(intervalStart: start, intervalEnd: end, repeats: false), events: events)
+    }
+
     public func ownedMonitorActivityIds() -> [String] {
         center.activities.map(\.rawValue).filter { $0.hasPrefix("pca-monitor-") && UUID(uuidString: String($0.dropFirst("pca-monitor-".count))) != nil }
     }
@@ -108,6 +165,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let installationClock: () -> Date
     private let mutationLock = NSRecursiveLock()
     private let policyCoordination: DeviceActivityPolicyCoordination
+    private let usageBindingProvider: (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding?
+    private let deviceTimeZone: () -> TimeZone
+    private let shieldEnforcer: PCADeviceActivityShieldEnforcing
 
     public init(
         authorizationIsApproved: @escaping () -> Bool,
@@ -115,7 +175,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         blobStore: OpaqueBlobStore,
         callbackLog: CallbackObservationLog? = nil,
         installationClock: @escaping () -> Date = Date.init,
-        policyCoordination: DeviceActivityPolicyCoordination = LocalDeviceActivityPolicyCoordination()
+        policyCoordination: DeviceActivityPolicyCoordination = LocalDeviceActivityPolicyCoordination(),
+        usageBindingProvider: @escaping (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding? = { _, _ in nil },
+        deviceTimeZone: @escaping () -> TimeZone = { .current },
+        shieldEnforcer: PCADeviceActivityShieldEnforcing = SystemPCADeviceActivityShieldEnforcer()
     ) {
         self.authorizationIsApproved = authorizationIsApproved
         self.scheduler = scheduler
@@ -123,6 +186,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         self.callbackLog = callbackLog
         self.installationClock = installationClock
         self.policyCoordination = policyCoordination
+        self.usageBindingProvider = usageBindingProvider
+        self.deviceTimeZone = deviceTimeZone
+        self.shieldEnforcer = shieldEnforcer
         // Process death during registration must not leave a partially owned
         // set consuming slots or claiming health after host reconstruction.
         try? policyCoordination.withExclusiveAccess {
@@ -186,9 +252,30 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         }
         let generation = UUID().uuidString.lowercased()
         let boundaries = triggers.map { DeviceActivityBoundaryMonitor(activityId: "pca-monitor-\(UUID().uuidString.lowercased())", trigger: $0) }
+        let usagePlan: DeviceActivityUsageDayPlan?
+        if policy.dailyLimit != nil, let binding = usageBindingProvider(policy, applicationTokens),
+           binding.matches(applicationTokens, logicalAppToken: policy.appToken) {
+            if #available(iOS 17.4, *) {
+                do {
+                    usagePlan = try DeviceActivityUsagePlanner.plan(policy: policy, binding: binding,
+                        generation: generation, now: planningTime, deviceTimeZone: deviceTimeZone(),
+                        historicalActivitySupported: true, otherMonitorCount: boundaries.count + 1)
+                } catch { throw PCAProtectionPolicyApplicationError.unsupportedSchedule }
+            } else { usagePlan = nil }
+        } else { usagePlan = nil } // No inferred association or fabricated zero-usage evidence.
         let monitoringCalendar = DeviceActivityScheduleMapper.monitoringCalendar()
         let previousInstallation = currentInstallation()
         let previousActiveId = currentActiveActivityId()
+        if usagePlan == nil, let limit = policy.dailyLimit, limit.appScope.includes(policy.appToken),
+           let prior = previousInstallation?.usageDayPlan,
+           planningTime >= prior.dayStartUtc, planningTime < prior.dayEndUtc,
+           prior.policyTimeZoneIdentifier.utf8.elementsEqual(policy.timeZone.identifier.utf8),
+           prior.binding.matches(applicationTokens, logicalAppToken: policy.appToken) {
+            // A schema-2 replacement would forget this day's attribution on the
+            // next extension callback. Keep the working generation intact until
+            // an explicit binding can support the replacement usage monitor.
+            throw PCAProtectionPolicyApplicationError.unsupportedSchedule
+        }
         blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
         blobStore.remove(forKey: "activeActivityId")
         guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == nil,
@@ -227,8 +314,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             installedAtUtc: installationClock(),
             timeZoneIdentifier: monitoringCalendar.timeZone.identifier,
             state: .starting,
-            schemaVersion: 2,
-            boundaryMonitors: boundaries
+            schemaVersion: usagePlan == nil ? 2 : 3,
+            boundaryMonitors: boundaries,
+            usageDayPlan: usagePlan
         )
         do {
             try writeInstallation(installation)
@@ -241,6 +329,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             for boundary in boundaries {
                 try scheduler.startBoundary(activityId: boundary.activityId, trigger: boundary.trigger)
             }
+            if let usagePlan { try scheduler.startUsage(plan: usagePlan, applications: applicationTokens) }
         } catch {
             // Stop every staged name, including a throwing registration that
             // may have partially reached the OS. stop is idempotent per name.
@@ -261,32 +350,73 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
 
-        let adapter = ManagedSettingsAdapter(
-            protectedApplicationTokens: protectedTokens,
-            protectedCategoryTokens: []
-        )
-        let decision = ScheduleEngine.evaluate(ScheduleEvaluationInput(
-            nowUtc: installationClock(),
-            timeZone: policy.timeZone,
-            appToken: policy.appToken,
-            windows: policy.windows,
-            bonusGrants: policy.bonusGrants,
-            exceptions: policy.exceptions,
-            dailyLimit: policy.dailyLimit,
-            enforcementCapability: policy.enforcementCapability
-        ))
-
-        if decision.isRestrictive || decision.kind == .enforcementUnavailable {
-            try adapter.apply(applications: applicationTokens, categories: [])
-        } else {
-            adapter.removeAll()
+        let evaluationTime = installationClock()
+        var usageAvailable = false
+        var observationPlan: DeviceActivityUsageDayPlan?
+        let retainedPlan = usagePlan ?? previousInstallation?.usageDayPlan
+        if let retainedPlan, policy.dailyLimit != nil,
+           retainedPlan.binding.matches(applicationTokens, logicalAppToken: policy.appToken),
+           retainedPlan.policyTimeZoneIdentifier.utf8.elementsEqual(policy.timeZone.identifier.utf8),
+           evaluationTime >= retainedPlan.dayStartUtc, evaluationTime < retainedPlan.dayEndUtc {
+            observationPlan = retainedPlan
+            usageAvailable = usagePlan != nil && retainedPlan.coverage == .wholePolicyDayPlanned &&
+                retainedPlan.contains(evaluationTime, deviceTimeZone: deviceTimeZone())
         }
+        guard try DeviceActivityUsageEnforcement.reconcile(policy: policy, now: evaluationTime,
+            applications: applicationTokens, protectedApplications: protectedTokens,
+            coverageAvailable: usageAvailable, loadLowerBound: {
+                guard let observationPlan else { return nil }
+                let usageStore = DeviceActivityUsageLowerBoundStore<ApplicationToken>(store: self.blobStore)
+                if let usagePlan { try usageStore.activate(plan: usagePlan) }
+                return try usageStore.lowerBound(for: observationPlan)
+            },
+            apply: { try self.shieldEnforcer.apply(applications: $0, protectedApplications: protectedTokens) },
+            remove: { self.shieldEnforcer.removeAll() }) else { return .degraded }
 
+        if policy.dailyLimit != nil && !usageAvailable { return .degraded }
         switch policy.enforcementCapability {
         case .enforced:
             return .applied
         case .degraded, .unavailable:
             return .degraded
+        }
+    }
+
+    /// Planned registration status only; this does not certify callback delivery.
+    public func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus {
+        return (try? policyCoordination.withExclusiveAccess {
+            guard let installation = currentInstallation(), installation.state == .active,
+                  currentActiveActivityId() == installation.policyActivityId,
+                  let plan = installation.usageDayPlan,
+                  let policy = StoredDeviceActivityPolicyLoader<ApplicationToken>(scheduleStore: blobStore, tokenStore: blobStore)
+                    .load(activityId: installation.policyActivityId, storageGeneration: installation.payloadStorageGeneration),
+                  plan.matches(policy: policy.schedule),
+                  plan.binding.matches(policy.applicationTokens, logicalAppToken: policy.schedule.appToken) else {
+                return DeviceActivityUsageMonitorStatus.unavailable
+            }
+            return plan.status(at: now, deviceTimeZone: deviceTimeZone())
+        }) ?? .unavailable
+    }
+
+    /// Reuse only the currently installed accepted payloads. Renewal needs host
+    /// execution; a recurring health monitor cannot renew this finite usage plan.
+    /// The explicit binding provider and all registration checks run again.
+    public func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
+        try policyCoordination.withExclusiveAccess {
+            guard let installation = currentInstallation(), installation.state == .active,
+                  currentActiveActivityId() == installation.policyActivityId else {
+                throw PCAProtectionPolicyApplicationError.malformedPolicy
+            }
+            let suffix = installation.payloadStorageGeneration.map { "." + $0 } ?? ""
+            guard let schedule = blobStore.read(forKey: "schedule.\(installation.policyActivityId)\(suffix)"),
+                  let tokens = blobStore.read(forKey: "applicationTokens.\(installation.policyActivityId)\(suffix)"),
+                  let floor = blobStore.read(forKey: "protectedApplicationTokens\(suffix)"),
+                  case .success(let policy) = PolicySyncDecoder.decode(schedule),
+                  policy.activityId.utf8.elementsEqual(installation.policyActivityId.utf8) else {
+                throw PCAProtectionPolicyApplicationError.malformedPolicy
+            }
+            return try applyPolicyUnderLock(scheduleData: schedule, applicationTokenData: tokens,
+                protectedApplicationTokenData: floor, now: now)
         }
     }
 
@@ -310,9 +440,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             removePayloads(policyActivityId: activityId, generation: nil)
             for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
         }
-        ManagedSettingsStore().shield.applications = nil
-        ManagedSettingsStore().shield.applicationCategories = nil
-        ManagedSettingsStore().shield.webDomains = nil
+        shieldEnforcer.removeAll()
     }
 
     private func removePayloads(policyActivityId: String, generation: String?) {
@@ -325,6 +453,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private func retire(_ installation: DeviceActivityMonitorInstallation) {
         for id in installation.allMonitorActivityIds { scheduler.stop(activityId: id) }
         removePayloads(policyActivityId: installation.policyActivityId, generation: installation.payloadStorageGeneration)
+        DeviceActivityUsageLowerBoundStore<ApplicationToken>(store: blobStore).discardPending(generation: installation.generation)
     }
 
     private func invalidate(_ installation: DeviceActivityMonitorInstallation) {
@@ -402,7 +531,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
 
     public static func production(
         authorizationIsApproved: @escaping () -> Bool,
-        appGroupIdentifier: String
+        appGroupIdentifier: String,
+        usageBindingProvider: @escaping (DecodedSchedulePolicy, Set<ApplicationToken>) -> DeviceActivityUsageSelectionBinding? = { _, _ in nil }
     ) throws -> PCAProductionProtectionPolicyRuntime {
         let blobStore = try AppGroupDeviceActivityFileStore(appGroupIdentifier: appGroupIdentifier)
         let coordination = try AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: appGroupIdentifier)
@@ -411,7 +541,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             authorizationIsApproved: authorizationIsApproved,
             blobStore: blobStore,
             callbackLog: callbackLog,
-            policyCoordination: coordination
+            policyCoordination: coordination,
+            usageBindingProvider: usageBindingProvider
         )
     }
 }

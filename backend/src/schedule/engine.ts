@@ -156,7 +156,7 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput, locale: Suppor
     }
   }
 
-  if (!dailyLimit) {
+  if (!dailyLimit || !appScopeIncludes(dailyLimit.appScope, appToken)) {
     return { decision: 'ALLOWED', reason: 'No daily limit configured.', reasonMessage: translate('schedule.ALLOWED', locale) };
   }
 

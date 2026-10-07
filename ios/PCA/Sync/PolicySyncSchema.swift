@@ -39,7 +39,7 @@ public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
         let suffix = storageGeneration.map { "." + $0 } ?? ""
         guard let scheduleData = scheduleStore.read(forKey: "schedule.\(activityId)\(suffix)"),
               case .success(let schedule) = PolicySyncDecoder.decode(scheduleData),
-              schedule.activityId == activityId,
+              schedule.activityId.utf8.elementsEqual(activityId.utf8),
               let tokenData = tokenStore.read(forKey: "applicationTokens.\(activityId)\(suffix)"),
               let tokens = try? PropertyListDecoder().decode(Set<Token>.self, from: tokenData) else { return nil }
         let protectedTokens: Set<Token>
@@ -89,7 +89,15 @@ public struct StoredTimeOfDay: Codable, Equatable {
 
 public enum StoredAppScope: Codable, Equatable {
     case all
-    case apps(Set<String>)
+    case apps([String])
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.all, .all): return true
+        case (.apps(let a), .apps(let b)): return Set(a.map { Data($0.utf8) }) == Set(b.map { Data($0.utf8) })
+        default: return false
+        }
+    }
 }
 
 public struct StoredScheduleWindow: Codable, Equatable {
@@ -191,6 +199,7 @@ public enum PolicySyncDecodeError: Error, Equatable {
     case invalidWindowConfig([String])
     case emptyActivityId
     case emptyAppToken
+    case invalidUsageConfig
 }
 
 public enum PolicySyncDecoder {
@@ -200,6 +209,7 @@ public enum PolicySyncDecoder {
     /// enumerated error rather than falling back to a default policy
     /// (PCA-15 correction F1: "never invent policy").
     public static func decode(_ data: Data) -> Result<DecodedSchedulePolicy, PolicySyncDecodeError> {
+        guard data.count <= 1_048_576 else { return .failure(.malformedData) }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let stored = try? decoder.decode(StoredDeviceActivityPolicy.self, from: data) else {
@@ -214,6 +224,13 @@ public enum PolicySyncDecoder {
         }
         guard !stored.activityId.isEmpty else { return .failure(.emptyActivityId) }
         guard !stored.appToken.isEmpty else { return .failure(.emptyAppToken) }
+        guard stored.appToken.utf8.count <= 256, stored.activityId.utf8.count <= 256,
+              stored.bonusGrants.count <= 64,
+              stored.bonusGrants.allSatisfy({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.extraMinutes) && $0.expiresAtUtc > $0.grantedAtUtc }),
+              stored.dailyLimit.map({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.limitMinutes) &&
+                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.usedMinutesToday) }) ?? true else {
+            return .failure(.invalidUsageConfig)
+        }
         guard let timeZone = TimeZone(identifier: stored.timeZoneIdentifier) else {
             return .failure(.unrecognizedTimeZone(stored.timeZoneIdentifier))
         }

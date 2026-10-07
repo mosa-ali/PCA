@@ -135,7 +135,7 @@ object ScheduleEvaluator {
             }
         }
 
-        if (dailyLimit == null) {
+        if (dailyLimit == null || !appScopeIncludes(dailyLimit.appScope, appToken)) {
             return ScheduleDecision(decision = ScheduleDecisionKind.ALLOWED, reason = "No daily limit configured.")
         }
 

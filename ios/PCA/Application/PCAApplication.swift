@@ -398,6 +398,26 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     private func reconcileCallbackHealth() {
+        let currentTime = now()
+        switch dependencies.policyRuntime.usageMonitorStatus(now: currentTime) {
+        case .expired, .deviceTimeZoneChanged:
+            guard authorization.permitsEnforcement else {
+                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                applicationState = stateForCurrentData()
+                return
+            }
+            do {
+                let result = try dependencies.policyRuntime.renewInstalledUsageMonitor(now: currentTime)
+                if result != .applied {
+                    dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                    applicationState = stateForCurrentData()
+                }
+            } catch {
+                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                applicationState = stateForCurrentData()
+            }
+        case .unavailable, .planned: break
+        }
         if case .degraded = dependencies.policyRuntime.callbackHealth(now: now()) {
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = stateForCurrentData()

@@ -26,12 +26,21 @@ public enum ScheduleWindowKind: String, Equatable, Codable {
 
 public enum AppScope: Equatable, Codable {
     case all
-    case apps(Set<String>)
+    // Arrays preserve opaque UTF-8 identities that Swift String sets normalize.
+    case apps([String])
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.all, .all): return true
+        case (.apps(let a), .apps(let b)): return Set(a.map { Data($0.utf8) }) == Set(b.map { Data($0.utf8) })
+        default: return false
+        }
+    }
 
     public func includes(_ appToken: String) -> Bool {
         switch self {
         case .all: return true
-        case .apps(let set): return set.contains(appToken)
+        case .apps(let set): return set.contains { $0.utf8.elementsEqual(appToken.utf8) }
         }
     }
 }

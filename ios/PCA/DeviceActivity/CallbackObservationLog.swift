@@ -86,6 +86,7 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
     public let state: DeviceActivityMonitorInstallationState
     public let schemaVersion: Int?
     public let boundaryMonitors: [DeviceActivityBoundaryMonitor]?
+    public let usageDayPlan: DeviceActivityUsageDayPlan?
 
     public init(
         policyActivityId: String,
@@ -95,7 +96,8 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
         timeZoneIdentifier: String,
         state: DeviceActivityMonitorInstallationState,
         schemaVersion: Int? = nil,
-        boundaryMonitors: [DeviceActivityBoundaryMonitor]? = nil
+        boundaryMonitors: [DeviceActivityBoundaryMonitor]? = nil,
+        usageDayPlan: DeviceActivityUsageDayPlan? = nil
     ) {
         self.policyActivityId = policyActivityId
         self.monitorActivityId = monitorActivityId
@@ -105,6 +107,7 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
         self.state = state
         self.schemaVersion = schemaVersion
         self.boundaryMonitors = boundaryMonitors
+        self.usageDayPlan = usageDayPlan
     }
 
     public func confirmingActive() -> DeviceActivityMonitorInstallation {
@@ -116,19 +119,20 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
             timeZoneIdentifier: timeZoneIdentifier,
             state: .active,
             schemaVersion: schemaVersion,
-            boundaryMonitors: boundaryMonitors
+            boundaryMonitors: boundaryMonitors,
+            usageDayPlan: usageDayPlan
         )
     }
 
     public func invalidating() -> DeviceActivityMonitorInstallation {
-        DeviceActivityMonitorInstallation(policyActivityId: policyActivityId, monitorActivityId: monitorActivityId, generation: generation, installedAtUtc: installedAtUtc, timeZoneIdentifier: timeZoneIdentifier, state: .invalidated, schemaVersion: schemaVersion, boundaryMonitors: boundaryMonitors)
+        DeviceActivityMonitorInstallation(policyActivityId: policyActivityId, monitorActivityId: monitorActivityId, generation: generation, installedAtUtc: installedAtUtc, timeZoneIdentifier: timeZoneIdentifier, state: .invalidated, schemaVersion: schemaVersion, boundaryMonitors: boundaryMonitors, usageDayPlan: usageDayPlan)
     }
 
     public var allMonitorActivityIds: [String] {
-        [monitorActivityId] + (boundaryMonitors ?? []).map(\.activityId)
+        [monitorActivityId] + (boundaryMonitors ?? []).map(\.activityId) + (usageDayPlan.map { [$0.monitorActivityId] } ?? [])
     }
 
-    public var payloadStorageGeneration: String? { schemaVersion == 2 ? generation : nil }
+    public var payloadStorageGeneration: String? { schemaVersion == 2 || schemaVersion == 3 ? generation : nil }
 
     public func containsMonitor(_ id: String) -> Bool { allMonitorActivityIds.contains(id) }
 
@@ -140,12 +144,18 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
               UUID(uuidString: value.generation) != nil,
               value.installedAtUtc.timeIntervalSince1970.isFinite,
               TimeZone(identifier: value.timeZoneIdentifier) != nil else { return nil }
-        guard value.schemaVersion == nil || value.schemaVersion == 2 else { return nil }
-        if value.schemaVersion == 2 {
+        guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 else { return nil }
+        if value.schemaVersion == 2 || value.schemaVersion == 3 {
             guard let boundaries = value.boundaryMonitors, boundaries.count <= 19,
                   boundaries.allSatisfy({ $0.trigger.isValid }),
                   Set(boundaries.map(\.trigger)).count == boundaries.count else { return nil }
         } else if value.boundaryMonitors != nil { return nil }
+        if value.schemaVersion == 3 {
+            guard let usage = value.usageDayPlan, usage.isValid,
+                  usage.generation == value.generation,
+                  usage.policyActivityId.utf8.elementsEqual(value.policyActivityId.utf8),
+                  value.allMonitorActivityIds.count <= 20 else { return nil }
+        } else if value.usageDayPlan != nil { return nil }
         let ids = value.allMonitorActivityIds
         guard Set(ids).count == ids.count,
               ids.allSatisfy({ $0.hasPrefix("pca-monitor-") && UUID(uuidString: String($0.dropFirst("pca-monitor-".count))) != nil }) else { return nil }

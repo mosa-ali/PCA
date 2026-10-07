@@ -9,6 +9,30 @@
   ],
   "vectors": [
     {
+      "id": "daily-limit-excludes-current-app",
+      "description": "An exhausted daily limit for another app does not restrict this app.",
+      "sourceScenario": "DailyAppLimit appScope applies only to included applications.",
+      "input": {
+        "nowUtc": "2026-01-07T09:00:00.000Z", "timezone": "UTC", "appToken": "app-a",
+        "windows": [], "bonusGrants": [], "exceptions": [],
+        "dailyLimit": { "appScope": { "apps": ["app-b"] }, "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "daily-limit-includes-current-app",
+      "description": "An exhausted daily limit blocks an included application.",
+      "sourceScenario": "DailyAppLimit appScope applies only to included applications.",
+      "input": {
+        "nowUtc": "2026-01-07T09:00:00.000Z", "timezone": "UTC", "appToken": "app-a",
+        "windows": [], "bonusGrants": [], "exceptions": [],
+        "dailyLimit": { "appScope": { "apps": ["app-a"] }, "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_LIMIT_REACHED", "remainingMinutesToday": 0 }
+    },
+    {
       "id": "bedtime-blocks-before-midnight",
       "description": "Cross-midnight bedtime window blocks before local midnight.",
       "sourceScenario": "backend/test/schedule/engine.test.mjs: cross-midnight bedtime blocks both before and after midnight, but not midday",

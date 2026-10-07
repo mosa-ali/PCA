@@ -72,7 +72,7 @@ public enum ScheduleEngine {
             }
         }
 
-        guard let dailyLimit = input.dailyLimit else {
+        guard let dailyLimit = input.dailyLimit, dailyLimit.appScope.includes(appToken) else {
             return ScheduleDecision(kind: .allowed, reason: "No daily limit configured.")
         }
 

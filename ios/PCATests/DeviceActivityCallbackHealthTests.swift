@@ -99,6 +99,81 @@ import FamilyControls
 import ManagedSettings
 
 final class DeviceActivityCallbackRuntimeTests: XCTestCase {
+    private final class ShieldRecorder: PCADeviceActivityShieldEnforcing {
+        var applyCount = 0
+        var removeCount = 0
+        func apply(applications: Set<ApplicationToken>, protectedApplications: Set<ApplicationToken>) throws { applyCount += 1 }
+        func removeAll() { removeCount += 1 }
+    }
+    func testRegistrationAndPublicationFailuresDoNotMutateExistingShields() throws {
+        for failure in ["payload", "schedule", "publication"] {
+            let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler(), shields = ShieldRecorder()
+            if failure == "payload" { store.failKey = "schedule.policy" }
+            if failure == "schedule" { scheduler.failStart = true }
+            if failure == "publication" { store.failActiveWrite = true }
+            let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+                scheduler: scheduler, blobStore: store, installationClock: { self.installedAt }, shieldEnforcer: shields)
+            XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policy(),
+                applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+                protectedApplicationTokenData: nil, now: installedAt))
+            XCTAssertEqual(shields.applyCount, 0, failure)
+            XCTAssertEqual(shields.removeCount, 0, failure)
+        }
+    }
+    func testExplicitPolicyClearUsesEnforcementPortOnlyForMatchingPolicy() throws {
+        let store = CallbackRuntimeBlobStore(), shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: CallbackRuntimeScheduler(), blobStore: store,
+            installationClock: { self.installedAt }, shieldEnforcer: shields)
+        _ = try runtime.applyVerifiedPolicy(scheduleData: policy(),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt)
+        let count = shields.removeCount
+        runtime.clearPolicy(activityId: "unrelated")
+        XCTAssertEqual(shields.removeCount, count)
+        runtime.clearPolicy(activityId: "policy")
+        XCTAssertEqual(shields.removeCount, count + 1)
+    }
+    func testInstalledPolicyRenewalFailurePreservesShieldsAndStopsAttemptedGeneration() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler(), shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt }, shieldEnforcer: shields)
+        _ = try runtime.applyVerifiedPolicy(scheduleData: policy(),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt)
+        let prior = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
+            XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+        let priorMutationCount = shields.removeCount
+        let startedCount = scheduler.started.count
+        scheduler.failStart = true
+        XCTAssertThrowsError(try runtime.renewInstalledUsageMonitor(now: installedAt.addingTimeInterval(86400))) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .schedulingFailed)
+        }
+        XCTAssertEqual(shields.removeCount, priorMutationCount)
+        XCTAssertEqual(shields.applyCount, 0)
+        XCTAssertNil(store.read(forKey: "activeActivityId"))
+        let attempted = Array(scheduler.started.dropFirst(startedCount))
+        XCTAssertFalse(attempted.isEmpty)
+        XCTAssertTrue(attempted.allSatisfy { scheduler.stopped.contains($0) })
+        XCTAssertTrue(prior.allMonitorActivityIds.allSatisfy { scheduler.stopped.contains($0) })
+    }
+    func testRenewalRejectsCorruptStoredPolicyBeforeRetiringActiveGeneration() throws {
+        let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler(), shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt }, shieldEnforcer: shields)
+        _ = try runtime.applyVerifiedPolicy(scheduleData: policy(),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt)
+        let original = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let manifest = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(original))
+        try store.write(Data("corrupt".utf8), forKey: "schedule.policy." + manifest.generation)
+        let mutationCount = shields.removeCount
+        XCTAssertThrowsError(try runtime.renewInstalledUsageMonitor(now: installedAt))
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), original)
+        XCTAssertEqual(store.read(forKey: "activeActivityId"), Data("policy".utf8))
+        XCTAssertTrue(scheduler.stopped.isEmpty)
+        XCTAssertEqual(shields.removeCount, mutationCount)
+    }
     private let installedAt = ISO8601DateFormatter().date(from: "2025-06-03T12:00:00Z")!
     private let monitor = "pca-monitor-11111111-1111-4111-8111-111111111111"
     private let generation = "22222222-2222-4222-8222-222222222222"

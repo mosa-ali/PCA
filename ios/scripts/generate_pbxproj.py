@@ -320,6 +320,8 @@ with open(PROJECT_PATH, "w", encoding="utf-8") as f:
 # Fixed IDs keep additions independent of the legacy counter/tail contracts.
 from wire_family_trust_set_codec import wire_project
 wire_project(PROJECT_PATH)
+from wire_device_activity_usage import wire_project as wire_usage_project
+wire_usage_project(PROJECT_PATH)
 
 print("Done. Allocated %d new object IDs." % _counter)
 print("PCA host sources added: %d" % len(sources_files_by_target["PCA"]))

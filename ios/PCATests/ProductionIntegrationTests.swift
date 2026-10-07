@@ -5,6 +5,73 @@ import CryptoKit
 @testable import PCA
 
 final class ProductionIntegrationTests: XCTestCase {
+    private final class UsageRuntime: PCAProtectionPolicyRuntime {
+        var status: DeviceActivityUsageMonitorStatus = .expired
+        var renewals = 0
+        var fails = false
+        var result: PCAProtectionPolicyApplicationResult = .degraded
+        func applyVerifiedPolicy(scheduleData: Data, applicationTokenData: Data,
+            protectedApplicationTokenData: Data?, now: Date) throws -> PCAProtectionPolicyApplicationResult { .degraded }
+        func clearPolicy(activityId: String) {}
+        func callbackHealth(now: Date) -> DeviceActivityCallbackHealth { .unknown }
+        func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus { status }
+        func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
+            renewals += 1
+            if fails { throw PCAProtectionPolicyApplicationError.schedulingFailed }
+            status = .planned(.wholePolicyDayPlanned)
+            return result
+        }
+    }
+    @MainActor func testHostLaunchAndForegroundRenewOnlyExpiredOrChangedUsagePlans() throws {
+        let runtime = UsageRuntime()
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(), policyRuntime: runtime)
+        model.start()
+        XCTAssertEqual(runtime.renewals, 1)
+        model.start()
+        XCTAssertEqual(runtime.renewals, 1)
+        model.sceneBecameActive()
+        XCTAssertEqual(runtime.renewals, 1)
+        runtime.status = .deviceTimeZoneChanged
+        model.sceneBecameActive()
+        XCTAssertEqual(runtime.renewals, 2)
+        runtime.status = .unavailable
+        model.sceneBecameActive()
+        XCTAssertEqual(runtime.renewals, 2)
+    }
+    @MainActor func testFailedHostRenewalRemainsRetryableOnNextForeground() throws {
+        let runtime = UsageRuntime()
+        runtime.fails = true
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(), policyRuntime: runtime)
+        model.start()
+        XCTAssertEqual(runtime.renewals, 1)
+        runtime.fails = false
+        XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded)
+        model.sceneBecameActive()
+        XCTAssertEqual(runtime.renewals, 2)
+    }
+    @MainActor func testDeniedAuthorizationDoesNotRenewUsageMonitor() throws {
+        let runtime = UsageRuntime()
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(), policyRuntime: runtime, authorizationStatus: .denied)
+        model.start()
+        model.sceneBecameActive()
+        XCTAssertEqual(runtime.renewals, 0)
+        XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded)
+    }
+    @MainActor func testRenewalDoesNotPromoteProtectionAndNonAppliedResultsDegrade() throws {
+        for result in [PCAProtectionPolicyApplicationResult.applied, .scheduledOnly, .degraded] {
+            let runtime = UsageRuntime()
+            runtime.result = result
+            let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(),
+                attemptStore: InMemoryPCADeviceStateStore(), policyRuntime: runtime)
+            model.start()
+            XCTAssertEqual(runtime.renewals, 1)
+            XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+            if result != .applied { XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded) }
+        }
+    }
     func testFirstDeviceTrustRootRequiresExplicitApprovalAndDoesNotPromoteLifecycle() async throws {
         let rootStore = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(seed: trustRootSeed()))
         let api = TrustRootFlowApi()
@@ -1295,10 +1362,12 @@ final class ProductionIntegrationTests: XCTestCase {
         sessionClient: PCADeviceSessionClient? = nil,
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
         inboundInbox: PCAInboundInboxStoring? = nil,
-        assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in }
+        assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
+        policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
+        authorizationStatus: RawAuthorizationStatus = .approved
     ) throws -> PCAApplicationModel {
         let authorizationSource = FakeAuthorizationStatusSource()
-        authorizationSource.status = .approved
+        authorizationSource.status = authorizationStatus
         let authorizationCenter = ChildAuthorizationCenter(source: authorizationSource)
         // Runtime fixtures use an explicit committed root; this is not real-device evidence.
         let runtimeRoot = firstDeviceRootStore ?? (runtimeSyncClient == nil ? nil :
@@ -1324,6 +1393,7 @@ final class ProductionIntegrationTests: XCTestCase {
             keyDeletion: keyDeletion,
             firstDeviceRootStore: runtimeRoot,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
+            policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: identityStore
         )

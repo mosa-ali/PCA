@@ -8,6 +8,17 @@ import XCTest
 final class ScheduleEngineTests: XCTestCase {
     private let utc = TimeZone(identifier: "UTC")!
     private let riyadh = TimeZone(identifier: "Asia/Riyadh")!
+    func testDailyLimitAppliesOnlyToItsScope() {
+        let now = date("2026-01-07T09:00:00Z")
+        let excluded = DailyAppLimit(appScope: .apps(["app-b"]), limitMinutes: 30,
+            usedMinutesToday: 30, anchorLocalDate: "2026-01-07")
+        let included = DailyAppLimit(appScope: .apps(["app-a"]), limitMinutes: 30,
+            usedMinutesToday: 30, anchorLocalDate: "2026-01-07")
+        XCTAssertEqual(ScheduleEngine.evaluate(input(now: now, dailyLimit: excluded)).kind, .allowed)
+        XCTAssertEqual(ScheduleEngine.evaluate(input(now: now, dailyLimit: included)).kind, .blockedLimitReached)
+        XCTAssertEqual(ScheduleEngine.evaluate(input(now: now,
+            windows: [window(kind: .bedtime)], dailyLimit: excluded)).kind, .blockedBedtime)
+    }
 
     private func window(
         id: String = "w1", kind: ScheduleWindowKind = .blockPeriod,

@@ -23,6 +23,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     private let callbackLog: CallbackObservationLog
     private let managedSettings: ManagedSettingsStore
     private let policyCoordination: DeviceActivityPolicyCoordination?
+    private let usageState: OpaqueBlobStore?
 
     override init() {
         // `DeviceActivityMonitor` is instantiated by the OS, not by this
@@ -35,6 +36,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         // only when policy genuinely unavailable").
         self.policyStore = AppGroupDeviceActivityPolicySource(appGroupIdentifier: AppGroup.identifier)
         let callbackState = try? AppGroupDeviceActivityFileStore(appGroupIdentifier: AppGroup.identifier)
+        self.usageState = callbackState
         self.callbackLog = (try? AppGroupCallbackObservationLog(appGroupIdentifier: AppGroup.identifier, installationReader: { callbackState?.read(forKey: deviceActivityMonitorInstallationStorageKey) })) ?? InMemoryCallbackObservationLog()
         self.managedSettings = ManagedSettingsStore()
         self.policyCoordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
@@ -61,7 +63,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         super.eventDidReachThreshold(event, activity: activity)
         callbackLog.record(kind: .eventDidReachThreshold(eventId: event.rawValue), activityId: activity.rawValue, at: Date())
-        applyCurrentDecision(for: activity)
+        applyCurrentDecision(for: activity, usageEventId: event.rawValue)
     }
 
     /// Re-runs `ScheduleEngine.evaluate` against the currently-stored
@@ -71,14 +73,22 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     /// (parent exception, bonus time, etc.) can only be resolved by the
     /// engine at the moment of the callback, not baked into the schedule
     /// mapping ahead of time.
-    private func applyCurrentDecision(for activity: DeviceActivityName) {
+    private func applyCurrentDecision(for activity: DeviceActivityName, usageEventId: String? = nil) {
         // The shared OS file lock spans load, evaluation and shield mutation;
         // an old callback cannot clear a replacement's restrictive decision.
         guard let coordination = policyCoordination else { return }
-        try? coordination.withExclusiveAccess { applyCurrentDecisionUnderLock(for: activity) }
+        try? coordination.withExclusiveAccess { applyCurrentDecisionUnderLock(for: activity, usageEventId: usageEventId) }
     }
 
-    private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName) {
+    private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName, usageEventId: String?) {
+        if let eventId = usageEventId {
+            guard let usageState else { return }
+            do {
+                let active = try DeviceActivityUsageCallbackProcessor<ApplicationToken>(store: usageState)
+                    .consume(activityId: activity.rawValue, eventId: eventId, at: Date(), deviceTimeZone: .current)
+                if !active { return } // Staged registration observation; no shield mutation.
+            } catch { return } // Unrecognized/stale/corrupt attribution preserves current shields.
+        }
         guard let policy = policyStore.currentPolicy(for: activity) else {
             // Policy genuinely unavailable (never synced yet, App Group
             // unreachable, or malformed/rejected by PolicySyncDecoder) --
@@ -99,7 +109,28 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
             return
         }
 
-        let decision = ScheduleEngine.evaluate(policy.evaluationInput(nowUtc: Date()))
+        let now = Date()
+        var observationPlan: DeviceActivityUsageDayPlan?
+        var coverageAvailable = policy.schedule.dailyLimit == nil
+        if let usageState, let data = usageState.read(forKey: deviceActivityMonitorInstallationStorageKey),
+           let installation = DeviceActivityMonitorInstallation.decodeValidated(data), installation.state == .active,
+           let plan = installation.usageDayPlan {
+            guard plan.binding.matches(policy.applicationTokens, logicalAppToken: policy.schedule.appToken),
+                  plan.matches(policy: policy.schedule) else { return }
+            observationPlan = plan
+            coverageAvailable = plan.coverage == .wholePolicyDayPlanned && plan.contains(now, deviceTimeZone: .current)
+        }
+        _ = try? DeviceActivityUsageEnforcement.reconcile(policy: policy.schedule, now: now,
+            applications: policy.applicationTokens, protectedApplications: policy.protectedApplicationTokens,
+            coverageAvailable: coverageAvailable, loadLowerBound: {
+                guard let plan = observationPlan, let usageState = self.usageState else { return nil }
+                let usage = DeviceActivityUsageLowerBoundStore<ApplicationToken>(store: usageState)
+                try usage.activate(plan: plan)
+                guard now >= plan.dayStartUtc, now < plan.dayEndUtc else { return nil }
+                return try usage.lowerBound(for: plan)
+            },
+            apply: { self.managedSettings.shield.applications = $0.isEmpty ? nil : $0 },
+            remove: { self.managedSettings.shield.applications = nil })
 
         // `decision.isRestrictive` covers every fully-resolved BLOCKED_*
         // kind. `.enforcementUnavailable` (an intended-restrictive decision
@@ -110,8 +141,6 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         // here at all, applying the shield is the correct, safe action;
         // failing open (never shielding) on an unconfirmed-enforcement
         // signal would be the wrong default for a child-safety control.
-        let shouldShield = decision.isRestrictive || decision.kind == .enforcementUnavailable
-        managedSettings.shield.applications = shouldShield && !policy.applicationTokens.isEmpty ? policy.applicationTokens : nil
     }
 }
 
