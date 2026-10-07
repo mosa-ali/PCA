@@ -51,16 +51,39 @@ test('removeParentRule deletes a previously stored rule', async () => {
   assert.equal(matched.length, 0);
 });
 
+test('parent writes and removals preserve same-key category and schedule rules', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const service = new WebRuleService(repo);
+  const createdAt = new Date('2026-01-01T00:00:00Z');
+
+  await repo.put({ domain: 'example.com', listType: 'DENY', source: 'CATEGORY_RULE', familyId: 'fam-1', createdAt });
+  await repo.put({ domain: 'example.com', listType: 'DENY', source: 'SCHEDULE_RULE', familyId: 'fam-1', createdAt });
+  await service.setParentRule('fam-1', 'example.com', 'DENY', 'PARENT_DENYLIST');
+
+  const afterParentWrite = await repo.findMatching('fam-1', 'example.com');
+  assert.deepEqual(
+    afterParentWrite.map((rule) => rule.source).sort(),
+    ['CATEGORY_RULE', 'PARENT_DENYLIST', 'SCHEDULE_RULE'],
+  );
+  assert.deepEqual((await service.listParentRules('fam-1')).map((rule) => rule.source), ['PARENT_DENYLIST']);
+
+  await service.removeParentRule('fam-1', 'example.com', 'DENY');
+  const afterParentRemoval = await repo.findMatching('fam-1', 'example.com');
+  assert.deepEqual(
+    afterParentRemoval.map((rule) => rule.source).sort(),
+    ['CATEGORY_RULE', 'SCHEDULE_RULE'],
+  );
+  assert.deepEqual(await service.listParentRules('fam-1'), []);
+});
+
 // NEW-003 regression: InMemoryWebRuleRepository's internal Map key is built
-// from `${familyId} ${domain} ${listType}`. put() and remove() must key an
-// identical (familyId, domain, listType) triple to the SAME Map entry
+// from the exact (familyId, domain, listType, source) tuple. put() and remove()
+// must key an identical tuple to the SAME Map entry
 // (round-trip: put then remove then find returns nothing) while distinct
-// triples -- including ones that share a domain or a listType -- must never
+// tuples -- including ones that share a domain or a listType -- must never
 // collide with one another. This is unaffected by which separator
-// character sits between the fields, since opaque family ids and
-// canonicalized domains never contain that character; the assertions below
-// only depend on put/remove/findMatching agreeing on the same key, not on
-// the exact byte used to join them.
+// character sits between the fields; tuple serialization keeps field
+// boundaries unambiguous, including opaque family IDs.
 test('rule keys round-trip through put/remove and never collide across distinct families, domains or list types', async () => {
   const repo = new InMemoryWebRuleRepository();
   const service = new WebRuleService(repo);

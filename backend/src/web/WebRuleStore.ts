@@ -10,7 +10,7 @@ import type { CanonicalDomain, OpaqueFamilyId, WebRule, WebRuleListType, WebRule
  */
 export interface WebRuleRepository {
   put(rule: WebRule): Promise<void>;
-  remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType): Promise<void>;
+  remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType, source: WebRuleSource): Promise<void>;
   /** Every rule matching this domain, across the family's own rules AND the global security feed -- the full candidate set resolveWebRuleSource ranks. */
   findMatching(familyId: OpaqueFamilyId, domain: CanonicalDomain): Promise<WebRule[]>;
   /** Every rule stored under this family (across all domains) -- never includes the global security feed (familyId: null) or another family's rules. Backs the parent-facing rule-list authoring surface (WebRuleService.listParentRules), never the per-domain decision pipeline (that stays on findMatching). */
@@ -20,16 +20,16 @@ export interface WebRuleRepository {
 export class InMemoryWebRuleRepository implements WebRuleRepository {
   private readonly rules = new Map<string, WebRule>();
 
-  private key(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType): string {
-    return `${familyId ?? '*'} ${domain} ${listType}`;
+  private key(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType, source: WebRuleSource): string {
+    return JSON.stringify([familyId, domain, listType, source]);
   }
 
   async put(rule: WebRule): Promise<void> {
-    this.rules.set(this.key(rule.familyId, rule.domain, rule.listType), rule);
+    this.rules.set(this.key(rule.familyId, rule.domain, rule.listType, rule.source), rule);
   }
 
-  async remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType): Promise<void> {
-    this.rules.delete(this.key(familyId, domain, listType));
+  async remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType, source: WebRuleSource): Promise<void> {
+    this.rules.delete(this.key(familyId, domain, listType, source));
   }
 
   async findMatching(familyId: OpaqueFamilyId, domain: CanonicalDomain): Promise<WebRule[]> {
@@ -114,7 +114,8 @@ export class WebRuleService {
   ): Promise<void> {
     const canonicalDomain = canonicalizeDomain(domain);
     if (canonicalDomain === null) throw new WebRuleError('INVALID_DOMAIN');
-    await this.repository.remove(familyId, canonicalDomain, listType);
+    const source = listType === 'ALLOW' ? 'PARENT_ALLOWLIST' : 'PARENT_DENYLIST';
+    await this.repository.remove(familyId, canonicalDomain, listType, source);
   }
 
   /**

@@ -10,6 +10,18 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         func read(forKey key: String) -> Data? { values[key] }
         func remove(forKey key: String) { values.removeValue(forKey: key) }
     }
+    private struct PersistedRecordFixture: Codable {
+        let binding: DeviceActivityUsageSelectionBinding
+        let localDate: String
+        let zone: String
+        let dayStart: Date
+        let dayEnd: Date
+        let minutes: Int
+    }
+    private struct PersistedStateFixture: Codable {
+        let schemaVersion: Int
+        let records: [PersistedRecordFixture]
+    }
     private struct Token: Hashable, Codable { let value: String }
     private let now = Date(timeIntervalSince1970: 1_760_011_200)
     func testScopeDecodingPreservesDistinctOpaqueUnicodeIdentities() throws {
@@ -136,6 +148,17 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         let store = Store(), value = try plan(policy())
         store.values["com.pca.app.deviceactivity.usage-lower-bound.v1"] = Data("broken".utf8)
         XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: value))
+    }
+    func testPersistedZeroMinuteRecordIsUnavailableState() throws {
+        let store = Store(), value = try plan(policy())
+        let impossible = PersistedRecordFixture(binding: value.binding, localDate: value.localDate,
+            zone: value.policyTimeZoneIdentifier, dayStart: value.dayStartUtc, dayEnd: value.dayEndUtc, minutes: 0)
+        store.values["com.pca.app.deviceactivity.usage-lower-bound.v1"] = try JSONEncoder().encode(
+            PersistedStateFixture(schemaVersion: 1, records: [impossible]))
+
+        XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: value)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
     }
     func testEquivalentDecodedTokenEncodingRetainsSameDayMaximumAcrossGeneration() throws {
         let store = Store(), first = try plan(policy())

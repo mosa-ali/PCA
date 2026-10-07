@@ -222,7 +222,7 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
               state.schemaVersion == 1, state.records.count <= 8 else { throw DeviceActivityUsageError.unavailableState }
         for record in state.records {
             guard record.binding.isValid, let zone = TimeZone(identifier: record.zone),
-                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains(record.minutes),
+                  (1...DeviceActivityUsagePlanner.maximumMinutes).contains(record.minutes),
                   record.dayStart.timeIntervalSince1970.isFinite, record.dayEnd.timeIntervalSince1970.isFinite,
                   record.dayEnd > record.dayStart,
                   ScheduleEngine.localDateString(record.dayStart, timeZone: zone) == record.localDate,
