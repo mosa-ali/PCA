@@ -1569,3 +1569,38 @@ VALIDATION = backend2975/2975PASS; Android1568tests/0failures/0errors/1existingS
 CI = Quality gates37617553060 queued for exact source SHA at inspection. Re-poll this run; do not infer Apple acceptance.
 WORKTREE = no tracked unpublished implementation; excluded .vscode/, root0, PARENT_FIRST_DEVICE_TRUST_SET_PROTOCOL_REVIEW.md and ios/scripts/__pycache__/ preserved.
 REMAINING = verified policy inbox/crypto orchestration, durable explicit scoped app associations and producer/composition, recovery/source tests, remaining Parent/Platform TODOs; physical-device evidence, PCA-DEC-020, live migration0064/pca_pro, Azure and Platform activation gates unchanged. TODO12/14/15 remain unfinished; deployment readiness NO. Continue implementation after any exact-head CI corrections.
+
+### 2026-10-07 18:46 UTC — Parent TODO-14 Web Rules auth-order checkpoint
+
+PARENT_BASE = Local source base `d150a41b7923a8e58072affd4b3c3fa3f91127df`; the Parent backend change is uncommitted and unpublished. Backend build PASS; focused Web Rules route suite PASS 19/19. This only preserves Parent session/family/role/CSRF/actor-device checks before the existing unavailable-service response; Web Rules functionality remains unavailable.
+PLATFORM_SCOPE = No Platform code, Parent identity projection, Enrollment UI, live database, or Platform release gate changed. Platform remains `HOLD_PARENT_DEPENDENCY`; Enrollment identity work and its acceptance tests remain held. No fresh fetch, commit, push, exact-head CI, deployment, or owner acceptance is claimed.
+
+### 2026-10-07 18:50 UTC — Parent TODO-20 local schema parity checkpoint
+
+PARENT_LOCAL_DB = Read-only metadata inspection of retained `pca_local_owner_uat` at `127.0.0.1:33061` reports 61/61 repository migrations through 0063 and 95 tables / 830 columns. Compared table/column/index/FK-column-target metadata with zero differences. Canonical CHECK/FK-action parity, runtime grants, listener/firewall exposure, and live `pca_pro` are not yet verified. The retained UAT database was not modified; no service, container, port or firewall change occurred.
+PLATFORM_GATE = No Platform schema or identity change. Parent TODO-20 remains IN_PROGRESS; Platform remains `HOLD_PARENT_DEPENDENCY`. Deployment and owner acceptance gates are unchanged.
+
+### 2026-10-07 19:00 UTC — Parent dependency checkpoint for Platform
+
+PARENT_CHECKPOINT = Parent unavailable-service authorization ordering was tightened for Web Rules, Safe Zones, schedule policy, Eye Protection, preferences, and free-access status. Backend build and 60 focused cases passed; Parent read-only reviews found no concrete remaining defect. Changes are local and uncommitted on d150a41b7923a8e58072affd4b3c3fa3f91127df.
+PLATFORM_SCOPE_AND_GATE = No Platform source, projection, Enrollment behavior, schema, or release gate changed. PLATFORM remains HOLD_PARENT_DEPENDENCY; Parent identity projection, TODO-18 owner acceptance, exact-head CI, and production gates remain required. No fresh fetch, commit, push, live database action, deployment, or owner acceptance occurred.
+
+### 2026-10-07 19:31 UTC — Parent TODO-15 replay-retirement checkpoint
+
+PARENT_CHECKPOINT = An adversarial review found and the local Android/iOS sources corrected a permanently denied redelivery capacity leak for ciphertext entries whose terminal journal record had already been retired. The sweep preserves journal-backed/prepared items and pending ACKs and requires a durable ACK plus fresh permanent coverage at exact deletion. Android focused suites passed 61/61; changed iOS files passed Swift parse; Apple XCTest remains unavailable on Windows. The mobile changes are uncommitted at base `d150a41b7923a8e58072affd4b3c3fa3f91127df`.
+PLATFORM_SCOPE_AND_GATE = No Platform source, projection, Enrollment behavior, schema, or release gate changed. Parent TODO-15 still lacks production crypto composition and physical-device evidence. PLATFORM remains `HOLD_PARENT_DEPENDENCY`; no fresh fetch, commit, push, exact-head CI, live DB action, deployment, or owner acceptance occurred.
+
+### 2026-10-07 19:47 UTC — Parent TODO-20 disposable runtime-grant evidence
+
+PARENT_LOCAL_DB = A unique loopback-only MySQL 9.7 instance replayed the official 61-migration chain through 0063 (95 tables); the in-process runtime-grant acceptance suite passed 7/7 with zero skips. Audit append-only, ordinary-table DML, Trust Set, first-device bootstrap, and production audit repository grant paths were exercised. The exact schema, server, and temporary data directory were removed and verified.
+OPEN_GATE = This is supplemental version-specific test evidence; it does not certify retained MySQL 8.4.11 grants. Docker Desktop's stopped service could not be opened or started, retained UAT remains unavailable, and live `pca_pro` TCP/3306 remains unreachable. No retained or live database was mutated. Parent TODO-20 remains IN_PROGRESS; Platform remains `HOLD_PARENT_DEPENDENCY`, with no Platform implementation, owner acceptance, deployment, or release gate changed.
+
+### 2026-10-07 19:49 UTC — Parent TODO-15 reconnect validation update
+
+PARENT_DEPENDENCY = The focused Android reconnect/orchestrator class completed successfully with 26/26 tests and zero failures/errors/skips, including new verified-consumer integration cases. Swift parsing passed for the changed iOS app/store/test files; no Apple XCTest or physical-device evidence was produced. This does not prove production crypto composition or device activation.
+PLATFORM_GATE = No Platform source, projection, Enrollment behavior, or release gate changed. Parent TODO-12/14/15/20 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`; no commit, push, exact-head CI, live DB action, deployment, or owner acceptance occurred.
+
+### 2026-10-07 19:51 UTC — Parent TODO-14 route validation update
+
+PARENT_DEPENDENCY = Backend build passed; five changed Parent route suites passed 60/60 with no failures/skips, covering child policy, Eye Protection, Web Rules, free-access status, and preferences/Safe Zones. The unconfigured-service cases remain fail-closed and do not prove Web Rules persistence/delivery.
+PLATFORM_GATE = No Platform source or release gate changed. Parent TODO-12/14/15/20 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`; no commit, push, exact-head CI, live DB action, deployment, or owner acceptance occurred.

@@ -119,6 +119,7 @@ public struct PCAProductionDependencies {
     public let sessionClient: PCADeviceSessionClient?
     public let runtimeSyncClient: PCADeviceRuntimeSyncClient?
     public let inboundInbox: PCAInboundInboxStoring?
+    public let inboundConsumer: PCAInboundCommandConsumer?
     public let assertRuntimeKeyCustody: (String) throws -> Void
     public let sessionStore: PCADeviceSessionStore
     public let attemptStore: PCAEnrollmentAttemptStore
@@ -148,6 +149,7 @@ public struct PCAProductionDependencies {
         sessionClient: PCADeviceSessionClient? = nil,
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
         inboundInbox: PCAInboundInboxStoring? = nil,
+        inboundConsumer: PCAInboundCommandConsumer? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in throw PCADeviceProofError.secureKeyUnavailable },
         sessionStore: PCADeviceSessionStore,
         attemptStore: PCAEnrollmentAttemptStore,
@@ -168,6 +170,7 @@ public struct PCAProductionDependencies {
         self.sessionClient = sessionClient
         self.runtimeSyncClient = runtimeSyncClient
         self.inboundInbox = inboundInbox
+        self.inboundConsumer = inboundConsumer
         self.assertRuntimeKeyCustody = assertRuntimeKeyCustody
         self.sessionStore = sessionStore
         self.attemptStore = attemptStore
@@ -773,11 +776,24 @@ public final class PCAApplicationModel: ObservableObject {
             }
             return true
         }
+        func consumeStored(_ scope: PCAInboundScope) async throws {
+            try validateScope(scope)
+            try assertContinuity()
+            guard let consumer = dependencies.inboundConsumer else { return }
+            guard ProcessInfo.processInfo.systemUptime - started < 30 else { return }
+            _ = try await consumer.consume(try inbox.pendingCrypto(scope: scope), scope: scope,
+                now: { self.now() }, assertAuthority: {
+                    try assertContinuity()
+                    guard ProcessInfo.processInfo.systemUptime - started < 30 else { throw PCAInboundInboxError.unavailable }
+                })
+            try assertContinuity()
+        }
         syncConnectionState = .syncing
         do {
             try assertContinuity()
             var cursor = try inbox.navigation(sessionIncarnation: incarnation)?.nextCursor
             var resetRejectedCursor = false
+            if let scope = try inbox.retainedScope() { try await consumeStored(scope) }
             if let scope = try inbox.retainedScope(), !(try await acknowledgeStored(scope)) {
                 syncConnectionState = .syncPending
                 return .morePending
@@ -800,6 +816,7 @@ public final class PCAApplicationModel: ObservableObject {
                 try assertContinuity()
                 try validateScope(response.scope)
                 try inbox.capture(response, sessionDeviceId: session.deviceId, sessionIncarnation: incarnation, requestedCursor: cursor)
+                try await consumeStored(response.scope)
                 guard try await acknowledgeStored(response.scope) else {
                     syncConnectionState = .syncPending
                     return .morePending
@@ -810,7 +827,8 @@ public final class PCAApplicationModel: ObservableObject {
                     continue
                 }
                 try assertContinuity()
-                let pendingCrypto = try inbox.pendingCrypto(scope: response.scope)
+                let retainedCrypto = try inbox.pendingCrypto(scope: response.scope)
+                let pendingCrypto = try dependencies.inboundConsumer?.pending(retainedCrypto, scope: response.scope) ?? retainedCrypto
                 let unresolved = try inbox.hasUnresolvedRelayWork()
                 syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
                     isTransportConnected: true,

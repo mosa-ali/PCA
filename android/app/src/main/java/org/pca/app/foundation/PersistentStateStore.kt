@@ -10,6 +10,13 @@ package org.pca.app.foundation
  * says nothing about encryption, only durability and key/value semantics.
  */
 interface PersistentStateStore {
+    /**
+     * Stable in-process lock identity for every wrapper over the same backing
+     * store. Backends that can be constructed more than once for one file must
+     * override this with a shared object; the default protects single instances.
+     */
+    val coordinationLock: Any get() = this
+
     fun getString(key: String): String?
     fun putString(key: String, value: String)
     fun remove(key: String)

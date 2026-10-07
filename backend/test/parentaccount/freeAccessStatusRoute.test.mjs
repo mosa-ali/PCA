@@ -138,6 +138,10 @@ test('GET /api/parent/free-access-status: server clock, never a client-supplied 
 
 test('GET /api/parent/free-access-status: fails closed (503, never a crash or a wrong 200) when the repository dependency has not been wired yet', async () => {
   const { app, emailSender } = buildApp({ withFreeAccessRepository: false });
+  const unauthenticated = await app.inject({ method: 'GET', url: '/api/parent/free-access-status' });
+  assert.equal(unauthenticated.statusCode, 401);
+  recordParentRouteScenario({ method: 'GET', route: FREE_ACCESS_ROUTE, scenarioId: 'free_access_status_unconfigured_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: unauthenticated });
+
   const email = 'free-access-unwired@example.com';
   const cookie = await registerAndVerify(app, emailSender, email);
 

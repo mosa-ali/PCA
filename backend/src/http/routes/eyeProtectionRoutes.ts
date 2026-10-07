@@ -114,10 +114,10 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
   app.get(
     '/api/parent/families/:familyId/children/:childProfileId/eye-protection',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.eyeProtectionSettingsService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!(await requireRole(session, reply, READ_ROLES))) return;
+      if (!deps.eyeProtectionSettingsService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
@@ -135,11 +135,11 @@ export function registerEyeProtectionRoutes(app: FastifyInstance, deps: EyeProte
     '/api/parent/families/:familyId/children/:childProfileId/eye-protection',
     { bodyLimit: MAX_BODY_BYTES },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.eyeProtectionSettingsService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       if (!(await requireRole(session, reply, ADMIN_ROLES))) return;
+      if (!deps.eyeProtectionSettingsService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {

@@ -58,6 +58,7 @@ class ReconnectSyncOrchestrator(
     private val ciphertextInbox: PersistentCiphertextInbox? = null,
     /** Production binds family to the captured committed root, independently of a response. */
     private val expectedFamilyId: String,
+    private val inboundConsumer: org.pca.app.runtime.sync.inbox.VerifiedInboundCommandConsumer? = null,
 ) {
     init { require(expectedFamilyId.isNotBlank() && expectedFamilyId.length <= 128) }
     private val reconnectMutex = Mutex()
@@ -99,7 +100,20 @@ class ReconnectSyncOrchestrator(
                 isTransportConnected = isTransportConnected,
                 isSyncing = isSyncing,
                 hasPendingLocalWork = pendingLocalWorkCount > 0 || pendingRelayWorkCount > 0 ||
-                    (ciphertextInbox?.let { runCatching { it.pendingCryptoCount() > 0 }.getOrDefault(true) } ?: true),
+                    (ciphertextInbox?.let { inbox ->
+                        runCatching {
+                            val consumer = inboundConsumer
+                            if (consumer == null) inbox.pendingCryptoCount() > 0 else {
+                                val scope = inbox.retainedScope()
+                                if (scope == null) false else {
+                                    if (scope.familyId != expectedFamilyId || scope.recipientDeviceId != sessionManager.configuredDeviceId)
+                                        throw IllegalStateException("Stored application scope changed")
+                                    inbox.pendingAcknowledgements(scope).isNotEmpty() ||
+                                        consumer.pending(inbox.pendingCrypto(scope), scope).isNotEmpty()
+                                }
+                            }
+                        }.getOrDefault(true)
+                    } ?: true),
                 lastSuccessfulSyncAtEpochMillis = lastSuccessfulSyncAtEpochMillis,
                 nowEpochMillis = nowEpochMillis(),
             ),
@@ -237,6 +251,20 @@ class ReconnectSyncOrchestrator(
             var cursor = inbox.navigationFor(incarnation)?.nextCursor
             var resetRejectedCursor = false
             var ackCount = 0
+            suspend fun consumeStored(scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope) {
+                if (scope.recipientDeviceId != sessionManager.configuredDeviceId || scope.familyId != expectedFamilyId)
+                    throw IllegalStateException("Stored application scope changed")
+                val consumer = inboundConsumer ?: return
+                val context = currentCoroutineContext()
+                fun assertContinuity() {
+                    context.ensureActive()
+                    sessionManager.assertCurrentSession(sessionToken)
+                    if (System.nanoTime() - started >= 30_000_000_000L) throw IllegalStateException("Application campaign expired")
+                }
+                assertContinuity()
+                consumer.consume(inbox.pendingCrypto(scope), scope, ::assertContinuity)
+                assertContinuity()
+            }
             suspend fun acknowledgeStored(scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope): Boolean {
                 if (scope.recipientDeviceId != sessionManager.configuredDeviceId
                     || scope.familyId != expectedFamilyId) {
@@ -256,7 +284,10 @@ class ReconnectSyncOrchestrator(
             }
             // Recovery must not depend on a successful subsequent page fetch.
             // The same stored scope and current device session remain required.
-            inbox.retainedScope()?.let { if (!acknowledgeStored(it)) return RuntimeCustodyOutcome.MORE_PENDING }
+            inbox.retainedScope()?.let {
+                consumeStored(it)
+                if (!acknowledgeStored(it)) return RuntimeCustodyOutcome.MORE_PENDING
+            }
             for (page in 0 until 4) {
                 currentCoroutineContext().ensureActive()
                 sessionManager.assertCurrentSession(sessionToken)
@@ -282,6 +313,7 @@ class ReconnectSyncOrchestrator(
                 if (navigation != null && navigation.sessionIncarnation != incarnation) return RuntimeCustodyOutcome.BLOCKED
                 inbox.capture(scope, result.applied.map { it.envelopeWire ?: throw IllegalStateException("Missing envelope") },
                     result.receipts, navigation, incarnation, cursor)
+                consumeStored(scope)
                 pendingRelayWorkCount = result.unparseableMessageIds.size +
                     (if (result.hasMore || inbox.hasUnresolvedRelayWork()) 1 else 0)
                 // ACK recovery is independent of which wrappers appeared on this page.

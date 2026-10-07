@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reference PersistentStateStore backed by EncryptedSharedPreferences (an
@@ -25,6 +26,9 @@ class EncryptedSharedPreferencesStateStore(
     fileName: String,
 ) : PersistentStateStore {
     private val appContext = context.applicationContext
+    override val coordinationLock: Any = coordinationLocks.computeIfAbsent(
+        StorageIdentity(appContext.packageName, fileName),
+    ) { Any() }
 
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(appContext)
@@ -66,5 +70,11 @@ class EncryptedSharedPreferencesStateStore(
      */
     override fun flush() {
         check(prefs.edit().commit()) { "EncryptedSharedPreferences durable commit failed" }
+    }
+
+    private data class StorageIdentity(val packageName: String, val fileName: String)
+
+    private companion object {
+        val coordinationLocks = ConcurrentHashMap<StorageIdentity, Any>()
     }
 }

@@ -139,10 +139,16 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
     '/api/parent/families/:familyId/children/:childProfileId/schedule-policy',
     { bodyLimit: MAX_BODY_BYTES },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.parentActionAuthorization) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!deps.parentActionAuthorization) {
+        if (await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) !== 'ADMINISTRATOR') {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (!(await requireActorDevice(request, reply, session.familyId))) return;
+        return reply.code(503).send({ error: 'not_configured' });
+      }
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {

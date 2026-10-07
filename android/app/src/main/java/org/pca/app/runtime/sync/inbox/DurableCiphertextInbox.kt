@@ -34,6 +34,7 @@ class PersistentCiphertextInbox(
     private val maxRecords: Int = 256,
     private val maxSnapshotBytes: Int = 4 * 1024 * 1024,
 ) {
+    private val coordinationLock: Any = store.coordinationLock
     private val storageKey = "runtime.ciphertext-inbox.v1." +
         Base64.getUrlEncoder().withoutPadding().encodeToString(expectedDeviceId.toByteArray(Charsets.UTF_8))
 
@@ -50,7 +51,7 @@ class PersistentCiphertextInbox(
     )
 
     /** Reset only navigation after reauthentication; retained ciphertext and ACK state survive. */
-    fun navigationFor(sessionIncarnation: String): InboundNavigation? = synchronized(store) {
+    fun navigationFor(sessionIncarnation: String): InboundNavigation? = synchronized(coordinationLock) {
         require(Regex("^[0-9a-f]{64}$").matches(sessionIncarnation))
         val snapshot = readSnapshot() ?: return@synchronized null
         val navigation = snapshot.navigation ?: return@synchronized null
@@ -64,23 +65,23 @@ class PersistentCiphertextInbox(
     }
 
     /** State reporting only; this read can never authorize acknowledgement. */
-    fun pendingCryptoCount(): Int = synchronized(store) { readSnapshot()?.records?.size ?: 0 }
+    fun pendingCryptoCount(): Int = synchronized(coordinationLock) { readSnapshot()?.records?.size ?: 0 }
 
     /** Server rejection resets only the exact requested navigation, never custody or receipts. */
-    fun resetRejectedNavigation(sessionIncarnation: String, cursor: String) = synchronized(store) {
+    fun resetRejectedNavigation(sessionIncarnation: String, cursor: String) = synchronized(coordinationLock) {
         val snapshot = readSnapshot() ?: unavailable()
         val navigation = snapshot.navigation ?: unavailable()
         if (navigation.sessionIncarnation != sessionIncarnation || navigation.nextCursor != cursor) unavailable()
         persist(snapshot.copy(navigation = null))
     }
 
-    fun hasUnresolvedRelayWork(): Boolean = synchronized(store) {
+    fun hasUnresolvedRelayWork(): Boolean = synchronized(coordinationLock) {
         val snapshot = readSnapshot()
         snapshot?.campaignUnresolved == true || snapshot?.navigation?.hasMore == true
     }
 
     /** Authenticated scope retained with ciphertext, never inferred from a new page. */
-    fun retainedScope(): RuntimeInboxScope? = synchronized(store) {
+    fun retainedScope(): RuntimeInboxScope? = synchronized(coordinationLock) {
         val snapshot = readSnapshot() ?: return@synchronized null
         persist(snapshot)
         snapshot.scope
@@ -91,7 +92,7 @@ class PersistentCiphertextInbox(
         scope: RuntimeInboxScope, envelopeWires: List<String>,
         receipts: List<InboundReceipt> = emptyList(), navigation: InboundNavigation? = null,
         expectedSessionIncarnation: String? = null, expectedCursor: String? = null,
-    ): List<CiphertextInboxRecord> = synchronized(store) {
+    ): List<CiphertextInboxRecord> = synchronized(coordinationLock) {
         checkScope(scope)
         val existing = readSnapshot()
         if (existing != null && existing.scope != scope) unavailable()
@@ -131,15 +132,31 @@ class PersistentCiphertextInbox(
         records.toList()
     }
 
-    fun pendingAcknowledgements(scope: RuntimeInboxScope): List<CiphertextInboxRecord> = synchronized(store) {
+    fun pendingAcknowledgements(scope: RuntimeInboxScope): List<CiphertextInboxRecord> = synchronized(coordinationLock) {
         confirmedSnapshot(scope).records.filter { it.acknowledgementPending }
     }
 
-    fun pendingCrypto(scope: RuntimeInboxScope): List<CiphertextInboxRecord> = synchronized(store) {
+    fun pendingCrypto(scope: RuntimeInboxScope): List<CiphertextInboxRecord> = synchronized(coordinationLock) {
         confirmedSnapshot(scope).records.toList()
     }
 
-    fun markAcknowledged(scope: RuntimeInboxScope, messageId: String, expectedEnvelopeWire: String) = synchronized(store) {
+    internal fun matchesJournal(journal: PersistentInboundApplicationJournal): Boolean = journal.matchesBacking(store, expectedDeviceId)
+
+    /** Preserves navigation/relay receipts and every pending ACK; exact deletion is retryable. */
+    internal fun removeRetiredAcknowledged(scope: RuntimeInboxScope, expected: CiphertextInboxRecord,
+        assertPermanentCoverage: () -> Unit): Boolean = synchronized(coordinationLock) {
+        if (expected.acknowledgementPending) unavailable()
+        val envelope = validateEnvelope(expected.envelopeWire, scope)
+        if (envelope.messageId != expected.messageId) unavailable()
+        val snapshot = confirmedSnapshot(scope)
+        val prior = snapshot.records.find { it.messageId == expected.messageId }
+        if (prior != null && prior != expected) unavailable()
+        assertPermanentCoverage()
+        persist(snapshot.copy(records = snapshot.records.filterNot { it.messageId == expected.messageId }))
+        prior != null
+    }
+
+    fun markAcknowledged(scope: RuntimeInboxScope, messageId: String, expectedEnvelopeWire: String) = synchronized(coordinationLock) {
         val snapshot = confirmedSnapshot(scope)
         val expected = validateEnvelope(expectedEnvelopeWire, scope)
         val prior = snapshot.records.find { it.messageId == messageId } ?: unavailable()
@@ -239,42 +256,45 @@ class PersistentCiphertextInbox(
         } catch (_: Exception) { unavailable() }
     }
 
-    private fun validateEnvelope(wire: String, scope: RuntimeInboxScope): FamilyEnvelope {
-        try {
-            if (wire.toByteArray(Charsets.UTF_8).size > 256 * 1024) unavailable()
-            val json = JSONObject(wire)
-            for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId", "messageType", "sequenceOrNonce", "issuedAt", "expiresAt", "semanticVersion", "payload", "signature")) {
-                val value = json.get(key)
-                if (value !is String || value.isEmpty()) unavailable()
-            }
-            for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId")) {
-                if (json.getString(key).length > 128) unavailable()
-            }
-            for (key in listOf("protocolMajor", "protocolMinor")) {
-                val value = json.get(key)
-                if (value !is Number || value.toDouble() != value.toLong().toDouble() || value.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable()
-            }
-            if (json.getInt("protocolMajor") != 1 || (json.has("recipientGroup") && !json.isNull("recipientGroup"))) unavailable()
-            if (json.getString("messageType") !in MESSAGE_TYPES) unavailable()
-            if (json.getString("sequenceOrNonce").length > 128 || json.getString("signature").length > 512) unavailable()
-            val version = json.getString("semanticVersion")
-            if (version.length > 32 || !SEMANTIC_VERSION.matches(version)) unavailable()
-            if (json.has("correlationId") && !json.isNull("correlationId")) {
-                val correlation = json.get("correlationId")
-                if (correlation !is String || correlation.isEmpty() || correlation.length > 128) unavailable()
-            }
-            val payload = json.getString("payload")
-            val decoded = Base64.getDecoder().decode(payload)
-            if (decoded.size !in 1..65536 || Base64.getEncoder().encodeToString(decoded) != payload) unavailable()
-            val envelope = envelopeFromRelayCiphertext(wire.toByteArray(Charsets.UTF_8)) ?: unavailable()
-            if (envelope.familyId != scope.familyId || envelope.recipient != RecipientBinding.Device(scope.recipientDeviceId)) unavailable()
-            return envelope
-        } catch (_: Exception) { unavailable() }
-    }
-
     private fun unavailable(): Nothing = throw CiphertextInboxUnavailable()
 
-    private companion object {
+    internal companion object {
+        internal fun validateEnvelope(wire: String, scope: RuntimeInboxScope): FamilyEnvelope {
+            try {
+                if (wire.toByteArray(Charsets.UTF_8).size > 256 * 1024) unavailable()
+                val json = JSONObject(wire)
+                for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId", "messageType", "sequenceOrNonce", "issuedAt", "expiresAt", "semanticVersion", "payload", "signature")) {
+                    val value = json.get(key)
+                    if (value !is String || value.isEmpty()) unavailable()
+                }
+                for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId")) {
+                    if (json.getString(key).length > 128) unavailable()
+                }
+                for (key in listOf("protocolMajor", "protocolMinor")) {
+                    val value = json.get(key)
+                    if (value !is Number || value.toDouble() != value.toLong().toDouble() || value.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable()
+                }
+                if (json.getInt("protocolMajor") != 1 || (json.has("recipientGroup") && !json.isNull("recipientGroup"))) unavailable()
+                if (json.getString("messageType") !in MESSAGE_TYPES) unavailable()
+                if (json.getString("sequenceOrNonce").length > 128 || json.getString("signature").length > 512) unavailable()
+                val version = json.getString("semanticVersion")
+                if (version.length > 32 || !SEMANTIC_VERSION.matches(version)) unavailable()
+                if (json.has("correlationId") && !json.isNull("correlationId")) {
+                    val correlation = json.get("correlationId")
+                    if (correlation !is String || correlation.isEmpty() || correlation.length > 128) unavailable()
+                }
+                val payload = json.getString("payload")
+                val decoded = Base64.getDecoder().decode(payload)
+                if (decoded.size !in 1..65536 || Base64.getEncoder().encodeToString(decoded) != payload) unavailable()
+                val envelope = envelopeFromRelayCiphertext(wire.toByteArray(Charsets.UTF_8)) ?: unavailable()
+                if (envelope.familyId != scope.familyId || envelope.recipient != RecipientBinding.Device(scope.recipientDeviceId)) unavailable()
+                return envelope
+            } catch (_: Exception) { unavailable() }
+        }
+
+
+        private fun unavailable(): Nothing = throw CiphertextInboxUnavailable()
+
         val SEMANTIC_VERSION = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
         val MESSAGE_TYPES = setOf("POLICY_UPDATE", "POLICY_RECEIPT", "STATUS_SNAPSHOT", "ACTIVITY_SUMMARY",
             "LOCATION_RESPONSE", "CHILD_REQUEST", "PARENT_DECISION", "TAMPER_ALERT", "RETENTION_DELETION_INSTRUCTION",

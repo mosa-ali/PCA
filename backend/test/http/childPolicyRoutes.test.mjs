@@ -302,6 +302,43 @@ test('the route fails closed with 503 when not configured, rather than a silent 
   }
 });
 
+test('an unconfigured schedule-policy route preserves Parent, family, CSRF, role, and device checks before 503', async () => {
+  const scenarios = [
+    { id: 'session_required', familyId: FAMILY, headers: {}, parentRole: 'ADMINISTRATOR', payload: VALID_ENVELOPE, status: 401, error: 'unauthorized', roleReads: 0, deviceReads: 0 },
+    { id: 'cross_family_denied', familyId: OTHER_FAMILY, headers: parentAuthHeaders, parentRole: 'ADMINISTRATOR', payload: VALID_ENVELOPE, status: 403, error: 'family_scope_forbidden', roleReads: 0, deviceReads: 0 },
+    { id: 'csrf_required', familyId: FAMILY, headers: { cookie: parentAuthHeaders.cookie }, parentRole: 'ADMINISTRATOR', payload: VALID_ENVELOPE, status: 403, error: 'csrf_mismatch', roleReads: 0, deviceReads: 0 },
+    { id: 'non_admin_denied', familyId: FAMILY, headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' }, parentRole: 'VIEWER', payload: VALID_ENVELOPE, status: 403, error: 'forbidden', roleReads: 1, deviceReads: 0 },
+    { id: 'actor_device_required', familyId: FAMILY, headers: parentAuthHeaders, parentRole: 'ADMINISTRATOR', payload: VALID_ENVELOPE, status: 401, error: 'actor_device_session_required', roleReads: 1, deviceReads: 0 },
+    { id: 'valid_caller_invalid_body_unavailable', familyId: FAMILY, headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' }, parentRole: 'ADMINISTRATOR', payload: { ciphertextB64: 'must-not-be-validated' }, status: 503, error: 'not_configured', roleReads: 1, deviceReads: 1 },
+  ];
+  for (const scenario of scenarios) {
+    const { app, submittedBatches, callCounts } = buildApp({ configured: false, parentRole: scenario.parentRole });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${scenario.familyId}/children/child-1/schedule-policy`,
+        headers: scenario.headers,
+        payload: scenario.payload,
+      });
+      assert.equal(response.statusCode, scenario.status, scenario.id);
+      assert.deepEqual(response.json(), { error: scenario.error }, scenario.id);
+      assert.equal(response.body.includes('must-not-be-validated'), false);
+      assert.equal(callCounts.activeFamilyRole, scenario.roleReads, scenario.id);
+      assert.equal(callCounts.actorDevice, scenario.deviceReads, scenario.id);
+      assert.equal(submittedBatches.length, 0);
+      recordParentRouteScenario({
+        method: 'POST', route: SCHEDULE_POLICY_ROUTE,
+        scenarioId: `schedule_policy_unconfigured_${scenario.id}`,
+        classification: scenario.status === 503 ? 'SERVICE_NOT_CONFIGURED' : 'EXPECTED_DENIAL',
+        expectedStatus: scenario.status,
+        response,
+      });
+    } finally {
+      await app.close();
+    }
+  }
+});
+
 test('a malformed envelope body (missing keyEpoch) is rejected with 400 before authorization runs', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
   const { app, submittedBatches } = buildApp({ authorization });

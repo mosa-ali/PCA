@@ -160,7 +160,6 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
   app.get(
     '/api/parent/families/:familyId/children/:childProfileId/web-rules',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
@@ -172,6 +171,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
 
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
+      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       if (!(await authorizeEditChildPolicy(reply, session.familyId, actorDeviceId, childProfileId))) return;
 
       const rules = await deps.webRuleService.listParentRules(session.familyId);
@@ -184,13 +184,13 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
     '/api/parent/families/:familyId/children/:childProfileId/web-rules',
     { bodyLimit: MAX_BODY_BYTES },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
+      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
@@ -228,13 +228,13 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
     '/api/parent/families/:familyId/children/:childProfileId/web-rules/remove',
     { bodyLimit: MAX_BODY_BYTES },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
       const session = await familySession(request, reply);
       if (!session) return;
       if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
+      if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {

@@ -661,10 +661,6 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
    */
   app.get('/api/parent/free-access-status', async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
-    if (!deps.freeAccessAccountRepository) {
-      await reply.code(503).send({ error: 'not_configured' });
-      return;
-    }
     const token = readSessionCookie(request);
     if (token === null) {
       await reply.code(401).send({ error: 'unauthorized' });
@@ -672,6 +668,10 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const session = await parentAccountService.readSession(token);
+      if (!deps.freeAccessAccountRepository) {
+        await reply.code(503).send({ error: 'not_configured' });
+        return;
+      }
       const row = await deps.freeAccessAccountRepository.findByAccountId(session.accountId);
       if (!row || row.freeAccess === null) {
         await reply.code(404).send({ error: 'not_found' });
@@ -713,11 +713,11 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
 
   app.get('/api/parent/preferences', async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
-    if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     try {
       const session = await parentAccountService.readSession(token);
+      if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
       return reply.code(200).send({ preferences: await deps.parentPreferenceRepository.get(session.accountId) });
     } catch (error) {
       if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
@@ -727,20 +727,20 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
 
   app.patch('/api/parent/preferences', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
-    if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
-    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
-    const body = request.body as Record<string, unknown>;
-    const keys = Object.keys(body);
-    if (keys.some((key) => !['language', 'emailAlertsEnabled', 'pushRequestsEnabled', 'emailDestination'].includes(key)) || keys.length === 0) return reply.code(400).send({ error: 'invalid_request' });
-    if (body.language !== undefined && body.language !== 'en' && body.language !== 'ar') return reply.code(400).send({ error: 'invalid_request' });
-    if (body.emailAlertsEnabled !== undefined && typeof body.emailAlertsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
-    if (body.pushRequestsEnabled !== undefined && typeof body.pushRequestsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
-    if (body.emailDestination !== undefined && body.emailDestination !== null && (typeof body.emailDestination !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.emailDestination) || body.emailDestination.length > 320)) return reply.code(400).send({ error: 'invalid_request' });
     try {
       const session = await parentAccountService.readSession(token);
+      if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
+      if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+      const body = request.body as Record<string, unknown>;
+      const keys = Object.keys(body);
+      if (keys.some((key) => !['language', 'emailAlertsEnabled', 'pushRequestsEnabled', 'emailDestination'].includes(key)) || keys.length === 0) return reply.code(400).send({ error: 'invalid_request' });
+      if (body.language !== undefined && body.language !== 'en' && body.language !== 'ar') return reply.code(400).send({ error: 'invalid_request' });
+      if (body.emailAlertsEnabled !== undefined && typeof body.emailAlertsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+      if (body.pushRequestsEnabled !== undefined && typeof body.pushRequestsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+      if (body.emailDestination !== undefined && body.emailDestination !== null && (typeof body.emailDestination !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.emailDestination) || body.emailDestination.length > 320)) return reply.code(400).send({ error: 'invalid_request' });
       const patch: ParentPreferencesPatch = {
         language: body.language as ParentLanguage | undefined,
         emailAlertsEnabled: body.emailAlertsEnabled as boolean | undefined,
@@ -827,6 +827,43 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     return true;
   }
 
+  async function requireSafeZoneActorDevice(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    session: { accountId: string; familyId: string },
+  ): Promise<string | null> {
+    const authorizationHeader = request.headers.authorization;
+    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
+      await reply.code(401).send({ error: 'actor_device_session_required' });
+      return null;
+    }
+    if (!deps.deviceSessionService) {
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return null;
+    }
+    let actorDeviceId: string;
+    try {
+      const identity = await deps.deviceSessionService.requireActorDeviceInFamily(
+        authorizationHeader.slice('Bearer '.length),
+        session.familyId,
+      );
+      actorDeviceId = identity.deviceId;
+    } catch (error) {
+      if (error instanceof RuntimeSyncAuthError) {
+        await reply.code(401).send({ error: 'actor_device_session_invalid' });
+        return null;
+      }
+      throw error;
+    }
+    const assertedActorDeviceId = request.headers[ACTOR_DEVICE_HEADER];
+    if (assertedActorDeviceId !== undefined &&
+        (typeof assertedActorDeviceId !== 'string' || assertedActorDeviceId !== actorDeviceId)) {
+      await reply.code(401).send({ error: 'actor_device_session_invalid' });
+      return null;
+    }
+    return actorDeviceId;
+  }
+
   async function authorizeSafeZoneRequest(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -836,33 +873,14 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
   ): Promise<boolean> {
     if (!(await authorizeSafeZoneRole(reply, session, operation))) return false;
     if (operation === 'EDIT_CHILD_POLICY') {
-      if (!deps.deviceSessionService || !deps.safeZonePolicyAuthorizer || targetScope.kind !== 'DEVICE') {
+      if (targetScope.kind !== 'DEVICE') {
         await reply.code(503).send({ error: 'family_authority_unavailable' });
         return false;
       }
-      const authorizationHeader = request.headers.authorization;
-      if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
-        await reply.code(401).send({ error: 'actor_device_session_required' });
-        return false;
-      }
-      let actorDeviceId: string;
-      try {
-        const identity = await deps.deviceSessionService.requireActorDeviceInFamily(
-          authorizationHeader.slice('Bearer '.length),
-          session.familyId,
-        );
-        actorDeviceId = identity.deviceId;
-      } catch (error) {
-        if (error instanceof RuntimeSyncAuthError) {
-          await reply.code(401).send({ error: 'actor_device_session_invalid' });
-          return false;
-        }
-        throw error;
-      }
-      const assertedActorDeviceId = request.headers[ACTOR_DEVICE_HEADER];
-      if (assertedActorDeviceId !== undefined &&
-          (typeof assertedActorDeviceId !== 'string' || assertedActorDeviceId !== actorDeviceId)) {
-        await reply.code(401).send({ error: 'actor_device_session_invalid' });
+      const actorDeviceId = await requireSafeZoneActorDevice(request, reply, session);
+      if (!actorDeviceId) return false;
+      if (!deps.safeZonePolicyAuthorizer) {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
         return false;
       }
 
@@ -902,19 +920,39 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     return true;
   }
 
+  async function respondSafeZoneRepositoryUnavailable(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    session: { accountId: string; familyId: string },
+  ): Promise<void> {
+    if (!csrfOk(request)) {
+      await reply.code(403).send({ error: 'csrf_mismatch' });
+      return;
+    }
+    if (!(await authorizeSafeZoneRole(reply, session, 'EDIT_CHILD_POLICY'))) return;
+    if (!(await requireSafeZoneActorDevice(request, reply, session))) return;
+    await reply.code(503).send({ error: 'not_configured' });
+  }
+
   app.get('/api/parent/families/:familyId/safe-zones', async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
-    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!deps.safeZoneRepository) {
+      if (!(await authorizeSafeZoneRole(reply, session, 'VIEW_DASHBOARD'))) return;
+      return reply.code(503).send({ error: 'not_configured' });
+    }
     if (!(await authorizeSafeZoneRequest(request, reply, session, 'VIEW_DASHBOARD'))) return;
     return reply.code(200).send({ safeZones: await deps.safeZoneRepository.list(session.familyId) });
   });
 
   app.post('/api/parent/families/:familyId/safe-zones', { bodyLimit: MAX_SAFE_ZONE_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!deps.safeZoneRepository) {
+      await respondSafeZoneRepositoryUnavailable(request, reply, session);
+      return;
+    }
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!validSafeZoneBody(request.body, session.familyId)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body;
@@ -929,9 +967,12 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
   });
 
   app.patch('/api/parent/families/:familyId/safe-zones/:zoneId', { bodyLimit: MAX_SAFE_ZONE_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!deps.safeZoneRepository) {
+      await respondSafeZoneRepositoryUnavailable(request, reply, session);
+      return;
+    }
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!validSafeZonePatch(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const value = request.body;
@@ -959,9 +1000,12 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
   });
 
   app.delete('/api/parent/families/:familyId/safe-zones/:zoneId', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!deps.safeZoneRepository) {
+      await respondSafeZoneRepositoryUnavailable(request, reply, session);
+      return;
+    }
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     const { zoneId } = request.params as { zoneId?: string };
     if (!zoneId || !/^[A-Za-z0-9_-]{1,128}$/.test(zoneId)) return reply.code(400).send({ error: 'invalid_request' });

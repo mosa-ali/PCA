@@ -5,6 +5,696 @@ import CryptoKit
 @testable import PCA
 
 final class ProductionIntegrationTests: XCTestCase {
+    private func replayEnvelope(id: String = "message-1", nonce: String = "1", sender: String = "key-1",
+                                trust: Int = 1, key: Int = 1) throws -> (PCAInboundEnvelope, PCAInboundScope) {
+        let response = try inboundResponse()
+        let original = try XCTUnwrap(response.applied.first)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        json["messageId"] = id; json["sequenceOrNonce"] = nonce; json["senderKeyId"] = sender
+        json["trustSetEpoch"] = trust; json["keyEpoch"] = key
+        return (try JSONDecoder().decode(PCAInboundEnvelope.self, from: JSONSerialization.data(withJSONObject: json)), response.scope)
+    }
+    func testReplayDenialRequiresExplicitInitializationAndPreservesMissingStateFailure() throws {
+        let keychain = InMemoryKeychainStore(), (envelope, scope) = try replayEnvelope()
+        let ledger = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "denial", expectedDeviceId: scope.recipientDeviceId)
+        XCTAssertThrowsError(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        try ledger.initializeFresh(assertAuthority: {})
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 2, minimumKeyEpoch: 0), assertAuthority: {})
+        XCTAssertTrue(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        XCTAssertThrowsError(try ledger.initializeFresh(assertAuthority: {}))
+        try keychain.delete(forAccount: "current.replay-denial", service: "denial.replay-denial")
+        XCTAssertThrowsError(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        XCTAssertThrowsError(try ledger.initializeFresh(assertAuthority: {}))
+    }
+    func testTrustedNumericRetirementDeniesMessageAliasesAndSurvivesAuthorityBindingChange() throws {
+        let keychain = InMemoryKeychainStore(), (envelope, scope) = try replayEnvelope()
+        let ledger = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "numeric-denial", expectedDeviceId: scope.recipientDeviceId)
+        try ledger.initializeFresh(assertAuthority: {})
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 2)]), assertAuthority: {})
+        XCTAssertTrue(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        XCTAssertTrue(try ledger.isEnvelopeDenied(replayEnvelope(id: "alias").0, scope: scope))
+        XCTAssertTrue(try ledger.isEnvelopeDenied(replayEnvelope(nonce: "01").0, scope: scope))
+        XCTAssertFalse(try ledger.isEnvelopeDenied(replayEnvelope(nonce: "3").0, scope: scope))
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([2]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0), assertAuthority: {})
+        let restored = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "numeric-denial", expectedDeviceId: scope.recipientDeviceId)
+        XCTAssertTrue(try restored.isEnvelopeDenied(replayEnvelope(id: "restored-alias").0, scope: scope))
+        XCTAssertFalse(try restored.isEnvelopeDenied(replayEnvelope(sender: "other-key").0, scope: scope))
+    }
+    func testReplayDenialNeverInfersNumericModeAndRejectsEpochRegressionAndOverflow() throws {
+        let (envelope, scope) = try replayEnvelope()
+        let ledger = PCAInboundReplayDenialLedger(keychain: InMemoryKeychainStore(), serviceNamespace: "opaque-denial", expectedDeviceId: scope.recipientDeviceId)
+        try ledger.initializeFresh(assertAuthority: {})
+        XCTAssertFalse(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        XCTAssertFalse(try ledger.isEnvelopeDenied(replayEnvelope(nonce: "01").0, scope: scope))
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 2, minimumKeyEpoch: 3), assertAuthority: {})
+        XCTAssertTrue(try ledger.isEnvelopeDenied(envelope, scope: scope))
+        XCTAssertFalse(try ledger.isEnvelopeDenied(replayEnvelope(trust: 2, key: 3).0, scope: scope))
+        XCTAssertThrowsError(try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([2]), minimumTrustSetEpoch: 1, minimumKeyEpoch: 3), assertAuthority: {}))
+        XCTAssertThrowsError(try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([2]), minimumTrustSetEpoch: Int(Int32.max) + 1, minimumKeyEpoch: 3), assertAuthority: {}))
+    }
+    func testEpochRejectionDoesNotCoverFreshEpochReplayAliasForReclamation() throws {
+        let (original, scope) = try replayEnvelope(trust: 1, key: 1)
+        let alias = try replayEnvelope(id: "alias", trust: 2, key: 2).0
+        let ledger = PCAInboundReplayDenialLedger(keychain: InMemoryKeychainStore(), serviceNamespace: "epoch-coverage", expectedDeviceId: scope.recipientDeviceId)
+        try ledger.initializeFresh(assertAuthority: {})
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 2, minimumKeyEpoch: 2), assertAuthority: {})
+        XCTAssertTrue(try ledger.isEnvelopeDenied(original, scope: scope))
+        XCTAssertFalse(try ledger.isEnvelopeDenied(alias, scope: scope))
+        XCTAssertFalse(try ledger.coversReplayIdentityPermanently(original, scope: scope))
+        XCTAssertFalse(try ledger.coversReplayIdentityPermanently(alias, scope: scope))
+        try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 2, minimumKeyEpoch: 2,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 2)]), assertAuthority: {})
+        XCTAssertTrue(try ledger.coversReplayIdentityPermanently(original, scope: scope))
+        XCTAssertTrue(try ledger.coversReplayIdentityPermanently(alias, scope: scope))
+    }
+    @MainActor func testConsumerDenialSuppressesAliasesWithoutInventingApplicationReceipt() async throws {
+        let keychain = InMemoryKeychainStore(), (envelope, scope) = try replayEnvelope()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "denied-consumer")
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "denied-consumer", expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        try denial.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)]), assertAuthority: {})
+        let handler = ConsumerHandler()
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler, replayDenial: denial)
+        let aliases = [envelope, try replayEnvelope(id: "alias").0].map { PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO") }
+        let count = try await consumer.consume(aliases, scope: scope, assertAuthority: {})
+        XCTAssertEqual(count, 0); XCTAssertTrue(handler.applied.isEmpty); XCTAssertTrue(try journal.records().isEmpty)
+        XCTAssertTrue(try consumer.pending(aliases, scope: scope).isEmpty)
+    }
+    @MainActor func testRetirementLatchBlocksNilAndUninitializedLedgersAcrossRestart() throws {
+        let keychain = InMemoryKeychainStore(), response = try inboundResponse()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-latch")
+        let candidates = response.applied.map {
+            PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }
+        let handler = ConsumerHandler()
+        let legacyConsumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        try journal.requireReplayDenial(scope: response.scope)
+        XCTAssertThrowsError(try legacyConsumer.pending(candidates, scope: response.scope))
+
+        let restoredJournal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-latch")
+        let restoredLegacyConsumer = PCAInboundCommandConsumer(journal: restoredJournal, verifier: ConsumerVerifier(), handler: handler)
+        XCTAssertThrowsError(try restoredLegacyConsumer.pending(candidates, scope: response.scope))
+
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "retirement-latch",
+            expectedDeviceId: response.scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let configuredConsumer = PCAInboundCommandConsumer(journal: restoredJournal, verifier: ConsumerVerifier(),
+            handler: handler, replayDenial: denial)
+        XCTAssertThrowsError(try configuredConsumer.pending(candidates, scope: response.scope),
+            "An initialized but boundary-free ledger cannot clear a retirement latch")
+        try denial.install(PCAInboundReplayRetirementBoundary(scope: response.scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0), assertAuthority: {})
+        XCTAssertEqual(try configuredConsumer.pending(candidates, scope: response.scope).count, candidates.count)
+    }
+    @MainActor func testRetirementMarkerAloneBlocksLegacyConsumerAfterSnapshotWriteFailure() throws {
+        let keychain = JournalKeychain(), response = try inboundResponse()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-partial")
+        let candidates = response.applied.map {
+            PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }
+        let legacyConsumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        keychain.failingAccount = "current.inbound-application-journal"
+        XCTAssertThrowsError(try journal.requireReplayDenial(scope: response.scope))
+        keychain.failingAccount = nil
+
+        let restored = PCAInboundCommandConsumer(
+            journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-partial"),
+            verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        XCTAssertThrowsError(try legacyConsumer.pending(candidates, scope: response.scope))
+        XCTAssertThrowsError(try restored.pending(candidates, scope: response.scope))
+    }
+    @MainActor func testReplayReclaimerRemovesOnlyCoveredAcknowledgedTerminalRecords() async throws {
+        let keychain = InMemoryKeychainStore(), response = try inboundResponse()
+        let envelope = try XCTUnwrap(response.applied.first), scope = response.scope
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-preserve")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.capture(try inboundResponse(id: "unacknowledged"), sessionDeviceId: scope.recipientDeviceId)
+        try inbox.capture(try inboundResponse(id: "prepared"), sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-preserve")
+        let acknowledged = try journalIntent()
+        try journal.prepare(acknowledged)
+        try journal.complete(acknowledged, outcome: .applied, at: acknowledged.preparedAt)
+        let unacknowledged = try journalIntent(id: "unacknowledged")
+        try journal.prepare(unacknowledged)
+        try journal.complete(unacknowledged, outcome: .applied, at: unacknowledged.preparedAt)
+        let prepared = try journalIntent(id: "prepared")
+        try journal.prepare(prepared)
+
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-preserve",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: RetirementVerifier(boundary: boundary))
+        let legacyConsumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        let candidates = [acknowledged, unacknowledged, prepared].map {
+            PCAStoredInboundEnvelope(envelope: $0.envelope, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }
+
+        let reclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(reclaimed, 1)
+        XCTAssertThrowsError(try legacyConsumer.pending(candidates, scope: scope))
+        XCTAssertEqual(Set(try inbox.pendingAcknowledgements(scope: scope).map { $0.envelope.messageId }),
+            Set(["unacknowledged", "prepared"]))
+        let remaining = try journal.records()
+        XCTAssertEqual(Set(remaining.map { $0.intent.envelope.messageId }), Set(["unacknowledged", "prepared"]))
+        XCTAssertNil(remaining.first(where: { $0.intent.envelope.messageId == "prepared" })?.outcome)
+    }
+    @MainActor func testReplayReclaimerClearsAcknowledgedInboxOnlyAliasesWithoutEvictingPendingACKs() async throws {
+        let keychain = InMemoryKeychainStore(), scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
+        let first = try inboundResponse(id: "retired-original") { $0["sequenceOrNonce"] = "1" }
+        let original = try XCTUnwrap(first.applied.first)
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
+        try inbox.capture(first, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(original, scope: scope)
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
+        let intent = PCAInboundApplicationIntent(operationId: UUID().uuidString.lowercased(), scope: scope,
+            envelope: original, authorityBinding: Data("authority".utf8), acceptedCommandBinding: Data("command".utf8),
+            preparedAt: Date(timeIntervalSince1970: 1_760_000_000))
+        try journal.prepare(intent)
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-inbox-only",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: RetirementVerifier(boundary: boundary))
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler(), replayDenial: denial)
+        let initialReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(initialReclaimed, 1)
+        XCTAssertTrue(try journal.records().isEmpty)
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+
+        for index in 0..<256 {
+            let response = try inboundResponse(id: "retired-alias-\(index)") { $0["sequenceOrNonce"] = "1" }
+            let alias = try XCTUnwrap(response.applied.first)
+            try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+            XCTAssertTrue(try consumer.pending(try inbox.pendingCrypto(scope: scope), scope: scope).isEmpty)
+            try inbox.markAcknowledged(alias, scope: scope)
+        }
+        let overflow = try inboundResponse(id: "overflow-alias") { $0["sequenceOrNonce"] = "1" }
+        XCTAssertThrowsError(try inbox.capture(overflow, sessionDeviceId: scope.recipientDeviceId))
+        let aliasesReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(aliasesReclaimed, 256)
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertTrue(try journal.records().isEmpty)
+        let restoredInbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
+        let restoredJournal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
+        let restoredDenial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-inbox-only",
+            expectedDeviceId: scope.recipientDeviceId)
+        XCTAssertTrue(try restoredInbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertTrue(try restoredJournal.records().isEmpty)
+        XCTAssertTrue(try restoredDenial.coversReplayIdentityPermanently(try XCTUnwrap(overflow.applied.first), scope: scope))
+
+        let unacknowledged = try inboundResponse(id: "unacknowledged-alias") { $0["sequenceOrNonce"] = "1" }
+        let pending = try XCTUnwrap(unacknowledged.applied.first)
+        try inbox.capture(unacknowledged, sessionDeviceId: scope.recipientDeviceId)
+        let pendingAckReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(pendingAckReclaimed, 0)
+        XCTAssertEqual(try inbox.pendingAcknowledgements(scope: scope).count, 1)
+        try inbox.markAcknowledged(pending, scope: scope)
+        let acknowledgedReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(acknowledgedReclaimed, 1)
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+
+        let legitimate = try inboundResponse(id: "after-retirement") { $0["sequenceOrNonce"] = "2" }
+        try inbox.capture(legitimate, sessionDeviceId: scope.recipientDeviceId)
+        XCTAssertEqual(try consumer.pending(try inbox.pendingCrypto(scope: scope), scope: scope).count, 1)
+    }
+    @MainActor func testReplayReclaimerResumesAfterCiphertextDeletionAndJournalWriteFailure() async throws {
+        let keychain = JournalKeychain(), response = try inboundResponse()
+        let envelope = try XCTUnwrap(response.applied.first), scope = response.scope
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-resume")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-resume")
+        let intent = try journalIntent()
+        try journal.prepare(intent)
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-resume",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let verifier = RetirementVerifier(boundary: boundary)
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial, verifier: verifier)
+        let authority: () throws -> Void = {
+            if keychain.failingAccount == nil, (try? inbox.pendingCrypto(scope: scope).isEmpty) == true {
+                keychain.failingAccount = "current.inbound-application-journal"
+            }
+        }
+        do {
+            _ = try await reclaimer.reclaim(scope: scope, assertAuthority: authority)
+            XCTFail("Journal write must fail after acknowledged ciphertext deletion")
+        } catch { }
+        XCTAssertEqual(keychain.failingAccount, "current.inbound-application-journal")
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertEqual(try journal.records().count, 1)
+
+        keychain.failingAccount = nil
+        let restored = try PCAInboundReplayReclaimer(
+            journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-resume"),
+            inbox: PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-resume"),
+            denial: PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-resume",
+                expectedDeviceId: scope.recipientDeviceId), verifier: verifier)
+        let resumed = try await restored.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(resumed, 1)
+        XCTAssertTrue(try journal.records().isEmpty)
+        XCTAssertTrue(try denial.coversReplayIdentityPermanently(envelope, scope: scope))
+    }
+    @MainActor func testUnavailableRetirementVerifierPreservesAcknowledgedCiphertextAndJournal() async throws {
+        let keychain = InMemoryKeychainStore(), response = try inboundResponse()
+        let envelope = try XCTUnwrap(response.applied.first), scope = response.scope
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-unavailable")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-unavailable")
+        let intent = try journalIntent()
+        try journal.prepare(intent)
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-unavailable",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let verifier = RetirementVerifier(boundary: PCAInboundReplayRetirementBoundary(scope: scope,
+            authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0))
+        verifier.available = false
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial, verifier: verifier)
+
+        let reclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(reclaimed, 0)
+        XCTAssertEqual(try inbox.pendingCrypto(scope: scope).count, 1)
+        XCTAssertEqual(try journal.records().count, 1)
+        let legacy = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        let unjournaled = try XCTUnwrap(inboundResponse(id: "still-pending").applied.first)
+        XCTAssertEqual(try legacy.pending([PCAStoredInboundEnvelope(envelope: unjournaled, relayAcknowledged: true,
+            processingState: "PENDING_CRYPTO")], scope: scope).count, 1)
+    }
+    @MainActor func testRetirementLedgerFailureAfterLatchPreservesRecordsAndBlocksLegacyConsumer() async throws {
+        let keychain = JournalKeychain(), response = try inboundResponse()
+        let envelope = try XCTUnwrap(response.applied.first), scope = response.scope
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-install-failure")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-install-failure")
+        let intent = try journalIntent()
+        try journal.prepare(intent)
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "reclaimer-install-failure",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: RetirementVerifier(boundary: boundary))
+        let legacy = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        let authority: () throws -> Void = {
+            if keychain.failingAccount == nil,
+               (try? keychain.retrieve(forAccount: "required.inbound-application-retirement",
+                    service: "reclaimer-install-failure.inbound-application")) != nil {
+                keychain.failingAccount = "current.replay-denial"
+            }
+        }
+
+        do {
+            _ = try await reclaimer.reclaim(scope: scope, assertAuthority: authority)
+            XCTFail("Denial persistence must fail after the retirement latch is installed")
+        } catch { }
+        keychain.failingAccount = nil
+        XCTAssertEqual(try inbox.pendingCrypto(scope: scope).count, 1)
+        XCTAssertEqual(try journal.records().count, 1)
+        XCTAssertThrowsError(try legacy.pending([PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: true,
+            processingState: "PENDING_CRYPTO")], scope: scope))
+    }
+    @MainActor func testDuplicateConsumerCandidatesCannotInflateCompletionCount() async throws {
+        let (envelope, scope) = try replayEnvelope()
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "duplicate-candidates")
+        let handler = ConsumerHandler()
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        let candidate = PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        do {
+            _ = try await consumer.consume([candidate, candidate], scope: scope, assertAuthority: {})
+            XCTFail("Duplicate candidates must be rejected")
+        } catch { }
+        XCTAssertTrue(handler.applied.isEmpty); XCTAssertTrue(try journal.records().isEmpty)
+    }
+    @MainActor func testDeniedPreparedOperationReconcilesPriorEffectWithoutApplyingAgain() async throws {
+        let keychain = InMemoryKeychainStore(), (envelope, scope) = try replayEnvelope()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "denied-recovery")
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "denied-recovery", expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let handler = ConsumerHandler(); handler.recovery = .unknown
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler, replayDenial: denial)
+        let candidates = [PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: true, processingState: "PENDING_CRYPTO")]
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        let pending = try await consumer.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(pending, 0)
+        let operation = try XCTUnwrap(journal.records().first?.intent.operationId)
+        try denial.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)]), assertAuthority: {})
+        handler.recovery = .notApplied
+        let denied = try await consumer.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(denied, 0); XCTAssertTrue(handler.applied.isEmpty); XCTAssertNil(try journal.records().first?.outcome)
+        handler.recovery = .completed(.applied)
+        let recovered = try await consumer.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(recovered, 1)
+        XCTAssertEqual(try journal.records().first?.intent.operationId, operation)
+        XCTAssertEqual(try journal.records().first?.outcome, .applied); XCTAssertTrue(handler.applied.isEmpty)
+    }
+    @MainActor func testDenialLossDuringSuspendedCompletedRecoveryPreventsReceiptPublication() async throws {
+        let keychain = InMemoryKeychainStore(), (envelope, scope) = try replayEnvelope()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "lost-denial")
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "lost-denial", expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let handler = ConsumerHandler(); handler.recovery = .completed(.applied)
+        let entered = expectation(description: "recovery suspended")
+        var continuation: CheckedContinuation<Void, Never>?
+        handler.suspendedReconcile = {
+            await withCheckedContinuation { pending in continuation = pending; entered.fulfill() }
+        }
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler, replayDenial: denial)
+        let candidates = [PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: true, processingState: "PENDING_CRYPTO")]
+        let task = Task { try await consumer.consume(candidates, scope: scope,
+            now: { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }, assertAuthority: {}) }
+        await fulfillment(of: [entered], timeout: 2)
+        try keychain.delete(forAccount: "current.replay-denial", service: "lost-denial.replay-denial")
+        continuation?.resume()
+        do { _ = try await task.value; XCTFail("Missing denial must prevent receipt") } catch { }
+        XCTAssertTrue(handler.applied.isEmpty); XCTAssertNil(try journal.records().first?.outcome)
+        XCTAssertEqual(try journal.records().count, 1)
+    }
+    @MainActor private final class ConsumerVerifier: PCAInboundCommandVerifying {
+        var available: (PCAInboundEnvelope) -> Bool = { _ in true }
+        var revalidate: () throws -> Void = {}
+        func verify(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) async throws -> PCAInboundVerificationResult {
+            guard available(envelope) else { return .unavailable }
+            return .accepted(authorityBinding: Data("authority".utf8), commandBinding: Data("command".utf8), revalidateAuthority: revalidate)
+        }
+    }
+    @MainActor private final class RetirementVerifier: PCAInboundRetirementVerifying {
+        let boundary: PCAInboundReplayRetirementBoundary
+        var available = true
+        var revalidate: () throws -> Void = {}
+        init(boundary: PCAInboundReplayRetirementBoundary) { self.boundary = boundary }
+        func verify(scope: PCAInboundScope) async throws -> PCAInboundRetirementVerification {
+            guard available else { return .unavailable }
+            return .accepted(boundary: boundary, revalidateAuthority: revalidate)
+        }
+    }
+    @MainActor private final class ConsumerHandler: PCAInboundCommandApplying {
+        var applied: [String] = []
+        var recovery: PCAInboundEffectRecovery = .notApplied
+        var onReconcile: (() -> Void)?
+        var suspendedReconcile: (() async -> Void)?
+        var afterApply: (() -> Void)?
+        func reconcile(_ intent: PCAInboundApplicationIntent) async throws -> PCAInboundEffectRecovery {
+            onReconcile?(); await suspendedReconcile?(); return recovery
+        }
+        func apply(_ intent: PCAInboundApplicationIntent, assertAuthority: @escaping () throws -> Void) async throws -> PCAInboundApplicationOutcome {
+            try assertAuthority(); applied.append(intent.operationId); afterApply?(); return .applied
+        }
+    }
+    @MainActor func testUnavailableConsumerNeverPreparesOrAppliesCiphertext() async throws {
+        let response = try inboundResponse()
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "consumer")
+        let handler = ConsumerHandler()
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: PCAUnavailableInboundCommandVerifier(), handler: handler)
+        let count = try await consumer.consume(response.applied.map {
+            PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }, scope: response.scope, assertAuthority: {})
+        XCTAssertEqual(count, 0)
+        XCTAssertTrue(try journal.records().isEmpty)
+        XCTAssertTrue(handler.applied.isEmpty)
+    }
+    @MainActor func testConsumerReusesPreparedOperationAndDoesNotReplayTerminalEffect() async throws {
+        let response = try inboundResponse(), handler = ConsumerHandler()
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "consumer")
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        let candidates = response.applied.map { PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: false, processingState: "PENDING_CRYPTO") }
+        handler.recovery = .unknown
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        let pending = try await consumer.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(pending, 0)
+        let operation = try XCTUnwrap(journal.records().first?.intent.operationId)
+        handler.recovery = .notApplied
+        let applied = try await consumer.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(applied, 1)
+        XCTAssertEqual(handler.applied, [operation])
+        let duplicate = try await consumer.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(duplicate, 0)
+        XCTAssertEqual(handler.applied, [operation])
+    }
+    @MainActor func testConsumerDoesNotApplyWhenAcceptanceExpiresDuringRecovery() async throws {
+        let response = try inboundResponse(), handler = ConsumerHandler()
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "consumer")
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        let formatter = ISO8601DateFormatter()
+        var clock = formatter.date(from: "2026-10-01T00:00:30Z")!
+        handler.onReconcile = { clock = formatter.date(from: "2026-10-01T00:01:00Z")! }
+        let count = try await consumer.consume(response.applied.map {
+                PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+            }, scope: response.scope, now: { clock }, assertAuthority: {})
+        XCTAssertEqual(count, 0)
+        XCTAssertTrue(handler.applied.isEmpty)
+        XCTAssertNil(try journal.records().first?.outcome)
+    }
+    @MainActor func testIndependentConsumersShareHostAdmissionCoordination() async throws {
+        let response = try inboundResponse(), keychain = InMemoryKeychainStore(), handler = ConsumerHandler()
+        let first = PCAInboundCommandConsumer(journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "shared-admission"),
+            verifier: ConsumerVerifier(), handler: handler)
+        let second = PCAInboundCommandConsumer(journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "shared-admission"),
+            verifier: ConsumerVerifier(), handler: handler)
+        let candidates = response.applied.map { PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO") }
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        let entered = expectation(description: "first consumer suspended")
+        var continuation: CheckedContinuation<Void, Never>?
+        handler.suspendedReconcile = {
+            await withCheckedContinuation { pending in continuation = pending; entered.fulfill() }
+        }
+        let task = Task { try await first.consume(candidates, scope: response.scope, now: clock, assertAuthority: {}) }
+        await fulfillment(of: [entered], timeout: 2)
+        let overlapping = try await second.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(overlapping, 0)
+        XCTAssertTrue(handler.applied.isEmpty)
+        continuation?.resume()
+        let completed = try await task.value
+        XCTAssertEqual(completed, 1)
+        XCTAssertEqual(handler.applied.count, 1)
+        let duplicate = try await second.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(duplicate, 0)
+        XCTAssertEqual(handler.applied.count, 1)
+    }
+    @MainActor func testConsumerSkipsTerminalPrefixAndProcessesLaterCandidates() async throws {
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "consumer")
+        let handler = ConsumerHandler()
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        let candidates = try (0..<33).map { index in
+            try PCAStoredInboundEnvelope(envelope: XCTUnwrap(inboundResponse(id: "message-\(index)").applied.first),
+                relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }
+        let scope = try inboundResponse().scope
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        let first = try await consumer.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        let next = try await consumer.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(first, 32)
+        XCTAssertEqual(next, 1)
+        XCTAssertEqual(handler.applied.count, 33)
+    }
+    @MainActor func testConsumerFairCursorSurvivesRestartAcrossUnavailablePrefix() async throws {
+        let keychain = InMemoryKeychainStore(), verifier = ConsumerVerifier(), handler = ConsumerHandler()
+        verifier.available = { $0.messageId == "message-32" }
+        let candidates = try (0..<33).map { index in
+            try PCAStoredInboundEnvelope(envelope: XCTUnwrap(inboundResponse(id: "message-\(index)").applied.first),
+                relayAcknowledged: true, processingState: "PENDING_CRYPTO")
+        }
+        let scope = try inboundResponse().scope
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        let first = PCAInboundCommandConsumer(journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "fair"),
+            verifier: verifier, handler: handler)
+        let count = try await first.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(count, 0)
+        let restored = PCAInboundCommandConsumer(journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "fair"),
+            verifier: verifier, handler: handler)
+        let next = try await restored.consume(candidates, scope: scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(next, 1)
+        XCTAssertEqual(handler.applied.count, 1)
+    }
+    @MainActor func testConsumerRechecksVerifierAuthorityAfterRecoverySuspension() async throws {
+        let response = try inboundResponse(), verifier = ConsumerVerifier(), handler = ConsumerHandler()
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "authority")
+        var valid = true
+        verifier.revalidate = { if !valid { throw PCAInboundInboxError.unavailable } }
+        let began = expectation(description: "recovery suspended")
+        var resume: CheckedContinuation<Void, Never>?
+        handler.suspendedReconcile = {
+            await withCheckedContinuation { continuation in resume = continuation; began.fulfill() }
+        }
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: verifier, handler: handler)
+        let attempt = Task { @MainActor in
+            try await consumer.consume(response.applied.map {
+                PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: false, processingState: "PENDING_CRYPTO")
+            }, scope: response.scope, now: { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }, assertAuthority: {})
+        }
+        await fulfillment(of: [began], timeout: 5)
+        valid = false
+        resume?.resume()
+        do {
+            _ = try await attempt.value
+            XCTFail("Changed signer/epoch authority must stop processing")
+        } catch {}
+        XCTAssertTrue(handler.applied.isEmpty)
+        XCTAssertNil(try journal.records().first?.outcome)
+    }
+    @MainActor func testConsumerRecoversEffectAfterFailedTerminalWriteWithoutReapplying() async throws {
+        let response = try inboundResponse(), verifier = ConsumerVerifier(), handler = ConsumerHandler()
+        let keychain = JournalKeychain()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "recovery")
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: verifier, handler: handler)
+        let candidates = response.applied.map { PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO") }
+        let clock = { ISO8601DateFormatter().date(from: "2026-10-01T00:00:30Z")! }
+        handler.afterApply = { keychain.ignoreWrites = true }
+        do {
+            _ = try await consumer.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+            XCTFail("Completion readback must fail")
+        } catch {}
+        let operation = try XCTUnwrap(journal.records().first?.intent.operationId)
+        XCTAssertEqual(handler.applied, [operation])
+        XCTAssertNil(try journal.records().first?.outcome)
+        keychain.ignoreWrites = false
+        handler.recovery = .completed(.applied)
+        let restored = PCAInboundCommandConsumer(journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "recovery"),
+            verifier: verifier, handler: handler)
+        let recovered = try await restored.consume(candidates, scope: response.scope, now: clock, assertAuthority: {})
+        XCTAssertEqual(recovered, 1)
+        XCTAssertEqual(handler.applied, [operation])
+        XCTAssertEqual(try journal.records().first?.outcome, .applied)
+    }
+    @MainActor func testHostRecoversRetainedIntentBeforeFailedNetworkAcknowledgement() async throws {
+        let response = try inboundResponse(), state = InMemoryPCADeviceStateStore()
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600)))
+        let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "host-recovery")
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "host-recovery")
+        let intent = PCAInboundApplicationIntent(operationId: UUID().uuidString.lowercased(), scope: response.scope,
+            envelope: try XCTUnwrap(response.applied.first), authorityBinding: Data("authority".utf8),
+            acceptedCommandBinding: Data("command".utf8), preparedAt: Date().addingTimeInterval(-60))
+        try journal.prepare(intent)
+        let handler = ConsumerHandler(); handler.recovery = .completed(.applied)
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        var networkCalls = 0
+        let transport = InMemoryPCAHTTPTransport { _ in networkCalls += 1; throw PCAHTTPTransportError.network }
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: inbox, inboundConsumer: consumer)
+        _ = try await model.synchronizeRuntimeCampaign()
+        XCTAssertEqual(try journal.records().first?.outcome, .applied)
+        XCTAssertTrue(handler.applied.isEmpty)
+        XCTAssertEqual(networkCalls, 1)
+        XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).count, 1)
+        XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
+    private func journalIntent(id: String = "message-1", operationId: String = UUID().uuidString.lowercased()) throws -> PCAInboundApplicationIntent {
+        let response = try inboundResponse(id: id)
+        return PCAInboundApplicationIntent(operationId: operationId, scope: response.scope,
+            envelope: XCTUnwrap(response.applied.first), authorityBinding: Data("accepted-context".utf8),
+            acceptedCommandBinding: Data("accepted-command".utf8), preparedAt: Date(timeIntervalSince1970: 1_760_000_000))
+    }
+    func testApplicationJournalRestoresPreparedIntentWithoutClaimingApplied() throws {
+        let keychain = InMemoryKeychainStore()
+        let intent = try journalIntent()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "journal")
+        try journal.prepare(intent)
+        try journal.prepare(intent)
+        let restored = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "journal")
+        let record = try XCTUnwrap(restored.records().first)
+        XCTAssertEqual(record.intent, intent)
+        XCTAssertNil(record.outcome)
+        XCTAssertNil(record.completedAt)
+        XCTAssertEqual(try restored.records().count, 1)
+    }
+    func testApplicationJournalRequiresPreparedIdentityAndImmutableTerminalOutcome() throws {
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "journal")
+        let intent = try journalIntent()
+        XCTAssertThrowsError(try journal.complete(intent, outcome: .applied, at: intent.preparedAt))
+        try journal.prepare(intent)
+        XCTAssertThrowsError(try journal.prepare(journalIntent())) // Conflicting operation for identical message.
+        XCTAssertThrowsError(try journal.complete(intent, outcome: .applied, at: intent.preparedAt.addingTimeInterval(-1)))
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt.addingTimeInterval(1))
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt.addingTimeInterval(2))
+        XCTAssertThrowsError(try journal.complete(intent, outcome: .rejected, at: intent.preparedAt.addingTimeInterval(2)))
+        XCTAssertEqual(try journal.records().first?.completedAt, intent.preparedAt.addingTimeInterval(1))
+    }
+    func testApplicationJournalRetainsDistinctOpaqueUnicodeMessageIdentities() throws {
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "journal")
+        try journal.prepare(journalIntent(id: "é"))
+        try journal.prepare(journalIntent(id: "e\u{301}"))
+        XCTAssertEqual(try journal.records().count, 2)
+    }
+    func testFullApplicationJournalPreservesEveryTerminalReplayReceipt() throws {
+        let keychain = InMemoryKeychainStore()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "capacity")
+        for index in 0..<64 {
+            let intent = try journalIntent(id: "completed-\(index)")
+            try journal.prepare(intent)
+            try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+        }
+        let original = try journal.records()
+        XCTAssertEqual(original.count, 64)
+        XCTAssertThrowsError(try journal.prepare(journalIntent(id: "next-command")))
+        let restored = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "capacity")
+        XCTAssertEqual(try restored.records(), original)
+        XCTAssertTrue(try restored.records().allSatisfy { $0.outcome == .applied })
+    }
+    private final class JournalKeychain: KeychainStoreProtocol {
+        let underlying = InMemoryKeychainStore()
+        var ignoreWrites = false
+        var failingAccount: String?
+        func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+            if account == failingAccount { throw KeychainStoreError.unexpectedStatus(-1) }
+            if !ignoreWrites { try underlying.store(data, forAccount: account, service: service, accessibility: accessibility) }
+        }
+        func retrieve(forAccount account: String, service: String) throws -> Data {
+            try underlying.retrieve(forAccount: account, service: service)
+        }
+        func delete(forAccount account: String, service: String) throws { try underlying.delete(forAccount: account, service: service) }
+    }
+    func testFailedJournalCompletionRestoresSamePreparedOperationForRecovery() throws {
+        let keychain = JournalKeychain(), intent = try journalIntent()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "journal")
+        keychain.ignoreWrites = true
+        XCTAssertThrowsError(try journal.prepare(intent))
+        XCTAssertTrue(try journal.records().isEmpty)
+        keychain.ignoreWrites = false
+        try journal.prepare(intent)
+        keychain.ignoreWrites = true
+        XCTAssertThrowsError(try journal.complete(intent, outcome: .applied, at: intent.preparedAt))
+        let restored = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "journal")
+        XCTAssertEqual(try restored.records().first?.intent.operationId, intent.operationId)
+        XCTAssertNil(try restored.records().first?.outcome)
+        keychain.ignoreWrites = false
+        try restored.complete(intent, outcome: .applied, at: intent.preparedAt)
+        XCTAssertEqual(try journal.records().first?.outcome, .applied)
+    }
+    func testJournalRejectsChangedAuthorityAndNoncanonicalOperationId() throws {
+        let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "journal")
+        let intent = try journalIntent()
+        try journal.prepare(intent)
+        let changed = PCAInboundApplicationIntent(operationId: intent.operationId, scope: intent.scope,
+            envelope: intent.envelope, authorityBinding: Data("other-context".utf8),
+            acceptedCommandBinding: intent.acceptedCommandBinding, preparedAt: intent.preparedAt)
+        XCTAssertThrowsError(try journal.prepare(changed))
+        XCTAssertThrowsError(try journal.prepare(journalIntent(id: "other", operationId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA")))
+        XCTAssertEqual(try journal.records().count, 1)
+    }
     private final class UsageRuntime: PCAProtectionPolicyRuntime {
         var status: DeviceActivityUsageMonitorStatus = .expired
         var renewals = 0
@@ -1362,6 +2052,7 @@ final class ProductionIntegrationTests: XCTestCase {
         sessionClient: PCADeviceSessionClient? = nil,
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
         inboundInbox: PCAInboundInboxStoring? = nil,
+        inboundConsumer: PCAInboundCommandConsumer? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         authorizationStatus: RawAuthorizationStatus = .approved
@@ -1385,6 +2076,7 @@ final class ProductionIntegrationTests: XCTestCase {
             sessionClient: sessionClient,
             runtimeSyncClient: runtimeSyncClient,
             inboundInbox: inboundInbox,
+            inboundConsumer: inboundConsumer,
             assertRuntimeKeyCustody: assertRuntimeKeyCustody,
             sessionStore: attemptStore,
             attemptStore: attemptStore,

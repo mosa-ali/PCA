@@ -9,6 +9,7 @@ import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.runtime.sync.inbox.PersistentCiphertextInbox
 import org.pca.app.runtime.sync.inbox.RuntimeInboxScope
+import org.pca.app.runtime.sync.inbox.*
 import org.pca.app.runtime.sync.envelope.*
 import org.pca.app.runtime.sync.state.SyncConnectionState
 import org.pca.app.runtime.sync.transport.InboundAppliedEnvelope
@@ -28,6 +29,7 @@ private fun buildOrchestrator(
     inbox: PersistentCiphertextInbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1"),
     assertKeyCustody: () -> Unit = {},
     expectedFamilyId: String = "family-1",
+    consumer: VerifiedInboundCommandConsumer? = null,
 ): ReconnectSyncOrchestrator {
     val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { now }, assertKeyCustody = assertKeyCustody)
     return ReconnectSyncOrchestrator(
@@ -39,6 +41,7 @@ private fun buildOrchestrator(
         nowEpochMillis = { now },
         ciphertextInbox = inbox,
         expectedFamilyId = expectedFamilyId,
+        inboundConsumer = consumer,
     )
 }
 
@@ -50,6 +53,105 @@ private fun inbound(id: String): InboundAppliedEnvelope {
 }
 
 class ReconnectSyncOrchestratorTest {
+    @Test fun `terminal application clears pending status while unavailable work remains pending`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val consumer = VerifiedInboundCommandConsumer(journal, InboundCommandVerifier { candidate, _ ->
+            if (candidate.messageId == "completed") InboundVerificationResult.Accepted("AQ==", "Ag==") {}
+            else InboundVerificationResult.Unavailable
+        }, object : InboundCommandApplier {
+            override suspend fun reconcile(intent: InboundApplicationIntent) = InboundEffectRecovery.NotApplied
+            override suspend fun apply(intent: InboundApplicationIntent, assertAuthority: () -> Unit): InboundApplicationOutcome {
+                assertAuthority(); return InboundApplicationOutcome.APPLIED
+            }
+        }, { 1_700_000_001_000L })
+        val relay = FakeRelayHttpClient().also { it.enqueueInbound(inbound("completed")) }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox, consumer = consumer)
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
+        assertEquals(SyncConnectionState.LIVE, orchestrator.connectionState.value)
+        assertEquals(1, inbox.pendingCryptoCount())
+        assertEquals(InboundApplicationOutcome.APPLIED, journal.records().single().outcome)
+        relay.enqueueInbound(inbound("unavailable"))
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+        assertEquals(2, inbox.pendingCryptoCount())
+    }
+
+    @Test fun `full journal blocks new host effect and ACK without evicting replay receipts`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val scope = RuntimeInboxScope("family-1", "device-1")
+        repeat(64) { index ->
+            val id = "completed-$index"
+            val intent = InboundApplicationIntent(java.util.UUID.randomUUID().toString(), scope, id,
+                inbound(id).envelopeWire!!, "AQ==", "Ag==", 1_700_000_001_000L)
+            journal.prepare(intent)
+            journal.complete(intent, InboundApplicationOutcome.APPLIED, intent.preparedAtEpochMillis)
+        }
+        val originals = journal.records()
+        var effectCalls = 0
+        val consumer = VerifiedInboundCommandConsumer(journal,
+            InboundCommandVerifier { _, _ -> InboundVerificationResult.Accepted("AQ==", "Ag==") {} },
+            object : InboundCommandApplier {
+                override suspend fun reconcile(intent: InboundApplicationIntent) = InboundEffectRecovery.NotApplied
+                override suspend fun apply(intent: InboundApplicationIntent, assertAuthority: () -> Unit): InboundApplicationOutcome {
+                    effectCalls++; error("Full journal must prevent effect")
+                }
+            }, { 1_700_000_001_000L })
+        val relay = FakeRelayHttpClient().also { it.enqueueInbound(inbound("next-command")) }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox, consumer = consumer)
+        assertEquals(RuntimeCustodyOutcome.BLOCKED, orchestrator.syncNow())
+        assertEquals(0, effectCalls)
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+        assertEquals(originals, journal.records())
+        assertEquals(1, inbox.pendingAcknowledgements(scope).size)
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+    }
+
+    @Test fun `retained application recovers before failed ACK without repeating effect`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val scope = RuntimeInboxScope("family-1", "device-1")
+        val wire = inbound("retained-effect").envelopeWire!!
+        inbox.capture(scope, listOf(wire))
+        val intent = InboundApplicationIntent("00000000-0000-0000-0000-000000000001", scope,
+            "retained-effect", wire, "AQ==", "Ag==", 1_700_000_001_000L)
+        journal.prepare(intent)
+        var reconciled = false
+        var applied = false
+        val consumer = VerifiedInboundCommandConsumer(journal,
+            InboundCommandVerifier { _, _ -> InboundVerificationResult.Accepted("AQ==", "Ag==") {} },
+            object : InboundCommandApplier {
+                override suspend fun reconcile(intent: InboundApplicationIntent): InboundEffectRecovery {
+                    reconciled = true
+                    return InboundEffectRecovery.Completed(InboundApplicationOutcome.APPLIED)
+                }
+                override suspend fun apply(intent: InboundApplicationIntent, assertAuthority: () -> Unit): InboundApplicationOutcome {
+                    applied = true; error("Recovery must not repeat effect")
+                }
+            }, { 1_700_000_061_000L })
+        var ackCalls = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by FakeRelayHttpClient() {
+            override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {
+                ackCalls++
+                assertTrue(reconciled)
+                assertEquals(InboundApplicationOutcome.APPLIED, journal.records().single().outcome)
+                throw org.pca.app.runtime.sync.transport.RelayHttpException(
+                    org.pca.app.runtime.sync.transport.RelayHttpErrorCode.Network, "offline")
+            }
+        }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), transport, inbox = inbox, consumer = consumer)
+        assertEquals(RuntimeCustodyOutcome.RETRYABLE_FAILURE, orchestrator.syncNow())
+        assertEquals(1, ackCalls)
+        assertTrue(!applied)
+        assertEquals(intent.operationId, journal.records().single().intent.operationId)
+        assertEquals(1, inbox.pendingAcknowledgements(scope).size)
+        assertEquals(1, inbox.pendingCrypto(scope).size)
+    }
+
     @Test fun `rejected session is reauthenticated on the next attempt`() = runTest {
         val relay = FakeRelayHttpClient()
         var authentications = 0

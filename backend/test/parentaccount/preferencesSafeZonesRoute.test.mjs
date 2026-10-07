@@ -13,7 +13,12 @@ after(async () => {
   await writeParentRouteScenarioReport();
 });
 
-function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneRepositoryOverrides = {}) {
+function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneRepositoryOverrides = {}, {
+  withPreferenceRepository = true,
+  withSafeZoneRepository = true,
+  withDeviceSessionService = true,
+  withSafeZonePolicyAuthorizer = true,
+} = {}) {
   const sessions = new Map([
     ['session-a', { accountId: 'account-a', familyId: 'family-a', emailVerified: true }],
     ['session-b', { accountId: 'account-b', familyId: 'family-a', emailVerified: true }],
@@ -88,11 +93,11 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   const app = Fastify();
   registerParentAccountRoutes(app, {
     parentAccountService,
-    parentPreferenceRepository,
-    safeZoneRepository,
+    parentPreferenceRepository: withPreferenceRepository ? parentPreferenceRepository : undefined,
+    safeZoneRepository: withSafeZoneRepository ? safeZoneRepository : undefined,
     deviceRepository,
-    deviceSessionService,
-    safeZonePolicyAuthorizer,
+    deviceSessionService: withDeviceSessionService ? deviceSessionService : undefined,
+    safeZonePolicyAuthorizer: withSafeZonePolicyAuthorizer ? safeZonePolicyAuthorizer : undefined,
   });
   app.safeZoneZones = zones;
   app.safeZoneRepository = safeZoneRepository;
@@ -135,6 +140,41 @@ test('preferences are account-scoped and mutations require matching CSRF', async
   assert.equal(destination.json().preferences.emailDestinationState, 'UNVERIFIED');
 });
 
+test('unconfigured Parent preferences preserve session and CSRF checks before 503', async () => {
+  const app = buildApp('OWNER', 'ALLOW', {}, { withPreferenceRepository: false });
+  try {
+    const noSessionRead = await app.inject({ method: 'GET', url: '/api/parent/preferences' });
+    assert.equal(noSessionRead.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: PREFERENCES_ROUTE, scenarioId: 'preferences_unconfigured_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: noSessionRead });
+
+    const authorizedRead = await app.inject({ method: 'GET', url: '/api/parent/preferences', headers: authHeaders });
+    assert.equal(authorizedRead.statusCode, 503);
+    assert.deepEqual(authorizedRead.json(), { error: 'not_configured' });
+    recordParentRouteScenario({ method: 'GET', route: PREFERENCES_ROUTE, scenarioId: 'preferences_unconfigured_authorized_503', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response: authorizedRead });
+
+    const noSessionWrite = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', payload: { language: 'ar' } });
+    assert.equal(noSessionWrite.statusCode, 401);
+    recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_unconfigured_patch_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: noSessionWrite });
+
+    const noCsrf = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: authHeaders, payload: { language: 'ar' } });
+    assert.equal(noCsrf.statusCode, 403);
+    assert.deepEqual(noCsrf.json(), { error: 'csrf_mismatch' });
+    recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_unconfigured_patch_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: noCsrf });
+
+    const invalidPayload = await app.inject({
+      method: 'PATCH', url: '/api/parent/preferences',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+      payload: { unknownPreference: 'must-not-be-processed' },
+    });
+    assert.equal(invalidPayload.statusCode, 503);
+    assert.deepEqual(invalidPayload.json(), { error: 'not_configured' });
+    assert.equal(invalidPayload.body.includes('must-not-be-processed'), false);
+    recordParentRouteScenario({ method: 'PATCH', route: PREFERENCES_ROUTE, scenarioId: 'preferences_unconfigured_patch_authorized_503', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response: invalidPayload });
+  } finally {
+    await app.close();
+  }
+});
+
 test('safe zones accept only opaque encrypted policy envelopes and preserve offline delivery state', async () => {
   const app = buildApp();
   const wrongFamily = await app.inject({ method: 'GET', url: '/api/parent/families/family-b/safe-zones', headers: authHeaders });
@@ -166,6 +206,104 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(list.headers['cache-control'], 'private, no-store');
   recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: list });
   assert.equal(list.json().safeZones.length, 1);
+});
+
+test('unconfigured Safe Zone routes preserve session, role, CSRF, and device-session checks before 503', async () => {
+  const noSessionApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
+  try {
+    const response = await noSessionApp.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones' });
+    assert.equal(response.statusCode, 401);
+    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_unconfigured_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
+  } finally { await noSessionApp.close(); }
+
+  const crossFamilyApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
+  try {
+    const response = await crossFamilyApp.inject({ method: 'GET', url: '/api/parent/families/family-b/safe-zones', headers: authHeaders });
+    assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_unconfigured_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
+  } finally { await crossFamilyApp.close(); }
+
+  const wrongRoleApp = buildApp('CHILD', 'ALLOW', {}, { withSafeZoneRepository: false });
+  try {
+    const response = await wrongRoleApp.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
+    assert.equal(response.statusCode, 403);
+    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_unconfigured_wrong_role_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
+  } finally { await wrongRoleApp.close(); }
+
+  const viewerApp = buildApp('VIEWER', 'ALLOW', {}, { withSafeZoneRepository: false });
+  try {
+    const response = await viewerApp.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'not_configured' });
+    recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_unconfigured_viewer_503', classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
+  } finally { await viewerApp.close(); }
+
+  const mutations = [
+    { method: 'POST', route: SAFE_ZONES_ROUTE, url: '/api/parent/families/family-a/safe-zones' },
+    { method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, url: '/api/parent/families/family-a/safe-zones/zone-a' },
+    { method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, url: '/api/parent/families/family-a/safe-zones/zone-a' },
+  ];
+  const validBody = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  for (const endpoint of mutations) {
+    const noCsrfApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
+    try {
+      const response = await noCsrfApp.inject({ method: endpoint.method, url: endpoint.url, headers: authHeaders, ...(endpoint.method === 'DELETE' ? {} : { payload: validBody }) });
+      assert.equal(response.statusCode, 403, `${endpoint.method} checks CSRF before repository availability`);
+      recordParentRouteScenario({ method: endpoint.method, route: endpoint.route, scenarioId: `safe_zones_unconfigured_csrf_denied_${endpoint.method.toLowerCase()}`, classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
+    } finally { await noCsrfApp.close(); }
+
+    const nonAdminApp = buildApp('VIEWER', 'ALLOW', {}, { withSafeZoneRepository: false });
+    try {
+      const response = await nonAdminApp.inject({ method: endpoint.method, url: endpoint.url, headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, ...(endpoint.method === 'DELETE' ? {} : { payload: validBody }) });
+      assert.equal(response.statusCode, 403, `${endpoint.method} checks Administrator role before repository availability`);
+      recordParentRouteScenario({ method: endpoint.method, route: endpoint.route, scenarioId: `safe_zones_unconfigured_non_admin_denied_${endpoint.method.toLowerCase()}`, classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
+    } finally { await nonAdminApp.close(); }
+
+    const noActorApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
+    try {
+      const response = await noActorApp.inject({ method: endpoint.method, url: endpoint.url, headers: { cookie: authHeaders.cookie, 'x-pca-csrf-token': 'csrf-a' }, ...(endpoint.method === 'DELETE' ? {} : { payload: validBody }) });
+      assert.equal(response.statusCode, 401, `${endpoint.method} requires an actor-device session before repository availability`);
+      recordParentRouteScenario({ method: endpoint.method, route: endpoint.route, scenarioId: `safe_zones_unconfigured_actor_denied_${endpoint.method.toLowerCase()}`, classification: 'EXPECTED_DENIAL', expectedStatus: 401, response });
+    } finally { await noActorApp.close(); }
+
+    const authorizedApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
+    try {
+      const response = await authorizedApp.inject({
+        method: endpoint.method, url: endpoint.url,
+        headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+        ...(endpoint.method === 'DELETE' ? {} : { payload: { ...validBody, domain: 'unavailable-never-echo.invalid' } }),
+      });
+      assert.equal(response.statusCode, 503, `${endpoint.method} retains not_configured for an authenticated Administrator`);
+      assert.deepEqual(response.json(), { error: 'not_configured' });
+      assert.equal(response.body.includes('unavailable-never-echo.invalid'), false);
+      assert.equal(authorizedApp.safeZoneZones.size, 0);
+      recordParentRouteScenario({ method: endpoint.method, route: endpoint.route, scenarioId: `safe_zones_unconfigured_authorized_503_${endpoint.method.toLowerCase()}`, classification: 'SERVICE_NOT_CONFIGURED', expectedStatus: 503, response });
+    } finally { await authorizedApp.close(); }
+  }
+});
+
+test('Safe Zone mutation checks the actor bearer before reporting unavailable edit authority', async () => {
+  const app = buildApp('OWNER', 'ALLOW', {}, { withSafeZonePolicyAuthorizer: false });
+  const payload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  try {
+    const missingActor = await app.inject({
+      method: 'POST', url: '/api/parent/families/family-a/safe-zones',
+      headers: { cookie: authHeaders.cookie, 'x-pca-csrf-token': 'csrf-a' }, payload,
+    });
+    assert.equal(missingActor.statusCode, 401);
+    assert.deepEqual(missingActor.json(), { error: 'actor_device_session_required' });
+    recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_missing_authorizer_requires_actor', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: missingActor });
+
+    const validActor = await app.inject({
+      method: 'POST', url: '/api/parent/families/family-a/safe-zones',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload,
+    });
+    assert.equal(validActor.statusCode, 503);
+    assert.deepEqual(validActor.json(), { error: 'family_authority_unavailable' });
+    assert.equal(app.safeZoneZones.size, 0);
+    assert.equal(app.safeZoneAuthorizationRequests.length, 0);
+    recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_missing_authorizer_valid_actor_503', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: validActor });
+  } finally { await app.close(); }
 });
 
 test('safe-zone HTTP validation enforces canonical bytes, repository epoch bounds, and opaque-only fields', async () => {
