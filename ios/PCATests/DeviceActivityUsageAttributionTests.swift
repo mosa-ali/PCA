@@ -285,7 +285,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertEqual(contextReadyToClose.wait(timeout: .now() + 5), .success)
         XCTAssertEqual(useEntryConfirmed.wait(timeout: .now()), .success,
             "the test must observe the read after it has entered the access lease")
-        let access = XCTUnwrap(accessBox.get())
+        let access = try XCTUnwrap(accessBox.get())
         let invalidationDeadline = Date().addingTimeInterval(5)
         while access.isActive(for: coordination) && Date() < invalidationDeadline {
             Thread.sleep(forTimeInterval: 0.001)
