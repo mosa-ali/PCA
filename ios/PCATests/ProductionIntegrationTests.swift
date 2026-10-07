@@ -639,6 +639,69 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).count, 1)
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
     }
+    @MainActor func testHostSessionReplacementDuringInboundRecoveryPreservesPendingIntentAndCustody() async throws {
+        let state = InMemoryPCADeviceStateStore()
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(600))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(600))
+        try state.saveSession(session)
+        let response = try inboundResponse()
+        let keychain = InMemoryKeychainStore()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "host-recovery-authority")
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "host-recovery-authority")
+        let envelope = try XCTUnwrap(response.applied.first)
+        let intent = PCAInboundApplicationIntent(operationId: UUID().uuidString.lowercased(), scope: response.scope,
+            envelope: envelope, authorityBinding: Data("authority".utf8),
+            acceptedCommandBinding: Data("command".utf8), preparedAt: Date())
+        try journal.prepare(intent)
+
+        let handler = ConsumerHandler()
+        handler.recovery = .completed(.applied)
+        let recoveryBegan = expectation(description: "host recovery suspended")
+        var resumeRecovery: CheckedContinuation<Void, Never>?
+        handler.suspendedReconcile = {
+            await withCheckedContinuation { continuation in
+                resumeRecovery = continuation
+                recoveryBegan.fulfill()
+            }
+        }
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "scope": ["familyId": response.scope.familyId, "recipientDeviceId": response.scope.recipientDeviceId],
+            "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))],
+            "unparseableMessageIds": [], "droppedForListBound": []
+        ])
+        var pulls = 0
+        var acknowledgements = 0
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.httpMethod == "GET" {
+                pulls += 1
+                return PCAHTTPResponse(statusCode: 200, data: responseData)
+            }
+            if request.url?.path.hasSuffix("/ack") == true { acknowledgements += 1 }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: inbox, inboundConsumer: consumer)
+
+        let synchronization = Task { @MainActor in try await model.synchronizeRuntimeCampaign() }
+        await fulfillment(of: [recoveryBegan], timeout: 5)
+        try state.saveSession(replacement)
+        resumeRecovery?.resume()
+
+        let outcome = try await synchronization.value
+        XCTAssertEqual(outcome, .retryableFailure)
+        XCTAssertEqual(try state.loadSession(), replacement)
+        XCTAssertEqual(pulls, 1)
+        XCTAssertEqual(acknowledgements, 0)
+        XCTAssertTrue(handler.applied.isEmpty)
+        let retainedIntent = try XCTUnwrap(journal.records().first)
+        XCTAssertEqual(retainedIntent.intent, intent)
+        XCTAssertNil(retainedIntent.outcome)
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).map(\.envelope), [envelope])
+        XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).map(\.envelope), [envelope])
+        XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
     private func journalIntent(id: String = "message-1", operationId: String = UUID().uuidString.lowercased()) throws -> PCAInboundApplicationIntent {
         let response = try inboundResponse(id: id)
         return PCAInboundApplicationIntent(operationId: operationId, scope: response.scope,
