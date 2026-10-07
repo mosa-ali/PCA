@@ -1,5 +1,15 @@
 # PCA Platform Web — Codex Master TODO
 
+## Published relay / candidate Trust Set checkpoint - 2026-10-07
+
+SOURCE_CHECKPOINT = 31935664865f83bdebbf651d1f193afbfb02ea62; 57 reviewed files published to origin/pca-dev by ordinary fast-forward. Fresh fetch and direct server lookup proved LOCAL_HEAD = REMOTE_HEAD; all 57 committed path blobs match origin/pca-dev. No tracked source diff or unpushed commit remained after push. Owner-excluded untracked files remain preserved.
+REVIEW = Revision 7 approved by all five required mobile specialists and independent adversarial QA; zero blockers/majors/minors. Earlier revision votes were superseded. Both discovered Swift normalized-identity defects are corrected in custody/deduplication and root/session continuity, with five new regression sources. No review substitutes for test execution.
+VALIDATION = Full backend 2973/2973 PASS, zero failures/skips; local disposable MySQL 707 PASS / 10 privilege skips / 0 failures. Full Android 1531 tests / 0 failures / 1 existing skip plus lint/release/androidTest compilation PASS; portable codec corpus 6/6 PASS. Swift syntax and project wiring/idempotency PASS only. Current new Apple compilation/XCTest is pending.
+CI = Source checkpoint Quality Gates run 37591840223 queued when inspected. No green result or deployment readiness is claimed; require every exact-head job, including Apple, before acceptance. A ledger publication may create a newer exact-head CI run, which must also be checked.
+STATE = Same Parent TODO-01..TODO-23 board retained: 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15 remain IN_PROGRESS; Platform HOLD_PARENT_DEPENDENCY. READY_FOR_AZURE_DEPLOYMENT = NO.
+NEXT_ACTION = Inspect exact-head CI and repair any repository failures; continue receiving-device trust/crypto authority, authenticated policy ingress and daily usage attribution where determinable. Five-specialist qualification applies to the next substantive source package. Physical-device, live pca_pro, production configuration, migration-0064 and deployment gates remain separate; no external evidence is fabricated or forced.
+
+
 ## Current untrusted Trust Set codec / Unicode draft — 2026-10-07
 
 PUBLISHED_BASE = c816f88d2c7c6962b8c66bbb3eb9059c8d946966. No new commit/push or new exact-head CI is claimed. The relay continuation draft remains unpublished.
