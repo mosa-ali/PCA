@@ -1,5 +1,13 @@
 # PCA mobile completion work matrix
 
+## Current typed-function import correction — 2026-10-07
+
+PUBLISHED_SOURCE = 6497df822d728bca5c5509827044f262946f6b62; LOCAL = ORIGIN = FETCH_HEAD = SERVER and all four remote paths verified. CI 37575475718 currently has 24/27 completed, 23 success, sole observed failure iOS build/unit tests; three jobs remain running. It tests published 6497df82, not this local correction.
+CAUSE_AND_CORRECTION = Apple diagnostic at CallbackObservationLog.swift:278 rejects scoped import func Darwin.flock as ambiguous between the C structure and function. Remove that scoped import and its misleading comment; retain ordinary import Darwin and the explicit (Int32, Int32) -> Int32 function alias. Lock flags, EINTR retry, protected operation, unlock and descriptor cleanup are unchanged. No ABI shim, security bypass or test suppression.
+EVIDENCE = Five required mobile specialists Stage A USABLE; corrected Swift frontend parse and diff check PASS. Apple compilation and XCTest have not passed for this correction. Frozen four-path Stage B is APPROVE from 5/5 required mobile specialists and independent QA, with zero blockers/majors/minors; fresh complete exact-head CI is mandatory. Last fully green checkpoint remains 366fda997ed57239533c56a4d115c2799207783e / 37572120232 SUCCESS 27/27.
+CONTINUATION = Backend/Android/iOS relay continuation has a source-qualified existing-schema contract for stable binary keysets, finite highwater navigation, bounded examined records and atomic mobile custody/receipt/cursor persistence. SQL scan/sort performance remains unproven without query-plan evidence; no migration 0064 is created. Repository work remains YES; Parent board 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED and Platform HOLD_PARENT_DEPENDENCY remain unchanged. Physical-device, live DB, production configuration and Azure gates are separate.
+NEXT_ACTION = Publish only after five mobile specialist approvals, verify remote alignment, require fresh Apple build/XCTest and all Quality Gates, then continue the coordinated relay implementation. All implementable repository work remains required; external evidence is never fabricated.
+
 ## Current Apple compile correction — 2026-10-07
 
 PUBLISHED_SOURCE = 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a; push/fetch/direct-server equality and all twelve remote paths verified. Published-source CI 37574599038 is terminal FAILURE: 27/27 completed, 26 success, sole Apple compile failure before XCTest. This run tested 80e773b8, not the local correction.

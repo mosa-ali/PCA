@@ -275,10 +275,8 @@ public final class LocalDeviceActivityPolicyCoordination: DeviceActivityPolicyCo
 }
 #if canImport(Darwin)
 import Darwin
-import func Darwin.flock
-
-// Scoped import plus an explicit function type excludes Darwin.flock the
-// record-lock structure from Swift overload resolution.
+// The explicit function type selects the BSD lock function rather than
+// Darwin.flock the record-lock structure.
 private let deviceActivitySystemFlock: (Int32, Int32) -> Int32 = flock
 public enum DeviceActivityPolicyStorageError: Error { case appGroupUnavailable, lockUnavailable }
 public final class AppGroupDeviceActivityPolicyCoordination: DeviceActivityPolicyCoordination {
