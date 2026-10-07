@@ -82,15 +82,28 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(count, 0); XCTAssertTrue(handler.applied.isEmpty); XCTAssertTrue(try journal.records().isEmpty)
         XCTAssertTrue(try consumer.pending(aliases, scope: scope).isEmpty)
     }
-    @MainActor func testRetirementLatchBlocksNilAndUninitializedLedgersAcrossRestart() throws {
-        let keychain = InMemoryKeychainStore(), response = try inboundResponse()
+    @MainActor func testRetirementLatchBlocksNilAndBoundaryFreeLedgersAcrossRestart() async throws {
+        let keychain = JournalKeychain(), response = try inboundResponse()
         let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-latch")
         let candidates = response.applied.map {
             PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
         }
         let handler = ConsumerHandler()
         let legacyConsumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
-        try journal.requireReplayDenial(scope: response.scope)
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "retirement-latch")
+        try inbox.capture(response, sessionDeviceId: response.scope.recipientDeviceId)
+        let initialDenial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "retirement-latch",
+            expectedDeviceId: response.scope.recipientDeviceId)
+        try initialDenial.initializeFresh(assertAuthority: {})
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: initialDenial,
+            verifier: RetirementVerifier(boundary: PCAInboundReplayRetirementBoundary(scope: response.scope,
+                authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0)))
+        keychain.failingAccount = "current.replay-denial"
+        do {
+            _ = try await reclaimer.reclaim(scope: response.scope, assertAuthority: {})
+            XCTFail("Retirement boundary persistence must fail after installing the latch")
+        } catch { }
+        keychain.failingAccount = nil
         XCTAssertThrowsError(try legacyConsumer.pending(candidates, scope: response.scope))
 
         let restoredJournal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-latch")
@@ -99,7 +112,6 @@ final class ProductionIntegrationTests: XCTestCase {
 
         let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "retirement-latch",
             expectedDeviceId: response.scope.recipientDeviceId)
-        try denial.initializeFresh(assertAuthority: {})
         let configuredConsumer = PCAInboundCommandConsumer(journal: restoredJournal, verifier: ConsumerVerifier(),
             handler: handler, replayDenial: denial)
         XCTAssertThrowsError(try configuredConsumer.pending(candidates, scope: response.scope),
@@ -108,15 +120,26 @@ final class ProductionIntegrationTests: XCTestCase {
             minimumTrustSetEpoch: 0, minimumKeyEpoch: 0), assertAuthority: {})
         XCTAssertEqual(try configuredConsumer.pending(candidates, scope: response.scope).count, candidates.count)
     }
-    @MainActor func testRetirementMarkerAloneBlocksLegacyConsumerAfterSnapshotWriteFailure() throws {
+    @MainActor func testRetirementMarkerAloneBlocksLegacyConsumerAfterSnapshotWriteFailure() async throws {
         let keychain = JournalKeychain(), response = try inboundResponse()
         let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-partial")
         let candidates = response.applied.map {
             PCAStoredInboundEnvelope(envelope: $0, relayAcknowledged: true, processingState: "PENDING_CRYPTO")
         }
         let legacyConsumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "retirement-partial")
+        try inbox.capture(response, sessionDeviceId: response.scope.recipientDeviceId)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "retirement-partial",
+            expectedDeviceId: response.scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let reclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: RetirementVerifier(boundary: PCAInboundReplayRetirementBoundary(scope: response.scope,
+                authorityBinding: Data([1]), minimumTrustSetEpoch: 0, minimumKeyEpoch: 0)))
         keychain.failingAccount = "current.inbound-application-journal"
-        XCTAssertThrowsError(try journal.requireReplayDenial(scope: response.scope))
+        do {
+            _ = try await reclaimer.reclaim(scope: response.scope, assertAuthority: {})
+            XCTFail("Journal snapshot persistence must fail after installing the marker")
+        } catch { }
         keychain.failingAccount = nil
 
         let restored = PCAInboundCommandConsumer(
@@ -615,7 +638,7 @@ final class ProductionIntegrationTests: XCTestCase {
     private func journalIntent(id: String = "message-1", operationId: String = UUID().uuidString.lowercased()) throws -> PCAInboundApplicationIntent {
         let response = try inboundResponse(id: id)
         return PCAInboundApplicationIntent(operationId: operationId, scope: response.scope,
-            envelope: XCTUnwrap(response.applied.first), authorityBinding: Data("accepted-context".utf8),
+            envelope: try XCTUnwrap(response.applied.first), authorityBinding: Data("accepted-context".utf8),
             acceptedCommandBinding: Data("accepted-command".utf8), preparedAt: Date(timeIntervalSince1970: 1_760_000_000))
     }
     func testApplicationJournalRestoresPreparedIntentWithoutClaimingApplied() throws {
