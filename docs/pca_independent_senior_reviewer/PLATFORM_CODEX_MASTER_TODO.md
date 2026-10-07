@@ -1604,3 +1604,8 @@ PLATFORM_GATE = No Platform source, projection, Enrollment behavior, or release 
 
 PARENT_DEPENDENCY = Backend build passed; five changed Parent route suites passed 60/60 with no failures/skips, covering child policy, Eye Protection, Web Rules, free-access status, and preferences/Safe Zones. The unconfigured-service cases remain fail-closed and do not prove Web Rules persistence/delivery.
 PLATFORM_GATE = No Platform source or release gate changed. Parent TODO-12/14/15/20 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`; no commit, push, exact-head CI, live DB action, deployment, or owner acceptance occurred.
+
+### 2026-10-07 19:55 UTC — Parent/mobile checkpoint publication state
+
+PARENT_SOURCE_COMMIT = Local commit `39367226242f4cef6fc8bd1557be7cb2a4dcd267` contains Parent route authorization, Android/iOS inbound-custody work and both master ledgers. Local focused backend/Android/MySQL and Swift-parse evidence is recorded in the Parent ledger. No Platform files changed.
+PLATFORM_GATE = The cached origin tracking ref remains at the prior base; no fresh fetch, push, exact-head CI, Platform implementation, live DB mutation, deployment, or owner acceptance occurred. Parent TODO-12/14/15/20 remain open, so Platform remains `HOLD_PARENT_DEPENDENCY`.
