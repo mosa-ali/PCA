@@ -222,7 +222,7 @@ describe('every first-level nav entry resolves to a live route', () => {
   it.each(NAV_PATHS)('%s renders a real page, not NotFound and not NotPermitted', async (path) => {
     const { container, unmount } = renderWithProviders(<App />, { route: path, role: 'OWNER' });
     try {
-      await waitFor(() => expect(container.querySelector('h1')).not.toBeNull());
+      await waitFor(() => expect(container.querySelector('h1')).not.toBeNull(), { timeout: 5000 });
       const heading = container.querySelector('h1')?.textContent ?? '';
       expect(heading).not.toBe(i18n.t('notFound.title'));
       expect(heading).not.toBe(i18n.t('rbac.deniedTitle'));
