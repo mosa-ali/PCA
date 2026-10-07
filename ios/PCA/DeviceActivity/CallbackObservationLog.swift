@@ -275,6 +275,11 @@ public final class LocalDeviceActivityPolicyCoordination: DeviceActivityPolicyCo
 }
 #if canImport(Darwin)
 import Darwin
+import func Darwin.flock
+
+// Scoped import plus an explicit function type excludes Darwin.flock the
+// record-lock structure from Swift overload resolution.
+private let deviceActivitySystemFlock: (Int32, Int32) -> Int32 = flock
 public enum DeviceActivityPolicyStorageError: Error { case appGroupUnavailable, lockUnavailable }
 public final class AppGroupDeviceActivityPolicyCoordination: DeviceActivityPolicyCoordination {
     private let path: String
@@ -289,10 +294,10 @@ public final class AppGroupDeviceActivityPolicyCoordination: DeviceActivityPolic
         let fd = path.withCString { Darwin.open($0, O_CREAT | O_RDWR | O_CLOEXEC, mode_t(0o600)) }
         guard fd >= 0 else { throw DeviceActivityPolicyStorageError.lockUnavailable }
         defer { Darwin.close(fd) }
-        while Darwin.flock(fd, LOCK_EX) != 0 {
+        while deviceActivitySystemFlock(fd, LOCK_EX) != 0 {
             if errno != EINTR { throw DeviceActivityPolicyStorageError.lockUnavailable }
         }
-        defer { Darwin.flock(fd, LOCK_UN) }
+        defer { deviceActivitySystemFlock(fd, LOCK_UN) }
         return try operation()
     }
 }

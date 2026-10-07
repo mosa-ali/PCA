@@ -1,6 +1,16 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
-## Current iOS boundary registration wave — 2026-10-07
+## Current Apple compile correction — 2026-10-07
+
+PUBLISHED_SOURCE = 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a; push/fetch/direct-server equality and all twelve remote paths verified. Published-source CI 37574599038 is terminal FAILURE: 27/27 completed, 26 success, sole Apple compile failure before XCTest. This run tested 80e773b8, not the local correction.
+CAUSE = Apple compiler resolves module-qualified Darwin.flock as the C record-lock structure. Errors at CallbackObservationLog.swift:292/295 occur before XCTest execution.
+CORRECTION = Explicit function-only import plus a typed (Int32, Int32) -> Int32 alias selects the existing flock function. Lock flags, EINTR handling, protected operation, unlock and descriptor cleanup are retained; no security bypass or test suppression.
+LOCAL_EVIDENCE = Corrected Swift frontend parse and diff check PASS. Five required mobile specialists and independent QA APPROVE the one-file source correction with zero blockers/majors/minors. Final four-path source/ledger review is APPROVE from 5/5 required mobile specialists and independent QA, with zero blockers/majors/minors; new Apple build/XCTest and complete exact-head CI are mandatory. Last fully green source remains 366fda997ed57239533c56a4d115c2799207783e (37572120232 SUCCESS 27/27).
+CONTINUATION = Coordinated backend/Android/iOS relay traversal is being source-qualified; Android-only hasMore looping cannot traverse obstructed queued heads. No migration, live DB, Azure or crypto authority is changed by the compile correction. Repository work remains YES; board retained 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; Platform HOLD_PARENT_DEPENDENCY.
+NEXT_ACTION = Publish reviewed compile correction, verify remote equality/paths, and require fresh exact-head CI. Continue qualified repository work while preserving real-device/live/owner gates.
+
+
+## Published iOS boundary registration wave — 2026-10-07
 
 PUBLISHED_GREEN_BASE = 366fda997ed57239533c56a4d115c2799207783e; ordinary push/fetch/direct-server equality verified. Quality Gates 37572120232 is terminal SUCCESS: every one of 27 jobs succeeded, including Apple build/XCTest, Android, both browser jobs, dependency audit and disposable-MySQL certification. This validates the published correction, not the following uncommitted source.
 IMPLEMENTATION = Nine Swift source/test paths now plan deduplicated window timezone edges, policy midnight when a daily limit exists, and future absolute UTC exception/bonus boundaries. Each auxiliary monitor is a twelve-hour reevaluation envelope; it never independently allows or blocks. Nineteen auxiliary monitors plus one health anchor is the ceiling; overflow rejects the whole plan before replacement.
@@ -22,7 +32,7 @@ REVIEW = Five required mobile specialists APPROVE source corrections, zero block
 COMPLETION_SCOPE = Complete all implementable repository work. Physical Android/iOS, live pca_pro, Azure and production configuration evidence remain external; no evidence is fabricated or external mutation forced. Repository work remains YES; canonical board retained at 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform HOLD_PARENT_DEPENDENCY retained.
 
 
-WORKSPACE_EXECUTION_GATE = RESTORED. Published 366fda997ed57239533c56a4d115c2799207783e passed Quality Gates 37572120232 SUCCESS 27/27; next iOS boundary registration source is uncommitted and requires new CI.
+WORKSPACE_EXECUTION_GATE = RESTORED. Published 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a has failed Apple compilation in CI 37574599038; scoped function-import correction is local. Last fully green checkpoint is 366fda99 (37572120232 SUCCESS 27/27).
 
 ## Mission
 
@@ -39,13 +49,13 @@ Checkpoint 3ef103fe exact-head Quality Gates run 37393457495 is terminal SUCCESS
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion  
 BRANCH = pca-dev  
 MISSION_STATUS = IN_PROGRESS  
-LAST_UPDATED_UTC = 2026-10-07 05:01 UTC (published correction green; local iOS boundary registration wave)
+LAST_UPDATED_UTC = 2026-10-07 05:11 UTC (Apple compile correction; latest CI observation recorded)
 WAVE_BASE_SHA = 3ef103fe0d85dc0c7563edeefc09caabbd056454 (published hasMore checkpoint; Quality Gates 37393457495 SUCCESS 27/27)
 LAST_GREEN_REMOTE_SHA = 366fda997ed57239533c56a4d115c2799207783e (Quality Gates 37572120232 SUCCESS 27/27)
-CURRENT_WAVE_STATUS = iOS boundary registration and coherent generation storage implemented locally; final frozen review/publication/new Apple CI pending.
-WAVE_CONTENT_SHA = Uncommitted iOS boundary source/test/ledger checkpoint based on 366fda997ed57239533c56a4d115c2799207783e.
-EXACT_HEAD_CI_SHA = 366fda997ed57239533c56a4d115c2799207783e, Quality Gates 37572120232 SUCCESS 27/27; all job conclusions inspected.
-LOCAL_STATE = HEAD, origin/pca-dev, FETCH_HEAD and direct server agree at 366fda997ed57239533c56a4d115c2799207783e. Nine Swift paths plus three ledgers are locally modified; unrelated untracked paths excluded.
+CURRENT_WAVE_STATUS = Boundary group source published; Apple compile failed on flock name resolution. Local scoped function-import correction approved; new CI required.
+WAVE_CONTENT_SHA = Uncommitted one-file Swift compile correction plus three ledgers based on 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a.
+EXACT_HEAD_CI_SHA = 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a, run 37574599038 IN_PROGRESS with Apple failure; latest 25 completed, 24 success, two running. Not accepted.
+LOCAL_STATE = Published 80e773b87e3cf4ba9de88e02ea1a7c8cb5ab7c7a verified equal to origin/FETCH_HEAD/server. One Swift correction plus three ledgers are modified; unrelated untracked paths excluded.
 COORDINATOR = Current Codex agent  
 CURRENT_ACTIVE_TODO = TODO-12, TODO-14 (52/52 declarations now have MySQL HTTP status evidence; three remain service-gated, aggregate NOT_YET_PROVEN), TODO-15, TODO-19 and TODO-20 remain IN_PROGRESS; TODO-18/21/22/23 remain owner/release gated. Formal board is 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED. Platform remains `HOLD_PARENT_DEPENDENCY`.
 CHILD_APP_RELEASE_STATE = Owner confirmed `PUBLIC_LANDING_PAGE` at `https://www.pcasafe.com/child-app/`; Parent production build defaults to this URL. Deploy and verify the Public route before deploying Parent; downstream signed installer/store destination and signing fingerprint remain unconfigured; Add Device/backend enrollment readiness = CLOSED. A current live route request could not connect because the configured proxy refused `127.0.0.1:9`; live availability remains unverified.
