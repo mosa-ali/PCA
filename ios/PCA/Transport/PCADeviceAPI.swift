@@ -146,25 +146,35 @@ public struct PCADeviceSessionClient {
         self.decoder = decoder
     }
 
-    public func establishSession(deviceId: String) async throws -> PCADeviceSessionResponse {
+    @MainActor public func establishSession(deviceId: String, assertContinuity: @MainActor () throws -> Void = {}) async throws -> PCADeviceSessionResponse {
+        try Task.checkCancellation()
+        try assertContinuity()
         var challengeRequest = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/devices/\(deviceId)/challenge"))
         challengeRequest.httpMethod = "POST"
         let challenge = try await decode(challengeRequest, as: PCADeviceSessionChallenge.self)
+        try Task.checkCancellation()
+        try assertContinuity()
         let signature: String
         do { signature = try proof.sign(challenge: challenge.nonce) }
         catch let error as PCADeviceProofError { throw error }
         catch { throw PCAAPIError.rejected }
+        try Task.checkCancellation()
+        try assertContinuity()
 
         var sessionRequest = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/devices/\(deviceId)/session"))
         sessionRequest.httpMethod = "POST"
         sessionRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         sessionRequest.httpBody = try JSONSerialization.data(withJSONObject: ["challengeId": challenge.challengeId, "signature": signature])
-        return try await decode(sessionRequest, as: PCADeviceSessionResponse.self)
+        let response = try await decode(sessionRequest, as: PCADeviceSessionResponse.self)
+        try Task.checkCancellation()
+        try assertContinuity()
+        return response
     }
 
     private func decode<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
+        catch is CancellationError { throw CancellationError() }
         catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
         catch { throw PCAAPIError.transport(.network) }
         switch response.statusCode {

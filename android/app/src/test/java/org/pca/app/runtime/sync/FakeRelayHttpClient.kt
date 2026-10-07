@@ -50,7 +50,7 @@ class FakeRelayHttpClient(
         return OutboundBatchResult(items.map { OutboundItemOutcome(it.messageId, "QUEUED") }, emptyList())
     }
 
-    override suspend fun listInbound(sessionToken: String): InboundListResult {
+    override suspend fun listInbound(sessionToken: String, cursor: String?): InboundListResult {
         inboundListCalls++
         if (failNextList) {
             failNextList = false

@@ -1,6 +1,11 @@
 import Foundation
 import Combine
 import SwiftUI
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
+
+public enum PCARuntimeCustodyOutcome: Equatable { case complete, morePending, retryableFailure, blocked, ineligible }
 #if canImport(ManagedSettings) && canImport(FamilyControls)
 import ManagedSettings
 import FamilyControls
@@ -230,6 +235,7 @@ public final class PCAApplicationModel: ObservableObject {
     private let now: () -> Date
     private var started = false
     private var runtimeSyncInProgress = false
+    private var sessionEstablishmentInProgress = false
     private var pendingDeviceId: String?
 
     public init(dependencies: PCAProductionDependencies, now: @escaping () -> Date = { Date() }) {
@@ -260,8 +266,7 @@ public final class PCAApplicationModel: ObservableObject {
         if authorization.permitsEnforcement {
             Task { await self.beginEnrollmentIfPossible() }
         }
-        Task { await self.establishSessionIfNeeded() }
-        Task { await self.synchronizeRuntime() }
+        Task { await self.establishSessionIfNeeded(); await self.synchronizeRuntime() }
     }
 
     public func sceneBecameActive() {
@@ -274,8 +279,7 @@ public final class PCAApplicationModel: ObservableObject {
         if authorization.permitsEnforcement {
             Task { await self.beginEnrollmentIfPossible() }
         }
-        Task { await self.establishSessionIfNeeded() }
-        Task { await self.synchronizeRuntime() }
+        Task { await self.establishSessionIfNeeded(); await self.synchronizeRuntime() }
     }
 
     public func requestAuthorization() async {
@@ -619,10 +623,16 @@ public final class PCAApplicationModel: ObservableObject {
         }
     }
 
-    private func establishSessionIfNeeded() async {
+    @MainActor func establishSessionIfNeeded() async {
+        guard !sessionEstablishmentInProgress, !Task.isCancelled else { return }
+        sessionEstablishmentInProgress = true
+        defer { sessionEstablishmentInProgress = false }
         guard let deviceId = pendingDeviceId, let sessionClient = dependencies.sessionClient else { return }
-        if let existing = try? dependencies.sessionStore.loadSession(),
-           existing.deviceId == deviceId,
+        let priorSession: PCADeviceSession?
+        do { priorSession = try dependencies.sessionStore.loadSession() }
+        catch { lastError = .recoverable; return }
+        if let existing = priorSession,
+           pcaOpaqueEqual(existing.deviceId, deviceId),
            existing.expiresAt > now() {
             return
         }
@@ -632,12 +642,37 @@ public final class PCAApplicationModel: ObservableObject {
             return
         }
         applicationState = .recovering
+        let capturedRoot = dependencies.firstDeviceRootStore?.current()
         do {
-            let response = try await sessionClient.establishSession(deviceId: deviceId)
+            try Task.checkCancellation()
+            if dependencies.firstDeviceRootStore != nil {
+                guard let capturedRoot, capturedRoot.state == .rootCommitted,
+                      pcaOpaqueEqual(capturedRoot.seed.deviceId, deviceId) else { throw PCADeviceProofError.secureKeyUnavailable }
+            }
+            try dependencies.assertRuntimeKeyCustody(deviceId)
+            let response = try await sessionClient.establishSession(deviceId: deviceId, assertContinuity: {
+                try Task.checkCancellation()
+                guard pcaOpaqueEqual(self.pendingDeviceId, deviceId),
+                      self.dependencies.firstDeviceRootStore?.current() == capturedRoot,
+                      try self.dependencies.sessionStore.loadSession() == priorSession else { throw PCADeviceProofError.secureKeyUnavailable }
+                try self.dependencies.assertRuntimeKeyCustody(deviceId)
+            })
+            try Task.checkCancellation()
+            guard pcaOpaqueEqual(pendingDeviceId, deviceId),
+                  dependencies.firstDeviceRootStore?.current() == capturedRoot else { throw PCADeviceProofError.secureKeyUnavailable }
+            // A completion cannot overwrite a session published by another caller.
+            guard try dependencies.sessionStore.loadSession() == priorSession else { return }
+            try dependencies.assertRuntimeKeyCustody(deviceId)
             let session = PCADeviceSession(deviceId: deviceId, sessionToken: response.sessionToken, expiresAt: response.expiresAt)
             try dependencies.sessionStore.saveSession(session)
             await reportProtectionStatusIfPossible(session: session)
+            try Task.checkCancellation()
+            guard pcaOpaqueEqual(pendingDeviceId, deviceId), dependencies.firstDeviceRootStore?.current() == capturedRoot,
+                  try dependencies.sessionStore.loadSession() == session else { return }
+            try dependencies.assertRuntimeKeyCustody(deviceId)
             applicationState = stateForCurrentData()
+        } catch is CancellationError {
+            return
         } catch is PCADeviceProofError {
             applicationState = .enrollmentBlockedBySecurityGate
             lastError = .securityGate
@@ -651,65 +686,155 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     @MainActor func synchronizeRuntime() async {
-        guard !runtimeSyncInProgress else { return }
+        do { _ = try await synchronizeRuntimeCampaign() }
+        catch is CancellationError { syncConnectionState = .stale }
+        catch { syncConnectionState = .stale }
+    }
+
+    /// Existing-session-only transport campaign, shared with OS background recovery.
+    /// No enrollment, authentication creation, permission prompt or crypto application.
+    @MainActor func synchronizeRuntimeCampaign() async throws -> PCARuntimeCustodyOutcome {
+        try Task.checkCancellation()
+        guard !runtimeSyncInProgress else { return .retryableFailure }
         runtimeSyncInProgress = true
         defer { runtimeSyncInProgress = false }
         guard let runtimeSyncClient = dependencies.runtimeSyncClient,
-              let inbox = dependencies.inboundInbox,
-              let session = try? dependencies.sessionStore.loadSession(),
+              let inbox = dependencies.inboundInbox else {
+            syncConnectionState = .stale
+            return .blocked
+        }
+        let retainedSession: PCADeviceSession?
+        do { retainedSession = try dependencies.sessionStore.loadSession() }
+        catch {
+            // Locked or corrupt Keychain state is retained; it is not missing enrollment.
+            syncConnectionState = .stale
+            return .blocked
+        }
+        guard let session = retainedSession,
               session.expiresAt > now() else {
             syncConnectionState = .stale
-            return
+            return .ineligible
+        }
+        guard let rootStore = dependencies.firstDeviceRootStore,
+              let capturedRoot = rootStore.current(), capturedRoot.state == .rootCommitted,
+              pcaOpaqueEqual(capturedRoot.seed.deviceId, session.deviceId),
+              let expectedFamilyId = capturedRoot.familyId, !expectedFamilyId.isEmpty else {
+            syncConnectionState = .stale
+            return .blocked
+        }
+        let incarnation: String
+        #if canImport(CryptoKit)
+        incarnation = SHA256.hash(data: Data(session.sessionToken.utf8)).map { String(format: "%02x", $0) }.joined()
+        #else
+        return .blocked
+        #endif
+        let started = ProcessInfo.processInfo.systemUptime
+        var ackCount = 0
+        func assertContinuity() throws {
+            try Task.checkCancellation()
+            guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else { throw PCAAPIError.unauthorized }
+            guard rootStore.current() == capturedRoot else { throw PCADeviceProofError.secureKeyUnavailable }
+            try dependencies.assertRuntimeKeyCustody(session.deviceId)
+        }
+        func validateScope(_ scope: PCAInboundScope) throws {
+            guard pcaOpaqueEqual(scope.recipientDeviceId, session.deviceId),
+                  pcaOpaqueEqual(scope.familyId, expectedFamilyId) else { throw PCAInboundInboxError.unavailable }
+        }
+        func acknowledgeStored(_ scope: PCAInboundScope) async throws -> Bool {
+            try validateScope(scope)
+            try assertContinuity()
+            for record in try inbox.pendingAcknowledgements(scope: scope) {
+                try assertContinuity()
+                guard ackCount < 100, ProcessInfo.processInfo.systemUptime - started < 30 else { return false }
+                try await runtimeSyncClient.acknowledge(messageId: record.envelope.messageId, session: session)
+                try assertContinuity()
+                try inbox.markAcknowledged(record.envelope, scope: scope)
+                ackCount += 1
+            }
+            return true
         }
         syncConnectionState = .syncing
         do {
-            try dependencies.assertRuntimeKeyCustody(session.deviceId)
-            let response = try await runtimeSyncClient.pull(session: session)
-            guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
-                throw PCAAPIError.unauthorized
+            try assertContinuity()
+            var cursor = try inbox.navigation(sessionIncarnation: incarnation)?.nextCursor
+            var resetRejectedCursor = false
+            if let scope = try inbox.retainedScope(), !(try await acknowledgeStored(scope)) {
+                syncConnectionState = .syncPending
+                return .morePending
             }
-            try inbox.capture(response, sessionDeviceId: session.deviceId)
-            for record in try inbox.pendingAcknowledgements(scope: response.scope) {
-                try dependencies.assertRuntimeKeyCustody(session.deviceId)
-                guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
-                    throw PCAAPIError.unauthorized
+            for _ in 0..<4 {
+                try assertContinuity()
+                guard ProcessInfo.processInfo.systemUptime - started < 30 else {
+                    syncConnectionState = .syncPending
+                    return .morePending
                 }
-                try await runtimeSyncClient.acknowledge(messageId: record.envelope.messageId, session: session)
-                try inbox.markAcknowledged(record.envelope, scope: response.scope)
+                let response: PCAInboundRuntimeSyncResponse
+                do { response = try await runtimeSyncClient.pull(session: session, cursor: cursor) }
+                catch PCAInboundNavigationError.invalidCursor {
+                    try assertContinuity()
+                    guard let rejected = cursor, !resetRejectedCursor else { throw PCAInboundInboxError.unavailable }
+                    try inbox.resetRejectedNavigation(sessionIncarnation: incarnation, cursor: rejected)
+                    cursor = nil; resetRejectedCursor = true
+                    continue
+                }
+                try assertContinuity()
+                try validateScope(response.scope)
+                try inbox.capture(response, sessionDeviceId: session.deviceId, sessionIncarnation: incarnation, requestedCursor: cursor)
+                guard try await acknowledgeStored(response.scope) else {
+                    syncConnectionState = .syncPending
+                    return .morePending
+                }
+                if let navigation = response.navigation, navigation.hasMore {
+                    guard let next = navigation.nextCursor, next != cursor else { throw PCAInboundInboxError.unavailable }
+                    cursor = next
+                    continue
+                }
+                try assertContinuity()
+                let pendingCrypto = try inbox.pendingCrypto(scope: response.scope)
+                let unresolved = try inbox.hasUnresolvedRelayWork()
+                syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
+                    isTransportConnected: true,
+                    isSyncing: false,
+                    hasPendingLocalWork: !pendingCrypto.isEmpty || response.hasMore || unresolved ||
+                        !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
+                    lastSuccessfulSyncAtUtc: now(),
+                    nowUtc: now(),
+                    staleThresholdSeconds: 24 * 60 * 60
+                ))
+                if !pendingCrypto.isEmpty {
+                    dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                    applicationState = stateForCurrentData()
+                }
+                if ProcessInfo.processInfo.systemUptime - started < 30 {
+                    try assertContinuity()
+                    await reportProtectionStatusIfPossible(session: session)
+                    try assertContinuity()
+                }
+                return .complete
             }
-            guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else {
-                throw PCAAPIError.unauthorized
-            }
-            let pendingCrypto = try inbox.pendingCrypto(scope: response.scope)
-            try dependencies.assertRuntimeKeyCustody(session.deviceId)
-            syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
-                isTransportConnected: true,
-                isSyncing: false,
-                hasPendingLocalWork: !pendingCrypto.isEmpty || response.hasMore ||
-                    !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
-                lastSuccessfulSyncAtUtc: now(),
-                nowUtc: now(),
-                staleThresholdSeconds: 24 * 60 * 60
-            ))
-            if !pendingCrypto.isEmpty {
-                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
-                applicationState = stateForCurrentData()
-            }
-            await reportProtectionStatusIfPossible(session: session)
+            syncConnectionState = .syncPending
+            return .morePending
+        } catch is CancellationError {
+            syncConnectionState = .stale
+            throw CancellationError()
         } catch let error as PCAAPIError {
             syncConnectionState = (error == .unauthorized) ? .stale : .offline
             if error == .unauthorized, (try? dependencies.sessionStore.loadSession()) == session {
                 try? dependencies.sessionStore.clearSession()
             }
             applicationState = error == .unauthorized ? .recovering : .offline
+            switch error {
+            case .unauthorized, .rejected, .unavailable, .transport(.network), .transport(.timeout): return .retryableFailure
+            default: return .blocked
+            }
         } catch is PCADeviceProofError {
-            if (try? dependencies.sessionStore.loadSession()) == session { try? dependencies.sessionStore.clearSession() }
             syncConnectionState = .stale
             applicationState = .enrollmentBlockedBySecurityGate
             lastError = .securityGate
+            return .blocked
         } catch {
-            syncConnectionState = .offline
-            applicationState = .offline
+            syncConnectionState = .stale
+            return .blocked
         }
     }
 
@@ -841,7 +966,7 @@ public enum PCAProductionCompositionRoot {
             inboundInbox: inboundInbox,
             assertRuntimeKeyCustody: { deviceId in
                 guard let root = firstDeviceRootStore.current(), root.state == .rootCommitted,
-                      root.seed.deviceId == deviceId, deviceProofProvider.signingPublicKey == root.seed.dskPublicKeyBase64 else {
+                      pcaOpaqueEqual(root.seed.deviceId, deviceId), deviceProofProvider.signingPublicKey == root.seed.dskPublicKeyBase64 else {
                     throw PCADeviceProofError.secureKeyUnavailable
                 }
                 _ = try deviceProofProvider.sign(challenge: "PCA_LOCAL_RUNTIME_KEY_CUSTODY_V1")

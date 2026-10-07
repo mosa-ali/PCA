@@ -27,6 +27,7 @@ private fun buildOrchestrator(
     now: Long = 1_700_000_000_000L,
     inbox: PersistentCiphertextInbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1"),
     assertKeyCustody: () -> Unit = {},
+    expectedFamilyId: String = "family-1",
 ): ReconnectSyncOrchestrator {
     val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { now }, assertKeyCustody = assertKeyCustody)
     return ReconnectSyncOrchestrator(
@@ -37,6 +38,7 @@ private fun buildOrchestrator(
         inboundHandler = handler,
         nowEpochMillis = { now },
         ciphertextInbox = inbox,
+        expectedFamilyId = expectedFamilyId,
     )
 }
 
@@ -48,6 +50,137 @@ private fun inbound(id: String): InboundAppliedEnvelope {
 }
 
 class ReconnectSyncOrchestratorTest {
+    @Test fun `rejected session is reauthenticated on the next attempt`() = runTest {
+        val relay = FakeRelayHttpClient()
+        var authentications = 0
+        var pulls = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): org.pca.app.runtime.sync.transport.DeviceSessionInfo {
+                authentications++
+                return relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "session-$authentications")
+            }
+            override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
+                if (++pulls == 1) throw org.pca.app.runtime.sync.transport.RelayHttpException(
+                    org.pca.app.runtime.sync.transport.RelayHttpErrorCode.Unauthorized, "rejected")
+                assertEquals("session-2", sessionToken)
+                return relay.listInbound(sessionToken, cursor)
+            }
+        }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), transport)
+        assertEquals(RuntimeCustodyOutcome.RETRYABLE_FAILURE, orchestrator.syncNow())
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
+        assertEquals(2, authentications)
+    }
+
+    @Test fun `rejected saved cursor starts one fresh bounded sweep without losing ciphertext`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        val incarnation = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+        inbox.capture(RuntimeInboxScope("family-1", "device-1"), listOf(inbound("retained").envelopeWire!!),
+            navigation = org.pca.app.runtime.sync.transport.InboundNavigation("oldCursor", true, false, incarnation),
+            expectedSessionIncarnation = incarnation)
+        val cursors = mutableListOf<String?>()
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
+                cursors.add(cursor)
+                if (cursor != null) throw org.pca.app.runtime.sync.transport.RelayHttpException(
+                    org.pca.app.runtime.sync.transport.RelayHttpErrorCode.InvalidCursor, "expired")
+                return relay.listInbound(sessionToken, cursor).copy(navigation =
+                    org.pca.app.runtime.sync.transport.InboundNavigation(null, false, false, incarnation))
+            }
+        }
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), transport, inbox = inbox)
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
+        assertEquals(listOf("oldCursor", null), cursors)
+        assertEquals(1, inbox.pendingCryptoCount())
+        assertEquals(listOf("retained"), relay.acknowledgedMessageIds)
+    }
+
+    @Test fun `ordinary invalid request does not reset stored navigation`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        val incarnation = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+        inbox.capture(RuntimeInboxScope("family-1", "device-1"), emptyList(),
+            navigation = org.pca.app.runtime.sync.transport.InboundNavigation("savedCursor", true, false, incarnation),
+            expectedSessionIncarnation = incarnation)
+        var pulls = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
+                pulls++
+                throw org.pca.app.runtime.sync.transport.RelayHttpException(
+                    org.pca.app.runtime.sync.transport.RelayHttpErrorCode.InvalidRequest, "malformed")
+            }
+        }
+        assertEquals(RuntimeCustodyOutcome.BLOCKED,
+            buildOrchestrator(FakeDurableBackingStore(), transport, inbox = inbox).syncNow())
+        assertEquals(1, pulls)
+        assertEquals("savedCursor", inbox.navigationFor(incarnation)?.nextCursor)
+    }
+
+    @Test fun `transport failure requests retry while custody failure is blocked`() = runTest {
+        val failedRelay = FakeRelayHttpClient().apply { failNextList = true }
+        assertEquals(RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            buildOrchestrator(FakeDurableBackingStore(), failedRelay).syncNow())
+        val relay = FakeRelayHttpClient()
+        assertEquals(RuntimeCustodyOutcome.BLOCKED,
+            buildOrchestrator(FakeDurableBackingStore(), relay, assertKeyCustody = { error("key unavailable") }).syncNow())
+        assertEquals(0, relay.inboundListCalls)
+    }
+
+    @Test fun `terminal custody completes scheduling while ciphertext still awaits crypto`() = runTest {
+        val relay = FakeRelayHttpClient().apply { enqueueInbound(inbound("pending-crypto")) }
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox)
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
+        assertEquals(1, inbox.pendingCryptoCount())
+        assertEquals(SyncConnectionState.SYNC_PENDING, orchestrator.connectionState.value)
+    }
+
+    @Test fun `bounded modern campaign resumes durable cursor on next invocation`() = runTest {
+        val backing = InMemoryPersistentStateStore()
+        val inbox = PersistentCiphertextInbox(backing, "device-1")
+        val relay = FakeRelayHttpClient()
+        val incarnation = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+        val cursors = mutableListOf<String?>()
+        val modern = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
+                cursors.add(cursor)
+                val page = cursors.size
+                val more = page < 5
+                return org.pca.app.runtime.sync.transport.InboundListResult(emptyList(), emptyList(), emptyList(),
+                    RuntimeInboxScope("family-1", "device-1"), more,
+                    navigation = org.pca.app.runtime.sync.transport.InboundNavigation(
+                        if (more) "cursor$page" else null, more, false, incarnation))
+            }
+        }
+        val first = buildOrchestrator(FakeDurableBackingStore(), modern, inbox = inbox)
+        assertEquals(RuntimeCustodyOutcome.MORE_PENDING, first.syncNow())
+        assertEquals(listOf(null, "cursor1", "cursor2", "cursor3"), cursors)
+        val restored = PersistentCiphertextInbox(backing, "device-1")
+        val second = buildOrchestrator(FakeDurableBackingStore(), modern, inbox = restored)
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, second.syncNow())
+        assertEquals("cursor4", cursors.last())
+        assertEquals(null, restored.navigationFor(incarnation)?.nextCursor)
+    }
+
+    @Test fun `retained old family ciphertext is not acknowledged under a new root`() = runTest {
+        val relay = FakeRelayHttpClient()
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        inbox.capture(RuntimeInboxScope("family-1", "device-1"), listOf(inbound("old-family").envelopeWire!!))
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox,
+            expectedFamilyId = "family-2")
+
+        orchestrator.syncNow()
+
+        assertTrue(relay.acknowledgedMessageIds.isEmpty())
+        assertEquals(0, relay.inboundListCalls)
+        assertEquals(1, inbox.pendingAcknowledgements(RuntimeInboxScope("family-1", "device-1")).size)
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+    }
+
     @Test fun `server continuation keeps empty inbound page pending without paging or acknowledgement`() = runTest {
         val relay = FakeRelayHttpClient().apply { inboundHasMore = true }
         val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay)
@@ -81,18 +214,31 @@ class ReconnectSyncOrchestratorTest {
         assertTrue(relay.acknowledgedMessageIds.isEmpty())
     }
 
-    @Test fun `key loss after pull retains ciphertext without acknowledgement`() = runTest {
+    @Test fun `key loss after pull prevents capture and leaves relay ciphertext unacknowledged`() = runTest {
         val relay = FakeRelayHttpClient()
         relay.enqueueInbound(inbound("message-1"))
         var keyAvailable = true
         val lostKey = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
-            override suspend fun listInbound(sessionToken: String) = relay.listInbound(sessionToken).also { keyAvailable = false }
+            override suspend fun listInbound(sessionToken: String, cursor: String?) = relay.listInbound(sessionToken).also { keyAvailable = false }
         }
         val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
         val orchestrator = buildOrchestrator(FakeDurableBackingStore(), lostKey, inbox = inbox,
             assertKeyCustody = { check(keyAvailable) })
         orchestrator.syncNow()
         assertTrue(relay.acknowledgedMessageIds.isEmpty())
+        assertEquals(0, inbox.pendingCryptoCount())
+        assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
+    }
+
+    @Test fun `stored pending acknowledgement is recovered before a failed new pull`() = runTest {
+        val relay = FakeRelayHttpClient().apply { failNextList = true }
+        val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
+        val retained = inbound("previously-captured")
+        inbox.capture(RuntimeInboxScope("family-1", "device-1"), listOf(retained.envelopeWire!!))
+        val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay, inbox = inbox)
+        orchestrator.syncNow()
+        assertEquals(listOf("previously-captured"), relay.acknowledgedMessageIds)
+        assertTrue(inbox.pendingAcknowledgements(RuntimeInboxScope("family-1", "device-1")).isEmpty())
         assertEquals(1, inbox.pendingCryptoCount())
         assertTrue(orchestrator.connectionState.value != SyncConnectionState.LIVE)
     }
@@ -100,7 +246,7 @@ class ReconnectSyncOrchestratorTest {
     @Test fun `uncaptured relay ids remain pending and never report LIVE`() = runTest {
         val relay = FakeRelayHttpClient()
         val incomplete = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
-            override suspend fun listInbound(sessionToken: String) = org.pca.app.runtime.sync.transport.InboundListResult(
+            override suspend fun listInbound(sessionToken: String, cursor: String?) = org.pca.app.runtime.sync.transport.InboundListResult(
                 emptyList(), listOf("malformed-1"), listOf("overflow-1"), RuntimeInboxScope("family-1", "device-1"))
         }
         val orchestrator = buildOrchestrator(FakeDurableBackingStore(), incomplete)
@@ -115,7 +261,7 @@ class ReconnectSyncOrchestratorTest {
         var active = 0
         var maximum = 0
         val delayed = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
-            override suspend fun listInbound(sessionToken: String): org.pca.app.runtime.sync.transport.InboundListResult {
+            override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
                 active++
                 maximum = maxOf(maximum, active)
                 delay(10)
@@ -216,7 +362,7 @@ class ReconnectSyncOrchestratorTest {
         var time = 0L
         val orchestrator = buildOrchestrator(store, relay, now = time)
         val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { time })
-        val realOrchestrator = ReconnectSyncOrchestrator(FakeConnectivitySource(), sessionManager, relay, outbox, RecordingInboundHandler(), nowEpochMillis = { time })
+        val realOrchestrator = ReconnectSyncOrchestrator(FakeConnectivitySource(), sessionManager, relay, outbox, RecordingInboundHandler(), nowEpochMillis = { time }, expectedFamilyId = "family-1")
 
         repeat(org.pca.app.runtime.sync.backoff.MAX_RETRY_COUNT + 2) {
             relay.failNextSubmit = true

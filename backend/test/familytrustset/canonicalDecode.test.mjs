@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { parseFamilyTrustSetEpoch } from '../../dist/familytrustset/parse.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import {
   decodeCanonicalTrustSetEpoch,
+  decodeCanonicalTrustSetEpochBytes,
   MAX_CANONICAL_TRUST_SET_LENGTH,
   TrustSetEpochDecodeError,
 } from '../../dist/familytrustset/decode.js';
@@ -65,6 +69,63 @@ function buildCanonical(fields) {
 function assertRejects(bytes) {
   assert.throws(() => decodeCanonicalTrustSetEpoch(bytes), TrustSetEpochDecodeError);
 }
+
+test('shared untrusted Trust Set vectors pin backend bytes, hashes, dates and rejection corpus', () => {
+  const fixtures = JSON.parse(readFileSync(new URL('../../../contracts/family-trust-set/canonical-vectors.json', import.meta.url), 'utf8'));
+  assert.equal(fixtures.version, 1);
+  for (const fixture of fixtures.vectors) {
+    assert.deepEqual(JSON.parse(fixture.wireJson), fixture.wire, fixture.name);
+    const candidate = parseFamilyTrustSetEpoch(JSON.parse(fixture.wireJson));
+    assert.ok(candidate, fixture.name);
+    const canonical = canonicalizeTrustSetEpoch(candidate);
+    assert.equal(canonical, fixture.canonical, fixture.name);
+    assert.equal(createHash('sha256').update(canonical, 'utf8').digest('hex'), fixture.sha256, fixture.name);
+    const decoded = decodeCanonicalTrustSetEpoch(fixture.canonical);
+    assert.equal(decoded.signature, '', fixture.name);
+    assert.equal(canonicalizeTrustSetEpoch(decoded), fixture.canonical, fixture.name);
+    assert.equal(decoded.issuedAt.toISOString(), fixture.wire.issuedAt, fixture.name);
+    assert.equal(canonicalizeTrustSetEpoch(decodeCanonicalTrustSetEpochBytes(Buffer.from(fixture.canonical))), fixture.canonical, fixture.name);
+  }
+  for (const fixture of fixtures.rejectedCanonical) {
+    if (fixture.canonicalBytesBase64) assert.throws(() => decodeCanonicalTrustSetEpochBytes(Buffer.from(fixture.canonicalBytesBase64, 'base64')), TrustSetEpochDecodeError);
+    else assertRejects(fixture.canonical);
+  }
+  for (const fixture of fixtures.rejectedWire) assert.equal(parseFamilyTrustSetEpoch(JSON.parse(fixture.wireJson)), null, fixture.name);
+});
+
+test('raw canonical byte decoder rejects invalid UTF-8, a leading BOM and excessive input without replacement', () => {
+  for (const raw of [Buffer.from([0xc0, 0xaf]), Buffer.from([0xed, 0xa0, 0x80]), Buffer.from([0xf0, 0x9f, 0x98]),
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(encode(epoch()))]),
+    Buffer.alloc(MAX_CANONICAL_TRUST_SET_LENGTH * 3 + 1)]) {
+    assert.throws(() => decodeCanonicalTrustSetEpochBytes(raw), TrustSetEpochDecodeError);
+  }
+  const canonical = encode(epoch({ familyId: '\uFEFF-family' }));
+  assert.equal(encode(decodeCanonicalTrustSetEpochBytes(Buffer.from(canonical))), canonical);
+});
+
+test('canonical Trust Set decoder rejects unpaired UTF-16 before accepting replacement-equivalent bytes', () => {
+  const fields = canonicalFields(epoch());
+  for (const malformed of ['\uD800', '\uDC00', 'a\uD800b', '\uD800\uD800', '\uDC00\uD800']) {
+    for (const index of [0, 4, 6, 7, 8, 9]) {
+      assertRejects(buildCanonical(fields.map((field, i) => i === index ? malformed : field)));
+    }
+  }
+});
+
+test('canonical Trust Set decoder preserves valid Unicode and full exact JavaScript ISO range', () => {
+  const dates = ['0000-02-29T00:00:00.000Z', '-000001-01-01T00:00:00.000Z',
+    '+010000-01-01T00:00:00.000Z', '-271821-04-20T00:00:00.000Z', '+275760-09-13T00:00:00.000Z'];
+  for (const issuedAt of dates) {
+    const value = epoch({ familyId: 'أسرة:😀\uFFFD', issuedAt: new Date(issuedAt),
+      entries: [entry({ dskPublicKey: '\u00E9', dekPublicKey: 'e\u0301' })] });
+    const canonical = encode(value);
+    const decoded = decodeCanonicalTrustSetEpoch(canonical);
+    assert.equal(decoded.issuedAt.toISOString(), issuedAt);
+    assert.equal(decoded.entries[0].dskPublicKey, '\u00E9');
+    assert.equal(decoded.entries[0].dekPublicKey, 'e\u0301');
+    assert.equal(encode(decoded), canonical);
+  }
+});
 
 test('TrustSetEpochDecodeError exposes the MALFORMED_CANONICAL_BYTES code', () => {
   try {

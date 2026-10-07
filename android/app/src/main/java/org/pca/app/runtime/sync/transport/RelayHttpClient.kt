@@ -25,6 +25,27 @@ data class InboundAppliedEnvelope(
     /** Complete signed wrapper, retained without discarding epoch/signature/recipient fields. */
     val envelopeWire: String? = null,
 )
+
+/** Server admission metadata only; APPLIED never proves recipient decryption or OS enforcement. */
+enum class InboundReceiptOutcome { APPLIED, HELD_PENDING, REJECTED }
+data class InboundReceipt(val messageId: String, val outcome: InboundReceiptOutcome, val atUtc: String) {
+    init {
+        require(messageId.isNotEmpty() && messageId.length <= 128)
+        require(Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$").matches(atUtc))
+        val instant = java.time.Instant.parse(atUtc)
+        require(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.ROOT)
+            .withZone(java.time.ZoneOffset.UTC).format(instant) == atUtc)
+    }
+}
+
+const val MAX_INBOUND_CURSOR_LENGTH = 6144
+data class InboundNavigation(val nextCursor: String?, val hasMore: Boolean, val hasUnresolved: Boolean, val sessionIncarnation: String) {
+    init {
+        require(Regex("^[0-9a-f]{64}$").matches(sessionIncarnation))
+        require(if (hasMore) nextCursor != null else nextCursor == null)
+        if (nextCursor != null) require(nextCursor.length in 1..MAX_INBOUND_CURSOR_LENGTH && Regex("^[A-Za-z0-9_-]+$").matches(nextCursor))
+    }
+}
 data class InboundListResult(
     val applied: List<InboundAppliedEnvelope>,
     val unparseableMessageIds: List<String>,
@@ -33,6 +54,8 @@ data class InboundListResult(
     val scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope? = null,
     /** Advisory bounded-page continuation; affects pending visibility only, never authority or ACK. */
     val hasMore: Boolean = false,
+    val receipts: List<InboundReceipt> = emptyList(),
+    val navigation: InboundNavigation? = null,
 )
 
 /**
@@ -49,14 +72,14 @@ data class InboundListResult(
  */
 enum class RelayProtectionLevel { STANDARD, PROTECTED, DEGRADED, AUTHORIZATION_REQUIRED, NOT_SUPPORTED }
 
-sealed class RelayHttpErrorCode { object Unauthorized : RelayHttpErrorCode(); object InvalidRequest : RelayHttpErrorCode(); object Network : RelayHttpErrorCode(); object Unknown : RelayHttpErrorCode() }
+sealed class RelayHttpErrorCode { object Unauthorized : RelayHttpErrorCode(); object InvalidRequest : RelayHttpErrorCode(); object InvalidCursor : RelayHttpErrorCode(); object Network : RelayHttpErrorCode(); object Unknown : RelayHttpErrorCode() }
 class RelayHttpException(val errorCode: RelayHttpErrorCode, message: String) : Exception(message)
 
 interface RelayHttpClient {
     suspend fun issueChallenge(deviceId: String): ChallengeResponse
     suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): DeviceSessionInfo
     suspend fun submitOutbound(sessionToken: String, items: List<OutboundSubmitItem>): OutboundBatchResult
-    suspend fun listInbound(sessionToken: String): InboundListResult
+    suspend fun listInbound(sessionToken: String, cursor: String? = null): InboundListResult
     suspend fun acknowledgeInbound(sessionToken: String, messageId: String)
     suspend fun getStatus(sessionToken: String): String
 

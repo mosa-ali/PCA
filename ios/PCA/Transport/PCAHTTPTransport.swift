@@ -41,6 +41,7 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
     }
 
     public func send(_ request: URLRequest) async throws -> PCAHTTPResponse {
+        try Task.checkCancellation()
         guard let url = request.url,
               url.scheme?.lowercased() == "https",
               url.user == nil,
@@ -54,11 +55,14 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
         do {
             #if canImport(FoundationNetworking)
             let (data, response) = try await session.data(for: boundedRequest)
+            try Task.checkCancellation()
             #else
             let (bytes, response) = try await session.bytes(for: boundedRequest)
+            try Task.checkCancellation()
             guard response.expectedContentLength <= Int64(maxResponseBytes) else { throw PCAHTTPTransportError.responseTooLarge }
             var data = Data()
             for try await byte in bytes {
+                try Task.checkCancellation()
                 guard data.count < maxResponseBytes else { throw PCAHTTPTransportError.responseTooLarge }
                 data.append(byte)
             }
@@ -68,6 +72,10 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
                 throw PCAHTTPTransportError.invalidResponse
             }
             return PCAHTTPResponse(statusCode: httpResponse.statusCode, data: data)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as PCAHTTPTransportError {
             throw error
         } catch let error as URLError where error.code == .timedOut {

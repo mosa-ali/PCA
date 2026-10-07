@@ -303,10 +303,12 @@ text = text.replace("/* End PBXContainerItemProxy section */", "\n".join(contain
 
 old_host_debug = 'A10000000000000000001003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_STYLE = Automatic; "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = PCA; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = org.pca.app; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";}; name = Debug; };'
 new_host_debug = old_host_debug.replace("CODE_SIGN_STYLE = Automatic;", "CODE_SIGN_ENTITLEMENTS = PCA/PCA.entitlements; CODE_SIGN_STYLE = Automatic;")
+new_host_debug = new_host_debug.replace("GENERATE_INFOPLIST_FILE = YES;", "GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = PCA/Info.plist;")
 must_replace(old_host_debug, new_host_debug, "host Debug config")
 
 old_host_release = 'A10000000000000000001004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_STYLE = Automatic; "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = PCA; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = org.pca.app; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";}; name = Release; };'
 new_host_release = old_host_release.replace("CODE_SIGN_STYLE = Automatic;", "CODE_SIGN_ENTITLEMENTS = PCA/PCA.entitlements; CODE_SIGN_STYLE = Automatic;")
+new_host_release = new_host_release.replace("GENERATE_INFOPLIST_FILE = YES;", "GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = PCA/Info.plist;")
 must_replace(old_host_release, new_host_release, "host Release config")
 
 text = text.replace("/* End XCBuildConfiguration section */", "\n".join(xcbuildconfig_lines) + "\n/* End XCBuildConfiguration section */")
@@ -314,6 +316,10 @@ text = text.replace("/* End XCConfigurationList section */", "\n".join(xcconfigl
 
 with open(PROJECT_PATH, "w", encoding="utf-8") as f:
     f.write(text)
+
+# Fixed IDs keep additions independent of the legacy counter/tail contracts.
+from wire_family_trust_set_codec import wire_project
+wire_project(PROJECT_PATH)
 
 print("Done. Allocated %d new object IDs." % _counter)
 print("PCA host sources added: %d" % len(sources_files_by_target["PCA"]))

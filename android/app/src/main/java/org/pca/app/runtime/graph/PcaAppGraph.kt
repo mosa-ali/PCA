@@ -12,6 +12,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.pca.app.feature.installapproval.InstallApprovalController
 import org.pca.app.feature.breakshield.BreakShieldTrigger
 import org.pca.app.feature.breakshield.ui.BreakShieldActivity
@@ -424,23 +427,38 @@ class PcaAppGraph private constructor(
     )
 
     private var custodyDeviceId: String? = null
+    private var custodyRoot: org.pca.app.firstdevice.FirstDeviceRootRecord? = null
     private var custodyOrchestrator: ReconnectSyncOrchestrator? = null
     private var custodyJob: Job? = null
+    private val custodyMutex = Mutex()
 
     /** Transport custody only. A committed root never becomes ACTIVE through this path. */
-    internal suspend fun synchronizeRuntimeCustody() {
-        val deviceId = enrolledDeviceIdOrNull() ?: return
-        val root = firstDeviceRootStore.current() ?: return
-        if (root.state != FirstDeviceRootState.ROOT_COMMITTED || root.seed.deviceId != deviceId) return
-        if (custodyDeviceId != deviceId) {
+    internal suspend fun synchronizeRuntimeCustody(): org.pca.app.runtime.sync.RuntimeCustodyOutcome = custodyMutex.withLock {
+        try {
+            synchronizeRuntimeCustodyLocked()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+        }
+    }
+
+    private suspend fun synchronizeRuntimeCustodyLocked(): org.pca.app.runtime.sync.RuntimeCustodyOutcome {
+        val deviceId = enrolledDeviceIdOrNull() ?: return org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE
+        val root = firstDeviceRootStore.current() ?: return org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE
+        if (root.state != FirstDeviceRootState.ROOT_COMMITTED || root.seed.deviceId != deviceId)
+            return org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE
+        val rootFamilyId = root.familyId?.takeIf { it.isNotEmpty() }
+            ?: return org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+        if (custodyDeviceId != deviceId || custodyRoot != root) {
             val relay = HttpUrlConnectionRelayHttpClient(baseUrl = "https://api.pcasafe.com")
             val session = DeviceSessionManager(relay, deviceId, signer = { nonce ->
                 val current = firstDeviceRootStore.current() ?: error("Device identity unavailable")
-                check(current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
+                check(current == root && current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
                 org.pca.app.runtime.sync.signRuntimeDeviceChallenge(androidKeystoreDskProvider, current.seed.dskAlias, nonce)
             }, assertKeyCustody = {
                 val current = firstDeviceRootStore.current() ?: error("Device identity unavailable")
-                check(current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
+                check(current == root && current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
                 androidKeystoreDskProvider.assertSigningKeyCustody(current.seed.dskAlias, current.seed.dskPublicKeyBase64)
             })
             custodyOrchestrator = ReconnectSyncOrchestrator(
@@ -452,10 +470,13 @@ class PcaAppGraph private constructor(
                     }
                 },
                 ciphertextInbox = PersistentCiphertextInbox(runtimeStateStore, deviceId),
+                expectedFamilyId = rootFamilyId,
             )
             custodyDeviceId = deviceId
+            custodyRoot = root
         }
-        if (connectivityObserver.isCurrentlyOnline()) custodyOrchestrator?.syncNow()
+        if (!connectivityObserver.isCurrentlyOnline()) return org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+        return custodyOrchestrator?.syncNow() ?: org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
     }
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports

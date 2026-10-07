@@ -1,0 +1,957 @@
+{
+  "note": "Untrusted structural candidates only. Backend pinned canonical bytes; no signature or authority proof. Reject malformed Unicode without normalization. Integer and exact ISO date domain follows backend familytrustset.",
+  "version": 1,
+  "vectors": [
+    {
+      "name": "genesis",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "2026-10-07T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z4:null",
+      "sha256": "cffb4d4b47c33fbf9be21dfa5c81e2aabec761fa76592151c54a384da2f1a079"
+    },
+    {
+      "name": "ordinary-unicode",
+      "wire": {
+        "familyId": "أسرة:😀\u0000",
+        "trustSetEpoch": 7,
+        "keyEpoch": 3,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "é",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "é",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "طفل:😀",
+            "role": "CHILD",
+            "dskKeyId": "dsk-1",
+            "dskPublicKey": "dsk-public-1",
+            "dekKeyId": "dek-1",
+            "dekPublicKey": "dek-public-1",
+            "status": "DEVICE_OFFLINE"
+          }
+        ],
+        "issuedAt": "2026-10-07T00:00:00.000Z",
+        "supersedesEpoch": 2,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"أسرة:😀\\u0000\",\"trustSetEpoch\":7,\"keyEpoch\":3,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"é\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"é\",\"status\":\"ACTIVE\"},{\"deviceId\":\"طفل:😀\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-1\",\"dskPublicKey\":\"dsk-public-1\",\"dekKeyId\":\"dek-1\",\"dekPublicKey\":\"dek-public-1\",\"status\":\"DEVICE_OFFLINE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":2,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "14:أسرة:😀\u00001:71:31:28:device-05:OWNER5:dsk-02:é5:dek-03:é6:ACTIVE11:طفل:😀5:CHILD5:dsk-112:dsk-public-15:dek-112:dek-public-114:DEVICE_OFFLINE24:2026-10-07T00:00:00.000Z1:2",
+      "sha256": "b8b6df14d58d6d91cd19a14957ebb2fa71639d956de71937627551435f3b01c7"
+    },
+    {
+      "name": "all-membership-vocabulary",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-1",
+            "role": "ADMINISTRATOR",
+            "dskKeyId": "dsk-1",
+            "dskPublicKey": "dsk-public-1",
+            "dekKeyId": "dek-1",
+            "dekPublicKey": "dek-public-1",
+            "status": "ROTATION_PENDING"
+          },
+          {
+            "deviceId": "device-2",
+            "role": "VIEWER",
+            "dskKeyId": "dsk-2",
+            "dskPublicKey": "dsk-public-2",
+            "dekKeyId": "dek-2",
+            "dekPublicKey": "dek-public-2",
+            "status": "DEVICE_OFFLINE"
+          },
+          {
+            "deviceId": "device-3",
+            "role": "CHILD",
+            "dskKeyId": "dsk-3",
+            "dskPublicKey": "dsk-public-3",
+            "dekKeyId": "dek-3",
+            "dekPublicKey": "dek-public-3",
+            "status": "REVOKED"
+          },
+          {
+            "deviceId": "device-4",
+            "role": "OWNER",
+            "dskKeyId": "dsk-4",
+            "dskPublicKey": "dsk-public-4",
+            "dekKeyId": "dek-4",
+            "dekPublicKey": "dek-public-4",
+            "status": "EPOCH_STALE"
+          },
+          {
+            "deviceId": "device-5",
+            "role": "ADMINISTRATOR",
+            "dskKeyId": "dsk-5",
+            "dskPublicKey": "dsk-public-5",
+            "dekKeyId": "dek-5",
+            "dekPublicKey": "dek-public-5",
+            "status": "RECOVERY_REQUIRED"
+          }
+        ],
+        "issuedAt": "2026-10-07T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-1\",\"role\":\"ADMINISTRATOR\",\"dskKeyId\":\"dsk-1\",\"dskPublicKey\":\"dsk-public-1\",\"dekKeyId\":\"dek-1\",\"dekPublicKey\":\"dek-public-1\",\"status\":\"ROTATION_PENDING\"},{\"deviceId\":\"device-2\",\"role\":\"VIEWER\",\"dskKeyId\":\"dsk-2\",\"dskPublicKey\":\"dsk-public-2\",\"dekKeyId\":\"dek-2\",\"dekPublicKey\":\"dek-public-2\",\"status\":\"DEVICE_OFFLINE\"},{\"deviceId\":\"device-3\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-3\",\"dskPublicKey\":\"dsk-public-3\",\"dekKeyId\":\"dek-3\",\"dekPublicKey\":\"dek-public-3\",\"status\":\"REVOKED\"},{\"deviceId\":\"device-4\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-4\",\"dskPublicKey\":\"dsk-public-4\",\"dekKeyId\":\"dek-4\",\"dekPublicKey\":\"dek-public-4\",\"status\":\"EPOCH_STALE\"},{\"deviceId\":\"device-5\",\"role\":\"ADMINISTRATOR\",\"dskKeyId\":\"dsk-5\",\"dskPublicKey\":\"dsk-public-5\",\"dekKeyId\":\"dek-5\",\"dekPublicKey\":\"dek-public-5\",\"status\":\"RECOVERY_REQUIRED\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:68:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE8:device-113:ADMINISTRATOR5:dsk-112:dsk-public-15:dek-112:dek-public-116:ROTATION_PENDING8:device-26:VIEWER5:dsk-212:dsk-public-25:dek-212:dek-public-214:DEVICE_OFFLINE8:device-35:CHILD5:dsk-312:dsk-public-35:dek-312:dek-public-37:REVOKED8:device-45:OWNER5:dsk-412:dsk-public-45:dek-412:dek-public-411:EPOCH_STALE8:device-513:ADMINISTRATOR5:dsk-512:dsk-public-55:dek-512:dek-public-517:RECOVERY_REQUIRED24:2026-10-07T00:00:00.000Z4:null",
+      "sha256": "513bf06b2dd01f68a6319f39b849b4538676ce9561497fee7b0cc76d6a29ba5a"
+    },
+    {
+      "name": "numeric-and-utf16-boundaries",
+      "wire": {
+        "familyId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "trustSetEpoch": 2147483647,
+        "keyEpoch": 2147483647,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "2026-10-07T00:00:00.000Z",
+        "supersedesEpoch": 2147483647,
+        "signature": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+      },
+      "wireJson": "{\"familyId\":\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\",\"trustSetEpoch\":2147483647,\"keyEpoch\":2147483647,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":2147483647,\"signature\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\"}",
+      "canonical": "256:😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀10:214748364710:21474836471:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z10:2147483647",
+      "sha256": "63745f606a9f31b0ab41651c465bc424888c3c798c77ed4a894443a74819aa06"
+    },
+    {
+      "name": "sixty-four-ordered-entries",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-1",
+            "role": "CHILD",
+            "dskKeyId": "dsk-1",
+            "dskPublicKey": "dsk-public-1",
+            "dekKeyId": "dek-1",
+            "dekPublicKey": "dek-public-1",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-2",
+            "role": "CHILD",
+            "dskKeyId": "dsk-2",
+            "dskPublicKey": "dsk-public-2",
+            "dekKeyId": "dek-2",
+            "dekPublicKey": "dek-public-2",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-3",
+            "role": "CHILD",
+            "dskKeyId": "dsk-3",
+            "dskPublicKey": "dsk-public-3",
+            "dekKeyId": "dek-3",
+            "dekPublicKey": "dek-public-3",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-4",
+            "role": "CHILD",
+            "dskKeyId": "dsk-4",
+            "dskPublicKey": "dsk-public-4",
+            "dekKeyId": "dek-4",
+            "dekPublicKey": "dek-public-4",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-5",
+            "role": "CHILD",
+            "dskKeyId": "dsk-5",
+            "dskPublicKey": "dsk-public-5",
+            "dekKeyId": "dek-5",
+            "dekPublicKey": "dek-public-5",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-6",
+            "role": "CHILD",
+            "dskKeyId": "dsk-6",
+            "dskPublicKey": "dsk-public-6",
+            "dekKeyId": "dek-6",
+            "dekPublicKey": "dek-public-6",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-7",
+            "role": "CHILD",
+            "dskKeyId": "dsk-7",
+            "dskPublicKey": "dsk-public-7",
+            "dekKeyId": "dek-7",
+            "dekPublicKey": "dek-public-7",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-8",
+            "role": "CHILD",
+            "dskKeyId": "dsk-8",
+            "dskPublicKey": "dsk-public-8",
+            "dekKeyId": "dek-8",
+            "dekPublicKey": "dek-public-8",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-9",
+            "role": "CHILD",
+            "dskKeyId": "dsk-9",
+            "dskPublicKey": "dsk-public-9",
+            "dekKeyId": "dek-9",
+            "dekPublicKey": "dek-public-9",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-10",
+            "role": "CHILD",
+            "dskKeyId": "dsk-10",
+            "dskPublicKey": "dsk-public-10",
+            "dekKeyId": "dek-10",
+            "dekPublicKey": "dek-public-10",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-11",
+            "role": "CHILD",
+            "dskKeyId": "dsk-11",
+            "dskPublicKey": "dsk-public-11",
+            "dekKeyId": "dek-11",
+            "dekPublicKey": "dek-public-11",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-12",
+            "role": "CHILD",
+            "dskKeyId": "dsk-12",
+            "dskPublicKey": "dsk-public-12",
+            "dekKeyId": "dek-12",
+            "dekPublicKey": "dek-public-12",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-13",
+            "role": "CHILD",
+            "dskKeyId": "dsk-13",
+            "dskPublicKey": "dsk-public-13",
+            "dekKeyId": "dek-13",
+            "dekPublicKey": "dek-public-13",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-14",
+            "role": "CHILD",
+            "dskKeyId": "dsk-14",
+            "dskPublicKey": "dsk-public-14",
+            "dekKeyId": "dek-14",
+            "dekPublicKey": "dek-public-14",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-15",
+            "role": "CHILD",
+            "dskKeyId": "dsk-15",
+            "dskPublicKey": "dsk-public-15",
+            "dekKeyId": "dek-15",
+            "dekPublicKey": "dek-public-15",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-16",
+            "role": "CHILD",
+            "dskKeyId": "dsk-16",
+            "dskPublicKey": "dsk-public-16",
+            "dekKeyId": "dek-16",
+            "dekPublicKey": "dek-public-16",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-17",
+            "role": "CHILD",
+            "dskKeyId": "dsk-17",
+            "dskPublicKey": "dsk-public-17",
+            "dekKeyId": "dek-17",
+            "dekPublicKey": "dek-public-17",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-18",
+            "role": "CHILD",
+            "dskKeyId": "dsk-18",
+            "dskPublicKey": "dsk-public-18",
+            "dekKeyId": "dek-18",
+            "dekPublicKey": "dek-public-18",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-19",
+            "role": "CHILD",
+            "dskKeyId": "dsk-19",
+            "dskPublicKey": "dsk-public-19",
+            "dekKeyId": "dek-19",
+            "dekPublicKey": "dek-public-19",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-20",
+            "role": "CHILD",
+            "dskKeyId": "dsk-20",
+            "dskPublicKey": "dsk-public-20",
+            "dekKeyId": "dek-20",
+            "dekPublicKey": "dek-public-20",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-21",
+            "role": "CHILD",
+            "dskKeyId": "dsk-21",
+            "dskPublicKey": "dsk-public-21",
+            "dekKeyId": "dek-21",
+            "dekPublicKey": "dek-public-21",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-22",
+            "role": "CHILD",
+            "dskKeyId": "dsk-22",
+            "dskPublicKey": "dsk-public-22",
+            "dekKeyId": "dek-22",
+            "dekPublicKey": "dek-public-22",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-23",
+            "role": "CHILD",
+            "dskKeyId": "dsk-23",
+            "dskPublicKey": "dsk-public-23",
+            "dekKeyId": "dek-23",
+            "dekPublicKey": "dek-public-23",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-24",
+            "role": "CHILD",
+            "dskKeyId": "dsk-24",
+            "dskPublicKey": "dsk-public-24",
+            "dekKeyId": "dek-24",
+            "dekPublicKey": "dek-public-24",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-25",
+            "role": "CHILD",
+            "dskKeyId": "dsk-25",
+            "dskPublicKey": "dsk-public-25",
+            "dekKeyId": "dek-25",
+            "dekPublicKey": "dek-public-25",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-26",
+            "role": "CHILD",
+            "dskKeyId": "dsk-26",
+            "dskPublicKey": "dsk-public-26",
+            "dekKeyId": "dek-26",
+            "dekPublicKey": "dek-public-26",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-27",
+            "role": "CHILD",
+            "dskKeyId": "dsk-27",
+            "dskPublicKey": "dsk-public-27",
+            "dekKeyId": "dek-27",
+            "dekPublicKey": "dek-public-27",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-28",
+            "role": "CHILD",
+            "dskKeyId": "dsk-28",
+            "dskPublicKey": "dsk-public-28",
+            "dekKeyId": "dek-28",
+            "dekPublicKey": "dek-public-28",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-29",
+            "role": "CHILD",
+            "dskKeyId": "dsk-29",
+            "dskPublicKey": "dsk-public-29",
+            "dekKeyId": "dek-29",
+            "dekPublicKey": "dek-public-29",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-30",
+            "role": "CHILD",
+            "dskKeyId": "dsk-30",
+            "dskPublicKey": "dsk-public-30",
+            "dekKeyId": "dek-30",
+            "dekPublicKey": "dek-public-30",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-31",
+            "role": "CHILD",
+            "dskKeyId": "dsk-31",
+            "dskPublicKey": "dsk-public-31",
+            "dekKeyId": "dek-31",
+            "dekPublicKey": "dek-public-31",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-32",
+            "role": "CHILD",
+            "dskKeyId": "dsk-32",
+            "dskPublicKey": "dsk-public-32",
+            "dekKeyId": "dek-32",
+            "dekPublicKey": "dek-public-32",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-33",
+            "role": "CHILD",
+            "dskKeyId": "dsk-33",
+            "dskPublicKey": "dsk-public-33",
+            "dekKeyId": "dek-33",
+            "dekPublicKey": "dek-public-33",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-34",
+            "role": "CHILD",
+            "dskKeyId": "dsk-34",
+            "dskPublicKey": "dsk-public-34",
+            "dekKeyId": "dek-34",
+            "dekPublicKey": "dek-public-34",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-35",
+            "role": "CHILD",
+            "dskKeyId": "dsk-35",
+            "dskPublicKey": "dsk-public-35",
+            "dekKeyId": "dek-35",
+            "dekPublicKey": "dek-public-35",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-36",
+            "role": "CHILD",
+            "dskKeyId": "dsk-36",
+            "dskPublicKey": "dsk-public-36",
+            "dekKeyId": "dek-36",
+            "dekPublicKey": "dek-public-36",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-37",
+            "role": "CHILD",
+            "dskKeyId": "dsk-37",
+            "dskPublicKey": "dsk-public-37",
+            "dekKeyId": "dek-37",
+            "dekPublicKey": "dek-public-37",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-38",
+            "role": "CHILD",
+            "dskKeyId": "dsk-38",
+            "dskPublicKey": "dsk-public-38",
+            "dekKeyId": "dek-38",
+            "dekPublicKey": "dek-public-38",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-39",
+            "role": "CHILD",
+            "dskKeyId": "dsk-39",
+            "dskPublicKey": "dsk-public-39",
+            "dekKeyId": "dek-39",
+            "dekPublicKey": "dek-public-39",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-40",
+            "role": "CHILD",
+            "dskKeyId": "dsk-40",
+            "dskPublicKey": "dsk-public-40",
+            "dekKeyId": "dek-40",
+            "dekPublicKey": "dek-public-40",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-41",
+            "role": "CHILD",
+            "dskKeyId": "dsk-41",
+            "dskPublicKey": "dsk-public-41",
+            "dekKeyId": "dek-41",
+            "dekPublicKey": "dek-public-41",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-42",
+            "role": "CHILD",
+            "dskKeyId": "dsk-42",
+            "dskPublicKey": "dsk-public-42",
+            "dekKeyId": "dek-42",
+            "dekPublicKey": "dek-public-42",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-43",
+            "role": "CHILD",
+            "dskKeyId": "dsk-43",
+            "dskPublicKey": "dsk-public-43",
+            "dekKeyId": "dek-43",
+            "dekPublicKey": "dek-public-43",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-44",
+            "role": "CHILD",
+            "dskKeyId": "dsk-44",
+            "dskPublicKey": "dsk-public-44",
+            "dekKeyId": "dek-44",
+            "dekPublicKey": "dek-public-44",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-45",
+            "role": "CHILD",
+            "dskKeyId": "dsk-45",
+            "dskPublicKey": "dsk-public-45",
+            "dekKeyId": "dek-45",
+            "dekPublicKey": "dek-public-45",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-46",
+            "role": "CHILD",
+            "dskKeyId": "dsk-46",
+            "dskPublicKey": "dsk-public-46",
+            "dekKeyId": "dek-46",
+            "dekPublicKey": "dek-public-46",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-47",
+            "role": "CHILD",
+            "dskKeyId": "dsk-47",
+            "dskPublicKey": "dsk-public-47",
+            "dekKeyId": "dek-47",
+            "dekPublicKey": "dek-public-47",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-48",
+            "role": "CHILD",
+            "dskKeyId": "dsk-48",
+            "dskPublicKey": "dsk-public-48",
+            "dekKeyId": "dek-48",
+            "dekPublicKey": "dek-public-48",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-49",
+            "role": "CHILD",
+            "dskKeyId": "dsk-49",
+            "dskPublicKey": "dsk-public-49",
+            "dekKeyId": "dek-49",
+            "dekPublicKey": "dek-public-49",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-50",
+            "role": "CHILD",
+            "dskKeyId": "dsk-50",
+            "dskPublicKey": "dsk-public-50",
+            "dekKeyId": "dek-50",
+            "dekPublicKey": "dek-public-50",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-51",
+            "role": "CHILD",
+            "dskKeyId": "dsk-51",
+            "dskPublicKey": "dsk-public-51",
+            "dekKeyId": "dek-51",
+            "dekPublicKey": "dek-public-51",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-52",
+            "role": "CHILD",
+            "dskKeyId": "dsk-52",
+            "dskPublicKey": "dsk-public-52",
+            "dekKeyId": "dek-52",
+            "dekPublicKey": "dek-public-52",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-53",
+            "role": "CHILD",
+            "dskKeyId": "dsk-53",
+            "dskPublicKey": "dsk-public-53",
+            "dekKeyId": "dek-53",
+            "dekPublicKey": "dek-public-53",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-54",
+            "role": "CHILD",
+            "dskKeyId": "dsk-54",
+            "dskPublicKey": "dsk-public-54",
+            "dekKeyId": "dek-54",
+            "dekPublicKey": "dek-public-54",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-55",
+            "role": "CHILD",
+            "dskKeyId": "dsk-55",
+            "dskPublicKey": "dsk-public-55",
+            "dekKeyId": "dek-55",
+            "dekPublicKey": "dek-public-55",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-56",
+            "role": "CHILD",
+            "dskKeyId": "dsk-56",
+            "dskPublicKey": "dsk-public-56",
+            "dekKeyId": "dek-56",
+            "dekPublicKey": "dek-public-56",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-57",
+            "role": "CHILD",
+            "dskKeyId": "dsk-57",
+            "dskPublicKey": "dsk-public-57",
+            "dekKeyId": "dek-57",
+            "dekPublicKey": "dek-public-57",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-58",
+            "role": "CHILD",
+            "dskKeyId": "dsk-58",
+            "dskPublicKey": "dsk-public-58",
+            "dekKeyId": "dek-58",
+            "dekPublicKey": "dek-public-58",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-59",
+            "role": "CHILD",
+            "dskKeyId": "dsk-59",
+            "dskPublicKey": "dsk-public-59",
+            "dekKeyId": "dek-59",
+            "dekPublicKey": "dek-public-59",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-60",
+            "role": "CHILD",
+            "dskKeyId": "dsk-60",
+            "dskPublicKey": "dsk-public-60",
+            "dekKeyId": "dek-60",
+            "dekPublicKey": "dek-public-60",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-61",
+            "role": "CHILD",
+            "dskKeyId": "dsk-61",
+            "dskPublicKey": "dsk-public-61",
+            "dekKeyId": "dek-61",
+            "dekPublicKey": "dek-public-61",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-62",
+            "role": "CHILD",
+            "dskKeyId": "dsk-62",
+            "dskPublicKey": "dsk-public-62",
+            "dekKeyId": "dek-62",
+            "dekPublicKey": "dek-public-62",
+            "status": "ACTIVE"
+          },
+          {
+            "deviceId": "device-63",
+            "role": "CHILD",
+            "dskKeyId": "dsk-63",
+            "dskPublicKey": "dsk-public-63",
+            "dekKeyId": "dek-63",
+            "dekPublicKey": "dek-public-63",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "2026-10-07T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-1\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-1\",\"dskPublicKey\":\"dsk-public-1\",\"dekKeyId\":\"dek-1\",\"dekPublicKey\":\"dek-public-1\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-2\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-2\",\"dskPublicKey\":\"dsk-public-2\",\"dekKeyId\":\"dek-2\",\"dekPublicKey\":\"dek-public-2\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-3\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-3\",\"dskPublicKey\":\"dsk-public-3\",\"dekKeyId\":\"dek-3\",\"dekPublicKey\":\"dek-public-3\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-4\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-4\",\"dskPublicKey\":\"dsk-public-4\",\"dekKeyId\":\"dek-4\",\"dekPublicKey\":\"dek-public-4\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-5\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-5\",\"dskPublicKey\":\"dsk-public-5\",\"dekKeyId\":\"dek-5\",\"dekPublicKey\":\"dek-public-5\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-6\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-6\",\"dskPublicKey\":\"dsk-public-6\",\"dekKeyId\":\"dek-6\",\"dekPublicKey\":\"dek-public-6\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-7\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-7\",\"dskPublicKey\":\"dsk-public-7\",\"dekKeyId\":\"dek-7\",\"dekPublicKey\":\"dek-public-7\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-8\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-8\",\"dskPublicKey\":\"dsk-public-8\",\"dekKeyId\":\"dek-8\",\"dekPublicKey\":\"dek-public-8\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-9\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-9\",\"dskPublicKey\":\"dsk-public-9\",\"dekKeyId\":\"dek-9\",\"dekPublicKey\":\"dek-public-9\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-10\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-10\",\"dskPublicKey\":\"dsk-public-10\",\"dekKeyId\":\"dek-10\",\"dekPublicKey\":\"dek-public-10\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-11\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-11\",\"dskPublicKey\":\"dsk-public-11\",\"dekKeyId\":\"dek-11\",\"dekPublicKey\":\"dek-public-11\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-12\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-12\",\"dskPublicKey\":\"dsk-public-12\",\"dekKeyId\":\"dek-12\",\"dekPublicKey\":\"dek-public-12\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-13\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-13\",\"dskPublicKey\":\"dsk-public-13\",\"dekKeyId\":\"dek-13\",\"dekPublicKey\":\"dek-public-13\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-14\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-14\",\"dskPublicKey\":\"dsk-public-14\",\"dekKeyId\":\"dek-14\",\"dekPublicKey\":\"dek-public-14\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-15\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-15\",\"dskPublicKey\":\"dsk-public-15\",\"dekKeyId\":\"dek-15\",\"dekPublicKey\":\"dek-public-15\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-16\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-16\",\"dskPublicKey\":\"dsk-public-16\",\"dekKeyId\":\"dek-16\",\"dekPublicKey\":\"dek-public-16\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-17\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-17\",\"dskPublicKey\":\"dsk-public-17\",\"dekKeyId\":\"dek-17\",\"dekPublicKey\":\"dek-public-17\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-18\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-18\",\"dskPublicKey\":\"dsk-public-18\",\"dekKeyId\":\"dek-18\",\"dekPublicKey\":\"dek-public-18\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-19\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-19\",\"dskPublicKey\":\"dsk-public-19\",\"dekKeyId\":\"dek-19\",\"dekPublicKey\":\"dek-public-19\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-20\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-20\",\"dskPublicKey\":\"dsk-public-20\",\"dekKeyId\":\"dek-20\",\"dekPublicKey\":\"dek-public-20\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-21\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-21\",\"dskPublicKey\":\"dsk-public-21\",\"dekKeyId\":\"dek-21\",\"dekPublicKey\":\"dek-public-21\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-22\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-22\",\"dskPublicKey\":\"dsk-public-22\",\"dekKeyId\":\"dek-22\",\"dekPublicKey\":\"dek-public-22\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-23\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-23\",\"dskPublicKey\":\"dsk-public-23\",\"dekKeyId\":\"dek-23\",\"dekPublicKey\":\"dek-public-23\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-24\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-24\",\"dskPublicKey\":\"dsk-public-24\",\"dekKeyId\":\"dek-24\",\"dekPublicKey\":\"dek-public-24\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-25\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-25\",\"dskPublicKey\":\"dsk-public-25\",\"dekKeyId\":\"dek-25\",\"dekPublicKey\":\"dek-public-25\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-26\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-26\",\"dskPublicKey\":\"dsk-public-26\",\"dekKeyId\":\"dek-26\",\"dekPublicKey\":\"dek-public-26\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-27\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-27\",\"dskPublicKey\":\"dsk-public-27\",\"dekKeyId\":\"dek-27\",\"dekPublicKey\":\"dek-public-27\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-28\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-28\",\"dskPublicKey\":\"dsk-public-28\",\"dekKeyId\":\"dek-28\",\"dekPublicKey\":\"dek-public-28\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-29\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-29\",\"dskPublicKey\":\"dsk-public-29\",\"dekKeyId\":\"dek-29\",\"dekPublicKey\":\"dek-public-29\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-30\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-30\",\"dskPublicKey\":\"dsk-public-30\",\"dekKeyId\":\"dek-30\",\"dekPublicKey\":\"dek-public-30\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-31\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-31\",\"dskPublicKey\":\"dsk-public-31\",\"dekKeyId\":\"dek-31\",\"dekPublicKey\":\"dek-public-31\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-32\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-32\",\"dskPublicKey\":\"dsk-public-32\",\"dekKeyId\":\"dek-32\",\"dekPublicKey\":\"dek-public-32\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-33\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-33\",\"dskPublicKey\":\"dsk-public-33\",\"dekKeyId\":\"dek-33\",\"dekPublicKey\":\"dek-public-33\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-34\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-34\",\"dskPublicKey\":\"dsk-public-34\",\"dekKeyId\":\"dek-34\",\"dekPublicKey\":\"dek-public-34\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-35\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-35\",\"dskPublicKey\":\"dsk-public-35\",\"dekKeyId\":\"dek-35\",\"dekPublicKey\":\"dek-public-35\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-36\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-36\",\"dskPublicKey\":\"dsk-public-36\",\"dekKeyId\":\"dek-36\",\"dekPublicKey\":\"dek-public-36\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-37\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-37\",\"dskPublicKey\":\"dsk-public-37\",\"dekKeyId\":\"dek-37\",\"dekPublicKey\":\"dek-public-37\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-38\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-38\",\"dskPublicKey\":\"dsk-public-38\",\"dekKeyId\":\"dek-38\",\"dekPublicKey\":\"dek-public-38\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-39\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-39\",\"dskPublicKey\":\"dsk-public-39\",\"dekKeyId\":\"dek-39\",\"dekPublicKey\":\"dek-public-39\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-40\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-40\",\"dskPublicKey\":\"dsk-public-40\",\"dekKeyId\":\"dek-40\",\"dekPublicKey\":\"dek-public-40\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-41\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-41\",\"dskPublicKey\":\"dsk-public-41\",\"dekKeyId\":\"dek-41\",\"dekPublicKey\":\"dek-public-41\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-42\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-42\",\"dskPublicKey\":\"dsk-public-42\",\"dekKeyId\":\"dek-42\",\"dekPublicKey\":\"dek-public-42\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-43\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-43\",\"dskPublicKey\":\"dsk-public-43\",\"dekKeyId\":\"dek-43\",\"dekPublicKey\":\"dek-public-43\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-44\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-44\",\"dskPublicKey\":\"dsk-public-44\",\"dekKeyId\":\"dek-44\",\"dekPublicKey\":\"dek-public-44\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-45\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-45\",\"dskPublicKey\":\"dsk-public-45\",\"dekKeyId\":\"dek-45\",\"dekPublicKey\":\"dek-public-45\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-46\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-46\",\"dskPublicKey\":\"dsk-public-46\",\"dekKeyId\":\"dek-46\",\"dekPublicKey\":\"dek-public-46\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-47\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-47\",\"dskPublicKey\":\"dsk-public-47\",\"dekKeyId\":\"dek-47\",\"dekPublicKey\":\"dek-public-47\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-48\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-48\",\"dskPublicKey\":\"dsk-public-48\",\"dekKeyId\":\"dek-48\",\"dekPublicKey\":\"dek-public-48\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-49\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-49\",\"dskPublicKey\":\"dsk-public-49\",\"dekKeyId\":\"dek-49\",\"dekPublicKey\":\"dek-public-49\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-50\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-50\",\"dskPublicKey\":\"dsk-public-50\",\"dekKeyId\":\"dek-50\",\"dekPublicKey\":\"dek-public-50\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-51\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-51\",\"dskPublicKey\":\"dsk-public-51\",\"dekKeyId\":\"dek-51\",\"dekPublicKey\":\"dek-public-51\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-52\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-52\",\"dskPublicKey\":\"dsk-public-52\",\"dekKeyId\":\"dek-52\",\"dekPublicKey\":\"dek-public-52\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-53\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-53\",\"dskPublicKey\":\"dsk-public-53\",\"dekKeyId\":\"dek-53\",\"dekPublicKey\":\"dek-public-53\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-54\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-54\",\"dskPublicKey\":\"dsk-public-54\",\"dekKeyId\":\"dek-54\",\"dekPublicKey\":\"dek-public-54\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-55\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-55\",\"dskPublicKey\":\"dsk-public-55\",\"dekKeyId\":\"dek-55\",\"dekPublicKey\":\"dek-public-55\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-56\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-56\",\"dskPublicKey\":\"dsk-public-56\",\"dekKeyId\":\"dek-56\",\"dekPublicKey\":\"dek-public-56\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-57\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-57\",\"dskPublicKey\":\"dsk-public-57\",\"dekKeyId\":\"dek-57\",\"dekPublicKey\":\"dek-public-57\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-58\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-58\",\"dskPublicKey\":\"dsk-public-58\",\"dekKeyId\":\"dek-58\",\"dekPublicKey\":\"dek-public-58\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-59\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-59\",\"dskPublicKey\":\"dsk-public-59\",\"dekKeyId\":\"dek-59\",\"dekPublicKey\":\"dek-public-59\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-60\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-60\",\"dskPublicKey\":\"dsk-public-60\",\"dekKeyId\":\"dek-60\",\"dekPublicKey\":\"dek-public-60\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-61\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-61\",\"dskPublicKey\":\"dsk-public-61\",\"dekKeyId\":\"dek-61\",\"dekPublicKey\":\"dek-public-61\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-62\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-62\",\"dskPublicKey\":\"dsk-public-62\",\"dekKeyId\":\"dek-62\",\"dekPublicKey\":\"dek-public-62\",\"status\":\"ACTIVE\"},{\"deviceId\":\"device-63\",\"role\":\"CHILD\",\"dskKeyId\":\"dsk-63\",\"dskPublicKey\":\"dsk-public-63\",\"dekKeyId\":\"dek-63\",\"dekPublicKey\":\"dek-public-63\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:02:648:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE8:device-15:CHILD5:dsk-112:dsk-public-15:dek-112:dek-public-16:ACTIVE8:device-25:CHILD5:dsk-212:dsk-public-25:dek-212:dek-public-26:ACTIVE8:device-35:CHILD5:dsk-312:dsk-public-35:dek-312:dek-public-36:ACTIVE8:device-45:CHILD5:dsk-412:dsk-public-45:dek-412:dek-public-46:ACTIVE8:device-55:CHILD5:dsk-512:dsk-public-55:dek-512:dek-public-56:ACTIVE8:device-65:CHILD5:dsk-612:dsk-public-65:dek-612:dek-public-66:ACTIVE8:device-75:CHILD5:dsk-712:dsk-public-75:dek-712:dek-public-76:ACTIVE8:device-85:CHILD5:dsk-812:dsk-public-85:dek-812:dek-public-86:ACTIVE8:device-95:CHILD5:dsk-912:dsk-public-95:dek-912:dek-public-96:ACTIVE9:device-105:CHILD6:dsk-1013:dsk-public-106:dek-1013:dek-public-106:ACTIVE9:device-115:CHILD6:dsk-1113:dsk-public-116:dek-1113:dek-public-116:ACTIVE9:device-125:CHILD6:dsk-1213:dsk-public-126:dek-1213:dek-public-126:ACTIVE9:device-135:CHILD6:dsk-1313:dsk-public-136:dek-1313:dek-public-136:ACTIVE9:device-145:CHILD6:dsk-1413:dsk-public-146:dek-1413:dek-public-146:ACTIVE9:device-155:CHILD6:dsk-1513:dsk-public-156:dek-1513:dek-public-156:ACTIVE9:device-165:CHILD6:dsk-1613:dsk-public-166:dek-1613:dek-public-166:ACTIVE9:device-175:CHILD6:dsk-1713:dsk-public-176:dek-1713:dek-public-176:ACTIVE9:device-185:CHILD6:dsk-1813:dsk-public-186:dek-1813:dek-public-186:ACTIVE9:device-195:CHILD6:dsk-1913:dsk-public-196:dek-1913:dek-public-196:ACTIVE9:device-205:CHILD6:dsk-2013:dsk-public-206:dek-2013:dek-public-206:ACTIVE9:device-215:CHILD6:dsk-2113:dsk-public-216:dek-2113:dek-public-216:ACTIVE9:device-225:CHILD6:dsk-2213:dsk-public-226:dek-2213:dek-public-226:ACTIVE9:device-235:CHILD6:dsk-2313:dsk-public-236:dek-2313:dek-public-236:ACTIVE9:device-245:CHILD6:dsk-2413:dsk-public-246:dek-2413:dek-public-246:ACTIVE9:device-255:CHILD6:dsk-2513:dsk-public-256:dek-2513:dek-public-256:ACTIVE9:device-265:CHILD6:dsk-2613:dsk-public-266:dek-2613:dek-public-266:ACTIVE9:device-275:CHILD6:dsk-2713:dsk-public-276:dek-2713:dek-public-276:ACTIVE9:device-285:CHILD6:dsk-2813:dsk-public-286:dek-2813:dek-public-286:ACTIVE9:device-295:CHILD6:dsk-2913:dsk-public-296:dek-2913:dek-public-296:ACTIVE9:device-305:CHILD6:dsk-3013:dsk-public-306:dek-3013:dek-public-306:ACTIVE9:device-315:CHILD6:dsk-3113:dsk-public-316:dek-3113:dek-public-316:ACTIVE9:device-325:CHILD6:dsk-3213:dsk-public-326:dek-3213:dek-public-326:ACTIVE9:device-335:CHILD6:dsk-3313:dsk-public-336:dek-3313:dek-public-336:ACTIVE9:device-345:CHILD6:dsk-3413:dsk-public-346:dek-3413:dek-public-346:ACTIVE9:device-355:CHILD6:dsk-3513:dsk-public-356:dek-3513:dek-public-356:ACTIVE9:device-365:CHILD6:dsk-3613:dsk-public-366:dek-3613:dek-public-366:ACTIVE9:device-375:CHILD6:dsk-3713:dsk-public-376:dek-3713:dek-public-376:ACTIVE9:device-385:CHILD6:dsk-3813:dsk-public-386:dek-3813:dek-public-386:ACTIVE9:device-395:CHILD6:dsk-3913:dsk-public-396:dek-3913:dek-public-396:ACTIVE9:device-405:CHILD6:dsk-4013:dsk-public-406:dek-4013:dek-public-406:ACTIVE9:device-415:CHILD6:dsk-4113:dsk-public-416:dek-4113:dek-public-416:ACTIVE9:device-425:CHILD6:dsk-4213:dsk-public-426:dek-4213:dek-public-426:ACTIVE9:device-435:CHILD6:dsk-4313:dsk-public-436:dek-4313:dek-public-436:ACTIVE9:device-445:CHILD6:dsk-4413:dsk-public-446:dek-4413:dek-public-446:ACTIVE9:device-455:CHILD6:dsk-4513:dsk-public-456:dek-4513:dek-public-456:ACTIVE9:device-465:CHILD6:dsk-4613:dsk-public-466:dek-4613:dek-public-466:ACTIVE9:device-475:CHILD6:dsk-4713:dsk-public-476:dek-4713:dek-public-476:ACTIVE9:device-485:CHILD6:dsk-4813:dsk-public-486:dek-4813:dek-public-486:ACTIVE9:device-495:CHILD6:dsk-4913:dsk-public-496:dek-4913:dek-public-496:ACTIVE9:device-505:CHILD6:dsk-5013:dsk-public-506:dek-5013:dek-public-506:ACTIVE9:device-515:CHILD6:dsk-5113:dsk-public-516:dek-5113:dek-public-516:ACTIVE9:device-525:CHILD6:dsk-5213:dsk-public-526:dek-5213:dek-public-526:ACTIVE9:device-535:CHILD6:dsk-5313:dsk-public-536:dek-5313:dek-public-536:ACTIVE9:device-545:CHILD6:dsk-5413:dsk-public-546:dek-5413:dek-public-546:ACTIVE9:device-555:CHILD6:dsk-5513:dsk-public-556:dek-5513:dek-public-556:ACTIVE9:device-565:CHILD6:dsk-5613:dsk-public-566:dek-5613:dek-public-566:ACTIVE9:device-575:CHILD6:dsk-5713:dsk-public-576:dek-5713:dek-public-576:ACTIVE9:device-585:CHILD6:dsk-5813:dsk-public-586:dek-5813:dek-public-586:ACTIVE9:device-595:CHILD6:dsk-5913:dsk-public-596:dek-5913:dek-public-596:ACTIVE9:device-605:CHILD6:dsk-6013:dsk-public-606:dek-6013:dek-public-606:ACTIVE9:device-615:CHILD6:dsk-6113:dsk-public-616:dek-6113:dek-public-616:ACTIVE9:device-625:CHILD6:dsk-6213:dsk-public-626:dek-6213:dek-public-626:ACTIVE9:device-635:CHILD6:dsk-6313:dsk-public-636:dek-6313:dek-public-636:ACTIVE24:2026-10-07T00:00:00.000Z4:null",
+      "sha256": "727ab72d9cc54ba7c08d3c929e97920c5ef7dc0bc47026c3095d7db9deb58912"
+    },
+    {
+      "name": "iso-range-0",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "0000-02-29T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"0000-02-29T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:0000-02-29T00:00:00.000Z4:null",
+      "sha256": "e630bdc72c7bece062cd3cf15c4efa03acdcd7c3ae1fbec97d8b09c7231ccfd2"
+    },
+    {
+      "name": "iso-range-1",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "-000001-01-01T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"-000001-01-01T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE27:-000001-01-01T00:00:00.000Z4:null",
+      "sha256": "0bf90f4d6949f24321e91739a785aabfac4ca46694cf80d8b9b222d2cc8ba5c3"
+    },
+    {
+      "name": "iso-range-2",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "+010000-01-01T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"+010000-01-01T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE27:+010000-01-01T00:00:00.000Z4:null",
+      "sha256": "8608159d36d22ebe6a8db9f0d9faf5bd588fecf5e8cd644ad15f81ef080b4120"
+    },
+    {
+      "name": "iso-range-3",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "-271821-04-20T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"-271821-04-20T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE27:-271821-04-20T00:00:00.000Z4:null",
+      "sha256": "173d537c11f6d1c709516e2a262ea163de62128a2119d31bc92f5fa7d2513556"
+    },
+    {
+      "name": "iso-range-4",
+      "wire": {
+        "familyId": "family-1",
+        "trustSetEpoch": 1,
+        "keyEpoch": 0,
+        "entries": [
+          {
+            "deviceId": "device-0",
+            "role": "OWNER",
+            "dskKeyId": "dsk-0",
+            "dskPublicKey": "dsk-public-0",
+            "dekKeyId": "dek-0",
+            "dekPublicKey": "dek-public-0",
+            "status": "ACTIVE"
+          }
+        ],
+        "issuedAt": "+275760-09-13T00:00:00.000Z",
+        "supersedesEpoch": null,
+        "signature": "structural-fixture-not-a-proof"
+      },
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"+275760-09-13T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE27:+275760-09-13T00:00:00.000Z4:null",
+      "sha256": "398fef3296f465e477b362d82c432563e69be6607f5e552199eb83af5f0e87e3"
+    }
+  ],
+  "rejectedCanonical": [
+    {
+      "name": "leading-zero-prefix",
+      "canonical": "08:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z4:null"
+    },
+    {
+      "name": "truncated",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z4:nul"
+    },
+    {
+      "name": "trailing-field",
+      "canonical": "8:family-11:11:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z4:null0:"
+    },
+    {
+      "name": "split-utf8-field",
+      "canonical": "1:أسرة:😀\u00001:71:31:28:device-05:OWNER5:dsk-02:é5:dek-03:é6:ACTIVE11:طفل:😀5:CHILD5:dsk-112:dsk-public-15:dek-112:dek-public-114:DEVICE_OFFLINE24:2026-10-07T00:00:00.000Z1:2"
+    },
+    {
+      "name": "noncanonical-integer",
+      "canonical": "8:family-12:011:01:18:device-05:OWNER5:dsk-012:dsk-public-05:dek-012:dek-public-06:ACTIVE24:2026-10-07T00:00:00.000Z4:null"
+    },
+    {
+      "name": "lone-high-surrogate-utf8",
+      "canonicalBytesBase64": "MzrtoIAxOjExOjAxOjE4OmRldmljZS0wNTpPV05FUjU6ZHNrLTAxMjpkc2stcHVibGljLTA1OmRlay0wMTI6ZGVrLXB1YmxpYy0wNjpBQ1RJVkUyNDoyMDI2LTEwLTA3VDAwOjAwOjAwLjAwMFo0Om51bGw="
+    },
+    {
+      "name": "lone-low-surrogate-utf8",
+      "canonicalBytesBase64": "MzrtsIAxOjExOjAxOjE4OmRldmljZS0wNTpPV05FUjU6ZHNrLTAxMjpkc2stcHVibGljLTA1OmRlay0wMTI6ZGVrLXB1YmxpYy0wNjpBQ1RJVkUyNDoyMDI2LTEwLTA3VDAwOjAwOjAwLjAwMFo0Om51bGw="
+    }
+  ],
+  "rejectedWire": [
+    {
+      "name": "lone-high-surrogate",
+      "wireJson": "{\"familyId\":\"\\ud800\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "lone-low-surrogate",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"\\udc00\"}"
+    },
+    {
+      "name": "equal-key-material",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"same\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"same\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "fractional-epoch",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1.5,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "overflow-epoch",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":2147483648,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "zero-trust-epoch",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":0,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "string-epoch",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":\"1\",\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "expanded-year-noncanonical",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"+000001-01-01T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "range-exceeded",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"+275760-09-13T00:00:00.001Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "unknown-role",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"ROOT\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "unknown-status",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"PAIRED\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"supersedesEpoch\":null,\"signature\":\"structural-fixture-not-a-proof\"}"
+    },
+    {
+      "name": "missing-explicit-null",
+      "wireJson": "{\"familyId\":\"family-1\",\"trustSetEpoch\":1,\"keyEpoch\":0,\"entries\":[{\"deviceId\":\"device-0\",\"role\":\"OWNER\",\"dskKeyId\":\"dsk-0\",\"dskPublicKey\":\"dsk-public-0\",\"dekKeyId\":\"dek-0\",\"dekPublicKey\":\"dek-public-0\",\"status\":\"ACTIVE\"}],\"issuedAt\":\"2026-10-07T00:00:00.000Z\",\"signature\":\"structural-fixture-not-a-proof\"}"
+    }
+  ]
+}

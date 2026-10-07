@@ -8,6 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -68,10 +69,16 @@ class HttpUrlConnectionRelayHttpClient(
 
                 if (status in 200..299) return@withContext parsed
                 if (status == 401) throw RelayHttpException(RelayHttpErrorCode.Unauthorized, "Authentication failed.")
+                if (status == 400 && path.startsWith("/v1/runtime-sync/inbound?") && parsed.opt("error") == "invalid_cursor")
+                    throw RelayHttpException(RelayHttpErrorCode.InvalidCursor, "Relay navigation expired or rejected.")
                 if (status in 400..499) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Request was rejected.")
                 throw RelayHttpException(RelayHttpErrorCode.Unknown, "Unexpected server response: $status")
             } catch (e: RelayHttpException) {
                 throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: org.json.JSONException) {
+                throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid relay response.")
             } catch (e: Exception) {
                 throw RelayHttpException(RelayHttpErrorCode.Network, "The request could not be completed: ${e.message}")
             } finally {
@@ -117,8 +124,12 @@ class HttpUrlConnectionRelayHttpClient(
         return OutboundBatchResult(results, dropped)
     }
 
-    override suspend fun listInbound(sessionToken: String): InboundListResult {
-        val response = request("/v1/runtime-sync/inbound", "GET", sessionToken, null)
+    override suspend fun listInbound(sessionToken: String, cursor: String?): InboundListResult {
+        if (cursor != null && (cursor.length !in 1..MAX_INBOUND_CURSOR_LENGTH || !Regex("^[A-Za-z0-9_-]+$").matches(cursor))) {
+            throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound cursor")
+        }
+        val suffix = cursor?.let { "?cursor=" + URLEncoder.encode(it, Charsets.UTF_8.name()) } ?: ""
+        val response = request("/v1/runtime-sync/inbound$suffix", "GET", sessionToken, null)
         val applied = mutableListOf<InboundAppliedEnvelope>()
         val appliedArray = response.getJSONArray("applied")
         if (appliedArray.length() > 256) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Inbound batch too large")
@@ -128,10 +139,20 @@ class HttpUrlConnectionRelayHttpClient(
         }
         val unparseable = mutableListOf<String>()
         val unparseableArray = response.getJSONArray("unparseableMessageIds")
-        for (i in 0 until unparseableArray.length()) unparseable.add(unparseableArray.getString(i))
+        if (unparseableArray.length() > 100) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Inbound diagnostics too large")
+        for (i in 0 until unparseableArray.length()) {
+            val id = unparseableArray.get(i)
+            if (id !is String || id.isEmpty() || id.length > 128) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound diagnostic")
+            unparseable.add(id)
+        }
         val dropped = mutableListOf<String>()
         val droppedArray = response.getJSONArray("droppedForListBound")
-        for (i in 0 until droppedArray.length()) dropped.add(droppedArray.getString(i))
+        if (droppedArray.length() > 100) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Inbound diagnostics too large")
+        for (i in 0 until droppedArray.length()) {
+            val id = droppedArray.get(i)
+            if (id !is String || id.isEmpty() || id.length > 128) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound diagnostic")
+            dropped.add(id)
+        }
 
         // Older servers may omit the explicit continuation bit. Preserve their
         // deferred-work signal from the bounded diagnostic IDs. When present,
@@ -149,7 +170,36 @@ class HttpUrlConnectionRelayHttpClient(
         val scope = org.pca.app.runtime.sync.inbox.RuntimeInboxScope(
             scopeJson.getString("familyId"), scopeJson.getString("recipientDeviceId"),
         )
-        return InboundListResult(applied, unparseable, dropped, scope, hasMore)
+        val modernFields = listOf("nextCursor", "hasUnresolved", "sessionIncarnation")
+        val modern = modernFields.any { response.has(it) }
+        val navigation: InboundNavigation?
+        val receipts = mutableListOf<InboundReceipt>()
+        try {
+            if (modern && (!modernFields.all { response.has(it) } || !response.has("hasMore") || !response.has("receipts"))) {
+                throw IllegalArgumentException("Incomplete navigation")
+            }
+            if (response.has("receipts")) {
+                val entries = response.getJSONArray("receipts")
+                require(entries.length() <= 100)
+                for (i in 0 until entries.length()) {
+                    val entry = entries.getJSONObject(i)
+                    for (key in listOf("messageId", "outcome", "atUtc")) require(entry.get(key) is String)
+                    receipts.add(InboundReceipt(entry.getString("messageId"), InboundReceiptOutcome.valueOf(entry.getString("outcome")), entry.getString("atUtc")))
+                }
+                require(receipts.map { it.messageId }.toSet().size == receipts.size)
+            }
+            navigation = if (modern) {
+                require(response.get("sessionIncarnation") is String && response.get("hasUnresolved") is Boolean)
+                val next = if (response.isNull("nextCursor")) null else {
+                    require(response.get("nextCursor") is String)
+                    response.getString("nextCursor")
+                }
+                InboundNavigation(next, hasMore, response.getBoolean("hasUnresolved"), response.getString("sessionIncarnation"))
+            } else null
+        } catch (_: Exception) {
+            throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Invalid inbound navigation metadata")
+        }
+        return InboundListResult(applied, unparseable, dropped, scope, hasMore, receipts, navigation)
     }
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {

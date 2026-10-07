@@ -11,6 +11,12 @@ public struct PCAStoredInboundEnvelope: Codable, Equatable {
 
 public protocol PCAInboundInboxStoring {
     func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String) throws
+    func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String,
+                 sessionIncarnation: String, requestedCursor: String?) throws
+    func navigation(sessionIncarnation: String) throws -> PCAInboundNavigation?
+    func resetRejectedNavigation(sessionIncarnation: String, cursor: String) throws
+    func retainedScope() throws -> PCAInboundScope?
+    func hasUnresolvedRelayWork() throws -> Bool
     func pendingAcknowledgements(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope]
     func markAcknowledged(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) throws
     func pendingCrypto(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope]
@@ -20,9 +26,41 @@ public protocol PCAInboundInboxStoring {
 /// Locked/corrupt storage fails closed; no eviction or plaintext fallback.
 public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
     private struct Snapshot: Codable {
-        let version: Int
+        var version: Int
         let scope: PCAInboundScope
         var entries: [PCAStoredInboundEnvelope]
+        var navigation: PCAInboundNavigation?
+        var receipts: [PCAInboundReceipt]
+        var campaignUnresolved: Bool
+
+        private enum CodingKeys: String, CodingKey { case version, scope, entries, navigation, receipts, campaignUnresolved }
+        init(scope: PCAInboundScope) {
+            version = 2; self.scope = scope; entries = []; navigation = nil; receipts = []; campaignUnresolved = false
+        }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decode(Int.self, forKey: .version)
+            scope = try container.decode(PCAInboundScope.self, forKey: .scope)
+            entries = try container.decode([PCAStoredInboundEnvelope].self, forKey: .entries)
+            if version == 1 {
+                navigation = nil; receipts = []; campaignUnresolved = false
+            } else {
+                guard version == 2, container.contains(.navigation) else { throw PCAInboundInboxError.unavailable }
+                navigation = try container.decodeIfPresent(PCAInboundNavigation.self, forKey: .navigation)
+                receipts = try container.decode([PCAInboundReceipt].self, forKey: .receipts)
+                campaignUnresolved = try container.decode(Bool.self, forKey: .campaignUnresolved)
+            }
+        }
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(2, forKey: .version)
+            try container.encode(scope, forKey: .scope)
+            try container.encode(entries, forKey: .entries)
+            if let navigation { try container.encode(navigation, forKey: .navigation) }
+            else { try container.encodeNil(forKey: .navigation) }
+            try container.encode(receipts, forKey: .receipts)
+            try container.encode(campaignUnresolved, forKey: .campaignUnresolved)
+        }
     }
     // Serialize independently constructed stores sharing the same Keychain namespace.
     private static let lock = NSRecursiveLock()
@@ -41,22 +79,84 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
     }
 
     public func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String) throws {
+        try captureValidated(response, sessionDeviceId: sessionDeviceId, sessionIncarnation: nil, requestedCursor: nil)
+    }
+
+    public func capture(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String,
+                        sessionIncarnation: String, requestedCursor: String?) throws {
+        try captureValidated(response, sessionDeviceId: sessionDeviceId, sessionIncarnation: sessionIncarnation, requestedCursor: requestedCursor)
+    }
+
+    private func captureValidated(_ response: PCAInboundRuntimeSyncResponse, sessionDeviceId: String,
+                                  sessionIncarnation: String?, requestedCursor: String?) throws {
         Self.lock.lock(); defer { Self.lock.unlock() }
         try validateScope(response.scope)
-        guard response.scope.recipientDeviceId == sessionDeviceId, response.applied.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+        guard pcaOpaqueEqual(response.scope.recipientDeviceId, sessionDeviceId), response.applied.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
         let existing = try read()
         guard existing == nil || existing?.scope == response.scope else { throw PCAInboundInboxError.unavailable }
-        var snapshot = existing ?? Snapshot(version: 1, scope: response.scope, entries: [])
+        guard response.receipts.count <= 100,
+              Set(response.receipts.map { Data($0.messageId.utf8) }).count == response.receipts.count else { throw PCAInboundInboxError.unavailable }
+        for receipt in response.receipts { try receipt.validate() }
+        if let navigation = response.navigation {
+            try navigation.validate()
+            let prior = existing?.navigation
+            let priorCursor = prior?.sessionIncarnation == sessionIncarnation ? prior?.nextCursor : nil
+            guard navigation.sessionIncarnation == sessionIncarnation, navigation.hasMore == response.hasMore,
+                  priorCursor == requestedCursor,
+                  !navigation.hasMore || navigation.nextCursor != requestedCursor else { throw PCAInboundInboxError.unavailable }
+        } else if requestedCursor != nil { throw PCAInboundInboxError.unavailable }
+        var snapshot = existing ?? Snapshot(scope: response.scope)
         for envelope in response.applied {
             try envelope.validate(scope: response.scope)
-            if let prior = snapshot.entries.first(where: { $0.envelope.messageId == envelope.messageId }) {
+            if let prior = snapshot.entries.first(where: { pcaOpaqueEqual($0.envelope.messageId, envelope.messageId) }) {
                 guard prior.envelope == envelope else { throw PCAInboundInboxError.unavailable }
             } else {
                 guard snapshot.entries.count < maxRecords else { throw PCAInboundInboxError.unavailable }
                 snapshot.entries.append(PCAStoredInboundEnvelope(envelope: envelope, relayAcknowledged: false, processingState: "PENDING_CRYPTO"))
             }
         }
+        let refreshed = Set(response.receipts.map { Data($0.messageId.utf8) })
+        snapshot.receipts = Array((snapshot.receipts.filter { !refreshed.contains(Data($0.messageId.utf8)) } + response.receipts).suffix(256))
+        if let navigation = response.navigation {
+            snapshot.campaignUnresolved = navigation.hasUnresolved || (requestedCursor != nil && snapshot.campaignUnresolved)
+        }
+        snapshot.campaignUnresolved = snapshot.campaignUnresolved || response.receipts.contains { $0.outcome != .applied }
+        snapshot.navigation = response.navigation
         try persist(snapshot)
+    }
+
+    public func navigation(sessionIncarnation: String) throws -> PCAInboundNavigation? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard sessionIncarnation.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { throw PCAInboundInboxError.unavailable }
+        guard var snapshot = try read(), let navigation = snapshot.navigation else { return nil }
+        if navigation.sessionIncarnation == sessionIncarnation {
+            try persist(snapshot)
+            return navigation
+        }
+        snapshot.navigation = nil
+        try persist(snapshot)
+        return nil
+    }
+
+    public func resetRejectedNavigation(sessionIncarnation: String, cursor: String) throws {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard var snapshot = try read(), let navigation = snapshot.navigation,
+              navigation.sessionIncarnation == sessionIncarnation, navigation.nextCursor == cursor else { throw PCAInboundInboxError.unavailable }
+        snapshot.navigation = nil
+        try persist(snapshot)
+    }
+
+    public func retainedScope() throws -> PCAInboundScope? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let snapshot = try read() else { return nil }
+        try persist(snapshot)
+        return snapshot.scope
+    }
+
+    public func hasUnresolvedRelayWork() throws -> Bool {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard let snapshot = try read() else { return false }
+        return snapshot.campaignUnresolved || snapshot.navigation?.hasMore == true
     }
 
     public func pendingAcknowledgements(scope: PCAInboundScope) throws -> [PCAStoredInboundEnvelope] {
@@ -72,7 +172,7 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
     public func markAcknowledged(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) throws {
         Self.lock.lock(); defer { Self.lock.unlock() }
         var snapshot = try confirmed(scope: scope)
-        guard let index = snapshot.entries.firstIndex(where: { $0.envelope.messageId == envelope.messageId }),
+        guard let index = snapshot.entries.firstIndex(where: { pcaOpaqueEqual($0.envelope.messageId, envelope.messageId) }),
               snapshot.entries[index].envelope == envelope else { throw PCAInboundInboxError.unavailable }
         snapshot.entries[index].relayAcknowledged = true
         try persist(snapshot)
@@ -95,11 +195,14 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
         catch KeychainStoreError.itemNotFound { return nil }
         catch { throw PCAInboundInboxError.unavailable }
         guard data.count <= maxBytes, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
-              snapshot.version == 1, snapshot.entries.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+              (snapshot.version == 1 || snapshot.version == 2), snapshot.entries.count <= maxRecords,
+              snapshot.receipts.count <= 256, Set(snapshot.receipts.map { Data($0.messageId.utf8) }).count == snapshot.receipts.count else { throw PCAInboundInboxError.unavailable }
+        try snapshot.navigation?.validate()
+        for receipt in snapshot.receipts { try receipt.validate() }
         try validateScope(snapshot.scope)
-        var seen = Set<String>()
+        var seen = Set<Data>()
         for record in snapshot.entries {
-            guard record.processingState == "PENDING_CRYPTO", seen.insert(record.envelope.messageId).inserted else { throw PCAInboundInboxError.unavailable }
+            guard record.processingState == "PENDING_CRYPTO", seen.insert(Data(record.envelope.messageId.utf8)).inserted else { throw PCAInboundInboxError.unavailable }
             try record.envelope.validate(scope: snapshot.scope)
         }
         return snapshot
@@ -127,6 +230,13 @@ public struct PCADeviceSession: Codable, Equatable {
         self.sessionToken = sessionToken
         self.expiresAt = expiresAt
     }
+    /// Compare persisted authority snapshots without Unicode normalization.
+    public static func == (left: PCADeviceSession, right: PCADeviceSession) -> Bool {
+        (left.deviceId.utf8.elementsEqual(right.deviceId.utf8)) &&
+        (left.sessionToken.utf8.elementsEqual(right.sessionToken.utf8)) &&
+        (left.expiresAt == right.expiresAt)
+    }
+
 }
 
 public struct PCAEnrollmentAttempt: Codable, Equatable {
@@ -137,6 +247,12 @@ public struct PCAEnrollmentAttempt: Codable, Equatable {
         self.attemptId = attemptId
         self.attemptRecoveryToken = attemptRecoveryToken
     }
+    /// Compare persisted authority snapshots without Unicode normalization.
+    public static func == (left: PCAEnrollmentAttempt, right: PCAEnrollmentAttempt) -> Bool {
+        (left.attemptId.utf8.elementsEqual(right.attemptId.utf8)) &&
+        (left.attemptRecoveryToken.utf8.elementsEqual(right.attemptRecoveryToken.utf8))
+    }
+
 }
 
 public protocol PCADeviceSessionStore {

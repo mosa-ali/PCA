@@ -5,6 +5,7 @@ import {
   isPlausibleFamilyRole,
   isPlausibleKeyEpoch,
   isPlausibleOpaqueId,
+  isWellFormedUnicode,
   MAX_ENTRIES_PER_EPOCH,
 } from './policy.js';
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
@@ -39,6 +40,18 @@ export class TrustSetEpochDecodeError extends Error {
   constructor() {
     super('malformed_canonical_trust_set_bytes');
     this.name = 'TrustSetEpochDecodeError';
+  }
+}
+
+/** Raw transport bytes must be strict UTF-8, never Node's replacement-based Buffer.toString decoding. */
+export function decodeCanonicalTrustSetEpochBytes(bytes: Uint8Array): FamilyTrustSetEpoch {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_CANONICAL_TRUST_SET_LENGTH * 3) throw new TrustSetEpochDecodeError();
+  try {
+    // Preserve a BOM as an actual scalar: a leading BOM is not canonical framing.
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    return decodeCanonicalTrustSetEpoch(text);
+  } catch {
+    throw new TrustSetEpochDecodeError();
   }
 }
 
@@ -85,7 +98,7 @@ export class TrustSetEpochDecodeError extends Error {
  * acceptance.
  */
 export function decodeCanonicalTrustSetEpoch(canonicalBytes: string): FamilyTrustSetEpoch {
-  if (typeof canonicalBytes !== 'string' || canonicalBytes.length > MAX_CANONICAL_TRUST_SET_LENGTH) {
+  if (typeof canonicalBytes !== 'string' || canonicalBytes.length > MAX_CANONICAL_TRUST_SET_LENGTH || !isWellFormedUnicode(canonicalBytes)) {
     throw new TrustSetEpochDecodeError();
   }
 

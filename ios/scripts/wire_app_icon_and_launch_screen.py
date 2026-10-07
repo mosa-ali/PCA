@@ -69,6 +69,7 @@ else:
         ("Debug", '\t\tA10000000000000000001003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = PCA/PCA.entitlements; CODE_SIGN_STYLE = Automatic; "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = PCA; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = org.pca.app; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";}; name = Debug; };'),
         ("Release", '\t\tA10000000000000000001004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = PCA/PCA.entitlements; CODE_SIGN_STYLE = Automatic; "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = PCA; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = org.pca.app; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";}; name = Release; };'),
     ]:
+        old_line = old_line.replace('GENERATE_INFOPLIST_FILE = YES;', 'GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = PCA/Info.plist;')
         assert old_line in text, "NOT FOUND: host %s config (has the file drifted since this script was written?)" % config_name
         new_line = old_line.replace(
             'ASSETCATALOG_COMPILER_APPICON_NAME = "";',

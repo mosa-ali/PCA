@@ -36,6 +36,27 @@ test('parseFamilyTrustSetEpoch accepts a well-formed epoch and converts wire typ
   assert.equal(parsed.entries[0].role, 'OWNER');
 });
 
+test('Trust Set wire parser rejects malformed Unicode in every identity, key and signature', () => {
+  for (const value of ['\uD800', '\uDC00', 'x\uD800y', '\uD800\uD800', '\uDC00\uD800']) {
+    assert.equal(parseFamilyTrustSetEpoch(rawEpoch({ familyId: value })), null);
+    assert.equal(parseFamilyTrustSetEpoch(rawEpoch({ signature: value })), null);
+    for (const field of ['deviceId', 'dskKeyId', 'dskPublicKey', 'dekKeyId', 'dekPublicKey']) {
+      assert.equal(parseFamilyTrustSetEpoch(rawEpoch({ entries: [rawEntry({ [field]: value })] })), null);
+    }
+    assert.equal(parseFamilyTrustSetEpoch(rawEpoch({ entries: [rawEntry({ dskPublicKey: value, dekPublicKey: '\uFFFD' })] })), null);
+  }
+});
+
+test('Trust Set wire parser retains valid Unicode without normalization or replacement', () => {
+  const value = rawEpoch({ familyId: 'أسرة:😀\uFFFD', signature: 'sig-😀',
+    entries: [rawEntry({ dskPublicKey: '\u00E9', dekPublicKey: 'e\u0301' })] });
+  const parsed = parseFamilyTrustSetEpoch(value);
+  assert.ok(parsed);
+  assert.equal(parsed.familyId, value.familyId);
+  assert.equal(parsed.entries[0].dskPublicKey, '\u00E9');
+  assert.equal(parsed.entries[0].dekPublicKey, 'e\u0301');
+});
+
 test('parseFamilyTrustSetEpoch rejects non-object input', () => {
   assert.equal(parseFamilyTrustSetEpoch(null), null);
   assert.equal(parseFamilyTrustSetEpoch('nope'), null);

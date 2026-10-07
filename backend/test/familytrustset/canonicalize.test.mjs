@@ -33,6 +33,28 @@ test('canonicalizeTrustSetEpoch is deterministic for identical input', () => {
   assert.equal(a, b);
 });
 
+test('Trust Set canonicalization rejects lone surrogates before UTF-8 replacement can collapse identities', () => {
+  const malformed = ['\uD800', '\uDC00', '\uD800x', 'x\uDC00', '\uD800\uD800'];
+  const replacement = canonicalizeTrustSetEpoch(baseEpoch({ familyId: '\uFFFD' }));
+  assert.ok(Buffer.from(replacement).includes(Buffer.from('\uFFFD')));
+  for (const value of malformed) {
+    assert.throws(() => canonicalizeTrustSetEpoch(baseEpoch({ familyId: value })));
+    for (const field of ['deviceId', 'role', 'dskKeyId', 'dskPublicKey', 'dekKeyId', 'dekPublicKey', 'status']) {
+      assert.throws(() => canonicalizeTrustSetEpoch(baseEpoch({ entries: [entry({ [field]: value })] })));
+    }
+  }
+});
+
+test('Trust Set canonicalization preserves supplementary, replacement and differently normalized Unicode bytes', () => {
+  for (const value of ['\uFFFD', '\uD800\uDC00', 'أسرة:😀', '\u00E9', 'e\u0301', 'a\u0000:b']) {
+    const canonical = canonicalizeTrustSetEpoch(baseEpoch({ familyId: value }));
+    assert.ok(canonical.startsWith(`${Buffer.byteLength(value)}:${value}`));
+    assert.equal(Buffer.from(canonical).toString('utf8'), canonical);
+  }
+  assert.notDeepEqual(Buffer.from(canonicalizeTrustSetEpoch(baseEpoch({ familyId: '\u00E9' }))),
+    Buffer.from(canonicalizeTrustSetEpoch(baseEpoch({ familyId: 'e\u0301' }))));
+});
+
 test('canonicalizeTrustSetEpoch changes when any epoch-level field changes', () => {
   const base = canonicalizeTrustSetEpoch(baseEpoch());
   assert.notEqual(canonicalizeTrustSetEpoch(baseEpoch({ familyId: 'family-2' })), base);

@@ -78,6 +78,20 @@ public struct FirstDeviceCeremonySeed: Codable, Equatable {
         self.dskAlias = dskAlias
         self.dekAlias = dekAlias
     }
+    /// Compare persisted authority snapshots without Unicode normalization.
+    public static func == (left: FirstDeviceCeremonySeed, right: FirstDeviceCeremonySeed) -> Bool {
+        (left.attemptId.utf8.elementsEqual(right.attemptId.utf8)) &&
+        (left.attemptRecoveryToken.utf8.elementsEqual(right.attemptRecoveryToken.utf8)) &&
+        (left.serverBaseUrl.utf8.elementsEqual(right.serverBaseUrl.utf8)) &&
+        (left.deviceId.utf8.elementsEqual(right.deviceId.utf8)) &&
+        (left.signingKeyId.utf8.elementsEqual(right.signingKeyId.utf8)) &&
+        (left.encryptionKeyId.utf8.elementsEqual(right.encryptionKeyId.utf8)) &&
+        (left.dskPublicKeyBase64.utf8.elementsEqual(right.dskPublicKeyBase64.utf8)) &&
+        (left.dekPublicKeyBase64.utf8.elementsEqual(right.dekPublicKeyBase64.utf8)) &&
+        (left.dskAlias.utf8.elementsEqual(right.dskAlias.utf8)) &&
+        (left.dekAlias.utf8.elementsEqual(right.dekAlias.utf8))
+    }
+
 }
 
 /// The exact bytes of one submission (persisted before first send; replayed verbatim).
@@ -95,6 +109,15 @@ public struct FirstDeviceSubmissionPayload: Codable, Equatable {
         self.epoch1Signature = epoch1Signature
         self.attestationEvidence = attestationEvidence
     }
+    /// Compare persisted authority snapshots without Unicode normalization.
+    public static func == (left: FirstDeviceSubmissionPayload, right: FirstDeviceSubmissionPayload) -> Bool {
+        (left.proofBytes.utf8.elementsEqual(right.proofBytes.utf8)) &&
+        (left.proofSignature.utf8.elementsEqual(right.proofSignature.utf8)) &&
+        (left.epoch1Bytes.utf8.elementsEqual(right.epoch1Bytes.utf8)) &&
+        (left.epoch1Signature.utf8.elementsEqual(right.epoch1Signature.utf8)) &&
+        (left.attestationEvidence.utf8.elementsEqual(right.attestationEvidence.utf8))
+    }
+
 }
 
 public struct FirstDeviceRootRecord: Codable, Equatable {
@@ -130,6 +153,19 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
         self.submission = submission
         self.committedAtMillis = committedAtMillis
     }
+    /// Compare persisted authority snapshots without Unicode normalization.
+    public static func == (left: FirstDeviceRootRecord, right: FirstDeviceRootRecord) -> Bool {
+        (left.seed == right.seed) &&
+        (left.state == right.state) &&
+        (left.ceremonyId.map { Data($0.utf8) } == right.ceremonyId.map { Data($0.utf8) }) &&
+        (left.challengeId.map { Data($0.utf8) } == right.challengeId.map { Data($0.utf8) }) &&
+        (left.nonce.map { Data($0.utf8) } == right.nonce.map { Data($0.utf8) }) &&
+        (left.expiresAt.map { Data($0.utf8) } == right.expiresAt.map { Data($0.utf8) }) &&
+        (left.familyId.map { Data($0.utf8) } == right.familyId.map { Data($0.utf8) }) &&
+        (left.submission == right.submission) &&
+        (left.committedAtMillis == right.committedAtMillis)
+    }
+
 }
 
 public protocol FirstDeviceRootStoring {
@@ -202,7 +238,7 @@ public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
                 record = candidate
                 return true
             }
-            if existing.seed.attemptId == candidate.seed.attemptId {
+            if existing.seed.attemptId.utf8.elementsEqual(candidate.seed.attemptId.utf8) {
                 // Confirm the complete same-attempt record is still readable
                 // before recovery accepts it; never rebuild it from the new
                 // seed-only candidate.
@@ -303,7 +339,7 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
             guard let existing else {
                 return saveAndConfirmUnlocked(candidate)
             }
-            if existing.seed.attemptId == candidate.seed.attemptId { return confirmDurable(existing) }
+            if existing.seed.attemptId.utf8.elementsEqual(candidate.seed.attemptId.utf8) { return confirmDurable(existing) }
             guard replacingTerminalStates.contains(existing.state) else {
                 // A competing enrollment cannot replace this ceremony, and
                 // must verify the exact retained record before treating the

@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.pca.app.runtime.sync.inbox.PersistentCiphertextInbox
@@ -17,6 +20,11 @@ import org.pca.app.runtime.sync.state.SyncConnectionState
 import org.pca.app.runtime.sync.state.computeSyncConnectionState
 import org.pca.app.runtime.sync.transport.OutboundSubmitItem
 import org.pca.app.runtime.sync.transport.RelayHttpClient
+import org.pca.app.runtime.sync.transport.RelayHttpException
+import org.pca.app.runtime.sync.transport.RelayHttpErrorCode
+
+/** Scheduling result only. Completion proves transport custody, never crypto or enforcement. */
+enum class RuntimeCustodyOutcome { COMPLETE, MORE_PENDING, RETRYABLE_FAILURE, BLOCKED, INELIGIBLE }
 
 /** Legacy callback retained for constructor compatibility; the custody path never dispatches through it. */
 interface InboundEnvelopeHandler {
@@ -48,7 +56,10 @@ class ReconnectSyncOrchestrator(
     private val inboundHandler: InboundEnvelopeHandler,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
     private val ciphertextInbox: PersistentCiphertextInbox? = null,
+    /** Production binds family to the captured committed root, independently of a response. */
+    private val expectedFamilyId: String,
 ) {
+    init { require(expectedFamilyId.isNotBlank() && expectedFamilyId.length <= 128) }
     private val reconnectMutex = Mutex()
     private val _connectionState = MutableStateFlow(SyncConnectionState.OFFLINE)
     val connectionState: StateFlow<SyncConnectionState> = _connectionState.asStateFlow()
@@ -77,9 +88,9 @@ class ReconnectSyncOrchestrator(
      * transport connected for the duration of this attempt -- callers that
      * invoke this directly are asserting connectivity is currently usable.
      */
-    suspend fun syncNow() {
+    suspend fun syncNow(): RuntimeCustodyOutcome {
         isTransportConnected = true
-        attemptReconnect()
+        return attemptReconnect()
     }
 
     private fun publishState() {
@@ -96,18 +107,21 @@ class ReconnectSyncOrchestrator(
     }
 
     /** One bounded reconnect attempt: outbound drain, then inbound drain. Safe to call repeatedly (e.g. on every connectivity flap) -- every step below is itself idempotent/bounded. */
-    suspend fun attemptReconnect() = reconnectMutex.withLock {
-        if (!isTransportConnected) return@withLock
+    suspend fun attemptReconnect(): RuntimeCustodyOutcome = reconnectMutex.withLock {
+        if (!isTransportConnected) return@withLock RuntimeCustodyOutcome.RETRYABLE_FAILURE
         isSyncing = true
         publishState()
         try {
             val sessionToken = try {
                 sessionManager.requireSessionToken()
-            } catch (_: Exception) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 lastSuccessfulSyncAtEpochMillis = null
-                return@withLock // authentication failed -- next trigger retries.
+                return@withLock failureOutcome(error)
             }
             val outboundReached = drainOutbound(sessionToken)
+            if (outboundReached == RuntimeCustodyOutcome.BLOCKED) return@withLock outboundReached
             val inboundReached = drainInbound(sessionToken)
             // A "successful sync" requires BOTH directions to have
             // genuinely reached the server this attempt (an empty
@@ -116,22 +130,47 @@ class ReconnectSyncOrchestrator(
             // must never be papered over by the other direction happening
             // to have nothing to do, or computeSyncConnectionState could
             // claim LIVE off a sync that only partially happened.
-            if (outboundReached && inboundReached) {
+            if (outboundReached == RuntimeCustodyOutcome.COMPLETE && (inboundReached == RuntimeCustodyOutcome.COMPLETE || inboundReached == RuntimeCustodyOutcome.MORE_PENDING)) {
                 lastSuccessfulSyncAtEpochMillis = nowEpochMillis()
             }
+            if (inboundReached == RuntimeCustodyOutcome.BLOCKED) return@withLock inboundReached
+            if (outboundReached == RuntimeCustodyOutcome.RETRYABLE_FAILURE || inboundReached == RuntimeCustodyOutcome.RETRYABLE_FAILURE) {
+                return@withLock RuntimeCustodyOutcome.RETRYABLE_FAILURE
+            }
+            currentCoroutineContext().ensureActive()
+            sessionManager.assertCurrentSession(sessionToken)
+            pendingLocalWorkCount = outboxPort.getReadyForDelivery(nowEpochMillis()).size
+            currentCoroutineContext().ensureActive()
+            sessionManager.assertCurrentSession(sessionToken)
+            if (pendingLocalWorkCount > 0 || inboundReached == RuntimeCustodyOutcome.MORE_PENDING)
+                RuntimeCustodyOutcome.MORE_PENDING else RuntimeCustodyOutcome.COMPLETE
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            failureOutcome(error)
         } finally {
             isSyncing = false
             publishState()
         }
     }
 
+    private fun failureOutcome(error: Exception): RuntimeCustodyOutcome =
+        if (error is DeviceSessionChanged || (error is RelayHttpException && (error.errorCode == RelayHttpErrorCode.Network ||
+                error.errorCode == RelayHttpErrorCode.Unknown || error.errorCode == RelayHttpErrorCode.Unauthorized))
+            )
+            RuntimeCustodyOutcome.RETRYABLE_FAILURE else RuntimeCustodyOutcome.BLOCKED
+
     /** Returns true if this attempt genuinely reached the server (including "nothing to send"), false only on a total transport-level failure. */
-    private suspend fun drainOutbound(sessionToken: String): Boolean {
+    private suspend fun drainOutbound(sessionToken: String): RuntimeCustodyOutcome {
         val now = nowEpochMillis()
         outboxPort.deleteExpired(now)
+        currentCoroutineContext().ensureActive()
+        sessionManager.assertCurrentSession(sessionToken)
         val ready = outboxPort.getReadyForDelivery(now).take(MAX_OUTBOUND_BATCH_SIZE)
         pendingLocalWorkCount = ready.size
-        if (ready.isEmpty()) return true
+        currentCoroutineContext().ensureActive()
+        sessionManager.assertCurrentSession(sessionToken)
+        if (ready.isEmpty()) return RuntimeCustodyOutcome.COMPLETE
 
         val items = ready.mapIndexed { index, item ->
             OutboundSubmitItem(
@@ -153,17 +192,30 @@ class ReconnectSyncOrchestrator(
 
         return try {
             val result = relayHttpClient.submitOutbound(sessionToken, items)
+            currentCoroutineContext().ensureActive()
+            sessionManager.assertCurrentSession(sessionToken)
             val outcomeByMessageId = result.results.associateBy { it.messageId }
             for (item in ready) {
+                currentCoroutineContext().ensureActive()
+                sessionManager.assertCurrentSession(sessionToken)
                 when (outcomeByMessageId[item.messageId]?.outcome) {
                     "QUEUED" -> outboxPort.markSent(item.messageId)
                     "CONFLICT", "INVALID" -> outboxPort.markSent(item.messageId) // permanent failure -- retrying cannot succeed
                     else -> Unit // dropped-for-batch-bound or missing -- left PENDING, retried next attempt
                 }
             }
-            true
-        } catch (_: Exception) {
+            RuntimeCustodyOutcome.COMPLETE
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (failureOutcome(error) == RuntimeCustodyOutcome.BLOCKED) return RuntimeCustodyOutcome.BLOCKED
+            if (error is RelayHttpException && error.errorCode == RelayHttpErrorCode.Unauthorized)
+                sessionManager.invalidateRejectedSession(sessionToken)
+            if (error is DeviceSessionChanged || (error is RelayHttpException && error.errorCode == RelayHttpErrorCode.Unauthorized))
+                return RuntimeCustodyOutcome.RETRYABLE_FAILURE
             for (item in ready) {
+                currentCoroutineContext().ensureActive()
+                sessionManager.assertCurrentSession(sessionToken)
                 val decision = computeBackoff(item.retryCount, now)
                 if (decision.shouldRetry) {
                     outboxPort.markFailedForRetry(item.messageId, decision.nextRetryAtEpochMillis)
@@ -171,37 +223,81 @@ class ReconnectSyncOrchestrator(
                     outboxPort.markSent(item.messageId) // exhausted retries -- explicit give-up, never retried forever
                 }
             }
-            false
+            RuntimeCustodyOutcome.RETRYABLE_FAILURE
         }
     }
 
-    /** Returns true if this attempt genuinely reached the server, false only on a total transport-level failure. */
-    private suspend fun drainInbound(sessionToken: String): Boolean {
-        val result = try {
-            relayHttpClient.listInbound(sessionToken)
-        } catch (_: Exception) {
-            return false
-        }
-        val inbox = ciphertextInbox ?: return false
-        val scope = result.scope ?: return false
-        if (scope.recipientDeviceId != sessionManager.configuredDeviceId) return false
-        // `hasMore` is a continuation hint, not an exact queue count. It only
-        // keeps connection state pending; the normal bounded retry trigger
-        // fetches the next page. Capture/ACK and policy paths remain unchanged.
-        pendingRelayWorkCount = result.unparseableMessageIds.size + result.droppedForListBound.size +
-            (if (result.hasMore) 1 else 0)
+    /** Retained crypto work alone does not request immediate scheduler retries. */
+    private suspend fun drainInbound(sessionToken: String): RuntimeCustodyOutcome {
+        val inbox = ciphertextInbox ?: return RuntimeCustodyOutcome.BLOCKED
+        val incarnation = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(sessionToken.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
+        val started = System.nanoTime()
         return try {
-            // Capture the complete bounded response before ANY acknowledgement.
-            // This is transport custody, never verification or OS application.
-            inbox.capture(scope, result.applied.map { it.envelopeWire ?: throw IllegalStateException("Missing envelope") })
-            for (record in inbox.pendingAcknowledgements(scope)) {
-                if (!sessionManager.isAuthenticated() || sessionManager.requireSessionToken() != sessionToken) return false
-                relayHttpClient.acknowledgeInbound(sessionToken, record.messageId)
-                inbox.markAcknowledged(scope, record.messageId, record.envelopeWire)
+            var cursor = inbox.navigationFor(incarnation)?.nextCursor
+            var resetRejectedCursor = false
+            var ackCount = 0
+            suspend fun acknowledgeStored(scope: org.pca.app.runtime.sync.inbox.RuntimeInboxScope): Boolean {
+                if (scope.recipientDeviceId != sessionManager.configuredDeviceId
+                    || scope.familyId != expectedFamilyId) {
+                    throw IllegalStateException("Stored relay scope changed")
+                }
+                for (record in inbox.pendingAcknowledgements(scope)) {
+                    currentCoroutineContext().ensureActive()
+                    sessionManager.assertCurrentSession(sessionToken)
+                    if (ackCount >= 100 || System.nanoTime() - started >= 30_000_000_000L) return false
+                    relayHttpClient.acknowledgeInbound(sessionToken, record.messageId)
+                    currentCoroutineContext().ensureActive()
+                    sessionManager.assertCurrentSession(sessionToken)
+                    inbox.markAcknowledged(scope, record.messageId, record.envelopeWire)
+                    ackCount++
+                }
+                return true
             }
-            true
-        } catch (_: Exception) {
-            false
+            // Recovery must not depend on a successful subsequent page fetch.
+            // The same stored scope and current device session remain required.
+            inbox.retainedScope()?.let { if (!acknowledgeStored(it)) return RuntimeCustodyOutcome.MORE_PENDING }
+            for (page in 0 until 4) {
+                currentCoroutineContext().ensureActive()
+                sessionManager.assertCurrentSession(sessionToken)
+                if (System.nanoTime() - started >= 30_000_000_000L) return RuntimeCustodyOutcome.MORE_PENDING
+                val result = try {
+                    relayHttpClient.listInbound(sessionToken, cursor)
+                } catch (error: RelayHttpException) {
+                    currentCoroutineContext().ensureActive()
+                    sessionManager.assertCurrentSession(sessionToken)
+                    val rejected = cursor
+                    if (error.errorCode != RelayHttpErrorCode.InvalidCursor || rejected == null || resetRejectedCursor) throw error
+                    inbox.resetRejectedNavigation(incarnation, rejected)
+                    cursor = null
+                    resetRejectedCursor = true
+                    continue
+                }
+                currentCoroutineContext().ensureActive()
+                sessionManager.assertCurrentSession(sessionToken)
+                val scope = result.scope ?: return RuntimeCustodyOutcome.BLOCKED
+                if (scope.recipientDeviceId != sessionManager.configuredDeviceId) return RuntimeCustodyOutcome.BLOCKED
+                if (scope.familyId != expectedFamilyId) return RuntimeCustodyOutcome.BLOCKED
+                val navigation = result.navigation
+                if (navigation != null && navigation.sessionIncarnation != incarnation) return RuntimeCustodyOutcome.BLOCKED
+                inbox.capture(scope, result.applied.map { it.envelopeWire ?: throw IllegalStateException("Missing envelope") },
+                    result.receipts, navigation, incarnation, cursor)
+                pendingRelayWorkCount = result.unparseableMessageIds.size +
+                    (if (result.hasMore || inbox.hasUnresolvedRelayWork()) 1 else 0)
+                // ACK recovery is independent of which wrappers appeared on this page.
+                if (!acknowledgeStored(scope)) return RuntimeCustodyOutcome.MORE_PENDING
+                if (navigation == null || !navigation.hasMore) return RuntimeCustodyOutcome.COMPLETE
+                val next = navigation.nextCursor ?: return RuntimeCustodyOutcome.BLOCKED
+                if (next == cursor) return RuntimeCustodyOutcome.BLOCKED
+                cursor = next
+            }
+            RuntimeCustodyOutcome.MORE_PENDING
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error is RelayHttpException && error.errorCode == RelayHttpErrorCode.Unauthorized)
+                sessionManager.invalidateRejectedSession(sessionToken)
+            failureOutcome(error)
         }
     }
 }

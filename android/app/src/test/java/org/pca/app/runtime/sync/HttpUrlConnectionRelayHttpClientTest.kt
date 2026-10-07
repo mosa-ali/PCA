@@ -18,6 +18,28 @@ import org.pca.app.runtime.sync.transport.RelayHttpException
  */
 class HttpUrlConnectionRelayHttpClientTest {
     @Test
+    fun `published receipt only responses remain legacy and partial navigation is rejected`() = kotlinx.coroutines.test.runTest {
+        val base = """{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[],"hasMore":false"""
+        val empty = readInboundResponse("$base,\"receipts\":[]}")
+        org.junit.Assert.assertNull(empty.navigation)
+        org.junit.Assert.assertTrue(empty.receipts.isEmpty())
+        for (outcome in listOf("APPLIED", "HELD_PENDING", "REJECTED")) {
+            val body = "$base,\"receipts\":[{\"messageId\":\"receipt-1\",\"outcome\":\"$outcome\",\"atUtc\":\"2026-10-07T00:00:00.000Z\"}]"
+            val result = readInboundResponse("$body}")
+            org.junit.Assert.assertNull(result.navigation)
+            org.junit.Assert.assertEquals(outcome, result.receipts.single().outcome.name)
+            for (partial in listOf("\"nextCursor\":null", "\"hasUnresolved\":false", "\"sessionIncarnation\":\"${"a".repeat(64)}\"")) {
+                try {
+                    readInboundResponse("$body,$partial}")
+                    fail("Partial modern navigation must not decode as legacy")
+                } catch (e: RelayHttpException) {
+                    org.junit.Assert.assertTrue(e.errorCode is RelayHttpErrorCode.InvalidRequest)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `inbound continuation parses as boolean and legacy deferred ids remain pending`() = kotlinx.coroutines.test.runTest {
         val base = """{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]"""
 

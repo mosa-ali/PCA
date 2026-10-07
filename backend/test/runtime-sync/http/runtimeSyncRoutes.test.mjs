@@ -228,6 +228,88 @@ test('GET /v1/runtime-sync/inbound requires a device session and returns an empt
   }
 });
 
+test('HTTP continuation crosses empty malformed pages and retains every queued record', async () => {
+  const { app, deviceRepository, relayService } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+    for (let i = 0; i < 105; i += 1) await relayService.queueEnvelope({
+      messageId: `${randomUUID()}-malformed-${i}`, familyId, senderDeviceId: deviceId, recipientDeviceId: deviceId,
+      ciphertext: Buffer.from('malformed'),
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const first = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers });
+    assert.equal(first.statusCode, 200);
+    const page = first.json();
+    assert.deepEqual(page.applied, []);
+    assert.equal(page.unparseableMessageIds.length, 100);
+    assert.equal(page.hasMore, true);
+    assert.equal(page.hasUnresolved, true);
+    assert.match(page.sessionIncarnation, /^[0-9a-f]{64}$/);
+    assert.notEqual(page.sessionIncarnation, token);
+    const tail = await app.inject({ method: 'GET', url: `/v1/runtime-sync/inbound?cursor=${page.nextCursor}`, headers });
+    assert.equal(tail.statusCode, 200);
+    assert.equal(tail.json().unparseableMessageIds.length, 5);
+    assert.equal(tail.json().hasMore, false);
+    assert.equal(tail.json().nextCursor, null);
+    assert.equal(tail.json().hasUnresolved, true);
+    assert.equal((await relayService.listQueuedForRecipient(deviceId)).length, 105);
+  } finally { await app.close(); }
+});
+
+test('HTTP cursor cannot cross a recipient, family or freshly authenticated session incarnation', async () => {
+  const { app, deviceRepository, relayService } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const own = await registerDevice(deviceRepository, familyId);
+    const firstToken = await authenticateDevice(app, own.deviceId, own.publicKey);
+    for (let i = 0; i < 101; i += 1) await relayService.queueEnvelope({
+      messageId: randomUUID(), familyId, senderDeviceId: own.deviceId, recipientDeviceId: own.deviceId, ciphertext: Buffer.from('malformed'),
+    });
+    const first = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers: { authorization: `Bearer ${firstToken}` } });
+    assert.equal(first.statusCode, 200);
+    const cursor = first.json().nextCursor;
+    const replacement = await authenticateDevice(app, own.deviceId, own.publicKey);
+    const sibling = await registerDevice(deviceRepository, familyId);
+    const siblingToken = await authenticateDevice(app, sibling.deviceId, sibling.publicKey);
+    const foreign = await registerDevice(deviceRepository, `other-${randomUUID()}`);
+    const foreignToken = await authenticateDevice(app, foreign.deviceId, foreign.publicKey);
+    for (const token of [replacement, siblingToken, foreignToken]) {
+      const response = await app.inject({ method: 'GET', url: `/v1/runtime-sync/inbound?cursor=${cursor}`,
+        headers: { authorization: `Bearer ${token}` } });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), { error: 'invalid_cursor' });
+    }
+    assert.equal((await relayService.listQueuedForRecipient(own.deviceId)).length, 101);
+  } finally { await app.close(); }
+});
+
+test('HTTP cursor rejects malformed, expired, inverted and excessive navigation without changing custody', async () => {
+  const { app, deviceRepository, relayService } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const own = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, own.deviceId, own.publicKey);
+    for (let i = 0; i < 101; i += 1) await relayService.queueEnvelope({
+      messageId: randomUUID(), familyId, senderDeviceId: own.deviceId, recipientDeviceId: own.deviceId, ciphertext: Buffer.from('malformed'),
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const first = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers });
+    const claim = JSON.parse(Buffer.from(first.json().nextCursor, 'base64url').toString());
+    const wire = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    for (const cursor of ['!', 'a'.repeat(6145), wire({ ...claim, version: 2 }),
+      wire({ ...claim, startedAtMs: Date.now() - 16 * 60 * 1000 }), wire({ ...claim, after: claim.highWater })]) {
+      const response = await app.inject({ method: 'GET', url: `/v1/runtime-sync/inbound?cursor=${encodeURIComponent(cursor)}`, headers });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), { error: 'invalid_cursor' });
+    }
+    const repeated = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound?cursor=a&cursor=b', headers });
+    assert.equal(repeated.statusCode, 400);
+    assert.equal((await relayService.listQueuedForRecipient(own.deviceId)).length, 101);
+  } finally { await app.close(); }
+});
+
 test('POST /v1/runtime-sync/inbound/:messageId/ack returns 404 for an unknown/not-this-recipient messageId', async () => {
   const { app, deviceRepository } = buildApp();
   try {

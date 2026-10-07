@@ -1,4 +1,5 @@
 import type { MessageId, OpaqueDeviceId, RelayEnvelopeRecord } from './types.js';
+import type { RelayQueuePage, RelayQueuePageInput, RelayQueuedRecord } from './queuePage.js';
 
 export type CreateEnvelopeResult =
   | { outcome: 'CREATED'; record: RelayEnvelopeRecord }
@@ -30,6 +31,10 @@ export interface RelayRepository {
   createOrMatchEnvelope(record: RelayEnvelopeRecord): Promise<CreateEnvelopeResult>;
   findForRecipient(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord | null>;
   listQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, now: Date): Promise<RelayEnvelopeRecord[]>;
+  /** Stable, bounded transport traversal; family and recipient are authenticated caller inputs. */
+  listQueuedPageForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, now: Date, input: RelayQueuePageInput): Promise<RelayQueuePage>;
+  /** Bounded exact correlation predecessor lookup. It must not move the base page position. */
+  findQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, messageIds: readonly MessageId[], now: Date): Promise<RelayQueuedRecord[]>;
   /** Best-effort operational cleanup; expired ciphertext must not accumulate in relay storage. */
   purgeExpired?(now: Date): Promise<number>;
   acknowledgeAtomically(

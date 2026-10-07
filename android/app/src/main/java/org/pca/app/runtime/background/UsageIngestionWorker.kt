@@ -3,7 +3,9 @@ package org.pca.app.runtime.background
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import org.pca.app.runtime.graph.PcaAppGraph
+import org.pca.app.runtime.sync.RuntimeCustodyOutcome
 
 /**
  * PCA-AND-002/PCA-FR-040/PCA-NFR-033 closure: the app's first `WorkManager`/`CoroutineWorker`
@@ -37,9 +39,13 @@ class UsageIngestionWorker(appContext: Context, params: WorkerParameters) : Coro
             graph.runUsageLocationIngestionCycle()
             // Reuse this persisted OS schedule after process death/reboot.
             // Only an eligible committed identity may pull; custody never applies a policy.
-            graph.synchronizeRuntimeCustody()
-            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = true)
-            Result.success()
+            val outcome = graph.synchronizeRuntimeCustody()
+            val retry = outcome == RuntimeCustodyOutcome.MORE_PENDING || outcome == RuntimeCustodyOutcome.RETRYABLE_FAILURE
+            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos,
+                success = !retry && outcome != RuntimeCustodyOutcome.BLOCKED)
+            if (retry) Result.retry() else Result.success()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
             BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = false)
             Result.retry()

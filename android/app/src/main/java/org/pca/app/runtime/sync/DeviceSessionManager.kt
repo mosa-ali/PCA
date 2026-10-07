@@ -1,6 +1,7 @@
 package org.pca.app.runtime.sync
 
 import java.time.Instant
+import kotlinx.coroutines.ensureActive
 import org.pca.app.runtime.sync.transport.DeviceSessionInfo
 import org.pca.app.runtime.sync.transport.RelayHttpClient
 import org.pca.app.security.DskSignatureEngine
@@ -16,6 +17,8 @@ internal fun signRuntimeDeviceChallenge(engine: DskSignatureEngine, alias: Strin
 fun interface ChallengeSigner {
     suspend fun sign(nonce: String): String
 }
+
+class DeviceSessionChanged : Exception("Device session changed")
 
 /**
  * Device-side counterpart of backend/src/runtime-sync/DeviceSessionService.ts:
@@ -47,8 +50,13 @@ class DeviceSessionManager(
     suspend fun authenticate(): DeviceSessionInfo {
         verifyKeyCustody()
         val challenge = relayHttpClient.issueChallenge(deviceId)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        verifyKeyCustody()
         val signature = signer.sign(challenge.nonce)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        verifyKeyCustody()
         val newSession = relayHttpClient.completeChallenge(deviceId, challenge.challengeId, signature)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         verifyKeyCustody()
         session = newSession
         return newSession
@@ -58,6 +66,17 @@ class DeviceSessionManager(
         verifyKeyCustody()
         if (isAuthenticated()) return (session as DeviceSessionInfo).sessionToken
         return authenticate().sessionToken
+    }
+
+    /** Continuity check only: never authenticate a replacement across an awaited operation. */
+    fun assertCurrentSession(expectedToken: String) {
+        verifyKeyCustody()
+        if (!isAuthenticated() || session?.sessionToken != expectedToken) throw DeviceSessionChanged()
+    }
+
+    /** A rejected token cannot clear a replacement authenticated by another caller. */
+    fun invalidateRejectedSession(expectedToken: String) {
+        if (session?.sessionToken == expectedToken) session = null
     }
 
     private fun verifyKeyCustody() {

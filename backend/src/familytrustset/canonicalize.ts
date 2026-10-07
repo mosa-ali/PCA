@@ -1,5 +1,6 @@
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { isWellFormedUnicode } from './policy.js';
 
 /**
  * Same netstring-style length-prefixed scheme as
@@ -28,7 +29,10 @@ export function canonicalizeTrustSetEpoch(epoch: Omit<FamilyTrustSetEpoch, 'sign
     epoch.issuedAt.toISOString(),
     epoch.supersedesEpoch === null ? 'null' : String(epoch.supersedesEpoch),
   ];
-  return fields.map((field) => `${Buffer.byteLength(field, 'utf8')}:${field}`).join('');
+  return fields.map((field) => {
+    if (!isWellFormedUnicode(field)) throw new Error('Trust Set canonical fields must contain well-formed Unicode.');
+    return `${Buffer.byteLength(field, 'utf8')}:${field}`;
+  }).join('');
 }
 
 function canonicalizeEntryFields(entry: FamilyTrustSetEntry): string[] {

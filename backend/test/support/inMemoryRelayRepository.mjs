@@ -17,6 +17,13 @@ export function createInMemoryRelayRepository() {
     );
   }
 
+  function comparePosition(a, b) {
+    return a.createdAtMs - b.createdAtMs || Buffer.compare(Buffer.from(a.messageId, 'utf8'), Buffer.from(b.messageId, 'utf8'));
+  }
+
+  const position = (record) => ({ createdAtMs: record.createdAt.getTime(), messageId: record.messageId });
+  const queuedClone = (record) => ({ ...clone(record), ciphertext: record.ciphertext.length <= 65536 ? Buffer.from(record.ciphertext) : null });
+
   return {
     // No `await` before any mutation below, so each call runs to completion
     // synchronously once invoked -- concurrent submissions of the same
@@ -53,6 +60,24 @@ export function createInMemoryRelayRepository() {
         }
       }
       return results;
+    },
+
+    async listQueuedPageForRecipient(recipientDeviceId, familyId, now, input) {
+      if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) throw new RangeError('Invalid page limit');
+      const eligible = [...byMessageId.values()].filter((record) => record.recipientDeviceId === recipientDeviceId
+        && record.familyId === familyId && record.state === 'QUEUED' && record.expiresAt > now)
+        .sort((a, b) => comparePosition(position(a), position(b)));
+      const highWater = input.highWater ?? (eligible.length ? position(eligible.at(-1)) : null);
+      const candidates = highWater === null ? [] : eligible.filter((record) => comparePosition(position(record), highWater) <= 0
+        && (input.after === null || comparePosition(position(record), input.after) > 0));
+      return { records: candidates.slice(0, input.limit).map(queuedClone), highWater, hasMore: candidates.length > input.limit };
+    },
+
+    async findQueuedForRecipient(recipientDeviceId, familyId, messageIds, now) {
+      if (messageIds.length > 16) throw new RangeError('Supplement bound exceeded');
+      return messageIds.map((id) => byMessageId.get(id)).filter((record) => record && record.recipientDeviceId === recipientDeviceId
+        && record.familyId === familyId && record.state === 'QUEUED' && record.expiresAt > now)
+        .sort((a, b) => comparePosition(position(a), position(b))).map(queuedClone);
     },
 
     async acknowledgeAtomically(recipientDeviceId, messageId, acknowledgedAt) {

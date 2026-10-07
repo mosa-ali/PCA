@@ -6,6 +6,59 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeviceSessionManagerTest {
+    @Test fun `old rejected token cannot invalidate a replacement session`() = runTest {
+        val relay = FakeRelayHttpClient()
+        var sequence = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) =
+                relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "session-${++sequence}")
+        }
+        val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" })
+        val old = manager.authenticate().sessionToken
+        val replacement = manager.authenticate().sessionToken
+        manager.invalidateRejectedSession(old)
+        assertEquals(replacement, manager.requireSessionToken())
+        assertEquals(2, sequence)
+        manager.invalidateRejectedSession(replacement)
+        assertEquals("session-3", manager.requireSessionToken())
+    }
+
+    @Test fun `custody loss during challenge prevents signing or session exchange`() = runTest {
+        val relay = FakeRelayHttpClient()
+        var custodyAvailable = true
+        var signingCalls = 0
+        var exchangeCalls = 0
+        val interrupted = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun issueChallenge(deviceId: String) = relay.issueChallenge(deviceId).also { custodyAvailable = false }
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): org.pca.app.runtime.sync.transport.DeviceSessionInfo {
+                exchangeCalls++
+                return relay.completeChallenge(deviceId, challengeId, signature)
+            }
+        }
+        val manager = DeviceSessionManager(interrupted, "device-1", signer = { signingCalls++; "sig" },
+            assertKeyCustody = { check(custodyAvailable) })
+        assertTrue(runCatching { manager.authenticate() }.isFailure)
+        assertEquals(0, signingCalls)
+        assertEquals(0, exchangeCalls)
+        assertTrue(!manager.isAuthenticated())
+    }
+
+    @Test fun `custody loss during signing prevents session exchange`() = runTest {
+        val relay = FakeRelayHttpClient()
+        var custodyAvailable = true
+        var exchangeCalls = 0
+        val observing = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): org.pca.app.runtime.sync.transport.DeviceSessionInfo {
+                exchangeCalls++
+                return relay.completeChallenge(deviceId, challengeId, signature)
+            }
+        }
+        val manager = DeviceSessionManager(observing, "device-1", signer = { custodyAvailable = false; "sig" },
+            assertKeyCustody = { check(custodyAvailable) })
+        assertTrue(runCatching { manager.authenticate() }.isFailure)
+        assertEquals(0, exchangeCalls)
+        assertTrue(!manager.isAuthenticated())
+    }
     @Test fun `runtime challenge composition encodes already canonical provider bytes once`() {
         val canonical = ByteArray(64) { (it + 1).toByte() }
         val engine = object : org.pca.app.security.DskSignatureEngine {

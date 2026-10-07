@@ -2,6 +2,7 @@ import { isPlausibleCiphertext, isPlausibleOpaqueId, resolveRelayTtlMs, computeE
 import type { AcknowledgeResult, CreateEnvelopeResult, RelayRepository } from './RelayRepository.js';
 import { buildRelayDiagnosticEvent, type RelayDiagnosticEvent, type RelayDiagnosticOutcome } from './diagnostics.js';
 import type { MessageId, OpaqueDeviceId, OpaqueFamilyId, RelayEnvelopeRecord } from './types.js';
+import { MAX_RELAY_SUPPLEMENT_RECORDS, validateRelayQueuePageInput, type RelayQueuePage, type RelayQueuePageInput, type RelayQueuedRecord } from './queuePage.js';
 
 export type RelayErrorCode = 'INVALID_INPUT' | 'CONFLICT' | 'NOT_FOUND' | 'EXPIRED';
 
@@ -134,6 +135,26 @@ export class RelayService {
     }
     this.emitDiagnostic(record, 'DELIVERED');
     return record;
+  }
+
+  async listQueuedPageForRecipient(
+    recipientDeviceId: OpaqueDeviceId, familyId: OpaqueFamilyId, now: Date, input: RelayQueuePageInput,
+  ): Promise<RelayQueuePage> {
+    if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(familyId)) throw new RelayError('INVALID_INPUT');
+    validateRelayQueuePageInput(input);
+    // Expiry is filtered by the query; global housekeeping is not required
+    // for bounded navigation and must not turn each page into a purge pass.
+    return this.repository.listQueuedPageForRecipient(recipientDeviceId, familyId, now, input);
+  }
+
+  async findQueuedForRecipient(
+    recipientDeviceId: OpaqueDeviceId, familyId: OpaqueFamilyId, messageIds: readonly MessageId[], now: Date,
+  ): Promise<RelayQueuedRecord[]> {
+    if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(familyId)
+        || messageIds.length > MAX_RELAY_SUPPLEMENT_RECORDS || messageIds.some((id) => !isPlausibleOpaqueId(id))) {
+      throw new RelayError('INVALID_INPUT');
+    }
+    return this.repository.findQueuedForRecipient(recipientDeviceId, familyId, [...new Set(messageIds)], now);
   }
 
   /** Acknowledgement is idempotent, but an already-expired envelope can never become ACKNOWLEDGED by a late ack. */

@@ -1,4 +1,5 @@
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import type { FamilyTrustSetEpoch } from './types.js';
 
 export const MAX_OPAQUE_ID_LENGTH = 128;
 export const MAX_SIGNATURE_LENGTH = 512;
@@ -17,11 +18,34 @@ const ENTRY_STATUSES = new Set([
 ]);
 
 export function isPlausibleOpaqueId(candidate: unknown): candidate is string {
-  return typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_OPAQUE_ID_LENGTH;
+  return typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_OPAQUE_ID_LENGTH && isWellFormedUnicode(candidate);
 }
 
 export function isPlausibleSignature(candidate: unknown): candidate is string {
-  return typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_SIGNATURE_LENGTH;
+  return typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_SIGNATURE_LENGTH && isWellFormedUnicode(candidate);
+}
+
+/** Reject unpaired UTF-16 instead of letting UTF-8 encoding replace signed identity bytes. */
+export function isWellFormedUnicode(candidate: unknown): candidate is string {
+  if (typeof candidate !== 'string') return false;
+  for (let i = 0; i < candidate.length; i += 1) {
+    const unit = candidate.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = candidate.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Direct typed acceptance callers must receive the same Unicode identity guard as wire parsing. */
+export function hasWellFormedTrustSetText(epoch: FamilyTrustSetEpoch): boolean {
+  if (!isWellFormedUnicode(epoch.familyId) || !isWellFormedUnicode(epoch.signature) || !Array.isArray(epoch.entries)) return false;
+  return epoch.entries.every((entry) => entry != null && [entry.deviceId, entry.role,
+    entry.dskKeyId, entry.dskPublicKey, entry.dekKeyId, entry.dekPublicKey, entry.status].every(isWellFormedUnicode));
 }
 
 export function isPlausibleEpochNumber(candidate: unknown): candidate is number {
@@ -42,5 +66,5 @@ export function isPlausibleEntryStatus(candidate: unknown): candidate is string 
 
 /** DSK and DEK are distinct roles (doc 09 Section 3.1) -- never the same key material for one entry. */
 export function isDistinctKeyPair(dskPublicKey: string, dekPublicKey: string): boolean {
-  return dskPublicKey !== dekPublicKey;
+  return isWellFormedUnicode(dskPublicKey) && isWellFormedUnicode(dekPublicKey) && dskPublicKey !== dekPublicKey;
 }

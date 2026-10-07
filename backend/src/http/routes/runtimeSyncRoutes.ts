@@ -5,6 +5,8 @@ import { envelopeToRawFamilyEnvelope } from '../../runtime-sync/envelopeWireCode
 import type { OutboundEnvelopeItem, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { RelayError } from '../../relay/RelayService.js';
+import { hashSessionToken } from '../../auth/token.js';
+import { InvalidRelayCursorError, MAX_RELAY_CURSOR_BYTES } from '../../runtime-sync/relayContinuation.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
@@ -33,6 +35,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     runtimeSyncDeviceId?: string;
     runtimeSyncFamilyId?: string;
+    runtimeSyncSessionIncarnation?: string;
   }
 }
 
@@ -185,6 +188,7 @@ function createRequireDeviceSession(deviceSessionService: DeviceSessionService) 
       const identity = await deviceSessionService.validateSession(header.slice('Bearer '.length));
       request.runtimeSyncDeviceId = identity.deviceId;
       request.runtimeSyncFamilyId = identity.familyId;
+      request.runtimeSyncSessionIncarnation = hashSessionToken(header.slice('Bearer '.length));
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) {
         await reply.code(401).send({ error: 'unauthorized' });
@@ -269,6 +273,10 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
     { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const deviceId = request.runtimeSyncDeviceId as string;
+      const query = request.query as { cursor?: unknown };
+      if (query.cursor !== undefined && !isNonEmptyString(query.cursor, MAX_RELAY_CURSOR_BYTES)) {
+        return reply.code(400).send({ error: 'invalid_cursor' });
+      }
       deps.statusTracker.markSyncStart(deviceId);
       try {
         const outcome = await deps.inboundReconnectService.reconnectDrainForRecipient(
@@ -276,6 +284,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           request.runtimeSyncFamilyId as string,
           (senderKeyId, nowUtc) => deps.resolveEnvelopeContext(senderKeyId, request.runtimeSyncFamilyId as string, nowUtc),
           new Date(),
+          { sessionIncarnation: request.runtimeSyncSessionIncarnation as string, cursor: query.cursor as string | undefined },
         );
         deps.statusTracker.markSyncSuccess(deviceId, new Date());
         return reply.send({
@@ -290,7 +299,13 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           unparseableMessageIds: outcome.unparseableMessageIds,
           droppedForListBound: outcome.droppedForListBound,
           hasMore: outcome.hasMore,
+          nextCursor: outcome.nextCursor,
+          hasUnresolved: outcome.hasUnresolved,
+          sessionIncarnation: outcome.sessionIncarnation,
         });
+      } catch (error) {
+        if (error instanceof InvalidRelayCursorError) return reply.code(400).send({ error: 'invalid_cursor' });
+        throw error;
       } finally {
         deps.statusTracker.markSyncEnd(deviceId);
       }

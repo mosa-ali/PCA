@@ -1,5 +1,5 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
-import { isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch } from './policy.js';
+import { hasWellFormedTrustSetText, isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch } from './policy.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
@@ -133,7 +133,7 @@ export async function acceptEpoch(
 ): Promise<FtsVerdict> {
   // Direct typed callers must receive the same numeric-domain guard as the
   // canonical decoder, before store reads, canonicalization, or signature work.
-  if (!isPlausibleEpochNumber(epoch.trustSetEpoch) || !isPlausibleKeyEpoch(epoch.keyEpoch)) {
+  if (!isPlausibleEpochNumber(epoch.trustSetEpoch) || !isPlausibleKeyEpoch(epoch.keyEpoch) || !hasWellFormedTrustSetText(epoch)) {
     return { accepted: false, reason: 'MALFORMED_EPOCH' };
   }
   if (activeOwnerCount(epoch.entries) !== 1) {
@@ -157,7 +157,7 @@ export async function acceptEpoch(
   if (currentEpoch && epoch.familyId !== currentEpoch.familyId) {
     return { accepted: false, reason: 'FAMILY_MISMATCH' };
   }
-  if (currentEpoch && (!isPlausibleEpochNumber(currentEpoch.trustSetEpoch) || !isPlausibleKeyEpoch(currentEpoch.keyEpoch))) {
+  if (currentEpoch && (!isPlausibleEpochNumber(currentEpoch.trustSetEpoch) || !isPlausibleKeyEpoch(currentEpoch.keyEpoch) || !hasWellFormedTrustSetText(currentEpoch))) {
     return { accepted: false, reason: 'MALFORMED_EPOCH' };
   }
   if (currentEpoch && epoch.trustSetEpoch <= currentEpoch.trustSetEpoch) {

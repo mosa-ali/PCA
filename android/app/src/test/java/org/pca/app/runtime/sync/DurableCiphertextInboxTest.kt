@@ -28,7 +28,91 @@ private class InboxBacking : PersistentStateStore {
 }
 
 class DurableCiphertextInboxTest {
+    @Test fun `legacy held receipt remains unresolved without navigation or acknowledgement`() {
+        val inbox = PersistentCiphertextInbox(InboxBacking(), "device-1")
+        val receipt = org.pca.app.runtime.sync.transport.InboundReceipt("held-1",
+            org.pca.app.runtime.sync.transport.InboundReceiptOutcome.HELD_PENDING, "2026-10-07T00:00:00.000Z")
+        inbox.capture(scope, emptyList(), receipts = listOf(receipt))
+        assertTrue(inbox.hasUnresolvedRelayWork())
+        assertTrue(inbox.pendingAcknowledgements(scope).isEmpty())
+        assertEquals(0, inbox.pendingCryptoCount())
+    }
+
+    private val incarnation = "a".repeat(64)
+    private fun navigation(cursor: String?, unresolved: Boolean = false) =
+        org.pca.app.runtime.sync.transport.InboundNavigation(cursor, cursor != null, unresolved, incarnation)
+
+    @Test fun `restart restores cursor receipts and acknowledgement in one snapshot`() {
+        val store = InboxBacking()
+        val receipt = org.pca.app.runtime.sync.transport.InboundReceipt("message-1",
+            org.pca.app.runtime.sync.transport.InboundReceiptOutcome.APPLIED, "2026-10-07T00:00:00.000Z")
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), listOf(receipt), navigation("cursor1"), incarnation, null)
+        val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
+        assertEquals("cursor1", restored.navigationFor(incarnation)?.nextCursor)
+        assertEquals(1, restored.pendingAcknowledgements(scope).size)
+        val snapshot = JSONObject(store.values.values.single())
+        assertEquals(1, snapshot.getJSONArray("receipts").length())
+        assertEquals(2, snapshot.getInt("version"))
+    }
+
+    @Test fun `rotation clears navigation but preserves ciphertext and pending acknowledgements`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        assertNull(inbox.navigationFor("b".repeat(64)))
+        val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
+        assertNull(restored.navigationFor(incarnation))
+        assertEquals(1, restored.pendingCryptoCount())
+        assertEquals(1, restored.pendingAcknowledgements(scope).size)
+    }
+
+    @Test fun `failed cursor flush cannot be exposed or survive process restart`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        store.failFlush = true
+        unavailable { inbox.capture(scope, emptyList(), navigation = navigation("cursor2"),
+            expectedSessionIncarnation = incarnation, expectedCursor = "cursor1") }
+        unavailable { inbox.navigationFor(incarnation) }
+        val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
+        assertEquals("cursor1", restored.navigationFor(incarnation)?.nextCursor)
+        assertEquals(1, restored.pendingAcknowledgements(scope).size)
+    }
+
+    @Test fun `wrong session repeated cursor and stale request cannot advance custody`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val before = store.values.toMap()
+        unavailable { inbox.capture(scope, emptyList(), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation, expectedCursor = "cursor1") }
+        unavailable { inbox.capture(scope, emptyList(), navigation = navigation("cursor2"),
+            expectedSessionIncarnation = incarnation, expectedCursor = "stale") }
+        unavailable { inbox.capture(scope, emptyList(), navigation = navigation("cursor2"),
+            expectedSessionIncarnation = "b".repeat(64), expectedCursor = "cursor1") }
+        assertEquals(before, store.values)
+    }
+
     private val scope = RuntimeInboxScope("family-1", "device-1")
+    @Test fun `legacy response to resumed modern cursor retains entire snapshot`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val before = store.values.toMap()
+        unavailable { inbox.capture(scope, listOf(wire("message-2")),
+            expectedSessionIncarnation = incarnation, expectedCursor = "cursor1") }
+        assertEquals(before, store.values)
+        val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
+        assertEquals("cursor1", restored.navigationFor(incarnation)?.nextCursor)
+        assertEquals(listOf("message-1"), restored.pendingAcknowledgements(scope).map { it.messageId })
+        assertEquals(1, restored.pendingCryptoCount())
+    }
+
     private fun wire(id: String = "message-1") = String(envelopeToRelayCiphertext(FamilyEnvelope(
         1, 0, id, "family-1", "sender-1", RecipientBinding.Device("device-1"), "key-1",
         "STATUS_SNAPSHOT", 1, 1, "nonce-1", 1_700_000_000_000L, 1_700_000_060_000L,

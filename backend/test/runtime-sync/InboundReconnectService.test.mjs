@@ -42,7 +42,8 @@ function buildEnvelope(overrides = {}) {
 }
 
 function buildHarness(options = {}) {
-  const relayService = new RelayService(createInMemoryRelayRepository());
+  const relayRepository = createInMemoryRelayRepository();
+  const relayService = new RelayService(relayRepository, options.relayNow);
   const syncCoordinator = new SyncCoordinator(
     new InMemoryPendingQueueStore(),
     new InMemorySequenceProgressLedger(),
@@ -53,8 +54,99 @@ function buildHarness(options = {}) {
     { isNumericSequenceSender: options.isNumericSequenceSender ?? (() => false) },
   );
   const inboundService = new InboundReconnectService(relayService, syncCoordinator);
-  return { relayService, syncCoordinator, inboundService };
+  return { relayService, relayRepository, syncCoordinator, inboundService };
 }
+
+test('a campaign traverses empty malformed pages and reaches later eligible ciphertext without ACKing the head', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, inboundService } = buildHarness({ relayNow: () => now });
+  for (let i = 0; i < 205; i += 1) {
+    await relayService.queueEnvelope({ messageId: `a-malformed-${String(i).padStart(3, '0')}`, familyId: 'family-1',
+      senderDeviceId: 'sender-device-1', recipientDeviceId: RECIPIENT_DEVICE_ID, ciphertext: Buffer.from('not an envelope') });
+  }
+  const tail = buildEnvelope({ messageId: 'z-eligible-tail' });
+  await queueForRecipient(relayService, tail);
+  let cursor;
+  let reached = false;
+  for (let page = 0; page < 4; page += 1) {
+    const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+      { sessionIncarnation: 'a'.repeat(64), cursor });
+    if (page < 2) { assert.deepEqual(outcome.applied, []); assert.equal(outcome.hasUnresolved, true); }
+    reached ||= outcome.applied.some((item) => item.messageId === tail.messageId);
+    if (!outcome.hasMore) { assert.equal(outcome.nextCursor, null); break; }
+    assert.equal(typeof outcome.nextCursor, 'string');
+    assert.notEqual(outcome.nextCursor, cursor);
+    cursor = outcome.nextCursor;
+  }
+  assert.equal(reached, true);
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 206);
+});
+
+test('an aggregate byte-full permanently held head cannot starve a valid tail in the same campaign', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, inboundService } = buildHarness({ relayNow: () => now });
+  for (let i = 0; i < 40; i += 1) await queueForRecipient(relayService, buildEnvelope({
+    messageId: `a-held-${String(i).padStart(3, '0')}`, messageType: 'PARENT_DECISION',
+    correlationId: `absent-request-${i}`, payload: Buffer.alloc(40 * 1024, 7),
+  }));
+  const tail = buildEnvelope({ messageId: 'z-byte-tail' });
+  await queueForRecipient(relayService, tail);
+  let cursor;
+  let reached = false;
+  let pages = 0;
+  for (; pages < 6; pages += 1) {
+    const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+      { sessionIncarnation: 'a'.repeat(64), cursor });
+    reached ||= outcome.applied.some((item) => item.messageId === tail.messageId);
+    assert.ok(outcome.receipts.every((item) => !outcome.droppedForListBound.includes(item.messageId)));
+    if (!outcome.hasMore) break;
+    assert.equal(typeof outcome.nextCursor, 'string');
+    assert.notEqual(outcome.nextCursor, cursor);
+    cursor = outcome.nextCursor;
+  }
+  assert.ok(pages > 0 && pages < 6);
+  assert.equal(reached, true);
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 41);
+});
+
+test('bounded supplemental predecessor admission cannot move the base cursor past unexamined rows', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, inboundService } = buildHarness({ relayNow: () => now });
+  const child = buildEnvelope({ messageId: 'z-supplement-child', messageType: 'CHILD_REQUEST' });
+  const parent = buildEnvelope({ messageId: 'a-supplement-parent', messageType: 'PARENT_DECISION', correlationId: child.messageId });
+  await queueForRecipient(relayService, parent);
+  for (let i = 0; i < 110; i += 1) await relayService.queueEnvelope({
+    messageId: `b-malformed-${String(i).padStart(3, '0')}`, familyId: 'family-1', senderDeviceId: 'sender-device-1',
+    recipientDeviceId: RECIPIENT_DEVICE_ID, ciphertext: Buffer.from('malformed'),
+  });
+  await queueForRecipient(relayService, child);
+  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64) });
+  assert.deepEqual(new Set(outcome.applied.map((item) => item.messageId)), new Set([child.messageId, parent.messageId]));
+  const claim = JSON.parse(Buffer.from(outcome.nextCursor, 'base64url').toString());
+  assert.equal(claim.after.messageId, 'b-malformed-098');
+  assert.equal(outcome.hasMore, true);
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 112);
+});
+
+test('oversized persisted legacy ciphertext is skipped without loading or ACKing it', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, relayRepository, inboundService } = buildHarness({ relayNow: () => now });
+  await relayRepository.createOrMatchEnvelope({ messageId: 'a-oversized', familyId: 'family-1', senderDeviceId: 'sender-device-1',
+    recipientDeviceId: RECIPIENT_DEVICE_ID, ciphertext: Buffer.alloc(65537), state: 'QUEUED', createdAt: now,
+    expiresAt: new Date(now.getTime() + 86400000), acknowledgedAt: null });
+  const tail = buildEnvelope({ messageId: 'z-after-oversized' });
+  await queueForRecipient(relayService, tail);
+  const page = await relayRepository.listQueuedPageForRecipient(RECIPIENT_DEVICE_ID, 'family-1', now,
+    { after: null, highWater: null, limit: 100 });
+  assert.equal(page.records[0].ciphertext, null);
+  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64) });
+  assert.deepEqual(outcome.unparseableMessageIds, ['a-oversized']);
+  assert.equal(outcome.applied[0].messageId, tail.messageId);
+  assert.equal(outcome.hasUnresolved, true);
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 2);
+});
 
 async function queueForRecipient(relayService, envelope) {
   await relayService.queueEnvelope({
@@ -105,9 +197,10 @@ test('large valid wrappers are paged before acceptance and remain queued until e
 test('continuation diagnostics are bounded independently of total queue depth', async () => {
   const { relayService, inboundService } = buildHarness();
   for (let i = 0; i < 305; i += 1) await queueForRecipient(relayService, buildEnvelope());
-  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), new Date('2026-01-01T01:00:00.000Z'));
+  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), new Date('2026-01-01T01:00:00.000Z'), { sessionIncarnation: 'a'.repeat(64) });
   assert.equal(outcome.applied.length, 100);
-  assert.equal(outcome.droppedForListBound.length, 100);
+  assert.equal(outcome.droppedForListBound.length, 0); // unfetched rows are represented by navigation, not an unbounded queue load
+  assert.equal(typeof outcome.nextCursor, 'string');
   assert.equal(outcome.hasMore, true);
   assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 305);
 });
@@ -124,12 +217,21 @@ test('queued correlation predecessors are paged ahead of large dependents so byt
   for (const decision of decisions) await queueForRecipient(relayService, decision);
   for (const request of requests) await queueForRecipient(relayService, request);
 
-  const outcome = await inboundService.reconnectDrainForRecipient(
-    RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), new Date('2026-01-01T01:00:00.000Z'),
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  let outcome = await inboundService.reconnectDrainForRecipient(
+    RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), now, { sessionIncarnation: 'a'.repeat(64) },
   );
   const appliedIds = new Set(outcome.applied.map((envelope) => envelope.messageId));
-  assert.ok(requests.every((request) => appliedIds.has(request.messageId)));
+  assert.ok(requests.some((request) => appliedIds.has(request.messageId)));
   assert.ok(outcome.hasMore);
+  for (let page = 0; outcome.hasMore && page < 10; page += 1) {
+    assert.equal(typeof outcome.nextCursor, 'string');
+    outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), now,
+      { sessionIncarnation: 'a'.repeat(64), cursor: outcome.nextCursor });
+    outcome.applied.forEach((envelope) => appliedIds.add(envelope.messageId));
+  }
+  assert.equal(outcome.hasMore, false);
+  assert.ok(requests.every((request) => appliedIds.has(request.messageId)));
   assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 40);
 });
 
@@ -227,14 +329,23 @@ test('a structurally malformed relay entry is left queued (not acknowledged) rat
   assert.equal(stillQueued.length, 1);
 });
 
-test('MAX_INBOUND_LIST_SIZE bounds a single reconnect attempt; the rest are reported dropped, never silently lost', async () => {
+test('MAX_INBOUND_LIST_SIZE bounds a reconnect page; retained tail is reached by continuation', async () => {
   const { relayService, inboundService } = buildHarness();
   for (let i = 0; i < MAX_INBOUND_LIST_SIZE + 3; i += 1) {
     await queueForRecipient(relayService, buildEnvelope());
   }
-  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), new Date('2026-01-01T01:00:00.000Z'));
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), now,
+    { sessionIncarnation: 'a'.repeat(64) });
   assert.equal(outcome.applied.length, MAX_INBOUND_LIST_SIZE);
-  assert.equal(outcome.droppedForListBound.length, 3);
+  assert.deepEqual(outcome.droppedForListBound, []);
+  assert.equal(outcome.hasMore, true);
+  const tail = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), now,
+    { sessionIncarnation: 'a'.repeat(64), cursor: outcome.nextCursor });
+  assert.equal(tail.applied.length, 3);
+  assert.equal(tail.hasMore, false);
+  assert.equal(tail.nextCursor, null);
+  assert.ok(tail.applied.every((item) => !outcome.applied.some((prior) => prior.messageId === item.messageId)));
 
   const stillQueued = await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID);
   assert.equal(stillQueued.length, MAX_INBOUND_LIST_SIZE + 3);
@@ -266,7 +377,9 @@ for (const [label, innerChanges, authenticatedFamily] of [
     assert.equal(acceptanceCalls, 0);
     assert.deepEqual(result.applied, []);
     assert.deepEqual(result.receipts, []);
-    assert.deepEqual(result.unparseableMessageIds, [base.messageId]);
+    // An authenticated-family mismatch is excluded by the repository itself,
+    // so it exposes neither ciphertext nor diagnostic IDs from that family.
+    assert.deepEqual(result.unparseableMessageIds, authenticatedFamily === base.familyId ? [base.messageId] : []);
     assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 1);
   });
 }

@@ -1,6 +1,6 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
 import { activeOwnerCount, findActiveOwner, findDuplicateIdentity } from './FamilyTrustSetEngine.js';
-import { isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch, isPlausibleOpaqueId, isPlausibleSignature, MAX_ENTRIES_PER_EPOCH } from './policy.js';
+import { hasWellFormedTrustSetText, isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch, isPlausibleOpaqueId, isPlausibleSignature, MAX_ENTRIES_PER_EPOCH } from './policy.js';
 import type { RecoveryTransactionLedger } from './RecoveryTransactionLedger.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
@@ -11,6 +11,7 @@ export type RecoveryFtsRejectionReason =
   | 'MALFORMED_RECOVERY_PROOF'
   | 'INVALID_BOUND_EPOCH'
   | 'MALFORMED_CANDIDATE_EPOCH'
+  | 'MALFORMED_CURRENT_EPOCH'
   | 'NO_ESTABLISHED_FAMILY'
   | 'FAMILY_MISMATCH'
   | 'ENVELOPE_EPOCH_MISMATCH'
@@ -129,6 +130,7 @@ export async function acceptRecoveryEpoch(
   // transaction INITIATED forever instead of recording FAILED with a reason.
   if (
     !Array.isArray(epoch.entries) ||
+    !hasWellFormedTrustSetText(epoch) ||
     epoch.entries.length > MAX_ENTRIES_PER_EPOCH ||
     !isPlausibleSignature(epoch.signature) ||
     !isPlausibleEpochNumber(epoch.trustSetEpoch) ||
@@ -144,6 +146,9 @@ export async function acceptRecoveryEpoch(
   const currentEpoch = store.getCurrentEpoch();
   if (!currentEpoch) {
     return { accepted: false, reason: 'NO_ESTABLISHED_FAMILY' };
+  }
+  if (!hasWellFormedTrustSetText(currentEpoch)) {
+    return { accepted: false, reason: 'MALFORMED_CURRENT_EPOCH' };
   }
   if (opened.familyId !== currentEpoch.familyId || opened.familyId !== epoch.familyId) {
     return { accepted: false, reason: 'FAMILY_MISMATCH' };

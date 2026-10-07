@@ -60,6 +60,33 @@ test('out-of-range direct candidate is rejected before store, canonicalization, 
 
 // --- Genesis -----------------------------------------------------------
 
+test('malformed Unicode direct candidate is rejected before store or signature effects', async () => {
+  const valid = buildEpoch('owner-dsk-pub');
+  for (const malformed of ['\uD800', '\uDC00', '\uD800x', '\uDC00\uD800']) {
+    for (const candidate of [{ ...valid, familyId: malformed }, { ...valid, signature: malformed },
+      ...['deviceId', 'role', 'dskKeyId', 'dskPublicKey', 'dekKeyId', 'dekPublicKey', 'status'].map((field) =>
+        ({ ...valid, entries: [{ ...valid.entries[0], [field]: malformed }] }))]) {
+      let reads = 0, writes = 0, verifies = 0;
+      const store = { getCurrentEpoch() { reads++; return null; }, setCurrentEpoch() { writes++; } };
+      const verifier = { async verify() { verifies++; return true; } };
+      assert.deepEqual(await acceptEpoch(candidate, store, verifier), { accepted: false, reason: 'MALFORMED_EPOCH' });
+      assert.deepEqual({ reads, writes, verifies }, { reads: 0, writes: 0, verifies: 0 });
+    }
+  }
+});
+
+test('malformed Unicode persisted Trust Set cannot supply ordinary signer authority', async () => {
+  const valid = buildEpoch('owner-dsk-pub');
+  let writes = 0, verifies = 0;
+  const current = { ...valid, entries: [{ ...valid.entries[0], dskPublicKey: '\uD800' }] };
+  const store = { getCurrentEpoch() { return current; }, setCurrentEpoch() { writes++; } };
+  const verifier = { async verify() { verifies++; return true; } };
+  const candidate = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1 });
+  assert.deepEqual(await acceptEpoch(candidate, store, verifier), { accepted: false, reason: 'MALFORMED_EPOCH' });
+  assert.deepEqual({ writes, verifies }, { writes: 0, verifies: 0 });
+  assert.equal(current.entries[0].dskPublicKey, '\uD800');
+});
+
 test('a valid genesis epoch (no prior store state) is accepted when self-signed by its own claimed owner', async () => {
   const { store, verifier } = buildHarness();
   const genesis = buildEpoch('owner-dsk-pub');

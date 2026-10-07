@@ -4,6 +4,8 @@ import test from 'node:test';
 import { RelayService } from '../../dist/relay/RelayService.js';
 import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
 import { closePool } from '../../dist/db/pool.js';
+import { relayQueuePosition, compareRelayQueuePositions } from '../../dist/relay/queuePage.js';
+import { encodeRelayContinuation, decodeRelayContinuation } from '../../dist/runtime-sync/relayContinuation.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -95,6 +97,82 @@ test('MySQL CONCURRENCY: ack race -- many concurrent acks on one envelope all re
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true);
   const timestamps = new Set(attempts.map((a) => a.value.acknowledgedAt.getTime()));
   assert.equal(timestamps.size, 1, 'all concurrent acks must agree on a single winning acknowledgedAt');
+});
+
+test('MySQL: keyset ties use exact binary order and survive ACK between pages', async () => {
+  const now = new Date();
+  const service = buildService(() => now);
+  const shared = envelope();
+  const prefix = randomUUID();
+  const ids = ['A ', 'A!', 'Z', '\uE000', '\u{10000}'].map((suffix) => `${prefix}-${suffix}`);
+  for (const messageId of ids) await service.queueEnvelope({ ...shared, messageId });
+  const expected = [...ids].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  const first = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: null, highWater: null, limit: 2 });
+  assert.deepEqual(first.records.map((record) => record.messageId), expected.slice(0, 2));
+  assert.equal(first.hasMore, true);
+  for (const record of first.records) await service.acknowledgeEnvelope(shared.recipientDeviceId, record.messageId);
+  const second = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: relayQueuePosition(first.records.at(-1)), highWater: first.highWater, limit: 100 });
+  assert.deepEqual(second.records.map((record) => record.messageId), expected.slice(2));
+  assert.equal(second.hasMore, false);
+  assert.ok(compareRelayQueuePositions(relayQueuePosition(first.records.at(-1)), relayQueuePosition(second.records[0])) < 0);
+});
+
+test('MySQL: finite highwater excludes later arrivals and a fresh sweep sees them', async () => {
+  let now = new Date();
+  const service = buildService(() => now);
+  const shared = envelope();
+  for (let i = 0; i < 4; i += 1) await service.queueEnvelope({ ...shared, messageId: `${randomUUID()}-${i}` });
+  const first = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: null, highWater: null, limit: 2 });
+  now = new Date(now.getTime() + 10);
+  const late = `${randomUUID()}-late`;
+  await service.queueEnvelope({ ...shared, messageId: late });
+  const tail = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: relayQueuePosition(first.records.at(-1)), highWater: first.highWater, limit: 100 });
+  assert.equal(tail.records.length, 2);
+  assert.equal(tail.records.some((record) => record.messageId === late), false);
+  assert.equal(tail.hasMore, false);
+  const fresh = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: null, highWater: null, limit: 100 });
+  assert.equal(fresh.records.length, 5); // no navigation operation acknowledges retained ciphertext
+  assert.equal(fresh.records.some((record) => record.messageId === late), true);
+});
+
+test('MySQL: base pages and exact supplements cannot cross recipient or family', async () => {
+  const now = new Date();
+  const service = buildService(() => now);
+  const own = envelope();
+  const foreign = { ...own, messageId: randomUUID(), familyId: `foreign-${randomUUID()}` };
+  await service.queueEnvelope(own);
+  await service.queueEnvelope(foreign);
+  const page = await repository.listQueuedPageForRecipient(own.recipientDeviceId, own.familyId, now,
+    { after: null, highWater: null, limit: 100 });
+  assert.deepEqual(page.records.map((record) => record.messageId), [own.messageId]);
+  const found = await repository.findQueuedForRecipient(own.recipientDeviceId, own.familyId, [own.messageId, foreign.messageId], now);
+  assert.deepEqual(found.map((record) => record.messageId), [own.messageId]);
+  assert.deepEqual(await repository.findQueuedForRecipient(`wrong-${randomUUID()}`, own.familyId, [own.messageId], now), []);
+});
+
+test('MySQL: supported escaped message IDs retain exact positions and bounded cursors', async () => {
+  const now = new Date();
+  const service = buildService(() => now);
+  const shared = envelope();
+  const prefix = randomUUID().slice(0, 8);
+  const ids = ['a', 'm', 'z'].map((lead) => lead + prefix + '\u0001'.repeat(119));
+  for (const messageId of ids) await service.queueEnvelope({ ...shared, messageId });
+  const first = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: null, highWater: null, limit: 1 });
+  assert.equal(first.records[0].messageId, ids[0]);
+  const scope = { familyId: shared.familyId, recipientDeviceId: shared.recipientDeviceId, sessionIncarnation: 'a'.repeat(64) };
+  const cursor = encodeRelayContinuation({ version: 1, scope, after: relayQueuePosition(first.records[0]),
+    highWater: first.highWater, startedAtMs: now.getTime() });
+  assert.ok(cursor.length > 2048);
+  const navigation = decodeRelayContinuation(cursor, scope, now);
+  const tail = await repository.listQueuedPageForRecipient(shared.recipientDeviceId, shared.familyId, now,
+    { after: navigation.after, highWater: navigation.highWater, limit: 100 });
+  assert.deepEqual(tail.records.map((record) => record.messageId), ids.slice(1));
 });
 
 test.after(async () => {

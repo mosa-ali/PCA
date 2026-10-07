@@ -87,6 +87,35 @@ function buildRecoveryEpoch(overrides = {}) {
 
 // --- Happy path ------------------------------------------------------------
 
+test('malformed Unicode recovery candidate is rejected before store, verifier or transaction claim', async () => {
+  const valid = buildRecoveryEpoch();
+  for (const value of ['\uD800', '\uDC00', 'a\uD800b']) {
+    for (const candidate of [{ ...valid, familyId: value }, { ...valid, signature: value },
+      { ...valid, entries: [{ ...valid.entries[0], dskPublicKey: value }, valid.entries[1]] }]) {
+      let reads = 0, writes = 0, verifies = 0, claims = 0;
+      const store = { getCurrentEpoch() { reads++; return null; }, setCurrentEpoch() { writes++; } };
+      const verifier = { async verify() { verifies++; return true; } };
+      const ledger = { async claimTransaction() { claims++; return true; } };
+      assert.deepEqual(await acceptRecoveryEpoch(candidate, opened(), store, verifier, ledger),
+        { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' });
+      assert.deepEqual({ reads, writes, verifies, claims }, { reads: 0, writes: 0, verifies: 0, claims: 0 });
+    }
+  }
+});
+
+test('malformed Unicode stored Trust Set cannot participate in recovery authority', async () => {
+  const genesis = buildEpoch('owner-dsk-pub');
+  const current = { ...genesis, entries: [{ ...genesis.entries[0], dekPublicKey: '\uD800' }] };
+  let writes = 0, verifies = 0, claims = 0;
+  const store = { getCurrentEpoch() { return current; }, setCurrentEpoch() { writes++; } };
+  const verifier = { async verify() { verifies++; return true; } };
+  const ledger = { async claimTransaction() { claims++; return true; } };
+  assert.deepEqual(await acceptRecoveryEpoch(buildRecoveryEpoch(), opened(), store, verifier, ledger),
+    { accepted: false, reason: 'MALFORMED_CURRENT_EPOCH' });
+  assert.deepEqual({ writes, verifies, claims }, { writes: 0, verifies: 0, claims: 0 });
+  assert.equal(current.entries[0].dekPublicKey, '\uD800');
+});
+
 test('a valid recovery epoch is accepted: revokes the lost owner, enrolls a distinct new owner, advances both epochs', async () => {
   const { store, verifier, ledger } = await establishedHarness();
   const recoveryEpoch = buildRecoveryEpoch();

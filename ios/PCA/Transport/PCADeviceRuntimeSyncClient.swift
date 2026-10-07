@@ -3,9 +3,23 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// Opaque protocol identity uses exact UTF-8 bytes, never Swift normalization.
+func pcaOpaqueEqual(_ left: String?, _ right: String?) -> Bool {
+    switch (left, right) {
+    case (nil, nil): return true
+    case let (left?, right?): return left.utf8.elementsEqual(right.utf8)
+    default: return false
+    }
+}
+
 public struct PCAInboundScope: Codable, Equatable {
     public let familyId: String
     public let recipientDeviceId: String
+    public static func == (left: PCAInboundScope, right: PCAInboundScope) -> Bool {
+        pcaOpaqueEqual(left.familyId, right.familyId) &&
+        pcaOpaqueEqual(left.recipientDeviceId, right.recipientDeviceId)
+    }
+
 }
 
 public struct PCAInboundEnvelope: Codable, Equatable {
@@ -32,7 +46,7 @@ public struct PCAInboundEnvelope: Codable, Equatable {
     func validate(scope: PCAInboundScope) throws {
         let ids = [messageId, familyId, senderDeviceId, senderKeyId, sequenceOrNonce]
         guard ids.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
-              familyId == scope.familyId, recipientDeviceId == scope.recipientDeviceId,
+              pcaOpaqueEqual(familyId, scope.familyId), pcaOpaqueEqual(recipientDeviceId, scope.recipientDeviceId),
               recipientGroup == nil, protocolMajor == 1, protocolMinor >= 0, protocolMinor <= Int(Int32.max),
               trustSetEpoch >= 0, trustSetEpoch <= Int(Int32.max), keyEpoch >= 0, keyEpoch <= Int(Int32.max),
               !signature.isEmpty, signature.utf16.count <= 512,
@@ -54,7 +68,96 @@ public struct PCAInboundEnvelope: Codable, Equatable {
     private static let messageTypes: Set<String> = ["POLICY_UPDATE", "POLICY_RECEIPT", "STATUS_SNAPSHOT", "ACTIVITY_SUMMARY",
         "LOCATION_RESPONSE", "CHILD_REQUEST", "PARENT_DECISION", "TAMPER_ALERT", "RETENTION_DELETION_INSTRUCTION",
         "RETENTION_RECEIPT", "FTS_UPDATE", "KEY_ROTATION", "DEVICE_REVOKE", "RECOVERY_TRANSACTION", "SIGNED_ROLLBACK"]
+    public static func == (left: PCAInboundEnvelope, right: PCAInboundEnvelope) -> Bool {
+        left.protocolMajor == right.protocolMajor &&
+        left.protocolMinor == right.protocolMinor &&
+        pcaOpaqueEqual(left.messageId, right.messageId) &&
+        pcaOpaqueEqual(left.familyId, right.familyId) &&
+        pcaOpaqueEqual(left.senderDeviceId, right.senderDeviceId) &&
+        pcaOpaqueEqual(left.recipientDeviceId, right.recipientDeviceId) &&
+        pcaOpaqueEqual(left.recipientGroup, right.recipientGroup) &&
+        pcaOpaqueEqual(left.senderKeyId, right.senderKeyId) &&
+        pcaOpaqueEqual(left.messageType, right.messageType) &&
+        left.trustSetEpoch == right.trustSetEpoch &&
+        left.keyEpoch == right.keyEpoch &&
+        pcaOpaqueEqual(left.sequenceOrNonce, right.sequenceOrNonce) &&
+        pcaOpaqueEqual(left.issuedAt, right.issuedAt) &&
+        pcaOpaqueEqual(left.expiresAt, right.expiresAt) &&
+        pcaOpaqueEqual(left.semanticVersion, right.semanticVersion) &&
+        pcaOpaqueEqual(left.correlationId, right.correlationId) &&
+        pcaOpaqueEqual(left.payload, right.payload) &&
+        pcaOpaqueEqual(left.signature, right.signature)
+    }
+
 }
+
+public struct PCAInboundReceipt: Codable, Equatable {
+    public enum Outcome: String, Codable { case applied = "APPLIED", heldPending = "HELD_PENDING", rejected = "REJECTED" }
+    public let messageId: String
+    public let outcome: Outcome
+    public let atUtc: String
+
+    func validate() throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard !messageId.isEmpty, messageId.utf16.count <= 128,
+              let date = formatter.date(from: atUtc), formatter.string(from: date) == atUtc else {
+            throw PCAAPIError.malformedResponse
+        }
+    }
+    public static func == (left: PCAInboundReceipt, right: PCAInboundReceipt) -> Bool {
+        pcaOpaqueEqual(left.messageId, right.messageId) &&
+        left.outcome == right.outcome &&
+        pcaOpaqueEqual(left.atUtc, right.atUtc)
+    }
+
+}
+
+/// Navigation and admission metadata never authorize decryption, policy application or ACK.
+public struct PCAInboundNavigation: Codable, Equatable {
+    public let nextCursor: String?
+    public let hasMore: Bool
+    public let hasUnresolved: Bool
+    public let sessionIncarnation: String
+
+    private enum CodingKeys: String, CodingKey { case nextCursor, hasMore, hasUnresolved, sessionIncarnation }
+    public init(nextCursor: String?, hasMore: Bool, hasUnresolved: Bool, sessionIncarnation: String) {
+        self.nextCursor = nextCursor; self.hasMore = hasMore
+        self.hasUnresolved = hasUnresolved; self.sessionIncarnation = sessionIncarnation
+    }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.contains(.nextCursor) else { throw PCAAPIError.malformedResponse }
+        nextCursor = try container.decodeIfPresent(String.self, forKey: .nextCursor)
+        hasMore = try container.decode(Bool.self, forKey: .hasMore)
+        hasUnresolved = try container.decode(Bool.self, forKey: .hasUnresolved)
+        sessionIncarnation = try container.decode(String.self, forKey: .sessionIncarnation)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let nextCursor { try container.encode(nextCursor, forKey: .nextCursor) }
+        else { try container.encodeNil(forKey: .nextCursor) }
+        try container.encode(hasMore, forKey: .hasMore)
+        try container.encode(hasUnresolved, forKey: .hasUnresolved)
+        try container.encode(sessionIncarnation, forKey: .sessionIncarnation)
+    }
+
+    func validate() throws {
+        guard sessionIncarnation.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              hasMore == (nextCursor != nil) else { throw PCAAPIError.malformedResponse }
+        if let nextCursor { try Self.validateCursor(nextCursor) }
+    }
+
+    static func validateCursor(_ cursor: String) throws {
+        guard !cursor.isEmpty, cursor.utf8.count <= 6144,
+              cursor.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil else {
+            throw PCAAPIError.malformedResponse
+        }
+    }
+}
+
+public enum PCAInboundNavigationError: Error { case invalidCursor }
 
 public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
     public let scope: PCAInboundScope
@@ -63,18 +166,24 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
     public let droppedForListBound: [String]
     /// Bounded-page continuation hint; it affects pending visibility only.
     public let hasMore: Bool
+    public let receipts: [PCAInboundReceipt]
+    public let navigation: PCAInboundNavigation?
 
     private enum CodingKeys: String, CodingKey {
         case scope, applied, unparseableMessageIds, droppedForListBound, hasMore
+        case receipts, nextCursor, hasUnresolved, sessionIncarnation
     }
 
     public init(scope: PCAInboundScope, applied: [PCAInboundEnvelope], unparseableMessageIds: [String],
-                droppedForListBound: [String], hasMore: Bool? = nil) {
+                droppedForListBound: [String], hasMore: Bool? = nil,
+                receipts: [PCAInboundReceipt] = [], navigation: PCAInboundNavigation? = nil) {
         self.scope = scope
         self.applied = applied
         self.unparseableMessageIds = unparseableMessageIds
         self.droppedForListBound = droppedForListBound
         self.hasMore = hasMore ?? !droppedForListBound.isEmpty
+        self.receipts = receipts
+        self.navigation = navigation
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +199,29 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
         } else {
             hasMore = !droppedForListBound.isEmpty
         }
+        receipts = container.contains(.receipts) ? try container.decode([PCAInboundReceipt].self, forKey: .receipts) : []
+        // Receipts predate cursor navigation and remain valid on the published legacy server.
+        let modern = [.nextCursor, .hasUnresolved, .sessionIncarnation] as [CodingKeys]
+        if modern.contains(where: { container.contains($0) }) {
+            guard modern.allSatisfy({ container.contains($0) }), container.contains(.receipts), container.contains(.hasMore) else {
+                throw PCAAPIError.malformedResponse
+            }
+            navigation = PCAInboundNavigation(
+                nextCursor: try container.decodeIfPresent(String.self, forKey: .nextCursor), hasMore: hasMore,
+                hasUnresolved: try container.decode(Bool.self, forKey: .hasUnresolved),
+                sessionIncarnation: try container.decode(String.self, forKey: .sessionIncarnation))
+            try navigation?.validate()
+        } else {
+            navigation = nil
+        }
+        guard !scope.familyId.isEmpty, scope.familyId.utf16.count <= 128,
+              !scope.recipientDeviceId.isEmpty, scope.recipientDeviceId.utf16.count <= 128,
+              applied.count <= 256, unparseableMessageIds.count <= 100, droppedForListBound.count <= 100,
+              (unparseableMessageIds + droppedForListBound).allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
+              receipts.count <= 100, Set(receipts.map { Data($0.messageId.utf8) }).count == receipts.count else {
+            throw PCAAPIError.malformedResponse
+        }
+        for receipt in receipts { try receipt.validate() }
     }
 }
 
@@ -116,8 +248,14 @@ public final class PCADeviceRuntimeSyncClient {
         self.transport = transport
     }
 
-    public func pull(session: PCADeviceSession) async throws -> PCAInboundRuntimeSyncResponse {
-        var request = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/inbound"))
+    public func pull(session: PCADeviceSession, cursor: String? = nil) async throws -> PCAInboundRuntimeSyncResponse {
+        var components = URLComponents(url: baseURL.appendingPathComponent("v1/runtime-sync/inbound"), resolvingAgainstBaseURL: false)
+        if let cursor {
+            try PCAInboundNavigation.validateCursor(cursor)
+            components?.queryItems = [URLQueryItem(name: "cursor", value: cursor)]
+        }
+        guard let url = components?.url else { throw PCAAPIError.invalidRequest }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(session.sessionToken)", forHTTPHeaderField: "Authorization")
         return try await send(request, decodeAs: PCAInboundRuntimeSyncResponse.self)
@@ -153,8 +291,10 @@ public final class PCADeviceRuntimeSyncClient {
         request.httpBody = try JSONEncoder().encode(["protectionLevel": level.rawValue])
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
+        catch is CancellationError { throw CancellationError() }
         catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
         catch { throw PCAAPIError.transport(.network) }
+        try Task.checkCancellation()
         switch response.statusCode {
         case 200...299: return
         case 401: throw PCAAPIError.unauthorized
@@ -168,12 +308,19 @@ public final class PCADeviceRuntimeSyncClient {
     private func send<T: Decodable>(_ request: URLRequest, decodeAs type: T.Type) async throws -> T {
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
+        catch is CancellationError { throw CancellationError() }
         catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
         catch { throw PCAAPIError.transport(.network) }
+        try Task.checkCancellation()
         switch response.statusCode {
         case 200...299: break
         case 401: throw PCAAPIError.unauthorized
-        case 400: throw PCAAPIError.invalidRequest
+        case 400:
+            if request.url?.path == baseURL.appendingPathComponent("v1/runtime-sync/inbound").path,
+               request.url?.query != nil,
+               let body = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+               body["error"] as? String == "invalid_cursor" { throw PCAInboundNavigationError.invalidCursor }
+            throw PCAAPIError.invalidRequest
         case 404: throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
