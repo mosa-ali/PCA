@@ -33,6 +33,28 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         let records: [PersistedRecordFixture]
     }
     private struct Token: Hashable, Codable { let value: String }
+    private final class AccessBox {
+        private let lock = NSLock()
+        private var stored: DeviceActivityPolicyLockAccess?
+        func set(_ access: DeviceActivityPolicyLockAccess) {
+            lock.lock(); stored = access; lock.unlock()
+        }
+        func get() -> DeviceActivityPolicyLockAccess? {
+            lock.lock(); defer { lock.unlock() }; return stored
+        }
+    }
+    private final class ActiveUseBodyCompletion {
+        private let lock = NSLock()
+        private var completed = false
+
+        func markCompleted() {
+            lock.lock(); completed = true; lock.unlock()
+        }
+
+        var hasCompleted: Bool {
+            lock.lock(); defer { lock.unlock() }; return completed
+        }
+    }
     private final class NonReentrantCoordination: DeviceActivityPolicyCoordination {
         private enum TestError: Error { case nestedAcquisition }
         private let lock = NSRecursiveLock()
@@ -53,6 +75,84 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             lock.lock()
             acquisitions = 0
             lock.unlock()
+        }
+    }
+    private final class WaiterAwareCoordination: DeviceActivityPolicyCoordination {
+        private enum TestError: Error { case waitTimedOut }
+        private let condition = NSCondition()
+        private let activeUseBodyCompletion: ActiveUseBodyCompletion
+        private var locked = false
+        private var acquisitionRequests = 0
+        private var secondRequestWasBlocked: Bool?
+        private var firstLockReleasedBeforeUseBodyCompletion: Bool?
+        private var secondLockAcquiredBeforeUseBodyCompletion: Bool?
+        private let secondRequestClassified = DispatchSemaphore(value: 0)
+        private let firstLockReleasedEarly = DispatchSemaphore(value: 0)
+
+        init(activeUseBodyCompletion: ActiveUseBodyCompletion) {
+            self.activeUseBodyCompletion = activeUseBodyCompletion
+        }
+
+        func withExclusiveAccess<T>(_ operation: () throws -> T) throws -> T {
+            condition.lock()
+            acquisitionRequests += 1
+            let requestNumber = acquisitionRequests
+            if locked {
+                if requestNumber == 2 {
+                    secondRequestWasBlocked = true
+                    secondRequestClassified.signal()
+                }
+                let deadline = Date().addingTimeInterval(10)
+                while locked {
+                    guard condition.wait(until: deadline) || !locked else {
+                        condition.unlock()
+                        throw TestError.waitTimedOut
+                    }
+                }
+            } else if requestNumber == 2 {
+                secondRequestWasBlocked = false
+                secondRequestClassified.signal()
+            }
+            if requestNumber == 2 {
+                secondLockAcquiredBeforeUseBodyCompletion = !activeUseBodyCompletion.hasCompleted
+            }
+            locked = true
+            condition.unlock()
+
+            defer {
+                condition.lock()
+                if requestNumber == 1 {
+                    firstLockReleasedBeforeUseBodyCompletion = !activeUseBodyCompletion.hasCompleted
+                    if firstLockReleasedBeforeUseBodyCompletion == true {
+                        firstLockReleasedEarly.signal()
+                    }
+                }
+                locked = false
+                condition.broadcast()
+                condition.unlock()
+            }
+            return try operation()
+        }
+
+        func awaitSecondRequestClassification() -> Bool? {
+            guard secondRequestClassified.wait(timeout: .now() + 5) == .success else { return nil }
+            condition.lock()
+            defer { condition.unlock() }
+            return secondRequestWasBlocked
+        }
+
+        func waitForPrematureFirstLockRelease() -> DispatchTimeoutResult {
+            firstLockReleasedEarly.wait(timeout: .now() + 1)
+        }
+
+        var didFirstLockReleaseBeforeUseBodyCompletion: Bool? {
+            condition.lock(); defer { condition.unlock() }
+            return firstLockReleasedBeforeUseBodyCompletion
+        }
+
+        var didSecondLockAcquireBeforeUseBodyCompletion: Bool? {
+            condition.lock(); defer { condition.unlock() }
+            return secondLockAcquiredBeforeUseBodyCompletion
         }
     }
     private let now = Date(timeIntervalSince1970: 1_760_011_200)
@@ -140,6 +240,81 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
                 XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .invalidLockAccess)
             }
         }
+    }
+
+    func testLockAccessInvalidationWaitsForInFlightUseBeforeUnlocking() throws {
+        let activeUseBodyCompletion = ActiveUseBodyCompletion()
+        let coordination = WaiterAwareCoordination(activeUseBodyCompletion: activeUseBodyCompletion)
+        let accessBox = AccessBox()
+        let useEntered = DispatchSemaphore(value: 0)
+        let useEntryConfirmed = DispatchSemaphore(value: 0)
+        let releaseUse = DispatchSemaphore(value: 0)
+        let contextReadyToClose = DispatchSemaphore(value: 0)
+        let contextFinished = DispatchSemaphore(value: 0)
+        let useFinished = DispatchSemaphore(value: 0)
+        let useAccepted = DispatchSemaphore(value: 0)
+        let competitorEntered = DispatchSemaphore(value: 0)
+        let competitorFinished = DispatchSemaphore(value: 0)
+        var releaseWasSignaled = false
+        defer { if !releaseWasSignaled { releaseUse.signal() } }
+
+        DispatchQueue.global().async {
+            defer { contextFinished.signal() }
+            do {
+                try coordination.withExclusiveAccessContext { access in
+                    accessBox.set(access)
+                    DispatchQueue.global().async {
+                        let result = access.withActiveUse(for: coordination) {
+                            useEntered.signal()
+                            _ = releaseUse.wait(timeout: .now() + 15)
+                            activeUseBodyCompletion.markCompleted()
+                        }
+                        if result != nil { useAccepted.signal() }
+                        useFinished.signal()
+                    }
+                    if useEntered.wait(timeout: .now() + 5) == .success {
+                        useEntryConfirmed.signal()
+                    }
+                    contextReadyToClose.signal()
+                }
+            } catch {
+                contextReadyToClose.signal()
+            }
+        }
+
+        XCTAssertEqual(contextReadyToClose.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(useEntryConfirmed.wait(timeout: .now()), .success,
+            "the test must observe the read after it has entered the access lease")
+        let access = XCTUnwrap(accessBox.get())
+        let invalidationDeadline = Date().addingTimeInterval(5)
+        while access.isActive(for: coordination) && Date() < invalidationDeadline {
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+        XCTAssertFalse(access.isActive(for: coordination), "the outer context must have started invalidation")
+
+        DispatchQueue.global().async {
+            do { try coordination.withExclusiveAccess { competitorEntered.signal() } }
+            catch { XCTFail("competitor lock acquisition failed: \(error)") }
+            competitorFinished.signal()
+        }
+        let competingRequestWasBlocked = coordination.awaitSecondRequestClassification()
+        let prematureUnlock = coordination.waitForPrematureFirstLockRelease()
+        releaseUse.signal()
+        releaseWasSignaled = true
+
+        XCTAssertEqual(competingRequestWasBlocked, true,
+            "a competing operation must not enter while the capability use is active")
+        XCTAssertEqual(prematureUnlock, .timedOut,
+            "the outer lock must not be released while the access use is still held")
+        XCTAssertEqual(contextFinished.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(useFinished.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(useAccepted.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(competitorEntered.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(competitorFinished.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(coordination.didFirstLockReleaseBeforeUseBodyCompletion, false,
+            "the coordinator lock must remain held until the active-use operation completes")
+        XCTAssertEqual(coordination.didSecondLockAcquireBeforeUseBodyCompletion, false,
+            "a competing operation must not acquire the coordinator before the active-use operation completes")
     }
 
     func testUsageAssociationRevocationCannotBeUndoneByStaleRevision() throws {

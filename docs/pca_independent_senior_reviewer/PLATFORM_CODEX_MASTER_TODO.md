@@ -2,8 +2,9 @@
 
 ## Current Parent dependency and exact-head CI refresh — 2026-10-08
 
-PARENT_PUBLISHED_HEAD = `0efe7cadaab97b448bf1486e9fb9900313347e77` was published to `origin/pca-dev` by ordinary fast-forward; direct GitHub ref lookup matches local HEAD and committed Parent test/ledger blobs were confirmed. Fresh fetch is blocked by `.git/FETCH_HEAD` permissions, leaving cached `origin/pca-dev` stale.
-PARENT_EXACT_HEAD_CI = Quality Gates run `37694228562` completed SUCCESS, 27/27 jobs. iOS build/unit tests, Android, backend/disposable MySQL, Parent/Platform web shards and browser E2E all succeeded. This certifies the published Parent checkpoint only; local draft changes are not included.
+PARENT_PUBLISHED_HEAD = `289b9a398ccb6016bab5f2e9417b23415623a8f0` was published to `origin/pca-dev` by ordinary fast-forward; direct GitHub ref and committed Contents API blobs matched local HEAD. Fresh fetch remains blocked by `.git/FETCH_HEAD` permissions, leaving cached `origin/pca-dev` stale.
+PARENT_EXACT_HEAD_CI = Quality Gates run `37695656162` completed SUCCESS, 27/27 jobs. iOS build/unit tests, Android, backend/disposable MySQL, Parent/Platform web shards and browser E2E all succeeded. This certifies `289b9a39`; the local iOS lifecycle test draft is not included.
+PARENT_ROUTE_AUDIT = Fresh run-owned disposable-MySQL campaign passed 56/56. Its report records 146 scenarios across all 52 declarations: 48 allows, 77 expected denials, 3 authority-unavailable, 3 crypto/device-gated, 3 service-not-configured, 1 protective-authority-not-applicable, 11 validation/protocol and zero unexpected 401/403/other. `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`; see the Parent ledger for report hash and limits.
 PLATFORM_SCOPE = A fresh read-only audit found no Platform source task ready to advance without crossing Parent TODO-18 / owner acceptance gates. Parent-owned identity projection and Platform consumer remain in place. PLATFORM-03…05 and PLATFORM-08…09 remain held by Parent dependency plus literal `LOCALHOST ACCEPTED=YES`; Platform remains `HOLD_PARENT_DEPENDENCY`.
 GATES = No Platform source, Parent identity projection, live database, deployment, Azure or owner acceptance changed. Live `pca_pro`, physical-device evidence and owner acceptance remain separate; `READY_FOR_AZURE_DEPLOYMENT = NO`.
 
