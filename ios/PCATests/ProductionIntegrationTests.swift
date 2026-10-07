@@ -104,6 +104,8 @@ final class ProductionIntegrationTests: XCTestCase {
             XCTFail("Retirement boundary persistence must fail after installing the latch")
         } catch { }
         keychain.failingAccount = nil
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).count, candidates.count)
+        XCTAssertTrue(try journal.records().isEmpty)
         XCTAssertThrowsError(try legacyConsumer.pending(candidates, scope: response.scope))
 
         let restoredJournal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-latch")
@@ -141,6 +143,8 @@ final class ProductionIntegrationTests: XCTestCase {
             XCTFail("Journal snapshot persistence must fail after installing the marker")
         } catch { }
         keychain.failingAccount = nil
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).count, candidates.count)
+        XCTAssertTrue(try journal.records().isEmpty)
 
         let restored = PCAInboundCommandConsumer(
             journal: PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "retirement-partial"),
