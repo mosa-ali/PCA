@@ -12,14 +12,35 @@ import ManagedSettings
 /// backend/Android engines it mirrors).
 public enum DeviceActivityScheduleMapper {
     #if canImport(DeviceActivity)
+    /// Captures the technical monitoring calendar once per installation. The
+    /// callback planner persists this calendar's timezone so its expected
+    /// recurrence boundaries are identical to the schedule sent to iOS.
+    public static func monitoringCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
     /// A full-day repeating callback envelope. The host cannot encode PCA's
     /// weekday/precedence/exception semantics into DeviceActivitySchedule;
     /// those semantics remain in ScheduleEngine and are re-evaluated by the
     /// monitor extension on every callback.
-    public static func monitoringSchedule() -> DeviceActivitySchedule {
-        DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: 0, minute: 0),
-            intervalEnd: DateComponents(hour: 23, minute: 59),
+    public static func monitoringSchedule(calendar: Calendar) -> DeviceActivitySchedule {
+        var intervalStart = DateComponents()
+        intervalStart.calendar = calendar
+        intervalStart.timeZone = calendar.timeZone
+        intervalStart.hour = 0
+        intervalStart.minute = 0
+
+        var intervalEnd = DateComponents()
+        intervalEnd.calendar = calendar
+        intervalEnd.timeZone = calendar.timeZone
+        intervalEnd.hour = 23
+        intervalEnd.minute = 59
+
+        return DeviceActivitySchedule(
+            intervalStart: intervalStart,
+            intervalEnd: intervalEnd,
             repeats: true
         )
     }

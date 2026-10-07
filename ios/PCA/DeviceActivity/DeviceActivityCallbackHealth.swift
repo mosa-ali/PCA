@@ -1,15 +1,10 @@
 import Foundation
 
-/// doc 07 Section 14: "`DeviceActivityMonitor` extension fails to receive
-/// scheduled callback (OS resource constraints) -- Missed-callback
-/// detection via expected-vs-actual schedule reconciliation on next
-/// host-app foreground -- Treated as a degraded-signal event ... not
-/// silently reported as full compliance."
-///
-/// Pure logic, framework-independent: the monitor extension (or the host
-/// app on foreground) records each callback kind it actually observed
-/// with a timestamp; this type compares that log against what the
-/// SCHEDULE said should have fired by `nowUtc` and reports health.
+/// Foundation-only callback delivery evidence. Apple delivers interval
+/// callbacks when the device is used, and does not supply a recurrence ID.
+/// Absence therefore cannot prove missed delivery. Only a receipt attributable
+/// to the first occurrence of a unique installation can certify delivery;
+/// later recurring occurrences and absent/ambiguous evidence remain unknown.
 public enum DeviceActivityCallbackKind: Equatable, Hashable, Codable {
     case intervalDidStart
     case intervalDidEnd
@@ -19,38 +14,62 @@ public enum DeviceActivityCallbackKind: Equatable, Hashable, Codable {
 public struct ObservedCallback: Equatable {
     public let kind: DeviceActivityCallbackKind
     public let observedAt: Date
-    public init(kind: DeviceActivityCallbackKind, observedAt: Date) {
+    public let activityId: String?
+    public let installationGeneration: String?
+
+    public init(
+        kind: DeviceActivityCallbackKind,
+        observedAt: Date,
+        activityId: String? = nil,
+        installationGeneration: String? = nil
+    ) {
         self.kind = kind
         self.observedAt = observedAt
+        self.activityId = activityId
+        self.installationGeneration = installationGeneration
     }
 }
 
 public struct ExpectedCallback: Equatable {
     public let kind: DeviceActivityCallbackKind
-    public let expectedNoLaterThan: Date
-    public init(kind: DeviceActivityCallbackKind, expectedNoLaterThan: Date) {
+    /// The schedule boundary for this specific daily occurrence. An observation
+    /// can satisfy this occurrence only if it was recorded at or after it.
+    public let occurrenceAt: Date
+    public let observationWindowEndsAt: Date?
+    public let attributionIsUnambiguous: Bool
+
+    public init(kind: DeviceActivityCallbackKind, occurrenceAt: Date, observationWindowEndsAt: Date? = nil, attributionIsUnambiguous: Bool = false) {
         self.kind = kind
-        self.expectedNoLaterThan = expectedNoLaterThan
+        self.occurrenceAt = occurrenceAt
+        self.observationWindowEndsAt = observationWindowEndsAt
+        self.attributionIsUnambiguous = attributionIsUnambiguous
     }
 }
 
 public enum DeviceActivityCallbackHealth: Equatable {
-    /// Every expected callback (whose deadline has passed) has a matching observed entry.
+    /// Every due, unambiguous first-install occurrence has a matching receipt.
     case healthy
-    /// At least one expected callback's deadline has passed with no matching observation --
-    /// this is DEGRADED, never silently treated as "still fully enforced."
+    /// A separately proven delivery failure. Absence alone cannot establish
+    /// this because Apple's callbacks depend on qualifying device use.
     case degraded(missed: [ExpectedCallback])
-    /// No expectation has come due yet -- neither healthy nor degraded is assertable.
+    /// No due expectation, missing receipt or ambiguous recurrence provenance.
     case unknown
 }
 
 public enum DeviceActivityCallbackReconciler {
-    /// `toleranceSeconds` allows for ordinary OS scheduling jitter without
-    /// flagging every callback as "missed" the instant its nominal deadline
-    /// passes -- a real miss (OS resource throttling, extension not
-    /// launched) is on the order of minutes to indefinitely, not seconds.
-    public static func reconcile(expected: [ExpectedCallback], observed: [ObservedCallback], nowUtc: Date, toleranceSeconds: TimeInterval = 120) -> DeviceActivityCallbackHealth {
-        let dueExpectations = expected.filter { nowUtc.timeIntervalSince($0.expectedNoLaterThan) > toleranceSeconds }
+    /// The grace delays assessment; it is not an Apple delivery SLA. Missing
+    /// receipts and repeated occurrences without OS occurrence identity remain
+    /// unknown. First-install receipts can be attributed only before the next
+    /// same-kind schedule boundary, even if device use delays delivery.
+    public static func reconcile(
+        expected: [ExpectedCallback],
+        observed: [ObservedCallback],
+        activityId: String,
+        installationGeneration: String,
+        nowUtc: Date,
+        toleranceSeconds: TimeInterval = 120
+    ) -> DeviceActivityCallbackHealth {
+        let dueExpectations = expected.filter { nowUtc.timeIntervalSince($0.occurrenceAt) > toleranceSeconds }
         if dueExpectations.isEmpty {
             // Not just "no expectations at all" -- also "expectations exist but
             // none has come due yet" (including ones still inside the jitter
@@ -58,8 +77,70 @@ public enum DeviceActivityCallbackReconciler {
             // yet in either case (see this type's own doc comment on .unknown).
             return .unknown
         }
-        let observedKinds = Set(observed.map(\.kind))
-        let missed = dueExpectations.filter { !observedKinds.contains($0.kind) }
-        return missed.isEmpty ? .healthy : .degraded(missed: missed)
+        let matched = dueExpectations.allSatisfy { expectation in
+            guard expectation.attributionIsUnambiguous,
+                  let windowEnd = expectation.observationWindowEndsAt else { return false }
+            return observed.contains { callback in
+                callback.activityId == activityId &&
+                callback.installationGeneration == installationGeneration &&
+                callback.kind == expectation.kind &&
+                callback.observedAt >= expectation.occurrenceAt &&
+                callback.observedAt < windowEnd &&
+                callback.observedAt <= nowUtc
+            }
+        }
+        return matched ? .healthy : .unknown
+    }
+}
+
+/// Builds expectations for the current or most recently completed daily
+/// occurrence of the technical 00:00–23:59 monitoring envelope. The policy's
+/// own timezone is deliberately not involved: the monitoring calendar and its
+/// timezone are captured when DeviceActivity is installed.
+public enum DeviceActivityCallbackPlanner {
+    public static func expectedCallbacks(
+        installedAt: Date,
+        now: Date,
+        calendar: Calendar,
+        toleranceSeconds: TimeInterval = 120
+    ) -> [ExpectedCallback] {
+        let todayStart = calendar.startOfDay(for: now)
+        guard let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart),
+              let todayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: todayStart),
+              let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart),
+              let yesterdayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: yesterdayStart) else {
+            return []
+        }
+
+        let installationDay = calendar.startOfDay(for: installedAt)
+        guard let installationDayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: installationDay),
+              let nextInstallationDay = calendar.date(byAdding: .day, value: 1, to: installationDay),
+              let nextInstallationDayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: nextInstallationDay) else { return [] }
+        let firstStart = installedAt < installationDayEnd ? installedAt : nextInstallationDay
+        let firstEnd = installedAt < installationDayEnd ? installationDayEnd : nextInstallationDayEnd
+
+        var expected: [ExpectedCallback] = []
+        let todayStartOccurrence: Date
+        if installedAt >= todayStart && installedAt < todayEnd {
+            // Apple can deliver intervalDidStart immediately when monitoring
+            // begins while the current interval is already active.
+            todayStartOccurrence = installedAt
+        } else if installedAt < todayStart {
+            todayStartOccurrence = todayStart
+        } else {
+            // Installation after the 23:59 end boundary waits for tomorrow's
+            // next interval start.
+            todayStartOccurrence = tomorrowStart
+        }
+        if todayStartOccurrence <= now {
+            expected.append(ExpectedCallback(kind: .intervalDidStart, occurrenceAt: todayStartOccurrence, observationWindowEndsAt: tomorrowStart, attributionIsUnambiguous: todayStartOccurrence == firstStart))
+        }
+
+        let latestEnd = now.timeIntervalSince(todayEnd) > toleranceSeconds ? todayEnd : yesterdayEnd
+        if now.timeIntervalSince(latestEnd) > toleranceSeconds && installedAt < latestEnd,
+           let nextEnd = calendar.date(byAdding: .day, value: 1, to: latestEnd) {
+            expected.append(ExpectedCallback(kind: .intervalDidEnd, occurrenceAt: latestEnd, observationWindowEndsAt: nextEnd, attributionIsUnambiguous: latestEnd == firstEnd))
+        }
+        return expected
     }
 }

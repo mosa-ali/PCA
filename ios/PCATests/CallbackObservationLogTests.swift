@@ -2,11 +2,8 @@ import XCTest
 @testable import PCA
 
 /// PCA-15 correction F1, requirements 4-6. Exercised against
-/// `InMemoryCallbackObservationLog`, which implements the EXACT SAME
-/// record/readAll/bounded-eviction logic `AppGroupCallbackObservationLog`
-/// does -- the only difference is the backing store (UserDefaults(suiteName:)
-/// vs. an in-memory dictionary), which requires a real App Group / Xcode
-/// environment to exercise (see docs/MAC_XCODE_VALIDATION_CHECKLIST.md).
+/// Bounded recording plus host-side UserDefaults serialization tests. These
+/// tests do not establish real App Group cross-process or device delivery.
 final class CallbackObservationLogTests: XCTestCase {
     // MARK: 4. record() actually persists / 5. persisted observation can be read back.
 
@@ -63,9 +60,9 @@ final class CallbackObservationLogTests: XCTestCase {
         XCTAssertEqual(log.readAll().count, 2, "duplicates are not silently collapsed at the storage layer")
 
         let observed = log.readAll().map(\.asObservedCallback)
-        let expected = [ExpectedCallback(kind: .intervalDidStart, expectedNoLaterThan: now)]
-        let health = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, nowUtc: now.addingTimeInterval(500))
-        XCTAssertEqual(health, .healthy, "reconciliation is a Set-membership test over kinds, so any number of duplicates converges to the same verdict")
+        let expected = [ExpectedCallback(kind: .intervalDidStart, occurrenceAt: now)]
+        let health = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, activityId: "activity-1", installationGeneration: "current", nowUtc: now.addingTimeInterval(500))
+        XCTAssertEqual(health, .unknown, "legacy observations without installation evidence cannot certify health")
     }
 
     func testReplayedEventThresholdCallbackWithSameEventIdIsIdempotentForReconciliation() {
@@ -76,11 +73,11 @@ final class CallbackObservationLogTests: XCTestCase {
         log.record(kind: .eventDidReachThreshold(eventId: "limit-30"), activityId: "activity-1", at: now.addingTimeInterval(2))
 
         let observed = log.readAll().map(\.asObservedCallback)
-        let expected = [ExpectedCallback(kind: .eventDidReachThreshold(eventId: "limit-30"), expectedNoLaterThan: now)]
-        let firstReconcile = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, nowUtc: now.addingTimeInterval(500))
-        let secondReconcile = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, nowUtc: now.addingTimeInterval(500))
+        let expected = [ExpectedCallback(kind: .eventDidReachThreshold(eventId: "limit-30"), occurrenceAt: now)]
+        let firstReconcile = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, activityId: "activity-1", installationGeneration: "current", nowUtc: now.addingTimeInterval(500))
+        let secondReconcile = DeviceActivityCallbackReconciler.reconcile(expected: expected, observed: observed, activityId: "activity-1", installationGeneration: "current", nowUtc: now.addingTimeInterval(500))
         XCTAssertEqual(firstReconcile, secondReconcile, "reconciling the same observation set twice must be deterministic")
-        XCTAssertEqual(firstReconcile, .healthy)
+        XCTAssertEqual(firstReconcile, .unknown)
     }
 
     func testMultipleActivitiesAreDistinguishableInThePersistedLog() {
@@ -91,5 +88,46 @@ final class CallbackObservationLogTests: XCTestCase {
 
         let activityIds = Set(log.readAll().map(\.activityId))
         XCTAssertEqual(activityIds, ["activity-a", "activity-b"])
+    }
+
+    func testSharedLogTagsOnlyMatchingInstallationAndRetainsIdentity() throws {
+        let suite = "org.pca.tests.callback.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let monitor = "pca-monitor-11111111-1111-4111-8111-111111111111"
+        let generation = "22222222-2222-4222-8222-222222222222"
+        let installation = DeviceActivityMonitorInstallation(
+            policyActivityId: "policy", monitorActivityId: monitor, generation: generation,
+            installedAtUtc: now, timeZoneIdentifier: "UTC", state: .starting
+        )
+        defaults.set(try JSONEncoder().encode(installation), forKey: deviceActivityMonitorInstallationStorageKey)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+        log.record(kind: .intervalDidStart, activityId: monitor, at: now)
+        log.record(kind: .intervalDidStart, activityId: "monitor-old", at: now)
+        let records = log.readAll()
+        XCTAssertEqual(records.first?.installationGeneration, generation)
+        XCTAssertNil(records.last?.installationGeneration)
+        XCTAssertEqual(records.first?.asObservedCallback.activityId, monitor)
+        XCTAssertEqual(records.first?.asObservedCallback.installationGeneration, generation)
+        defaults.set(try JSONEncoder().encode(installation.confirmingActive()), forKey: deviceActivityMonitorInstallationStorageKey)
+        XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+            expected: [ExpectedCallback(kind: .intervalDidStart, occurrenceAt: now, observationWindowEndsAt: now.addingTimeInterval(86400), attributionIsUnambiguous: true)],
+            observed: records.map(\.asObservedCallback), activityId: monitor,
+            installationGeneration: generation, nowUtc: now.addingTimeInterval(180)
+        ), .healthy, "an immediate callback recorded during start remains eligible after success")
+
+        defaults.set(Data("corrupt".utf8), forKey: deviceActivityMonitorInstallationStorageKey)
+        log.record(kind: .intervalDidStart, activityId: monitor, at: now)
+        XCTAssertNil(log.readAll().last?.installationGeneration)
+    }
+
+    func testLegacyObservationDecodesWithoutGeneration() throws {
+        let record = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "legacy", observedAtUtc: Date(timeIntervalSince1970: 0), sequence: 1)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        json.removeValue(forKey: "installationGeneration")
+        let decoded = try JSONDecoder().decode(PersistedCallbackObservation.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.activityId, "legacy")
+        XCTAssertNil(decoded.installationGeneration)
     }
 }

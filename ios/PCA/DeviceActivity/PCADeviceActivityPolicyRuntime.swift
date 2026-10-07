@@ -61,7 +61,7 @@ public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime 
 /// Narrow scheduler port so policy persistence/application can be tested
 /// without invoking Apple's process-bound DeviceActivity center.
 public protocol PCADeviceActivityScheduler {
-    func start(activityId: String) throws
+    func start(activityId: String, calendar: Calendar) throws
     func stop(activityId: String)
 }
 
@@ -72,13 +72,13 @@ public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler 
         self.center = center
     }
 
-    public func start(activityId: String) throws {
+    public func start(activityId: String, calendar: Calendar) throws {
         // The schedule is deliberately a technical all-day callback envelope.
         // ScheduleEngine remains the only authority for time-of-day, weekday,
         // exception, bonus, and daily-limit semantics inside each callback.
         try center.startMonitoring(
             DeviceActivityName(activityId),
-            during: DeviceActivityScheduleMapper.monitoringSchedule(),
+            during: DeviceActivityScheduleMapper.monitoringSchedule(calendar: calendar),
             events: [:]
         )
     }
@@ -94,17 +94,21 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let blobStore: OpaqueBlobStore
     private let callbackLog: CallbackObservationLog?
     private let plistDecoder = PropertyListDecoder()
+    private let installationEncoder = JSONEncoder()
+    private let installationClock: () -> Date
 
     public init(
         authorizationIsApproved: @escaping () -> Bool,
         scheduler: PCADeviceActivityScheduler = SystemPCADeviceActivityScheduler(),
         blobStore: OpaqueBlobStore,
-        callbackLog: CallbackObservationLog? = nil
+        callbackLog: CallbackObservationLog? = nil,
+        installationClock: @escaping () -> Date = Date.init
     ) {
         self.authorizationIsApproved = authorizationIsApproved
         self.scheduler = scheduler
         self.blobStore = blobStore
         self.callbackLog = callbackLog
+        self.installationClock = installationClock
     }
 
     public func applyVerifiedPolicy(
@@ -141,23 +145,73 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.unsafePolicy
         }
 
+        // Invalidate the prior installation before replacing the policy or
+        // schedule. A failed replacement must not let old callbacks certify
+        // the new policy. Per-install monitor names also keep late callbacks
+        // from a previous schedule distinct, including same-policy reinstall.
+        let previousInstallation = currentInstallation()
+        let previousActiveId = currentActiveActivityId()
+        blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+        blobStore.remove(forKey: "activeActivityId")
+        if let previousInstallation {
+            scheduler.stop(activityId: previousInstallation.monitorActivityId)
+        } else if let previousActiveId {
+            // Stop a legacy monitor from before generation-tagged names were
+            // introduced. Its callback cannot qualify health without metadata.
+            scheduler.stop(activityId: previousActiveId)
+        }
+
+        let monitoringCalendar = DeviceActivityScheduleMapper.monitoringCalendar()
         do {
             try blobStore.write(scheduleData, forKey: "schedule.\(policy.activityId)")
             try blobStore.write(applicationTokenData, forKey: "applicationTokens.\(policy.activityId)")
-            try blobStore.write(Data(policy.activityId.utf8), forKey: "activeActivityId")
             if let protectedApplicationTokenData = protectedApplicationTokenData {
                 try blobStore.write(protectedApplicationTokenData, forKey: "protectedApplicationTokens")
             } else {
                 blobStore.remove(forKey: "protectedApplicationTokens")
             }
         } catch {
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            blobStore.remove(forKey: "activeActivityId")
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+
+        let installation = DeviceActivityMonitorInstallation(
+            policyActivityId: policy.activityId,
+            monitorActivityId: "pca-monitor-\(UUID().uuidString.lowercased())",
+            generation: UUID().uuidString.lowercased(),
+            installedAtUtc: installationClock(),
+            timeZoneIdentifier: monitoringCalendar.timeZone.identifier,
+            state: .starting
+        )
+        do {
+            // Publish the active policy only after every payload and the
+            // starting record are present. Legacy callbacks are gated on this
+            // key and cannot observe a partial replacement.
+            try writeInstallation(installation)
+            try blobStore.write(Data(policy.activityId.utf8), forKey: "activeActivityId")
+        } catch {
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            blobStore.remove(forKey: "activeActivityId")
             throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
 
         do {
-            try scheduler.start(activityId: policy.activityId)
+            try scheduler.start(activityId: installation.monitorActivityId, calendar: monitoringCalendar)
         } catch {
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            blobStore.remove(forKey: "activeActivityId")
+            scheduler.stop(activityId: installation.monitorActivityId)
             throw PCAProtectionPolicyApplicationError.schedulingFailed
+        }
+
+        do {
+            try writeInstallation(installation.confirmingActive())
+        } catch {
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            blobStore.remove(forKey: "activeActivityId")
+            scheduler.stop(activityId: installation.monitorActivityId)
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
 
         let adapter = ManagedSettingsAdapter(
@@ -190,10 +244,20 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     }
 
     public func clearPolicy(activityId: String) {
-        scheduler.stop(activityId: activityId)
+        let installation = currentInstallation()
+        let activeActivityId = currentActiveActivityId()
+        if let installation, installation.policyActivityId == activityId {
+            scheduler.stop(activityId: installation.monitorActivityId)
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+        } else if activeActivityId == activityId {
+            scheduler.stop(activityId: activityId)
+            blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+        }
         blobStore.remove(forKey: "schedule.\(activityId)")
         blobStore.remove(forKey: "applicationTokens.\(activityId)")
-        blobStore.remove(forKey: "activeActivityId")
+        if activeActivityId == activityId {
+            blobStore.remove(forKey: "activeActivityId")
+        }
         ManagedSettingsStore().shield.applications = nil
         ManagedSettingsStore().shield.applicationCategories = nil
         ManagedSettingsStore().shield.webDomains = nil
@@ -201,34 +265,53 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
 
     public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth {
         guard let callbackLog = callbackLog,
-              let activityIdData = blobStore.read(forKey: "activeActivityId"),
-              let activityId = String(data: activityIdData, encoding: .utf8),
-              !activityId.isEmpty,
-              let policyData = blobStore.read(forKey: "schedule.\(activityId)"),
-              case .success(let policy) = PolicySyncDecoder.decode(policyData) else {
+              let installation = currentInstallation(),
+              installation.state == .active,
+              currentActiveActivityId() == installation.policyActivityId,
+              let timeZone = TimeZone(identifier: installation.timeZoneIdentifier),
+              let policyData = blobStore.read(forKey: "schedule.\(installation.policyActivityId)"),
+              case .success(let policy) = PolicySyncDecoder.decode(policyData),
+              policy.activityId == installation.policyActivityId else {
             return .unknown
         }
 
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = policy.timeZone
-        let todayStart = calendar.startOfDay(for: now)
-        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now
-        let todayEnd = calendar.date(byAdding: .second, value: -1, to: tomorrowStart) ?? now
-        let yesterdayEnd = calendar.date(byAdding: .second, value: -1, to: todayStart) ?? now
-        var expected: [ExpectedCallback] = []
-        if now.timeIntervalSince(todayStart) > 120 {
-            expected.append(ExpectedCallback(kind: .intervalDidStart, expectedNoLaterThan: todayStart))
-        }
-        if now > todayEnd.addingTimeInterval(120) {
-            expected.append(ExpectedCallback(kind: .intervalDidEnd, expectedNoLaterThan: todayEnd))
-        } else if now > yesterdayEnd.addingTimeInterval(120) {
-            expected.append(ExpectedCallback(kind: .intervalDidEnd, expectedNoLaterThan: yesterdayEnd))
-        }
+        calendar.timeZone = timeZone
+        let expected = DeviceActivityCallbackPlanner.expectedCallbacks(
+            installedAt: installation.installedAtUtc,
+            now: now,
+            calendar: calendar
+        )
+        let observations = callbackLog.readAll()
+            .filter {
+                $0.activityId == installation.monitorActivityId &&
+                $0.installationGeneration == installation.generation
+            }
+            .map(\.asObservedCallback)
         return DeviceActivityCallbackReconciler.reconcile(
             expected: expected,
-            observed: callbackLog.readAll().map(\.asObservedCallback),
+            observed: observations,
+            activityId: installation.monitorActivityId,
+            installationGeneration: installation.generation,
             nowUtc: now
         )
+    }
+
+    private func currentInstallation() -> DeviceActivityMonitorInstallation? {
+        guard let data = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) else { return nil }
+        return DeviceActivityMonitorInstallation.decodeValidated(data)
+    }
+
+    private func currentActiveActivityId() -> String? {
+        guard let data = blobStore.read(forKey: "activeActivityId"),
+              let value = String(data: data, encoding: .utf8),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
+    private func writeInstallation(_ installation: DeviceActivityMonitorInstallation) throws {
+        let data = try installationEncoder.encode(installation)
+        try blobStore.write(data, forKey: deviceActivityMonitorInstallationStorageKey)
     }
 
     public static func production(

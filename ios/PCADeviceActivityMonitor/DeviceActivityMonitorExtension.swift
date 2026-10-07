@@ -150,6 +150,31 @@ struct AppGroupDeviceActivityPolicySource: DeviceActivityPolicySource {
     func currentPolicy(for activity: DeviceActivityName) -> DeviceActivityAppliedPolicy? {
         guard let scheduleStore = scheduleBlobStore, let tokenStore = tokenBlobStore else { return nil }
 
+        if let installationData = scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) {
+            // Generation-tagged monitor names are resolved to their policy
+            // activity only while the matching installation record exists.
+            // A callback from an old or partially-installed monitor therefore
+            // cannot load a newly-written policy under a reused identifier.
+            guard let installation = DeviceActivityMonitorInstallation.decodeValidated(installationData),
+                  installation.monitorActivityId == activity.rawValue,
+                  installation.state == .starting || installation.state == .active else {
+                return nil
+            }
+            guard let loaded = StoredDeviceActivityPolicyLoader<ApplicationToken>(
+                scheduleStore: scheduleStore, tokenStore: tokenStore
+            ).load(activityId: installation.policyActivityId) else { return nil }
+            return DeviceActivityAppliedPolicy(
+                schedule: loaded.schedule, applicationTokens: loaded.applicationTokens,
+                protectedApplicationTokens: loaded.protectedApplicationTokens
+            )
+        }
+
+        // Existing monitors created before generation-tagged names used the
+        // policy activity ID directly. Keep their policy application intact;
+        // callback health remains `.unknown` until the host installs a fresh
+        // generation and records its successful start.
+        guard let activeId = scheduleStore.read(forKey: "activeActivityId"),
+              String(data: activeId, encoding: .utf8) == activity.rawValue else { return nil }
         guard let loaded = StoredDeviceActivityPolicyLoader<ApplicationToken>(
             scheduleStore: scheduleStore, tokenStore: tokenStore
         ).load(activityId: activity.rawValue) else { return nil }

@@ -102,9 +102,11 @@ Where on-device content classification (doc 14) requires local inference on iOS,
 | Failure | Detection | Behavior |
 |---|---|---|
 | Family Controls authorization revoked by an authorized parent/guardian or through the documented revocation flow | `AuthorizationCenter` status check | Shields/monitoring stop being enforceable; app surfaces this to the parent as an out-of-band change rather than silently reporting stale "protected" status |
-| `DeviceActivityMonitor` extension fails to receive scheduled callback (OS resource constraints) | Missed-callback detection via expected-vs-actual schedule reconciliation on next host-app foreground | Treated as a degraded-signal event (parallel to doc 06 Section 12's OEM-throttling case), not silently reported as full compliance |
+| `DeviceActivityMonitor` callback receipt unavailable or ambiguous | Installation identity and bounded first-occurrence receipt reconciliation on host-app foreground | Unknown delivery health; absence alone does not prove failure because callbacks depend on qualifying device use |
 | Family Controls authorization is unavailable after install/update | Authorization-status check and attempted schedule start | App MUST degrade to Section 11's fallback state, not crash or silently disable protection without informing the parent |
 | Shield misconfiguration accidentally covers emergency surface | Client-side allowlist validation (Section 10) | Rejected before application (PCA-IOS-003) |
+
+Callback health uses the successfully installed monitor's unique activity name and generation. A first-occurrence receipt can establish delivery only before the next same-kind boundary; delivery delayed beyond two minutes can still qualify within that window. Apple supplies receipt time and activity name, without an OS recurrence identifier. Later recurring callbacks and absent receipts remain unknown, including foreground races and intervals without qualifying device use. The 120-second assessment grace is not an Apple delivery guarantee. The technical monitoring envelope is 00:00–23:59 in the Gregorian calendar and timezone captured at installation; policy timezone remains a separate ScheduleEngine input. Replacement invalidates prior installation eligibility before payload writes. Missing, malformed or incomplete installation evidence reports unknown. These observations do not certify OS enforcement; real-device delivery and enforcement remain device-validation gates.
 
 ## 15. Security/privacy implications
 

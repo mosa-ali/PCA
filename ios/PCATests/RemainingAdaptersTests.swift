@@ -37,7 +37,7 @@ final class ChildStatusSnapshotTests: XCTestCase {
     }
 
     func testNotFullyHealthyWhenDeviceActivityCallbacksAreDegraded() {
-        let degraded = DeviceActivityCallbackHealth.degraded(missed: [ExpectedCallback(kind: .intervalDidStart, expectedNoLaterThan: Date())])
+        let degraded = DeviceActivityCallbackHealth.degraded(missed: [ExpectedCallback(kind: .intervalDidStart, occurrenceAt: Date())])
         XCTAssertFalse(snapshot(health: degraded).isFullyHealthy)
     }
 }
