@@ -2378,6 +2378,11 @@ LOCAL_COMMIT = `39367226242f4cef6fc8bd1557be7cb2a4dcd267` on `pca-dev`, containi
 VALIDATION = Backend build and the five focused Parent route suites passed (60/60); focused Android reconnect suite passed (26/26); Android replay/inbox suites passed earlier in this checkpoint (61/61); disposable MySQL 9.7 privilege suite passed (7/7) after all 61 migrations/95 tables; Swift syntax parsing and `git diff --check` passed. Apple XCTest and physical-device acceptance remain unavailable.
 REMOTE_AND_GATES = `origin/pca-dev` tracking ref still points to the pre-commit base `d150a41b7923a8e58072affd4b3c3fa3f91127df`; no fresh fetch or push was performed, so the new commit is local-only and exact-head CI is not available. TODO-12/14/15/20 remain IN_PROGRESS; Platform remains `HOLD_PARENT_DEPENDENCY`; live DB, Azure, deployment, production and owner acceptance gates remain closed.
 
+### 2026-10-07 19:57 UTC — Fresh pca-dev ancestry preflight
+
+GIT_PREFLIGHT = Fresh `git fetch origin pca-dev` succeeded. The fetched remote head is `d150a41b7923a8e58072affd4b3c3fa3f91127df`; local HEAD at this preflight was `0d8b5d39649713db1060a965f177650250067069`, two commits ahead, with the remote as its ancestor and no divergence. Tracked files are clean; unrelated `.vscode/`, root `0`, protocol-review draft, and Python cache remain untracked and untouched.
+PUSH_AND_RELEASE = No push or exact-head CI has occurred. TODO-12/14/15/20 and Platform's Parent dependency remain open; no live database, deployment, Azure, production or owner acceptance action occurred.
+
 ### 2026-10-07 19:08 UTC — Platform dependency ledger: local DB replay evidence
 
 PARENT_LOCAL_DB = Fresh official migration replay in a uniquely named local disposable schema matched retained pca_local_owner_uat through 0063: 95 tables, 830 columns, 348 index entries, 104 foreign keys, 312 checks; columns/indexes/FK actions/check names and exact check clauses/journal matched. Disposable schema was removed; retained UAT was read-only and unchanged.

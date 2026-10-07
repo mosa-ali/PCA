@@ -1609,3 +1609,8 @@ PLATFORM_GATE = No Platform source or release gate changed. Parent TODO-12/14/15
 
 PARENT_SOURCE_COMMIT = Local commit `39367226242f4cef6fc8bd1557be7cb2a4dcd267` contains Parent route authorization, Android/iOS inbound-custody work and both master ledgers. Local focused backend/Android/MySQL and Swift-parse evidence is recorded in the Parent ledger. No Platform files changed.
 PLATFORM_GATE = The cached origin tracking ref remains at the prior base; no fresh fetch, push, exact-head CI, Platform implementation, live DB mutation, deployment, or owner acceptance occurred. Parent TODO-12/14/15/20 remain open, so Platform remains `HOLD_PARENT_DEPENDENCY`.
+
+### 2026-10-07 19:57 UTC — Parent checkpoint Git preflight
+
+PARENT_GIT = A fresh fetch confirmed `origin/pca-dev` at `d150a41b7923a8e58072affd4b3c3fa3f91127df`; local Parent/mobile commits were ahead by two with no divergence at the check. No Platform files changed.
+PLATFORM_GATE = No push or exact-head CI has occurred. Parent TODO-12/14/15/20 remain open; Platform remains `HOLD_PARENT_DEPENDENCY`; no live SQL, deployment, Azure mutation, or owner acceptance occurred.
