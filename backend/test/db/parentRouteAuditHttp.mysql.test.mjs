@@ -15,12 +15,11 @@
 //   - createTestClock: drives TOTP counter steps deterministically; it is
 //     anchored at the real wall clock so DB NOW(3) timestamps and service
 //     timestamps stay aligned within seconds.
-//   - This harness does not mint verified device-session bearers or compose
-//     the Trust Set-backed Safe Zone policy authorizer. Safe Zone mutations
-//     therefore must classify as AUTHORITY_UNAVAILABLE (503) and leave rows
-//     unchanged. Positive actor/policy-ordering behavior is covered by the
-//     focused route tests with explicit test collaborators; those tests do
-//     not certify production cryptography or activate a missing service.
+//   - DeviceSessionService validates test-issued hashed bearer records in its
+//     production process-local repository against real MySQL device/family
+//     lifecycle epochs. These fixtures bypass proof-of-possession issuance;
+//     they do not certify signatures. Missing/invalid bearers must return 401
+//     before omitted Web Rules or Safe Zone policy services return 503.
 //   - The schedule-policy gate case below uses the real MySQL-backed Parent
 //     session/role path, StoreBackedTrustSetRoleResolver, and durable action
 //     idempotency ledger. Its device-session identity is an explicit test
@@ -28,8 +27,8 @@
 //     not certify device signatures or successful policy delivery.
 //   - WebRuleRoutes is registered with its production webRuleService omitted.
 //     The route audit records the resulting 503s through the disposable MySQL
-//     HTTP harness, but the service-presence guard returns before session,
-//     actor, or policy authorization. No Web Rules functionality is enabled.
+//     HTTP harness after Parent role/CSRF and actor-session checks. No Web
+//     Rules functionality is enabled.
 // No production credential, host, or database is used; the database name is
 // the run-owned disposable pca_test_codex_<uuid> created by
 // scripts/with-disposable-db.mjs (enforced by require-owned-disposable-db).
@@ -46,6 +45,11 @@ import { MySqlFamilyMembershipRepository } from '../../dist/familymembers/MySqlF
 import { MySqlParentPreferenceRepository } from '../../dist/parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from '../../dist/location/MySqlSafeZoneRepository.js';
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
+import { DeviceAuthService } from '../../dist/deviceauth/DeviceAuthService.js';
+import { MySqlDeviceChallengeRepository } from '../../dist/deviceauth/MySqlDeviceChallengeRepository.js';
+import { DeviceSessionService } from '../../dist/runtime-sync/DeviceSessionService.js';
+import { InMemoryDeviceSessionRepository } from '../../dist/runtime-sync/DeviceSessionRepository.js';
+import { generateSessionToken } from '../../dist/auth/token.js';
 import { MySqlFreeAccessAccountRepository } from '../../dist/parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
 import { MySqlFamilyAuditEventLedger } from '../../dist/familyrbac/MySqlFamilyAuditEventLedger.js';
 import { MySqlProtectionAlertLedger } from '../../dist/alerts/MySqlProtectionAlertLedger.js';
@@ -143,6 +147,29 @@ const dashboardAggregatorService = new DashboardAggregatorService([
   ),
 ]);
 const clock = createTestClock(new Date(Date.now() - 1000).toISOString());
+const actorDeviceRepository = new MySqlDeviceRepository();
+const actorSessionRepository = new InMemoryDeviceSessionRepository();
+const actorDeviceAuth = new DeviceAuthService(
+  new MySqlDeviceChallengeRepository(), actorDeviceRepository,
+  { async verify() { throw new Error('this route fixture must not certify device signatures'); } },
+  clock.now,
+);
+const actorDeviceSessionService = new DeviceSessionService(actorDeviceAuth, actorSessionRepository, clock.now);
+
+async function testActorHeaders(session) {
+  const deviceId = await insertFamilyDevice(session.familyId);
+  const familySessionEpoch = await actorDeviceRepository.getActiveDeviceSessionEpoch(session.familyId, deviceId);
+  assert.notEqual(familySessionEpoch, null, 'the fixture requires an active persisted device and family');
+  const { rawToken, tokenHash } = generateSessionToken();
+  await actorSessionRepository.create({
+    sessionId: randomUUID(), tokenHash, deviceId, familyId: session.familyId,
+    familySessionEpoch, issuedAt: clock.now(),
+    expiresAt: new Date(clock.ms() + 60_000), revokedAt: null,
+  });
+  assert.deepEqual(await actorDeviceSessionService.requireActorDeviceInFamily(rawToken, session.familyId),
+    { deviceId, familyId: session.familyId });
+  return { authorization: `Bearer ${rawToken}` };
+}
 
 let emailSender;
 let parentAccountService;
@@ -163,6 +190,7 @@ function buildApp({ schedulePolicyHarness } = {}) {
     parentAccountService,
     parentPreferenceRepository: new MySqlParentPreferenceRepository(),
     safeZoneRepository,
+    deviceSessionService: actorDeviceSessionService,
     deviceRepository: new MySqlDeviceRepository(),
     freeAccessAccountRepository: new MySqlFreeAccessAccountRepository(),
   });
@@ -171,11 +199,7 @@ function buildApp({ schedulePolicyHarness } = {}) {
   registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger });
   registerWebRuleRoutes(app, {
     parentAccountService,
-    deviceSessionService: {
-      async requireActorDeviceInFamily() {
-        throw new Error('the unconfigured Web Rules gate must return before device authorization');
-      },
-    },
+    deviceSessionService: actorDeviceSessionService,
     // Intentionally omit webRuleService, matching production composition.
   });
   if (schedulePolicyHarness) {
@@ -281,20 +305,24 @@ test('MYSQL HTTP Web Rules declarations remain explicitly service-gated with a r
   const domain = `mysql-web-rules-no-echo-${randomUUID()}.example`;
   try {
     const session = await registerVerifyLogin(app, `route-audit-web-rules-${randomUUID()}@example.test`);
+    const actorHeaders = await testActorHeaders(session);
+    const otherFamily = await registerVerifyLogin(app, uniqueEmail('audit-web-rules-other-family'));
+    const foreignActorHeaders = await testActorHeaders(otherFamily);
+    const unknownActorHeaders = { authorization: `Bearer ${generateSessionToken().rawToken}` };
     const scenarios = [
       {
         method: 'GET',
         route: WEB_RULES_ROUTE,
         scenarioId: 'mysql_web_rules_read_not_configured',
         url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules`,
-        headers: sessionHeaders(session),
+        headers: { ...sessionHeaders(session), ...actorHeaders },
       },
       {
         method: 'POST',
         route: WEB_RULES_ROUTE,
         scenarioId: 'mysql_web_rules_add_not_configured',
         url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules`,
-        headers: mutationHeaders(session),
+        headers: { ...mutationHeaders(session), ...actorHeaders },
         payload: { domain, listType: 'DENY' },
       },
       {
@@ -302,12 +330,30 @@ test('MYSQL HTTP Web Rules declarations remain explicitly service-gated with a r
         route: WEB_RULES_REMOVE_ROUTE,
         scenarioId: 'mysql_web_rules_remove_not_configured',
         url: `/api/parent/families/${session.familyId}/children/child-audit-web-rules/web-rules/remove`,
-        headers: mutationHeaders(session),
+        headers: { ...mutationHeaders(session), ...actorHeaders },
         payload: { domain, listType: 'DENY' },
       },
     ];
 
     for (const scenario of scenarios) {
+      const withoutActor = { ...scenario.headers };
+      delete withoutActor.authorization;
+      const denied = await app.inject({ method: scenario.method, url: scenario.url, headers: withoutActor,
+        ...(scenario.payload ? { payload: scenario.payload } : {}) });
+      assert.equal(denied.statusCode, 401);
+      assert.deepEqual(denied.json(), { error: 'actor_device_session_required' });
+      assert.equal(denied.body.includes(domain), false);
+      recordParentRouteScenario({ method: scenario.method, route: scenario.route,
+        scenarioId: `${scenario.scenarioId}_requires_actor`, classification: 'EXPECTED_DENIAL',
+        expectedStatus: 401, response: denied, evidenceTier: 'MYSQL_HTTP' });
+      for (const invalidHeaders of [unknownActorHeaders, foreignActorHeaders]) {
+        const invalid = await app.inject({ method: scenario.method, url: scenario.url,
+          headers: { ...scenario.headers, ...invalidHeaders },
+          ...(scenario.payload ? { payload: scenario.payload } : {}) });
+        assert.equal(invalid.statusCode, 401);
+        assert.deepEqual(invalid.json(), { error: 'actor_device_session_invalid' });
+        assert.equal(invalid.body.includes(domain), false);
+      }
       const response = await app.inject({
         method: scenario.method,
         url: scenario.url,
@@ -827,6 +873,7 @@ test('MYSQL HTTP safe zones: role/CSRF/validation boundaries and missing actor a
   try {
     const owner = await registerVerifyLogin(app, uniqueEmail('audit-safezone'));
     const deviceId = await insertFamilyDevice(owner.familyId);
+    const actorHeaders = await testActorHeaders(owner);
     const viewer = await createFamilyMemberSession({ familyId: owner.familyId, role: 'VIEWER' });
     const opaquePayload = { recipientEndpointId: deviceId, ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
 
@@ -850,21 +897,48 @@ test('MYSQL HTTP safe zones: role/CSRF/validation boundaries and missing actor a
     assert.equal(viewerMutation.statusCode, 403);
     recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: viewerMutation, evidenceTier: 'MYSQL_HTTP' });
 
-    const createUnavailable = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: mutationHeaders(owner), payload: opaquePayload });
+    const missingActor = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: mutationHeaders(owner), payload: opaquePayload });
+    assert.equal(missingActor.statusCode, 401);
+    assert.deepEqual(missingActor.json(), { error: 'actor_device_session_required' });
+    recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_requires_actor', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: missingActor, evidenceTier: 'MYSQL_HTTP' });
+
+    const otherFamily = await registerVerifyLogin(app, uniqueEmail('audit-safezone-other-family'));
+    const foreignActorHeaders = await testActorHeaders(otherFamily);
+    for (const invalidHeaders of [{ authorization: `Bearer ${generateSessionToken().rawToken}` }, foreignActorHeaders]) {
+      const invalid = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`,
+        headers: { ...mutationHeaders(owner), ...invalidHeaders }, payload: opaquePayload });
+      assert.equal(invalid.statusCode, 401);
+      assert.deepEqual(invalid.json(), { error: 'actor_device_session_invalid' });
+    }
+
+    const createUnavailable = await app.inject({ method: 'POST', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: { ...mutationHeaders(owner), ...actorHeaders }, payload: opaquePayload });
     assert.equal(createUnavailable.statusCode, 503);
+    assert.deepEqual(createUnavailable.json(), { error: 'family_authority_unavailable' });
     recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'mysql_safe_zones_create_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: createUnavailable, evidenceTier: 'MYSQL_HTTP' });
     assert.equal((await safeZoneRepository.list(owner.familyId)).length, 0, 'the unavailable actor authority must prevent a Safe Zone insert');
 
-    // A disposable fixture lets PATCH/DELETE reach the same missing-authority
+    // A disposable fixture and validated actor let PATCH/DELETE reach the missing-policy
     // gate. It is never treated as proof that an unauthenticated actor may
     // mutate a production row.
     const fixture = await safeZoneRepository.create({ familyId: owner.familyId, recipientEndpointId: deviceId, ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 });
-    const patchUnavailable = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: mutationHeaders(owner), payload: { ciphertextB64: 'BAUG' } });
+    for (const method of ['PATCH', 'DELETE']) {
+      for (const actor of [null, { authorization: `Bearer ${generateSessionToken().rawToken}` }, foreignActorHeaders]) {
+        const denied = await app.inject({ method,
+          url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`,
+          headers: { ...mutationHeaders(owner), ...(actor ?? {}) },
+          ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG' } } : {}) });
+        assert.equal(denied.statusCode, 401);
+        assert.deepEqual(denied.json(), { error: actor ? 'actor_device_session_invalid' : 'actor_device_session_required' });
+      }
+    }
+    const patchUnavailable = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: { ...mutationHeaders(owner), ...actorHeaders }, payload: { ciphertextB64: 'BAUG' } });
     assert.equal(patchUnavailable.statusCode, 503);
+    assert.deepEqual(patchUnavailable.json(), { error: 'family_authority_unavailable' });
     recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_update_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: patchUnavailable, evidenceTier: 'MYSQL_HTTP' });
 
-    const deleteUnavailable = await app.inject({ method: 'DELETE', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: mutationHeaders(owner) });
+    const deleteUnavailable = await app.inject({ method: 'DELETE', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: { ...mutationHeaders(owner), ...actorHeaders } });
     assert.equal(deleteUnavailable.statusCode, 503);
+    assert.deepEqual(deleteUnavailable.json(), { error: 'family_authority_unavailable' });
     recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_delete_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: deleteUnavailable, evidenceTier: 'MYSQL_HTTP' });
 
     const readBack = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/safe-zones`, headers: sessionHeaders(owner) });
