@@ -3,6 +3,7 @@ package org.pca.app.runtime.usage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.pca.app.platform.UsageClockSample
 
 class UsageObservationRestorerTest {
 
@@ -15,11 +16,22 @@ class UsageObservationRestorerTest {
     fun `same confirmed boot id -- process restart, the persisted cursor is trusted`() {
         val open = OpenUsageSession(appToken = "abc", startedAtElapsedMillis = 1_000L, startedAtEpochMillis = 5_000L)
         val engineState = UsageSessionEngineState(openSession = open, lastProcessedElapsedMillis = 8_000_000_000L)
-        val snapshot = UsageObservationSnapshot(engineState, bootId = "boot-1")
+        val sample = UsageClockSample(8_000_000_000L, 8_000_004_000L)
+        val snapshot = UsageObservationSnapshot(engineState, bootId = "boot-1", schemaVersion = 2,
+            bridgeSample = sample, deviceId = "device-1", coverage = UsageObservationCoverage.OBSERVED,
+            observationGeneration = "generation-1", generationAnchor = UsageClockSample(0L, 4_000L))
 
         val restored = UsageObservationRestorer.restore(snapshot, currentBootId = "boot-1")
 
         assertEquals(engineState, restored)
+    }
+
+    @Test
+    fun `legacy snapshot discards open credit even with matching boot`() {
+        val open = OpenUsageSession("abc", 1_000L, 5_000L)
+        val snapshot = UsageObservationSnapshot(UsageSessionEngineState(open, 2_000L), "boot-1")
+        assertEquals(UsageSessionEngineState.INITIAL,
+            UsageObservationRestorer.restore(snapshot, currentBootId = "boot-1"))
     }
 
     @Test

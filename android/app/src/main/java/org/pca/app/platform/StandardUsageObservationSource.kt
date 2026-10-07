@@ -37,31 +37,57 @@ class StandardUsageObservationSource(
     }
 
     override fun queryEventsSince(elapsedRealtimeMillis: Long): List<UsageEvent> {
-        if (accessState() != UsageAccessState.GRANTED) return emptyList()
-        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return emptyList()
-
-        // UsageStatsManager.queryEvents is wall-clock-timestamp-based
-        // (System.currentTimeMillis epoch), not elapsed-realtime. Bridge the
-        // two timelines at a single instant so every timestamp this method
-        // RETURNS stays on the monotonic timeline the interface promises,
-        // per this interface's own anti-clock-rollback contract.
-        val nowElapsed = monotonicTimeSource.elapsedRealtimeMillis()
-        val nowWallClock = wallClockTimeSource.currentTimeMillis()
-        val elapsedSinceOrigin = (nowElapsed - elapsedRealtimeMillis).coerceAtLeast(0)
-        val wallClockOrigin = nowWallClock - elapsedSinceOrigin
-
-        val events = usageStatsManager.queryEvents(wallClockOrigin, nowWallClock)
-        val result = mutableListOf<UsageEvent>()
-        val event = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            val type = classifyEventType(event.eventType) ?: continue
-            val eventElapsed = event.timeStamp - wallClockOrigin + elapsedRealtimeMillis
-            result.add(UsageEvent(event.packageName, type, eventElapsed))
-        }
-        return result
+        val batch = queryObservationBatchSince(elapsedRealtimeMillis)
+        return if (batch.status == UsageQueryStatus.OBSERVED) batch.events.map { it.event } else emptyList()
     }
+
+    override fun queryObservationBatchSince(elapsedRealtimeMillis: Long): UsageObservationBatch {
+        val before = clockSample()
+        val access = accessState()
+        fun unavailable(status: UsageQueryStatus, actualAccess: UsageAccessState = access) =
+            UsageObservationBatch(emptyList(), before, clockSample(), null, actualAccess, status)
+        if (access != UsageAccessState.GRANTED) return unavailable(UsageQueryStatus.ACCESS_UNAVAILABLE)
+        if (elapsedRealtimeMillis < -1L || !UsageClockBridge.valid(before))
+            return unavailable(UsageQueryStatus.CLOCK_DISCONTINUITY)
+        val queryStart = UsageClockBridge.wallAtElapsed(elapsedRealtimeMillis.coerceAtLeast(0L), before)
+            ?: return unavailable(UsageQueryStatus.CLOCK_DISCONTINUITY)
+        val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return unavailable(UsageQueryStatus.SERVICE_UNAVAILABLE)
+        return try {
+            val platformEvents = manager.queryEvents(queryStart, before.wallMillis)
+                ?: return unavailable(UsageQueryStatus.SERVICE_UNAVAILABLE)
+            val observed = mutableListOf<UsageObservedEvent>()
+            val event = UsageEvents.Event()
+            var scannedEvents = 0
+            while (platformEvents.hasNextEvent()) {
+                // Bound application iteration/materialization, including irrelevant event types.
+                // The framework query's own internal allocation is outside this bound.
+                if (++scannedEvents > 4_096) return unavailable(UsageQueryStatus.QUERY_FAILED)
+                platformEvents.getNextEvent(event)
+                val type = classifyEventType(event.eventType) ?: continue
+                if (event.timeStamp < queryStart || event.timeStamp > before.wallMillis)
+                    return unavailable(UsageQueryStatus.CLOCK_DISCONTINUITY)
+                val elapsed = UsageClockBridge.elapsedAtWall(event.timeStamp, before)
+                    ?: return unavailable(UsageQueryStatus.CLOCK_DISCONTINUITY)
+                observed.add(UsageObservedEvent(UsageEvent(event.packageName, type, elapsed), event.timeStamp))
+            }
+            val after = clockSample()
+            val finalAccess = accessState()
+            val status = when {
+                finalAccess != UsageAccessState.GRANTED -> UsageQueryStatus.ACCESS_UNAVAILABLE
+                !UsageClockBridge.continuous(before, after) -> UsageQueryStatus.CLOCK_DISCONTINUITY
+                else -> UsageQueryStatus.OBSERVED
+            }
+            UsageObservationBatch(if (status == UsageQueryStatus.OBSERVED) observed else emptyList(),
+                before, after, queryStart, finalAccess, status)
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            unavailable(UsageQueryStatus.QUERY_FAILED)
+        }
+    }
+
+    private fun clockSample() = UsageClockSample(
+        monotonicTimeSource.elapsedRealtimeMillis(), wallClockTimeSource.currentTimeMillis())
 
     /**
      * ACTIVITY_RESUMED/ACTIVITY_PAUSED (API 29+) are the non-deprecated

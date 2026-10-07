@@ -57,14 +57,66 @@ enum class UsageEventType { FOREGROUND, BACKGROUND }
  *    calls, not by this interface remembering state itself.
  *  - events are NOT assumed gapless across reboot -- callers must treat a
  *    query as a best-effort snapshot, never a complete-history guarantee.
- *  - all timestamps this interface exposes are on the MONOTONIC
- *    (elapsed-realtime) timeline, never a raw wall-clock value -- doc 06's
- *    anti-clock-rollback requirement. A concrete implementation whose
- *    underlying platform API is wall-clock-based (as UsageStatsManager's
- *    query methods are) is responsible for converting at the boundary; it
- *    must never leak that reliance to callers.
+ *  - legacy UsageEvent timestamps are elapsed-time projections, not proof of
+ *    event-time monotonic provenance. UsageStatsManager supplies wall timestamps.
+ *  - queryObservationBatchSince explicitly carries original wall timestamps and
+ *    before/after samples so durable consumers can detect observed discontinuities.
+ *    A null batch means provenance is unavailable, not a successful empty query.
+ *    Matching samples do not establish complete or gapless observation coverage.
  */
 interface UsageObservationSource {
     fun accessState(): UsageAccessState
     fun queryEventsSince(elapsedRealtimeMillis: Long): List<UsageEvent>
+
+    /** Null means this adapter cannot establish query provenance; never infer it from legacy events. */
+    fun queryObservationBatchSince(elapsedRealtimeMillis: Long): UsageObservationBatch? = null
+}
+
+data class UsageClockSample(val elapsedMillis: Long, val wallMillis: Long)
+
+enum class UsageQueryStatus { OBSERVED, ACCESS_UNAVAILABLE, SERVICE_UNAVAILABLE, QUERY_FAILED, CLOCK_DISCONTINUITY }
+
+/** Original platform timestamp and its projection under the batch's one captured bridge. */
+data class UsageObservedEvent(val event: UsageEvent, val epochMillis: Long)
+
+data class UsageObservationBatch(
+    val events: List<UsageObservedEvent>,
+    val beforeQuery: UsageClockSample,
+    val afterQuery: UsageClockSample,
+    val queryStartWallMillis: Long?,
+    val accessState: UsageAccessState,
+    val status: UsageQueryStatus,
+)
+
+/** Detects observed discontinuities; matching samples never prove gapless or exact history. */
+object UsageClockBridge {
+    const val DETECTION_TOLERANCE_MILLIS = 1_000L
+
+    fun valid(sample: UsageClockSample): Boolean = sample.elapsedMillis >= 0L && sample.wallMillis >= 0L
+
+    fun continuous(previous: UsageClockSample, next: UsageClockSample): Boolean {
+        if (!valid(previous) || !valid(next) || next.elapsedMillis < previous.elapsedMillis) return false
+        return try {
+            val elapsedDelta = Math.subtractExact(next.elapsedMillis, previous.elapsedMillis)
+            val wallDelta = Math.subtractExact(next.wallMillis, previous.wallMillis)
+            val difference = Math.subtractExact(wallDelta, elapsedDelta)
+            difference in -DETECTION_TOLERANCE_MILLIS..DETECTION_TOLERANCE_MILLIS
+        } catch (_: ArithmeticException) { false }
+    }
+
+    fun wallAtElapsed(elapsed: Long, sample: UsageClockSample): Long? {
+        if (elapsed < 0L || !valid(sample) || elapsed > sample.elapsedMillis) return null
+        return try {
+            Math.subtractExact(sample.wallMillis, Math.subtractExact(sample.elapsedMillis, elapsed))
+                .takeIf { it >= 0L }
+        } catch (_: ArithmeticException) { null }
+    }
+
+    fun elapsedAtWall(wall: Long, sample: UsageClockSample): Long? {
+        if (wall < 0L || !valid(sample) || wall > sample.wallMillis) return null
+        return try {
+            Math.subtractExact(sample.elapsedMillis, Math.subtractExact(sample.wallMillis, wall))
+                .takeIf { it >= 0L }
+        } catch (_: ArithmeticException) { null }
+    }
 }

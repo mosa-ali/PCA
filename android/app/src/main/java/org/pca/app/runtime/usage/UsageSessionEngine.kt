@@ -33,11 +33,9 @@ data class CompletedUsageSession(
 
 /**
  * One already-tokenized, already-timestamped platform usage event. [elapsedRealtimeMillis] is the
- * real value [org.pca.app.platform.UsageObservationSource] reported (never fabricated);
- * [epochMillis] is the wall-clock projection of that same instant, computed once per poll using a
- * single elapsed/wall-clock bridge sample (same technique
- * [org.pca.app.platform.StandardUsageObservationSource] itself uses internally) so every event in
- * one batch is bridged consistently.
+ * checked projection under the observation batch's captured clock bridge. [epochMillis] retains
+ * the original platform wall timestamp. Matching bridge samples establish sampled consistency,
+ * not event-time monotonic evidence or complete platform history.
  */
 data class TimestampedUsageEvent(
     val appToken: String,
