@@ -2,7 +2,30 @@
 
 This is the live mission history. The canonical TODO-01…TODO-23 board remains in `docs/pca_independent_senior_reviewer/PARENT_CODEX_MASTER_TODO.md`; continue the same mission and retain its history. The 2026-10-04 owner amendment assigns Codex overall implementation ownership and authorizes continuing repository engineering. External device, live database, owner acceptance, Platform, Azure, and production gates remain separate.
 
-## Current checkpoint
+## Current checkpoint — 2026-10-08
+
+```text
+PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
+OWNER = Codex coordinates and implements the continuing Parent mission
+MISSION_STATUS = IN_PROGRESS
+BRANCH = pca-dev
+CONTINUITY_STATUS = PASS
+LOCAL_HEAD_AT_CI = 6c18d2a87415d892ce73fa62b0e88a3bb3a1143b
+ORIGIN_HEAD_AT_CI = 6c18d2a87415d892ce73fa62b0e88a3bb3a1143b
+SERVER_HEAD_AT_CI = 6c18d2a87415d892ce73fa62b0e88a3bb3a1143b
+PRODUCT_SOURCE_CHECKPOINT = 3ffc62b3d286a257b912a2bd947dea5106fa9167; the 6c18d2a8 checkpoint added only TODO/mission-ledger records after that source.
+EXACT_HEAD_CI = Quality Gates run 37713556780 completed SUCCESS 27/27 at 6c18d2a87415d892ce73fa62b0e88a3bb3a1143b, including full disposable-MySQL, Android, iOS, and real-backend browser E2E. Runs 37713055890 at cc47c42c and 37713389129 at 3ffc62b3 were cancelled after superseding fast-forwards.
+LOCAL_ANDROID_TESTS = Focused UsageSyncPortTest 2/2, DeviceSessionManagerTest 9/9, and ReconnectSyncOrchestratorTest 26/26 passed (37/37 total).
+WORKTREE_STATUS_AT_REENTRY = No tracked changes; four pre-existing untracked paths remain preserved: .vscode/, root file 0, docs/pca_independent_senior_reviewer/PARENT_FIRST_DEVICE_TRUST_SET_PROTOCOL_REVIEW.md, and ios/scripts/__pycache__/.
+PARENT_TODO_BOARD = 15 PASS / 4 IN_PROGRESS / 4 TODO / 0 BLOCKED. TODO-19 is PASS at run 37713556780; TODO-12/14/15/20 remain open.
+TODO14 = Route status evidence exists for all 52 declarations; GLOBAL_AGGREGATE_STATUS remains NOT_YET_PROVEN because gated/service-dependent outcomes are not functionally proven.
+TODO20_REPOSITORY_LOCAL = Repository/disposable validation is through migration 0063. Live pca_pro was last schema-verified at 0059. Fresh DNS resolved pca-mysql.mysql.database.azure.com through pca-mysql.privatelink.mysql.database.azure.com to 4.161.89.178; TCP/3306 failed. No authenticated live SQL read or mutation occurred.
+PLATFORM = HOLD_PARENT_DEPENDENCY
+EXTERNAL_GATES = Physical Android/iOS, live DB schema/grants, owner localhost acceptance, Platform dependency, Azure deployment, and production acceptance remain separate and open. READY_FOR_AZURE_DEPLOYMENT = NO.
+NEXT_IMPLEMENTABLE_TASK = Resume TODO-20 with read-only live preflight when the approved target is reachable. No safe source-only TODO-12/14/15 change emerged without the reviewed Trust Set authority, key-custody, and encrypted-delivery contracts.
+```
+
+## Historical checkpoint — 2026-10-05 (superseded by the 2026-10-08 checkpoint)
 
 ```text
 PURSUING_GOAL = PCA Parent Authentication + Authority — Continuous Completion
