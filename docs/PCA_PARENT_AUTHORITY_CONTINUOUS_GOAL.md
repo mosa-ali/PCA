@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-19 owner-authorized publication recheck — 2026-10-08
+
+The user-provided checkpoint attachment states `OWNER_CHECKPOINT_PUSH_AUTHORIZATION = YES` and `TARGET_BRANCH = pca-dev`, directing normal fast-forward publication after fetch/ancestry reconciliation, followed by post-push equality and exact-head CI. At pre-push head `351814664990d4a5d68045db454b6e2d675e67b2`, local was seven commits ahead of fresh `origin/pca-dev` / server `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. This correction-ledger commit is documentation-only; refresh ancestry and publish the resulting candidate under the existing authorization. No force push or history rewrite is authorized.
+
 ## TODO-15 relay paging and callback attribution validation — 2026-10-08
 
 At local validation head `da30a3c5f9bd4647a83de4577949f45575072cfa`, the focused Android reconnect suite passed 26/26 with zero failures, errors, or skips; it covers bounded relay cursor continuation, restart from a saved cursor, empty-page continuation, and rejected-cursor recovery. Nine iOS relay/custody/callback implementation and test files passed `swiftc -frontend -parse` in an isolated process. Source inspection verifies callback-health observations are bound to the active monitor activity and installation generation; stale/foreign events use a bounded diagnostic ring. Xcode is unavailable, so no iOS XCTest/typecheck is claimed. TODO-12/15 crypto, authority and device gates remain open; TODO-14 aggregate, TODO-19 exact-head CI and TODO-20 live DB access remain open. This ledger synchronization changes no product source.
@@ -10,7 +14,7 @@ The changed `ios/PCATests/ProductionIntegrationTests.swift` parsed successfully 
 
 ## TODO-19 published-head CI recheck — 2026-10-08
 
-Quality Gates run `37788211532` completed FAILURE at published `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; the iOS job alone failed on three stale enrollment test fixtures. The local correction is in `73524a4e`. The current local snapshot `7d05241cf35a745aaa96f86127e5199723b48023` was four commits ahead with a clean tracked worktree; this ledger-only follow-up adds one local documentation commit and still has no exact-head CI. `TODO-19 = IN_PROGRESS`; publication awaits direct exact-commit authorization for `origin/pca-dev`, followed by exact-head CI inspection. Parent route audit remains 56/56 locally at source head `fedcdd56`; global aggregate remains `NOT_YET_PROVEN`. TODO-20 live TCP/3306 is unreachable; no live DB operation occurred.
+Quality Gates run `37788211532` completed FAILURE at published `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; the iOS job alone failed on three stale enrollment test fixtures. The local correction is in `73524a4e`. The current local snapshot `7d05241cf35a745aaa96f86127e5199723b48023` was four commits ahead with a clean tracked worktree; this ledger-only follow-up adds one local documentation commit and still has no exact-head CI. `TODO-19 = IN_PROGRESS`; the existing owner checkpoint amendment authorizes ordinary fast-forward publication to `pca-dev` after a fresh ancestry check, followed by exact-head CI inspection. Parent route audit remains 56/56 locally at source head `fedcdd56`; global aggregate remains `NOT_YET_PROVEN`. TODO-20 live TCP/3306 is unreachable; no live DB operation occurred.
 
 ## Current implementation checkpoint — TODO-14 current-source route audit — 2026-10-08
 
