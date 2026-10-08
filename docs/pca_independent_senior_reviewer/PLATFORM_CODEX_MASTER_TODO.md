@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-19 exact-head CI result — 2026-10-08
+
+Published docs-only ledger checkpoint `f963a79e3b7ded0e9836c59b65b1ed236a188066` passed Quality Gates run `37800886221` 27/27. Local/tracking/server refs were equal at f963 after fetch. No Platform source changed; `HOLD_PARENT_DEPENDENCY` and all owner/release gates remain open.
+
 ## Parent TODO-19 / release-route / TODO-20 re-entry — 2026-10-08
 
 Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` and its docs-only CI-result checkpoint `c6945079f0e2f1de56de9ec587618118bcc9502a` are pushed to `pca-dev`. Fresh fetch and direct server lookup verify local/tracking/server equality at c694. Quality Gates run `37798823066` passed 27/27 at c694; source checkpoint run `37797038084` passed 27/27 at 4e. No Platform product source changed.
@@ -889,7 +893,7 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` and docs-only CI-result ledger checkpoint `c6945079f0e2f1de56de9ec587618118bcc9502a` are published with local/tracking/server equality. Quality Gates run `37798823066` passed 27/27 at c694; source run `37797038084` passed 27/27 at 4e. No Platform source changed.
+EVIDENCE = Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` and docs-only ledger checkpoints `c6945079f0e2f1de56de9ec587618118bcc9502a` / `f963a79e3b7ded0e9836c59b65b1ed236a188066` are published with local/tracking/server equality. Quality Gates run `37800886221` passed 27/27 at f963; preceding source and docs-only checkpoints also passed exact-head CI. No Platform source changed.
 BLOCKER = None for this publication checkpoint. Parent authority/owner gates still hold Enrollment.
 DONE_WHEN = local=remote and exact-head CI PASS
 

@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-19 latest ledger CI result — 2026-10-08
+
+Published docs-only ledger checkpoint `f963a79e3b7ded0e9836c59b65b1ed236a188066` passed Quality Gates run `37800886221` 27/27. The source tree is unchanged from `4e722cde2a590916cb02e18fca83428e0ac1c135`; latest post-push fetch/direct server equality and excluded-file preservation are recorded in both master TODOs. No product, database, deployment, or acceptance state changed.
+
 ## Re-entry checkpoint — 2026-10-08
 
 CONTINUITY_STATUS = PASS; branch `pca-dev`; fresh fetch and direct server lookup verify `LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = c6945079f0e2f1de56de9ec587618118bcc9502a`. The c694 commit updates only the three ledgers; product source remains at `4e722cde2a590916cb02e18fca83428e0ac1c135`. Five excluded untracked files remain preserved.
