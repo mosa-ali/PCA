@@ -1,5 +1,14 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — TODO-14 crosswalk correction and TODO-20 reachability — 2026-10-08
+
+CONTINUITY = Branch `pca-dev`; `LOCAL_HEAD = 73524a4e5938142c04af4285a480e95f50921515`; fresh `ORIGIN_HEAD = SERVER_HEAD = c4b05a8bfac419d49ac65fd58b2006d67fefd824`. The iOS test-only correction is one local commit ahead; this checkpoint adds a crosswalk correction and ledger entries. Preserve the five owner/excluded untracked paths listed in the Parent master TODO.
+TODO14 = Corrected the stale integrated-evidence sentence to separate route authentication (Parent session/family, Administrator role, actor-device; CSRF on mutations) from action-level `EDIT_CHILD_POLICY` authorization. A missing service returns `503 not_configured` after the former checks and before the latter, persistence, or mutation payload validation. Source and tests confirm the order; no runtime behavior changed.
+VALIDATION = `git diff --check` passed with CRLF normalization notices. This is documentation-only; no tests were run. The preceding iOS test-harness correction passed sanitized Swift frontend parsing; XCTest and exact-head CI remain pending.
+TODO20 = Fresh DNS resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178`; bounded TCP/3306 timed out. No credentials or live SQL were used. Local disposable schema/grant evidence through migration 0065 remains local-only; live schema/grants remain unverified.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15/19/20 remain open and TODO-14 aggregate remains `NOT_YET_PROVEN`. Platform remains `HOLD_PARENT_DEPENDENCY`. Physical-device, owner acceptance, live DB, Azure, and production gates remain separate/open; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Continue the earliest repository-implementable Parent requirement with settled authority/security semantics. Keep publication/exact-head CI and live DB reconciliation pending their evidence gates; do not infer external acceptance.
+
 ## Current implementation checkpoint — iOS enrollment-test harness corrections — 2026-10-08
 
 CONTINUITY = Approved read-only fetch and direct server query verify LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. Preserve five untracked owner/excluded paths listed in the Parent master TODO.

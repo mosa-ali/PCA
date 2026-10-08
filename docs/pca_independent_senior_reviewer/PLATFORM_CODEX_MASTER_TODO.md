@@ -1,5 +1,13 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — TODO-14 crosswalk correction and TODO-20 reachability — 2026-10-08
+
+PARENT_CONTINUITY = Local `pca-dev` HEAD is `73524a4e5938142c04af4285a480e95f50921515`; fresh `origin/pca-dev` and direct server head are `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. The local Parent checkpoint is one commit ahead; the route-crosswalk and ledger updates are tracked local changes. Five owner/excluded untracked paths remain preserved.
+PARENT_CHANGE = The Parent integrated-evidence crosswalk now accurately states that session/family, Administrator, actor-device, and mutation CSRF checks occur before Web Rules `503 not_configured`; action-level `EDIT_CHILD_POLICY` authorization does not run without the service. This is documentation-only; `git diff --check` passed and no tests were run. No Platform source, Parent projection, Enrollment behavior, or schema changed.
+PARENT_TODO20 = Fresh DNS resolved the configured MySQL host to `4.161.89.178`; bounded TCP/3306 timed out. No live SQL or grants were inspected and no live mutation occurred. Parent TODO-20 remains IN_PROGRESS.
+PLATFORM_SCOPE_AND_GATES = Keep `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, and literal owner `LOCALHOST ACCEPTED` outstanding. Physical-device, owner acceptance, live DB, Azure, and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Continue Platform implementation only after Parent authority/projection dependencies and owner acceptance close; no dependent Platform release gate is promoted by this Parent documentation correction.
+
 ## Current Parent checkpoint — iOS enrollment-test harness corrections — 2026-10-08
 
 PARENT_CONTINUITY = Approved read-only fetch and direct server query both verify LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. Preserve the five untracked owner/excluded files in the Parent ledger. The only source delta is a Parent iOS integration-test harness correction.
