@@ -4373,7 +4373,7 @@ private final class SuspendedEnrollmentTransport: PCAHTTPTransport {
         if request.url?.path == "/v1/enrollment/bootstrap/prepare" {
             return PCAHTTPResponse(statusCode: 200, data: Data(#"{"status":"READY"}"#.utf8))
         }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<PCAHTTPResponse, Error>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<PCAHTTPResponse, Error>) in
             record(request, response: continuation)
         }
     }
