@@ -19,9 +19,10 @@ enum class LocationPrecisionTier { EXACT, APPROXIMATE }
  * IMPORTANT: [latitude]/[longitude] here are still PLAINTEXT domain values (decrypted from this
  * device's own local-at-rest encryption by [LocationPointRepository] so the sync layer has
  * something to encrypt) -- exactly analogous to how [org.pca.app.runtime.sync.envelope.FamilyEnvelope.payload]
- * itself is opaque bytes this module never inspects. A caller MUST route every
- * [LocationSampleSyncPayload] through the established E2EE envelope construction before it leaves
- * this device; it MUST NEVER be logged, written to unencrypted storage, or handed to any
+ * itself is opaque bytes this module never inspects. A future caller must route every
+ * [LocationSampleSyncPayload] through an E2EE envelope before it leaves this device; this port
+ * does not construct that envelope or prove a transport path exists. Coordinates MUST NEVER be
+ * logged, written to unencrypted storage, or handed to any
  * network/transport call directly. [toString] is overridden to redact the coordinate fields as a
  * defense-in-depth guard against exactly that kind of accidental leak (e.g. a debug log
  * statement) -- see `LocationSyncPortTest` for the runnable proof.
@@ -45,14 +46,24 @@ data class LocationSampleSyncPayload(
 }
 
 /**
- * Clean port boundary for the sync layer: exposes locally-recorded, still-encrypted-at-rest
- * location samples as [LocationSampleSyncPayload]s, and nothing else -- no transport, no envelope
- * construction, no direct network path. A concrete sync implementation is expected to map each
- * payload into an outbound [org.pca.app.runtime.sync.envelope.FamilyEnvelope] (E2EE-encrypted
- * there, never here) and hand that envelope to [org.pca.app.runtime.sync.outbox.SyncOutboxPort].
+ * Clean port boundary for the sync layer: reads local rows whose coordinates are encrypted at
+ * rest, then returns [LocationSampleSyncPayload]s with plaintext coordinates in memory for a
+ * trusted E2EE envelope builder. The caller must never log these values, store them unencrypted,
+ * or send them directly over the network. This port has no transport or envelope construction.
+ * A future sync implementation must put each payload into an outbound
+ * [org.pca.app.runtime.sync.envelope.FamilyEnvelope] (encrypted there, never here) and hand that
+ * envelope to [org.pca.app.runtime.sync.outbox.SyncOutboxPort]. Unknown source values fail closed
+ * instead of being promoted to exact precision.
  */
 interface LocationSyncPayloadSource {
-    suspend fun pendingSamplesForSync(deviceId: String): List<LocationSampleSyncPayload>
+    /**
+     * Returns all rows currently stored for [deviceId], not a pending-delivery queue. The DAO
+     * does not evaluate retention cutoffs, so an expired row can remain available until scheduled
+     * cleanup deletes it. There is no delivery marker or acknowledgement, so repeated reads can
+     * return the same rows. The caller must supply the currently enrolled device identity; this
+     * port scopes records to that value but is not an authority boundary.
+     */
+    suspend fun availableSamplesForSync(deviceId: String): List<LocationSampleSyncPayload>
 }
 
 /** Thin, non-mutating adapter over [LocationPointRepository] -- reuses Agent-12's decrypt-on-read
@@ -61,20 +72,25 @@ class RepositoryBackedLocationSyncPayloadSource(
     private val repository: LocationPointRepository,
 ) : LocationSyncPayloadSource {
 
-    override suspend fun pendingSamplesForSync(deviceId: String): List<LocationSampleSyncPayload> =
-        repository.getForDevice(deviceId).map { it.toSyncPayload() }
+    override suspend fun availableSamplesForSync(deviceId: String): List<LocationSampleSyncPayload> =
+        repository.getForDevice(deviceId).map { sample ->
+            check(sample.deviceId == deviceId) {
+                "Location point repository returned a row outside the requested device scope"
+            }
+            sample.toSyncPayload()
+        }
 
     private fun LocationPoint.toSyncPayload() = LocationSampleSyncPayload(
         sampleId = id,
-        deviceId = deviceId,
+        deviceId = this.deviceId,
         timestampEpochMillis = timestampEpochMillis,
         latitude = latitude,
         longitude = longitude,
         accuracyMeters = accuracyMeters,
-        precisionTier = if (source == LocationSampleRecorder.SOURCE_APPROXIMATE) {
-            LocationPrecisionTier.APPROXIMATE
-        } else {
-            LocationPrecisionTier.EXACT
+        precisionTier = when (source) {
+            LocationSampleRecorder.SOURCE_APPROXIMATE -> LocationPrecisionTier.APPROXIMATE
+            LocationSampleRecorder.SOURCE_PLATFORM_FIX -> LocationPrecisionTier.EXACT
+            else -> throw IllegalStateException("Location point has an unsupported source for sync precision")
         },
     )
 }

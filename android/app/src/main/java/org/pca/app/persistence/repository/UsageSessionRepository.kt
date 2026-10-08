@@ -61,7 +61,7 @@ class UsageSessionRepository(
 
     private fun UsageSessionEntity.toDomain(cipher: LocalRecordCipher): UsageSession = UsageSession(
         id = id,
-        deviceId = deviceId,
+        deviceId = this.deviceId,
         appOrCategoryToken = cipher.decryptFromColumns(appOrCategoryTokenEnc, appOrCategoryTokenIv),
         startedAtEpochMillis = startedAtEpochMillis,
         endedAtEpochMillis = endedAtEpochMillis,

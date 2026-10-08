@@ -62,11 +62,16 @@ class LocationPointRepository(
     }
 
     suspend fun getForDevice(deviceId: String): List<LocationPoint> =
-        dao.getForDevice(deviceId).map { it.toDomain(cipher) }
+        dao.getForDevice(deviceId).map { entity ->
+            check(entity.deviceId == deviceId) {
+                "Location point DAO returned a row outside the requested device scope"
+            }
+            entity.toDomain(cipher)
+        }
 
     private fun LocationPointEntity.toDomain(cipher: LocalRecordCipher): LocationPoint = LocationPoint(
         id = id,
-        deviceId = deviceId,
+        deviceId = this.deviceId,
         timestampEpochMillis = timestampEpochMillis,
         latitude = cipher.decryptFromColumns(latitudeEnc, latitudeIv).toDouble(),
         longitude = cipher.decryptFromColumns(longitudeEnc, longitudeIv).toDouble(),

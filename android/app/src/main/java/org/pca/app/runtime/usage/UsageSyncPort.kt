@@ -8,9 +8,9 @@ import org.pca.app.persistence.repository.UsageSessionRepository
  * Read-only, domain-shaped view of a locally-recorded usage session for whichever component
  * builds the outbound family-sync [org.pca.app.runtime.sync.envelope.FamilyEnvelope] (Agent 16 /
  * Coordinator integration, same "this lane defines the port, the transport is out of scope" split
- * as [org.pca.app.runtime.port.FamilySyncRuntimePort]). [appOrCategoryToken] is already the same
- * opaque SHA-256 token [UsageSessionRecorder] persisted -- never a raw package name, so there is
- * no plaintext app identity for this payload to leak even before encryption.
+ * as [org.pca.app.runtime.port.FamilySyncRuntimePort]). [appOrCategoryToken] is the same stable,
+ * truncated, unkeyed SHA-256 digest [UsageSessionRecorder] persisted -- it is not a raw package
+ * name, but it is linkable and dictionary-testable, so it is not anonymity protection.
  */
 data class UsageSessionSyncPayload(
     val sessionId: String,
@@ -31,7 +31,14 @@ data class UsageSessionSyncPayload(
  * lane.
  */
 interface UsageSyncPayloadSource {
-    suspend fun pendingSessionsForSync(deviceId: String): List<UsageSessionSyncPayload>
+    /**
+     * Returns every retained local session for [deviceId]. This is not a pending-delivery queue:
+     * the repository has no delivery marker or acknowledgement, so repeated reads can return the
+     * same sessions until local retention removes them. The caller must supply the currently
+     * enrolled device identity; this port scopes records to that value but is not an authority
+     * boundary.
+     */
+    suspend fun availableSessionsForSync(deviceId: String): List<UsageSessionSyncPayload>
 }
 
 /** Thin, non-mutating adapter over [UsageSessionRepository] -- reuses Agent-12's decrypt-on-read
@@ -40,12 +47,17 @@ class RepositoryBackedUsageSyncPayloadSource(
     private val repository: UsageSessionRepository,
 ) : UsageSyncPayloadSource {
 
-    override suspend fun pendingSessionsForSync(deviceId: String): List<UsageSessionSyncPayload> =
-        repository.getForDevice(deviceId).map { it.toSyncPayload() }
+    override suspend fun availableSessionsForSync(deviceId: String): List<UsageSessionSyncPayload> =
+        repository.getForDevice(deviceId).map { session ->
+            check(session.deviceId == deviceId) {
+                "Usage session repository returned a row outside the requested device scope"
+            }
+            session.toSyncPayload()
+        }
 
     private fun UsageSession.toSyncPayload() = UsageSessionSyncPayload(
         sessionId = id,
-        deviceId = deviceId,
+        deviceId = this.deviceId,
         appOrCategoryToken = appOrCategoryToken,
         startedAtEpochMillis = startedAtEpochMillis,
         endedAtEpochMillis = endedAtEpochMillis,
