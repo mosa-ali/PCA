@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-15 local iOS fixture syntax recheck — 2026-10-08
+
+The changed `ios/PCATests/ProductionIntegrationTests.swift` parsed successfully with `swiftc -frontend -parse` (exit 0) from an isolated child process with normalized environment. A direct parser launch crashed before parsing because Swift reported duplicate `Path` environment keys. `xcodebuild` is unavailable, so no XCTest/typecheck result is claimed. The source correction remains the fixture-only commit `73524a4e`; published CI at `c4b05a8` still fails on those three tests, and the unpublished candidate still needs exact-head CI. This ledger update follows precheck head `9976f3fb10b6f88b715407d5a543ae0cff9b7c27` and changes no source.
+
 ## TODO-19 published-head CI recheck — 2026-10-08
 
 Quality Gates run `37788211532` completed FAILURE at published `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; the iOS job alone failed on three stale enrollment test fixtures. The local correction is in `73524a4e`. The current local snapshot `7d05241cf35a745aaa96f86127e5199723b48023` was four commits ahead with a clean tracked worktree; this ledger-only follow-up adds one local documentation commit and still has no exact-head CI. `TODO-19 = IN_PROGRESS`; publication awaits direct exact-commit authorization for `origin/pca-dev`, followed by exact-head CI inspection. Parent route audit remains 56/56 locally at source head `fedcdd56`; global aggregate remains `NOT_YET_PROVEN`. TODO-20 live TCP/3306 is unreachable; no live DB operation occurred.

@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-15 iOS fixture syntax checkpoint — 2026-10-08
+
+PRECHECK_HEAD = `9976f3fb10b6f88b715407d5a543ae0cff9b7c27`; the tracked tree was clean and the candidate was five commits ahead of `origin/pca-dev` / server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824` before this ledger update. The direct read-only fetch and server lookup verified that remote head.
+LOCAL_IOS_SYNTAX = `swiftc -frontend -parse ios/PCATests/ProductionIntegrationTests.swift` passed with exit 0 when launched in an isolated child process with a normalized environment. A direct launch first crashed in Swift environment initialization with duplicate `Path` keys before parsing the source. `xcodebuild` is unavailable, so XCTest/typecheck are not claimed.
+SOURCE_AND_CI = The only unpublished source change remains the enrollment test-fixture correction in `73524a4e`; it addresses the three stale-fixture failures in published run `37788211532` at `c4b05a8`. The current candidate still has no exact-head CI and remains unpublished. This checkpoint is documentation-only and adds one local ledger commit after `PRECHECK_HEAD`.
+
 ## TODO-19 latest published-head CI recheck — 2026-10-08
 
 SNAPSHOT_HEAD = `7d05241cf35a745aaa96f86127e5199723b48023` on `pca-dev`; at this observation the tracked worktree was clean and four commits ahead of directly verified `origin/pca-dev` / server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. This ledger synchronization is documentation-only and follows that snapshot.
