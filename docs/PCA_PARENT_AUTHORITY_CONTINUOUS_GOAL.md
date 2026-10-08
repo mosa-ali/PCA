@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — iOS main-actor initializer repair — 2026-10-08
+
+CONTINUITY = Branch `pca-dev`; source commit `d79e5cb764f52659879a4b142676184adbf46724` is one fast-forward commit ahead of freshly verified `origin/pca-dev` and server head `d778d11f5693336e75438bc274d1d018a4110c44`. Five pre-existing untracked owner/excluded files remain preserved.
+IMPLEMENTATION = Removed the main-actor factory from `ContentView`'s default argument, moved construction into actor-isolated `init()`, retained `init(model:)` injection, and marked the existing launch smoke test `@MainActor`. The production app still injects its shared model.
+CI_AND_REVIEW = Previous exact-head run `37780141275` completed FAILURE only in the iOS build due to the actor-isolated default argument. Five independent mobile specialists approved the correction. Swift frontend parsing for both changed files and `git diff --check` passed; a fresh exact-head CI run is pending. Apple SDK typecheck and physical iOS validation remain unclaimed.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED, with TODO-12/14/15/19/20 open. Platform remains `HOLD_PARENT_DEPENDENCY`. The previous fresh disposable DB replay and runtime grant tests passed; live `pca_pro` remains unreachable and uninspected. Owner acceptance, physical Android/iOS, Azure, and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Commit the ledger checkpoint, recheck direct remote ancestry, publish by ordinary fast-forward, verify the exact remote source and new exact-head CI, then continue the same mission.
+
 ## Latest implementation checkpoint — iOS callback evidence isolation — 2026-10-08
 
 CONTINUITY = Fresh `git fetch origin pca-dev` and direct `git ls-remote` both verify `94a721dcbd0306c7fd59c1b3546533c1be304218` after local source commit `d40f8ca3`. Local is two commits ahead/zero behind and remote is its direct ancestor. The ordinary fast-forward push remains pending.

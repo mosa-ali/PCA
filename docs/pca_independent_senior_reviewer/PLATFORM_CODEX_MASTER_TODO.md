@@ -1,5 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — iOS main-actor initializer repair — 2026-10-08
+
+PARENT_CONTINUITY = Verified `pca-dev` source commit `d79e5cb764f52659879a4b142676184adbf46724`, one fast-forward commit ahead of freshly verified `origin/pca-dev` and server `d778d11f5693336e75438bc274d1d018a4110c44`. Preserve the five untracked paths listed in the Parent master ledger; no Platform source file changed in this checkpoint.
+PARENT_CI = Exact-head Quality Gates run `37780141275` completed with all non-iOS jobs successful and the iOS build failing at the main-actor factory call in `ContentView`'s default argument. The local fix uses a separate actor-isolated no-argument initializer and preserves explicit app model injection; five mobile specialists reviewed it. Swift parsing and `git diff --check` passed; next exact-head CI is pending publication.
+PLATFORM_SCOPE_AND_GATES = Keep `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, and owner `LOCALHOST ACCEPTED` gate unchanged. Physical-device, owner acceptance, live DB, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Verify the Parent fix through exact-head CI and keep Platform enrollment and deployment held until the Parent authority/projection and acceptance dependencies are closed.
+
 ## Parent dependency checkpoint — iOS callback evidence isolation — 2026-10-08
 
 PARENT_CONTINUITY = Fresh fetch and independent direct server query both verify `origin/pca-dev` at `94a721dcbd0306c7fd59c1b3546533c1be304218`. Local source checkpoint `d40f8ca3` follows prior commit `9205590f` and is two commits ahead, zero behind. The tracked tree was clean immediately after the source commit; five owner-excluded untracked files remain. This ledger update is the current tracked delta.
