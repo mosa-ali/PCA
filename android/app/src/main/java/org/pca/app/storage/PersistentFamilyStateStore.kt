@@ -24,18 +24,18 @@ class PersistentFamilyStateStore(
 ) : FamilyStateStore {
 
     override fun currentState(): LocalFamilyState? {
-        val raw = store.getString(key) ?: return null
+        val raw = DurableEnrollmentStorage.read(store, key) ?: return null
         return decode(raw)
     }
 
     override fun save(state: LocalFamilyState) {
         EpochBounds.requireValid(state.trustSetEpoch, "trustSetEpoch")
         EpochBounds.requireValid(state.keyEpoch, "keyEpoch")
-        store.putString(key, encode(state))
+        DurableEnrollmentStorage.write(store, key, encode(state))
     }
 
     override fun clear() {
-        store.remove(key)
+        DurableEnrollmentStorage.write(store, key, null)
     }
 
     internal fun encode(state: LocalFamilyState): String = listOf(

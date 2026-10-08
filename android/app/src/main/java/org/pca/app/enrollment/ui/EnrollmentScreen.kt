@@ -110,6 +110,15 @@ fun EnrollmentScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (state) {
+            is EnrollmentState.LocalPersistenceUnavailable -> {
+                Text(
+                    stringResource(R.string.enrollment_local_storage_unavailable_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = headingModifier,
+                )
+                Text(stringResource(R.string.enrollment_local_storage_unavailable_body))
+            }
+
             is EnrollmentState.LocalStateCorrupt -> {
                 Text(
                     stringResource(R.string.enrollment_local_state_corrupt_title),

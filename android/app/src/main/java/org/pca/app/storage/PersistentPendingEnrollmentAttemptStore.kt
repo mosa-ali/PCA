@@ -4,9 +4,8 @@ import org.pca.app.foundation.PersistentStateStore
 
 /**
  * Durable binding for [PendingEnrollmentAttemptStore], backed by the same generic
- * [PersistentStateStore] (durable, OS-backed at-rest protection) every other runtime snapshot in
- * this app uses -- mirrors [PersistentFamilyStateStore]'s own encode/decode-with-fail-safe-null
- * pattern exactly.
+ * [PersistentStateStore] with its synchronous durability barrier. An unreadable present record
+ * blocks enrollment; it never represents an absent attempt.
  *
  * This is the ONLY durable record PCA-ENROLLMENT-RUNTIME-2 writes before the bootstrap network
  * call. [PendingEnrollmentAttempt] has no raw-invitation-token field, so there is no way for this
@@ -18,16 +17,16 @@ class PersistentPendingEnrollmentAttemptStore(
 ) : PendingEnrollmentAttemptStore {
 
     override fun current(): PendingEnrollmentAttempt? {
-        val raw = store.getString(key) ?: return null
+        val raw = DurableEnrollmentStorage.read(store, key) ?: return null
         return decode(raw)
     }
 
     override fun save(attempt: PendingEnrollmentAttempt) {
-        store.putString(key, encode(attempt))
+        DurableEnrollmentStorage.write(store, key, encode(attempt))
     }
 
     override fun clear() {
-        store.remove(key)
+        DurableEnrollmentStorage.write(store, key, null)
     }
 
     internal fun encode(attempt: PendingEnrollmentAttempt): String = listOf(
@@ -44,7 +43,7 @@ class PersistentPendingEnrollmentAttemptStore(
 
     internal fun decode(raw: String): PendingEnrollmentAttempt? {
         val parts = raw.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (parts.size != FIELD_COUNT) return null
+        if (parts.size != FIELD_COUNT) throw EnrollmentPersistenceException()
         return try {
             PendingEnrollmentAttempt(
                 attemptId = parts[0],
@@ -58,9 +57,8 @@ class PersistentPendingEnrollmentAttemptStore(
                 status = PendingEnrollmentAttemptStatus.valueOf(parts[8]),
             )
         } catch (_: IllegalArgumentException) {
-            // Malformed/corrupt persisted value -- fail safe to "no pending attempt" rather than
-            // crash or fabricate recovery material.
-            null
+            // Present but unreadable recovery material must never look like an absent attempt.
+            throw EnrollmentPersistenceException()
         }
     }
 

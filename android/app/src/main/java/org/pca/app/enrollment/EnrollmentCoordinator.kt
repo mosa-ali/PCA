@@ -18,6 +18,7 @@ import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.GeneratedKeyPair
 import org.pca.app.security.SecureKeyUnavailableException
 import org.pca.app.storage.CorruptLocalFamilyStateException
+import org.pca.app.storage.EnrollmentPersistenceException
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.LocalFamilyState
 import org.pca.app.storage.PendingEnrollmentAttempt
@@ -49,9 +50,8 @@ import org.pca.app.storage.PendingEnrollmentAttemptStore
  * - No local family state AND a pending attempt exists -> [EnrollmentState.RecoveryPending]:
  *   the raw token is gone, but [recoverAttempt] can still resolve the outcome using only the
  *   durably-held attemptId + attemptRecoveryToken.
- * - Local family state already exists -> that remains authoritative (unchanged behavior); a
- *   pending-attempt record left over from that same successful attempt is simply stale (already
- *   cleared by [persistSuccess]'s caller in the ordinary case).
+ * - Local family state already exists -> identity remains authoritative; a retained pending
+ *   record alongside PAIRING_PENDING keeps recovery actionable until cleanup is confirmed.
  *
  * Bootstrap authority remains ONLY "possession of the valid one-time invitation token" --
  * attemptId and attemptRecoveryToken are never authority to redeem anything; they only let a
@@ -106,11 +106,18 @@ class EnrollmentCoordinator(
 
     /** Concurrent callers are rejected rather than queued against a later attempt. */
     private suspend fun runOperation(action: suspend () -> Unit) {
+        if (_state.value is EnrollmentState.LocalPersistenceUnavailable) return
         if (!operationMutex.tryLock()) return
         try { currentCoroutineContext().ensureActive(); action() } catch (cancelled: CancellationException) {
             pendingProfileConfirmation = null
-            pendingAttemptStore.current()?.let { _state.value = EnrollmentState.RecoveryPending(it.serverBaseUrl) }
+            try {
+                pendingAttemptStore.current()?.let { _state.value = EnrollmentState.RecoveryPending(it.serverBaseUrl) }
+            } catch (_: EnrollmentPersistenceException) {
+                _state.value = EnrollmentState.LocalPersistenceUnavailable
+            }
             throw cancelled
+        } catch (_: EnrollmentPersistenceException) {
+            _state.value = EnrollmentState.LocalPersistenceUnavailable
         } finally { operationMutex.unlock() }
     }
 
@@ -124,28 +131,39 @@ class EnrollmentCoordinator(
     }
 
     private fun restoreInitialState(): EnrollmentState {
-        val persisted = try {
-            familyStateStore.currentState()
-        } catch (_: CorruptLocalFamilyStateException) {
-            // Do not inspect/recover a pending attempt against an unreadable identity record.
-            return EnrollmentState.LocalStateCorrupt
-        }
-        if (persisted != null) {
-            return if (persisted.pairingState == PairingState.REVOKED) {
-                EnrollmentState.Revoked
-            } else {
-                // Deliberately never PAIRED/ACTIVE here regardless of the persisted PairingState --
-                // this coordinator's own model only distinguishes "not enrolled," "revoked," and
-                // "enrolled" (PairingPending). A future status-refresh feature that reads the real,
-                // authenticated pairing status is the only thing allowed to expose PAIRED/ACTIVE.
-                EnrollmentState.PairingPending(persisted.deviceId)
+        try {
+            val persisted = try {
+                familyStateStore.currentState()
+            } catch (_: CorruptLocalFamilyStateException) {
+                // Do not inspect/recover a pending attempt against an unreadable identity record.
+                return EnrollmentState.LocalStateCorrupt
             }
+            if (persisted != null) {
+                // A family commit can survive while pending cleanup fails. Keep
+                // its recovery endpoint actionable after process restart.
+                if (persisted.pairingState == PairingState.PAIRING_PENDING) {
+                    pendingAttemptStore.current()?.let {
+                        return EnrollmentState.RecoveryPending(it.serverBaseUrl)
+                    }
+                }
+                return if (persisted.pairingState == PairingState.REVOKED) {
+                    EnrollmentState.Revoked
+                } else {
+                    // Deliberately never PAIRED/ACTIVE here regardless of the persisted PairingState --
+                    // this coordinator's own model only distinguishes "not enrolled," "revoked," and
+                    // "enrolled" (PairingPending). A future status-refresh feature that reads the real,
+                    // authenticated pairing status is the only thing allowed to expose PAIRED/ACTIVE.
+                    EnrollmentState.PairingPending(persisted.deviceId)
+                }
+            }
+            val pending = pendingAttemptStore.current() ?: return EnrollmentState.NotEnrolled
+            // A durably-persisted attempt survived a process/app restart (or device reboot) with no
+            // confirmed local success yet -- the raw invitation token is gone (never persisted), so
+            // only recoverAttempt() (not retryBootstrap()) can resolve this from here.
+            return EnrollmentState.RecoveryPending(pending.serverBaseUrl)
+        } catch (_: EnrollmentPersistenceException) {
+            return EnrollmentState.LocalPersistenceUnavailable
         }
-        val pending = pendingAttemptStore.current() ?: return EnrollmentState.NotEnrolled
-        // A durably-persisted attempt survived a process/app restart (or device reboot) with no
-        // confirmed local success yet -- the raw invitation token is gone (never persisted), so
-        // only recoverAttempt() (not retryBootstrap()) can resolve this from here.
-        return EnrollmentState.RecoveryPending(pending.serverBaseUrl)
     }
 
     /**
@@ -173,6 +191,8 @@ class EnrollmentCoordinator(
             // fingerprint from a PRIOR device's key pair while this one is still being prepared.
             _keyFingerprints.value = null
             _state.value = EnrollmentState.InvitationReady(parsed.serverBaseUrl)
+        } catch (_: EnrollmentPersistenceException) {
+            _state.value = EnrollmentState.LocalPersistenceUnavailable
         } finally { operationMutex.unlock() }
     }
 
@@ -291,6 +311,8 @@ class EnrollmentCoordinator(
     }
 
     private suspend fun sendBootstrapRequest(token: String, pending: PendingEnrollmentAttempt) {
+        // Reconfirm durability on every send; an in-memory equality read is insufficient.
+        pendingAttemptStore.save(pending)
         _state.value = EnrollmentState.Bootstrapping
         val result = try {
             apiClient.bootstrap(
@@ -382,6 +404,7 @@ class EnrollmentCoordinator(
             return
         }
 
+        pendingAttemptStore.save(pending)
         val result = try {
             apiClient.recoverAttempt(
                 bootstrapAttemptId = pending.attemptId,
@@ -437,19 +460,27 @@ class EnrollmentCoordinator(
     }
 
     /**
-     * Wave 6C: abandons the pending attempt AND deletes its key material
-     * (delete-before-clear). The keys were never used in any accepted server
-     * state -- the whole attempt is definitively dead -- so removing them
-     * shrinks the local secret surface without any recovery implication.
-     * Never called on a merely-ambiguous outcome; never called after a
-     * successful [persistSuccess] (whose keys back the ceremony).
+     * Abandons a definitively dead pending attempt, clearing it durably before deleting keys.
+     * Key deletion is permitted only when no family or ceremony record holds custody.
+     * Never called on a merely-ambiguous outcome. After a partial commit,
+     * family or ceremony custody prevents deletion even on definitive recovery errors.
      */
     private fun abandonPendingAttempt(pending: PendingEnrollmentAttempt) {
         if (!matchesAttempt(pending)) return
+        // Partial confirmation may already have committed family identity or
+        // a ceremony seed. A missing recovery response cannot revoke that custody.
+        val family = try { familyStateStore.currentState() } catch (_: CorruptLocalFamilyStateException) {
+            throw EnrollmentPersistenceException()
+        }
+        val root = firstDeviceRootStore?.readState() ?: FirstDeviceRootReadResult.Missing
+        if (root is FirstDeviceRootReadResult.Unreadable) throw EnrollmentPersistenceException()
+        val keysUnused = family == null && root is FirstDeviceRootReadResult.Missing
+        // Never delete custody while a failed clear could resurrect its recovery record.
+        pendingAttemptStore.clear()
+        if (!keysUnused) return
         val deleter = keyPairGenerator as? DeviceKeyPairDeletion
         deleter?.deleteKeyPair(pending.signingPrivateKeyAlias)
         deleter?.deleteKeyPair(pending.encryptionPrivateKeyAlias)
-        pendingAttemptStore.clear()
     }
 
     /**
@@ -487,6 +518,8 @@ class EnrollmentCoordinator(
             pendingAttemptStore.clear()
             pendingProfileConfirmation = null
             _state.value = EnrollmentState.PairingPending(result.deviceId)
+        } catch (_: EnrollmentPersistenceException) {
+            _state.value = EnrollmentState.LocalPersistenceUnavailable
         } finally { operationMutex.unlock() }
     }
 
@@ -511,12 +544,17 @@ class EnrollmentCoordinator(
         if (!matchesAttempt(pending)) return false
         if (result.status != PairingState.PAIRING_PENDING.name) return false
         val serverPairingState = PairingState.PAIRING_PENDING
-        val previousPairingState = try {
-            familyStateStore.currentState()?.pairingState
+        val previousFamily = try {
+            familyStateStore.currentState()
         } catch (_: CorruptLocalFamilyStateException) {
             _state.value = EnrollmentState.LocalStateCorrupt
             return false
         }
+        if (previousFamily != null && previousFamily.deviceId != result.deviceId) {
+            _state.value = EnrollmentState.LocalPersistenceUnavailable
+            throw EnrollmentPersistenceException()
+        }
+        val previousPairingState = previousFamily?.pairingState
         // Seed persistence is part of the enrollment commit boundary. Capture
         // it before committing LocalFamilyState or its lifecycle audit so a
         // durable-write failure leaves the persisted attempt available for
@@ -578,14 +616,20 @@ class EnrollmentCoordinator(
     }
 
     /** Keep all public enrollment actions blocked if persisted identity data becomes unreadable. */
-    private fun blockIfLocalStateCorrupt(): Boolean = try {
-        familyStateStore.currentState()
-        false
-    } catch (_: CorruptLocalFamilyStateException) {
-        rawInvitationToken = null
-        pendingProfileConfirmation = null
-        _state.value = EnrollmentState.LocalStateCorrupt
-        true
+    private fun blockIfLocalStateCorrupt(): Boolean {
+        if (_state.value is EnrollmentState.LocalPersistenceUnavailable) return true
+        return try {
+            familyStateStore.currentState()
+            false
+        } catch (_: CorruptLocalFamilyStateException) {
+            rawInvitationToken = null
+            pendingProfileConfirmation = null
+            _state.value = EnrollmentState.LocalStateCorrupt
+            true
+        } catch (_: EnrollmentPersistenceException) {
+            _state.value = EnrollmentState.LocalPersistenceUnavailable
+            true
+        }
     }
 
     /**

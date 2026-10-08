@@ -18,6 +18,9 @@ sealed interface EnrollmentState {
     /** Persisted enrollment data exists but is corrupt; do not offer first-device enrollment or recovery actions. */
     data object LocalStateCorrupt : EnrollmentState
 
+    /** A local durability operation failed; preserve key custody and block enrollment actions. */
+    data object LocalPersistenceUnavailable : EnrollmentState
+
     /** A syntactically valid invitation link has been parsed and its opaque token is held in memory; nothing has been sent to the server yet. */
     data class InvitationReady(val serverBaseUrl: String) : EnrollmentState
 

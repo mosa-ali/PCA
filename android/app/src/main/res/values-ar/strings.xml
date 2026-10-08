@@ -243,6 +243,8 @@
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. PENDING NATIVE REVIEWER SIGN-OFF, same posture as the rest of this file. -->
     <string name="enrollment_entry_title">إعداد هذا الجهاز</string>
     <string name="enrollment_entry_body">اطلب من والدك أو والدتك رابط دعوة، ثم الصقه أدناه.</string>
+    <string name="enrollment_local_storage_unavailable_title">تعذّر حفظ بيانات الإعداد بأمان</string>
+    <string name="enrollment_local_storage_unavailable_body">تعذّر على PCA التأكد من حفظ بيانات الإعداد على هذا الجهاز. أوقفنا الإعداد. لا تمسح بيانات التطبيق ولا تحذفه. اطلب من أحد والديك المساعدة في التحقق من مساحة التخزين قبل إعادة تشغيل PCA.</string>
     <string name="enrollment_local_state_corrupt_title">تعذّرت قراءة بيانات الإعداد المحفوظة</string>
     <string name="enrollment_local_state_corrupt_body">تعذّر على PCA قراءة بيانات الإعداد المحفوظة على هذا الجهاز. أوقفنا الإعداد لحماية عائلتك. لا تمسح بيانات هذا التطبيق الآن. اطلب من أحد والديك إرشادات الاستعادة.</string>
     <string name="enrollment_link_input_hint">الصق رابط الدعوة</string>

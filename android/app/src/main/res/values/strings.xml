@@ -240,6 +240,8 @@
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. -->
     <string name="enrollment_entry_title">Set up this device</string>
     <string name="enrollment_entry_body">Ask your parent for an invitation link, then paste it below.</string>
+    <string name="enrollment_local_storage_unavailable_title">Setup data could not be saved safely</string>
+    <string name="enrollment_local_storage_unavailable_body">PCA could not confirm that setup data was saved on this device. Setup is paused. Do not clear the app’s data or remove it. Ask your parent for help checking device storage before restarting PCA.</string>
     <string name="enrollment_local_state_corrupt_title">Saved setup data cannot be read</string>
     <string name="enrollment_local_state_corrupt_body">PCA cannot read the setup data saved on this device. Setup is paused to protect your family. Do not clear this app’s data yet. Ask your parent for recovery guidance.</string>
     <string name="enrollment_link_input_hint">Paste invitation link</string>

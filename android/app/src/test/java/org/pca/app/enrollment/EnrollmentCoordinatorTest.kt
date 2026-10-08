@@ -141,8 +141,164 @@ private class CountingKeyPairGenerator(private val delegate: DeviceKeyPairGenera
     }
 }
 
+private class FaultingEnrollmentBacking : org.pca.app.foundation.PersistentStateStore by InMemoryPersistentStateStore() {
+    var successfulFlushesBeforeFailure: Int? = null
+    override fun flush() {
+        successfulFlushesBeforeFailure?.let {
+            if (it == 0) { successfulFlushesBeforeFailure = null; error("disk unavailable") }
+            successfulFlushesBeforeFailure = it - 1
+        }
+    }
+}
+
+private class EnrollmentCustodyCounter : DeviceKeyPairGenerator by TestConformanceDeviceKeyPairGenerator(), org.pca.app.security.DeviceKeyPairDeletion {
+    val deleted = mutableListOf<String>()
+    override fun deleteKeyPair(alias: String) { deleted += alias }
+    override fun deleteOrphanedAttemptKeys(keepAttemptIds: Set<String>) { /* separate pre-generation sweep */ }
+}
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class EnrollmentCoordinatorTest {
+    @Test
+    fun `pending durability failure blocks submission and all subsequent actions`() = runTest {
+        val backing = object : org.pca.app.foundation.PersistentStateStore by InMemoryPersistentStateStore() {
+            override fun flush() { error("disk unavailable") }
+        }
+        val api = FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(),
+            PersistentFamilyStateStore(backing), org.pca.app.storage.PersistentPendingEnrollmentAttemptStore(backing))
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertEquals(0, api.callCount)
+        c.retryBootstrap()
+        c.recoverAttempt()
+        c.submitInvitationLink(LINK)
+        c.confirmProfile()
+        assertEquals(0, api.callCount)
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+    }
+
+    @Test
+    fun `family write and pending cleanup failure retain recovery after restart`() = runTest {
+        for (successfulFlushes in listOf(0, 1)) {
+            val backing = FaultingEnrollmentBacking()
+            val family = PersistentFamilyStateStore(backing)
+            val pending = PersistentPendingEnrollmentAttemptStore(backing)
+            val api = FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }
+            val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), family, pending)
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+            val original = pending.current()
+            backing.successfulFlushesBeforeFailure = successfulFlushes
+            c.confirmProfile()
+            assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+            assertEquals(original, pending.current())
+            if (successfulFlushes == 0) assertNull(family.currentState())
+            else assertEquals("device", family.currentState()?.deviceId)
+            val recovery = FakeRecoveryApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }
+            val restarted = coordinator(recovery, TestConformanceDeviceKeyPairGenerator(), family, pending)
+            assertTrue(restarted.state.value is EnrollmentState.RecoveryPending)
+            restarted.recoverAttempt()
+            restarted.confirmProfile()
+            assertEquals(EnrollmentState.PairingPending("device"), restarted.state.value)
+            assertNull(pending.current())
+        }
+    }
+
+    @Test
+    fun `failed definitive abandonment clear preserves both key aliases`() = runTest {
+        val backing = FaultingEnrollmentBacking()
+        val pending = PersistentPendingEnrollmentAttemptStore(backing)
+        val custody = EnrollmentCustodyCounter()
+        val api = FakeBootstrapApiClient {
+            backing.successfulFlushesBeforeFailure = 0
+            throw BootstrapError.InvitationUnavailable
+        }
+        val c = coordinator(api, custody, PersistentFamilyStateStore(backing), pending)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertNotNull(pending.current())
+        assertTrue(custody.deleted.isEmpty())
+    }
+
+    @Test
+    fun `malformed pending record blocks enrollment on restart`() = runTest {
+        val backing = InMemoryPersistentStateStore().apply { putString("pending_enrollment_attempt_v1", "unreadable") }
+        val c = coordinator(NeverCalledBootstrapApiClient(), TestConformanceDeviceKeyPairGenerator(),
+            PersistentFamilyStateStore(backing), PersistentPendingEnrollmentAttemptStore(backing))
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertEquals("unreadable", backing.getString("pending_enrollment_attempt_v1"))
+    }
+
+    @Test
+    fun `restart cleanup cannot replace a committed device identity`() = runTest {
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(FakeBootstrapApiClient { DeviceBootstrapResult("original", "PAIRING_PENDING") },
+            TestConformanceDeviceKeyPairGenerator(), family, pending)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        val attempt = pending.current()!!
+        c.confirmProfile()
+        pending.save(attempt)
+        val restarted = coordinator(FakeRecoveryApiClient { DeviceBootstrapResult("different", "PAIRING_PENDING") },
+            TestConformanceDeviceKeyPairGenerator(), family, pending)
+        restarted.recoverAttempt()
+        restarted.confirmProfile()
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, restarted.state.value)
+        assertEquals("original", family.currentState()?.deviceId)
+        assertEquals(attempt, pending.current())
+    }
+
+    @Test
+    fun `definitive recovery errors never delete committed family key custody`() = runTest {
+        for (error in listOf(RecoveryError.NotFound, RecoveryError.InvalidRequest)) {
+            val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+            val pending = InMemoryPendingEnrollmentAttemptStore()
+            val custody = EnrollmentCustodyCounter()
+            val c = coordinator(FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }, custody, family, pending)
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+            val retained = pending.current()!!
+            c.confirmProfile()
+            pending.save(retained) // models a prior process whose final cleanup was not durable
+            val restarted = coordinator(ThrowingRecoveryApiClient(error), custody, family, pending)
+            restarted.recoverAttempt()
+            assertTrue(custody.deleted.isEmpty())
+            assertEquals("device", family.currentState()?.deviceId)
+        }
+    }
+
+    @Test
+    fun `definitive recovery errors preserve durable ceremony seed key custody`() = runTest {
+        for (error in listOf(RecoveryError.NotFound, RecoveryError.InvalidRequest)) {
+            val pending = InMemoryPendingEnrollmentAttemptStore()
+            val custody = EnrollmentCustodyCounter()
+            val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+            val c = coordinator(FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }, custody, family, pending)
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+            val attempt = pending.current()!!
+            val root = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore()
+            root.captureSeed(org.pca.app.firstdevice.FirstDeviceRootRecord(
+                seed = org.pca.app.firstdevice.FirstDeviceCeremonySeed(
+                    attempt.attemptId, attempt.attemptRecoveryToken, attempt.serverBaseUrl,
+                    "device", "signing-id", "encryption-id", attempt.signingPublicKeyBase64,
+                    attempt.encryptionPublicKeyBase64, attempt.signingPrivateKeyAlias, attempt.encryptionPrivateKeyAlias,
+                )), emptySet())
+            val restarted = EnrollmentCoordinator(parser(), ThrowingRecoveryApiClient(error), custody, family, pending,
+                firstDeviceRootStore = root)
+            restarted.recoverAttempt()
+            assertTrue(custody.deleted.isEmpty())
+            assertNotNull(root.current())
+        }
+    }
+
     private fun parser() = UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
 
     private fun coordinator(
