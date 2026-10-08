@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — TODO-14 current-source route audit — 2026-10-08
+
+AUDIT_SOURCE_HEAD = `fedcdd56bfc0720a166b28c3a7170be45ac1ae9c`. Fresh fetch and direct server lookup verify `origin/pca-dev = SERVER_HEAD = c4b05a8bfac419d49ac65fd58b2006d67fefd824`; at audit time local was three commits ahead and a fast-forward descendant. Preserve the five owner-excluded untracked paths in the Parent master TODO.
+TODO14 = Current-source disposable Parent route audit passed backend build and 56/56 tests, zero failures/skips, on loopback MySQL 8.4.11. It applied all 63 migrations through 0065, covered 52/52 declarations in 146/146 matched scenarios, reported zero missing/undeclared keys and zero unexpected status outcomes, and retained `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`. The generated ignored report is `.agent-local-artifacts/parent-route-audit-fedcdd56-20261008-mysql8411.json`, SHA-256 `D1C71BBA2566BE9C316C50FC6CEA9680027546D7708D80C5CEE7E3B7EBE59B59`. The schema was verified absent and the temporary server/datadir removed.
+TODO20 = Fresh bounded live TCP/3306 probe timed out after DNS resolved the host to `4.161.89.178`; no live credentials, SQL, grant read, or mutation. Local disposable schema/grant evidence remains through 0065.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15/19/20 remain open. Platform stays `HOLD_PARENT_DEPENDENCY`. Physical-device, owner acceptance, live DB, Azure, and production gates remain distinct; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Keep TODO-14 aggregate and the seven authority/service/crypto/optional dispositions open. Continue locally implementable Parent/Platform work and retain external gates until direct evidence/authorization arrives.
+
 ## Current implementation checkpoint — TODO-14 crosswalk correction and TODO-20 reachability — 2026-10-08
 
 CONTINUITY = At this source/documentation checkpoint, branch `pca-dev` commit `4bdc2960d17d709b5a6d54f377966e1e4fe75464` was two commits ahead of the directly verified `origin/pca-dev` / server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`, which was its ancestor. Commit `73524a4e` contains the iOS test-only correction; `4bdc2960` contains the Web Rules crosswalk correction and initial ledger checkpoint. This ledger-only follow-up records the post-commit state. Preserve the five owner/excluded untracked paths listed in the Parent master TODO.

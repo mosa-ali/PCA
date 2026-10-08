@@ -1,5 +1,13 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — TODO-14 MySQL 8.4.11 route audit — 2026-10-08
+
+PARENT_AUDIT_SOURCE_HEAD = `fedcdd56bfc0720a166b28c3a7170be45ac1ae9c`; at test time it was three fast-forward commits ahead of the last directly verified `origin/pca-dev` and server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. The fresh `npm run test:db:parent-route-audit` campaign passed build and 56/56 tests on MySQL 8.4.11 after 63 migrations through 0065. Its local report records 146/146 matched scenarios across 52/52 declarations, zero missing/undeclared keys, zero unexpected statuses, and `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`; the disposable schema and temporary server were removed. The ignored report SHA-256 is `D1C71BBA2566BE9C316C50FC6CEA9680027546D7708D80C5CEE7E3B7EBE59B59`.
+PARENT_SCOPE = The Parent Web Rules crosswalk now accurately distinguishes session/family, Administrator, actor-device, and mutation CSRF checks before `503` from action-level `EDIT_CHILD_POLICY` authorization that is skipped when the service is absent. This documentation update does not alter Platform code, Parent identity projection, or Enrollment behavior.
+PARENT_TODO20 = Fresh DNS resolved the MySQL host to `4.161.89.178`; bounded TCP/3306 timed out. No live SQL/grants or credentials were used. Local MySQL 8.4.11 disposable evidence through migration 0065 remains local-only.
+PLATFORM_SCOPE_AND_GATES = Keep `HOLD_PARENT_DEPENDENCY`, Parent-owned identity projection, Platform Enrollment dependency, and literal owner `LOCALHOST ACCEPTED` outstanding. Physical-device, owner, live DB, Azure, and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Continue dependent Platform work only after Parent authority/projection, exact-head CI, and owner acceptance dependencies close. No Platform release gate is promoted by the Parent route-audit evidence.
+
 ## Current Parent checkpoint — TODO-14 crosswalk correction and TODO-20 reachability — 2026-10-08
 
 PARENT_CONTINUITY = At the recorded Parent source/documentation checkpoint, local `pca-dev` commit `4bdc2960d17d709b5a6d54f377966e1e4fe75464` was two commits ahead of the directly verified `origin/pca-dev` and server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`, which was its ancestor. The crosswalk correction is committed in `4bdc2960`; this ledger-only follow-up records that status. Five owner/excluded untracked paths remain preserved.
