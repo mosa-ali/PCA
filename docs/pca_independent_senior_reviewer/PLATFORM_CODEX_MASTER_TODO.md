@@ -1,5 +1,11 @@
 # PCA Platform Web — Codex Master TODO
 
+## TODO-20 database dependency reconciled — 2026-10-09
+
+Parent TODO-20 is PASS: repository, fresh disposable MySQL 8.4.11, retained local UAT and live pca_pro match through 0065 (63 migrations, 96 tables, 834 columns; fingerprint 2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050). Runtime grants are exact locally/live, existing row digests preserved, no seed data or data loss. Exact SQL/hashes and grant receipt: [TODO20_LIVE_RECONCILIATION_20261009.md](TODO20_LIVE_RECONCILIATION_20261009.md). Validated DB source e4ac7641 passed Quality Gates 37848504607 27/27. Retained local MySQL now uses loopback-only port binding and the original named volume; backend DB health 200. Temporary live firewall access removed; Key Vault values unchanged.
+
+TODO-19 is IN_PROGRESS for publication and exact-head CI of this substantive closure/Compose checkpoint. Parent board: 15 PASS / 4 IN_PROGRESS (12/14/15/19) / 4 TODO (18/21/22/23). HOLD_PARENT_DEPENDENCY remains: Parent authority/device contracts and literal owner LOCALHOST ACCEPTED are not closed. No Platform product change or Azure deployment occurred.
+
 ## Parent TODO-20 access and TLS checkpoint — 2026-10-09
 
 Base checkpoint `c34b1db5c89c0bbe2bbc18efda125e189517f929` passed Quality Gates `37846928266`. Shared schema-introspection tooling now enforces PCA verified TLS policy; focused CLI/test-registration checks passed 9/9. Key Vault CLI access is restored and migration-secret target validated without credential output. Live MySQL TCP/3306 remains inaccessible because the current client IP differs from the existing firewall allowlist; temporary single-IP access awaits owner approval. No live SQL, firewall mutation or Platform product change occurred. Preserve HOLD_PARENT_DEPENDENCY, Parent-owned projection, literal owner LOCALHOST ACCEPTED, live DB, device, Azure and production gates.

@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-20 reconciled — 2026-10-09
+
+TODO-20 PASS: all 63 migrations through 0065 and exact runtime grants match repository, disposable MySQL, retained local UAT and live pca_pro. Full live/local comparison is EXACT_MATCH (96 tables / 834 columns), fingerprint 2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050. Existing live/retained row digests are unchanged; no seed data or data loss. Temporary firewall access removed, original rules preserved, Key Vault unchanged. Retained local MySQL is healthy on loopback-only 33061 with its named volume preserved; backend DB health 200. Full receipt and exact grant SQL are tracked under docs/pca_independent_senior_reviewer/.
+
+Validated DB source e4ac7641 passed exact-head CI 37848504607 27/27. The new closure/Compose checkpoint awaits publication and CI; TODO-19 IN_PROGRESS. Parent 15 PASS / 4 IN_PROGRESS (12/14/15/19) / 4 TODO (18/21/22/23); TODO-14 NOT_YET_PROVEN; Platform HOLD_PARENT_DEPENDENCY. Continue TODO-19 publication/CI, then the earliest implementable authority/device work. Physical Android/iOS, literal owner localhost acceptance, Azure and production gates remain separate/open; the same mission continues.
+
 ## TODO-20 TLS tooling and Key Vault access — 2026-10-09
 
 Observed base `c34b1db5c89c0bbe2bbc18efda125e189517f929` passed Quality Gates `37846928266`. Schema introspection now uses the shared verified TLS policy; CLI integration and suite-registration checks passed 9/9 (test-double connection forwarding, not live DB proof). Key Vault-specific owner MFA restored CLI access; migration-secret target matched the authorized live `pca_pro` host/database with no credential output/persistence. MySQL is Ready, but current IP `209.198.151.40` is outside the existing firewall allowlist and TCP/3306 fails. Temporary single-IP access awaits owner approval; no live SQL or firewall mutation occurred. TODO-20 stays IN_PROGRESS and all distinct external gates remain open. Continue authenticated read-only schema/grant preflight once reachable, then only locally validated, data-preserving reconciliation.
