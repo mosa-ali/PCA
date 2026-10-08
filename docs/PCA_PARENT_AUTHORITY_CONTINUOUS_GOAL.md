@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Database tooling TLS completion — 2026-10-09
+
+Published base checkpoint 7edfdf2addea915534bdb5224a426c6e7a8366b1 has live exact-head CI 37851501316 running. Schema snapshot and bootstrap post-validation now apply the shared fail-closed verified TLS policy. Focused CLI/registration checks passed 13/13; fresh local MySQL 8.4.11 applied all 63 migrations through 0065 and actual post-validation passed with the canonical fingerprint, then its disposable schema was removed. No schema snapshot rewrite or live mutation. TODO-20 remains PASS; TODO-19 awaits CI/publication. Authority/device contracts, physical proof, owner localhost acceptance, Platform dependency and Azure/production gates remain open. Continue the same mission.
+
 ## TODO-20 reconciled — 2026-10-09
 
 TODO-20 PASS: all 63 migrations through 0065 and exact runtime grants match repository, disposable MySQL, retained local UAT and live pca_pro. Full live/local comparison is EXACT_MATCH (96 tables / 834 columns), fingerprint 2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050. Existing live/retained row digests are unchanged; no seed data or data loss. Temporary firewall access removed, original rules preserved, Key Vault unchanged. Retained local MySQL is healthy on loopback-only 33061 with its named volume preserved; backend DB health 200. Full receipt and exact grant SQL are tracked under docs/pca_independent_senior_reviewer/.

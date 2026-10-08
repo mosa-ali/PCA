@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const mysqlModule = pathToFileURL(createRequire(import.meta.url).resolve('mysql2/promise')).href;
 
-function run(posture, ca, uri = 'mysql://test:test@localhost/disposable') {
+function run(posture, ca, uri = 'mysql://test:test@localhost/disposable', script = 'scripts/introspect-schema.mjs') {
   const scratch = mkdtempSync(path.join(tmpdir(), 'pca-introspection-tls-'));
   try {
     const capture = path.join(scratch, 'connection.json');
@@ -19,16 +19,18 @@ function run(posture, ca, uri = 'mysql://test:test@localhost/disposable') {
 import { writeFileSync } from 'node:fs';
 mysql.createConnection = async (options) => {
   writeFileSync(process.env.CAPTURE, JSON.stringify({ ssl: options.ssl, timezone: options.timezone }));
+  if (process.env.CAPTURE_STOP === 'YES') throw new Error('TLS_CAPTURE_STOP');
   return { query: async (sql) => sql === 'SELECT DATABASE() AS db' ? [[{db:'disposable'}]] : [[]], end: async () => {} };
 };`);
-    const env = { ...process.env, NODE_ENV: 'production', PCA_SCHEMA_INTROSPECTION_URL: uri,
+    const env = { ...process.env, NODE_ENV: 'production', PCA_SCHEMA_INTROSPECTION_URL: uri, PCA_DATABASE_URL: uri,
+      CAPTURE_STOP: script === 'scripts/introspect-schema.mjs' ? 'NO' : 'YES',
       PCA_SCHEMA_INTROSPECTION_OUT: path.join(scratch, 'schema.json'), CAPTURE: capture };
     delete env.PCA_DATABASE_TLS;
     delete env.PCA_DATABASE_TLS_CA;
     if (posture !== undefined) env.PCA_DATABASE_TLS = posture;
     if (ca !== undefined) env.PCA_DATABASE_TLS_CA = ca;
     const result = spawnSync(process.execPath, ['--import', pathToFileURL(preload).href,
-      'scripts/introspect-schema.mjs'], { cwd: root, env, encoding: 'utf8' });
+      script], { cwd: root, env, encoding: 'utf8' });
     let options;
     try { options = JSON.parse(readFileSync(capture, 'utf8')); } catch (error) {
       if (error.code !== 'ENOENT') throw error;
@@ -62,6 +64,45 @@ test('introspection carries configured CA and rejects unreadable CA before conne
   assert.equal(result.options.ssl.ca, pem);
   const rejected = run('REQUIRED', path.join(tmpdir(), 'pca-missing-ca-for-introspection.pem'));
   assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /DatabaseTlsConfigurationError/);
+  assert.equal(rejected.options, undefined);
+});
+
+test('schema snapshot rejects unsafe production TLS before connecting or writing schema files', () => {
+  for (const posture of [undefined, 'DISABLED', 'required']) {
+    const result = run(posture, undefined, undefined, 'scripts/schema-snapshot.mjs');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /DatabaseTlsConfigurationError/);
+    assert.equal(result.options, undefined);
+  }
+});
+
+test('schema snapshot forwards verified TLS and CA despite an unverified URI option', () => {
+  const pem = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----';
+  const result = run('REQUIRED', pem,
+    'mysql://test:test@localhost/disposable?ssl=%7B%22rejectUnauthorized%22%3Afalse%7D', 'scripts/schema-snapshot.mjs');
+  // Stop at the captured connection boundary so a test never writes real snapshots.
+  assert.match(result.stderr, /TLS_CAPTURE_STOP/);
+  assert.deepEqual(result.options, { ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true, ca: pem }, timezone: 'Z' });
+  const rejected = run('REQUIRED', path.join(tmpdir(), 'pca-missing-ca-for-snapshot.pem'), undefined, 'scripts/schema-snapshot.mjs');
+  assert.match(rejected.stderr, /DatabaseTlsConfigurationError/);
+  assert.equal(rejected.options, undefined);
+});
+
+test('bootstrap post-validation rejects unsafe production TLS before connecting', () => {
+  for (const posture of [undefined, 'DISABLED', 'required']) {
+    const result = run(posture, undefined, undefined, 'scripts/post-validate.mjs');
+    assert.match(result.stderr, /DatabaseTlsConfigurationError/);
+    assert.equal(result.options, undefined);
+  }
+});
+
+test('bootstrap post-validation explicitly forwards verified TLS without URI downgrade', () => {
+  const result = run('REQUIRED', undefined,
+    'mysql://test:test@localhost/disposable?ssl=%7B%22rejectUnauthorized%22%3Afalse%7D', 'scripts/post-validate.mjs');
+  assert.match(result.stderr, /TLS_CAPTURE_STOP/);
+  assert.deepEqual(result.options, { ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true }, timezone: 'Z' });
+  const rejected = run('REQUIRED', path.join(tmpdir(), 'pca-missing-ca-for-post-validation.pem'), undefined, 'scripts/post-validate.mjs');
   assert.match(rejected.stderr, /DatabaseTlsConfigurationError/);
   assert.equal(rejected.options, undefined);
 });

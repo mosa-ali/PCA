@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent schema tooling TLS completion — 2026-10-09
+
+Base checkpoint `7edfdf2addea915534bdb5224a426c6e7a8366b1` is published/aligned, with exact-head CI 37851501316 running. Shared schema-snapshot and bootstrap post-validation tools now enforce verified TLS consistently with migration/runtime/introspection tools. Focused CLI/registration checks passed 13/13; real disposable MySQL 8.4.11 replay through 0065 and post-validation passed. No live DB or Platform product change occurred. TODO-20 remains PASS; TODO-19 publication/CI remains IN_PROGRESS. Preserve HOLD_PARENT_DEPENDENCY and all owner/device/deployment gates.
+
 ## TODO-20 database dependency reconciled — 2026-10-09
 
 Parent TODO-20 is PASS: repository, fresh disposable MySQL 8.4.11, retained local UAT and live pca_pro match through 0065 (63 migrations, 96 tables, 834 columns; fingerprint 2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050). Runtime grants are exact locally/live, existing row digests preserved, no seed data or data loss. Exact SQL/hashes and grant receipt: [TODO20_LIVE_RECONCILIATION_20261009.md](TODO20_LIVE_RECONCILIATION_20261009.md). Validated DB source e4ac7641 passed Quality Gates 37848504607 27/27. Retained local MySQL now uses loopback-only port binding and the original named volume; backend DB health 200. Temporary live firewall access removed; Key Vault values unchanged.

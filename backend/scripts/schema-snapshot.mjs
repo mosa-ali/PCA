@@ -6,17 +6,25 @@
 // schema authority -- the versioned SQL migrations in backend/migrations/
 // remain the only schema source of truth. Re-run this script and diff the
 // output whenever migrations change, to catch schema drift.
+// Production-sensitive execution requires PCA_DATABASE_TLS=REQUIRED; optional
+// PCA_DATABASE_TLS_CA follows the same verified TLS policy as migrations.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
+import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 
 const connectionString = process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL is required to snapshot the schema.');
+const tls = resolveDatabaseTlsOption();
 
 const outDir = new URL('../schema/', import.meta.url);
 await mkdir(outDir, { recursive: true });
 
-const connection = await mysql.createConnection({ uri: connectionString, timezone: 'Z' });
+const connection = await mysql.createConnection({
+  uri: connectionString,
+  ssl: tls === false ? undefined : tls,
+  timezone: 'Z',
+});
 try {
   const [tableRows] = await connection.query(
     `SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name`,

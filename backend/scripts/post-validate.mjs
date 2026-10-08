@@ -14,12 +14,15 @@
 //      docs/database/PCA_CANONICAL_SCHEMA_REPORT.md.
 //
 // Usage: PCA_DATABASE_URL=... node post-validate.mjs
+// Production-sensitive execution requires PCA_DATABASE_TLS=REQUIRED; local
+// disposable test/development databases may explicitly use DISABLED.
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import mysql from 'mysql2/promise';
+import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 import { normalizedFingerprint } from './schema-fingerprint.mjs';
 
 const execFileP = promisify(execFile);
@@ -67,7 +70,12 @@ function assert(condition, message) {
   }
 }
 
-const connection = await mysql.createConnection({ uri: connectionString, timezone: 'Z' });
+const tls = resolveDatabaseTlsOption();
+const connection = await mysql.createConnection({
+  uri: connectionString,
+  ssl: tls === false ? undefined : tls,
+  timezone: 'Z',
+});
 try {
   const [dbRows] = await connection.query('SELECT DATABASE() AS db');
   const dbName = dbRows[0].db;

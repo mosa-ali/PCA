@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-20 tooling TLS completion — 2026-10-09
+
+BASE_CHECKPOINT_SHA = `7edfdf2addea915534bdb5224a426c6e7a8366b1`, published/aligned after the substantive live/local reconciliation. Its exact-head CI 37851501316 is currently running; no failures observed.
+IMPLEMENTATION = schema-snapshot.mjs and post-validate.mjs now enforce the shared explicit verified TLS policy, completing the live-capable schema tooling fix begun in introspect-schema.mjs. Production missing/disabled/invalid TLS and unreadable CA fail closed; REQUIRED cannot be downgraded by URI SSL options. CLI connection-boundary/test-registration checks passed 13/13. A fresh owned local MySQL 8.4.11 schema applied all 63 migrations and actual post-validation passed with the canonical fingerprint; only the disposable schema was removed. No tracked schema snapshot was regenerated, no live credential was reused locally, and no further live mutation occurred.
+TODO_STATE = TODO-20 remains PASS. TODO-19 remains IN_PROGRESS for exact-head CI and publication of this source follow-up; Parent 15 PASS / 4 IN_PROGRESS (12/14/15/19) / 4 TODO (18/21/22/23). TODO-12/14/15 reviewed contract gates, physical-device proof, literal owner localhost acceptance, Platform dependency and deployment gates remain open.
+
 ## TODO-20 completed — live and retained local reconciliation — 2026-10-09
 
 VALIDATED_DB_SOURCE_SHA = `e4ac7641b1fe536af256956d7d1772e55049135c`; exact-head Quality Gates `37848504607` passed 27/27.
