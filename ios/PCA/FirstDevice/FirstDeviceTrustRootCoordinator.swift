@@ -45,6 +45,10 @@ actor FirstDeviceSingleFlightGate {
     func run<T>(_ operation: () async throws -> T) async throws -> T {
         await lock()
         do {
+            // A queued operation may have been cancelled while another
+            // ceremony held the gate. Release the gate without touching
+            // persisted ceremony state or invoking its transport.
+            try Task.checkCancellation()
             let value = try await operation()
             unlock()
             return value

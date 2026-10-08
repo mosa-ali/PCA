@@ -430,6 +430,28 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.current()?.state, .awaitingApproval)
     }
 
+    func testCancelledWaitingOperationDoesNotRunAndReleasesGate() async throws {
+        let gate = FirstDeviceSingleFlightGate()
+        await gate.lock()
+        let cancelled = Task {
+            try await gate.run {
+                XCTFail("A cancelled operation must not touch ceremony state or transport")
+            }
+        }
+        cancelled.cancel()
+        await gate.unlock()
+        do {
+            try await cancelled.value
+            XCTFail("The gate must preserve cancellation")
+        } catch is CancellationError {
+            // Expected whether cancellation arrived before or during queueing.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        let subsequent = try await gate.run { 42 }
+        XCTAssertEqual(subsequent, 42, "Cancellation must release the gate")
+    }
+
     func testSingleFlightGateSerializesConcurrentOperationsFIFO() async throws {
         let (coordinator, store, api, _, _) = makeCoordinator(record: approvedRecord())
         api.holdSubmit = true
