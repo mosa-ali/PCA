@@ -1,5 +1,11 @@
 # PCA Platform Web — Codex Master TODO
 
+## Live Child App route predeployment check — 2026-10-09
+
+Read-only public GET/HEAD of the owner-selected `https://www.pcasafe.com/child-app/` returned HTTP 404 (`Server: nginx`, `Content-Type: text/html`) in two requests. Repository source at verified 0f598dcd includes the bilingual static `/child-app/` route, routing tests and `public-web/deploy/verify-container.mjs` check. The deploy README documents the first Release A publish as a manually authorized operation and identifies the current public target as placeholder; no deploy was attempted. Therefore Download App source is ready, but the owner-selected live destination is unavailable until a release is authorized/deployed and the verifier passes. Preserve Parent app installer destination/signing, Android association and Add Device readiness as separate gates. Parent TODO-21 and Platform-15 remain TODO.
+
+Current published ledger CI 37857699619 is at 23/27 with four active jobs, no failures. This route observation does not change the service or the CI run.
+
 ## Git/CI checkpoint complete — 2026-10-09
 
 Verified checkpoint 2dd845075e66f40b92d40c7dd3acd8e2b775c7cb passed exact-head Quality Gates 37856734886, SUCCESS 27/27. Fresh fetch/direct-server comparison proves LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD at that checkpoint; tracked worktree clean, five excluded untracked files preserved. Product source remains the separately certified provenance checkpoint 0f598dcd (source CI 37855820056 SUCCESS 27/27); local selected compatibility 97/97 and instrumented-test compilation PASS. TODO-19 is PASS for this verified publication checkpoint. Parent board: 16 PASS / 3 IN_PROGRESS (12/14/15) / 4 TODO (18/21/22/23). TODO-20 remains PASS.
@@ -971,8 +977,8 @@ DONE_WHEN = pre-deployment API/Parent/Platform revisions captured and current
 STATUS = TODO  
 OWNER = Coordinator + owner  
 FILES = Approved API/backend, Parent Web and Platform Web artifacts  
-EVIDENCE = No Azure deployment or production smoke was run or authorized by this checkpoint.  
-BLOCKER = Current exact-head CI, refreshed rollback baseline, Parent acceptance/authority/device completion and the deployment gate. Schema/grants reconciliation through 0065 is PASS; deployment still requires fresh preflight.
+EVIDENCE = No Azure deployment. Read-only GET/HEAD of the owner-selected Public Web Child App route https://www.pcasafe.com/child-app/ returned nginx HTTP 404; source route exists but live availability is not proven.
+BLOCKER = Current exact-head CI, refreshed rollback baseline, Parent acceptance/authority/device completion and the deployment gate. The public Child App landing URL is not live yet (404) and must be verified after authorized publication. Schema/grants reconciliation through 0065 is PASS; deployment still requires fresh preflight.
 DONE_WHEN = API, Parent Web and Platform Web deployed; running revisions verified; production smoke PASS
 
 ### PLATFORM-16 — Owner UAT / Platform closure
