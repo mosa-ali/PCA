@@ -25,6 +25,14 @@ class PersistentPendingEnrollmentAttemptStore(
         DurableEnrollmentStorage.write(store, key, encode(attempt))
     }
 
+    override fun compareAndSet(expected: PendingEnrollmentAttempt?, replacement: PendingEnrollmentAttempt?): Boolean =
+        synchronized(store.coordinationLock) {
+            val currentRaw = DurableEnrollmentStorage.read(store, key)
+            val current = currentRaw?.let(::decode)
+            if (current != expected) return@synchronized false
+            DurableEnrollmentStorage.compareAndWrite(store, key, currentRaw, replacement?.let(::encode))
+        }
+
     override fun clear() {
         DurableEnrollmentStorage.write(store, key, null)
     }
@@ -39,12 +47,15 @@ class PersistentPendingEnrollmentAttemptStore(
         attempt.encryptionPublicKeyBase64,
         attempt.encryptionPrivateKeyAlias,
         attempt.status.name,
+        attempt.invitationTokenSha256.orEmpty(),
     ).joinToString(FIELD_SEPARATOR)
 
     internal fun decode(raw: String): PendingEnrollmentAttempt? {
         val parts = raw.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (parts.size != FIELD_COUNT) throw EnrollmentPersistenceException()
+        if (parts.size !in LEGACY_FIELD_COUNT..FIELD_COUNT) throw EnrollmentPersistenceException()
         return try {
+            val invitationTokenSha256 = parts.getOrNull(9)?.takeIf { it.isNotEmpty() }
+            require(invitationTokenSha256 == null || SHA256_HEX.matches(invitationTokenSha256))
             PendingEnrollmentAttempt(
                 attemptId = parts[0],
                 attemptRecoveryToken = parts[1],
@@ -55,6 +66,7 @@ class PersistentPendingEnrollmentAttemptStore(
                 encryptionPublicKeyBase64 = parts[6],
                 encryptionPrivateKeyAlias = parts[7],
                 status = PendingEnrollmentAttemptStatus.valueOf(parts[8]),
+                invitationTokenSha256 = invitationTokenSha256,
             )
         } catch (_: IllegalArgumentException) {
             // Present but unreadable recovery material must never look like an absent attempt.
@@ -65,6 +77,8 @@ class PersistentPendingEnrollmentAttemptStore(
     private companion object {
         const val KEY = "pending_enrollment_attempt_v1"
         const val FIELD_SEPARATOR = "|"
-        const val FIELD_COUNT = 9
+        const val LEGACY_FIELD_COUNT = 9
+        const val FIELD_COUNT = 10
+        val SHA256_HEX = Regex("^[0-9a-f]{64}$")
     }
 }

@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    95 tables
---   830 columns
---    95 primary keys
---   104 foreign keys
---    38 unique non-primary-key indexes
+--    96 tables
+--   834 columns
+--    96 primary keys
+--   105 foreign keys
+--    39 unique non-primary-key indexes
 --   144 non-unique indexes
---   312 CHECK constraints
+--   315 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    61 schema_migrations journal rows
+--    63 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -628,7 +628,20 @@ CREATE TABLE `enrollment_administration_verifiers` (
   CONSTRAINT `enrollment_administration_verifiers_verifier_check` CHECK ((char_length(`verifier_b64`) between 1 and 64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- enrollment_bootstrap_attempts (defined by backend/migrations/0003_enrollment_bootstrap_attempts.sql, altered by 0037_enrollment_bootstrap_attempt_invitation_fk.sql)
+-- enrollment_bootstrap_attempt_tombstones (defined by backend/migrations/0065_enrollment_abandoned_attempt_tombstones.sql)
+CREATE TABLE `enrollment_bootstrap_attempt_tombstones` (
+  `attempt_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `invitation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `recovery_token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `abandoned_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`attempt_id`),
+  KEY `enrollment_bootstrap_attempt_tombstones_invitation_idx` (`invitation_id`),
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_invitation_fk` FOREIGN KEY (`invitation_id`) REFERENCES `enrollment_invitations` (`invitation_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_attempt_id_check` CHECK ((char_length(`attempt_id`) between 16 and 64)),
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_recovery_hash_check` CHECK (regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- enrollment_bootstrap_attempts (defined by backend/migrations/0003_enrollment_bootstrap_attempts.sql, altered by 0037_enrollment_bootstrap_attempt_invitation_fk.sql, 0064_enrollment_bootstrap_attempt_resolution.sql)
 CREATE TABLE `enrollment_bootstrap_attempts` (
   `attempt_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -636,25 +649,26 @@ CREATE TABLE `enrollment_bootstrap_attempts` (
   `platform` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `signing_public_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `encryption_public_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `signing_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `encryption_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `signing_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `encryption_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   `invitation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `created_at` datetime(3) NOT NULL,
   PRIMARY KEY (`attempt_id`),
   UNIQUE KEY `enrollment_bootstrap_attempts_recovery_token_hash_key` (`recovery_token_hash`),
+  UNIQUE KEY `enrollment_bootstrap_attempts_token_hash_key` (`token_hash`),
   KEY `enrollment_bootstrap_attempts_device_id_idx` (`device_id`),
   KEY `enrollment_bootstrap_attempts_invitation_id_idx` (`invitation_id`),
-  KEY `enrollment_bootstrap_attempts_token_hash_idx` (`token_hash`),
   CONSTRAINT `enrollment_bootstrap_attempts_device_id_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `enrollment_bootstrap_attempts_invitation_id_fk` FOREIGN KEY (`invitation_id`) REFERENCES `enrollment_invitations` (`invitation_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `enrollment_bootstrap_attempts_attempt_id_check` CHECK ((char_length(`attempt_id`) between 16 and 64)),
   CONSTRAINT `enrollment_bootstrap_attempts_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `enrollment_bootstrap_attempts_platform_check` CHECK ((`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS'))),
   CONSTRAINT `enrollment_bootstrap_attempts_recovery_token_hash_check` CHECK (regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')),
-  CONSTRAINT `enrollment_bootstrap_attempts_status_check` CHECK ((`status` = _utf8mb4'COMPLETED')),
+  CONSTRAINT `enrollment_bootstrap_attempts_device_result_check` CHECK (((`status` = _utf8mb4'COMPLETED' and `device_id` is not null and `signing_key_id` is not null and `encryption_key_id` is not null) or (`status` in (_utf8mb4'PREPARED',_utf8mb4'ABANDONED') and `device_id` is null and `signing_key_id` is null and `encryption_key_id` is null))),
+  CONSTRAINT `enrollment_bootstrap_attempts_status_check` CHECK ((`status` in (_utf8mb4'PREPARED',_utf8mb4'COMPLETED',_utf8mb4'ABANDONED'))),
   CONSTRAINT `enrollment_bootstrap_attempts_token_hash_check` CHECK (regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -2045,4 +2059,6 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0060_family_trust_set_epoch_persistence.sql'),
   ('0061_parent_password_login_lock.sql'),
   ('0062_first_device_trust_root_bootstrap.sql'),
-  ('0063_first_device_bootstrap_audit_digests.sql');
+  ('0063_first_device_bootstrap_audit_digests.sql'),
+  ('0064_enrollment_bootstrap_attempt_resolution.sql'),
+  ('0065_enrollment_abandoned_attempt_tombstones.sql');

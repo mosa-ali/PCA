@@ -209,7 +209,7 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
 }
 
 final class PCAEnrollmentProfileRuntimeTests: XCTestCase {
-    func testUniversalLinkAndCustomSchemeAcceptOnlyCanonicalOpaqueTokens() {
+    func testUniversalLinkAndCustomSchemeAcceptOnlyCanonicalOpaqueTokens() throws {
         let parser = PCAEnrollmentLinkParser()
         let token = String(repeating: "A", count: 43)
 
@@ -226,7 +226,17 @@ final class PCAEnrollmentProfileRuntimeTests: XCTestCase {
         XCTAssertNil(parser.parse(URL(string: "pca://enroll?token=short")!))
 
         let router = PCAEnrollmentLinkRouter()
-        XCTAssertTrue(router.receive(URL(string: "https://enroll.pca.app/\(token)")!))
+        let first = URL(string: "https://enroll.pca.app/\(token)")!
+        let other = URL(string: "https://enroll.pca.app/\(String(repeating: "B", count: 43))")!
+        XCTAssertTrue(router.receive(first))
+        let expected = try XCTUnwrap(parser.parse(first))
+        let different = try XCTUnwrap(parser.parse(other))
+        XCTAssertFalse(router.takePendingLink(ifEqualTo: different))
+        XCTAssertEqual(router.pendingLink, expected)
+        XCTAssertTrue(router.takePendingLink(ifEqualTo: expected))
+        XCTAssertNil(router.pendingLink)
+
+        XCTAssertTrue(router.receive(first))
         XCTAssertEqual(router.takePendingLink()?.rawInvitationToken, token)
         XCTAssertNil(router.takePendingLink())
     }

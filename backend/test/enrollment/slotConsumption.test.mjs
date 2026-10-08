@@ -43,7 +43,9 @@ test('successful enrollment consumes the managed-device reservation for the invi
   const consumed = [];
   const coordinator = new EnrollmentCoordinator(repository, () => BASE_TIME, undefined, { consumeForInvitation: async (invitationId) => consumed.push(invitationId) });
 
-  await coordinator.enrollDevice({ rawInvitationToken: token, ...deviceInput() });
+  const input = { rawInvitationToken: token, ...deviceInput() };
+  assert.equal(await coordinator.prepareAttempt(input), 'READY');
+  await coordinator.enrollDevice(input);
   assert.deepEqual(consumed, [invitation.invitationId]);
 });
 
@@ -54,8 +56,11 @@ test('a successful enrollment retry replays consumption idempotently for the sam
   let calls = 0;
   const coordinator = new EnrollmentCoordinator(repository, () => BASE_TIME, undefined, { consumeForInvitation: async () => { calls += 1; } });
 
-  await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
-  await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
+  const request = { rawInvitationToken: token, ...input };
+  assert.equal(await coordinator.prepareAttempt(request), 'READY');
+  await coordinator.enrollDevice(request);
+  assert.equal(await coordinator.prepareAttempt(request), 'COMPLETED');
+  await coordinator.enrollDevice(request);
   assert.equal(calls, 2);
 });
 

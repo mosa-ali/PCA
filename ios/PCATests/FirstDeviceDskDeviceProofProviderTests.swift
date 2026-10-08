@@ -19,6 +19,7 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         var generatedRoles: [String] = []
         var publicKeys: [String: String] = [:]
         var failGeneration = false
+        var failEncryptionGeneration = false
         var failSigning = false
         var generationError: SecureEnclaveDskError?
 
@@ -28,8 +29,9 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         func generateSigningKeyPair(attemptId: String) throws -> GeneratedDskKeyPair {
             if let generationError { throw generationError }
             if failGeneration { throw SecureEnclaveDskError.secureEnclaveUnavailable }
-            generatedRoles.append("dsk:\(attemptId)")
             let alias = signingKeyAlias(attemptId: attemptId)
+            if publicKeys[alias] != nil { throw SecureEnclaveDskError.keyAliasConflict }
+            generatedRoles.append("dsk:\(attemptId)")
             publicKeys[alias] = "dsk-public-\(attemptId)"
             return GeneratedDskKeyPair(publicKeyBase64: publicKeys[alias]!, privateKeyAlias: alias)
         }
@@ -37,8 +39,10 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         func generateEncryptionKeyPair(attemptId: String) throws -> GeneratedDskKeyPair {
             if let generationError { throw generationError }
             if failGeneration { throw SecureEnclaveDskError.secureEnclaveUnavailable }
-            generatedRoles.append("dek:\(attemptId)")
+            if failEncryptionGeneration { throw SecureEnclaveDskError.secureEnclaveUnavailable }
             let alias = encryptionKeyAlias(attemptId: attemptId)
+            if publicKeys[alias] != nil { throw SecureEnclaveDskError.keyAliasConflict }
+            generatedRoles.append("dek:\(attemptId)")
             publicKeys[alias] = "dek-public-\(attemptId)"
             return GeneratedDskKeyPair(publicKeyBase64: publicKeys[alias]!, privateKeyAlias: alias)
         }
@@ -138,17 +142,24 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         XCTAssertTrue(fake.generatedRoles.isEmpty)
     }
 
-    func testCrashRecoveryRefusesWhenKeyMaterialIsIncomplete() {
-        // Only the DSK exists under the alias: the attempt must NOT be
-        // silently re-activated (a half pair is unusable and unwedgeable).
+    func testCrashRecoveryCompletesMissingEncryptionKeyWithoutReplacingSigningKey() throws {
+        // A process interruption after DSK generation leaves a recoverable
+        // prepared attempt. Retry must preserve DSK and create only DEK.
         let fake = FakeDskKeyMaterial()
-        fake.publicKeys["pca.dsk.a1"] = "dsk-public-a1"
-        fake.generationError = .keyAliasConflict
+        fake.failEncryptionGeneration = true
         let provider = FirstDeviceDskDeviceProofProvider(provider: fake)
         XCTAssertThrowsError(try provider.prepareEnrollmentKeys(attemptId: "a1")) { error in
-            XCTAssertEqual(error as? SecureEnclaveDskError, .keyAliasConflict)
+            XCTAssertEqual(error as? SecureEnclaveDskError, .secureEnclaveUnavailable)
         }
-        XCTAssertEqual(provider.signingPublicKey, "")
+        let originalSigningKey = fake.publicKeys["pca.dsk.a1"]
+        XCTAssertEqual(originalSigningKey, "dsk-public-a1")
+        XCTAssertNil(fake.publicKeys["pca.dek.a1"])
+
+        fake.failEncryptionGeneration = false
+        try provider.prepareEnrollmentKeys(attemptId: "a1")
+        XCTAssertEqual(provider.signingPublicKey, originalSigningKey)
+        XCTAssertEqual(provider.encryptionPublicKey, "dek-public-a1")
+        XCTAssertEqual(fake.generatedRoles, ["dsk:a1", "dek:a1"])
     }
 
     func testSecureEnclaveFailurePropagatesWithoutLeavingPreparedState() throws {

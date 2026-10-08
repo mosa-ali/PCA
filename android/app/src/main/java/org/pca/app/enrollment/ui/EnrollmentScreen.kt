@@ -97,6 +97,7 @@ fun EnrollmentScreen(
     onContinue: () -> Unit,
     onProfileConfirmed: () -> Unit = {},
     onCheckStatus: () -> Unit = {},
+    onRetrySameSetup: () -> Unit = {},
     firstDeviceRootRecord: FirstDeviceRootRecord? = null,
     onStartFirstDeviceRootReview: () -> Unit = {},
     onRefreshFirstDeviceRootStatus: () -> Unit = {},
@@ -191,7 +192,7 @@ fun EnrollmentScreen(
             is EnrollmentState.FailedRetryable -> {
                 Text(stringResource(R.string.enrollment_retryable_failure))
                 Button(onClick = onContinue) {
-                    Text(stringResource(R.string.enrollment_continue_button))
+                    Text(stringResource(R.string.enrollment_retry_same_setup_button))
                 }
             }
 
@@ -208,21 +209,31 @@ fun EnrollmentScreen(
             }
 
             is EnrollmentState.BootstrapResultUnknown -> {
-                // PCA-ENROLLMENT-RUNTIME-2: BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP is now closed
-                // -- "Check status" is an explicit, human-directed action (never automatic) that
-                // safely re-sends/recovers the SAME attempt; it can never create a second device.
+                // Status recovery can prove completion or authoritative abandonment. Exact replay
+                // remains a separate explicit action and reuses the same attempt and key material.
                 Text(stringResource(R.string.enrollment_result_unknown))
                 Button(onClick = onCheckStatus) {
                     Text(stringResource(R.string.enrollment_check_status_button))
+                }
+                OutlinedButton(onClick = onRetrySameSetup) {
+                    Text(stringResource(R.string.enrollment_retry_same_setup_button))
                 }
             }
 
             is EnrollmentState.RecoveryPending -> {
                 // Restored after a process/app restart or device reboot with an unresolved
                 // ambiguous attempt on record -- honest, no claim of success or failure; recovery
-                // is explicit/bounded, never an automatic retry loop (mission Section 20).
+                // is explicit/bounded, never an automatic retry loop. Rescanning the original link
+                // can unlock exact replay when local root custody is consistent; a custody
+                // conflict remains recovery-only, and a different link cannot replace this attempt.
                 Text(stringResource(R.string.enrollment_recovery_pending_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
-                Text(stringResource(R.string.enrollment_recovery_pending_body))
+                Text(stringResource(
+                    if (state.custodyConflict) R.string.enrollment_recovery_custody_conflict
+                    else R.string.enrollment_recovery_pending_body,
+                ))
+                if (state.invitationRescanRejected) {
+                    Text(stringResource(R.string.enrollment_recovery_rescan_rejected))
+                }
                 Button(onClick = onCheckStatus) {
                     Text(stringResource(R.string.enrollment_check_status_button))
                 }

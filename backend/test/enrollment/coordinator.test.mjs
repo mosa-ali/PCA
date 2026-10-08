@@ -29,8 +29,16 @@ function buildCoordinator() {
   const repository = createInMemoryEnrollmentRepository();
   let currentTime = BASE_TIME;
   const clock = { now: () => new Date(currentTime), advance: (ms) => { currentTime += ms; }, set: (ms) => { currentTime = ms; } };
-  const coordinator = new EnrollmentCoordinator(repository, clock.now);
-  return { coordinator, repository, clock };
+  const rawCoordinator = new EnrollmentCoordinator(repository, clock.now);
+  const coordinator = {
+    prepareAttempt: (input) => rawCoordinator.prepareAttempt(input),
+    recoverAttempt: (input) => rawCoordinator.recoverAttempt(input),
+    async enrollDevice(input) {
+      await rawCoordinator.prepareAttempt(input);
+      return rawCoordinator.enrollDevice(input);
+    },
+  };
+  return { coordinator, rawCoordinator, repository, clock };
 }
 
 function seedInvitation(repository, overrides = {}) {
@@ -71,6 +79,17 @@ test('successful enrollment: PAIRING_PENDING device created, DSK+DEK registered,
   assert.ok(result.signingKeyId);
   assert.ok(result.encryptionKeyId);
   assert.notEqual(result.signingKeyId, result.encryptionKeyId);
+});
+
+test('direct bootstrap without a committed PREPARED reservation is rejected and leaves the invitation usable', async () => {
+  const { coordinator, rawCoordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  const input = { rawInvitationToken: token, ...deviceKeysInput() };
+
+  await assert.rejects(() => rawCoordinator.enrollDevice(input), { code: 'ATTEMPT_CONFLICT' });
+  assert.equal(await coordinator.prepareAttempt(input), 'READY');
+  const enrolled = await coordinator.enrollDevice(input);
+  assert.equal(enrolled.status, 'PAIRING_PENDING');
 });
 
 test('malformed invitation token rejected before any repository lookup', async () => {
@@ -179,9 +198,15 @@ test('duplicate public key (as either DSK or DEK) rejected and does not consume 
   await coordinator.enrollDevice({ rawInvitationToken: firstToken, ...deviceKeysInput({ signingPublicKey: sharedKey }) });
 
   const { token: secondToken } = seedInvitation(repository);
+  const duplicateInput = deviceKeysInput({ encryptionPublicKey: sharedKey });
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: secondToken, ...deviceKeysInput({ encryptionPublicKey: sharedKey }) }),
+    () => coordinator.enrollDevice({ rawInvitationToken: secondToken, ...duplicateInput }),
     { code: 'DUPLICATE_KEY' },
+  );
+  assert.deepEqual(
+    await coordinator.recoverAttempt({ attemptId: duplicateInput.attemptId, attemptRecoveryToken: duplicateInput.attemptRecoveryToken }),
+    { outcome: 'ABANDONED' },
+    'the failed prepared tuple must be abandoned before a fresh key tuple can claim the invitation',
   );
   // The second invitation must NOT have been consumed by the failed attempt.
   const retry = await coordinator.enrollDevice({ rawInvitationToken: secondToken, ...deviceKeysInput() });
@@ -213,7 +238,7 @@ test('concurrency (in-memory): many simultaneous enrollment attempts (distinct a
   const rejected = attempts.filter((a) => a.status === 'rejected');
   assert.equal(fulfilled.length, 1, 'exactly one concurrent enrollment must succeed');
   assert.equal(rejected.length, 19);
-  for (const failure of rejected) assert.equal(failure.reason.code, 'ALREADY_REDEEMED');
+  for (const failure of rejected) assert.equal(failure.reason.code, 'ATTEMPT_CONFLICT');
 });
 
 // --- PCA-ENROLLMENT-RUNTIME-2: ambiguous-retry / idempotent-recovery tests ---
@@ -271,6 +296,33 @@ test('ATTEMPT CONFLICT: same attempt id + same token but DIFFERENT keys is rejec
   await coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ attemptId: sharedAttemptId }) });
   await assert.rejects(
     () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ attemptId: sharedAttemptId }) }),
+    { code: 'ATTEMPT_CONFLICT' },
+  );
+});
+
+test('ATTEMPT CONFLICT: same attempt id, invitation and keys with a different recovery token is not an exact replay', async () => {
+  const { coordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  const input = deviceKeysInput();
+  const first = await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
+
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...input, attemptRecoveryToken: recoveryToken() }),
+    { code: 'ATTEMPT_CONFLICT' },
+  );
+  const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.deviceId, first.deviceId, 'the original recovery capability remains bound to the committed attempt');
+});
+
+test('ATTEMPT CONFLICT: same attempt id, invitation and keys with a different platform is not an exact replay', async () => {
+  const { coordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  const input = deviceKeysInput({ platform: 'ANDROID' });
+  await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
+
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...input, platform: 'IOS' }),
     { code: 'ATTEMPT_CONFLICT' },
   );
 });
@@ -344,13 +396,33 @@ test('RECOVERY: correct attempt id + correct recovery token returns the same dev
   const input = deviceKeysInput();
   const original = await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
   const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
-  assert.equal(recovered.deviceId, original.deviceId);
-  assert.equal(recovered.status, 'PAIRING_PENDING');
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.deviceId, original.deviceId);
+  assert.equal(recovered.result.status, 'PAIRING_PENDING');
   // Wave 6C: the recovery result must deliver the server-minted DSK/DEK key
   // ids verbatim (the device needs its own key ids for the first-device
   // trust-root ceremony, which M1-binds to the enrollment attempt's DSK).
-  assert.equal(recovered.signingKeyId, original.signingKeyId);
-  assert.equal(recovered.encryptionKeyId, original.encryptionKeyId);
+  assert.equal(recovered.result.signingKeyId, original.signingKeyId);
+  assert.equal(recovered.result.encryptionKeyId, original.encryptionKeyId);
+});
+
+test('RECOVERY: a prepared attempt is atomically abandoned and cannot later bootstrap', async () => {
+  const { coordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  const input = deviceKeysInput();
+  assert.equal(await coordinator.prepareAttempt({ rawInvitationToken: token, ...input }), 'READY');
+  const abandoned = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
+  assert.deepEqual(abandoned, { outcome: 'ABANDONED' });
+  await assert.rejects(() => coordinator.enrollDevice({ rawInvitationToken: token, ...input }), { code: 'ATTEMPT_CONFLICT' });
+  assert.deepEqual(
+    await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken }),
+    { outcome: 'ABANDONED' },
+    'a lost abandonment response is idempotently recoverable',
+  );
+  const next = deviceKeysInput();
+  assert.equal(await coordinator.prepareAttempt({ rawInvitationToken: token, ...next }), 'READY');
+  const enrolled = await coordinator.enrollDevice({ rawInvitationToken: token, ...next });
+  assert.equal(enrolled.status, 'PAIRING_PENDING');
 });
 
 test('RECOVERY: unknown attempt id is NOT_FOUND', async () => {

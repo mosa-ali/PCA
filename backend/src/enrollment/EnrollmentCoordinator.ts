@@ -2,8 +2,8 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { hashInvitationToken, isPlausibleInvitationToken } from '../invitation/token.js';
 import { isPlausiblePublicKey } from '../device/publicKey.js';
 import { hashAttemptRecoveryToken, isPlausibleAttemptId, isPlausibleAttemptRecoveryToken } from './attempt.js';
-import type { EnrollDeviceOutcome, EnrollmentRepository } from './EnrollmentRepository.js';
-import type { EnrollDeviceInput, EnrollDeviceResult, Platform, RecoverAttemptInput, RecoverAttemptResult } from './types.js';
+import type { EnrollDeviceOutcome, EnrollmentRepository, PrepareAttemptOutcome } from './EnrollmentRepository.js';
+import type { EnrollDeviceInput, EnrollDeviceResult, Platform, RecoverAttemptInput, RecoverAttemptOutcome } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 
@@ -51,7 +51,9 @@ const ENROLLMENT_ERROR_MESSAGES: Record<EnrollmentErrorCode, string> = {
 const VALID_PLATFORMS: ReadonlySet<string> = new Set(['ANDROID', 'IOS']);
 
 /**
- * The ONLY supported way to consume an enrollment invitation. There is
+ * The ONLY supported way to consume an enrollment invitation. The client
+ * must first commit the exact attempt tuple through prepareAttempt; a
+ * direct bootstrap without that reservation is rejected. There is
  * deliberately no standalone "redeem invitation" operation reachable from
  * enrollment -- redemption only ever happens bundled with device+DSK+DEK
  * creation in one atomic transaction, so a failure partway through can
@@ -67,9 +69,9 @@ const VALID_PLATFORMS: ReadonlySet<string> = new Set(['ANDROID', 'IOS']);
  * PCA-ENROLLMENT-RUNTIME-2: bootstrap authority remains ONLY "possession of
  * the valid one-time invitation token" -- attemptId and
  * attemptRecoveryToken are never authority to redeem anything. attemptId
- * only lets a RETRY of the same logical attempt (still presenting the same
- * token/DSK/DEK) be recognized as such instead of colliding with
- * ALREADY_REDEEMED. attemptRecoveryToken only lets a caller who already
+ * only lets a RETRY of the same logical attempt (same invitation hash,
+ * recovery-token hash, platform and DSK/DEK) be recognized as such instead
+ * of colliding with ALREADY_REDEEMED. attemptRecoveryToken only lets a caller who already
  * generated it (before the original request) recover the outcome of an
  * attempt whose response was lost, via recoverAttempt below, WITHOUT ever
  * re-presenting the raw invitation token.
@@ -93,21 +95,7 @@ export class EnrollmentCoordinator {
   }
 
   async enrollDevice(input: EnrollDeviceInput): Promise<EnrollDeviceResult> {
-    if (!isPlausibleInvitationToken(input.rawInvitationToken)) throw new EnrollmentError('INVALID_TOKEN');
-    if (!isValidPlatform(input.platform)) throw new EnrollmentError('INVALID_PLATFORM');
-    if (!isPlausiblePublicKey(input.signingPublicKey) || !isPlausiblePublicKey(input.encryptionPublicKey)) {
-      throw new EnrollmentError('INVALID_PUBLIC_KEY');
-    }
-    // DSK and DEK are distinct roles (doc 09 Section 3.1) -- reusing the
-    // same bytes for both would collapse the role separation the
-    // architecture requires, independent of the permanent per-value
-    // uniqueness the persistence layer also enforces.
-    if (input.signingPublicKey === input.encryptionPublicKey) throw new EnrollmentError('KEYS_NOT_DISTINCT');
-    if (!isPlausibleAttemptId(input.attemptId)) throw new EnrollmentError('INVALID_ATTEMPT_ID');
-    if (!isPlausibleAttemptRecoveryToken(input.attemptRecoveryToken)) throw new EnrollmentError('INVALID_RECOVERY_TOKEN');
-
-    const tokenHash = hashInvitationToken(input.rawInvitationToken);
-    const attemptRecoveryTokenHash = hashAttemptRecoveryToken(input.attemptRecoveryToken);
+    const { tokenHash, attemptRecoveryTokenHash } = validateAttemptInput(input);
     const deviceId = randomUUID();
     const signingKeyId = randomUUID();
     const encryptionKeyId = randomUUID();
@@ -128,22 +116,24 @@ export class EnrollmentCoordinator {
     switch (result.outcome) {
       case 'PAIRING_REQUEST_CREATED':
         if (this.slotReservationService) await this.slotReservationService.consumeForInvitation(result.invitationId);
-        await this.auditService.record({
-          familyId: result.familyId,
-          actionType: 'ROLE_ACCEPT',
-          actorDeviceId: result.deviceId,
-          actorMemberId: null,
-          targetScope: { kind: 'DEVICE', id: result.deviceId },
-          authorizationRole: null,
-          trustSetEpoch: 0,
-          policyRevision: null,
-          clientMonotonicSequence: null,
-          resultStatus: 'SUCCESS',
-          targetAcknowledgementCount: 0,
-          reasonCategory: null,
-          correlationId: result.invitationId,
-          actionId: null,
-        });
+        if (!result.replayed) {
+          await this.auditService.record({
+            familyId: result.familyId,
+            actionType: 'ROLE_ACCEPT',
+            actorDeviceId: result.deviceId,
+            actorMemberId: null,
+            targetScope: { kind: 'DEVICE', id: result.deviceId },
+            authorizationRole: null,
+            trustSetEpoch: 0,
+            policyRevision: null,
+            clientMonotonicSequence: null,
+            resultStatus: 'SUCCESS',
+            targetAcknowledgementCount: 0,
+            reasonCategory: null,
+            correlationId: result.invitationId,
+            actionId: null,
+          });
+        }
         return {
           deviceId: result.deviceId,
           signingKeyId: result.signingKeyId,
@@ -173,6 +163,26 @@ export class EnrollmentCoordinator {
   }
 
   /**
+   * Reserve the exact request tuple before the client sends /bootstrap.
+   * Raw invitation and recovery tokens are hashed before persistence; the
+   * reservation stores public keys only and creates no device or key rows.
+   */
+  async prepareAttempt(input: EnrollDeviceInput): Promise<'READY' | 'COMPLETED'> {
+    const { tokenHash, attemptRecoveryTokenHash } = validateAttemptInput(input);
+    const result = await this.repository.prepareAttempt(
+      tokenHash,
+      input.platform,
+      input.signingPublicKey,
+      input.encryptionPublicKey,
+      this.now(),
+      input.attemptId,
+      attemptRecoveryTokenHash,
+    );
+    if (result.outcome === 'READY' || result.outcome === 'COMPLETED') return result.outcome;
+    throw enrollmentErrorForOutcome(result);
+  }
+
+  /**
    * Recovers the outcome of a PREVIOUSLY-COMPLETED bootstrap attempt whose
    * HTTP response was lost, using only the client-generated attemptId +
    * attemptRecoveryToken -- never the raw invitation token, which the
@@ -184,33 +194,45 @@ export class EnrollmentCoordinator {
    * exists" without already possessing its recovery secret. attemptId
    * alone is public/guessable and must never disclose anything by itself.
    */
-  async recoverAttempt(input: RecoverAttemptInput): Promise<RecoverAttemptResult> {
+  async recoverAttempt(input: RecoverAttemptInput): Promise<RecoverAttemptOutcome> {
     if (!isPlausibleAttemptId(input.attemptId)) throw new EnrollmentError('INVALID_ATTEMPT_ID');
     if (!isPlausibleAttemptRecoveryToken(input.attemptRecoveryToken)) throw new EnrollmentError('INVALID_RECOVERY_TOKEN');
 
-    const row = await this.repository.findAttemptForRecovery(input.attemptId);
-    if (!row) throw new EnrollmentError('NOT_FOUND');
-
     const candidateHash = Buffer.from(hashAttemptRecoveryToken(input.attemptRecoveryToken), 'hex');
-    const storedHash = Buffer.from(row.recoveryTokenHash, 'hex');
-    // Both hashes are fixed-length (SHA-256, 32 bytes) regardless of input,
-    // so this length check itself leaks nothing about the secret; it only
-    // guards timingSafeEqual's own precondition that both buffers match in
-    // length.
-    if (candidateHash.length !== storedHash.length || !timingSafeEqual(candidateHash, storedHash)) {
-      throw new EnrollmentError('NOT_FOUND');
-    }
-
+    const resolution = await this.repository.resolveAttemptForRecovery(
+      input.attemptId,
+      (recoveryTokenHash) => {
+        const storedHash = Buffer.from(recoveryTokenHash, 'hex');
+        return candidateHash.length === storedHash.length && timingSafeEqual(candidateHash, storedHash);
+      },
+      this.now(),
+    );
+    if (resolution.outcome === 'NOT_FOUND') throw new EnrollmentError('NOT_FOUND');
+    if (resolution.outcome === 'ABANDONED') return { outcome: 'ABANDONED' };
     return {
-      deviceId: row.deviceId,
-      signingKeyId: row.signingKeyId,
-      encryptionKeyId: row.encryptionKeyId,
-      childProfileId: row.childProfileId,
-      ageUxTier: row.ageUxTier,
-      initialPolicyProfile: row.initialPolicyProfile,
-      status: 'PAIRING_PENDING',
+      outcome: 'COMPLETED',
+      result: { ...resolution.result, status: 'PAIRING_PENDING' },
     };
   }
+}
+
+function validateAttemptInput(input: EnrollDeviceInput): { tokenHash: string; attemptRecoveryTokenHash: string } {
+  if (!isPlausibleInvitationToken(input.rawInvitationToken)) throw new EnrollmentError('INVALID_TOKEN');
+  if (!isValidPlatform(input.platform)) throw new EnrollmentError('INVALID_PLATFORM');
+  if (!isPlausiblePublicKey(input.signingPublicKey) || !isPlausiblePublicKey(input.encryptionPublicKey)) {
+    throw new EnrollmentError('INVALID_PUBLIC_KEY');
+  }
+  if (input.signingPublicKey === input.encryptionPublicKey) throw new EnrollmentError('KEYS_NOT_DISTINCT');
+  if (!isPlausibleAttemptId(input.attemptId)) throw new EnrollmentError('INVALID_ATTEMPT_ID');
+  if (!isPlausibleAttemptRecoveryToken(input.attemptRecoveryToken)) throw new EnrollmentError('INVALID_RECOVERY_TOKEN');
+  return {
+    tokenHash: hashInvitationToken(input.rawInvitationToken),
+    attemptRecoveryTokenHash: hashAttemptRecoveryToken(input.attemptRecoveryToken),
+  };
+}
+
+function enrollmentErrorForOutcome(result: Exclude<PrepareAttemptOutcome, { outcome: 'READY' | 'COMPLETED' }>): EnrollmentError {
+  return new EnrollmentError(result.outcome);
 }
 
 function isValidPlatform(candidate: string): candidate is Platform {

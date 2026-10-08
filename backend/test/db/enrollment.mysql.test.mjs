@@ -8,6 +8,7 @@ import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitation
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { MySqlDeviceChildBindingRepository } from '../../dist/device/DeviceChildBindingRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -17,7 +18,15 @@ const deviceRepository = new MySqlDeviceRepository();
 const deviceChildBindingRepository = new MySqlDeviceChildBindingRepository();
 
 function buildCoordinator(now = () => new Date()) {
-  return new EnrollmentCoordinator(enrollmentRepository, now);
+  const rawCoordinator = new EnrollmentCoordinator(enrollmentRepository, now);
+  return {
+    prepareAttempt: (input) => rawCoordinator.prepareAttempt(input),
+    recoverAttempt: (input) => rawCoordinator.recoverAttempt(input),
+    async enrollDevice(input) {
+      await rawCoordinator.prepareAttempt(input);
+      return rawCoordinator.enrollDevice(input);
+    },
+  };
 }
 
 function key() {
@@ -80,6 +89,20 @@ test('MySQL: successful enrollment creates a PAIRING_PENDING device with DSK+DEK
   const [attemptRows] = await getPool().query(`SELECT device_id, status FROM enrollment_bootstrap_attempts WHERE device_id = ?`, [result.deviceId]);
   assert.equal(attemptRows.length, 1, 'exactly one bootstrap-attempt row must be persisted atomically with the device it created');
   assert.equal(attemptRows[0].status, 'COMPLETED');
+});
+
+test('MySQL: direct bootstrap without a committed PREPARED reservation has no side effects', async () => {
+  const { rawToken, record } = await createInvitation();
+  const input = { rawInvitationToken: rawToken, ...deviceKeysInput() };
+  const rawCoordinator = new EnrollmentCoordinator(enrollmentRepository);
+
+  await assert.rejects(() => rawCoordinator.enrollDevice(input), { code: 'ATTEMPT_CONFLICT' });
+  const [[invitation]] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [record.invitationId]);
+  const [[devices]] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  const [[attempts]] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE invitation_id = ?`, [record.invitationId]);
+  assert.equal(invitation.status, 'CREATED');
+  assert.equal(Number(devices.n), 0);
+  assert.equal(Number(attempts.n), 0);
 });
 
 test('MySQL: device child binding resolves only the persisted family enrollment invitation edge', async () => {
@@ -180,7 +203,7 @@ test('MySQL: platform mismatch rejected, invitation remains usable afterward', a
   assert.ok(result.deviceId);
 });
 
-test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOLE transaction -- no orphan device, invitation stays unredeemed, no attempt row', async () => {
+test('MySQL FAILURE INJECTION: duplicate public key aborts bootstrap while the prepared claim remains recoverable', async () => {
   const coordinator = buildCoordinator();
   const sharedKey = key();
   const first = await createInvitation();
@@ -188,8 +211,9 @@ test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOL
 
   const second = await createInvitation();
   const secondAttemptId = attemptId();
+  const failedInput = deviceKeysInput({ attemptId: secondAttemptId, encryptionPublicKey: sharedKey });
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...deviceKeysInput({ attemptId: secondAttemptId, encryptionPublicKey: sharedKey }) }),
+    () => coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...failedInput }),
     { code: 'DUPLICATE_KEY' },
   );
 
@@ -203,8 +227,13 @@ test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOL
   const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [second.record.familyId]);
   assert.equal(deviceRows[0].n, 0, 'no orphan device may survive a rolled-back enrollment transaction');
 
-  const [attemptRows] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`, [secondAttemptId]);
-  assert.equal(attemptRows[0].n, 0, 'no orphan attempt row may survive a rolled-back enrollment transaction');
+  const [attemptRows] = await getPool().query(`SELECT status, device_id FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`, [secondAttemptId]);
+  assert.deepEqual(attemptRows[0], { status: 'PREPARED', device_id: null }, 'the separately committed reservation remains available for authenticated recovery');
+  assert.deepEqual(
+    await coordinator.recoverAttempt({ attemptId: secondAttemptId, attemptRecoveryToken: failedInput.attemptRecoveryToken }),
+    { outcome: 'ABANDONED' },
+    'the client can resolve the failed exact tuple before retrying with fresh keys',
+  );
 
   // The invitation can still be redeemed with fresh keys.
   const retry = await coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...deviceKeysInput() });
@@ -273,7 +302,7 @@ test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts (distinct 
   const rejected = attempts.filter((a) => a.status === 'rejected');
   assert.equal(fulfilled.length, 1, 'exactly one concurrent enrollment attempt must succeed');
   assert.equal(rejected.length, 29);
-  for (const failure of rejected) assert.equal(failure.reason.code, 'ALREADY_REDEEMED');
+  for (const failure of rejected) assert.equal(failure.reason.code, 'ATTEMPT_CONFLICT');
 
   const [deviceRows] = await getPool().query(
     `SELECT COUNT(*) AS n, GROUP_CONCAT(DISTINCT status) AS statuses FROM devices WHERE family_id = ?`,
@@ -297,8 +326,21 @@ test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts (distinct 
 
 // --- PCA-ENROLLMENT-RUNTIME-2: ambiguous-retry / idempotent-recovery MySQL tests ---
 
-test('MySQL RETRY: same (attemptId, token, DSK, DEK) tuple replays the original device, never creates a second one', async () => {
-  const coordinator = buildCoordinator();
+test('MySQL RETRY: exact tuple replays the original device and emits one ROLE_ACCEPT audit event', async () => {
+  const auditRepository = new InMemoryFamilyAuditRepository();
+  const rawCoordinator = new EnrollmentCoordinator(
+    enrollmentRepository,
+    () => new Date(),
+    new FamilyAuditService(auditRepository),
+  );
+  const coordinator = {
+    prepareAttempt: (input) => rawCoordinator.prepareAttempt(input),
+    recoverAttempt: (input) => rawCoordinator.recoverAttempt(input),
+    async enrollDevice(input) {
+      await rawCoordinator.prepareAttempt(input);
+      return rawCoordinator.enrollDevice(input);
+    },
+  };
   const { rawToken, record } = await createInvitation();
   const input = deviceKeysInput();
   const first = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
@@ -306,9 +348,34 @@ test('MySQL RETRY: same (attemptId, token, DSK, DEK) tuple replays the original 
   assert.equal(retry.deviceId, first.deviceId);
   assert.equal(retry.signingKeyId, first.signingKeyId);
   assert.equal(retry.encryptionKeyId, first.encryptionKeyId);
+  const auditEvents = await auditRepository.listForFamily(record.familyId);
+  assert.equal(auditEvents.length, 1, 'an exact retry must not append another ROLE_ACCEPT event');
+  assert.equal(auditEvents[0].targetScope.id, first.deviceId);
 
   const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
   assert.equal(deviceRows[0].n, 1, 'DEVICE_COUNT_AFTER_RETRIES: exactly one device after a retry of the same attempt');
+});
+
+test('MySQL ADVERSARIAL: replay requires the original recovery token and platform', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken } = await createInvitation();
+  const input = deviceKeysInput({ platform: 'ANDROID' });
+  const first = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
+
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input, attemptRecoveryToken: recoveryToken() }),
+    { code: 'ATTEMPT_CONFLICT' },
+  );
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input, platform: 'IOS' }),
+    { code: 'ATTEMPT_CONFLICT' },
+  );
+  const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.deviceId, first.deviceId, 'invalid replay tuples must not replace the committed recovery credential');
+
+  const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE device_id = ?`, [first.deviceId]);
+  assert.equal(deviceRows[0].n, 1);
 });
 
 test('MySQL RETRY: 20 concurrent retries of the SAME attempt id -- exactly one device, all responses agree', async () => {
@@ -382,11 +449,84 @@ test('MySQL RECOVERY: recoverAttempt returns the original deviceId after a lost 
   // Simulate total loss of the original in-memory rawInvitationToken/response:
   // recovery uses only attemptId + attemptRecoveryToken.
   const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
-  assert.equal(recovered.deviceId, original.deviceId);
-  assert.equal(recovered.status, 'PAIRING_PENDING');
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.deviceId, original.deviceId);
+  assert.equal(recovered.result.status, 'PAIRING_PENDING');
   // Wave 6C: recovery delivers the persisted server-minted key ids verbatim.
-  assert.equal(recovered.signingKeyId, original.signingKeyId);
-  assert.equal(recovered.encryptionKeyId, original.encryptionKeyId);
+  assert.equal(recovered.result.signingKeyId, original.signingKeyId);
+  assert.equal(recovered.result.encryptionKeyId, original.encryptionKeyId);
+});
+
+test('MySQL RESOLUTION: prepare is durable without a device; recovery abandons it atomically and permits a fresh attempt', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken, record } = await createInvitation();
+  const input = deviceKeysInput();
+  assert.equal(await coordinator.prepareAttempt({ rawInvitationToken: rawToken, ...input }), 'READY');
+
+  const [[claim]] = await getPool().query(
+    `SELECT status, device_id, signing_key_id, encryption_key_id FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`,
+    [input.attemptId],
+  );
+  assert.deepEqual(claim, { status: 'PREPARED', device_id: null, signing_key_id: null, encryption_key_id: null });
+  const [[devicesBefore]] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  assert.equal(Number(devicesBefore.n), 0, 'prepare creates no device identity');
+
+  assert.deepEqual(
+    await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken }),
+    { outcome: 'ABANDONED' },
+  );
+  await assert.rejects(() => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input }), { code: 'ATTEMPT_CONFLICT' });
+
+  const next = deviceKeysInput();
+  assert.equal(await coordinator.prepareAttempt({ rawInvitationToken: rawToken, ...next }), 'READY');
+  assert.deepEqual(
+    await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken }),
+    { outcome: 'ABANDONED' },
+    'claiming the invitation with a new attempt must not erase the old attempt recovery outcome',
+  );
+  await assert.rejects(
+    () => coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: recoveryToken() }),
+    { code: 'NOT_FOUND' },
+  );
+  const enrolled = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...next });
+  assert.equal(enrolled.status, 'PAIRING_PENDING');
+});
+
+test('MySQL RESOLUTION RACE: bootstrap and recovery serialize so exactly one commits or abandons', async () => {
+  const coordinator = buildCoordinator();
+  for (let index = 0; index < 12; index += 1) {
+    const { rawToken, record } = await createInvitation();
+    const input = deviceKeysInput();
+    assert.equal(await coordinator.prepareAttempt({ rawInvitationToken: rawToken, ...input }), 'READY');
+    const [bootstrapResult, recoveryResult] = await Promise.allSettled([
+      coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input }),
+      coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken }),
+    ]);
+    assert.equal(recoveryResult.status, 'fulfilled');
+
+    const [[attemptRow]] = await getPool().query(
+      `SELECT status, device_id FROM enrollment_bootstrap_attempts WHERE token_hash = SHA2(?, 256)`,
+      [rawToken],
+    );
+    const [[deviceCount]] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+    const [[invitationRow]] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [record.invitationId]);
+
+    if (recoveryResult.value.outcome === 'COMPLETED') {
+      assert.equal(bootstrapResult.status, 'fulfilled');
+      assert.equal(bootstrapResult.value.deviceId, recoveryResult.value.result.deviceId);
+      assert.equal(attemptRow.status, 'COMPLETED');
+      assert.equal(Number(deviceCount.n), 1);
+      assert.equal(invitationRow.status, 'REDEEMED');
+    } else {
+      assert.deepEqual(recoveryResult.value, { outcome: 'ABANDONED' });
+      assert.equal(bootstrapResult.status, 'rejected');
+      assert.equal(bootstrapResult.reason.code, 'ATTEMPT_CONFLICT');
+      assert.equal(attemptRow.status, 'ABANDONED');
+      assert.equal(attemptRow.device_id, null);
+      assert.equal(Number(deviceCount.n), 0);
+      assert.notEqual(invitationRow.status, 'REDEEMED');
+    }
+  }
 });
 
 test('MySQL RECOVERY: unknown attempt id and wrong recovery token both raise the identical NOT_FOUND error -- no oracle', async () => {

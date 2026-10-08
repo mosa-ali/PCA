@@ -222,7 +222,7 @@ enum PCAFirstDeviceTrustRootComposition {
     }
 }
 
-public final class PCAApplicationModel: ObservableObject {
+@MainActor public final class PCAApplicationModel: ObservableObject {
     @Published public private(set) var applicationState: PCAApplicationState = .initializing
     @Published public private(set) var authorization: ChildAuthorizationState = .notDetermined
     @Published public private(set) var profileRuntimeState: PCAEnrollmentProfileRuntimeState = .awaitingProfile
@@ -232,14 +232,61 @@ public final class PCAApplicationModel: ObservableObject {
     @Published public private(set) var firstDeviceRootRecord: FirstDeviceRootRecord?
     @Published public private(set) var firstDeviceRootReadUnavailable = false
     @Published public private(set) var isFirstDeviceRootActionInProgress = false
+    @Published public private(set) var enrollmentOperationInProgress = false
 
     public let dependencies: PCAProductionDependencies
     public let linkRouter: PCAEnrollmentLinkRouter
     private let now: () -> Date
+    /// A newly received invite may have a durable local attempt before any
+    /// bootstrap request reached the server. Do not reinterpret that pre-send
+    /// security gate as a remotely recoverable attempt in this process.
+    private var localEnrollmentBootstrapNotYetSubmitted = false
     private var started = false
     private var runtimeSyncInProgress = false
     private var sessionEstablishmentInProgress = false
     private var pendingDeviceId: String?
+    private var pendingProfileEnrollmentAttempt: PCAEnrollmentAttempt?
+
+    /// True only for an exact durable attempt whose remote outcome can be
+    /// resolved safely through the recovery endpoint.
+    public var hasPendingEnrollmentStatusCheck: Bool {
+        guard authorization.permitsEnforcement,
+              pendingProfileEnrollmentAttempt == nil,
+              !localEnrollmentBootstrapNotYetSubmitted else { return false }
+        do {
+            guard let attempt = try dependencies.attemptStore.loadAttempt() else { return false }
+            return attempt.submissionState == .submitted || attempt.submissionState == .awaitingInvitation
+        } catch {
+            return false
+        }
+    }
+
+    /// Bootstrap, restart recovery and repeated foreground notifications share
+    /// one admission slot. Main-actor isolation protects the slot between awaits.
+    private func acquireEnrollmentAdmission() -> Bool {
+        guard !enrollmentOperationInProgress else { return false }
+        enrollmentOperationInProgress = true
+        return true
+    }
+
+    private func releaseEnrollmentAdmission() {
+        enrollmentOperationInProgress = false
+    }
+
+    private func stillOwnsEnrollmentAttempt(_ attempt: PCAEnrollmentAttempt) -> Bool {
+        do {
+            guard try dependencies.attemptStore.loadAttempt() == attempt else {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return false
+            }
+            return true
+        } catch {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+            return false
+        }
+    }
 
     public init(dependencies: PCAProductionDependencies, now: @escaping () -> Date = { Date() }) {
         self.dependencies = dependencies
@@ -248,7 +295,7 @@ public final class PCAApplicationModel: ObservableObject {
         self.pendingDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
         self.firstDeviceRootRecord = dependencies.firstDeviceRootStore?.current()
         dependencies.firstDeviceTrustRootCoordinator?.onRecordChanged = { [weak self] _ in
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 // Coordinator callbacks are only a signal to re-read. The
                 // durable store is authoritative; never publish a stale or
                 // nil coordinator snapshot as if the ceremony were absent.
@@ -265,9 +312,11 @@ public final class PCAApplicationModel: ObservableObject {
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
         reconcileCallbackHealth()
-        Task { await self.resumeEnrollmentIfPossible() }
-        if authorization.permitsEnforcement {
-            Task { await self.beginEnrollmentIfPossible() }
+        Task {
+            await self.resumeEnrollmentIfPossible()
+            if self.authorization.permitsEnforcement {
+                await self.beginEnrollmentIfPossible()
+            }
         }
         Task { await self.establishSessionIfNeeded(); await self.synchronizeRuntime() }
     }
@@ -278,9 +327,11 @@ public final class PCAApplicationModel: ObservableObject {
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
         reconcileCallbackHealth()
-        Task { await self.resumeEnrollmentIfPossible() }
-        if authorization.permitsEnforcement {
-            Task { await self.beginEnrollmentIfPossible() }
+        Task {
+            await self.resumeEnrollmentIfPossible()
+            if self.authorization.permitsEnforcement {
+                await self.beginEnrollmentIfPossible()
+            }
         }
         Task { await self.establishSessionIfNeeded(); await self.synchronizeRuntime() }
     }
@@ -293,32 +344,102 @@ public final class PCAApplicationModel: ObservableObject {
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
         if authorization.permitsEnforcement {
-            Task { await self.beginEnrollmentIfPossible() }
+            Task {
+                await self.resumeEnrollmentIfPossible()
+                await self.beginEnrollmentIfPossible()
+            }
         }
+    }
+
+    /// Resolves the exact persisted attempt. It never creates or submits a
+    /// replacement invitation/bootstrap request.
+    public func checkEnrollmentStatus() {
+        guard hasPendingEnrollmentStatusCheck, !enrollmentOperationInProgress else { return }
+        Task { await self.resumeEnrollmentIfPossible() }
     }
 
     @discardableResult
     public func receiveEnrollmentLink(_ url: URL) -> Bool {
-        guard linkRouter.receive(url) else { return false }
+        // Main-actor isolation and the operation flag make the durable check
+        // plus router insertion one admission step relative to bootstrap and
+        // recovery. An unresolved attempt accepts only its bound invitation.
+        guard !enrollmentOperationInProgress, pendingDeviceId == nil else { return false }
+        guard let link = PCAEnrollmentLinkParser().parse(url) else { return false }
+        let invitationTokenSHA256 = FirstDeviceCanonical.sha256Hex(link.rawInvitationToken)
+        var existingAttempt: PCAEnrollmentAttempt?
+        do {
+            let storedAttempt = try dependencies.attemptStore.loadAttempt()
+            existingAttempt = storedAttempt
+            if let storedAttempt {
+                guard let boundDigest = storedAttempt.invitationTokenSHA256,
+                      pcaOpaqueEqual(boundDigest, invitationTokenSHA256) else {
+                    lastError = .recoverable
+                    applicationState = .error(.recoverable)
+                    return false
+                }
+            }
+            guard linkRouter.receive(url) else { return false }
+        } catch {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+            return false
+        }
         applicationState = .enrollmentInProgress
-        Task { await self.beginEnrollmentIfPossible() }
+        if existingAttempt?.submissionState == .submitted || existingAttempt?.submissionState == .awaitingInvitation {
+            // An ambiguous request must resolve through the recovery endpoint
+            // before any bootstrap retry can be considered.
+            localEnrollmentBootstrapNotYetSubmitted = false
+            Task {
+                await self.resumeEnrollmentIfPossible()
+                await self.beginEnrollmentIfPossible()
+            }
+        } else {
+            localEnrollmentBootstrapNotYetSubmitted = true
+            Task { await self.beginEnrollmentIfPossible() }
+        }
         return true
     }
 
     public func confirmPendingProfile() {
         guard let deviceId = pendingDeviceId,
               case .awaitingChildConfirmation = profileRuntimeState else { return }
+        guard let attempt = pendingProfileEnrollmentAttempt else {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+            return
+        }
+        guard stillOwnsEnrollmentAttempt(attempt) else { return }
         let controller = PCAEnrollmentProfileRuntimeController(
             deviceId: deviceId,
             store: dependencies.profileStore,
             authorization: authorization
         )
         if case let .awaitingChildConfirmation(profile, _) = profileRuntimeState {
-            _ = dependencies.enrollmentCoordinator.consumeProfile(profile, authorization: authorization)
-            controller.receiveParentAuthorizedProfile(profile)
-            profileRuntimeState = controller.confirmChildProfile()
+            var confirmedState: PCAEnrollmentProfileRuntimeState?
+            do {
+                guard try dependencies.attemptStore.performIfCurrent(attempt, {
+                    _ = dependencies.enrollmentCoordinator.consumeProfile(profile, authorization: authorization)
+                    controller.receiveParentAuthorizedProfile(profile)
+                    let result = controller.confirmChildProfile()
+                    confirmedState = result
+                    return result != .profilePersistenceFailed
+                }) else {
+                    _ = stillOwnsEnrollmentAttempt(attempt)
+                    return
+                }
+            } catch {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
+            guard let confirmedState, confirmedState != .profilePersistenceFailed else {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
+            profileRuntimeState = confirmedState
+            pendingProfileEnrollmentAttempt = nil
             pendingDisclosure = nil
-            try? dependencies.attemptStore.clearAttempt()
             publishFirstDeviceRootRecord()
             applicationState = stateForCurrentData()
             Task {
@@ -477,6 +598,12 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     private func restoreEnrolledState() {
+        // Foreground refresh must not replace a live, explicitly pending child
+        // confirmation with an empty profile-store read.
+        if pendingProfileEnrollmentAttempt != nil,
+           case .awaitingChildConfirmation = profileRuntimeState {
+            return
+        }
         guard let deviceId = pendingDeviceId else {
             applicationState = authorization.permitsEnforcement ? .notEnrolled : .authorizationRequired
             return
@@ -497,14 +624,39 @@ public final class PCAApplicationModel: ObservableObject {
             lastError = .authorization
             return
         }
-        guard let link = linkRouter.takePendingLink() else { return }
-
-        let attempt = PCAEnrollmentAttempt(
-            attemptId: UUID().uuidString.replacingOccurrences(of: "-", with: ""),
-            attemptRecoveryToken: UUID().uuidString + UUID().uuidString
-        )
+        guard acquireEnrollmentAdmission() else { return }
+        defer { releaseEnrollmentAdmission() }
+        var submittedAttemptForFailure: PCAEnrollmentAttempt?
+        var attemptForFailure: PCAEnrollmentAttempt?
+        var activeAttempt: PCAEnrollmentAttempt?
+        var recoveringFromPreflightFailure = false
         do {
-            try dependencies.attemptStore.saveAttempt(attempt)
+            guard pendingDeviceId == nil, let link = linkRouter.pendingLink else { return }
+            let storedAttempt = try dependencies.attemptStore.loadAttempt()
+            let attempt: PCAEnrollmentAttempt
+            let invitationTokenSHA256 = FirstDeviceCanonical.sha256Hex(link.rawInvitationToken)
+            if let storedAttempt {
+                if let boundDigest = storedAttempt.invitationTokenSHA256 {
+                    // A restarted process resumes only from the exact invite
+                    // bound to this attempt while its outcome is unresolved.
+                    guard pcaOpaqueEqual(boundDigest, invitationTokenSHA256) else {
+                        lastError = .recoverable
+                        applicationState = .error(.recoverable)
+                        return
+                    }
+                    guard storedAttempt.submissionState == .prepared else { return }
+                    attempt = storedAttempt
+                } else {
+                    lastError = .recoverable
+                    applicationState = .error(.recoverable)
+                    return
+                }
+            } else {
+                attempt = Self.makeEnrollmentAttempt(invitationTokenSHA256: invitationTokenSHA256)
+                try dependencies.attemptStore.saveAttempt(attempt)
+            }
+            attemptForFailure = attempt
+            activeAttempt = attempt
             // Wave 6D ordering: the attempt record exists BEFORE any key is
             // generated (attemptId BEFORE keygen), and the Secure Enclave
             // DSK/DEK preparation happens BEFORE the bootstrap request reads
@@ -533,21 +685,76 @@ public final class PCAApplicationModel: ObservableObject {
                 bootstrapAttemptId: attempt.attemptId,
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
-            let response = try await dependencies.enrollmentClient.bootstrap(request)
+            let submittedAttempt = attempt.markingSubmitted()
+            let response = try await dependencies.enrollmentClient.bootstrap(
+                request,
+                willRecoverFromPreflightFailure: { @MainActor [self] in
+                    guard let currentlyActiveAttempt = activeAttempt,
+                          try dependencies.attemptStore.loadAttempt() == currentlyActiveAttempt else {
+                        throw PCAAPIError.invalidRequest
+                    }
+                    let recoveryAttempt = currentlyActiveAttempt.markingAwaitingInvitation()
+                    try dependencies.attemptStore.saveAttempt(recoveryAttempt)
+                    activeAttempt = recoveryAttempt
+                    attemptForFailure = recoveryAttempt
+                    recoveringFromPreflightFailure = true
+                    localEnrollmentBootstrapNotYetSubmitted = false
+                },
+                didConfirmNoPreflightAttempt: { @MainActor [self] in
+                    guard let currentlyActiveAttempt = activeAttempt,
+                          try dependencies.attemptStore.loadAttempt() == currentlyActiveAttempt else {
+                        throw PCAAPIError.invalidRequest
+                    }
+                    try dependencies.attemptStore.saveAttempt(attempt)
+                    activeAttempt = attempt
+                    attemptForFailure = attempt
+                    recoveringFromPreflightFailure = false
+                    localEnrollmentBootstrapNotYetSubmitted = true
+                },
+                willSubmit: { @MainActor [self] in
+                    guard let currentlyActiveAttempt = activeAttempt,
+                          try dependencies.attemptStore.loadAttempt() == currentlyActiveAttempt else {
+                        throw PCAAPIError.invalidRequest
+                    }
+                    let submittedAttempt = currentlyActiveAttempt.markingSubmitted()
+                    try dependencies.attemptStore.saveAttempt(submittedAttempt)
+                    activeAttempt = submittedAttempt
+                    attemptForFailure = submittedAttempt
+                    submittedAttemptForFailure = submittedAttempt
+                    localEnrollmentBootstrapNotYetSubmitted = false
+                    if recoveringFromPreflightFailure {
+                        // The recovery result is already authoritative for this
+                        // exact attempt; consuming a still-pending matching link
+                        // is cleanup, not a condition for accepting that result.
+                        _ = linkRouter.takePendingLink(ifEqualTo: link)
+                    } else {
+                        guard linkRouter.takePendingLink(ifEqualTo: link) else {
+                            try dependencies.attemptStore.saveAttempt(currentlyActiveAttempt)
+                            activeAttempt = currentlyActiveAttempt
+                            attemptForFailure = currentlyActiveAttempt
+                            submittedAttemptForFailure = nil
+                            localEnrollmentBootstrapNotYetSubmitted = true
+                            throw PCAAPIError.invalidRequest
+                        }
+                    }
+                }
+            )
             try Task.checkCancellation()
+            guard stillOwnsEnrollmentAttempt(submittedAttempt) else { return }
             // Wave 6D seed capture: durably record the ceremony credentials
             // and the M1-minted key ids NOW (before any later clear), so a
             // process death can never strand a committed-capable device
             // with no way to reach its own first-device ceremony.
-            guard captureFirstDeviceSeed(attempt: attempt, response: response) else {
+            guard captureFirstDeviceSeed(attempt: submittedAttempt, response: response) else {
                 lastError = .recoverable
                 applicationState = .error(.recoverable)
                 return
             }
             publishFirstDeviceRootRecord()
             pendingDeviceId = response.deviceId
+            pendingProfileEnrollmentAttempt = submittedAttempt
             dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
-            cleanupConfirmedEnrollmentKeys(attempt: attempt)
+            cleanupConfirmedEnrollmentKeys(attempt: submittedAttempt)
             let profile = PCAEnrollmentProfile(childProfileId: response.childProfileId, ageUxTier: response.ageUxTier, initialPolicyProfile: response.initialPolicyProfile)
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
@@ -558,6 +765,31 @@ public final class PCAApplicationModel: ObservableObject {
             lastError = .recoverable
             applicationState = .error(.recoverable)
         } catch let error as PCAAPIError {
+            if error == .attemptAbandoned,
+               let abandonedAttempt = submittedAttemptForFailure ?? attemptForFailure {
+                _ = clearAbandonedEnrollmentAttempt(abandonedAttempt)
+                return
+            }
+            if error == .preparationRejected,
+               let preparedAttempt = attemptForFailure,
+               (try? dependencies.attemptStore.loadAttempt()) == preparedAttempt,
+               preparedAttempt.submissionState == .prepared {
+                // Recovery proved no reservation exists, and this durable
+                // phase proves bootstrap was never sent. Releasing only this
+                // exact prepared attempt permits a different invitation.
+                _ = clearAbandonedEnrollmentAttempt(preparedAttempt)
+                return
+            }
+            if error == .unavailable,
+               let submittedAttempt = submittedAttemptForFailure {
+                guard stillOwnsEnrollmentAttempt(submittedAttempt) else { return }
+                // A generic 404 may race an uncommitted bootstrap transaction.
+                // Keep the invitation digest and recovery credentials bound;
+                // it cannot authorize a different invitation for this attempt.
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
             lastError = Self.category(for: error)
             applicationState = Self.state(for: error)
         } catch is PCADeviceProofError {
@@ -612,18 +844,107 @@ public final class PCAApplicationModel: ObservableObject {
         }
     }
 
+    /// Clears only a server-resolved abandoned attempt after its exact durable
+    /// record is removed. Alias deletion is gated by a confirmed root record
+    /// (or a confirmed empty root store), so unreadable root custody is kept.
+    private func clearAbandonedEnrollmentAttempt(_ attempt: PCAEnrollmentAttempt) -> Bool {
+        guard stillOwnsEnrollmentAttempt(attempt) else { return false }
+        do {
+            guard try dependencies.attemptStore.clearAttempt(ifCurrent: attempt) else {
+                _ = stillOwnsEnrollmentAttempt(attempt)
+                return false
+            }
+        } catch {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+            return false
+        }
+        cleanupAbandonedEnrollmentKeys(attempt: attempt)
+        if let pending = linkRouter.pendingLink,
+           let digest = attempt.invitationTokenSHA256,
+           pcaOpaqueEqual(FirstDeviceCanonical.sha256Hex(pending.rawInvitationToken), digest) {
+            _ = linkRouter.takePendingLink(ifEqualTo: pending)
+        }
+        pendingProfileEnrollmentAttempt = nil
+        pendingDisclosure = nil
+        profileRuntimeState = .awaitingProfile
+        lastError = nil
+        applicationState = .notEnrolled
+        return true
+    }
+
+    private func cleanupAbandonedEnrollmentKeys(attempt: PCAEnrollmentAttempt) {
+        let releaseAndDeleteExactAttemptKeys = {
+            self.dependencies.enrollmentKeys?.abandonPreparedEnrollmentKeys(attemptId: attempt.attemptId)
+            self.dependencies.keyDeletion?.deleteKeyPair(alias: "pca.dsk." + attempt.attemptId)
+            self.dependencies.keyDeletion?.deleteKeyPair(alias: "pca.dek." + attempt.attemptId)
+        }
+        guard let rootStore = dependencies.firstDeviceRootStore else {
+            releaseAndDeleteExactAttemptKeys()
+            return
+        }
+        if rootStore.withConfirmedCurrentRecord({ retained in
+            if !pcaOpaqueEqual(retained.seed.attemptId, attempt.attemptId) {
+                releaseAndDeleteExactAttemptKeys()
+            }
+        }) {
+            return
+        }
+        _ = rootStore.withConfirmedNoCurrentRecord(releaseAndDeleteExactAttemptKeys)
+    }
+
     private func resumeEnrollmentIfPossible() async {
         guard !Task.isCancelled else { return }
         guard authorization.permitsEnforcement,
-              pendingDeviceId == nil,
-              let attempt = try? dependencies.attemptStore.loadAttempt() else { return }
+               !localEnrollmentBootstrapNotYetSubmitted,
+               pendingProfileEnrollmentAttempt == nil,
+               acquireEnrollmentAdmission() else { return }
+        defer { releaseEnrollmentAdmission() }
+        let attempt: PCAEnrollmentAttempt
+        do {
+            guard let stored = try dependencies.attemptStore.loadAttempt() else { return }
+            guard stored.submissionState == .submitted || stored.submissionState == .awaitingInvitation else {
+                if stored.submissionState == .prepared {
+                    applicationState = .notEnrolled
+                    lastError = nil
+                } else {
+                    applicationState = .error(.recoverable)
+                    lastError = .recoverable
+                }
+                return
+            }
+            attempt = stored
+        } catch {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+            return
+        }
         applicationState = .recovering
+        let retainedDeviceId = pendingDeviceId
         do {
             let response = try await dependencies.enrollmentClient.recover(
                 attemptId: attempt.attemptId,
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
             try Task.checkCancellation()
+            guard stillOwnsEnrollmentAttempt(attempt) else { return }
+            if let retainedDeviceId,
+               !pcaOpaqueEqual(response.deviceId, retainedDeviceId) {
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
+            let previouslyConfirmedProfile: Bool
+            switch profileRuntimeState {
+            case .ready, .authorizationRequired:
+                previouslyConfirmedProfile = retainedDeviceId != nil
+            case .awaitingProfile, .awaitingChildConfirmation:
+                previouslyConfirmedProfile = false
+            case .profilePersistenceFailed:
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
             // Wave 6D: the recovery path restores the SAME ceremony seed the
             // original bootstrap would have captured (idempotent capture).
             if let preparation = dependencies.enrollmentKeys {
@@ -634,10 +955,33 @@ public final class PCAApplicationModel: ObservableObject {
                 applicationState = .error(.recoverable)
                 return
             }
+            if let pendingLink = linkRouter.pendingLink,
+               pcaOpaqueEqual(FirstDeviceCanonical.sha256Hex(pendingLink.rawInvitationToken), attempt.invitationTokenSHA256) {
+                _ = linkRouter.takePendingLink(ifEqualTo: pendingLink)
+            }
             publishFirstDeviceRootRecord()
             pendingDeviceId = response.deviceId
-            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            if retainedDeviceId == nil {
+                dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            }
             cleanupConfirmedEnrollmentKeys(attempt: attempt)
+            if previouslyConfirmedProfile {
+                do {
+                    guard try dependencies.attemptStore.clearAttempt(ifCurrent: attempt) else {
+                        _ = stillOwnsEnrollmentAttempt(attempt)
+                        return
+                    }
+                } catch {
+                    lastError = .recoverable
+                    applicationState = .error(.recoverable)
+                    return
+                }
+                pendingProfileEnrollmentAttempt = nil
+                lastError = nil
+                applicationState = stateForCurrentData()
+                return
+            }
+            pendingProfileEnrollmentAttempt = attempt
             let profile = PCAEnrollmentProfile(
                 childProfileId: response.childProfileId,
                 ageUxTier: response.ageUxTier,
@@ -650,12 +994,33 @@ public final class PCAApplicationModel: ObservableObject {
             lastError = .recoverable
             applicationState = .error(.recoverable)
         } catch let error as PCAAPIError {
+            if error == .attemptAbandoned {
+                _ = clearAbandonedEnrollmentAttempt(attempt)
+                return
+            }
+            if error == .unavailable {
+                guard stillOwnsEnrollmentAttempt(attempt) else { return }
+                // A recovery 404 cannot prove the prior bootstrap transaction
+                // is finished; preserve its invitation binding for later recovery.
+                lastError = .recoverable
+                applicationState = .error(.recoverable)
+                return
+            }
             lastError = Self.category(for: error)
             applicationState = Self.state(for: error)
         } catch {
             lastError = .recoverable
             applicationState = .error(.recoverable)
         }
+    }
+
+    private static func makeEnrollmentAttempt(invitationTokenSHA256: String) -> PCAEnrollmentAttempt {
+        PCAEnrollmentAttempt(
+            attemptId: UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+            attemptRecoveryToken: UUID().uuidString + UUID().uuidString,
+            submissionState: .prepared,
+            invitationTokenSHA256: invitationTokenSHA256
+        )
     }
 
     @MainActor func establishSessionIfNeeded() async {
@@ -917,7 +1282,7 @@ public final class PCAApplicationModel: ObservableObject {
         case .unauthorized: return .session
         case .transport(.timeout), .transport(.network), .unavailable: return .network
         case .malformedResponse: return .permanent
-        case .invalidRequest, .rejected, .transport(_): return .recoverable
+        case .invalidRequest, .rejected, .transport(_), .attemptAbandoned, .preparationRejected, .enrollmentOutcomeUnknown: return .recoverable
         }
     }
 
@@ -927,7 +1292,7 @@ public final class PCAApplicationModel: ObservableObject {
         case .unauthorized: return .recovering
         case .invalidConfiguration: return .error(.configuration)
         case .malformedResponse: return .error(.permanent)
-        case .invalidRequest, .rejected, .transport(_): return .error(.recoverable)
+        case .invalidRequest, .rejected, .transport(_), .attemptAbandoned, .preparationRejected, .enrollmentOutcomeUnknown: return .error(.recoverable)
         }
     }
 }
@@ -935,6 +1300,7 @@ public final class PCAApplicationModel: ObservableObject {
 public enum PCAProductionCompositionRoot {
     public static let productionAPIBaseURL = URL(string: "https://api.pcasafe.com")!
 
+    @MainActor
     public static func make() -> PCAApplicationModel {
         #if canImport(Security)
         let keychain: KeychainStoreProtocol = SystemKeychainStore()

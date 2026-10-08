@@ -44,6 +44,7 @@ const PRODUCTION_APPLIED_THROUGH = 40;
 const TOP_LEVEL_DDL = /^(CREATE TABLE|ALTER TABLE|CREATE INDEX|DROP TABLE|DROP INDEX)\b/;
 const GUARDED_CREATE = /^CREATE TABLE IF NOT EXISTS\b/;
 const ATOMIC_RECOVERY_MIGRATIONS = new Map([
+  ['0064_enrollment_bootstrap_attempt_resolution.sql', 'ALTER TABLE enrollment_bootstrap_attempts'],
   ['0057_parent_actor_provenance_for_removal_decisions.sql', 'ALTER TABLE enrollment_protection_approval_requests'],
 ]);
 
@@ -169,6 +170,21 @@ test('the named migration-0057 atomic recovery exception remains single-statemen
 
   const runner = readFileSync(fileURLToPath(new URL('../../scripts/migrate.mjs', import.meta.url)), 'utf8');
   assert.match(runner, /file === '0057_parent_actor_provenance_for_removal_decisions\.sql'/);
+  assert.match(runner, /recoveryState === 'COMPLETE'/);
+  assert.match(runner, /recoveryState === 'PARTIAL'/);
+});
+
+test('migration 0064 atomic recovery exception remains single-statement and fail-closed', () => {
+  const file = migrationFiles().find((candidate) => candidate.name === '0064_enrollment_bootstrap_attempt_resolution.sql');
+  assert.ok(file, 'migration 0064 must remain in the migration chain');
+  const analysis = assessResumability(file.text);
+  assert.equal(analysis.topLevelDdlCount, 1, 'migration 0064 must remain one atomic top-level DDL statement');
+  assert.deepEqual(analysis.topLevelAlters, [ATOMIC_RECOVERY_MIGRATIONS.get(file.name)]);
+  assert.deepEqual(analysis.unguardedCreates, []);
+
+  const runner = readFileSync(fileURLToPath(new URL('../../scripts/migrate.mjs', import.meta.url)), 'utf8');
+  assert.match(runner, /file === '0064_enrollment_bootstrap_attempt_resolution\.sql'/);
+  assert.match(runner, /inspectEnrollmentBootstrapAttemptResolutionMigrationState\(connection\)/);
   assert.match(runner, /recoveryState === 'COMPLETE'/);
   assert.match(runner, /recoveryState === 'PARTIAL'/);
 });

@@ -43,7 +43,7 @@ class ProfileConfirmationStateTransitionTest {
             pendingAttemptStore,
         )
 
-        coordinator.submitInvitationLink("pca://enroll?token=raw-token-profile-confirmation")
+        coordinator.submitInvitationLink("pca://enroll?token=${"A".repeat(43)}")
         coordinator.beginBootstrap()
         val profile = coordinator.state.value
         val pending = pendingAttemptStore.current()

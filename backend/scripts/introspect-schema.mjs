@@ -65,9 +65,11 @@ function extractGeneratedColumnsFromDdl(ddl) {
   return results;
 }
 
-const [, , connectionString, outPath] = process.argv;
+const [, , connectionArgument, outputArgument] = process.argv;
+const connectionString = process.env.PCA_SCHEMA_INTROSPECTION_URL ?? connectionArgument;
+const outPath = process.env.PCA_SCHEMA_INTROSPECTION_OUT ?? outputArgument;
 if (!connectionString || !outPath) {
-  throw new Error('Usage: node introspect-schema.mjs <PCA_DATABASE_URL> <out.json>');
+  throw new Error('Usage: node introspect-schema.mjs <PCA_DATABASE_URL> <out.json> (or set PCA_SCHEMA_INTROSPECTION_URL and PCA_SCHEMA_INTROSPECTION_OUT).');
 }
 
 const connection = await mysql.createConnection({ uri: connectionString, timezone: 'Z' });

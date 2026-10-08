@@ -68,7 +68,7 @@ test('invitation revoke appends a ROLE_REVOKE SUCCESS record', async () => {
   assert.equal(revokeEvent.correlationId, record.invitationId);
 });
 
-test('enrollment (invitation acceptance) appends a ROLE_ACCEPT SUCCESS record', async () => {
+test('enrollment appends one ROLE_ACCEPT SUCCESS record across an exact bootstrap replay', async () => {
   const { repo, service } = freshAudit();
   const enrollmentRepository = createInMemoryEnrollmentRepository();
   const coordinator = new EnrollmentCoordinator(enrollmentRepository, () => new Date(), service);
@@ -82,14 +82,19 @@ test('enrollment (invitation acceptance) appends a ROLE_ACCEPT SUCCESS record', 
     expiresAt: new Date(Date.now() + 60_000),
   };
   enrollmentRepository._seedInvitation(invitation);
-  const result = await coordinator.enrollDevice({
+  const input = {
     rawInvitationToken: token,
     platform: 'ANDROID',
     signingPublicKey: key(),
     encryptionPublicKey: key(),
     attemptId: randomBytes(24).toString('base64url'),
     attemptRecoveryToken: randomBytes(32).toString('base64url'),
-  });
+  };
+  await coordinator.prepareAttempt(input);
+  const result = await coordinator.enrollDevice(input);
+  assert.equal(await coordinator.prepareAttempt(input), 'COMPLETED');
+  const replay = await coordinator.enrollDevice(input);
+  assert.equal(replay.deviceId, result.deviceId);
   const events = await repo.listForFamily('fam-audit-3');
   assert.equal(events.length, 1);
   assert.equal(events[0].actionType, 'ROLE_ACCEPT');

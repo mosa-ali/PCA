@@ -18,6 +18,7 @@ import org.pca.app.BuildConfig
 object EnrollmentDeepLinkConfig {
     const val EXPECTED_SCHEME = "pca"
     const val EXPECTED_HOST = "enroll"
+    const val MAX_INVITATION_URI_LENGTH = 256
 
     /**
      * Android App Link origin and route prefix. The public host is supplied by the Gradle build;

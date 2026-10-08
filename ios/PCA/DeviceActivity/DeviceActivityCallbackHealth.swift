@@ -56,6 +56,10 @@ public enum DeviceActivityCallbackHealth: Equatable {
     case unknown
 }
 
+private func isValidCallbackTolerance(_ seconds: TimeInterval) -> Bool {
+    seconds.isFinite && seconds >= 0
+}
+
 public enum DeviceActivityCallbackReconciler {
     /// The grace delays assessment; it is not an Apple delivery SLA. Missing
     /// receipts and repeated occurrences without OS occurrence identity remain
@@ -69,6 +73,7 @@ public enum DeviceActivityCallbackReconciler {
         nowUtc: Date,
         toleranceSeconds: TimeInterval = 120
     ) -> DeviceActivityCallbackHealth {
+        guard isValidCallbackTolerance(toleranceSeconds) else { return .unknown }
         let dueExpectations = expected.filter { nowUtc.timeIntervalSince($0.occurrenceAt) > toleranceSeconds }
         if dueExpectations.isEmpty {
             // Not just "no expectations at all" -- also "expectations exist but
@@ -104,6 +109,7 @@ public enum DeviceActivityCallbackPlanner {
         calendar: Calendar,
         toleranceSeconds: TimeInterval = 120
     ) -> [ExpectedCallback] {
+        guard isValidCallbackTolerance(toleranceSeconds) else { return [] }
         let todayStart = calendar.startOfDay(for: now)
         guard let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart),
               let todayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: todayStart),

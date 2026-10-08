@@ -45,10 +45,10 @@ sealed interface EnrollmentState {
     /** Bootstrap succeeded (HTTP 201, well-formed body): [deviceId] is the server-issued identity, now durably persisted. Awaiting the parent's pairing confirmation -- never shown as ACTIVE/PAIRED. */
     data class PairingPending(val deviceId: String) : EnrollmentState
 
-    /** A definitive, non-ambiguous failure that a fresh attempt (parsing a link again, retrying the request) may resolve -- e.g. HTTP 400 or an unexpected 5xx. Never reached for network timeouts/ambiguous outcomes; see [BootstrapResultUnknown]. */
+    /** A retryable server failure with pending attempt and key custody retained; retry uses the same tuple. */
     data object FailedRetryable : EnrollmentState
 
-    /** The invitation itself is unusable (unparseable link, or the server's generic 404 invitation_unavailable covering not-found/expired/revoked/already-redeemed). Deliberately not distinguished further -- see [BootstrapError.InvitationUnavailable]'s own doc. */
+    /** A link was malformed or a caller used an invalid state transition; a generic server 404 stays unresolved in [BootstrapResultUnknown] or [RecoveryPending]. */
     data object FailedInvitationInvalid : EnrollmentState
 
     /** [org.pca.app.security.CryptoSuiteNotApprovedException] was thrown while preparing keys -- production key generation is not yet approved for release. Bootstrap never reached the network in this case. */
@@ -67,37 +67,41 @@ sealed interface EnrollmentState {
     data object Revoked : EnrollmentState
 
     /**
-     * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP, SAME PROCESS: the bootstrap request was sent and a
-     * definitive outcome could not be determined -- see [BootstrapError.AmbiguousOutcome]'s own
-     * doc for the exact conditions (network/timeout/connection-reset, or an unparseable 201
-     * body). Reachable only while [rawInvitationToken][EnrollmentCoordinator] is still held in
-     * memory (this process has not restarted since the ambiguous attempt).
+     * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: the bootstrap request was sent and a
+     * definitive outcome could not be determined -- see [BootstrapError.AmbiguousOutcome],
+     * [BootstrapError.InvalidRequest], and [BootstrapError.InvitationUnavailable] (network or
+     * timeout, generic 400/404, or unparseable 201 body). It is reachable when the token remains
+     * in memory or after the exact invitation has been rescanned and matched to the durable digest.
      *
-     * PCA-ENROLLMENT-RUNTIME-2 CLOSES the prior gap here: [EnrollmentCoordinator.retryBootstrap]
-     * safely re-sends the SAME (attemptId, token, DSK, DEK) tuple -- the backend
-     * (MySqlEnrollmentCoordinatorRepository) recognizes the retry and replays the original
-     * result idempotently rather than creating a second device, or a fresh success if the
-     * original request never actually reached the server. This state never auto-retries on its
-     * own; the caller (UI) decides when to call [EnrollmentCoordinator.retryBootstrap].
+     * [EnrollmentCoordinator.retryBootstrap] explicitly re-sends the same attemptId, invitation,
+     * recovery token, platform, DSK and DEK tuple. A same-link rescan after restart can restore
+     * the invitation in memory only when its SHA-256 binding matches the durable attempt. This
+     * state never auto-retries; the caller (UI) decides when to retry or recover.
      */
     data object BootstrapResultUnknown : EnrollmentState
 
     /**
      * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP, AFTER PROCESS/APP RESTART (or device reboot):
      * [EnrollmentCoordinator] restored a durably-persisted
-     * [org.pca.app.storage.PendingEnrollmentAttempt] on construction -- the raw invitation token
-     * is gone (never persisted, by design), so a plain retry of the original request is
-     * impossible. [EnrollmentCoordinator.recoverAttempt] instead calls the dedicated recovery
-     * endpoint (`POST /v1/enrollment/bootstrap/recover`) using only the durably-held
-     * attemptId + attemptRecoveryToken, recovering the SAME deviceId if the original attempt
-     * actually succeeded server-side, without ever re-presenting the invitation token.
+     * [org.pca.app.storage.PendingEnrollmentAttempt] on construction. The raw invitation token
+     * is never persisted. Recovery uses the durable attemptId + attemptRecoveryToken; if recovery
+     * remains unresolved, a user can rescan the original invitation and the coordinator will
+     * permit an explicit exact-attempt retry only when its digest matches and [custodyConflict]
+     * is false.
      *
      * Deliberately distinct from [BootstrapResultUnknown] only for observability (which recovery
      * path is available) -- both represent "an attempt may or may not have succeeded server-side,
-     * a definitive answer has not yet been obtained." If offline, callers should show this
-     * honestly rather than claim success or failure, and resume recovery explicitly on
-     * reconnect (bounded, not a retry storm) -- see [EnrollmentCoordinator.recoverAttempt]'s own
-     * doc.
+     * a definitive answer has not yet been obtained." A recovery HTTP 404 is still unresolved:
+     * the backend's generic response and non-locking lookup cannot rule out an original bootstrap
+     * transaction that has not committed yet. Callers must preserve pending credentials and keys.
+     * If offline, callers should show this honestly rather than claim success or failure, and resume
+     * recovery explicitly on reconnect (bounded, not a retry storm) -- see
+     * [EnrollmentCoordinator.recoverAttempt]'s own doc.
      */
-    data class RecoveryPending(val serverBaseUrl: String) : EnrollmentState
+    data class RecoveryPending(
+        val serverBaseUrl: String,
+        val invitationRescanRejected: Boolean = false,
+        /** Server resolution conflicts with, or cannot be reconciled against, local root custody. */
+        val custodyConflict: Boolean = false,
+    ) : EnrollmentState
 }

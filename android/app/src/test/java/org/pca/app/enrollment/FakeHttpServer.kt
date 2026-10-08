@@ -12,6 +12,8 @@ import java.net.Socket
  * restricts the JDK modules exposed there). Good enough to drive [HttpDeviceBootstrapApiClient]
  * against a real socket/real bytes-on-the-wire round trip without a mocking framework.
  */
+data class FakeHttpRequest(val method: String, val path: String, val body: String)
+
 class FakeHttpServer private constructor(private val serverSocket: ServerSocket) {
     val baseUrl: String = "http://127.0.0.1:${serverSocket.localPort}"
     @Volatile private var stopped = false
@@ -19,6 +21,11 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
 
     /** [respond] receives the captured request body (already fully read) and returns (status, body bytes). Never called for a connection that this server was told to drop instead (see [dropConnections]). */
     fun start(respond: (requestBody: String) -> Pair<Int, ByteArray>) {
+        startRequest { request -> respond(request.body) }
+    }
+
+    /** Request-line-aware variant for asserting endpoint path and method on real sockets. */
+    fun startRequest(respond: (request: FakeHttpRequest) -> Pair<Int, ByteArray>) {
         thread = Thread {
             while (!stopped) {
                 val socket = try {
@@ -55,9 +62,12 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
         thread!!.start()
     }
 
-    private fun handleOneRequest(socket: Socket, respond: (String) -> Pair<Int, ByteArray>) {
+    private fun handleOneRequest(socket: Socket, respond: (FakeHttpRequest) -> Pair<Int, ByteArray>) {
         val input = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
         val requestLine = input.readLine() ?: return
+        val requestParts = requestLine.split(' ')
+        val method = requestParts.getOrNull(0).orEmpty()
+        val path = requestParts.getOrNull(1).orEmpty()
         var contentLength = 0
         while (true) {
             val line = input.readLine() ?: break
@@ -76,7 +86,7 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
         }
         val body = String(bodyChars, 0, read)
 
-        val (status, responseBytes) = respond(body)
+        val (status, responseBytes) = respond(FakeHttpRequest(method, path, body))
         val statusText = when (status) {
             200 -> "OK"
             201 -> "Created"

@@ -31,6 +31,8 @@ class FirstDeviceTrustRootCoordinatorTest {
         var flushes = 0
         override fun current(): FirstDeviceRootRecord? = inner.current()
         override fun readState(): FirstDeviceRootReadResult = inner.readState()
+        override fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean =
+            inner.withConfirmedSafeAttemptKeyCleanup(attemptId, cleanup)
         override fun save(record: FirstDeviceRootRecord) { saves++; inner.save(record) }
         override fun clear() = inner.clear()
         override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean {

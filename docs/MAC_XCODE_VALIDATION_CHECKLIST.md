@@ -150,7 +150,7 @@ Run `xcodebuild test -scheme PCA -destination 'platform=iOS Simulator,name=<any 
 - [ ] `ChildAuthorizationCenterTests` — authorization state transitions, revocation detection, entitlement-unavailable surfacing.
 - [ ] `ShieldSafetyValidatorTests` + `EmergencyShieldFloorTests` — emergency exclusion floor, token-opacity-preserving equality-only checks, independent-dimension rejection.
 - [ ] `ScheduleEngineTests` — precedence, cross-midnight/weekday-rollover/DST, FINDING-006 school-mode intersection, enforcement-unavailable reporting.
-- [ ] `DeviceActivityCallbackHealthTests` — missed-callback degraded-state reconciliation.
+- [ ] `DeviceActivityCallbackHealthTests` — first-install receipt attribution, unknown status for missing/ambiguous callbacks, grace/window boundaries, and DST behavior.
 - [ ] `CallbackObservationLogTests` — record/readAll round trip, monotonic sequencing, bounded eviction, duplicate/replay determinism (PCA-15 correction F1).
 - [ ] `PolicySyncDecoderTests` — well-formed decode, malformed/garbage data, wrong schema version, invalid timezone, invalid window config, empty required fields, decoded-policy-still-subject-to-emergency-floor (PCA-15 correction F1).
 - [ ] `KeychainStoreTests` — write/read/delete contract, accessibility-attribute recording, DSK/DEK isolation (via `InMemoryKeychainStore`; see Section 4 for the REAL Keychain check).
@@ -170,7 +170,7 @@ Run `xcodebuild test -scheme PCA -destination 'platform=iOS Simulator,name=<any 
 - [ ] Apply a shield via `ManagedSettingsAdapter.apply` for a real `ApplicationToken`/`ActivityCategoryToken` set and confirm the system shield UI actually appears when the child opens a shielded app.
 - [ ] Confirm the Shield Configuration extension renders (Apple's default presentation, per doc 07 PCA-DEC-017) and the Shield Action extension's primary-button tap dismisses it without unshielding.
 - [ ] With a deliberately malformed policy that would shield Phone/Emergency-SOS-equivalent tokens, confirm `ManagedSettingsAdapter.apply` throws `.rejectedByEmergencySafetyFloor` and the shield is never applied to those tokens; separately confirm placing an actual emergency call remains possible on a device with an active PCA shield configured for other apps.
-- [ ] Toggle Airplane Mode / kill the app process during an active DeviceActivity schedule; on next foreground, confirm `DeviceActivityCallbackReconciler`, fed from `AppGroupCallbackObservationLog.readAll()`, reports `.degraded` rather than silently showing full compliance.
+- [ ] Toggle Airplane Mode / kill the app process during an active DeviceActivity schedule; on next foreground, confirm missing or ambiguous callback receipts report `.unknown` and do not count as fully healthy. Missing receipts alone must not be labeled `.degraded`.
 - [ ] Confirm removing/uninstalling the app while child authorization is active behaves exactly as Apple documents (blocked/requires parent action) — and separately confirm an authorized parent/guardian CAN still remove it via the supported path (doc 07 Section 6 / PCA-IOS-002: no universal-uninstall-prevention claim).
 
 ## 4. Keychain (real device or simulator Keychain, not `InMemoryKeychainStore`)

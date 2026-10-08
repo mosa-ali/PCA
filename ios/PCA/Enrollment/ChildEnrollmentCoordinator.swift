@@ -271,7 +271,14 @@ public struct PCAEnrollmentLinkParser {
 /// bootstrap input.
 public final class PCAEnrollmentLinkRouter {
     private let parser: PCAEnrollmentLinkParser
-    public private(set) var pendingLink: PCAEnrollmentLink?
+    private let lock = NSLock()
+    private var storedPendingLink: PCAEnrollmentLink?
+
+    public var pendingLink: PCAEnrollmentLink? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedPendingLink
+    }
 
     public init(parser: PCAEnrollmentLinkParser = PCAEnrollmentLinkParser()) {
         self.parser = parser
@@ -280,13 +287,29 @@ public final class PCAEnrollmentLinkRouter {
     @discardableResult
     public func receive(_ url: URL) -> Bool {
         guard let link = parser.parse(url) else { return false }
-        pendingLink = link
+        lock.lock()
+        defer { lock.unlock() }
+        guard storedPendingLink == nil else { return false }
+        storedPendingLink = link
         return true
     }
 
     public func takePendingLink() -> PCAEnrollmentLink? {
-        defer { pendingLink = nil }
-        return pendingLink
+        lock.lock()
+        defer { lock.unlock() }
+        defer { storedPendingLink = nil }
+        return storedPendingLink
+    }
+
+    /// Atomically consume the exact link that passed preflight. A concurrent
+    /// router caller cannot replace it between comparison and removal.
+    @discardableResult
+    public func takePendingLink(ifEqualTo expected: PCAEnrollmentLink) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard storedPendingLink == expected else { return false }
+        storedPendingLink = nil
+        return true
     }
 }
 

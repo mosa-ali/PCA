@@ -871,18 +871,79 @@ public struct PCADeviceSession: Codable, Equatable {
 
 }
 
+public enum PCAEnrollmentAttemptSubmissionState: String, Codable {
+    /// No bootstrap request has been handed to the transport yet. After a
+    /// restart, the same invitation can safely resume this attempt.
+    case prepared
+    /// Bootstrap may have reached the server; resolve it through recovery.
+    case submitted
+    /// Recovery must remain bound to this invitation. Older builds wrote this
+    /// after a generic recovery 404; current code also uses it after an
+    /// ambiguous preflight recovery so retries stay on the recovery endpoint.
+    case awaitingInvitation
+}
+
 public struct PCAEnrollmentAttempt: Codable, Equatable {
     public let attemptId: String
     public let attemptRecoveryToken: String
+    public let submissionState: PCAEnrollmentAttemptSubmissionState
+    /// One-way binding to the invitation presented before process loss. The
+    /// raw invitation remains in memory and is never written to Keychain.
+    public let invitationTokenSHA256: String?
 
-    public init(attemptId: String, attemptRecoveryToken: String) {
+    public init(
+        attemptId: String,
+        attemptRecoveryToken: String,
+        submissionState: PCAEnrollmentAttemptSubmissionState = .submitted,
+        invitationTokenSHA256: String? = nil
+    ) {
         self.attemptId = attemptId
         self.attemptRecoveryToken = attemptRecoveryToken
+        self.submissionState = submissionState
+        self.invitationTokenSHA256 = invitationTokenSHA256
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case attemptId
+        case attemptRecoveryToken
+        case submissionState
+        case invitationTokenSHA256
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        attemptId = try values.decode(String.self, forKey: .attemptId)
+        attemptRecoveryToken = try values.decode(String.self, forKey: .attemptRecoveryToken)
+        // Older records predate the local submission marker and must remain
+        // on the conservative recovery path.
+        submissionState = try values.decodeIfPresent(PCAEnrollmentAttemptSubmissionState.self, forKey: .submissionState) ?? .submitted
+        invitationTokenSHA256 = try values.decodeIfPresent(String.self, forKey: .invitationTokenSHA256)
+    }
+
+    public func markingSubmitted() -> PCAEnrollmentAttempt {
+        PCAEnrollmentAttempt(
+            attemptId: attemptId,
+            attemptRecoveryToken: attemptRecoveryToken,
+            submissionState: .submitted,
+            invitationTokenSHA256: invitationTokenSHA256
+        )
+    }
+
+    public func markingAwaitingInvitation() -> PCAEnrollmentAttempt {
+        PCAEnrollmentAttempt(
+            attemptId: attemptId,
+            attemptRecoveryToken: attemptRecoveryToken,
+            submissionState: .awaitingInvitation,
+            invitationTokenSHA256: invitationTokenSHA256
+        )
+    }
+
     /// Compare persisted authority snapshots without Unicode normalization.
     public static func == (left: PCAEnrollmentAttempt, right: PCAEnrollmentAttempt) -> Bool {
         (left.attemptId.utf8.elementsEqual(right.attemptId.utf8)) &&
-        (left.attemptRecoveryToken.utf8.elementsEqual(right.attemptRecoveryToken.utf8))
+        (left.attemptRecoveryToken.utf8.elementsEqual(right.attemptRecoveryToken.utf8)) &&
+        (left.submissionState == right.submissionState) &&
+        pcaOpaqueEqual(left.invitationTokenSHA256, right.invitationTokenSHA256)
     }
 
 }
@@ -897,12 +958,29 @@ public protocol PCAEnrollmentAttemptStore {
     func loadAttempt() throws -> PCAEnrollmentAttempt?
     func saveAttempt(_ attempt: PCAEnrollmentAttempt) throws
     func clearAttempt() throws
+    /// Runs the operation only while the exact durable attempt is current.
+    /// Return true to clear that attempt after the operation succeeds, or
+    /// false to retain it. Implementations serialize the check, operation and
+    /// optional clear against all access to the same backing attempt record.
+    func performIfCurrent(_ expected: PCAEnrollmentAttempt, _ operation: () throws -> Bool) throws -> Bool
+    /// Clears only the exact attempt snapshot observed by the caller.
+    func clearAttempt(ifCurrent expected: PCAEnrollmentAttempt) throws -> Bool
+}
+
+public extension PCAEnrollmentAttemptStore {
+    func clearAttempt(ifCurrent expected: PCAEnrollmentAttempt) throws -> Bool {
+        try performIfCurrent(expected) { true }
+    }
 }
 
 /// Session and recovery material are secrets/security-sensitive state. Both
 /// are encoded only into Keychain data; UserDefaults is intentionally used
 /// for neither bearer tokens nor attempt recovery tokens.
 public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnrollmentAttemptStore {
+    /// All wrappers for this account in the process share the same critical
+    /// section, so compare-and-clear cannot delete a replacement written by a
+    /// second store instance between its read and delete.
+    private static let attemptLock = NSRecursiveLock()
     private let keychain: KeychainStoreProtocol
     private let service: String
     private let sessionAccount: String
@@ -930,15 +1008,35 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
     }
 
     public func loadAttempt() throws -> PCAEnrollmentAttempt? {
-        try loadValue(PCAEnrollmentAttempt.self, account: attemptAccount)
+        Self.attemptLock.lock()
+        defer { Self.attemptLock.unlock() }
+        return try loadValue(PCAEnrollmentAttempt.self, account: attemptAccount)
     }
 
     public func saveAttempt(_ attempt: PCAEnrollmentAttempt) throws {
+        Self.attemptLock.lock()
+        defer { Self.attemptLock.unlock() }
         try saveValue(attempt, account: attemptAccount)
     }
 
     public func clearAttempt() throws {
+        Self.attemptLock.lock()
+        defer { Self.attemptLock.unlock() }
         try keychain.delete(forAccount: attemptAccount, service: service)
+    }
+
+    public func performIfCurrent(_ expected: PCAEnrollmentAttempt, _ operation: () throws -> Bool) throws -> Bool {
+        Self.attemptLock.lock()
+        defer { Self.attemptLock.unlock() }
+        guard try loadValue(PCAEnrollmentAttempt.self, account: attemptAccount) == expected else { return false }
+        let shouldClear = try operation()
+        // A recursive callback can still write through another store wrapper
+        // on this thread. Never remove a replacement installed by that work.
+        guard try loadValue(PCAEnrollmentAttempt.self, account: attemptAccount) == expected else { return false }
+        if shouldClear {
+            try keychain.delete(forAccount: attemptAccount, service: service)
+        }
+        return true
     }
 
     private func saveValue<T: Encodable>(_ value: T, account: String) throws {
@@ -959,11 +1057,33 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
 public final class InMemoryPCADeviceStateStore: PCADeviceSessionStore, PCAEnrollmentAttemptStore {
     private var session: PCADeviceSession?
     private var attempt: PCAEnrollmentAttempt?
+    private let attemptLock = NSRecursiveLock()
     public init() {}
     public func loadSession() throws -> PCADeviceSession? { session }
     public func saveSession(_ value: PCADeviceSession) throws { session = value }
     public func clearSession() throws { session = nil }
-    public func loadAttempt() throws -> PCAEnrollmentAttempt? { attempt }
-    public func saveAttempt(_ value: PCAEnrollmentAttempt) throws { attempt = value }
-    public func clearAttempt() throws { attempt = nil }
+    public func loadAttempt() throws -> PCAEnrollmentAttempt? {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        return attempt
+    }
+    public func saveAttempt(_ value: PCAEnrollmentAttempt) throws {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        attempt = value
+    }
+    public func clearAttempt() throws {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        attempt = nil
+    }
+    public func performIfCurrent(_ expected: PCAEnrollmentAttempt, _ operation: () throws -> Bool) throws -> Bool {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        guard attempt == expected else { return false }
+        let shouldClear = try operation()
+        guard attempt == expected else { return false }
+        if shouldClear { attempt = nil }
+        return true
+    }
 }

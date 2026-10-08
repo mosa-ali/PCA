@@ -81,8 +81,14 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   const prepare = indexOf('prepareEnrollmentKeys(attemptId: attempt.attemptId)');
   const pubkeyGuard = indexOf('guard !dependencies.proofProvider.signingPublicKey.isEmpty');
   const request = indexOf('PCAEnrollmentBootstrapRequest(');
-  const bootstrap = indexOf('dependencies.enrollmentClient.bootstrap(request)');
-  const seedCapture = indexOf('captureFirstDeviceSeed(attempt: attempt, response: response)');
+  const bootstrapMatch = /dependencies\.enrollmentClient\.bootstrap\(\s*request(?:,|\))/.exec(composition);
+  assert.ok(bootstrapMatch, 'the prepared request must enter the enrollment bootstrap client');
+  const bootstrap = bootstrapMatch.index;
+  assert.ok(
+    composition.indexOf('willRecoverFromPreflightFailure:', bootstrap) > bootstrap,
+    'bootstrap must persist the recovery-only state before preflight recovery',
+  );
+  const seedCapture = indexOf('captureFirstDeviceSeed(attempt: submittedAttempt, response: response)');
   const sweep = indexOf('rootStore.withConfirmedCurrentRecord { retained in');
   assert.ok(saveAttempt < prepare, 'the attempt record must exist before any key is generated');
   assert.ok(prepare < pubkeyGuard, 'key preparation must precede the public-key read');
@@ -91,7 +97,7 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   assert.ok(bootstrap < seedCapture, 'the seed is captured from a successful bootstrap');
   assert.ok(seedCapture < sweep, 'over the freshly captured seed the sweep keeps this attempt');
   assert.equal(
-    (composition.match(/cleanupConfirmedEnrollmentKeys\(attempt: attempt\)/g) ?? []).length,
+    (composition.match(/cleanupConfirmedEnrollmentKeys\(attempt: (?:attempt|submittedAttempt)\)/g) ?? []).length,
     2,
     'bootstrap and saved-attempt recovery must share confirmed-root key cleanup',
   );
@@ -99,8 +105,9 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
     const start = composition.indexOf(`private func ${name}()`);
     const end = composition.indexOf('private func ', start + 1);
     const body = composition.slice(start, end);
-    const capture = body.indexOf('guard captureFirstDeviceSeed(attempt: attempt, response: response)');
-    const cleanup = body.indexOf('cleanupConfirmedEnrollmentKeys(attempt: attempt)');
+    const attemptName = name === 'beginEnrollmentIfPossible' ? 'submittedAttempt' : 'attempt';
+    const capture = body.indexOf(`guard captureFirstDeviceSeed(attempt: ${attemptName}, response: response)`);
+    const cleanup = body.indexOf(`cleanupConfirmedEnrollmentKeys(attempt: ${attemptName})`);
     assert.ok(capture >= 0 && cleanup > capture, `${name} must capture the retained seed before cleanup`);
   }
   // The sweep keep-set is the UNION of this attempt and the durable root
@@ -137,13 +144,52 @@ test('enrollment ordering: attemptId BEFORE keygen, keys BEFORE the request, see
   assert.match(saveAndConfirm, /guard saveUnlocked\(record\) else \{ return false \}[\s\S]{0,80}flush\(\)[\s\S]{0,80}isCurrentUnlocked\(record\)/);
 
   const coordinator = await readSource(path.join('PCA', 'FirstDevice', 'FirstDeviceTrustRootCoordinator.swift'));
-  // A successful capture precedes the single child-confirmation clear.
+  // Child confirmation consumes the exact attempt atomically only after the
+  // profile has been persisted successfully; a failed profile write retains it.
+  const confirmationStart = composition.indexOf('public func confirmPendingProfile()');
+  const confirmationEnd = composition.indexOf('public func ', confirmationStart + 1);
+  const confirmationBody = composition.slice(confirmationStart, confirmationEnd);
+  const confirmationOperationStart = confirmationBody.indexOf('performIfCurrent(attempt, {');
+  const confirmationOperationEnd = confirmationBody.indexOf('}) else {', confirmationOperationStart);
+  assert.ok(confirmationOperationStart >= 0 && confirmationOperationEnd > confirmationOperationStart);
+  const confirmationOperation = confirmationBody.slice(confirmationOperationStart, confirmationOperationEnd);
+  assert.match(confirmationOperation, /controller\.confirmChildProfile\(\)/);
+  assert.match(confirmationOperation, /return result != \.profilePersistenceFailed/);
+  assert.doesNotMatch(confirmationBody, /attemptStore\.clearAttempt/);
   assert.ok(composition.includes('captureFirstDeviceSeed(attempt: attempt, response: response)'));
-  assert.equal(
-    (composition.match(/dependencies\.attemptStore\.clearAttempt\(\)/g) ?? []).length,
-    1,
-    'the pending-attempt clear must exist exactly once, in the child-confirmation step',
+
+  // The storage contract compares ownership before and after the callback and
+  // clears only when that callback reports a successfully persisted profile.
+  const attemptStoreSource = await readSource(path.join('PCA', 'Keychain', 'PCADeviceSessionStore.swift'));
+  const extractAttemptStoreMethod = (classMarker, endMarker) => {
+    const classStart = attemptStoreSource.indexOf(classMarker);
+    const classEnd = endMarker ? attemptStoreSource.indexOf(endMarker, classStart + classMarker.length) : attemptStoreSource.length;
+    assert.ok(classStart >= 0 && classEnd > classStart, `missing attempt store class: ${classMarker}`);
+    const classBody = attemptStoreSource.slice(classStart, classEnd);
+    const methodStart = classBody.indexOf('public func performIfCurrent(');
+    const methodEnd = classBody.indexOf('\n    }', methodStart);
+    assert.ok(methodStart >= 0 && methodEnd > methodStart, `missing performIfCurrent in ${classMarker}`);
+    return classBody.slice(methodStart, methodEnd);
+  };
+  const keychainAttemptStore = extractAttemptStoreMethod(
+    'public final class PCAKeychainDeviceStateStore',
+    'public final class InMemoryPCADeviceStateStore',
   );
+  const inMemoryAttemptStore = extractAttemptStoreMethod('public final class InMemoryPCADeviceStateStore');
+  const assertCompareOperateCompare = (method, comparison, label) => {
+    const firstCompare = method.indexOf(comparison);
+    const operation = method.indexOf('let shouldClear = try operation()');
+    const secondCompare = method.indexOf(comparison, firstCompare + comparison.length);
+    assert.ok(firstCompare >= 0 && operation > firstCompare && secondCompare > operation,
+      `${label} must compare the exact attempt before and after the operation`);
+  };
+  const keychainComparison = 'guard try loadValue(PCAEnrollmentAttempt.self, account: attemptAccount) == expected else { return false }';
+  const inMemoryComparison = 'guard attempt == expected else { return false }';
+  assertCompareOperateCompare(keychainAttemptStore, keychainComparison, 'Keychain store');
+  assert.match(keychainAttemptStore, /if shouldClear \{\s*try keychain\.delete\(forAccount: attemptAccount, service: service\)/);
+  assert.equal((keychainAttemptStore.match(/keychain\.delete\(forAccount: attemptAccount, service: service\)/g) ?? []).length, 1);
+  assertCompareOperateCompare(inMemoryAttemptStore, inMemoryComparison, 'In-memory store');
+  assert.match(inMemoryAttemptStore, /if shouldClear \{\s*attempt = nil\s*\}/);
   assert.ok(!coordinator.includes('clearAttempt'), 'the coordinator must not touch the attempt store');
 });
 

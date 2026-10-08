@@ -1,5 +1,7 @@
 package org.pca.app.enrollment
 
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertNotNull
 
 import kotlinx.coroutines.CompletableDeferred
@@ -20,11 +22,15 @@ import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
 import org.pca.app.security.TestConformanceDeviceKeyPairGenerator
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.InMemoryPendingEnrollmentAttemptStore
+import org.pca.app.storage.PendingEnrollmentAttempt
 import org.pca.app.storage.PendingEnrollmentAttemptStore
+import org.pca.app.storage.PendingEnrollmentAttemptStatus
 import org.pca.app.storage.PersistentFamilyStateStore
 import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
 
-private const val LINK = "pca://enroll?token=raw-token-xyz"
+private val VALID_LINK_TOKEN = "A".repeat(43)
+private val OTHER_VALID_LINK_TOKEN = "B".repeat(42) + "E"
+private val LINK = "pca://enroll?token=$VALID_LINK_TOKEN"
 
 /** Fake [DeviceBootstrapApiClient] -- lets each test dictate the exact outcome without a real socket, and records every bootstrap()/recoverAttempt() call so tests can prove the coordinator never sends familyId/role/authority claims, reuses the same attemptId on retry, and never calls the network at all past the crypto gate. */
 private class FakeBootstrapApiClient(private val outcome: () -> DeviceBootstrapResult) : DeviceBootstrapApiClient {
@@ -59,6 +65,7 @@ private class ThrowingBootstrapApiClient(private val error: BootstrapError) : De
     var callCount = 0
         private set
     val attemptIdsSeen = mutableListOf<String>()
+    val rawTokensSeen = mutableListOf<String>()
 
     override suspend fun bootstrap(
         rawInvitationToken: String,
@@ -70,6 +77,7 @@ private class ThrowingBootstrapApiClient(private val error: BootstrapError) : De
     ): DeviceBootstrapResult {
         callCount++
         attemptIdsSeen += bootstrapAttemptId
+        rawTokensSeen += rawInvitationToken
         throw error
     }
 
@@ -112,6 +120,8 @@ private class FakeRecoveryApiClient(private val outcome: () -> DeviceBootstrapRe
 private class ThrowingRecoveryApiClient(private val error: RecoveryError) : DeviceBootstrapApiClient {
     var recoverCallCount = 0
         private set
+    val attemptIdsSeen = mutableListOf<String>()
+    val recoveryTokensSeen = mutableListOf<String>()
 
     override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
         throw AssertionError("bootstrap() must not be called from a recovery-only test")
@@ -119,6 +129,8 @@ private class ThrowingRecoveryApiClient(private val error: RecoveryError) : Devi
 
     override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
         recoverCallCount++
+        attemptIdsSeen += bootstrapAttemptId
+        recoveryTokensSeen += attemptRecoveryToken
         throw error
     }
 }
@@ -151,14 +163,102 @@ private class FaultingEnrollmentBacking : org.pca.app.foundation.PersistentState
     }
 }
 
-private class EnrollmentCustodyCounter : DeviceKeyPairGenerator by TestConformanceDeviceKeyPairGenerator(), org.pca.app.security.DeviceKeyPairDeletion {
+private class EnrollmentCustodyCounter(
+    private val delegate: DeviceKeyPairGenerator = TestConformanceDeviceKeyPairGenerator(),
+) : DeviceKeyPairGenerator by delegate, org.pca.app.security.DeviceKeyPairDeletion {
     val deleted = mutableListOf<String>()
-    override fun deleteKeyPair(alias: String) { deleted += alias }
-    override fun deleteOrphanedAttemptKeys(keepAttemptIds: Set<String>) { /* separate pre-generation sweep */ }
+    val generatedAliases = mutableListOf<String>()
+    val orphanSweepKeepSets = mutableListOf<Set<String>>()
+    var failingAlias: String? = null
+    var signingGenerations = 0
+        private set
+    var encryptionGenerations = 0
+        private set
+    override fun generateSigningKeyPair(attemptId: String): GeneratedKeyPair {
+        signingGenerations++
+        return delegate.generateSigningKeyPair(attemptId).also { generatedAliases += it.privateKeyAlias }
+    }
+    override fun generateEncryptionKeyPair(attemptId: String): GeneratedKeyPair {
+        encryptionGenerations++
+        return delegate.generateEncryptionKeyPair(attemptId).also { generatedAliases += it.privateKeyAlias }
+    }
+    override fun deleteKeyPair(alias: String) {
+        if (alias == failingAlias) error("key deletion failed")
+        deleted += alias
+    }
+    override fun deleteOrphanedAttemptKeys(keepAttemptIds: Set<String>) { orphanSweepKeepSets += keepAttemptIds.toSet() }
+}
+
+private class RejectedPrepareApiClient(private val recoveryError: RecoveryError) : DeviceBootstrapApiClient {
+    var prepareCalls = 0
+    var bootstrapCalls = 0
+    var recoveryCalls = 0
+    var attemptId: String? = null
+    override suspend fun prepareAttempt(
+        rawInvitationToken: String,
+        platform: String,
+        signingPublicKeyBase64: String,
+        encryptionPublicKeyBase64: String,
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
+    ) {
+        prepareCalls++
+        attemptId = bootstrapAttemptId
+        throw BootstrapError.InvitationUnavailable
+    }
+    override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String,
+        encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+        bootstrapCalls++
+        throw AssertionError("bootstrap must not follow a rejected reservation")
+    }
+    override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+        recoveryCalls++
+        throw recoveryError
+    }
+}
+
+/** Separates staged writes from the process-restart snapshot for durability-barrier regressions. */
+private class DurableFaultingEnrollmentBacking(
+    initial: Map<String, String> = emptyMap(),
+) : org.pca.app.foundation.PersistentStateStore {
+    override val coordinationLock: Any = this
+    private var staged = initial.toMutableMap()
+    private var durable = initial.toMap()
+    var failNextFlush = false
+
+    override fun getString(key: String): String? = staged[key]
+    override fun putString(key: String, value: String) { staged[key] = value }
+    override fun remove(key: String) { staged.remove(key) }
+    override fun contains(key: String): Boolean = staged.containsKey(key)
+    override fun clear() { staged.clear() }
+    override fun flush() {
+        if (failNextFlush) {
+            failNextFlush = false
+            error("disk unavailable")
+        }
+        durable = staged.toMap()
+    }
+
+    fun simulateProcessRestart() {
+        staged = durable.toMutableMap()
+    }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class EnrollmentCoordinatorTest {
+    @Test
+    fun `missing first-device root store disables destructive orphan-key sweep`() = runTest {
+        val custody = EnrollmentCustodyCounter()
+        val api = FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") }
+        val c = coordinator(api, custody)
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        assertTrue(custody.orphanSweepKeepSets.isEmpty())
+        assertEquals(1, api.callCount)
+    }
+
     @Test
     fun `pending durability failure blocks submission and all subsequent actions`() = runTest {
         val backing = object : org.pca.app.foundation.PersistentStateStore by InMemoryPersistentStateStore() {
@@ -207,18 +307,18 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `failed definitive abandonment clear preserves both key aliases`() = runTest {
+    fun `bootstrap HTTP 400 preserves pending attempt and keys when storage later fails`() = runTest {
         val backing = FaultingEnrollmentBacking()
         val pending = PersistentPendingEnrollmentAttemptStore(backing)
         val custody = EnrollmentCustodyCounter()
         val api = FakeBootstrapApiClient {
             backing.successfulFlushesBeforeFailure = 0
-            throw BootstrapError.InvitationUnavailable
+            throw BootstrapError.InvalidRequest
         }
         val c = coordinator(api, custody, PersistentFamilyStateStore(backing), pending)
         c.submitInvitationLink(LINK)
         c.beginBootstrap()
-        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
         assertNotNull(pending.current())
         assertTrue(custody.deleted.isEmpty())
     }
@@ -256,7 +356,7 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `definitive recovery errors never delete committed family key custody`() = runTest {
+    fun `recovery errors preserve pending credentials and committed family key custody`() = runTest {
         for (error in listOf(RecoveryError.NotFound, RecoveryError.InvalidRequest)) {
             val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
             val pending = InMemoryPendingEnrollmentAttemptStore()
@@ -270,12 +370,13 @@ class EnrollmentCoordinatorTest {
             val restarted = coordinator(ThrowingRecoveryApiClient(error), custody, family, pending)
             restarted.recoverAttempt()
             assertTrue(custody.deleted.isEmpty())
+            assertEquals(retained, pending.current())
             assertEquals("device", family.currentState()?.deviceId)
         }
     }
 
     @Test
-    fun `definitive recovery errors preserve durable ceremony seed key custody`() = runTest {
+    fun `recovery errors preserve durable ceremony seed key custody`() = runTest {
         for (error in listOf(RecoveryError.NotFound, RecoveryError.InvalidRequest)) {
             val pending = InMemoryPendingEnrollmentAttemptStore()
             val custody = EnrollmentCustodyCounter()
@@ -295,18 +396,55 @@ class EnrollmentCoordinatorTest {
                 firstDeviceRootStore = root)
             restarted.recoverAttempt()
             assertTrue(custody.deleted.isEmpty())
+            assertEquals(attempt, pending.current())
             assertNotNull(root.current())
         }
     }
 
-    private fun parser() = UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
+    @Test
+    fun `recovery HTTP 400 without family or root preserves attempt and both key aliases`() = runTest {
+        val backing = InMemoryPersistentStateStore()
+        val family = PersistentFamilyStateStore(backing)
+        val pending = PersistentPendingEnrollmentAttemptStore(backing)
+        val custody = EnrollmentCustodyCounter()
+        val initial = coordinator(
+            FakeBootstrapApiClient { DeviceBootstrapResult("device", "PAIRING_PENDING") },
+            custody,
+            family,
+            pending,
+        )
+        initial.submitInvitationLink(LINK)
+        initial.beginBootstrap()
+        val retained = pending.current()!!
+        assertNull(family.currentState())
+
+        val restarted = coordinator(ThrowingRecoveryApiClient(RecoveryError.InvalidRequest), custody, family, pending)
+        assertEquals(EnrollmentState.RecoveryPending(retained.serverBaseUrl), restarted.state.value)
+        restarted.recoverAttempt()
+
+        assertEquals(EnrollmentState.RecoveryPending(retained.serverBaseUrl), restarted.state.value)
+        assertEquals(retained, pending.current())
+        assertTrue(custody.deleted.isEmpty())
+    }
+
+    private fun parser() = UriEnrollmentLinkParser(
+        expectedScheme = EnrollmentDeepLinkConfig.EXPECTED_SCHEME,
+        expectedHost = EnrollmentDeepLinkConfig.EXPECTED_HOST,
+        appLinkScheme = EnrollmentDeepLinkConfig.APP_LINK_SCHEME,
+        appLinkHost = EnrollmentDeepLinkConfig.APP_LINK_HOST,
+        appLinkPathPrefix = EnrollmentDeepLinkConfig.APP_LINK_PATH_PREFIX,
+    )
 
     private fun coordinator(
         apiClient: DeviceBootstrapApiClient,
         keyPairGenerator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator(),
         familyStateStore: FamilyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore()),
         pendingAttemptStore: PendingEnrollmentAttemptStore = InMemoryPendingEnrollmentAttemptStore(),
-    ) = EnrollmentCoordinator(parser(), apiClient, keyPairGenerator, familyStateStore, pendingAttemptStore)
+        firstDeviceRootStore: org.pca.app.firstdevice.FirstDeviceRootStore? = null,
+    ) = EnrollmentCoordinator(
+        parser(), apiClient, keyPairGenerator, familyStateStore, pendingAttemptStore,
+        firstDeviceRootStore = firstDeviceRootStore,
+    )
 
     @Test
     fun `starts NotEnrolled when no local family state and no pending attempt exists`() {
@@ -396,8 +534,220 @@ class EnrollmentCoordinatorTest {
         assertEquals(EnrollmentState.PairingPending("server-issued-device-id"), c.state.value)
         assertEquals("server-issued-device-id", familyStateStore.currentState()?.deviceId)
         assertEquals(1, apiClient.callCount)
-        assertEquals("raw-token-xyz", apiClient.lastRawToken)
+        assertEquals(VALID_LINK_TOKEN, apiClient.lastRawToken)
         assertNull(pendingAttemptStore.current())
+    }
+
+    @Test
+    fun `server reservation is durable before the submitted marker and bootstrap request`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val calls = mutableListOf<String>()
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                calls += "prepare"
+                assertEquals(PendingEnrollmentAttemptStatus.PREPARED, pending.current()?.status)
+                assertEquals(VALID_LINK_TOKEN, rawInvitationToken)
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) = DeviceBootstrapResult("device-prepared", "PAIRING_PENDING").also {
+                calls += "bootstrap"
+                assertEquals(PendingEnrollmentAttemptStatus.BOOTSTRAPPING, pending.current()?.status)
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+                throw AssertionError("fresh enrollment cannot recover")
+            }
+        }
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+
+        assertEquals(listOf("prepare", "bootstrap"), calls)
+        assertEquals(EnrollmentState.ProfileConfirmation("device-prepared", AgeUxTier.YOUNG_CHILD, InitialPolicyProfile.BALANCED), c.state.value)
+    }
+
+    @Test
+    fun `failed durable submitted marker after reservation retains prepared attempt and sends no bootstrap`() = runTest {
+        val backing = DurableFaultingEnrollmentBacking()
+        val pending = PersistentPendingEnrollmentAttemptStore(backing)
+        val custody = EnrollmentCustodyCounter()
+        var prepareCalls = 0
+        var bootstrapCalls = 0
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                prepareCalls++
+                assertEquals(PendingEnrollmentAttemptStatus.PREPARED, pending.current()?.status)
+                // Let reservation succeed, then fail the next durable write: PREPARED -> BOOTSTRAPPING.
+                backing.failNextFlush = true
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                bootstrapCalls++
+                return DeviceBootstrapResult("unexpected", "PAIRING_PENDING")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult =
+                throw AssertionError("marker failure must not trigger automatic recovery")
+        }
+        val c = coordinator(
+            api,
+            custody,
+            PersistentFamilyStateStore(InMemoryPersistentStateStore()),
+            pending,
+            org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+
+        assertEquals(1, prepareCalls)
+        assertEquals(0, bootstrapCalls)
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertEquals(PendingEnrollmentAttemptStatus.PREPARED, pending.current()?.status)
+        val expected = pending.current()
+        assertNotNull(expected?.attemptRecoveryToken)
+        assertTrue(custody.deleted.isEmpty())
+        backing.simulateProcessRestart()
+        assertEquals(expected, PersistentPendingEnrollmentAttemptStore(backing).current())
+    }
+
+    @Test
+    fun `replacement while prepare is suspended prevents bootstrap and stale result publication`() = runTest {
+        val prepareStarted = CompletableDeferred<Unit>()
+        val finishPrepare = CompletableDeferred<Unit>()
+        var bootstrapCalls = 0
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                prepareStarted.complete(Unit)
+                finishPrepare.await()
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                bootstrapCalls++
+                return DeviceBootstrapResult("stale-device", "PAIRING_PENDING")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult =
+                throw AssertionError("prepare replacement test must not recover")
+        }
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(api, custody, pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        val begin = launch { c.beginBootstrap() }
+        runCurrent()
+        prepareStarted.await()
+        val original = pending.current()!!
+        val replacement = retainedAttempt().copy(
+            attemptId = "replacement-attempt-identifier",
+            attemptRecoveryToken = "replacement-recovery-token",
+            status = PendingEnrollmentAttemptStatus.PREPARED,
+        )
+        pending.save(replacement)
+
+        finishPrepare.complete(Unit)
+        begin.join()
+
+        assertEquals(0, bootstrapCalls)
+        assertEquals(replacement, pending.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertNull(c.keyFingerprints.value)
+        assertTrue(c.state.value !is EnrollmentState.ProfileConfirmation)
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
+        assertNotEquals(original.attemptId, replacement.attemptId)
+    }
+
+    @Test
+    fun `unreadable attempt after prepare prevents bootstrap and retains unavailable state`() = runTest {
+        val backing = InMemoryPendingEnrollmentAttemptStore()
+        var attemptReadUnavailable = false
+        val pending = object : PendingEnrollmentAttemptStore by backing {
+            override fun current(): PendingEnrollmentAttempt? {
+                if (attemptReadUnavailable) throw org.pca.app.storage.EnrollmentPersistenceException()
+                return backing.current()
+            }
+        }
+        val custody = EnrollmentCustodyCounter()
+        var bootstrapCalls = 0
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                assertEquals(PendingEnrollmentAttemptStatus.PREPARED, backing.current()?.status)
+                attemptReadUnavailable = true
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                bootstrapCalls++
+                return DeviceBootstrapResult("unexpected", "PAIRING_PENDING")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult =
+                throw AssertionError("unreadable local custody must not trigger automatic recovery")
+        }
+        val c = coordinator(api, custody, pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+        assertEquals(0, bootstrapCalls)
+        assertTrue(backing.current() != null)
+        assertTrue(custody.deleted.isEmpty())
     }
 
     @Test
@@ -534,19 +884,47 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `server 404 invitation_unavailable clears the token AND the pending attempt, never claims retry-ability`() = runTest {
+    fun `server 404 preserves pending attempt and exact token for explicit idempotent retry`() = runTest {
         val apiClient = ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable)
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
-        val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pendingAttemptStore)
+        val custody = EnrollmentCustodyCounter()
+        val keyGenerator = CountingKeyPairGenerator(custody)
+        val c = coordinator(apiClient, keyGenerator, pendingAttemptStore = pendingAttemptStore)
         c.submitInvitationLink(LINK)
 
         c.beginBootstrap()
 
-        assertEquals(EnrollmentState.FailedInvitationInvalid, c.state.value)
-        assertNull(pendingAttemptStore.current())
-        // Submitting the exact same link again must go through link parsing again -- beginBootstrap
-        // alone (with no fresh submitInvitationLink) must be a no-op, proving the token was cleared.
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        val attempt = pendingAttemptStore.current() ?: error("the submitted attempt must remain durable after a generic 404")
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(1, keyGenerator.signingCallCount)
+        assertEquals(1, keyGenerator.encryptionCallCount)
+        assertEquals(1, apiClient.callCount)
+
+        // A user-directed retry preserves the same server id, invitation token, and hardware keys.
+        // The coordinator never starts the replay by itself.
+        c.retryBootstrap()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertEquals(attempt, pendingAttemptStore.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(1, keyGenerator.signingCallCount)
+        assertEquals(1, keyGenerator.encryptionCallCount)
+        assertEquals(listOf(attempt.attemptId, attempt.attemptId), apiClient.attemptIdsSeen)
+        assertEquals(listOf(LINK.substringAfter("token="), LINK.substringAfter("token=")), apiClient.rawTokensSeen)
+        assertEquals(2, apiClient.callCount)
+    }
+
+    @Test
+    fun `beginBootstrap alone never retries a generic invitation 404`() = runTest {
+        val apiClient = ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable)
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pendingAttemptStore)
+        c.submitInvitationLink(LINK)
         c.beginBootstrap()
+
+        c.beginBootstrap()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertNotNull(pendingAttemptStore.current())
         assertEquals(1, apiClient.callCount)
     }
 
@@ -571,16 +949,182 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `a malformed request outcome (400) is retryable, distinct from the invitation-invalid outcome, and clears the pending attempt`() = runTest {
-        val apiClient = ThrowingBootstrapApiClient(BootstrapError.InvalidRequest)
+    fun `malformed HTTP profile response preserves bootstrap custody without publishing profile`() = runTest {
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val pendingAtBootstrapRequest = AtomicReference<PendingEnrollmentAttempt?>()
+        val fake = FakeHttpServer.start()
+        fake.startRequest { request ->
+            if (request.path == "/v1/enrollment/bootstrap") {
+                pendingAtBootstrapRequest.set(pending.current())
+            }
+            when (request.path) {
+                "/v1/enrollment/bootstrap/prepare" -> 200 to """{"status":"READY"}""".toByteArray()
+                "/v1/enrollment/bootstrap" -> 201 to """{"deviceId":"device-123","status":"PAIRING_PENDING","signingKeyId":"dsk-123","encryptionKeyId":"dek-123","ageUxTier":"TEEN","childProfileId":null}""".toByteArray()
+                else -> 500 to ByteArray(0)
+            }
+        }
+        val apiClient = HttpDeviceBootstrapApiClient(
+            BootstrapEndpointConfig(fake.baseUrl, allowInsecureHttp = true),
+        )
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(apiClient, custody, family, pending)
+
+        try {
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+
+            assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+            val attemptAtRequest = requireNotNull(pendingAtBootstrapRequest.get())
+            assertEquals(PendingEnrollmentAttemptStatus.BOOTSTRAPPING, attemptAtRequest.status)
+            assertEquals(attemptAtRequest, pending.current())
+            assertNull(family.currentState())
+            assertTrue(c.state.value !is EnrollmentState.ProfileConfirmation)
+            assertTrue(custody.deleted.isEmpty())
+        } finally {
+            fake.stop()
+        }
+    }
+
+    @Test
+    fun `bootstrap HTTP 400 retains custody and explicit retry reuses the same request tuple`() = runTest {
+        var callCount = 0
+        val requests = mutableListOf<List<String>>()
+        val apiClient = object : DeviceBootstrapApiClient {
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                requests += listOf(rawInvitationToken, platform, signingPublicKeyBase64,
+                    encryptionPublicKeyBase64, bootstrapAttemptId, attemptRecoveryToken)
+                callCount++
+                if (callCount == 1) throw BootstrapError.InvalidRequest
+                return DeviceBootstrapResult("device-after-retry", "PAIRING_PENDING")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult =
+                throw AssertionError("recovery must not be called by same-process bootstrap retry")
+        }
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
-        val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pendingAttemptStore)
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(apiClient, custody, pendingAttemptStore = pendingAttemptStore)
         c.submitInvitationLink(LINK)
 
         c.beginBootstrap()
 
-        assertEquals(EnrollmentState.FailedRetryable, c.state.value)
-        assertNull(pendingAttemptStore.current())
+        val original = pendingAttemptStore.current()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertNotNull(original)
+        assertTrue(custody.deleted.isEmpty())
+
+        c.retryBootstrap()
+
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+        assertEquals(2, callCount)
+        assertEquals(requests[0], requests[1])
+        assertEquals(original, pendingAttemptStore.current())
+        assertEquals(1, custody.signingGenerations)
+        assertEquals(1, custody.encryptionGenerations)
+        assertTrue(custody.deleted.isEmpty())
+    }
+
+    @Test
+    fun `unknown bootstrap can recover authoritative abandonment before a fresh tuple is created`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val custody = EnrollmentCustodyCounter()
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val bootstrapTuples = mutableListOf<List<String>>()
+        var prepareCalls = 0
+        var recoveryCalls = 0
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                prepareCalls++
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                bootstrapTuples += listOf(
+                    rawInvitationToken,
+                    platform,
+                    signingPublicKeyBase64,
+                    encryptionPublicKeyBase64,
+                    bootstrapAttemptId,
+                    attemptRecoveryToken,
+                )
+                if (bootstrapTuples.size == 1) throw BootstrapError.InvalidRequest
+                return DeviceBootstrapResult(
+                    "fresh-device",
+                    "PAIRING_PENDING",
+                    signingKeyId = "fresh-signing-key-id",
+                    encryptionKeyId = "fresh-encryption-key-id",
+                )
+            }
+
+            override suspend fun recoverAttempt(
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                recoveryCalls++
+                assertEquals(pending.current()?.attemptId, bootstrapAttemptId)
+                assertEquals(pending.current()?.attemptRecoveryToken, attemptRecoveryToken)
+                throw RecoveryError.AttemptAbandoned
+            }
+        }
+        val c = coordinator(
+            api,
+            custody,
+            familyStateStore = family,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        val abandoned = pending.current()!!
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+
+        c.recoverAttempt()
+
+        assertEquals(1, recoveryCalls)
+        assertEquals(1, bootstrapTuples.size)
+        assertEquals(EnrollmentState.NotEnrolled, c.state.value)
+        assertNull(pending.current())
+        assertEquals(listOf(abandoned.signingPrivateKeyAlias, abandoned.encryptionPrivateKeyAlias), custody.deleted)
+
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+
+        assertEquals(2, prepareCalls)
+        assertEquals(2, bootstrapTuples.size)
+        assertNotEquals(bootstrapTuples[0][4], bootstrapTuples[1][4])
+        assertNotEquals(bootstrapTuples[0][5], bootstrapTuples[1][5])
+        assertNotEquals(bootstrapTuples[0][2], bootstrapTuples[1][2])
+        assertNotEquals(bootstrapTuples[0][3], bootstrapTuples[1][3])
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+        assertEquals("fresh-device", (c.state.value as EnrollmentState.ProfileConfirmation).deviceId)
+        assertEquals(PendingEnrollmentAttemptStatus.BOOTSTRAPPING, pending.current()?.status)
+        assertTrue(custody.deleted.contains(abandoned.signingPrivateKeyAlias))
+        assertTrue(custody.deleted.contains(abandoned.encryptionPrivateKeyAlias))
+        c.confirmProfile()
+        assertEquals(EnrollmentState.PairingPending("fresh-device"), c.state.value)
+        assertEquals("fresh-device", family.currentState()?.deviceId)
+        assertNull(pending.current())
     }
 
     @Test
@@ -593,7 +1137,14 @@ class EnrollmentCoordinatorTest {
         c.beginBootstrap()
 
         assertEquals(EnrollmentState.FailedRetryable, c.state.value)
-        assertTrue(pendingAttemptStore.current() != null)
+        val original = pendingAttemptStore.current()!!
+        c.retryBootstrap()
+
+        assertEquals(EnrollmentState.FailedRetryable, c.state.value)
+        assertEquals(original, pendingAttemptStore.current())
+        assertEquals(listOf(original.attemptId, original.attemptId), apiClient.attemptIdsSeen)
+        assertEquals(listOf(LINK.substringAfter("token="), LINK.substringAfter("token=")), apiClient.rawTokensSeen)
+        assertEquals(2, apiClient.callCount)
     }
 
     @Test
@@ -608,7 +1159,7 @@ class EnrollmentCoordinatorTest {
 
         c.beginBootstrap()
 
-        assertEquals("raw-token-xyz", apiClient.lastRawToken)
+        assertEquals(VALID_LINK_TOKEN, apiClient.lastRawToken)
     }
 
     // --- PCA-ENROLLMENT-RUNTIME-2: retry / keypair-reuse / recovery tests ---
@@ -716,22 +1267,417 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `recoverAttempt with a definitive NotFound abandons the attempt -- FailedInvitationInvalid, pending state cleared`() = runTest {
+    fun `recoverAttempt 404 preserves unresolved attempt and key custody -- no false terminal answer or automatic retry`() = runTest {
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
-        pendingAttemptStore.save(
-            org.pca.app.storage.PendingEnrollmentAttempt(
-                "attempt-x", "secret-x", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias", "dek", "dek-alias",
-                org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
-            ),
+        val unresolved = org.pca.app.storage.PendingEnrollmentAttempt(
+            "attempt-x", "secret-x", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias", "dek", "dek-alias",
+            org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
         )
+        pendingAttemptStore.save(unresolved)
         val apiClient = ThrowingRecoveryApiClient(RecoveryError.NotFound)
-        val c = EnrollmentCoordinator(parser(), apiClient, NotApprovedDeviceKeyPairGenerator(), PersistentFamilyStateStore(InMemoryPersistentStateStore()), pendingAttemptStore)
+        val custody = EnrollmentCustodyCounter()
+        val c = EnrollmentCoordinator(parser(), apiClient, custody, PersistentFamilyStateStore(InMemoryPersistentStateStore()), pendingAttemptStore)
         assertTrue(c.state.value is EnrollmentState.RecoveryPending)
 
         c.recoverAttempt()
 
-        assertEquals(EnrollmentState.FailedInvitationInvalid, c.state.value)
-        assertNull(pendingAttemptStore.current())
+        assertEquals(EnrollmentState.RecoveryPending("https://api.pca.app"), c.state.value)
+        assertEquals(unresolved, pendingAttemptStore.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(listOf("attempt-x"), apiClient.attemptIdsSeen)
+        assertEquals(listOf("secret-x"), apiClient.recoveryTokensSeen)
+        assertEquals(1, apiClient.recoverCallCount)
+
+        // A later explicit recovery uses the same durable capability; the coordinator never
+        // turns a 404 into an automatic retry loop or releases these keys.
+        c.recoverAttempt()
+        assertEquals(EnrollmentState.RecoveryPending("https://api.pca.app"), c.state.value)
+        assertEquals(unresolved, pendingAttemptStore.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(listOf("attempt-x", "attempt-x"), apiClient.attemptIdsSeen)
+        assertEquals(listOf("secret-x", "secret-x"), apiClient.recoveryTokensSeen)
+        assertEquals(2, apiClient.recoverCallCount)
+    }
+
+    @Test
+    fun `prepared attempt restart recovery 404 keeps custody until exact link is rescanned and same attempt is retried`() = runTest {
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val unresolved = retainedAttempt(VALID_LINK_TOKEN).copy(status = PendingEnrollmentAttemptStatus.PREPARED)
+        pendingAttemptStore.save(unresolved)
+        val custody = EnrollmentCustodyCounter()
+        val calls = mutableListOf<String>()
+        val api = object : DeviceBootstrapApiClient {
+            override suspend fun prepareAttempt(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ) {
+                assertEquals(VALID_LINK_TOKEN, rawInvitationToken)
+                assertEquals(unresolved.platform, platform)
+                assertEquals(unresolved.signingPublicKeyBase64, signingPublicKeyBase64)
+                assertEquals(unresolved.encryptionPublicKeyBase64, encryptionPublicKeyBase64)
+                assertEquals(unresolved.attemptId, bootstrapAttemptId)
+                assertEquals(unresolved.attemptRecoveryToken, attemptRecoveryToken)
+                calls += "prepare:$bootstrapAttemptId"
+            }
+
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                assertEquals(VALID_LINK_TOKEN, rawInvitationToken)
+                assertEquals(unresolved.platform, platform)
+                assertEquals(unresolved.signingPublicKeyBase64, signingPublicKeyBase64)
+                assertEquals(unresolved.encryptionPublicKeyBase64, encryptionPublicKeyBase64)
+                assertEquals(unresolved.attemptId, bootstrapAttemptId)
+                assertEquals(unresolved.attemptRecoveryToken, attemptRecoveryToken)
+                calls += "bootstrap:$bootstrapAttemptId"
+                return DeviceBootstrapResult("device-after-rescan", "PAIRING_PENDING")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+                calls += "recover:$bootstrapAttemptId"
+                throw RecoveryError.NotFound
+            }
+        }
+        val c = coordinator(api, custody, pendingAttemptStore = pendingAttemptStore)
+
+        assertEquals(EnrollmentState.RecoveryPending("https://api.pca.app"), c.state.value)
+        c.recoverAttempt()
+
+        assertEquals(EnrollmentState.RecoveryPending("https://api.pca.app"), c.state.value)
+        assertEquals(unresolved, pendingAttemptStore.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(listOf("recover:${unresolved.attemptId}"), calls)
+
+        c.submitInvitationLink(LINK)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        c.retryBootstrap()
+
+        assertEquals(listOf("recover:${unresolved.attemptId}", "prepare:${unresolved.attemptId}", "bootstrap:${unresolved.attemptId}"), calls)
+        assertEquals(PendingEnrollmentAttemptStatus.BOOTSTRAPPING, pendingAttemptStore.current()?.status)
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals("device-after-rescan", (c.state.value as EnrollmentState.ProfileConfirmation).deviceId)
+    }
+
+    @Test
+    fun `recoverAttempt with authoritative abandonment clears only that attempt and its two aliases`() = runTest {
+        val pendingStore = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt()
+        pendingStore.save(attempt)
+        val custody = EnrollmentCustodyCounter()
+        val api = ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned)
+        val c = coordinator(
+            api,
+            custody,
+            PersistentFamilyStateStore(InMemoryPersistentStateStore()),
+            pendingStore,
+            org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+
+        c.recoverAttempt()
+
+        assertEquals(EnrollmentState.NotEnrolled, c.state.value)
+        assertNull(pendingStore.current())
+        assertEquals(listOf(attempt.signingPrivateKeyAlias, attempt.encryptionPrivateKeyAlias), custody.deleted)
+    }
+
+    @Test
+    fun `abandonment cleanup never deletes aliases after pending ownership changes before CAS`() = runTest {
+        val attempt = retainedAttempt()
+        val replacementAttempt = attempt.copy(
+            attemptId = "replacement",
+            signingPrivateKeyAlias = "replacement-signing",
+            encryptionPrivateKeyAlias = "replacement-encryption",
+        )
+        val backing = InMemoryPendingEnrollmentAttemptStore().apply { save(attempt) }
+        val pending = object : PendingEnrollmentAttemptStore by backing {
+            override fun compareAndSet(
+                expected: PendingEnrollmentAttempt?,
+                replacement: PendingEnrollmentAttempt?,
+            ): Boolean {
+                if (expected == attempt && replacement == null) {
+                    backing.save(replacementAttempt)
+                    return false
+                }
+                return backing.compareAndSet(expected, replacement)
+            }
+        }
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(
+            ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned),
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+
+        c.recoverAttempt()
+
+        assertEquals(replacementAttempt, pending.current())
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(EnrollmentState.LocalPersistenceUnavailable, c.state.value)
+    }
+
+    @Test
+    fun `authoritative abandonment preserves aliases already owned by the same first-device root`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt()
+        pending.save(attempt)
+        val rootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore()
+        val root = org.pca.app.firstdevice.FirstDeviceRootRecord(
+            seed = org.pca.app.firstdevice.FirstDeviceCeremonySeed(
+                attempt.attemptId,
+                attempt.attemptRecoveryToken,
+                attempt.serverBaseUrl,
+                "device-root",
+                "signing-id",
+                "encryption-id",
+                attempt.signingPublicKeyBase64,
+                attempt.encryptionPublicKeyBase64,
+                attempt.signingPrivateKeyAlias,
+                attempt.encryptionPrivateKeyAlias,
+            ),
+        )
+        assertTrue(rootStore.captureSeed(root, emptySet()))
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(
+            ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned),
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = rootStore,
+        )
+
+        c.recoverAttempt()
+
+        assertEquals(attempt, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        assertTrue(custody.deleted.isEmpty())
+        assertEquals(root, rootStore.current())
+    }
+
+    @Test
+    fun `authoritative abandonment preserves aliases when first-device root state is unreadable`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt()
+        pending.save(attempt)
+        val unreadableRootStore = object : org.pca.app.firstdevice.FirstDeviceRootStore by
+            org.pca.app.firstdevice.InMemoryFirstDeviceRootStore() {
+            override fun readState(): org.pca.app.firstdevice.FirstDeviceRootReadResult =
+                org.pca.app.firstdevice.FirstDeviceRootReadResult.Unreadable
+
+            override fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean = false
+        }
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(
+            ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned),
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = unreadableRootStore,
+        )
+
+        c.recoverAttempt()
+
+        assertEquals(attempt, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        assertTrue(custody.deleted.isEmpty())
+    }
+
+    @Test
+    fun `authoritative abandonment without a root store remains recoverable custody conflict`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt()
+        pending.save(attempt)
+        val custody = EnrollmentCustodyCounter()
+        val c = coordinator(
+            ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned),
+            custody,
+            pendingAttemptStore = pending,
+        )
+
+        c.recoverAttempt()
+
+        assertEquals(attempt, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        assertTrue(custody.deleted.isEmpty())
+    }
+
+    @Test
+    fun `exact rescan in custody conflict remains recovery-only and keeps warning after a 404`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt(VALID_LINK_TOKEN)
+        pending.save(attempt)
+        val api = object : DeviceBootstrapApiClient {
+            var recoveryCalls = 0
+            var bootstrapCalls = 0
+            override suspend fun bootstrap(
+                rawInvitationToken: String,
+                platform: String,
+                signingPublicKeyBase64: String,
+                encryptionPublicKeyBase64: String,
+                bootstrapAttemptId: String,
+                attemptRecoveryToken: String,
+            ): DeviceBootstrapResult {
+                bootstrapCalls++
+                throw AssertionError("custody conflict must never replay bootstrap")
+            }
+
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+                recoveryCalls++
+                if (recoveryCalls == 1) throw RecoveryError.AttemptAbandoned
+                throw RecoveryError.NotFound
+            }
+        }
+        val c = coordinator(api, pendingAttemptStore = pending)
+
+        c.recoverAttempt()
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        c.submitInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN")
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, invitationRescanRejected = true, custodyConflict = true), c.state.value)
+
+        c.submitInvitationLink(LINK)
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        c.recoverAttempt()
+
+        assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl, custodyConflict = true), c.state.value)
+        assertEquals(attempt, pending.current())
+        assertEquals(2, api.recoveryCalls)
+        assertEquals(0, api.bootstrapCalls)
+    }
+
+    @Test
+    fun `rejected prepare resolves an unsent attempt and a recovery 404 releases it for a different invite`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val custody = EnrollmentCustodyCounter()
+        val api = RejectedPrepareApiClient(RecoveryError.NotFound)
+        val c = coordinator(
+            api,
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        assertEquals(1, api.prepareCalls)
+        assertEquals(1, api.recoveryCalls)
+        assertEquals(0, api.bootstrapCalls)
+        assertNull(pending.current())
+        assertEquals(EnrollmentState.NotEnrolled, c.state.value)
+        assertEquals(custody.generatedAliases, custody.deleted)
+        c.submitInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN")
+        assertTrue(c.state.value is EnrollmentState.InvitationReady)
+    }
+
+    @Test
+    fun `unrecognized prepare 404 preserves the exact prepared attempt and generated key custody`() = runTest {
+        val calls = AtomicReference<List<String>>(emptyList())
+        val fake = FakeHttpServer.start()
+        fake.startRequest { request ->
+            calls.updateAndGet { it + request.path }
+            404 to """{"error":"invitation_unavailable","proxy":"not found"}""".toByteArray()
+        }
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val custody = EnrollmentCustodyCounter()
+        val api = HttpDeviceBootstrapApiClient(
+            BootstrapEndpointConfig(baseUrl = fake.baseUrl, allowInsecureHttp = true),
+        )
+        val c = coordinator(
+            api,
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+        try {
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+
+            val attempt = pending.current()
+            assertNotNull(attempt)
+            assertEquals(PendingEnrollmentAttemptStatus.PREPARED, attempt!!.status)
+            assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+            assertEquals(listOf("/v1/enrollment/bootstrap/prepare"), calls.get())
+            assertEquals(
+                setOf(attempt.signingPrivateKeyAlias, attempt.encryptionPrivateKeyAlias),
+                custody.generatedAliases.toSet(),
+            )
+            assertTrue(custody.deleted.isEmpty())
+        } finally {
+            fake.stop()
+        }
+    }
+
+    @Test
+    fun `canonical prepare 404 followed by unrecognized recovery 404 preserves the unsent attempt`() = runTest {
+        val calls = AtomicReference<List<String>>(emptyList())
+        val fake = FakeHttpServer.start()
+        fake.startRequest { request ->
+            calls.updateAndGet { it + request.path }
+            val body = when (request.path) {
+                "/v1/enrollment/bootstrap/prepare" -> """{"error":"invitation_unavailable"}"""
+                "/v1/enrollment/bootstrap/recover" -> """{"error":"invitation_unavailable","route":"missing"}"""
+                else -> "unexpected route"
+            }
+            404 to body.toByteArray()
+        }
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val custody = EnrollmentCustodyCounter()
+        val api = HttpDeviceBootstrapApiClient(
+            BootstrapEndpointConfig(baseUrl = fake.baseUrl, allowInsecureHttp = true),
+        )
+        val c = coordinator(
+            api,
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+        try {
+            c.submitInvitationLink(LINK)
+            c.beginBootstrap()
+
+            val attempt = pending.current()
+            assertNotNull(attempt)
+            assertEquals(PendingEnrollmentAttemptStatus.PREPARED, attempt!!.status)
+            assertTrue(c.state.value is EnrollmentState.RecoveryPending)
+            assertEquals(
+                listOf("/v1/enrollment/bootstrap/prepare", "/v1/enrollment/bootstrap/recover"),
+                calls.get(),
+            )
+            assertEquals(
+                setOf(attempt.signingPrivateKeyAlias, attempt.encryptionPrivateKeyAlias),
+                custody.generatedAliases.toSet(),
+            )
+            assertTrue(custody.deleted.isEmpty())
+        } finally {
+            fake.stop()
+        }
+    }
+
+    @Test
+    fun `abandoned attempt deletion continues to the second key alias after the first deletion throws`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val attempt = retainedAttempt()
+        pending.save(attempt)
+        val custody = EnrollmentCustodyCounter().apply { failingAlias = attempt.signingPrivateKeyAlias }
+        val c = coordinator(
+            ThrowingRecoveryApiClient(RecoveryError.AttemptAbandoned),
+            custody,
+            pendingAttemptStore = pending,
+            firstDeviceRootStore = org.pca.app.firstdevice.InMemoryFirstDeviceRootStore(),
+        )
+
+        c.recoverAttempt()
+
+        assertNull(pending.current())
+        assertEquals(EnrollmentState.NotEnrolled, c.state.value)
+        assertEquals(listOf(attempt.encryptionPrivateKeyAlias), custody.deleted)
     }
 
     @Test
@@ -757,6 +1703,36 @@ class EnrollmentCoordinatorTest {
         // coordinator itself triggers.
         c.recoverAttempt()
         assertEquals(2, apiClient.recoverCallCount)
+    }
+
+    @Test
+    fun `malformed recovery HTTP profile response preserves exact attempt and key custody`() = runTest {
+        val attempt = PendingEnrollmentAttempt(
+            "attempt-malformed-recovery", "recovery-secret", "https://api.pca.app", "ANDROID",
+            "dsk-public", "dsk-alias", "dek-public", "dek-alias",
+            PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
+        )
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(attempt) }
+        val family = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val custody = EnrollmentCustodyCounter()
+        val fake = FakeHttpServer.start()
+        fake.start { 200 to """{"deviceId":"device-123","status":"PAIRING_PENDING","signingKeyId":"dsk-123","encryptionKeyId":"dek-123","initialPolicyProfile":"STRICT","childProfileId":null}""".toByteArray() }
+        val apiClient = HttpDeviceBootstrapApiClient(
+            BootstrapEndpointConfig(fake.baseUrl, allowInsecureHttp = true),
+        )
+        val c = coordinator(apiClient, custody, family, pending)
+
+        try {
+            c.recoverAttempt()
+
+            assertEquals(EnrollmentState.RecoveryPending(attempt.serverBaseUrl), c.state.value)
+            assertEquals(attempt, pending.current())
+            assertNull(family.currentState())
+            assertTrue(c.state.value !is EnrollmentState.ProfileConfirmation)
+            assertTrue(custody.deleted.isEmpty())
+        } finally {
+            fake.stop()
+        }
     }
 
     @Test
@@ -860,9 +1836,14 @@ class EnrollmentCoordinatorTest {
         assertNotEquals(firstAttemptId, apiClient.attemptIdsSeen[1])
     }
 
-    private fun retainedAttempt() = org.pca.app.storage.PendingEnrollmentAttempt(
+    private fun invitationDigest(token: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(token.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun retainedAttempt(invitationToken: String? = null) = org.pca.app.storage.PendingEnrollmentAttempt(
         "retained", "secret", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias",
         "dek", "dek-alias", org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
+        invitationTokenSha256 = invitationToken?.let(::invitationDigest),
     )
 
     private class SuspendedApi : DeviceBootstrapApiClient {
@@ -890,7 +1871,7 @@ class EnrollmentCoordinatorTest {
         val job = launch { c.beginBootstrap() }
         runCurrent()
         val original = pending.current()
-        c.submitInvitationLink("pca://enroll?token=replacement")
+        c.submitInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN")
         c.beginBootstrap()
         c.retryBootstrap()
         c.recoverAttempt()
@@ -909,16 +1890,91 @@ class EnrollmentCoordinatorTest {
 
     @Test
     fun `restart unresolved attempt rejects new invitation and key generation`() = runTest {
-        val original = retainedAttempt()
+        val original = retainedAttempt(LINK.substringAfter("token="))
         val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
         val keys = CountingKeyPairGenerator(TestConformanceDeviceKeyPairGenerator())
         val c = coordinator(NeverCalledBootstrapApiClient(), keys, pendingAttemptStore = pending)
         c.submitInvitationLink(LINK)
         c.beginBootstrap()
         assertEquals(original, pending.current())
-        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
         assertEquals(0, keys.signingCallCount)
         assertEquals(0, keys.encryptionCallCount)
+    }
+
+    @Test
+    fun `restart allows explicit retry only after rescanning the exact bound invitation`() = runTest {
+        val token = "A".repeat(43)
+        val original = retainedAttempt(token).copy(serverBaseUrl = "pca://enroll")
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val api = ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable)
+        val keys = CountingKeyPairGenerator(TestConformanceDeviceKeyPairGenerator())
+        val c = coordinator(api, keys, pendingAttemptStore = pending)
+
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        c.submitInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN")
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl, invitationRescanRejected = true), c.state.value)
+        assertEquals(0, api.callCount)
+
+        val alternateRepresentation = "${EnrollmentDeepLinkConfig.APP_LINK_SCHEME}://${EnrollmentDeepLinkConfig.APP_LINK_HOST}${EnrollmentDeepLinkConfig.APP_LINK_PATH_PREFIX}$token"
+        c.submitInvitationLink(alternateRepresentation)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        c.retryBootstrap()
+
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertEquals(original, pending.current())
+        assertEquals(listOf(token), api.rawTokensSeen)
+        assertEquals(listOf(original.attemptId), api.attemptIdsSeen)
+        assertEquals(0, keys.signingCallCount)
+        assertEquals(0, keys.encryptionCallCount)
+    }
+
+    @Test
+    fun `legacy restart record without invitation digest remains recovery only`() = runTest {
+        val original = retainedAttempt()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val api = ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable)
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+
+        c.submitInvitationLink(LINK)
+
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl, invitationRescanRejected = true), c.state.value)
+        assertEquals(0, api.callCount)
+        assertEquals(original, pending.current())
+    }
+
+    @Test
+    fun `recovery status retry keeps the rejected-rescan explanation visible`() = runTest {
+        val original = retainedAttempt(LINK.substringAfter("token="))
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val api = ThrowingRecoveryApiClient(RecoveryError.NotFound)
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+
+        c.submitInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN")
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl, true), c.state.value)
+        c.recoverAttempt()
+
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl, true), c.state.value)
+        assertEquals(original, pending.current())
+        assertEquals(1, api.recoverCallCount)
+    }
+
+    @Test
+    fun `stale coordinator cannot adopt a replaced attempt during retry`() = runTest {
+        val original = retainedAttempt(LINK.substringAfter("token=")).copy(serverBaseUrl = "pca://enroll")
+        val replacement = original.copy(attemptId = "replacement-attempt")
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val api = ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable)
+        val c = coordinator(api, pendingAttemptStore = pending)
+
+        c.submitInvitationLink(LINK)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        pending.save(replacement)
+        c.retryBootstrap()
+
+        assertEquals(0, api.callCount)
+        assertEquals(replacement, pending.current())
+        assertEquals(EnrollmentState.RecoveryPending(replacement.serverBaseUrl), c.state.value)
     }
 
     @Test
@@ -939,6 +1995,156 @@ class EnrollmentCoordinatorTest {
         job.join()
         c.confirmProfile()
         assertEquals("recovered-device", family.currentState()?.deviceId)
+    }
+
+    @Test
+    fun `activity deep link waits for active recovery and only one link may wait`() = runTest {
+        val api = SuspendedApi()
+        val original = retainedAttempt(LINK.substringAfter("token="))
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(original) }
+        val c = coordinator(api, pendingAttemptStore = pending)
+        val recovery = launch { c.recoverAttempt() }
+        runCurrent()
+        assertEquals(1, api.recoveryCalls)
+
+        var submissionResult: InvitationSubmissionResult? = null
+        val admission = c.reserveInvitationSubmission()
+        assertNotNull(admission)
+        assertTrue(admission!!.waitsForCurrentOperation)
+        val deepLink = launch { submissionResult = c.submitReservedInvitationLink(LINK, admission.permit) }
+        runCurrent()
+        assertEquals(EnrollmentState.RecoveryPending(original.serverBaseUrl), c.state.value)
+        assertNull(c.reserveInvitationSubmission())
+
+        api.response.completeExceptionally(RecoveryError.NotFound)
+        runCurrent()
+        recovery.join()
+        deepLink.join()
+
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertEquals(InvitationSubmissionResult.PROCESSED, submissionResult)
+        assertEquals(original, pending.current())
+        assertEquals(1, api.recoveryCalls)
+    }
+
+    @Test
+    fun `deep link admission is synchronous and refuses a second queued uri`() {
+        val c = coordinator(NeverCalledBootstrapApiClient())
+        val admission = c.reserveInvitationSubmission()
+        assertNotNull(admission)
+        assertNull(c.reserveInvitationSubmission())
+        admission!!.permit.release()
+        val next = c.reserveInvitationSubmission()
+        assertNotNull(next)
+        next!!.permit.release()
+    }
+
+    @Test
+    fun `queued invitation asks user to reopen after current bootstrap reaches profile confirmation`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(api, TestConformanceDeviceKeyPairGenerator(), pendingAttemptStore = pending)
+        c.submitInvitationLink(LINK)
+        val bootstrap = launch { c.beginBootstrap() }
+        runCurrent()
+        assertEquals(1, api.bootstrapCalls)
+
+        val admission = c.reserveInvitationSubmission()
+        assertNotNull(admission)
+        assertTrue(admission!!.waitsForCurrentOperation)
+        var submissionResult: InvitationSubmissionResult? = null
+        val deepLink = launch {
+            submissionResult = c.submitReservedInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN", admission.permit)
+        }
+        runCurrent()
+
+        api.response.complete(DeviceBootstrapResult("completed-device", "PAIRING_PENDING"))
+        runCurrent()
+        bootstrap.join()
+        deepLink.join()
+
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+        assertEquals(InvitationSubmissionResult.REOPEN_AFTER_CONFIRMATION, submissionResult)
+        assertNotNull(pending.current())
+    }
+
+    @Test
+    fun `redelivery of the invitation already in profile confirmation does not tell user to reopen it`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(
+            FakeBootstrapApiClient { DeviceBootstrapResult("confirmed-device", "PAIRING_PENDING") },
+            TestConformanceDeviceKeyPairGenerator(),
+            pendingAttemptStore = pending,
+        )
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+
+        val admission = c.reserveInvitationSubmission()!!
+        assertEquals(
+            InvitationSubmissionResult.CURRENT_INVITATION_ALREADY_IN_USE,
+            c.submitReservedInvitationLink(LINK, admission.permit),
+        )
+        c.submitInvitationLink(LINK)
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+    }
+
+    @Test
+    fun `legacy profile confirmation does not claim it can verify a rescanned invitation`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(retainedAttempt()) }
+        val c = coordinator(
+            FakeRecoveryApiClient { DeviceBootstrapResult("legacy-device", "PAIRING_PENDING") },
+            pendingAttemptStore = pending,
+        )
+        c.recoverAttempt()
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+
+        val admission = c.reserveInvitationSubmission()!!
+        assertEquals(
+            InvitationSubmissionResult.CURRENT_INVITATION_UNVERIFIED,
+            c.submitReservedInvitationLink(LINK, admission.permit),
+        )
+        assertTrue(c.state.value is EnrollmentState.ProfileConfirmation)
+    }
+
+    @Test
+    fun `different invitation is rejected with feedback while original bootstrap outcome is unresolved`() = runTest {
+        val pending = InMemoryPendingEnrollmentAttemptStore()
+        val c = coordinator(
+            ThrowingBootstrapApiClient(BootstrapError.InvitationUnavailable),
+            TestConformanceDeviceKeyPairGenerator(),
+            pendingAttemptStore = pending,
+        )
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        val original = pending.current()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+
+        val admission = c.reserveInvitationSubmission()!!
+        assertEquals(
+            InvitationSubmissionResult.REJECTED_UNRESOLVED,
+            c.submitReservedInvitationLink("pca://enroll?token=$OTHER_VALID_LINK_TOKEN", admission.permit),
+        )
+        assertEquals(EnrollmentState.BootstrapResultUnknown, c.state.value)
+        assertEquals(original, pending.current())
+    }
+
+    @Test
+    fun `cancelling a queued invitation releases its synchronous admission permit`() = runTest {
+        val api = SuspendedApi()
+        val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(retainedAttempt(VALID_LINK_TOKEN)) }
+        val c = coordinator(api, pendingAttemptStore = pending)
+        val recovery = launch { c.recoverAttempt() }
+        runCurrent()
+        val admission = c.reserveInvitationSubmission()!!
+        val queued = launch { c.submitReservedInvitationLink(LINK, admission.permit) }
+        runCurrent()
+
+        queued.cancelAndJoin()
+        val nextAdmission = c.reserveInvitationSubmission()
+        assertNotNull(nextAdmission)
+        nextAdmission!!.permit.release()
+        recovery.cancelAndJoin()
     }
 
     @Test

@@ -219,10 +219,22 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
             .flatMap { DeviceActivityMonitorInstallation.decodeValidated($0) }
         // Auxiliary/stale callback traffic has its own bounded diagnostics
         // ring and cannot evict the technical anchor's health observations.
-        let targetKey = installation.map { $0.monitorActivityId == activityId ? storageKey : storageKey + ".boundaries" } ?? storageKey
+        // Without a valid manifest, the callback cannot be attributed to the
+        // health anchor. Keep it in the separate bounded diagnostic ring so
+        // stale/unknown traffic cannot evict receipts from a prior valid run.
+        // A valid starting installation still owns its matching monitor ID;
+        // an immediate start callback remains eligible if publication succeeds.
+        // Invalidated manifests no longer own callbacks, even if a teardown
+        // callback reuses their monitor name.
+        let installationCanOwnCallbacks = installation.map { $0.state != .invalidated } ?? false
+        let targetKey = installationCanOwnCallbacks && installation?.monitorActivityId == activityId
+            ? storageKey
+            : storageKey + ".boundaries"
         var all = readRecords(forKey: targetKey)
         let nextSequence = (all.last?.sequence ?? 0) + 1
-        let installationGeneration = installation.flatMap { $0.containsMonitor(activityId) ? $0.generation : nil }
+        let installationGeneration = installation.flatMap {
+            installationCanOwnCallbacks && $0.containsMonitor(activityId) ? $0.generation : nil
+        }
         all.append(PersistedCallbackObservation(
             kind: kind,
             activityId: activityId,

@@ -283,11 +283,19 @@
     <!-- Deliberately generic: the server never distinguishes not-found/expired/revoked/already-redeemed to this client, and this text must not either. -->
     <string name="enrollment_invitation_unavailable">Invitation is no longer available. Ask the parent to create a new one.</string>
     <string name="enrollment_retryable_failure">Something went wrong. Please try again.</string>
-    <!-- PCA-ENROLLMENT-RUNTIME-2: BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP closure. Deliberately does not say "failed" or "succeeded"; the true outcome is unknown. A retry/recovery button is now offered (explicit, human-directed, never automatic). -->
-    <string name="enrollment_result_unknown">We couldn\'t confirm whether setup finished. Tap below to check, or ask your parent before trying this link again.</string>
+    <string name="enrollment_result_unknown">We couldn\'t confirm whether setup finished. Check status first. If the attempt was abandoned, reopen the original invitation to start a new setup. You can also retry the exact same setup with the same device keys.</string>
     <string name="enrollment_check_status_button">Check status</string>
+    <string name="enrollment_retry_same_setup_button">Retry this setup</string>
     <string name="enrollment_recovery_pending_title">Finishing setup…</string>
-    <string name="enrollment_recovery_pending_body">Setup may already be complete on the server. Tap below to check.</string>
+    <string name="enrollment_recovery_pending_body">Setup may already be complete on the server. Tap below to check. If it remains unresolved and you have the original invitation, reopen it. This app can retry only when it can verify that the link belongs to this saved setup.</string>
+    <string name="enrollment_recovery_custody_conflict">We could not verify this setup’s saved device security data. Keep this setup in place while checking its status; do not erase app data or start a new setup yet.</string>
+    <string name="enrollment_recovery_rescan_rejected">The saved setup is still unresolved. This link could not be verified for it. Continue checking its status below.</string>
+    <string name="enrollment_link_waiting">This invitation was received. It will be checked after the current setup action finishes.</string>
+    <string name="enrollment_link_already_waiting">Another invitation is being handled. Reopen this invitation after setup.</string>
+    <string name="enrollment_link_finish_profile_then_reopen">Finish confirming the current setup, then reopen this invitation.</string>
+    <string name="enrollment_link_current_invitation_in_use">This invitation is already part of the current setup. Finish confirming it; no need to reopen it.</string>
+    <string name="enrollment_link_current_invitation_unverified">This saved setup cannot verify its original invitation link. Finish confirming this setup before using another invitation.</string>
+    <string name="enrollment_link_rejected_unresolved">This link does not match the saved setup. Continue checking that setup first.</string>
     <string name="enrollment_crypto_review_required">This build isn\'t approved for real device setup yet (development mode).</string>
     <string name="enrollment_secure_key_unavailable">This device can\'t create the protected security key that family setup requires, so setup can\'t continue here.</string>
     <string name="enrollment_revoked">This device\'s access has been removed. Ask a parent for a new invitation.</string>

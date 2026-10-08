@@ -33,6 +33,11 @@ public protocol FirstDeviceEnrollmentKeyPreparation {
     /// another attempt (or a committed root) is active, and for every
     /// Secure Enclave refusal. Never falls back to software keys.
     func prepareEnrollmentKeys(attemptId: String) throws
+
+    /// Releases the transient provider selection after the durable attempt is
+    /// cleared. The application separately deletes only this attempt's aliases
+    /// after confirming no first-device root still owns them.
+    func abandonPreparedEnrollmentKeys(attemptId: String)
 }
 
 /// WAVE 6D: the ONE production `PCADeviceProofProvider` instance shared by
@@ -98,21 +103,26 @@ public final class FirstDeviceDskDeviceProofProvider: PCADeviceProofProvider, Fi
             // replacement.
             throw SecureEnclaveDskError.keyAliasConflict
         }
+        // Generate each role independently. If process death or a transient
+        // failure occurs after DSK creation, a retry preserves that DSK and
+        // may create only the missing DEK. An existing alias is activated
+        // only after its public material is readable; it is never replaced.
+        let signingAlias = provider.signingKeyAlias(attemptId: attemptId)
         do {
             _ = try provider.generateSigningKeyPair(attemptId: attemptId)
+        } catch SecureEnclaveDskError.keyAliasConflict {
+            guard !(try provider.loadPublicKeyBase64(alias: signingAlias)).isEmpty else {
+                throw SecureEnclaveDskError.keyMaterialMissing
+            }
+        }
+
+        let encryptionAlias = provider.encryptionKeyAlias(attemptId: attemptId)
+        do {
             _ = try provider.generateEncryptionKeyPair(attemptId: attemptId)
         } catch SecureEnclaveDskError.keyAliasConflict {
-            // CRASH RECOVERY (Stage-B finding): key material for this SAME
-            // attempt already exists while no durable seed does (process
-            // death between keygen and seed capture). Re-activate the
-            // attempt ONLY if BOTH public keys are actually readable;
-            // otherwise rethrow -- never a silent replacement.
-            guard (try? provider.loadPublicKeyBase64(alias: provider.signingKeyAlias(attemptId: attemptId))) != nil,
-                  (try? provider.loadPublicKeyBase64(alias: provider.encryptionKeyAlias(attemptId: attemptId))) != nil else {
-                throw SecureEnclaveDskError.keyAliasConflict
+            guard !(try provider.loadPublicKeyBase64(alias: encryptionAlias)).isEmpty else {
+                throw SecureEnclaveDskError.keyMaterialMissing
             }
-        } catch {
-            throw error
         }
         preparedAttemptId = attemptId
     }
@@ -123,6 +133,13 @@ public final class FirstDeviceDskDeviceProofProvider: PCADeviceProofProvider, Fi
     public func clearPreparedAttempt() {
         lock.lock()
         defer { lock.unlock() }
+        preparedAttemptId = nil
+    }
+
+    public func abandonPreparedEnrollmentKeys(attemptId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard preparedAttemptId == attemptId else { return }
         preparedAttemptId = nil
     }
 

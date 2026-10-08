@@ -66,13 +66,13 @@ class UriEnrollmentLinkParser(
     }
 
     private fun parseQueryParamToken(parsed: URI, scheme: String, host: String): ParsedEnrollmentLink? {
-        val token = parsed.query
+        val token = parsed.rawQuery
             ?.split("&")
             ?.asSequence()
             ?.map { it.split("=", limit = 2) }
             ?.firstOrNull { it.size == 2 && it[0] == "token" }
             ?.get(1)
-        if (token.isNullOrEmpty()) return null
+        if (token == null || !CANONICAL_INVITATION_TOKEN.matches(token)) return null
         return ParsedEnrollmentLink(serverBaseUrl = "$scheme://$host", rawInvitationToken = token)
     }
 
@@ -93,6 +93,9 @@ class UriEnrollmentLinkParser(
     }
 
     private companion object {
-        val CANONICAL_INVITATION_TOKEN = Regex("^[A-Za-z0-9_-]{43}$")
+        // 32 random bytes encode to 43 unpadded base64url characters. The last
+        // character has only four data bits, so its two unused pad bits must be
+        // zero; restricting it avoids accepting alternate encodings of a token.
+        val CANONICAL_INVITATION_TOKEN = Regex("^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$")
     }
 }

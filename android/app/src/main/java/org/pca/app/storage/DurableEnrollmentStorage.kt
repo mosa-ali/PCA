@@ -38,4 +38,13 @@ internal object DurableEnrollmentStorage {
             throw EnrollmentPersistenceException()
         }
     }
+
+    fun compareAndWrite(store: PersistentStateStore, key: String, expected: String?, replacement: String?): Boolean =
+        synchronized(store.coordinationLock) {
+            checkHealthy(store)
+            val current = try { store.getString(key) } catch (_: Exception) { throw EnrollmentPersistenceException() }
+            if (current != expected) return@synchronized false
+            write(store, key, replacement)
+            true
+        }
 }

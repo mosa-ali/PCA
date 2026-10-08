@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 95 tables, including schema_migrations itself),
+// central MySQL schema (all 96 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0063; 61 files, 0009/0010 never existed) from an empty database
+// through 0065; 63 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -40,6 +40,8 @@
 // digest columns bootstrap_proof_sha256 and attestation_evidence_sha256
 // (digests only - raw proof bytes and raw attestation evidence are never
 // stored).
+// 0064 persists pre-bootstrap enrollment reservations; 0065 adds durable
+// abandoned-attempt tombstones so a later retry cannot erase old recovery.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -1280,12 +1282,40 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "enrollment_bootstrap_attempt_tombstones",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0065_enrollment_abandoned_attempt_tombstones.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/enrollment",
+    columns: [
+      { name: "attempt_id", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier." },
+      { name: "invitation_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque enrollment invitation identifier." },
+      { name: "recovery_token_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Hash of the recovery token; never stores the raw secret." },
+      { name: "abandoned_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp of the terminal abandonment transition." },
+    ],
+    primaryKey: ["attempt_id"],
+    uniqueIndexes: [],
+    indexes: [
+      { name: "enrollment_bootstrap_attempt_tombstones_invitation_idx", columns: ["invitation_id"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "enrollment_bootstrap_attempt_tombstones_invitation_fk", columns: ["invitation_id"], referencedTable: "enrollment_invitations", referencedColumns: ["invitation_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "enrollment_bootstrap_attempt_tombstones_attempt_id_check", clause: "(char_length(`attempt_id`) between 16 and 64)" },
+      { name: "enrollment_bootstrap_attempt_tombstones_recovery_hash_check", clause: "regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
     name: "enrollment_bootstrap_attempts",
     engine: 'InnoDB',
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0003_enrollment_bootstrap_attempts.sql",
-    alteredByMigrations: ["0037_enrollment_bootstrap_attempt_invitation_fk.sql"],
+    alteredByMigrations: ["0037_enrollment_bootstrap_attempt_invitation_fk.sql", "0064_enrollment_bootstrap_attempt_resolution.sql"],
     ownerModule: "backend/src/db",
     columns: [
       { name: "attempt_id", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -1294,9 +1324,9 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "platform", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "signing_public_key", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key material (never private)." },
       { name: "encryption_public_key", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key material (never private)." },
-      { name: "device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
-      { name: "signing_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
-      { name: "encryption_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification). Null until a prepared enrollment commits." },
+      { name: "signing_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification). Null until a prepared enrollment commits." },
+      { name: "encryption_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification). Null until a prepared enrollment commits." },
       { name: "invitation_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
@@ -1305,11 +1335,11 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     primaryKey: ["attempt_id"],
     uniqueIndexes: [
       { name: "enrollment_bootstrap_attempts_recovery_token_hash_key", columns: ["recovery_token_hash"], unique: true },
+      { name: "enrollment_bootstrap_attempts_token_hash_key", columns: ["token_hash"], unique: true },
     ],
     indexes: [
       { name: "enrollment_bootstrap_attempts_device_id_idx", columns: ["device_id"], unique: false },
       { name: "enrollment_bootstrap_attempts_invitation_id_idx", columns: ["invitation_id"], unique: false },
-      { name: "enrollment_bootstrap_attempts_token_hash_idx", columns: ["token_hash"], unique: false },
     ],
     foreignKeys: [
       { name: "enrollment_bootstrap_attempts_device_id_fk", columns: ["device_id"], referencedTable: "devices", referencedColumns: ["device_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
@@ -1320,7 +1350,8 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "enrollment_bootstrap_attempts_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
       { name: "enrollment_bootstrap_attempts_platform_check", clause: "(`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS'))" },
       { name: "enrollment_bootstrap_attempts_recovery_token_hash_check", clause: "regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')" },
-      { name: "enrollment_bootstrap_attempts_status_check", clause: "(`status` = _utf8mb4'COMPLETED')" },
+      { name: "enrollment_bootstrap_attempts_device_result_check", clause: "((`status` = _utf8mb4'COMPLETED' and `device_id` is not null and `signing_key_id` is not null and `encryption_key_id` is not null) or (`status` in (_utf8mb4'PREPARED',_utf8mb4'ABANDONED') and `device_id` is null and `signing_key_id` is null and `encryption_key_id` is null))" },
+      { name: "enrollment_bootstrap_attempts_status_check", clause: "(`status` in (_utf8mb4'PREPARED',_utf8mb4'COMPLETED',_utf8mb4'ABANDONED'))" },
       { name: "enrollment_bootstrap_attempts_token_hash_check", clause: "regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$')" },
     ],
     applicationEnforcedRelations: [

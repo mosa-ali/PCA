@@ -6,27 +6,28 @@ import org.junit.Test
 
 class UriEnrollmentLinkParserTest {
     private val parser = UriEnrollmentLinkParser(expectedScheme = "pca", expectedHost = "enroll")
+    private val canonicalToken = "A".repeat(43)
 
     @Test
     fun `parses a well-formed enrollment link`() {
-        val result = parser.parse("pca://enroll?token=abc123")
-        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = "abc123"), result)
+        val result = parser.parse("pca://enroll?token=$canonicalToken")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = canonicalToken), result)
     }
 
     @Test
     fun `ignores other query parameters, extracting only token`() {
-        val result = parser.parse("pca://enroll?utm_source=qr&token=abc123&extra=ignored")
-        assertEquals("abc123", result?.rawInvitationToken)
+        val result = parser.parse("pca://enroll?utm_source=qr&token=$canonicalToken&extra=ignored")
+        assertEquals(canonicalToken, result?.rawInvitationToken)
     }
 
     @Test
     fun `rejects a wrong scheme`() {
-        assertNull(parser.parse("https://enroll?token=abc123"))
+        assertNull(parser.parse("https://enroll?token=$canonicalToken"))
     }
 
     @Test
     fun `rejects a wrong host`() {
-        assertNull(parser.parse("pca://not-enroll?token=abc123"))
+        assertNull(parser.parse("pca://not-enroll?token=$canonicalToken"))
     }
 
     @Test
@@ -37,6 +38,16 @@ class UriEnrollmentLinkParserTest {
     @Test
     fun `rejects an empty token value`() {
         assertNull(parser.parse("pca://enroll?token="))
+    }
+
+    @Test
+    fun `rejects noncanonical custom scheme tokens before enrollment`() {
+        assertNull(parser.parse("pca://enroll?token=abc123"))
+        assertNull(parser.parse("pca://enroll?token=${"A".repeat(42)}"))
+        assertNull(parser.parse("pca://enroll?token=${"A".repeat(44)}"))
+        assertNull(parser.parse("pca://enroll?token=${"A".repeat(42)}+"))
+        assertNull(parser.parse("pca://enroll?token=%41${canonicalToken.drop(1)}"))
+        assertNull(parser.parse("pca://enroll?token=${"A".repeat(42)}B"))
     }
 
     @Test
@@ -51,14 +62,14 @@ class UriEnrollmentLinkParserTest {
 
     @Test
     fun `scheme comparison is case-insensitive, host comparison is not`() {
-        assertEquals("abc123", parser.parse("PCA://enroll?token=abc123")?.rawInvitationToken)
-        assertNull(parser.parse("pca://ENROLL?token=abc123"))
+        assertEquals(canonicalToken, parser.parse("PCA://enroll?token=$canonicalToken")?.rawInvitationToken)
+        assertNull(parser.parse("pca://ENROLL?token=$canonicalToken"))
     }
 
     @Test
     fun `never treats an unrelated authority claim in the query string as trusted -- only token is ever extracted`() {
-        val result = parser.parse("pca://enroll?token=abc123&familyId=attacker-controlled&role=OWNER")
-        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = "abc123"), result)
+        val result = parser.parse("pca://enroll?token=$canonicalToken&familyId=attacker-controlled&role=OWNER")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = canonicalToken), result)
     }
 
     // -------------------------------------------------------------------
@@ -97,12 +108,13 @@ class UriEnrollmentLinkParserTest {
     fun `App Link form -- rejects noncanonical or encoded token path segments`() {
         assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/abc123"))
         assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/${"A".repeat(42)}%2F"))
+        assertNull(appLinkParser.parse("https://www.pcasafe.com/enroll/${"A".repeat(42)}B"))
     }
 
     @Test
     fun `App Link form -- the custom pca scheme still works on the SAME parser instance (additive, not a replacement)`() {
-        val result = appLinkParser.parse("pca://enroll?token=xyz789")
-        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = "xyz789"), result)
+        val result = appLinkParser.parse("pca://enroll?token=$appLinkToken")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = appLinkToken), result)
     }
 
     @Test

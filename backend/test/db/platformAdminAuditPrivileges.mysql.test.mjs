@@ -63,7 +63,7 @@ const PRODUCTION_PATH_TEST_NAME =
 if (!process.env.PCA_MIGRATION_DATABASE_URL) {
   // STANDARD DB REGRESSION mode: no admin/provisioning credential was
   // supplied, so this file does not attempt any connection, CREATE USER, or
-  // GRANT/REVOKE at all -- it only registers four explicitly-skipped tests
+  // GRANT/REVOKE at all -- it only registers explicitly-skipped tests
   // so a `npm run test:db` run visibly reports "skipped", never silently
   // omits or (worse) silently reports these as passed.
   test('MySQL PRIVILEGE BOUNDARY: the least-privilege runtime principal can INSERT and SELECT platform_admin_audit_events', { skip: SKIP_REASON }, () => {});
@@ -89,6 +89,11 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
   );
   test(
     'MySQL PRIVILEGE BOUNDARY: migration 0062 first-device bootstrap ceremonies keep SELECT/INSERT/UPDATE and are denied DELETE',
+    { skip: SKIP_REASON },
+    () => {},
+  );
+  test(
+    'MySQL PRIVILEGE BOUNDARY: migration 0065 abandoned enrollment tombstones allow SELECT/INSERT and deny UPDATE/DELETE',
     { skip: SKIP_REASON },
     () => {},
   );
@@ -299,6 +304,67 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
       // Only this test's UUID-owned row is removed, using the privileged
       // connection. The containing database is also a disposable grant-test DB.
       await adminConnection.query(`DELETE FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ?`, [ceremonyId]).catch(() => {});
+    }
+  });
+
+  test('MySQL PRIVILEGE BOUNDARY: migration 0065 abandoned enrollment tombstones allow SELECT/INSERT and deny UPDATE/DELETE', async () => {
+    const invitationId = randomUUID();
+    const attemptId = `privilege-probe-${randomUUID()}`;
+    const recoveryTokenHash = randomBytes(32).toString('hex');
+    const tokenHash = randomBytes(32).toString('hex');
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+    try {
+      // The tombstone's FK requires an invitation row. Create only this
+      // uniquely identified disposable parent row through the admin connection.
+      await adminConnection.query(
+        `INSERT INTO enrollment_invitations
+           (invitation_id, family_id, token_hash, platform, requested_protection_mode,
+            status, created_at, expires_at)
+         VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'REVOKED', ?, ?)`,
+        [invitationId, `privilege-probe-${randomUUID()}`, tokenHash, now, expiresAt],
+      );
+
+      await runtimeConnection.query(
+        `INSERT INTO enrollment_bootstrap_attempt_tombstones
+           (attempt_id, invitation_id, recovery_token_hash, abandoned_at)
+         VALUES (?, ?, ?, ?)`,
+        [attemptId, invitationId, recoveryTokenHash, now],
+      );
+      const [rows] = await runtimeConnection.query(
+        `SELECT invitation_id, recovery_token_hash
+         FROM enrollment_bootstrap_attempt_tombstones WHERE attempt_id = ?`,
+        [attemptId],
+      );
+      assert.equal(rows.length, 1, 'runtime principal must read the immutable recovery claim it inserted');
+      assert.equal(rows[0].invitation_id, invitationId);
+      assert.equal(rows[0].recovery_token_hash, recoveryTokenHash);
+
+      await assert.rejects(
+        () => runtimeConnection.query(
+          `UPDATE enrollment_bootstrap_attempt_tombstones
+           SET recovery_token_hash = ? WHERE attempt_id = ?`,
+          [randomBytes(32).toString('hex'), attemptId],
+        ),
+        isTableAccessDenied,
+      );
+      await assert.rejects(
+        () => runtimeConnection.query(
+          `DELETE FROM enrollment_bootstrap_attempt_tombstones WHERE attempt_id = ?`,
+          [attemptId],
+        ),
+        isTableAccessDenied,
+      );
+    } finally {
+      // Remove only this test's UUID-owned rows, respecting the FK order.
+      await adminConnection.query(
+        `DELETE FROM enrollment_bootstrap_attempt_tombstones WHERE attempt_id = ?`,
+        [attemptId],
+      ).catch(() => {});
+      await adminConnection.query(
+        `DELETE FROM enrollment_invitations WHERE invitation_id = ?`,
+        [invitationId],
+      ).catch(() => {});
     }
   });
 

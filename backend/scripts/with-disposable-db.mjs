@@ -29,6 +29,8 @@ const requestedTarget = process.argv[2] ?? 'all';
 const isParentMfaTarget = requestedTarget === 'parent-mfa-real-e2e';
 const isParentAcceptanceTarget = requestedTarget === 'parent-owner-acceptance-real-e2e';
 const isFullCertifiedTarget = requestedTarget === 'all-certified';
+const isPlatformAdminPrivilegesTarget = requestedTarget === 'platform-admin-privileges';
+const isFamilyIdentityTarget = requestedTarget === 'family-identity';
 const targetScript = requestedTarget === 'all'
   ? 'test:db:inner'
   : requestedTarget === 'all-certified'
@@ -39,8 +41,12 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:enrollment-binding:inner'
     : requestedTarget === 'parent-auth'
       ? 'test:db:parent-auth:inner'
+    : isFamilyIdentityTarget
+      ? 'test:db:family-identity:inner'
     : requestedTarget === 'platform-admin-auth'
       ? 'test:db:platform-admin-auth:inner'
+    : isPlatformAdminPrivilegesTarget
+      ? 'test:db:platform-admin-privileges:inner'
     : requestedTarget === 'refund-recovery'
       ? 'test:db:refund-recovery:inner'
     : requestedTarget === 'parent-route-audit'
@@ -52,7 +58,7 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'parent-auth', 'platform-admin-auth', 'refund-recovery', 'parent-route-audit', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, parent-auth, platform-admin-auth, refund-recovery, parent-route-audit, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'family-identity', 'parent-auth', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, family-identity, parent-auth, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
 if (requestedTarget === 'parent-route-audit' && !process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) {
   throw new Error('parent-route-audit requires PCA_PARENT_ROUTE_SCENARIO_OUT so the campaign always produces its evidence report.');
 }
@@ -599,13 +605,33 @@ try {
     PCA_DISPOSABLE_TEST_DATABASE_OWNER: 'with-disposable-db',
   };
   await run(process.execPath, ['--env-file=test.env', '--env-file=test.db.env', 'scripts/verify-mysql.mjs'], migrationEnv);
-  // The migration credential is only for provisioning the isolated schema.
-  // Ordinary regression tests and the application must use the runtime role;
-  // leaving the admin URL in their environment also activates separate
-  // CREATE USER/GRANT privilege acceptance tests unintentionally.
+  if (process.env.PCA_PRINT_DISPOSABLE_SCHEMA_FINGERPRINT === '1') {
+    const fingerprintDirectory = await mkdtemp(join(tmpdir(), 'pca-disposable-schema-fingerprint-'));
+    const introspectionPath = join(fingerprintDirectory, 'schema.json');
+    try {
+      await run(process.execPath, ['scripts/introspect-schema.mjs'], {
+        ...migrationEnv,
+        PCA_SCHEMA_INTROSPECTION_URL: migrationDatabaseUrl.toString(),
+        PCA_SCHEMA_INTROSPECTION_OUT: introspectionPath,
+      });
+      await run(process.execPath, ['scripts/schema-fingerprint.mjs', introspectionPath], migrationEnv);
+    } finally {
+      await rm(fingerprintDirectory, { recursive: true, force: true });
+    }
+  }
+  // The migration credential is required for provisioning the isolated schema
+  // and is retained for the one explicit runtime-privilege acceptance target.
+  // Ordinary regression tests and the application use only the runtime role;
+  // leaving the admin URL in their environment for them could activate
+  // CREATE USER/GRANT checks unintentionally.
   const childEnv = { ...migrationEnv };
-  delete childEnv.PCA_MIGRATION_DATABASE_URL;
+  if (!isPlatformAdminPrivilegesTarget) delete childEnv.PCA_MIGRATION_DATABASE_URL;
   throwIfInterrupted();
+  // Optional certification of the same post-migration checks used by the
+  // production bootstrap runbook, against this owned disposable database.
+  if (process.env.PCA_RUN_DISPOSABLE_POST_VALIDATE === '1') {
+    await run(process.execPath, ['scripts/post-validate.mjs'], childEnv);
+  }
   if (isParentMfaTarget || isParentAcceptanceTarget) {
     await runParentMfaRealE2e({
       ...childEnv,

@@ -195,9 +195,9 @@ const REGISTER = new Map([
     status: 'CERTIFIED',
     realWriter: 'EnrollmentCoordinator.enroll (buildCoordinator() injects the real repository), driven alongside the real InvitationService that redeems the token',
     realReader: 'the device and its DSK+DEK are read back after commit, and the invitation is re-read through the real repository to confirm it was redeemed in the same transaction',
-    hostileCase: 'FAILURE INJECTION: a duplicate public key aborts the WHOLE transaction -- no orphan device row, the invitation stays unredeemed and no attempt row is written; plus same attemptId against a DIFFERENT token is ATTEMPT_CONFLICT leaving no device for the loser, and a cross-family recovery secret never recovers another family attempt',
+    hostileCase: 'FAILURE INJECTION: duplicate DSK/DEK keys roll back the bootstrap transaction with no orphan device and leave the invitation unredeemed; the separately committed PREPARED claim remains recoverable as ABANDONED before a fresh-key retry. Same attemptId against a DIFFERENT token is ATTEMPT_CONFLICT with no device for the loser, and a cross-family recovery secret never recovers another family attempt',
     testFile: 'test/db/enrollment.mysql.test.mjs',
-    testName: 'MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOLE transaction -- no orphan device, invitation stays unredeemed, no attempt row',
+    testName: 'MySQL FAILURE INJECTION: duplicate public key aborts bootstrap while the prepared claim remains recoverable',
   }],
   ['MySqlDeviceRepository', {
     status: 'CERTIFIED',

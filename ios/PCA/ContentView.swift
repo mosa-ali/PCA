@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ContentView: View {
+@MainActor struct ContentView: View {
     @ObservedObject private var model: PCAApplicationModel
 
     init(model: PCAApplicationModel = PCAProductionCompositionRoot.make()) {
@@ -38,6 +38,18 @@ struct ContentView: View {
                         Label(PCALocalizedStrings.text("Enrollment"), systemImage: "person.crop.circle.badge.checkmark")
                     }
                     .accessibilityHint(PCALocalizedStrings.text("Confirms the parent-selected settings without changing them"))
+                }
+
+                if model.hasPendingEnrollmentStatusCheck {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(PCALocalizedStrings.text("The enrollment result is still being confirmed. Your saved attempt remains available."))
+                            .foregroundStyle(.secondary)
+                        Button(PCALocalizedStrings.text("Check enrollment status")) {
+                            model.checkEnrollmentStatus()
+                        }
+                        .disabled(model.enrollmentOperationInProgress)
+                        .accessibilityHint(PCALocalizedStrings.text("Checks the saved enrollment attempt without starting a new one."))
+                    }
                 }
 
                 if model.pendingDisclosure == nil, let record = model.firstDeviceRootRecord {

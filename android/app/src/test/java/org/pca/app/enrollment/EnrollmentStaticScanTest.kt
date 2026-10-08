@@ -78,6 +78,35 @@ class EnrollmentStaticScanTest {
         assertFalse(Regex("""(?i)val\s+rawToken""").containsMatchIn(text))
     }
 
+    @Test
+    fun `activity removes token-bearing launch data after passing it to the coordinator`() {
+        val text = locateMainDir("src/main/java/org/pca/app/enrollment/EnrollmentActivity.kt").readText()
+        val createBody = text.substringBefore("setContent {")
+        val newIntentBody = text.substringAfter("override fun onNewIntent")
+        assertTrue(createBody.indexOf("scheduleInvitationLink(graph, coordinator, uri)") < createBody.indexOf("launchIntent?.data = null"))
+        assertTrue(newIntentBody.indexOf("scheduleInvitationLink(graph, graph.enrollmentCoordinator, uri)") < newIntentBody.indexOf("intent.data = null"))
+        val schedulingBody = text.substringAfter("private fun scheduleInvitationLink(")
+        assertTrue(schedulingBody.indexOf("coordinator.reserveInvitationSubmission()") < schedulingBody.indexOf("graph.coroutineScope.launch"))
+        assertTrue(text.contains("coordinator.submitReservedInvitationLink(boundedUri, admission.permit)"))
+        assertTrue(text.contains("graph.coroutineScope.launch"))
+        assertTrue(createBody.contains("setIntent(launchIntent)"))
+        assertTrue(newIntentBody.contains("setIntent(intent)"))
+    }
+
+    @Test
+    fun `unknown bootstrap exposes separate status recovery and exact replay actions`() {
+        val activity = locateMainDir("src/main/java/org/pca/app/enrollment/EnrollmentActivity.kt").readText()
+        val screen = locateMainDir("src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt").readText()
+        assertTrue(activity.contains("is EnrollmentState.BootstrapResultUnknown -> coordinator.recoverAttempt()"))
+        assertTrue(activity.contains("onRetrySameSetup = {"))
+        val retryAction = activity.substringAfter("onRetrySameSetup = {").substringBefore("// Root review begins")
+        assertTrue(retryAction.contains("coordinator.retryBootstrap()"))
+        assertTrue(screen.contains("Button(onClick = onCheckStatus)"))
+        assertTrue(screen.contains("OutlinedButton(onClick = onRetrySameSetup)"))
+        assertTrue(screen.contains("R.string.enrollment_check_status_button"))
+        assertTrue(screen.contains("R.string.enrollment_retry_same_setup_button"))
+    }
+
     // -- Runtime companions to the static scans above: the raw token is provably never written to
     // either persistent store's backing map at any point across a full successful flow, an
     // ambiguous flow, or a recovered flow. --
@@ -95,7 +124,7 @@ class EnrollmentStaticScanTest {
         val backing = InMemoryPersistentStateStore()
         val familyStateStore = PersistentFamilyStateStore(backing)
         val pendingAttemptStore = PersistentPendingEnrollmentAttemptStore(backing)
-        val rawToken = "super-secret-raw-token-should-never-be-persisted"
+        val rawToken = "A".repeat(43)
         val apiClient = apiClientReturning(rawToken, DeviceBootstrapResult("device-id-1", "PAIRING_PENDING"))
         val coordinator = EnrollmentCoordinator(
             UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST),
@@ -117,7 +146,7 @@ class EnrollmentStaticScanTest {
     fun `raw invitation token never appears in the pending-attempt backing store even mid-flight (before the response arrives)`() = runTest {
         val backing = InMemoryPersistentStateStore()
         val pendingAttemptStore = PersistentPendingEnrollmentAttemptStore(backing)
-        val rawToken = "another-secret-raw-token-mid-flight"
+        val rawToken = "A".repeat(43)
         var sawDuringCall = ""
         val apiClient = object : DeviceBootstrapApiClient {
             override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
@@ -144,11 +173,13 @@ class EnrollmentStaticScanTest {
     }
 
     @Test
-    fun `the coordinator clears the in-memory token reference AND the pending attempt after a terminal invitation-invalid outcome`() = runTest {
+    fun `the coordinator keeps the attempt and invitation binding after generic 404 for explicit retry`() = runTest {
         val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        var callCount = 0
         val apiClient = object : DeviceBootstrapApiClient {
             override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+                callCount++
                 throw BootstrapError.InvitationUnavailable
             }
             override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String) = throw AssertionError()
@@ -160,16 +191,20 @@ class EnrollmentStaticScanTest {
             familyStateStore,
             pendingAttemptStore,
         )
-        coordinator.submitInvitationLink("pca://enroll?token=abc")
+        coordinator.submitInvitationLink("pca://enroll?token=${"A".repeat(43)}")
         coordinator.beginBootstrap()
-        assertEquals(EnrollmentState.FailedInvitationInvalid, coordinator.state.value)
+        val original = pendingAttemptStore.current()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, coordinator.state.value)
+        assertTrue(original != null)
 
-        // Calling beginBootstrap again with no fresh submitInvitationLink must be a no-op that
-        // re-reports the same invalid state -- proof the token reference was actually cleared,
-        // not merely unused this once.
+        // A generic 404 is not proof that the request did not commit. Keep the same token binding,
+        // attempt and key custody, and retry only after the visible explicit action.
         coordinator.beginBootstrap()
-        assertEquals(EnrollmentState.FailedInvitationInvalid, coordinator.state.value)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, coordinator.state.value)
+        coordinator.retryBootstrap()
+        assertEquals(EnrollmentState.BootstrapResultUnknown, coordinator.state.value)
+        assertEquals(original, pendingAttemptStore.current())
+        assertEquals(2, callCount)
         assertNull(familyStateStore.currentState())
-        assertNull(pendingAttemptStore.current())
     }
 }

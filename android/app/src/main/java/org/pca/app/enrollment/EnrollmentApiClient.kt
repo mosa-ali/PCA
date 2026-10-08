@@ -53,6 +53,16 @@ data class DeviceBootstrapResult(
  * ambiguous response).
  */
 interface DeviceBootstrapApiClient {
+    /** Reserve the exact tuple before any bootstrap request can be sent. Test doubles may no-op. */
+    suspend fun prepareAttempt(
+        rawInvitationToken: String,
+        platform: String,
+        signingPublicKeyBase64: String,
+        encryptionPublicKeyBase64: String,
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
+    ) {}
+
     suspend fun bootstrap(
         rawInvitationToken: String,
         platform: String,

@@ -133,6 +133,12 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   // deleted by the runtime. ---
   family_first_device_bootstrap_ceremonies: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
 
+  // --- migration 0065 (abandoned enrollment attempt recovery tombstones).
+  // Tombstones are immutable recovery claims: the runtime reads them to
+  // resolve an old attempt after invitation reuse and inserts them when an
+  // attempt is authoritatively abandoned. It never updates or deletes them. ---
+  enrollment_bootstrap_attempt_tombstones: Object.freeze(['SELECT', 'INSERT']),
+
   // --- ordinary runtime DML tables (explicit declaration each) ---
   account_entitlements: DML,
   billing_commercial_markets: DML,

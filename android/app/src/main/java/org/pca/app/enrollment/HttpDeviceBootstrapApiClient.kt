@@ -48,7 +48,12 @@ data class BootstrapEndpointConfig(
  * client-side would defeat it).
  */
 sealed class BootstrapError(message: String) : Exception(message) {
-    /** Server responded 404 -- token invalid, expired, revoked, already redeemed, or a conflicting attempt id. Indistinguishable by design. */
+    /**
+     * The response matched the backend's canonical generic 404 envelope -- token invalid,
+     * expired, revoked, already redeemed, or a conflicting attempt id. These causes remain
+     * indistinguishable by design. A 404 with any other body is ambiguous and must not be treated
+     * as this result.
+     */
     object InvitationUnavailable : BootstrapError("invitation_unavailable")
 
     /** Server responded 400 -- malformed request shape on this client's own side (a caller bug, not a user-recoverable state). */
@@ -56,16 +61,16 @@ sealed class BootstrapError(message: String) : Exception(message) {
 
     /**
      * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: no HTTP response was received at all (timeout,
-     * connection reset, I/O failure), OR a 201 was received but its body could not be parsed into
-     * a valid deviceId/status. In either case the true server-side outcome is unknown -- the
-     * device+keys may already have been created and the invitation already marked REDEEMED.
+     * connection reset, I/O failure), a 404 body did not match the canonical API error envelope,
+     * OR a 201 was received but its body could not be parsed into a valid deviceId/status. In
+     * either case the true server-side outcome is unknown -- the device+keys may already have
+     * been created and the invitation already marked REDEEMED.
      *
-     * PCA-ENROLLMENT-RUNTIME-2: this is no longer a dead end. The same-process caller
-     * ([EnrollmentCoordinator.retryBootstrap]) can safely resend the SAME (attemptId, token,
-     * DSK, DEK) tuple -- the backend replays the original result idempotently rather than
-     * creating a second device (MySqlEnrollmentCoordinatorRepository). If the process has since
-     * restarted (rawInvitationToken no longer in memory), [recoverAttempt] recovers the same
-     * outcome using only the durably-persisted attemptId + attemptRecoveryToken.
+     * [EnrollmentCoordinator.retryBootstrap] can explicitly resend the same attemptId, invitation,
+     * recovery token, platform, DSK and DEK tuple. After restart, [recoverAttempt] uses the durable
+     * attempt credentials; a rescan of the same invitation can also restore the token in memory
+     * after its SHA-256 digest matches the pending record. The coordinator disables that replay
+     * path while local first-device root custody is in conflict.
      */
     object AmbiguousOutcome : BootstrapError("bootstrap_result_unknown")
 
@@ -79,12 +84,17 @@ sealed class BootstrapError(message: String) : Exception(message) {
  * server-side causes collapsed into one generic response (no existence oracle).
  */
 sealed class RecoveryError(message: String) : Exception(message) {
+    /** The server serialized recovery against bootstrap and proved no device was committed. */
+    object AttemptAbandoned : RecoveryError("attempt_abandoned")
     /**
-     * Server responded 404 -- either no attempt exists under this attemptId, or the
-     * attemptRecoveryToken presented does not match (byte-for-byte indistinguishable responses,
-     * per EnrollmentCoordinator.ts's own doc: "no existence oracle"). This is a DEFINITIVE
-     * answer -- the server actually processed the request and gave a real response -- unlike
-     * [AmbiguousOutcome] below.
+     * The body matched the backend's canonical generic 404 envelope -- either no attempt exists
+     * under this attemptId, or the attemptRecoveryToken presented does not match (byte-for-byte
+     * indistinguishable responses, per EnrollmentCoordinator.ts: "no existence oracle"). It is
+     * not proof that the attempt is terminal: the backend uses an unlocked read, so an original
+     * bootstrap transaction can still be in flight and commit after this lookup. Normal recovery
+     * callers preserve pending attempt and key custody. Cleanup is allowed only in the
+     * coordinator's PREPARED-only path after both prepare and recovery returned this canonical
+     * envelope. A 404 with any other body is AmbiguousOutcome.
      */
     object NotFound : RecoveryError("invitation_unavailable")
 
@@ -119,6 +129,46 @@ class HttpDeviceBootstrapApiClient(
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
 ) : DeviceBootstrapApiClient {
 
+    override suspend fun prepareAttempt(
+        rawInvitationToken: String,
+        platform: String,
+        signingPublicKeyBase64: String,
+        encryptionPublicKeyBase64: String,
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
+    ) = withContext(Dispatchers.IO) {
+        val connection = openConnection(PREPARE_PATH) { BootstrapError.AmbiguousOutcome }
+        try {
+            configureRequest(connection)
+            val body = JSONObject()
+                .put("rawInvitationToken", rawInvitationToken)
+                .put("platform", platform)
+                .put("signingPublicKey", signingPublicKeyBase64)
+                .put("encryptionPublicKey", encryptionPublicKeyBase64)
+                .put("bootstrapAttemptId", bootstrapAttemptId)
+                .put("attemptRecoveryToken", attemptRecoveryToken)
+            writeRequestBody(connection, body) { BootstrapError.AmbiguousOutcome }
+
+            val status = readStatusCode(connection) { BootstrapError.AmbiguousOutcome }
+            when (status) {
+                200 -> {
+                    val json = runCatching { JSONObject(readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }) }
+                        .getOrElse { throw BootstrapError.AmbiguousOutcome }
+                    if (json.optString("status") !in setOf("READY", "COMPLETED")) throw BootstrapError.AmbiguousOutcome
+                }
+                404 -> {
+                    val errorBody = readBoundedBytes(connection.errorStream) { BootstrapError.AmbiguousOutcome }
+                    if (isCanonicalInvitationUnavailableEnvelope(errorBody)) throw BootstrapError.InvitationUnavailable
+                    throw BootstrapError.AmbiguousOutcome
+                }
+                400 -> { drainQuietly(connection.errorStream); throw BootstrapError.InvalidRequest }
+                else -> { drainQuietly(connection.errorStream); throw BootstrapError.UnexpectedServerError }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     override suspend fun bootstrap(
         rawInvitationToken: String,
         platform: String,
@@ -142,7 +192,11 @@ class HttpDeviceBootstrapApiClient(
             val status = readStatusCode(connection) { BootstrapError.AmbiguousOutcome }
             when (status) {
                 201 -> parseSuccessBody(readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }) { BootstrapError.AmbiguousOutcome }
-                404 -> { drainQuietly(connection.errorStream); throw BootstrapError.InvitationUnavailable }
+                404 -> {
+                    val errorBody = readBoundedBytes(connection.errorStream) { BootstrapError.AmbiguousOutcome }
+                    if (isCanonicalInvitationUnavailableEnvelope(errorBody)) throw BootstrapError.InvitationUnavailable
+                    throw BootstrapError.AmbiguousOutcome
+                }
                 400 -> { drainQuietly(connection.errorStream); throw BootstrapError.InvalidRequest }
                 else -> { drainQuietly(connection.errorStream); throw BootstrapError.UnexpectedServerError }
             }
@@ -169,8 +223,17 @@ class HttpDeviceBootstrapApiClient(
 
             val status = readStatusCode(connection) { RecoveryError.AmbiguousOutcome }
             when (status) {
-                200 -> parseSuccessBody(readBoundedBody(connection.inputStream) { RecoveryError.AmbiguousOutcome }) { RecoveryError.AmbiguousOutcome }
-                404 -> { drainQuietly(connection.errorStream); throw RecoveryError.NotFound }
+                200 -> {
+                    val responseBody = readBoundedBody(connection.inputStream) { RecoveryError.AmbiguousOutcome }
+                    val json = runCatching { JSONObject(responseBody) }.getOrElse { throw RecoveryError.AmbiguousOutcome }
+                    if (json.optString("status") == ATTEMPT_ABANDONED_STATUS) throw RecoveryError.AttemptAbandoned
+                    parseSuccessBody(responseBody) { RecoveryError.AmbiguousOutcome }
+                }
+                404 -> {
+                    val errorBody = readBoundedBytes(connection.errorStream) { RecoveryError.AmbiguousOutcome }
+                    if (isCanonicalInvitationUnavailableEnvelope(errorBody)) throw RecoveryError.NotFound
+                    throw RecoveryError.AmbiguousOutcome
+                }
                 400 -> { drainQuietly(connection.errorStream); throw RecoveryError.InvalidRequest }
                 else -> { drainQuietly(connection.errorStream); throw RecoveryError.UnexpectedServerError }
             }
@@ -228,8 +291,8 @@ class HttpDeviceBootstrapApiClient(
             // created/found server-side, but its deviceId cannot be recovered from this response.
             throw onAmbiguous()
         }
-        val deviceId = json.optString("deviceId", "")
-        val status = json.optString("status", "")
+        val deviceId = json.opt("deviceId") as? String ?: throw onAmbiguous()
+        val status = json.opt("status") as? String ?: throw onAmbiguous()
         // Bootstrap and recovery DTOs are intentionally narrower than the
         // general device lifecycle: this endpoint may establish only the
         // server-issued identity in PAIRING_PENDING. Treat every other status
@@ -240,20 +303,31 @@ class HttpDeviceBootstrapApiClient(
         // certified DTO on BOTH routes; a response missing them cannot feed
         // the first-device trust-root ceremony and is therefore ambiguous
         // (the attempt is preserved and recovery can re-obtain them).
-        val signingKeyId = json.optString("signingKeyId", "")
-        val encryptionKeyId = json.optString("encryptionKeyId", "")
+        val signingKeyId = json.opt("signingKeyId") as? String ?: throw onAmbiguous()
+        val encryptionKeyId = json.opt("encryptionKeyId") as? String ?: throw onAmbiguous()
         if (signingKeyId.isBlank() || encryptionKeyId.isBlank()) throw onAmbiguous()
-        val ageUxTier = runCatching { AgeUxTier.valueOf(json.optString("ageUxTier", AgeUxTier.YOUNG_CHILD.name)) }
+        // These two values are server-selected enrollment authority data, not
+        // optional client presentation hints. Require actual JSON strings and
+        // recognized values; never invent a default when the DTO is incomplete.
+        val ageUxTierValue = json.opt("ageUxTier") as? String ?: throw onAmbiguous()
+        val ageUxTier = runCatching { AgeUxTier.valueOf(ageUxTierValue) }
             .getOrElse { throw onAmbiguous() }
+        val initialPolicyProfileValue = json.opt("initialPolicyProfile") as? String ?: throw onAmbiguous()
         val initialPolicyProfile = runCatching {
-            InitialPolicyProfile.valueOf(json.optString("initialPolicyProfile", InitialPolicyProfile.BALANCED.name))
+            InitialPolicyProfile.valueOf(initialPolicyProfileValue)
         }.getOrElse { throw onAmbiguous() }
+        if (!json.has("childProfileId")) throw onAmbiguous()
+        val childProfileId = when (val value = json.opt("childProfileId")) {
+            JSONObject.NULL -> null
+            is String -> value.takeIf { it.isNotBlank() } ?: throw onAmbiguous()
+            else -> throw onAmbiguous()
+        }
         return DeviceBootstrapResult(
             deviceId = deviceId,
             status = status,
             signingKeyId = signingKeyId,
             encryptionKeyId = encryptionKeyId,
-            childProfileId = json.optString("childProfileId", "").ifBlank { null },
+            childProfileId = childProfileId,
             ageUxTier = ageUxTier,
             initialPolicyProfile = initialPolicyProfile,
         )
@@ -268,8 +342,11 @@ class HttpDeviceBootstrapApiClient(
      * a simple non-keep-alive test server); filling the bound exactly is already conservative
      * enough to distrust the body without further reads.
      */
-    private fun readBoundedBody(stream: InputStream?, onAmbiguous: () -> Exception): String {
-        if (stream == null) return ""
+    private fun readBoundedBody(stream: InputStream?, onAmbiguous: () -> Exception): String =
+        String(readBoundedBytes(stream, onAmbiguous), Charsets.UTF_8)
+
+    private fun readBoundedBytes(stream: InputStream?, onAmbiguous: () -> Exception): ByteArray {
+        if (stream == null) return ByteArray(0)
         val buffer = ByteArray(MAX_RESPONSE_BYTES)
         var total = 0
         try {
@@ -286,10 +363,51 @@ class HttpDeviceBootstrapApiClient(
             throw onAmbiguous()
         }
         if (total >= MAX_RESPONSE_BYTES) throw onAmbiguous()
-        return String(buffer, 0, total, Charsets.UTF_8)
+        return buffer.copyOf(total)
     }
 
-    /** Error-path bodies are never needed for classification (status code alone determines the outcome) -- drained only to free the connection, any failure here is immaterial. */
+    /**
+     * Match only the backend's one-property generic 404 JSON envelope. This deliberately avoids
+     * JSONObject: its duplicate-key handling can collapse an invalid response into an apparently
+     * valid object. Permit only RFC JSON whitespace around tokens, and compare the ASCII bytes
+     * directly so malformed UTF-8, duplicate keys, additional properties and proxy-generated
+     * error pages remain ambiguous.
+     */
+    private fun isCanonicalInvitationUnavailableEnvelope(body: ByteArray): Boolean {
+        var index = 0
+
+        fun skipJsonWhitespace() {
+            while (index < body.size) {
+                when (body[index].toInt() and 0xff) {
+                    0x20, 0x09, 0x0a, 0x0d -> index++
+                    else -> return
+                }
+            }
+        }
+
+        fun consumeAscii(expected: String): Boolean {
+            for (character in expected) {
+                if (index >= body.size || (body[index].toInt() and 0xff) != character.code) return false
+                index++
+            }
+            return true
+        }
+
+        skipJsonWhitespace()
+        if (!consumeAscii("{")) return false
+        skipJsonWhitespace()
+        if (!consumeAscii("\"error\"")) return false
+        skipJsonWhitespace()
+        if (!consumeAscii(":")) return false
+        skipJsonWhitespace()
+        if (!consumeAscii("\"invitation_unavailable\"")) return false
+        skipJsonWhitespace()
+        if (!consumeAscii("}")) return false
+        skipJsonWhitespace()
+        return index == body.size
+    }
+
+    /** Bodies for other error statuses are not used for classification; drain them only to free the connection. */
     private fun drainQuietly(stream: InputStream?) {
         if (stream == null) return
         try {
@@ -304,7 +422,9 @@ class HttpDeviceBootstrapApiClient(
 
     private companion object {
         const val BOOTSTRAP_PATH = "/v1/enrollment/bootstrap"
+        const val PREPARE_PATH = "/v1/enrollment/bootstrap/prepare"
         const val RECOVER_PATH = "/v1/enrollment/bootstrap/recover"
+        const val ATTEMPT_ABANDONED_STATUS = "ATTEMPT_ABANDONED"
         const val PAIRING_PENDING_STATUS = "PAIRING_PENDING"
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000

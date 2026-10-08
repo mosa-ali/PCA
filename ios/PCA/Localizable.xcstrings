@@ -715,6 +715,24 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Check parent approval" } }
       }
     },
+    "Check enrollment status" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "التحقق من حالة التسجيل" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check enrollment status" } }
+      }
+    },
+    "Checks the saved enrollment attempt without starting a new one." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "يتحقق من حالة محاولة التسجيل المحفوظة دون بدء محاولة جديدة." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Checks the saved enrollment attempt without starting a new one." } }
+      }
+    },
+    "The enrollment result is still being confirmed. Your saved attempt remains available." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "ما زالت نتيجة التسجيل قيد التحقق. تبقى المحاولة المحفوظة متاحة." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The enrollment result is still being confirmed. Your saved attempt remains available." } }
+      }
+    },
     "Submit approved secure setup" : {
       "localizations" : {
         "ar" : { "stringUnit" : { "state" : "translated", "value" : "إرسال الإعداد الآمن بعد الموافقة" } },

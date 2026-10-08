@@ -114,6 +114,14 @@ test('migration 0062 first-device bootstrap ceremonies declare exactly their sou
   );
 });
 
+test('migration 0065 abandoned enrollment tombstones are readable and append-only', () => {
+  assert.deepEqual(
+    sorted(privilegesForTable('enrollment_bootstrap_attempt_tombstones')),
+    ['INSERT', 'SELECT'],
+    'the runtime reads and appends immutable recovery tombstones, but must not UPDATE or DELETE them',
+  );
+});
+
 test('no declaration contains a forbidden verb, and none is a table-level ALL', () => {
   for (const [table, verbs] of Object.entries(RUNTIME_TABLE_PRIVILEGES)) {
     for (const verb of verbs) {

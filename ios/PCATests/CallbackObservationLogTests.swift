@@ -120,9 +120,14 @@ final class CallbackObservationLogTests: XCTestCase {
             installationGeneration: generation, nowUtc: now.addingTimeInterval(180)
         ), .healthy, "an immediate callback recorded during start remains eligible after success")
 
+        let healthRecordsBeforeCorruptCallback = log.readAll()
         defaults.set(Data("corrupt".utf8), forKey: deviceActivityMonitorInstallationStorageKey)
         log.record(kind: .intervalDidStart, activityId: monitor, at: now)
-        XCTAssertNil(log.readAll().last?.installationGeneration)
+        XCTAssertEqual(log.readAll(), healthRecordsBeforeCorruptCallback)
+        let corruptDiagnosticData = try XCTUnwrap(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"))
+        let corruptDiagnostic = try JSONDecoder().decode([PersistedCallbackObservation].self, from: corruptDiagnosticData)
+        XCTAssertEqual(corruptDiagnostic.last?.activityId, monitor)
+        XCTAssertNil(corruptDiagnostic.last?.installationGeneration)
     }
 
     func testLegacyObservationDecodesWithoutGeneration() throws {
@@ -154,6 +159,41 @@ final class BoundaryCallbackIsolationTests: XCTestCase {
         let diagnostics = try JSONDecoder().decode([PersistedCallbackObservation].self, from: data)
         XCTAssertEqual(diagnostics.count, 3)
         XCTAssertTrue(diagnostics.allSatisfy { $0.installationGeneration == generation })
+    }
+    func testMissingCorruptOrInvalidatedManifestFloodCannotEvictAnchorHealthEvidence() throws {
+        for manifestState in ["missing", "corrupt", "invalidated"] {
+            let suite = "org.pca.tests.boundaries.\(manifestState).\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let anchor = "pca-monitor-\(UUID().uuidString.lowercased())"
+            let generation = UUID().uuidString.lowercased()
+            let now = Date()
+            let active = DeviceActivityMonitorInstallation(
+                policyActivityId: "policy", monitorActivityId: anchor, generation: generation,
+                installedAtUtc: now, timeZoneIdentifier: "UTC", state: .active
+            )
+            defaults.set(try JSONEncoder().encode(active), forKey: deviceActivityMonitorInstallationStorageKey)
+            let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite, capacity: 3)
+            log.record(kind: .intervalDidStart, activityId: anchor, at: now)
+            let anchorEvidence = log.readAll()
+
+            switch manifestState {
+            case "missing": defaults.removeObject(forKey: deviceActivityMonitorInstallationStorageKey)
+            case "corrupt": defaults.set(Data("corrupt".utf8), forKey: deviceActivityMonitorInstallationStorageKey)
+            default: defaults.set(try JSONEncoder().encode(active.invalidating()), forKey: deviceActivityMonitorInstallationStorageKey)
+            }
+            for offset in 0..<10 {
+                log.record(kind: .intervalDidStart, activityId: anchor, at: now.addingTimeInterval(Double(offset + 1)))
+            }
+
+            XCTAssertEqual(log.readAll(), anchorEvidence, manifestState)
+            let diagnosticData = try XCTUnwrap(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"))
+            let diagnostics = try JSONDecoder().decode([PersistedCallbackObservation].self, from: diagnosticData)
+            XCTAssertEqual(diagnostics.count, 3, manifestState)
+            XCTAssertTrue(diagnostics.allSatisfy {
+                $0.activityId == anchor && $0.installationGeneration == nil
+            }, manifestState)
+        }
     }
     func testManifestRejectsDuplicateIdsTriggersAndMissingV2Collection() throws {
         let anchor = "pca-monitor-\(UUID().uuidString.lowercased())"

@@ -1,5 +1,8 @@
 package org.pca.app.firstdevice
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -118,6 +121,99 @@ class FirstDeviceRootStoreTest {
     }
 
     @Test
+    fun `attempt key cleanup runs only for confirmed empty or different-attempt root state`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        var cleanupCount = 0
+
+        assertTrue(store.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) { cleanupCount++ })
+        assertEquals(1, cleanupCount)
+
+        store.save(FirstDeviceRootRecord(seed = seed()))
+        assertFalse(store.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) { cleanupCount++ })
+        assertEquals(1, cleanupCount)
+
+        val otherAttemptId = "b".repeat(32)
+        val otherAttempt = seed().copy(
+            attemptId = otherAttemptId,
+            dskAlias = "pca.dsk.$otherAttemptId",
+            dekAlias = "pca.dek.$otherAttemptId",
+        )
+        store.save(FirstDeviceRootRecord(seed = otherAttempt))
+        assertTrue(store.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) { cleanupCount++ })
+        assertEquals(2, cleanupCount)
+
+        backing.values["first_device_root_v1"] = "corrupt"
+        assertFalse(store.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) { cleanupCount++ })
+        assertEquals(2, cleanupCount)
+    }
+
+    @Test
+    fun `root record with aliases from another attempt is unreadable and blocks cleanup`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        val record = FirstDeviceRootRecord(seed = seed())
+        val malformed = store.encode(record).split('|').toMutableList().apply {
+            this[8] = "pca.dsk." + "b".repeat(32)
+        }.joinToString("|")
+        backing.values["first_device_root_v1"] = malformed
+        var cleanupCount = 0
+
+        assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+        assertFalse(store.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) { cleanupCount++ })
+        assertEquals(0, cleanupCount)
+    }
+
+    @Test
+    fun `separate wrappers sharing coordination lock serialize cleanup against seed capture`() {
+        val backing = RecordingStore()
+        val sharedLock = Any()
+        fun wrapper() = object : PersistentStateStore by backing {
+            override val coordinationLock: Any = sharedLock
+        }
+        val cleanupStore = PersistentFirstDeviceRootStore(wrapper())
+        val captureStore = PersistentFirstDeviceRootStore(wrapper())
+        val cleanupEntered = CountDownLatch(1)
+        val allowCleanupToFinish = CountDownLatch(1)
+        val captureFinished = CountDownLatch(1)
+        val cleanupResult = AtomicBoolean(false)
+        val captureResult = AtomicBoolean(false)
+
+        val cleanupThread = Thread {
+            cleanupResult.set(cleanupStore.withConfirmedSafeAttemptKeyCleanup(seed().attemptId) {
+                cleanupEntered.countDown()
+                check(allowCleanupToFinish.await(2, TimeUnit.SECONDS))
+            })
+        }
+        val captureThread = Thread {
+            try {
+                val candidateAttemptId = "b".repeat(32)
+                val candidate = FirstDeviceRootRecord(seed = seed().copy(
+                    attemptId = candidateAttemptId,
+                    dskAlias = "pca.dsk.$candidateAttemptId",
+                    dekAlias = "pca.dek.$candidateAttemptId",
+                ))
+                captureResult.set(captureStore.captureSeed(candidate, emptySet()))
+            } finally {
+                captureFinished.countDown()
+            }
+        }
+
+        cleanupThread.start()
+        assertTrue(cleanupEntered.await(2, TimeUnit.SECONDS))
+        captureThread.start()
+        val captureWasBlockedByCleanup = !captureFinished.await(100, TimeUnit.MILLISECONDS)
+        allowCleanupToFinish.countDown()
+        cleanupThread.join(2_000)
+        captureThread.join(2_000)
+
+        assertTrue(captureWasBlockedByCleanup)
+        assertTrue(cleanupResult.get())
+        assertTrue(captureResult.get())
+        assertEquals("b".repeat(32), captureStore.current()?.seed?.attemptId)
+    }
+
+    @Test
     fun `separator safety - every encoded field is separator-free by construction`() {
         val backing = RecordingStore()
         val store = PersistentFirstDeviceRootStore(backing)
@@ -151,7 +247,15 @@ class FirstDeviceRootStoreTest {
     fun `conditional root write rejects a stale coordinator snapshot`() {
         val store = PersistentFirstDeviceRootStore(RecordingStore())
         val original = FirstDeviceRootRecord(seed = seed(), state = FirstDeviceRootState.EXPIRED)
-        val replacement = original.copy(seed = seed().copy(attemptId = "b".repeat(32)), state = FirstDeviceRootState.NOT_STARTED)
+        val replacementAttemptId = "b".repeat(32)
+        val replacement = original.copy(
+            seed = seed().copy(
+                attemptId = replacementAttemptId,
+                dskAlias = "pca.dsk.$replacementAttemptId",
+                dekAlias = "pca.dek.$replacementAttemptId",
+            ),
+            state = FirstDeviceRootState.NOT_STARTED,
+        )
         assertTrue(store.writeIfCurrent(null, original))
         assertTrue(store.captureSeed(replacement, setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED)))
 
@@ -224,7 +328,12 @@ class FirstDeviceRootStoreTest {
         val backing = RecordingStore()
         val store = PersistentFirstDeviceRootStore(backing)
         val live = FirstDeviceRootRecord(seed = seed(), state = FirstDeviceRootState.AWAITING_APPROVAL, ceremonyId = "live-ceremony")
-        val competitor = FirstDeviceRootRecord(seed = seed().copy(attemptId = "b".repeat(32)))
+        val competitorAttemptId = "b".repeat(32)
+        val competitor = FirstDeviceRootRecord(seed = seed().copy(
+            attemptId = competitorAttemptId,
+            dskAlias = "pca.dsk.$competitorAttemptId",
+            dekAlias = "pca.dek.$competitorAttemptId",
+        ))
         assertTrue(store.writeIfCurrent(null, live))
 
         backing.failNextFlush = true

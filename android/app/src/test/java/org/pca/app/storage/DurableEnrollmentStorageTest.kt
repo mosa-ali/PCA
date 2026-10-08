@@ -33,14 +33,41 @@ class DurableEnrollmentStorageTest {
         val backing = DiskStore()
         val pending = PersistentPendingEnrollmentAttemptStore(backing)
         val family = PersistentFamilyStateStore(backing)
-        pending.save(attempt())
+        val boundAttempt = attempt().copy(invitationTokenSha256 = "a".repeat(64))
+        pending.save(boundAttempt)
         val state = LocalFamilyState("family", "device", PairingState.PAIRING_PENDING, 0, 0)
         family.save(state)
         val restarted = DiskStore(backing.disk)
-        assertEquals(attempt(), PersistentPendingEnrollmentAttemptStore(restarted).current())
+        assertEquals(boundAttempt, PersistentPendingEnrollmentAttemptStore(restarted).current())
         assertEquals(state, PersistentFamilyStateStore(restarted).currentState())
         pending.clear()
         assertNull(PersistentPendingEnrollmentAttemptStore(DiskStore(backing.disk)).current())
+    }
+
+    @Test fun `legacy pending record decodes without an invitation binding`() {
+        val legacyRaw = listOf(
+            "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "dsk-alias",
+            "dek", "dek-alias", PendingEnrollmentAttemptStatus.BOOTSTRAPPING.name,
+        ).joinToString("|")
+        val store = PersistentPendingEnrollmentAttemptStore(DiskStore(mapOf("pending_enrollment_attempt_v1" to legacyRaw)))
+
+        assertEquals(attempt(), store.current())
+        assertTrue(store.compareAndSet(attempt(), null))
+        assertNull(store.current())
+    }
+
+    @Test fun `compare and set prevents stale pending owner from replacing or clearing a newer attempt`() {
+        val backing = DiskStore()
+        val firstWrapper = PersistentPendingEnrollmentAttemptStore(backing)
+        val secondWrapper = PersistentPendingEnrollmentAttemptStore(backing)
+        val original = attempt()
+        val replacement = original.copy(attemptId = "replacement")
+
+        assertTrue(firstWrapper.compareAndSet(null, original))
+        assertFalse(secondWrapper.compareAndSet(null, replacement))
+        assertTrue(secondWrapper.compareAndSet(original, replacement))
+        assertFalse(firstWrapper.compareAndSet(original, null))
+        assertEquals(replacement, firstWrapper.current())
     }
 
     @Test fun `failed save rolls back visible and durable bytes`() {

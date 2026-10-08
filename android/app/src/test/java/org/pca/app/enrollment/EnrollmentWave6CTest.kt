@@ -2,6 +2,7 @@ package org.pca.app.enrollment
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,7 +33,7 @@ import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
  */
 class EnrollmentWave6CTest {
 
-    private val link = "pca://enroll?token=wave6c-token"
+    private val link = "pca://enroll?token=${"A".repeat(43)}"
 
     private class RecordingGenerator(
         private val deleteLog: MutableList<String> = mutableListOf(),
@@ -97,6 +98,8 @@ class EnrollmentWave6CTest {
         var failCapture = true
         override fun current(): FirstDeviceRootRecord? = delegate.current()
         override fun readState(): FirstDeviceRootReadResult = delegate.readState()
+        override fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean =
+            delegate.withConfirmedSafeAttemptKeyCleanup(attemptId, cleanup)
         override fun save(record: FirstDeviceRootRecord) = delegate.save(record)
         override fun clear() = delegate.clear()
         override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean =
@@ -122,6 +125,7 @@ class EnrollmentWave6CTest {
             generator,
             PersistentFamilyStateStore(InMemoryPersistentStateStore()),
             pendingAttemptStore,
+            firstDeviceRootStore = InMemoryFirstDeviceRootStore(),
         )
         coordinator.submitInvitationLink(link)
         coordinator.beginBootstrap()
@@ -150,7 +154,7 @@ class EnrollmentWave6CTest {
     }
 
     @Test
-    fun `a definitively-abandoned attempt deletes BOTH key aliases before clearing the record (delete-before-clear)`() = runTest {
+    fun `an ambiguous invitation-unavailable response retains key aliases and the pending record`() = runTest {
         val deleteLog = mutableListOf<String>()
         val generator = RecordingGenerator(deleteLog)
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
@@ -164,9 +168,9 @@ class EnrollmentWave6CTest {
         coordinator.submitInvitationLink(link)
         coordinator.beginBootstrap()
 
-        assertEquals(EnrollmentState.FailedInvitationInvalid, coordinator.state.value)
-        assertNull(pendingAttemptStore.current())
-        assertEquals(listOf(generator.lastSigningAlias, generator.lastEncryptionAlias), deleteLog)
+        assertEquals(EnrollmentState.BootstrapResultUnknown, coordinator.state.value)
+        assertNotNull(pendingAttemptStore.current())
+        assertTrue(deleteLog.isEmpty())
     }
 
     @Test

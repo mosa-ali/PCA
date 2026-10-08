@@ -48,6 +48,10 @@ export interface RecoverAttemptInput {
   attemptRecoveryToken: string;
 }
 
+export type RecoverAttemptOutcome =
+  | { outcome: 'COMPLETED'; result: RecoverAttemptResult }
+  | { outcome: 'ABANDONED' };
+
 /** Same shape as a successful bootstrap so the HTTP layer can reuse one DTO for both. */
 export interface RecoverAttemptResult {
   deviceId: string;

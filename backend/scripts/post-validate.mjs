@@ -48,7 +48,10 @@ const execFileP = promisify(execFile);
 // _ascii; the canonical-bootstrap build preserves the explicit _utf8mb4
 // introducers from schema.ts), so a bootstrap-built database hashes differently
 // from a migration-built one even when structurally identical.
-const EXPECTED_FINGERPRINT = '5231cd6e838a8d4e4ee11a25188aeb490e1e3360d4a37dadfd765177893af3a7';
+// WAVE 7 (2026-10-08): migrations 0064/0065 add durable enrollment-attempt
+// resolution and immutable abandoned-attempt recovery tombstones. Recomputed
+// from a fresh 63-migration disposable MySQL 8.4.11 database (96 tables).
+const EXPECTED_FINGERPRINT = '2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;
@@ -126,7 +129,17 @@ try {
   // 3. Schema fingerprint match.
   const scratchDir = await mkdtemp(path.join(tmpdir(), 'pca-postvalidate-'));
   const scratchJson = path.join(scratchDir, 'live.json');
-  await execFileP('node', [path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]):/, '$1:')), 'introspect-schema.mjs'), connectionString, scratchJson]);
+  await execFileP(
+    'node',
+    [path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]):/, '$1:')), 'introspect-schema.mjs')],
+    {
+      env: {
+        ...process.env,
+        PCA_SCHEMA_INTROSPECTION_URL: connectionString,
+        PCA_SCHEMA_INTROSPECTION_OUT: scratchJson,
+      },
+    },
+  );
   const { readFile } = await import('node:fs/promises');
   const liveIntrospection = JSON.parse(await readFile(scratchJson, 'utf8'));
   const { hash } = normalizedFingerprint(liveIntrospection);

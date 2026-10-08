@@ -7,8 +7,8 @@ package org.pca.app.storage
  *
  * Deliberately does NOT hold the raw invitation bearer token: this data class has no such field,
  * so [PersistentPendingEnrollmentAttemptStore] has no code path by which it could persist it even
- * by mistake -- the raw token continues to live ONLY in [EnrollmentCoordinator]'s in-memory field,
- * exactly as before this migration (see that class's own doc comment).
+ * by mistake. It stores only [invitationTokenSha256], which allows an exact user-rescan after
+ * restart without retaining the bearer token.
  *
  * [attemptId] is the client-generated, high-entropy, NON-secret retry correlator
  * (backend/src/enrollment/attempt.ts's bootstrapAttemptId) -- safe to persist in the clear.
@@ -31,6 +31,8 @@ data class PendingEnrollmentAttempt(
     val encryptionPublicKeyBase64: String,
     val encryptionPrivateKeyAlias: String,
     val status: PendingEnrollmentAttemptStatus,
+    /** SHA-256 binding used only to recognize a user-rescanned copy of this invite after restart. */
+    val invitationTokenSha256: String? = null,
 )
 
 /**
@@ -47,12 +49,15 @@ data class PendingEnrollmentAttempt(
  * distinction exists for observability/debugging, not different recovery logic, since from a
  * restarted process's point of view both are "an attempt may or may not have succeeded server-side."
  */
-enum class PendingEnrollmentAttemptStatus { BOOTSTRAPPING, RESULT_UNKNOWN }
+enum class PendingEnrollmentAttemptStatus { PREPARED, BOOTSTRAPPING, RESULT_UNKNOWN }
 
 interface PendingEnrollmentAttemptStore {
     fun current(): PendingEnrollmentAttempt?
+    /** Unconditional write for test/setup fixtures; coordinator lifecycle writes must use compareAndSet. */
     fun save(attempt: PendingEnrollmentAttempt)
-    /** Section 12: called once an attempt is either successfully recovered, or definitively abandoned (invalid/revoked invitation) -- never on a merely-ambiguous outcome. */
+    /** Atomically replace only the exact expected record; null means the slot must be empty. */
+    fun compareAndSet(expected: PendingEnrollmentAttempt?, replacement: PendingEnrollmentAttempt?): Boolean
+    /** Unconditional removal for test/setup fixtures; coordinator cleanup must use compareAndSet. */
     fun clear()
 }
 
@@ -60,7 +65,12 @@ interface PendingEnrollmentAttemptStore {
 class InMemoryPendingEnrollmentAttemptStore : PendingEnrollmentAttemptStore {
     private var attempt: PendingEnrollmentAttempt? = null
 
-    override fun current(): PendingEnrollmentAttempt? = attempt
-    override fun save(attempt: PendingEnrollmentAttempt) { this.attempt = attempt }
-    override fun clear() { attempt = null }
+    @Synchronized override fun current(): PendingEnrollmentAttempt? = attempt
+    @Synchronized override fun save(attempt: PendingEnrollmentAttempt) { this.attempt = attempt }
+    @Synchronized override fun compareAndSet(expected: PendingEnrollmentAttempt?, replacement: PendingEnrollmentAttempt?): Boolean {
+        if (attempt != expected) return false
+        attempt = replacement
+        return true
+    }
+    @Synchronized override fun clear() { attempt = null }
 }

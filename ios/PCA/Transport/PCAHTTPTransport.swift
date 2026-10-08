@@ -89,12 +89,17 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
 public final class InMemoryPCAHTTPTransport: PCAHTTPTransport {
     public private(set) var requests: [URLRequest] = []
     private let responder: (URLRequest) async throws -> PCAHTTPResponse
+    private let autoAcceptEnrollmentPreparation: Bool
 
-    public init(responder: @escaping (URLRequest) async throws -> PCAHTTPResponse) {
+    public init(autoAcceptEnrollmentPreparation: Bool = true, responder: @escaping (URLRequest) async throws -> PCAHTTPResponse) {
+        self.autoAcceptEnrollmentPreparation = autoAcceptEnrollmentPreparation
         self.responder = responder
     }
 
     public func send(_ request: URLRequest) async throws -> PCAHTTPResponse {
+        if autoAcceptEnrollmentPreparation, request.url?.path == "/v1/enrollment/bootstrap/prepare" {
+            return PCAHTTPResponse(statusCode: 200, data: Data(#"{"status":"READY"}"#.utf8))
+        }
         requests.append(request)
         return try await responder(request)
     }

@@ -299,6 +299,7 @@ const files = [
   "test/tooling/migrationAdvisoryLock.test.mjs",
   "test/tooling/migrationIdentityFailClosed.test.mjs",
   "test/tooling/migrationResumability.test.mjs",
+  "test/tooling/enrollmentBootstrapAttemptResolutionMigrationRecovery.test.mjs",
   "test/tooling/canonicalSchemaDrift.test.mjs",
   "test/tooling/runtimeGrantPolicy.test.mjs",
   "test/tooling/productionInMemoryStores.test.mjs",

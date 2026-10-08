@@ -39,6 +39,42 @@ final class DeviceActivityCallbackHealthTests: XCTestCase {
         XCTAssertEqual(health([receipt(base.addingTimeInterval(-1))]), .unknown)
         XCTAssertEqual(health([receipt(base.addingTimeInterval(4000))]), .unknown)
     }
+    func testGraceBoundaryRequiresMoreThanTolerance() {
+        let expected = [firstStart()]
+        let observation = [receipt(base.addingTimeInterval(1))]
+        XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+            expected: expected, observed: observation, activityId: monitor,
+            installationGeneration: generation, nowUtc: base.addingTimeInterval(120)
+        ), .unknown)
+        XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+            expected: expected, observed: observation, activityId: monitor,
+            installationGeneration: generation, nowUtc: base.addingTimeInterval(120.001)
+        ), .healthy)
+    }
+    func testObservationAtNowIsAcceptedButFutureByEpsilonIsNot() {
+        let now = base.addingTimeInterval(3600)
+        XCTAssertEqual(health([receipt(now)], now: now), .healthy)
+        XCTAssertEqual(health([receipt(now.addingTimeInterval(0.001))], now: now), .unknown)
+    }
+    func testReceiptJustBeforeWindowEndCanCertifyDelivery() {
+        let windowEnd = base.addingTimeInterval(86400)
+        let observation = receipt(windowEnd.addingTimeInterval(-0.001))
+        XCTAssertEqual(health([observation], now: windowEnd), .healthy)
+    }
+    func testInvalidToleranceCannotCertifyHealthOrCreateExpectations() {
+        let now = base.addingTimeInterval(60)
+        let observation = [receipt(base.addingTimeInterval(1))]
+        for tolerance in [-1.0, .nan, .infinity, -.infinity] {
+            XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+                expected: [firstStart()], observed: observation, activityId: monitor,
+                installationGeneration: generation, nowUtc: now, toleranceSeconds: tolerance
+            ), .unknown)
+            XCTAssertTrue(DeviceActivityCallbackPlanner.expectedCallbacks(
+                installedAt: base, now: base.addingTimeInterval(3600), calendar: calendar(),
+                toleranceSeconds: tolerance
+            ).isEmpty)
+        }
+    }
     func testReceiptAtNextSameKindBoundaryIsAmbiguous() {
         let nextBoundary = base.addingTimeInterval(86400)
         XCTAssertEqual(health([receipt(nextBoundary)], now: nextBoundary.addingTimeInterval(300)), .unknown)

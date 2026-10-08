@@ -97,6 +97,14 @@ interface FirstDeviceRootStore {
     fun current(): FirstDeviceRootRecord?
     /** Typed health read for operations, such as key cleanup, that must fail closed on corruption. */
     fun readState(): FirstDeviceRootReadResult
+    /**
+     * Runs [cleanup] while the durable root slot is locked only when it is
+     * confirmed empty or belongs to a different attempt. Implementations
+     * must keep root writes blocked for the duration of the callback so a
+     * concurrent seed capture cannot race key deletion. A matching or
+     * unreadable root returns false without running [cleanup].
+     */
+    fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean
     fun save(record: FirstDeviceRootRecord)
     fun clear()
 
@@ -139,6 +147,11 @@ class InMemoryFirstDeviceRootStore : FirstDeviceRootStore {
     override fun current(): FirstDeviceRootRecord? = synchronized(lock) { record }
     override fun readState(): FirstDeviceRootReadResult = synchronized(lock) {
         record?.let(FirstDeviceRootReadResult::Present) ?: FirstDeviceRootReadResult.Missing
+    }
+    override fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean = synchronized(lock) {
+        if (record?.seed?.attemptId == attemptId) return@synchronized false
+        cleanup()
+        true
     }
     override fun save(record: FirstDeviceRootRecord) { synchronized(lock) { this.record = record } }
     override fun clear() { synchronized(lock) { record = null } }
@@ -183,19 +196,19 @@ class PersistentFirstDeviceRootStore(
         data class Valid(val record: FirstDeviceRootRecord) : StoredRecord
     }
 
-    override fun current(): FirstDeviceRootRecord? = synchronized(store) {
+    override fun current(): FirstDeviceRootRecord? = synchronized(store.coordinationLock) {
         (readStoredRecord() as? StoredRecord.Valid)?.record
     }
 
-    override fun save(record: FirstDeviceRootRecord) = synchronized(store) {
+    override fun save(record: FirstDeviceRootRecord) = synchronized(store.coordinationLock) {
         store.putString(key, encode(record))
     }
 
-    override fun clear() = synchronized(store) {
+    override fun clear() = synchronized(store.coordinationLock) {
         store.remove(key)
     }
 
-    override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean = synchronized(store) {
+    override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean = synchronized(store.coordinationLock) {
         when (val stored = readStoredRecord()) {
             StoredRecord.Missing -> if (expected != null) return@synchronized false
             StoredRecord.Invalid -> return@synchronized false
@@ -207,7 +220,7 @@ class PersistentFirstDeviceRootStore(
     override fun captureSeed(
         candidate: FirstDeviceRootRecord,
         replaceableTerminalStates: Set<FirstDeviceRootState>,
-    ): Boolean = synchronized(store) {
+    ): Boolean = synchronized(store.coordinationLock) {
         val existing = when (val stored = readStoredRecord()) {
             StoredRecord.Missing -> null
             StoredRecord.Invalid -> return@synchronized false
@@ -230,7 +243,7 @@ class PersistentFirstDeviceRootStore(
         writeDurably(candidate)
     }
 
-    override fun readState(): FirstDeviceRootReadResult = synchronized(store) {
+    override fun readState(): FirstDeviceRootReadResult = synchronized(store.coordinationLock) {
         when (val stored = readStoredRecord()) {
             StoredRecord.Missing -> FirstDeviceRootReadResult.Missing
             StoredRecord.Invalid -> FirstDeviceRootReadResult.Unreadable
@@ -238,7 +251,23 @@ class PersistentFirstDeviceRootStore(
         }
     }
 
-    override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = synchronized(store) {
+    override fun withConfirmedSafeAttemptKeyCleanup(attemptId: String, cleanup: () -> Unit): Boolean = synchronized(store.coordinationLock) {
+        when (val stored = readStoredRecord()) {
+            StoredRecord.Missing -> {
+                cleanup()
+                true
+            }
+            StoredRecord.Invalid -> false
+            is StoredRecord.Valid -> if (stored.record.seed.attemptId == attemptId) {
+                false
+            } else {
+                cleanup()
+                true
+            }
+        }
+    }
+
+    override fun confirmDurable(record: FirstDeviceRootRecord): Boolean = synchronized(store.coordinationLock) {
         try {
             store.flush()
             (readStoredRecord() as? StoredRecord.Valid)?.record == record
@@ -247,7 +276,7 @@ class PersistentFirstDeviceRootStore(
         }
     }
 
-    override fun flush() = synchronized(store) {
+    override fun flush() = synchronized(store.coordinationLock) {
         store.flush()
     }
 
@@ -272,6 +301,8 @@ class PersistentFirstDeviceRootStore(
     }
 
     internal fun encode(record: FirstDeviceRootRecord): String {
+        require(record.seed.dskAlias == ALIAS_PREFIX_DSK + record.seed.attemptId)
+        require(record.seed.dekAlias == ALIAS_PREFIX_DEK + record.seed.attemptId)
         val submission = record.submission
         val fields = listOf(
             record.seed.attemptId,
@@ -307,6 +338,9 @@ class PersistentFirstDeviceRootStore(
         val parts = raw.split(FIELD_SEPARATOR)
         if (parts.size != FIELD_COUNT) return null
         return try {
+            val attemptId = parts[0]
+            require(parts[8] == ALIAS_PREFIX_DSK + attemptId)
+            require(parts[9] == ALIAS_PREFIX_DEK + attemptId)
             val submission = if (parts[16].isEmpty() && parts[17].isEmpty() && parts[18].isEmpty() && parts[19].isEmpty() && parts[20].isEmpty()) {
                 null
             } else {
@@ -349,5 +383,7 @@ class PersistentFirstDeviceRootStore(
         const val KEY = "first_device_root_v1"
         const val FIELD_SEPARATOR = "|"
         const val FIELD_COUNT = 22
+        const val ALIAS_PREFIX_DSK = "pca.dsk."
+        const val ALIAS_PREFIX_DEK = "pca.dek."
     }
 }

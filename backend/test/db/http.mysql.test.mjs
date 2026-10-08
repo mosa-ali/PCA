@@ -92,7 +92,7 @@ const resolveEnvelopeContext = (_senderKeyId, _familyId, nowUtc) => ({
  * (e.g. the burst/concurrency tests below).
  */
 function freshApp() {
-  return buildServer({
+  const server = buildServer({
     authService,
     parentAccountService,
     familyMembershipRepository,
@@ -106,6 +106,24 @@ function freshApp() {
     statusTracker,
     resolveEnvelopeContext,
   });
+  // Keep the default integration helper aligned with the shipped app flow:
+  // every bootstrap request first commits the exact attempt through the real
+  // HTTP prepare route. Tests for raw/legacy requests use rawInject explicitly.
+  return {
+    log: server.log,
+    async inject(options) {
+      if (options.method === 'POST' && options.url === '/v1/enrollment/bootstrap') {
+        const prepared = await server.inject({
+          method: 'POST',
+          url: '/v1/enrollment/bootstrap/prepare',
+          payload: options.payload,
+        });
+        if (prepared.statusCode !== 200) return prepared;
+      }
+      return server.inject(options);
+    },
+    rawInject: (options) => server.inject(options),
+  };
 }
 
 function key() {
@@ -445,6 +463,26 @@ test('MySQL HTTP: valid bootstrap returns PAIRING_PENDING', async () => {
   assert.equal(response.json().status, 'PAIRING_PENDING');
 });
 
+test('MySQL HTTP: legacy direct bootstrap without PREPARED fails closed with no side effects', async () => {
+  const app = freshApp();
+  const { rawToken, record } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+
+  const response = await app.rawInject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'invitation_unavailable' });
+
+  const [[invitation]] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [record.invitationId]);
+  const [[devices]] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  const [[attempts]] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE invitation_id = ?`, [record.invitationId]);
+  assert.equal(invitation.status, 'CREATED');
+  assert.equal(Number(devices.n), 0);
+  assert.equal(Number(attempts.n), 0);
+
+  const supportedFlow = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(supportedFlow.statusCode, 201, 'prepare-then-bootstrap succeeds');
+});
+
 test('MySQL HTTP: malformed token is 400', async () => {
   const response = await freshApp().inject({
     method: 'POST',
@@ -620,7 +658,7 @@ test('MySQL HTTP: bootstrap bucket itself rate-limits independently of invitatio
   const responses = [];
   for (let i = 0; i < 31; i++) {
     responses.push(
-      await app.inject({
+      await app.rawInject({
         method: 'POST',
         url: '/v1/enrollment/bootstrap',
         payload: bootstrapPayload({ rawInvitationToken: randomBytes(32).toString('base64url') }),
@@ -645,6 +683,53 @@ test('MySQL HTTP RETRY: same attempt id + same token + same keys replays the ori
 
   const [rows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE device_id = ?`, [first.json().deviceId]);
   assert.equal(rows[0].n, 1);
+});
+
+test('MySQL HTTP RESOLUTION: prepare creates no device, recovery atomically abandons, and stale bootstrap cannot commit', async () => {
+  const app = freshApp();
+  const { rawToken, record } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+  const prepared = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap/prepare', payload });
+  assert.equal(prepared.statusCode, 200);
+  assert.deepEqual(prepared.json(), { status: 'READY' });
+
+  const [[claim]] = await getPool().query(
+    `SELECT status, device_id, signing_key_id, encryption_key_id FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`,
+    [payload.bootstrapAttemptId],
+  );
+  assert.deepEqual(claim, { status: 'PREPARED', device_id: null, signing_key_id: null, encryption_key_id: null });
+  const [[deviceCountBefore]] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  assert.equal(Number(deviceCountBefore.n), 0);
+
+  const wrongSecret = await app.inject({
+    method: 'POST', url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payload.bootstrapAttemptId, attemptRecoveryToken: recoveryToken() },
+  });
+  assert.equal(wrongSecret.statusCode, 404);
+  const stillPrepared = await getPool().query(`SELECT status FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`, [payload.bootstrapAttemptId]);
+  assert.equal(stillPrepared[0][0].status, 'PREPARED', 'invalid recovery authority cannot abandon a reservation');
+
+  const abandoned = await app.inject({
+    method: 'POST', url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payload.bootstrapAttemptId, attemptRecoveryToken: payload.attemptRecoveryToken },
+  });
+  assert.equal(abandoned.statusCode, 200);
+  assert.deepEqual(abandoned.json(), { status: 'ATTEMPT_ABANDONED' });
+
+  const staleBootstrap = await app.rawInject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(staleBootstrap.statusCode, 404);
+  const nextPayload = bootstrapPayload({ rawInvitationToken: rawToken });
+  const nextPrepared = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap/prepare', payload: nextPayload });
+  assert.equal(nextPrepared.statusCode, 200);
+  assert.deepEqual(nextPrepared.json(), { status: 'READY' });
+  const oldTerminal = await app.inject({
+    method: 'POST', url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payload.bootstrapAttemptId, attemptRecoveryToken: payload.attemptRecoveryToken },
+  });
+  assert.equal(oldTerminal.statusCode, 200, 'a lost terminal response remains recoverable after a new attempt claims the invitation');
+  assert.deepEqual(oldTerminal.json(), { status: 'ATTEMPT_ABANDONED' });
+  const committed = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: nextPayload });
+  assert.equal(committed.statusCode, 201);
 });
 
 test('MySQL HTTP RETRY: DEVICE_COUNT_AFTER_RETRIES -- 10 sequential retries of the same attempt create exactly one device', async () => {
