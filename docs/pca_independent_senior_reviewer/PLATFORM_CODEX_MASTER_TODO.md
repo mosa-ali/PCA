@@ -1,5 +1,11 @@
 # PCA Platform Web — Codex Master TODO
 
+## Git/CI checkpoint complete — 2026-10-09
+
+Verified checkpoint 2dd845075e66f40b92d40c7dd3acd8e2b775c7cb passed exact-head Quality Gates 37856734886, SUCCESS 27/27. Fresh fetch/direct-server comparison proves LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD at that checkpoint; tracked worktree clean, five excluded untracked files preserved. Product source remains the separately certified provenance checkpoint 0f598dcd (source CI 37855820056 SUCCESS 27/27); local selected compatibility 97/97 and instrumented-test compilation PASS. TODO-19 is PASS for this verified publication checkpoint. Parent board: 16 PASS / 3 IN_PROGRESS (12/14/15) / 4 TODO (18/21/22/23). TODO-20 remains PASS.
+
+Remaining mission gates: reviewed ordinary signed-epoch request/retry and receiving-policy/encrypted-delivery contracts, physical Android/iOS and instrumented migration execution, literal owner LOCALHOST ACCEPTED, Platform Enrollment dependency, approved Azure deployment and production acceptance. No mission completion or release authorization is claimed. This final status synchronization changes only ledgers; its publication/CI is separately monitored. Read current receipt-head truth with git rev-parse HEAD/origin/pca-dev and the matching Quality Gates run; avoid creating another receipt-only commit merely to repeat an unchanged PASS state.
+
 ## Validated source and ledger synchronization checkpoint — 2026-10-09
 
 Source checkpoint 0f598dcdf8253f7a08d145f894c98d4448a4a47a is published/aligned and passed exact-head Quality Gates 37855820056, 27/27. Final local usage/export/retention/schema tests passed 97/97, and local compileDebugAndroidTestKotlin passed (exit 0). The generated v6→v7 comparison is purely additive; real SQLite migration preserved historical values/indices. No connected Android device or installed emulator was available, so instrumented migration execution and physical Android/iOS acceptance remain unproven.
@@ -944,11 +950,11 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 
 ### PLATFORM-13 — Push / exact-head CI
 
-STATUS = IN_PROGRESS (current shared published checkpoint; prior projection checkpoints passed)
+STATUS = PASS (verified shared checkpoint 2dd84507)
 OWNER = COORDINATOR
-FILES = Current shared publication and canonical ledgers
-EVIDENCE = Source checkpoint `0f598dcdf8253f7a08d145f894c98d4448a4a47a` is published and local/tracking/server aligned; both master TODO files verified remotely. Exact-head Quality Gates `37855820056` completed SUCCESS 27/27. Previous checkpoint `53974526` passed 27/27. No Platform product code changed in the mobile checkpoint.
-BLOCKER = Publish this ledger synchronization and verify its resulting exact-head CI. HOLD_PARENT_DEPENDENCY remains separately open.
+FILES = Shared publication and canonical ledgers
+EVIDENCE = Local/tracking/server aligned at 2dd845075e66f40b92d40c7dd3acd8e2b775c7cb; exact-head Quality Gates 37856734886 completed SUCCESS 27/27. Source checkpoint 0f598dcd also passed 27/27. Both master TODO files remotely verified. No Platform product source changed in the mobile checkpoint.
+BLOCKER = None for this verified publication. HOLD_PARENT_DEPENDENCY remains independently open; later publication CI is separately checked.
 DONE_WHEN = local=remote and exact-head CI PASS
 
 ### PLATFORM-14 — Refresh rollback baseline

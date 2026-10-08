@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Git/CI checkpoint complete — 2026-10-09
+
+Verified checkpoint 2dd845075e66f40b92d40c7dd3acd8e2b775c7cb passed exact-head Quality Gates 37856734886, SUCCESS 27/27. Fresh fetch/direct-server comparison proves LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD at that checkpoint; tracked worktree clean, five excluded untracked files preserved. Product source remains the separately certified provenance checkpoint 0f598dcd (source CI 37855820056 SUCCESS 27/27); local selected compatibility 97/97 and instrumented-test compilation PASS. TODO-19 is PASS for this verified publication checkpoint. Parent board: 16 PASS / 3 IN_PROGRESS (12/14/15) / 4 TODO (18/21/22/23). TODO-20 remains PASS.
+
+Remaining mission gates: reviewed ordinary signed-epoch request/retry and receiving-policy/encrypted-delivery contracts, physical Android/iOS and instrumented migration execution, literal owner LOCALHOST ACCEPTED, Platform Enrollment dependency, approved Azure deployment and production acceptance. No mission completion or release authorization is claimed. This final status synchronization changes only ledgers; its publication/CI is separately monitored. Read current receipt-head truth with git rev-parse HEAD/origin/pca-dev and the matching Quality Gates run; avoid creating another receipt-only commit merely to repeat an unchanged PASS state.
+
 ## Validated source and ledger synchronization checkpoint — 2026-10-09
 
 Source checkpoint 0f598dcdf8253f7a08d145f894c98d4448a4a47a is published/aligned and passed exact-head Quality Gates 37855820056, 27/27. Final local usage/export/retention/schema tests passed 97/97, and local compileDebugAndroidTestKotlin passed (exit 0). The generated v6→v7 comparison is purely additive; real SQLite migration preserved historical values/indices. No connected Android device or installed emulator was available, so instrumented migration execution and physical Android/iOS acceptance remain unproven.
@@ -1222,20 +1228,18 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 
 ### TODO-19 — Git reconciliation + remote alignment + exact-head CI
 
-STATUS = IN_PROGRESS (source checkpoint 0f598dcd passed exact-head CI; ledger synchronization awaits publication/CI)
+STATUS = PASS (verified checkpoint 2dd84507; later receipt publication is monitored separately)
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers
-EVIDENCE = Validated source/schema/test checkpoint `0f598dcdf8253f7a08d145f894c98d4448a4a47a` published to `origin/pca-dev` by ordinary fast-forward. Fresh fetch and direct server lookup prove LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD. Both canonical TODO files were verified in that remote commit; all 17 checkpoint files are published. Local final usage/export/retention/schema campaign passed 97/97 with no failures/errors/skips. Prior checkpoint `5397452694d89cd772422ae0d63513c05871ee50` passed Quality Gates `37852533600`, 27/27.
-BLOCKER = Source exact-head Quality Gates `37855820056` completed SUCCESS 27/27. Publish this ledger synchronization and verify its resulting exact-head CI. Physical devices, ordinary authority/crypto contracts, owner acceptance and Platform dependency remain independent.
+EVIDENCE = Published source 0f598dcdf8253f7a08d145f894c98d4448a4a47a passed Quality Gates 37855820056, 27/27. Ledger checkpoint 2dd845075e66f40b92d40c7dd3acd8e2b775c7cb passed Quality Gates 37856734886, 27/27. Fresh fetch and direct server lookup prove all three refs equal at the verified checkpoint, with zero tracked diffs/unpushed commits and five preserved excluded files. Both master TODOs and all 17 source checkpoint files are remotely present. Local compatibility 97/97 and instrumented-test compilation passed.
+BLOCKER = None for the verified checkpoint. This PASS does not authorize source changes, device activation or deployment without the remaining mission gates. Any later source checkpoint requires fresh validation.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
-LAST_ALIGNED_LOCAL_HEAD = `0f598dcdf8253f7a08d145f894c98d4448a4a47a`
-LAST_ALIGNED_REMOTE_HEAD = `0f598dcdf8253f7a08d145f894c98d4448a4a47a`
-LAST_PUBLICATION_LOCAL_ONLY_FILES = 0 tracked files at publication; five excluded untracked files preserved.
-LAST_PUBLICATION_UNPUSHED_COMMITS = 0 after post-push verification.
-LATEST_RECORDED_EXACT_HEAD_CI = `37855820056`, SUCCESS 27/27 at published source SHA; ledger synchronization needs its own verification.
-CURRENT_LOCAL_HEAD = `0f598dcdf8253f7a08d145f894c98d4448a4a47a`
-CURRENT_REMOTE_HEAD = `0f598dcdf8253f7a08d145f894c98d4448a4a47a`
-CURRENT_PUBLICATION_STATE = Source/schema/test checkpoint is remote. Current publication receipt and canonical board corrections are maintained locally for the next meaningful checkpoint; preserve the running CI instead of pushing a receipt-only change over it.
+LAST_ALIGNED_LOCAL_HEAD = `2dd845075e66f40b92d40c7dd3acd8e2b775c7cb`
+LAST_ALIGNED_REMOTE_HEAD = `2dd845075e66f40b92d40c7dd3acd8e2b775c7cb`
+LAST_PUBLICATION_LOCAL_ONLY_FILES = 0 at verified checkpoint; excluded files preserved.
+LAST_PUBLICATION_UNPUSHED_COMMITS = 0 at verified checkpoint.
+LATEST_RECORDED_EXACT_HEAD_CI = `37856734886`, SUCCESS 27/27 at `2dd845075e66f40b92d40c7dd3acd8e2b775c7cb`.
+CURRENT_PUBLICATION_STATE = Verified checkpoint PASS. This status-only receipt is published separately and its actual head/CI verified using Git/GitHub, without recursively publishing unchanged CI receipts.
 
 ### TODO-20 — Live schema / DB grants reconciliation
 
