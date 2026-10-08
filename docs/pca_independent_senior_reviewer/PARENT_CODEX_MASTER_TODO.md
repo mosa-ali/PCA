@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-15 relay paging and callback attribution checkpoint — 2026-10-08
+
+VALIDATION_HEAD = `da30a3c5f9bd4647a83de4577949f45575072cfa`; local `pca-dev` was six commits ahead of freshly fetched `origin/pca-dev` / server `c4b05a8bfac419d49ac65fd58b2006d67fefd824` when these checks ran. This checkpoint adds one documentation-only commit afterward.
+ANDROID_RELAY_PAGING = Focused `:app:testDebugUnitTest --tests org.pca.app.runtime.sync.ReconnectSyncOrchestratorTest` passed: 26 tests, 0 failures, 0 errors, 0 skips. Tests include durable cursor continuation across bounded invocations, empty-page continuation, and rejected saved-cursor recovery without losing ciphertext. Production follows at most four pages per campaign and retains cursor/work when continuation remains.
+IOS_RELAY_AND_CALLBACK_SYNTAX = `swiftc -frontend -parse` passed for nine current iOS implementation/test files covering relay navigation, application consumption, custody storage, callback observation logging, and health reconciliation. Apple XCTest/typecheck was not run; Xcode is unavailable on this host.
+IOS_CALLBACK_ATTRIBUTION = Source inspection confirms only the current non-invalidated monitor activity is written to the health anchor; stale/foreign/unknown activity is kept in a separate bounded diagnostic ring. Health reconciliation requires exact activity ID, installation generation, callback kind, and the unambiguous first-occurrence window. Existing tests cover stale activity/generation and diagnostic isolation; no Apple execution claim is made.
+TODO_STATE = The queued relay-pagination and callback-attribution repository work is implemented and locally checked. TODO-12/15 remain IN_PROGRESS for production trusted crypto/authority composition, policy application and receiving-device enforcement, and physical-device evidence. TODO-14 remains NOT_YET_PROVEN at aggregate level; TODO-19 exact-head CI and TODO-20 live DB access remain open. No Platform source or external gate changed.
+
 ## TODO-15 iOS fixture syntax checkpoint — 2026-10-08
 
 PRECHECK_HEAD = `9976f3fb10b6f88b715407d5a543ae0cff9b7c27`; the tracked tree was clean and the candidate was five commits ahead of `origin/pca-dev` / server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824` before this ledger update. The direct read-only fetch and server lookup verified that remote head.

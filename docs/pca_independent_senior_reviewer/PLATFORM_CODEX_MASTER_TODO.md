@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-15 mobile regression checkpoint — 2026-10-08
+
+Parent's queued relay-pagination path passed the focused Android reconnect suite 26/26 (zero failures/errors/skips); nine related iOS source/test files passed Swift syntax parsing. iOS XCTest/typecheck remains unavailable because Xcode is absent. Source review confirms callback health uses exact active activity/generation attribution and sends stale/foreign activity to bounded diagnostics. No Platform product source or Parent identity projection changed; preserve `HOLD_PARENT_DEPENDENCY`, the Enrollment identity gates, and literal owner `LOCALHOST ACCEPTED` requirement.
+
 ## Parent TODO-19 CI update — 2026-10-08
 
 The latest published `pca-dev` Quality Gates run `37788211532` completed FAILURE at Parent base `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; its only failed job was iOS, with three stale enrollment test fixtures. The local correction is in Parent commit `73524a4e`, followed by the current route-audit evidence checkpoint. This CI run does not cover the local Parent candidate and does not alter Platform implementation status. Keep `HOLD_PARENT_DEPENDENCY`, Parent-owned projection requirements, owner localhost acceptance, and Platform release gates open; Platform exact-head CI has not been established by this Parent run.

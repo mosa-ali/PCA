@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-15 relay paging and callback attribution validation — 2026-10-08
+
+At local validation head `da30a3c5f9bd4647a83de4577949f45575072cfa`, the focused Android reconnect suite passed 26/26 with zero failures, errors, or skips; it covers bounded relay cursor continuation, restart from a saved cursor, empty-page continuation, and rejected-cursor recovery. Nine iOS relay/custody/callback implementation and test files passed `swiftc -frontend -parse` in an isolated process. Source inspection verifies callback-health observations are bound to the active monitor activity and installation generation; stale/foreign events use a bounded diagnostic ring. Xcode is unavailable, so no iOS XCTest/typecheck is claimed. TODO-12/15 crypto, authority and device gates remain open; TODO-14 aggregate, TODO-19 exact-head CI and TODO-20 live DB access remain open. This ledger synchronization changes no product source.
+
 ## TODO-15 local iOS fixture syntax recheck — 2026-10-08
 
 The changed `ios/PCATests/ProductionIntegrationTests.swift` parsed successfully with `swiftc -frontend -parse` (exit 0) from an isolated child process with normalized environment. A direct parser launch crashed before parsing because Swift reported duplicate `Path` environment keys. `xcodebuild` is unavailable, so no XCTest/typecheck result is claimed. The source correction remains the fixture-only commit `73524a4e`; published CI at `c4b05a8` still fails on those three tests, and the unpublished candidate still needs exact-head CI. This ledger update follows precheck head `9976f3fb10b6f88b715407d5a543ae0cff9b7c27` and changes no source.
