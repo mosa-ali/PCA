@@ -1,5 +1,14 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Current terminal checkpoint — iOS integration test compile fixes — 2026-10-08
+
+CONTINUITY = Branch `pca-dev`; local source checkpoint `222fb7dac7be8ce196521e2a115c205addd14244` is one commit ahead of the last freshly fetched and directly verified origin/server head `868323e5c8be63d9ae638951be0cc86df2c8fd76`. A new fetch and direct server query are required before publication. The tracked tree is clean after this source commit. Preserve five untracked owner/excluded files listed in the checkpoint below.
+CI_RESULT = Exact-head Quality Gates run `37782124895` on `868323e5c8be63d9ae638951be0cc86df2c8fd76` completed FAILURE only in the iOS job. The initial `ContentView` actor-isolation error is cleared. Test-target compilation then found three reversed `makeEnrollmentModel` argument pairs and one `[Data?].first` double-optional unwrap at `ProductionIntegrationTests.swift` lines 1250, 1297, 1337, and 1826.
+IMPLEMENTATION = Commit `222fb7dac7be8ce196521e2a115c205addd14244` changes only `ios/PCATests/ProductionIntegrationTests.swift`: moves `enrollmentKeys` before `keyDeletion` at the three affected calls and separately unwraps the recorded HTTP body entry and `Data` before JSON parsing.
+REVIEW_AND_VALIDATION = Three independent mobile reviewers confirmed the helper argument order and nested optional semantics. Swift frontend parsing passed for `ProductionIntegrationTests.swift`, `ContentView.swift`, and `PCATests.swift`; `git diff --check` passed with CRLF normalization notices only. Full Apple SDK build/XCTest awaits the next exact-head run; no physical iOS evidence is claimed.
+TODO_AND_GATES = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15/19/20 remain open. Platform remains `HOLD_PARENT_DEPENDENCY`. Live DB, owner localhost acceptance, physical Android/iOS, Azure and production remain separate/open; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Update and commit this checkpoint in both master TODOs and the continuous-goal ledger, refresh origin and server refs, publish by ordinary fast-forward, verify remote source, and review the new exact-head CI result.
+
 ## Current terminal checkpoint — iOS main-actor initializer repair — 2026-10-08
 
 CONTINUITY = Fresh read-only continuity refresh verified branch `pca-dev`, `ORIGIN_HEAD = SERVER_HEAD = d778d11f5693336e75438bc274d1d018a4110c44`. Local source commit `d79e5cb764f52659879a4b142676184adbf46724` is one fast-forward commit ahead and zero behind. Tracked worktree is clean after the source commit. Preserve five untracked owner/excluded files: `.vscode/settings.json`, `.vscode/tasks.json`, root `0`, proposal-only `PARENT_FIRST_DEVICE_TRUST_SET_PROTOCOL_REVIEW.md`, and `ios/scripts/__pycache__/wire_family_trust_set_codec.cpython-314.pyc`.

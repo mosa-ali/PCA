@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — iOS integration test compile fixes — 2026-10-08
+
+CONTINUITY = Branch `pca-dev`; local commit `222fb7dac7be8ce196521e2a115c205addd14244` is one commit ahead of the last freshly verified origin/server head `868323e5c8be63d9ae638951be0cc86df2c8fd76`. Refresh refs before publication; preserve five untracked owner/excluded files.
+CI_AND_IMPLEMENTATION = Exact-head run `37782124895` failed only the iOS job after the app-level actor-isolation failure was cleared. It reported three `makeEnrollmentModel` label-order errors and one double-optional request-body unwrap. The current commit swaps the labels at those three calls and unwraps the `[Data?]` entry and `Data` separately.
+REVIEW_AND_VALIDATION = Three independent mobile reviewers confirmed the argument ordering and optional semantics. Swift frontend parsing passed for all three changed iOS files; `git diff --check` passed with line-ending notices. Full Xcode build/XCTest remains pending the next exact-head CI; no device evidence is claimed.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED, with TODO-12/14/15/19/20 open. Platform remains `HOLD_PARENT_DEPENDENCY`; live `pca_pro` remains unreachable and uninspected. Owner acceptance, physical Android/iOS, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Record this checkpoint, refresh remote ancestry, publish the validated source/ledger candidate by ordinary fast-forward, confirm remote equality, and continue through exact-head CI.
+
 ## Current implementation checkpoint — iOS main-actor initializer repair — 2026-10-08
 
 CONTINUITY = Branch `pca-dev`; source commit `d79e5cb764f52659879a4b142676184adbf46724` is one fast-forward commit ahead of freshly verified `origin/pca-dev` and server head `d778d11f5693336e75438bc274d1d018a4110c44`. Five pre-existing untracked owner/excluded files remain preserved.

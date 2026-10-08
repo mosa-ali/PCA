@@ -1,5 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — iOS integration test compile fixes — 2026-10-08
+
+PARENT_CONTINUITY = Parent source commit `222fb7dac7be8ce196521e2a115c205addd14244` is one commit ahead of the last freshly verified `origin/pca-dev` and server head `868323e5c8be63d9ae638951be0cc86df2c8fd76`; refresh both before publication. No Platform source changed.
+PARENT_CI = Exact-head Quality Gates run `37782124895` completed FAILURE only in iOS after surfacing three enrollment-test argument-order errors and one nested optional request-body unwrap. Commit `222fb7da` corrects those four test compile sites; Swift parsing and diff check pass. A new exact-head run remains pending.
+PLATFORM_SCOPE_AND_GATES = Keep `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, and owner `LOCALHOST ACCEPTED` gate unchanged. Physical-device, owner acceptance, live DB, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Verify the Parent test-target fixes through exact-head CI; keep dependent Platform enrollment and deployment held until Parent authority/projection and acceptance dependencies close.
+
 ## Current Parent checkpoint — iOS main-actor initializer repair — 2026-10-08
 
 PARENT_CONTINUITY = Verified `pca-dev` source commit `d79e5cb764f52659879a4b142676184adbf46724`, one fast-forward commit ahead of freshly verified `origin/pca-dev` and server `d778d11f5693336e75438bc274d1d018a4110c44`. Preserve the five untracked paths listed in the Parent master ledger; no Platform source file changed in this checkpoint.
