@@ -302,6 +302,7 @@ const files = [
   "test/tooling/enrollmentBootstrapAttemptResolutionMigrationRecovery.test.mjs",
   "test/tooling/canonicalSchemaDrift.test.mjs",
   "test/tooling/runtimeGrantPolicy.test.mjs",
+  "test/tooling/schemaIntrospectionTls.test.mjs",
   "test/tooling/productionInMemoryStores.test.mjs",
   "test/tooling/ftsProductionWiring.test.mjs",
   "test/tooling/productionPathCertification.test.mjs",

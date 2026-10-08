@@ -1,5 +1,12 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-20 TLS tooling and restored Key Vault access — 2026-10-09
+
+BASE_CHECKPOINT = `c34b1db5c89c0bbe2bbc18efda125e189517f929`; Quality Gates run `37846928266` completed SUCCESS at this exact SHA.
+IMPLEMENTATION = Schema introspection now applies the shared database TLS policy before connecting, matching migration/runtime grant tooling. Production missing/disabled/invalid TLS and unreadable CA fail closed; REQUIRED supplies verified TLS 1.2+ explicitly. Focused CLI integration and test-registration checks passed 9/9; connection forwarding uses a test double, not live TLS evidence.
+LIVE_ACCESS = Owner-completed Key Vault-specific CLI MFA restored `pca-key` metadata/secret access. Migration secret was read only in process memory and its target validated as `pca-mysql.mysql.database.azure.com/pca_pro`; no credential was printed or persisted. ARM reports MySQL 8.4 Ready with public networking enabled. TCP/3306 fails; current client IP `209.198.151.40` differs from existing single-IP firewall rules (`209.198.151.62`, `9.246.39.10`). Temporary single-IP access is awaiting owner approval; no firewall or live SQL/schema/grant mutation occurred.
+TODO_STATE = TODO-20 remains IN_PROGRESS. Parent 15 PASS / 4 IN_PROGRESS (12/14/15/20) / 4 TODO (18/21/22/23); TODO-14 NOT_YET_PROVEN. Platform HOLD_PARENT_DEPENDENCY and physical-device, owner localhost, live DB, Azure deployment and production gates remain open.
+
 ## Resume checkpoint — 2026-10-09
 
 CONTINUITY_STATUS = PASS at observed head `607efefeeec1bf067abac13800c83406b5294ed0`: fresh fetch/direct server lookup verified local/tracking/server equality on `pca-dev`; tracked files were clean and all five excluded untracked files were preserved.

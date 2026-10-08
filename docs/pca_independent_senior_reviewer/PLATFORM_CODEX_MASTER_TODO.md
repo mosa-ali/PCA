@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-20 access and TLS checkpoint — 2026-10-09
+
+Base checkpoint `c34b1db5c89c0bbe2bbc18efda125e189517f929` passed Quality Gates `37846928266`. Shared schema-introspection tooling now enforces PCA verified TLS policy; focused CLI/test-registration checks passed 9/9. Key Vault CLI access is restored and migration-secret target validated without credential output. Live MySQL TCP/3306 remains inaccessible because the current client IP differs from the existing firewall allowlist; temporary single-IP access awaits owner approval. No live SQL, firewall mutation or Platform product change occurred. Preserve HOLD_PARENT_DEPENDENCY, Parent-owned projection, literal owner LOCALHOST ACCEPTED, live DB, device, Azure and production gates.
+
 ## Parent resume checkpoint — 2026-10-09
 
 Parent TODO-20 now explicitly has owner authorization to use `pca-key` credentials. Vault secret-name metadata inspection returned expired MFA (`AADSTS50078`); no secret value or live SQL was read. Azure CLI reauthentication is requested.

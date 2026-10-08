@@ -6,6 +6,7 @@
 // non-unique), foreign keys (with on_update/on_delete), and check constraints.
 import { writeFile } from 'node:fs/promises';
 import mysql from 'mysql2/promise';
+import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 
 /**
  * information_schema.check_constraints.check_clause and
@@ -72,7 +73,14 @@ if (!connectionString || !outPath) {
   throw new Error('Usage: node introspect-schema.mjs <PCA_DATABASE_URL> <out.json> (or set PCA_SCHEMA_INTROSPECTION_URL and PCA_SCHEMA_INTROSPECTION_OUT).');
 }
 
-const connection = await mysql.createConnection({ uri: connectionString, timezone: 'Z' });
+// Use the same explicit, verified TLS policy as runtime and migration tools.
+// URI ssl-mode parameters alone do not enforce TLS in mysql2.
+const tls = resolveDatabaseTlsOption();
+const connection = await mysql.createConnection({
+  uri: connectionString,
+  ssl: tls === false ? undefined : tls,
+  timezone: 'Z',
+});
 try {
   const [dbRows] = await connection.query('SELECT DATABASE() AS db');
   const dbName = dbRows[0].db;

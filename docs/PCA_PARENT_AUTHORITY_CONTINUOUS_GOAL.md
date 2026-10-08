@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-20 TLS tooling and Key Vault access — 2026-10-09
+
+Observed base `c34b1db5c89c0bbe2bbc18efda125e189517f929` passed Quality Gates `37846928266`. Schema introspection now uses the shared verified TLS policy; CLI integration and suite-registration checks passed 9/9 (test-double connection forwarding, not live DB proof). Key Vault-specific owner MFA restored CLI access; migration-secret target matched the authorized live `pca_pro` host/database with no credential output/persistence. MySQL is Ready, but current IP `209.198.151.40` is outside the existing firewall allowlist and TCP/3306 fails. Temporary single-IP access awaits owner approval; no live SQL or firewall mutation occurred. TODO-20 stays IN_PROGRESS and all distinct external gates remain open. Continue authenticated read-only schema/grant preflight once reachable, then only locally validated, data-preserving reconciliation.
+
 ## Resume checkpoint — 2026-10-09
 
 TODO-20 Key Vault credential access is explicitly owner-authorized. The repository identifies `pca-key`; metadata-only inspection returned `AADSTS50078` for the vault data plane. No secret values were read. Await renewed Azure CLI MFA, then use the vault credentials inside the DB connection process without exposing them and resume the required live read-only comparison/preflight.
