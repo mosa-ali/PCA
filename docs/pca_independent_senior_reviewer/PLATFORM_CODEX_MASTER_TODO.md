@@ -1,5 +1,12 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — iOS suspended-response test transport — 2026-10-08
+
+PARENT_CONTINUITY = Local source commit `61453aed0f1869faf4246ca4cec16b3ac73b6e6f` is one commit ahead of last freshly verified `origin/pca-dev` and server head `df5eef23ca7a7dc769831a8f2137c4f5982a9a19`; refresh refs before publication. No Platform source changed.
+PARENT_CI = Run `37787153627` has a failed iOS job for a missing `return` in the suspended test transport, while the overall run was still in progress at last inspection. The current local commit adds the explicit return; Swift parsing and diff check pass. The next exact-head run is pending.
+PLATFORM_SCOPE_AND_GATES = Keep `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, and owner `LOCALHOST ACCEPTED` gate unchanged. Physical-device, owner acceptance, live DB, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Verify the Parent correction through exact-head CI; keep dependent Platform enrollment and deployment held until Parent authority/projection and acceptance dependencies close.
+
 ## Current Parent checkpoint — iOS integration test compile fixes — 2026-10-08
 
 PARENT_CONTINUITY = Parent source commit `222fb7dac7be8ce196521e2a115c205addd14244` is one commit ahead of the last freshly verified `origin/pca-dev` and server head `868323e5c8be63d9ae638951be0cc86df2c8fd76`; refresh both before publication. No Platform source changed.

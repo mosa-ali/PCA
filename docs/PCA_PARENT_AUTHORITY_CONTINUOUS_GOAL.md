@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — iOS suspended-response test transport — 2026-10-08
+
+CONTINUITY = Branch `pca-dev`; source commit `61453aed0f1869faf4246ca4cec16b3ac73b6e6f` is one commit ahead of the last fresh origin/server head `df5eef23ca7a7dc769831a8f2137c4f5982a9a19`. Refresh refs before publication and preserve five untracked owner/excluded files.
+CI_AND_IMPLEMENTATION = Run `37787153627` at `df5eef23` has an iOS job failure for the missing return after an early branch in `SuspendedEnrollmentTransport.send(_:)`; the full run remained in progress at last inspection. The current commit adds `return` before the checked continuation, preserving request behavior.
+REVIEW_AND_VALIDATION = An independent mobile reviewer confirmed the minimal correction. Swift frontend parsing and `git diff --check` passed; full Xcode build/XCTest remains pending the next exact-head CI. A fresh read-only TODO-20 probe resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178` and TCP/3306 failed; no live SQL or mutation occurred.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15/19/20 remain open. Platform remains `HOLD_PARENT_DEPENDENCY`. Owner acceptance, physical Android/iOS, live DB, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Update the canonical ledgers, refresh direct remote ancestry, publish by ordinary fast-forward, verify remote equality, and close the next exact-head CI run.
+
 ## Current implementation checkpoint — iOS integration test compile fixes — 2026-10-08
 
 CONTINUITY = Branch `pca-dev`; local commit `222fb7dac7be8ce196521e2a115c205addd14244` is one commit ahead of the last freshly verified origin/server head `868323e5c8be63d9ae638951be0cc86df2c8fd76`. Refresh refs before publication; preserve five untracked owner/excluded files.
