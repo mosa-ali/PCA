@@ -2,6 +2,8 @@
 
 ## Parent schema tooling TLS completion — 2026-10-09
 
+CI update: 7edfdf2addea915534bdb5224a426c6e7a8366b1 passed Quality Gates 37851501316, 27/27. TLS completion is locally committed at feae53e9; its publication/exact-head CI remain pending. The running-state observation below predates this result.
+
 Base checkpoint `7edfdf2addea915534bdb5224a426c6e7a8366b1` is published/aligned, with exact-head CI 37851501316 running. Shared schema-snapshot and bootstrap post-validation tools now enforce verified TLS consistently with migration/runtime/introspection tools. Focused CLI/registration checks passed 13/13; real disposable MySQL 8.4.11 replay through 0065 and post-validation passed. No live DB or Platform product change occurred. TODO-20 remains PASS; TODO-19 publication/CI remains IN_PROGRESS. Preserve HOLD_PARENT_DEPENDENCY and all owner/device/deployment gates.
 
 ## TODO-20 database dependency reconciled — 2026-10-09
