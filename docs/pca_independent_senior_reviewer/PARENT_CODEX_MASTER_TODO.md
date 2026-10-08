@@ -1,5 +1,12 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-19 exact-head CI + TODO-20 live-access recheck — 2026-10-08
+
+CI_HEAD = `173d5c31232e2093a735772374c173eed3252977`; Quality Gates run `37802124920` completed SUCCESS, 27/27 jobs. The run includes Android, iOS, full disposable-MySQL certification, and real-backend browser E2E. The range from product-source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` to this head changes only the Parent, Platform, and continuous-goal ledgers; this is not a new product-source validation or external-gate closure.
+TODO20_READ_ONLY = DNS resolves `pca-mysql.mysql.database.azure.com` to `4.161.89.178`; TCP/3306 remains unreachable. Azure account context is enabled, but read-only Flexible Server/firewall queries returned `AADSTS50078` because cached MFA had expired. No live SQL, schema/grant read, firewall change, or database mutation occurred.
+MISSION_STATE = Parent remains 15 PASS / 4 IN_PROGRESS (TODO-12/14/15/20) / 4 TODO (TODO-18/21/22/23) / 0 BLOCKED. TODO-14 remains `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`; Platform remains `HOLD_PARENT_DEPENDENCY`. Device, live DB, owner localhost, Azure deployment, and production gates remain separate/open.
+NEXT = Resume TODO-20 read-only live comparison after an authorized reachable session is available. Continue TODO-12/14/15 only when the required authority, cryptographic, delivery, and device contracts permit a safe implementation; keep Azure deployment readiness NO.
+
 ## TODO-19 exact-head CI result — 2026-10-08
 
 PUBLISHED_HEAD = `f963a79e3b7ded0e9836c59b65b1ed236a188066`; fresh fetch and direct server lookup verify local/tracking/server equality at this commit. Quality Gates run `37800886221` completed SUCCESS, 27/27 jobs. This is a docs-only ledger checkpoint; product source remains unchanged from `4e722cde2a590916cb02e18fca83428e0ac1c135`. Five excluded untracked files remain preserved.

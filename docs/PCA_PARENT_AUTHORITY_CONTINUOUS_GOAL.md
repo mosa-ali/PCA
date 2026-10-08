@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-19 exact-head CI + TODO-20 access recheck — 2026-10-08
+
+Quality Gates run `37802124920` completed SUCCESS 27/27 at `173d5c31232e2093a735772374c173eed3252977`. Since product-source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135`, the range contains only the three mission ledgers. TODO-20 DNS resolves `pca-mysql.mysql.database.azure.com` to `4.161.89.178`, but TCP/3306 fails; Azure Flexible Server/firewall inspection returned `AADSTS50078` because cached MFA expired. No live SQL/grant read, firewall change, database mutation, or deployment occurred. Parent remains 15 PASS / 4 IN_PROGRESS (12/14/15/20) / 4 TODO (18/21/22/23); TODO-14 remains `NOT_YET_PROVEN`; Platform remains `HOLD_PARENT_DEPENDENCY`. Continue TODO-20 when authorized reachable access is available and continue TODO-12/14/15 only where their reviewed contracts make implementation safe. Physical-device, owner localhost, live DB, Azure, and production gates stay distinct.
+
 ## TODO-19 latest ledger CI result — 2026-10-08
 
 Published docs-only ledger checkpoint `f963a79e3b7ded0e9836c59b65b1ed236a188066` passed Quality Gates run `37800886221` 27/27. The source tree is unchanged from `4e722cde2a590916cb02e18fca83428e0ac1c135`; latest post-push fetch/direct server equality and excluded-file preservation are recorded in both master TODOs. No product, database, deployment, or acceptance state changed.
