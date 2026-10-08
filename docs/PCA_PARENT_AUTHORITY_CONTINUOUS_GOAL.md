@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Current implementation checkpoint — iOS enrollment-test harness corrections — 2026-10-08
+
+CONTINUITY = Approved read-only fetch and direct server query verify LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. Preserve five untracked owner/excluded paths listed in the Parent master TODO.
+IMPLEMENTATION = Corrected three iOS test harnesses without production changes: awaited route-specific abandonment/rescan, suspending `/prepare` before ownership mutation and asserting recoverable/no-bootstrap, and route-specific `PAIRING_PENDING` profile response. Five independent mobile specialists reviewed the diff.
+VALIDATION = Sanitized Swift frontend parsing passed and `git diff --check` passed with CRLF normalization warnings only. Apple XCTest and a fresh exact-head CI run remain unverified; run `37788211532` at `c4b05a8` had a failed iOS job and was IN_PROGRESS overall at last query.
+MISSION_STATE = Parent remains 14 PASS / 5 IN_PROGRESS / 4 TODO / 0 BLOCKED; TODO-12/14/15/19/20 remain open. Platform stays `HOLD_PARENT_DEPENDENCY`. TODO-20 disposable MySQL schema/grants passed through migration 0065; live TCP/3306 remained unreachable, with no live SQL. Physical Android/iOS, owner acceptance, Azure and production remain separate/open; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Commit the scoped correction, recheck remote refs and the direct server head before publication, then verify source blobs and exact-head CI after ordinary fast-forward. Android pending/family durability is already implemented in `94a721dc`, with focused 59/59 and full Android unit validation (0 failures, 1 existing skip); the Android job on `37788211532` was PASS at last observation. After exact-head CI, continue TODO-12/14/15 only where existing authority and wire contracts define safe behavior; retain the signed-epoch, recipient-enforcement, encrypted-delivery, pinned-root and physical-device gates.
+
 ## Current implementation checkpoint — iOS suspended-response test transport — 2026-10-08
 
 CONTINUITY = Branch `pca-dev`; source commit `61453aed0f1869faf4246ca4cec16b3ac73b6e6f` is one commit ahead of the last fresh origin/server head `df5eef23ca7a7dc769831a8f2137c4f5982a9a19`. Refresh refs before publication and preserve five untracked owner/excluded files.

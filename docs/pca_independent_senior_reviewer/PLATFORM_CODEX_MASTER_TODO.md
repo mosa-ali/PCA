@@ -1,5 +1,13 @@
 # PCA Platform Web — Codex Master TODO
 
+## Current Parent checkpoint — iOS enrollment-test harness corrections — 2026-10-08
+
+PARENT_CONTINUITY = Approved read-only fetch and direct server query both verify LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. Preserve the five untracked owner/excluded files in the Parent ledger. The only source delta is a Parent iOS integration-test harness correction.
+PARENT_CI = Last recorded run `37788211532` at `c4b05a8` had an iOS job failure; overall status was IN_PROGRESS at last query. The local follow-up corrects three test fixtures and passes Swift syntax parsing; no exact-head result exists for the changed file.
+PARENT_CHANGE = Rescan now awaits fresh bootstrap completion, the ownership race suspends `/prepare`, and profile confirmation uses a route-specific `PAIRING_PENDING` response. Five independent mobile specialists reviewed the test-only correction. No Parent product authority, Platform source, schema, or identity projection behavior changed.
+PLATFORM_SCOPE_AND_GATES = Preserve `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, and literal owner `LOCALHOST ACCEPTED`. Physical-device, owner acceptance, live DB, Azure and production gates remain separate/open. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+NEXT = Commit the scoped correction, recheck GitHub before publication, then obtain green exact-head CI. Continue dependent Platform work only after Parent authority/projection and acceptance dependencies close.
+
 ## Current Parent checkpoint — iOS suspended-response test transport — 2026-10-08
 
 PARENT_CONTINUITY = Local source commit `61453aed0f1869faf4246ca4cec16b3ac73b6e6f` is one commit ahead of last freshly verified `origin/pca-dev` and server head `df5eef23ca7a7dc769831a8f2137c4f5982a9a19`; refresh refs before publication. No Platform source changed.
