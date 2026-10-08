@@ -1,5 +1,14 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Resume checkpoint — 2026-10-09
+
+CONTINUITY_STATUS = PASS at observed head `607efefeeec1bf067abac13800c83406b5294ed0`: fresh fetch/direct server lookup verified local/tracking/server equality on `pca-dev`; tracked files were clean and all five excluded untracked files were preserved.
+EXACT_HEAD_CI = Quality Gates run `37806206751`, attempt 2, completed SUCCESS with all 27 jobs successful. Attempt 1 failed Android tests at Robolectric MavenArtifactFetcher with an underlying HTTP FileNotFoundException; the Android-only rerun passed on the identical SHA without source changes. The initial failure is retained as history; no product regression was established.
+TODO20_PREFLIGHT = Fresh TCP/3306 to `4.161.89.178` failed. Read-only Azure Flexible Server inspection returned `AADSTS50078` (expired MFA). No live SQL/schema/grant inspection or mutation occurred.
+TODO20_KEY_VAULT = Owner explicitly authorized Key Vault credentials for TODO-20. Repository identifies vault `pca-key`; its secret-name metadata request also returned `AADSTS50078` for the Key Vault data plane. No secret values were read. Owner Azure CLI MFA renewal is requested; after renewal, locate the DB credentials without logging them, retry target reachability, and perform authenticated read-only live schema/grant comparison before any locally validated mutation.
+CONTRACT_RECHECK = The tracked R2 crypto manifest still requires independent human cryptographic/application-security review; its Parent Genesis composition predates DEC-037 and does not approve an ordinary signed-epoch request/retry or recipient-policy application contract. Current source/security gates remain required.
+TODO_STATE = Parent 15 PASS / 4 IN_PROGRESS (12/14/15/20) / 4 TODO (18/21/22/23). TODO-14 remains NOT_YET_PROVEN; Platform remains HOLD_PARENT_DEPENDENCY. Physical Android/iOS, live DB, owner localhost, Azure and production gates remain open. Continue the existing mission when the corresponding prerequisites are supplied.
+
 ## TODO-19 exact-head CI + TODO-20 live-access recheck — 2026-10-08
 
 CI_HEAD = `173d5c31232e2093a735772374c173eed3252977`; Quality Gates run `37802124920` completed SUCCESS, 27/27 jobs. The run includes Android, iOS, full disposable-MySQL certification, and real-backend browser E2E. The range from product-source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` to this head changes only the Parent, Platform, and continuous-goal ledgers; this is not a new product-source validation or external-gate closure.

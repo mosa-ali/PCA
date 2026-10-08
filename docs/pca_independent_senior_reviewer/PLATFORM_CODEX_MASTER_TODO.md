@@ -1,5 +1,11 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent resume checkpoint — 2026-10-09
+
+Parent TODO-20 now explicitly has owner authorization to use `pca-key` credentials. Vault secret-name metadata inspection returned expired MFA (`AADSTS50078`); no secret value or live SQL was read. Azure CLI reauthentication is requested.
+
+Parent observed head `607efefeeec1bf067abac13800c83406b5294ed0` is aligned locally/remotely; Quality Gates `37806206751`, attempt 2, passed all 27 jobs after the Android-only rerun resolved the initial MavenArtifactFetcher/HTTP FileNotFoundException failure without source changes. Fresh Parent TODO-20 TCP/3306 failed and Azure inspection requires renewed MFA (AADSTS50078); no live SQL or mutation occurred. Keep HOLD_PARENT_DEPENDENCY, Parent-owned projection, literal owner LOCALHOST ACCEPTED, physical-device, live DB, Azure and production gates open. No Platform source changed.
+
 ## Parent TODO-19 exact-head CI + TODO-20 access recheck — 2026-10-08
 
 Quality Gates run `37802124920` completed SUCCESS, 27/27, at `173d5c31232e2093a735772374c173eed3252977`; ledger checkpoint `bc6926d4cb114da109e1d89b22453fb94baa739a` passed `37803550761` 27/27, and checkpoint `2489bd07e9f3443ee36bc50a4e64d7effd6690d9` passed `37804813479` 27/27. Changes since source checkpoint `4e722cde` are ledger-only; no Platform product source changed. Azure MySQL resource/firewall reads were blocked by expired cached MFA (`AADSTS50078`), and TCP/3306 is unreachable; no live DB query or mutation occurred. Preserve `HOLD_PARENT_DEPENDENCY`, the Parent-owned identity projection dependency, owner `LOCALHOST ACCEPTED`, and Azure/production gates.
