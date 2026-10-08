@@ -1246,8 +1246,8 @@ final class ProductionIntegrationTests: XCTestCase {
             attemptStore: attempts,
             firstDeviceRootStore: roots,
             proofProvider: TestEnrollmentProofProvider(),
-            keyDeletion: deletion,
             enrollmentKeys: preparation,
+            keyDeletion: deletion,
             enrollmentTransport: transport
         )
 
@@ -1293,8 +1293,8 @@ final class ProductionIntegrationTests: XCTestCase {
                 identityStore: identity,
                 attemptStore: attempts,
                 firstDeviceRootStore: roots,
-                keyDeletion: deletion,
                 enrollmentKeys: preparation,
+                keyDeletion: deletion,
                 enrollmentTransport: transport
             )
 
@@ -1333,8 +1333,8 @@ final class ProductionIntegrationTests: XCTestCase {
             identityStore: identity,
             attemptStore: attempts,
             firstDeviceRootStore: roots,
-            keyDeletion: deletion,
             enrollmentKeys: preparation,
+            keyDeletion: deletion,
             enrollmentTransport: transport
         )
 
@@ -1823,7 +1823,9 @@ final class ProductionIntegrationTests: XCTestCase {
                 let requestPaths = transport.requestPaths()
                 XCTAssertEqual(requestPaths, [recovery ? "/v1/enrollment/bootstrap/recover" : "/v1/enrollment/bootstrap"])
                 let requestBodies = transport.requestBodies()
-                let requestBody = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(requestBodies.first)) as? [String: String])
+                let recordedBody = try XCTUnwrap(requestBodies.first, "enrollment request should be recorded")
+                let requestData = try XCTUnwrap(recordedBody, "enrollment request body should be present")
+                let requestBody = try XCTUnwrap(JSONSerialization.jsonObject(with: requestData) as? [String: String])
                 XCTAssertEqual(requestBody["bootstrapAttemptId"], attempt.attemptId)
                 XCTAssertEqual(requestBody["attemptRecoveryToken"], attempt.attemptRecoveryToken)
 
