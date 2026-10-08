@@ -491,6 +491,7 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     private func beginEnrollmentIfPossible() async {
+        guard !Task.isCancelled else { return }
         guard authorization.permitsEnforcement else {
             applicationState = .authorizationRequired
             lastError = .authorization
@@ -533,6 +534,7 @@ public final class PCAApplicationModel: ObservableObject {
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
             let response = try await dependencies.enrollmentClient.bootstrap(request)
+            try Task.checkCancellation()
             // Wave 6D seed capture: durably record the ceremony credentials
             // and the M1-minted key ids NOW (before any later clear), so a
             // process death can never strand a committed-capable device
@@ -550,6 +552,11 @@ public final class PCAApplicationModel: ObservableObject {
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
             applicationState = .enrollmentInProgress
+        } catch is CancellationError {
+            // A cancelled POST may still have reached the server. Keep the
+            // persisted attempt and keys for its existing recovery endpoint.
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
         } catch let error as PCAAPIError {
             lastError = Self.category(for: error)
             applicationState = Self.state(for: error)
@@ -606,6 +613,7 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     private func resumeEnrollmentIfPossible() async {
+        guard !Task.isCancelled else { return }
         guard authorization.permitsEnforcement,
               pendingDeviceId == nil,
               let attempt = try? dependencies.attemptStore.loadAttempt() else { return }
@@ -615,6 +623,7 @@ public final class PCAApplicationModel: ObservableObject {
                 attemptId: attempt.attemptId,
                 attemptRecoveryToken: attempt.attemptRecoveryToken
             )
+            try Task.checkCancellation()
             // Wave 6D: the recovery path restores the SAME ceremony seed the
             // original bootstrap would have captured (idempotent capture).
             if let preparation = dependencies.enrollmentKeys {
@@ -637,6 +646,9 @@ public final class PCAApplicationModel: ObservableObject {
             profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
             pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
             applicationState = .enrollmentInProgress
+        } catch is CancellationError {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
         } catch let error as PCAAPIError {
             lastError = Self.category(for: error)
             applicationState = Self.state(for: error)

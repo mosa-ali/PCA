@@ -71,10 +71,19 @@ public struct PCAEnrollmentBootstrapClient {
     }
 
     private func decode(_ request: URLRequest) async throws -> PCAEnrollmentBootstrapResponse {
+        try Task.checkCancellation()
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
-        catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
-        catch { throw PCAAPIError.transport(.network) }
+        catch is CancellationError { throw CancellationError() }
+        catch let error as PCAHTTPTransportError {
+            try Task.checkCancellation()
+            throw PCAAPIError.transport(error)
+        }
+        catch {
+            try Task.checkCancellation()
+            throw PCAAPIError.transport(.network)
+        }
+        try Task.checkCancellation()
 
         switch response.statusCode {
         case 200...299: break
