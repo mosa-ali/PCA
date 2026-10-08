@@ -1,5 +1,12 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-19 latest published-head CI recheck — 2026-10-08
+
+SNAPSHOT_HEAD = `7d05241cf35a745aaa96f86127e5199723b48023` on `pca-dev`; at this observation the tracked worktree was clean and four commits ahead of directly verified `origin/pca-dev` / server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. This ledger synchronization is documentation-only and follows that snapshot.
+PUBLISHED_HEAD_CI = Quality Gates run `37788211532` completed FAILURE at `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. The iOS build/unit-test job was the only failed job; three stale fixture tests failed (`testBootstrapAndRecoveryAcceptExplicitNullChildProfileProperty`, `testBootstrapPreparationOwnershipChangePreventsBootstrapSend`, and `testProfileConfirmationDoesNotMutateOrClearAnotherAttempt`). The other jobs passed. This is published-head evidence, not a result for the local candidate.
+LOCAL_CORRECTION = Commit `73524a4e` contains the iOS enrollment integration-test fixture corrections; the local iOS execution is unavailable on this Windows host. The later current-source Parent MySQL route campaign passed at `fedcdd56`, but no exact-head Quality Gates run covers the local commits.
+TODO19_STATUS = IN_PROGRESS. The four-commit local candidate remains unpublished and has no exact-head CI. Any push still requires direct authorization naming the exact current commit, `origin`, and `pca-dev`; after publication, inspect the exact-head run before advancing dependent gates. This documentation sync adds one further local ledger commit after `SNAPSHOT_HEAD` and changes no source.
+
 ## Current terminal resume checkpoint — TODO-14 current-source route audit — 2026-10-08
 
 AUDIT_SOURCE_HEAD = `fedcdd56bfc0720a166b28c3a7170be45ac1ae9c` on `pca-dev`; the run used the current checkout after the three local commits listed below. Fresh `git fetch origin` and direct `git ls-remote` verify `origin/pca-dev = SERVER_HEAD = c4b05a8bfac419d49ac65fd58b2006d67fefd824`; local was three commits ahead and the server head was its ancestor. The five owner-excluded untracked paths remain untouched.

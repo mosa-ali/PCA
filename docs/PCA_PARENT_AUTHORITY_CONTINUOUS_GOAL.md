@@ -1,5 +1,9 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## TODO-19 published-head CI recheck — 2026-10-08
+
+Quality Gates run `37788211532` completed FAILURE at published `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; the iOS job alone failed on three stale enrollment test fixtures. The local correction is in `73524a4e`. The current local snapshot `7d05241cf35a745aaa96f86127e5199723b48023` was four commits ahead with a clean tracked worktree; this ledger-only follow-up adds one local documentation commit and still has no exact-head CI. `TODO-19 = IN_PROGRESS`; publication awaits direct exact-commit authorization for `origin/pca-dev`, followed by exact-head CI inspection. Parent route audit remains 56/56 locally at source head `fedcdd56`; global aggregate remains `NOT_YET_PROVEN`. TODO-20 live TCP/3306 is unreachable; no live DB operation occurred.
+
 ## Current implementation checkpoint — TODO-14 current-source route audit — 2026-10-08
 
 AUDIT_SOURCE_HEAD = `fedcdd56bfc0720a166b28c3a7170be45ac1ae9c`. Fresh fetch and direct server lookup verify `origin/pca-dev = SERVER_HEAD = c4b05a8bfac419d49ac65fd58b2006d67fefd824`; at audit time local was three commits ahead and a fast-forward descendant. Preserve the five owner-excluded untracked paths in the Parent master TODO.

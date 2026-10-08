@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-19 CI update — 2026-10-08
+
+The latest published `pca-dev` Quality Gates run `37788211532` completed FAILURE at Parent base `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; its only failed job was iOS, with three stale enrollment test fixtures. The local correction is in Parent commit `73524a4e`, followed by the current route-audit evidence checkpoint. This CI run does not cover the local Parent candidate and does not alter Platform implementation status. Keep `HOLD_PARENT_DEPENDENCY`, Parent-owned projection requirements, owner localhost acceptance, and Platform release gates open; Platform exact-head CI has not been established by this Parent run.
+
 ## Current Parent checkpoint — TODO-14 MySQL 8.4.11 route audit — 2026-10-08
 
 PARENT_AUDIT_SOURCE_HEAD = `fedcdd56bfc0720a166b28c3a7170be45ac1ae9c`; at test time it was three fast-forward commits ahead of the last directly verified `origin/pca-dev` and server head `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. The fresh `npm run test:db:parent-route-audit` campaign passed build and 56/56 tests on MySQL 8.4.11 after 63 migrations through 0065. Its local report records 146/146 matched scenarios across 52/52 declarations, zero missing/undeclared keys, zero unexpected statuses, and `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`; the disposable schema and temporary server were removed. The ignored report SHA-256 is `D1C71BBA2566BE9C316C50FC6CEA9680027546D7708D80C5CEE7E3B7EBE59B59`.
