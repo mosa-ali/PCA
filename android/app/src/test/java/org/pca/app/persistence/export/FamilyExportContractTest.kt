@@ -31,6 +31,8 @@ import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.entity.SourceConfidence
 import org.pca.app.persistence.repository.InstalledAppEventRepository
 import org.pca.app.persistence.repository.UsageSessionRepository
+import org.pca.app.runtime.usage.UsageSessionProvenance
+import org.pca.app.platform.UsageClockSample
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
@@ -76,6 +78,10 @@ class FamilyExportContractTest {
             endedAtEpochMillis = now.toEpochMilli(),
             durationMillis = 60_000,
             sourceConfidence = SourceConfidence.PLATFORM_API,
+            observationProvenance = UsageSessionProvenance("private-generation", "private-boot", 0, 60000,
+                UsageClockSample(0, now.minusSeconds(60).toEpochMilli()),
+                UsageClockSample(61000, now.plusSeconds(1).toEpochMilli()),
+                UsageClockSample(61000, now.plusSeconds(1).toEpochMilli())),
         )
         UsageSessionRepository(database.usageSessionDao(), cipher).record(
             id = "usage-expired",
@@ -129,6 +135,10 @@ class FamilyExportContractTest {
         val records = LocalRoomFamilyExportDataSource(database, cipher).collect("family-a", scope, now)
         val ids = records.map { it.id }.toSet()
         assertTrue("recent family activity is exported", "usage-recent" in ids)
+        val usagePayload = records.single { it.id == "usage-recent" }.payload
+        assertEquals(setOf("appOrCategoryToken", "startedAtEpochMillis", "endedAtEpochMillis", "durationMillis", "sourceConfidence"), usagePayload.keys().asSequence().toSet())
+        assertFalse(usagePayload.toString().contains("private-generation"))
+        assertFalse(usagePayload.toString().contains("private-boot"))
         assertFalse("expired activity is excluded", "usage-expired" in ids)
         assertTrue("recent family audit is exported", "audit-recent" in ids)
         assertFalse("audit floor excludes records older than its bounded floor", "audit-too-old" in ids)

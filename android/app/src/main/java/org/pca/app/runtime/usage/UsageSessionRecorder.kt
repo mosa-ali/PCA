@@ -148,6 +148,10 @@ class UsageSessionRecorder(
                 observed.event.elapsedRealtimeMillis, observed.epochMillis)
         }
         val result = UsageSessionEngine.apply(state, timestamped)
+        // A tolerated projection change must not credit an interval before this generation.
+        if (result.completedSessions.any { it.startedAtElapsedMillis < previous.generationAnchor.elapsedMillis }) {
+            return establishBaseline(after, device, access)
+        }
         // Stable framed identity uses original platform wall time, not a reprojected start.
         // A new generation separates intervals on each detected continuity reset.
         for (session in result.completedSessions) {
@@ -157,7 +161,10 @@ class UsageSessionRecorder(
                 id = sessionId(device, previous.observationGeneration, session), deviceId = device,
                 appOrCategoryToken = session.appToken, startedAtEpochMillis = session.startedAtEpochMillis,
                 endedAtEpochMillis = session.endedAtEpochMillis, durationMillis = session.durationMillis,
-                sourceConfidence = SourceConfidence.PLATFORM_API)
+                sourceConfidence = SourceConfidence.PLATFORM_API,
+                observationProvenance = UsageSessionProvenance(previous.observationGeneration, bootId,
+                    session.startedAtElapsedMillis, session.endedAtElapsedMillis,
+                    previous.generationAnchor, batch.beforeQuery, batch.afterQuery))
         }
         currentCoroutineContext().ensureActive()
         check(deviceIdProvider() == device) { "Usage device changed before cursor commit" }

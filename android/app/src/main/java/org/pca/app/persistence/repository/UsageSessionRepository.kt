@@ -1,5 +1,8 @@
 package org.pca.app.persistence.repository
 
+import org.pca.app.runtime.usage.UsageSessionProvenance
+import org.pca.app.runtime.usage.UsageSessionProvenanceCodec
+import org.pca.app.runtime.usage.UsageProvenanceBinding
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.crypto.decryptFromColumns
 import org.pca.app.persistence.crypto.encryptToColumns
@@ -16,7 +19,11 @@ data class UsageSession(
     val endedAtEpochMillis: Long,
     val durationMillis: Long,
     val sourceConfidence: SourceConfidence,
+    val observationProvenance: UsageSessionProvenance? = null,
 )
+
+/** Truncation explicitly describes this retained-row query, never platform coverage. */
+data class UsageObservationPage(val sessions: List<UsageSession>, val truncated: Boolean)
 
 /**
  * PCA-RUNTIME-PERSIST-1 Section 6: real Room bridge for legitimate usage
@@ -40,7 +47,14 @@ class UsageSessionRepository(
         endedAtEpochMillis: Long,
         durationMillis: Long,
         sourceConfidence: SourceConfidence,
+        observationProvenance: UsageSessionProvenance? = null,
     ) {
+        val provenance = observationProvenance?.let {
+            require(sourceConfidence == SourceConfidence.PLATFORM_API)
+            cipher.encryptToColumns(UsageSessionProvenanceCodec.encode(
+                UsageProvenanceBinding(id, deviceId, appOrCategoryToken,
+                    startedAtEpochMillis, endedAtEpochMillis, durationMillis), it))
+        }
         val (tokenEnc, tokenIv) = cipher.encryptToColumns(appOrCategoryToken)
         dao.upsert(
             UsageSessionEntity(
@@ -52,6 +66,8 @@ class UsageSessionRepository(
                 endedAtEpochMillis = endedAtEpochMillis,
                 durationMillis = durationMillis,
                 sourceConfidence = sourceConfidence,
+                observationProvenanceEnc = provenance?.first,
+                observationProvenanceIv = provenance?.second,
             ),
         )
     }
@@ -64,13 +80,40 @@ class UsageSessionRepository(
             entity.toDomain(cipher)
         }
 
-    private fun UsageSessionEntity.toDomain(cipher: LocalRecordCipher): UsageSession = UsageSession(
-        id = id,
-        deviceId = this.deviceId,
-        appOrCategoryToken = cipher.decryptFromColumns(appOrCategoryTokenEnc, appOrCategoryTokenIv),
-        startedAtEpochMillis = startedAtEpochMillis,
-        endedAtEpochMillis = endedAtEpochMillis,
-        durationMillis = durationMillis,
-        sourceConfidence = sourceConfidence,
-    )
+    /** Bounded read-only local observations. Missing metadata is legacy/unknown;
+     * malformed present metadata fails the read rather than becoming qualified capture. */
+    suspend fun getRecentObservations(deviceId: String, limit: Int): UsageObservationPage {
+        require(deviceId.isNotBlank() && limit in 1..256)
+        val rows = dao.getRecentForDevice(deviceId, limit + 1)
+        check(rows.size <= limit + 1 && rows.all { it.deviceId == deviceId }) {
+            "Usage observation DAO violated query bounds or device scope"
+        }
+        return UsageObservationPage(rows.take(limit).map { it.toDomain(cipher) }, rows.size > limit)
+    }
+
+    private fun UsageSessionEntity.toDomain(cipher: LocalRecordCipher): UsageSession {
+        val token = cipher.decryptFromColumns(appOrCategoryTokenEnc, appOrCategoryTokenIv)
+        check((observationProvenanceEnc == null) == (observationProvenanceIv == null)) {
+            "Usage observation metadata unavailable"
+        }
+        val provenance = observationProvenanceEnc?.let { encrypted ->
+            check(sourceConfidence == SourceConfidence.PLATFORM_API)
+            check(encrypted.length <= 32768 && observationProvenanceIv!!.length <= 128) {
+                "Usage observation metadata unavailable"
+            }
+            UsageSessionProvenanceCodec.decode(
+                UsageProvenanceBinding(id, deviceId, token, startedAtEpochMillis, endedAtEpochMillis, durationMillis),
+                cipher.decryptFromColumns(encrypted, observationProvenanceIv!!))
+        }
+        return UsageSession(
+            id = id,
+            deviceId = this.deviceId,
+            appOrCategoryToken = token,
+            startedAtEpochMillis = startedAtEpochMillis,
+            endedAtEpochMillis = endedAtEpochMillis,
+            durationMillis = durationMillis,
+            sourceConfidence = sourceConfidence,
+            observationProvenance = provenance,
+        )
+    }
 }

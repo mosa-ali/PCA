@@ -23,4 +23,6 @@ data class UsageSessionEntity(
     val endedAtEpochMillis: Long,
     val durationMillis: Long,
     val sourceConfidence: SourceConfidence,
+    val observationProvenanceEnc: String? = null,
+    val observationProvenanceIv: String? = null,
 )

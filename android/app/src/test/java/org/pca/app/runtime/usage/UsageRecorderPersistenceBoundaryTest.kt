@@ -63,6 +63,24 @@ class UsageRecorderPersistenceBoundaryTest {
         override fun close() = db.close()
     }
 
+    @Test fun `persisted interval preceding generation anchor is discarded without credit`() = runTest {
+        Fixture().use { f ->
+            f.elapsed.nowNanos = 100_000_000L
+            f.wall.nowMillis = 10_100L
+            val anchor = UsageClockSample(100L, 10_100L)
+            f.store.save(UsageObservationSnapshot(
+                UsageSessionEngineState(OpenUsageSession("opaque", 50L, 10_050L), 100L),
+                "boot-1", 2, anchor, "device-1", UsageObservationCoverage.OBSERVED, "generation", anchor))
+            val recorder = f.recorder()
+            f.elapsed.nowNanos = 200_000_000L
+            f.wall.nowMillis = 10_200L
+            f.events = listOf(UsageObservedEvent(UsageEvent("new", UsageEventType.FOREGROUND, 200L), 10_200L))
+            assertEquals(UsageObservationCoverage.BASELINE, recorder.poll().coverage)
+            assertEquals(0, f.db.usageSessionDao().count())
+            assertNull(recorder.currentEngineState().openSession)
+        }
+    }
+
     @Test fun `cancellation during second Room write preserves cursor and restart replays without duplicates`() = runTest {
         Fixture().use { f ->
             val recorder = f.recorder()
@@ -86,6 +104,7 @@ class UsageRecorderPersistenceBoundaryTest {
             f.beforeWrite = {}
             assertEquals(2, f.recorder().poll().recordedSessionCount)
             assertEquals(2, f.repository.getForDevice("device-1").size)
+            assertTrue(f.repository.getForDevice("device-1").all { it.observationProvenance != null })
             assertEquals(400L, f.store.load()!!.engineState.lastProcessedElapsedMillis)
         }
     }

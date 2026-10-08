@@ -14,6 +14,9 @@ interface UsageSessionDao {
     @Query("SELECT * FROM usage_sessions WHERE deviceId = :deviceId ORDER BY startedAtEpochMillis DESC")
     suspend fun getForDevice(deviceId: String): List<UsageSessionEntity>
 
+    @Query("SELECT * FROM usage_sessions WHERE deviceId = :deviceId ORDER BY startedAtEpochMillis DESC, id DESC LIMIT :rowLimit")
+    suspend fun getRecentForDevice(deviceId: String, rowLimit: Int): List<UsageSessionEntity>
+
     @Query("SELECT COUNT(*) FROM usage_sessions WHERE startedAtEpochMillis < :cutoffEpochMillis")
     suspend fun countOlderThan(cutoffEpochMillis: Long): Int
 

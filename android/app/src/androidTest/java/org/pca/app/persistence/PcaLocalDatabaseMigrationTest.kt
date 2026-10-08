@@ -30,6 +30,24 @@ class PcaLocalDatabaseMigrationTest {
     )
 
     @Test
+    fun migrate6To7PreservesUsageRowsWithUnknownProvenance() {
+        helper.createDatabase(TEST_DB_NAME, 6).apply {
+            execSQL("INSERT INTO usage_sessions (id, deviceId, appOrCategoryTokenEnc, appOrCategoryTokenIv, startedAtEpochMillis, endedAtEpochMillis, durationMillis, sourceConfidence) VALUES ('u1', 'd1', 'enc', 'iv', 1000, 2000, 1000, 'PLATFORM_API')")
+            close()
+        }
+        helper.runMigrationsAndValidate(TEST_DB_NAME, 7, true, Migrations.MIGRATION_6_7).use { db ->
+            db.query("SELECT * FROM usage_sessions WHERE id = 'u1'").use { row ->
+                org.junit.Assert.assertTrue(row.moveToFirst())
+                org.junit.Assert.assertEquals("enc", row.getString(row.getColumnIndexOrThrow("appOrCategoryTokenEnc")))
+                org.junit.Assert.assertEquals(1000L, row.getLong(row.getColumnIndexOrThrow("durationMillis")))
+                org.junit.Assert.assertTrue(row.isNull(row.getColumnIndexOrThrow("observationProvenanceEnc")))
+                org.junit.Assert.assertTrue(row.isNull(row.getColumnIndexOrThrow("observationProvenanceIv")))
+                org.junit.Assert.assertFalse(row.moveToNext())
+            }
+        }
+    }
+
+    @Test
     fun version1SchemaCreatesCleanly() {
         helper.createDatabase(TEST_DB_NAME, 1).close()
     }
