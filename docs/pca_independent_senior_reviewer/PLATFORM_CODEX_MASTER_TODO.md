@@ -1,5 +1,9 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-19 publication result — 2026-10-08
+
+Parent checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` was pushed by ordinary fast-forward under the existing owner authorization. Fresh fetch and direct server lookup prove local/tracking/server equality; all five changed tracked paths exist in the remote tree. Exact-head Quality Gates run `37797038084` completed SUCCESS 27/27 at that SHA. This Parent publication does not change Platform product scope or close `HOLD_PARENT_DEPENDENCY`, Enrollment identity requirements, owner `LOCALHOST ACCEPTED`, or Azure/production gates.
+
 ## Parent TODO-15 mobile regression checkpoint — 2026-10-08
 
 Parent's queued relay-pagination path passed the focused Android reconnect suite 26/26 (zero failures/errors/skips); nine related iOS source/test files passed Swift syntax parsing. iOS XCTest/typecheck remains unavailable because Xcode is absent. Source review confirms callback health uses exact active activity/generation attribution and sends stale/foreign activity to bounded diagnostics. No Platform product source or Parent identity projection changed; preserve `HOLD_PARENT_DEPENDENCY`, the Enrollment identity gates, and literal owner `LOCALHOST ACCEPTED` requirement.
@@ -877,11 +881,11 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 
 ### PLATFORM-13 — Push / exact-head CI
 
-STATUS = IN_PROGRESS  
+STATUS = PASS
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Reviewed source checkpoint b79f429e514960bc44581121914326e1c4e1628c is six commits / 38 tracked paths ahead of freshly fetched and directly verified origin/pca-dev at d150a41b7923a8e58072affd4b3c3fa3f91127df without divergence. No Platform source changed. Publication and exact-head CI remain pending at this ledger checkpoint.
-BLOCKER = Publication and exact-head CI remain pending. The existing owner Git amendment authorizes safe ordinary fast-forward publication to origin/pca-dev; the earlier blanket requirement for renewed SHA-specific permission was incorrect. Parent authority/owner gates still hold Enrollment.
+EVIDENCE = Parent checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` is published with local/tracking/server equality; Quality Gates run `37797038084` passed 27/27 at that exact SHA. No Platform source changed. Only the CI-result ledger sync is pending publication.
+BLOCKER = None for this publication checkpoint. Parent authority/owner gates still hold Enrollment.
 DONE_WHEN = local=remote and exact-head CI PASS
 
 ### PLATFORM-14 — Refresh rollback baseline

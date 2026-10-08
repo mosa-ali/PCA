@@ -1,5 +1,12 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## TODO-19 push verification — 2026-10-08
+
+PUSHED_SHA = `4e722cde2a590916cb02e18fca83428e0ac1c135`; push completed by ordinary fast-forward under the owner's existing checkpoint authorization.
+POST_PUSH = Fresh fetch and direct `git ls-remote` verify `LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = 4e722cde2a590916cb02e18fca83428e0ac1c135`; ahead/behind counts are both zero. All five changed tracked paths are present in the fetched remote tree; no tracked local-only files or unpublished commits remain. Five excluded untracked files are preserved.
+EXACT_HEAD_CI = Quality Gates run `37797038084` completed SUCCESS, 27/27 jobs, at exact SHA `4e722cde2a590916cb02e18fca83428e0ac1c135`. The CI result is current in this local ledger update; publish the result sync as a docs-only checkpoint.
+GATES = Parent TODO-12/14/15 and TODO-20, owner localhost acceptance, Platform dependency, physical devices, Azure, and production remain separate/open. The push changes none of those states.
+
 ## TODO-19 owner-authorized publication checkpoint — 2026-10-08
 
 PRE_PUSH_HEAD = `351814664990d4a5d68045db454b6e2d675e67b2`; after fresh fetch, `origin/pca-dev` and the direct server both verified `c4b05a8bfac419d49ac65fd58b2006d67fefd824`, with seven local fast-forward commits. The tracked worktree was clean before this authorization-ledger correction; five excluded untracked files remain untouched.
@@ -1133,20 +1140,20 @@ DONE_WHEN = literal `LOCALHOST ACCEPTED` received
 
 ### TODO-19 — Git reconciliation + remote alignment + exact-head CI
 
-STATUS = IN_PROGRESS (local source/report checkpoints remain ahead of the last published head `c4b05a8`; exact-head CI for the current candidate is not available)
+STATUS = PASS (source candidate fast-forward published, local/remote equality verified, and exact-head CI passed; this checkpoint syncs the result ledger)
 OWNER = COORDINATOR
 FILES = Parent/Platform source, tests, migrations, assessments and ledgers  
-EVIDENCE = Fresh fetch and direct server query both verify `c4b05a8bfac419d49ac65fd58b2006d67fefd824`. Before the current authorization-ledger correction, local `pca-dev` was seven fast-forward commits ahead; the correction adds one documentation-only commit. `73524a4e` contains the iOS test-harness correction; `4bdc2960` corrects the route crosswalk; `fedcdd56` records the MySQL 8.4.11 Parent route audit (56/56, 52/52 declarations, 146/146 scenarios). Published-head run `37788211532` at `c4b05a8` completed FAILURE; the iOS job was the only failed job, with three stale fixture failures, while other jobs passed. No exact-head Quality Gates run covers the local candidate. Five owner-excluded untracked files remain preserved.
-BLOCKER = The last published/fetched/server-aligned head is `c4b05a8bfac419d49ac65fd58b2006d67fefd824`; local checkpoint commits are unpublished. The tracked tree is clean, with only the five classified owner-excluded paths untracked. The existing owner amendment authorizes ordinary fast-forward publication to `origin/pca-dev`; after rechecking ancestry, push and inspect exact-head CI. Parent authority/device, live DB, owner acceptance, and Platform gates remain separately open.
+EVIDENCE = Ordinary fast-forward push completed at `4e722cde2a590916cb02e18fca83428e0ac1c135`; fresh fetch and direct server lookup prove `LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD`, zero ahead/behind commits, and all five changed tracked paths present remotely. Exact-head Quality Gates run `37797038084` completed SUCCESS 27/27 at that SHA, including backend/disposable MySQL, real-backend/browser, Android, iOS, web, security and release-control jobs. The earlier published-head run `37788211532` at `c4b05a8` failed only the iOS job on three stale fixtures, corrected in `73524a4e`. Five owner-excluded untracked files remain preserved.
+BLOCKER = None for TODO-19 source publication and exact-head CI. Parent authority/device, live DB, owner acceptance, and Platform gates remain separately open.
 DONE_WHEN = local/remote align, complete approved state is remote, exact-head CI PASS, and all files are classified
-LAST_ALIGNED_LOCAL_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`, freshly fetched and server-verified in this turn.
-LAST_ALIGNED_REMOTE_HEAD = `c4b05a8bfac419d49ac65fd58b2006d67fefd824`, verified by fresh fetch and direct `git ls-remote` in this turn.
+LAST_ALIGNED_LOCAL_HEAD = `4e722cde2a590916cb02e18fca83428e0ac1c135`, the published source checkpoint after post-push fetch.
+LAST_ALIGNED_REMOTE_HEAD = `4e722cde2a590916cb02e18fca83428e0ac1c135`, verified by fresh fetch and direct `git ls-remote` after push.
 LAST_PUBLICATION_LOCAL_ONLY_FILES = 0 tracked files at the last published checkpoint; five untracked owner/excluded files remain preserved.
-LAST_PUBLICATION_UNPUSHED_COMMITS = 0 at `c4b05a8`; seven local commits followed that base at pre-push head `35181466`, plus the current documentation authorization correction.
-LATEST_RECORDED_EXACT_HEAD_CI = Run `37782124895` completed FAILURE at `868323e5`; run `37787153627` at `df5eef23` failed its iOS job; run `37788211532` at `c4b05a8` completed FAILURE, with the iOS job as the only failed job and three stale fixture failures. No current-candidate PASS is claimed.
-CURRENT_LOCAL_HEAD = Pre-correction head `351814664990d4a5d68045db454b6e2d675e67b2`; the only source change in the outgoing range is the iOS test-fixture correction in `73524a4e`. The current ledger correction is documentation-only.
-CURRENT_REMOTE_HEAD = `origin/pca-dev` and the direct server head are both `c4b05a8bfac419d49ac65fd58b2006d67fefd824`.
-CURRENT_PUBLICATION_STATE = Seven commits were ahead at the verified pre-correction head; one additional documentation-only authorization correction is pending. The final candidate has no exact-head CI. Preserve the five owner-excluded untracked files.
+LAST_PUBLICATION_UNPUSHED_COMMITS = 0 at `4e722cde`; zero current unpublished commits at post-push verification.
+LATEST_RECORDED_EXACT_HEAD_CI = Run `37797038084` completed SUCCESS 27/27 at exact source SHA `4e722cde2a590916cb02e18fca83428e0ac1c135`; preceding published-head failures are recorded above. The CI-result ledger sync changes docs only.
+CURRENT_LOCAL_HEAD = `4e722cde2a590916cb02e18fca83428e0ac1c135` at post-push CI verification; the current staged-to-follow-up ledger result contains no product-source changes.
+CURRENT_REMOTE_HEAD = `origin/pca-dev` and the direct server head both equal `4e722cde2a590916cb02e18fca83428e0ac1c135` at post-push verification.
+CURRENT_PUBLICATION_STATE = Source candidate is published and exact-head CI passed; this result ledger synchronization is documentation-only. Preserve the five owner-excluded untracked files.
 
 CURRENT_REENTRY_CHECK = 2026-09-30: exact-head Quality Gates run `36657492055` passed 27/27 at SHA `965479051b547cb659946c0c4a6fb8f237a5883c`. Full disposable-MySQL certification, real-backend browser E2E, Android, iOS, backend, Parent/Platform, release-control and security jobs passed. Parent production-preview browser suite passed 101/101 with demo fixtures; Platform production-preview suite passed 21/21 with HTTP mocks. Backend and DB health returned 200; both web apps were restored to real-backend local development mode. Use `127.0.0.1` because `localhost` reaches an unrelated IPv6 listener. Fresh read-only TODO-20 preflight resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178` but TCP/3306 returned False; no live read or mutation occurred. TODO-20 and owner TODO-18 remain open.
 
