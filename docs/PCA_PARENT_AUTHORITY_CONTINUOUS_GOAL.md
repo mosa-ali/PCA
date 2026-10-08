@@ -1,5 +1,19 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Validated source and ledger synchronization checkpoint — 2026-10-09
+
+Source checkpoint 0f598dcdf8253f7a08d145f894c98d4448a4a47a is published/aligned and passed exact-head Quality Gates 37855820056, 27/27. Final local usage/export/retention/schema tests passed 97/97, and local compileDebugAndroidTestKotlin passed (exit 0). The generated v6→v7 comparison is purely additive; real SQLite migration preserved historical values/indices. No connected Android device or installed emulator was available, so instrumented migration execution and physical Android/iOS acceptance remain unproven.
+
+This three-ledger synchronization records completed source CI, current source SHA and corrected canonical Git/deployment blockers. Its own publication and exact-head CI must be verified. TODO-19 remains IN_PROGRESS until this synchronization is aligned/certified; TODO-20 remains PASS, TODO-12/14/15 IN_PROGRESS, TODO-18/21/22/23 TODO. Platform retains HOLD_PARENT_DEPENDENCY. No deployment/production or owner acceptance is inferred.
+
+## Published provenance source CI passed — 2026-10-09
+
+Quality Gates 37855820056 completed SUCCESS, 27/27 jobs, at exact source SHA 0f598dcdf8253f7a08d145f894c98d4448a4a47a. Android full build/lint/tests, iOS build/XCTest, full disposable MySQL and real-backend E2E all passed. Local selected compatibility 97/97 and generated schema additive comparison remain PASS. CI does not compile Android instrumented tests; local compileDebugAndroidTestKotlin is running separately, and no device/emulator is available for instrumented execution. Canonical Git/release blocker corrections are locally maintained for publication after that check. No authority, physical-device, owner acceptance, Platform activation or deployment gate closes.
+
+## Provenance checkpoint publication verified — 2026-10-09
+
+Commit 0f598dcdf8253f7a08d145f894c98d4448a4a47a published by ordinary fast-forward to origin/pca-dev. Fresh fetch/direct-server verification: LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD; both master TODO files verified in the remote commit; tracked worktree clean immediately after push, only five preserved owner-excluded untracked files. Final local compatibility 97/97 PASS. Exact-head Quality Gates 37855820056 is queued/running; no CI PASS claimed for this new checkpoint. TODO-19 remains IN_PROGRESS, TODO-20 PASS, TODO-12/14/15 IN_PROGRESS, Platform HOLD_PARENT_DEPENDENCY. Physical/instrumented migration, independent review, literal localhost acceptance and deployment gates remain separate/open. This publication receipt is maintained locally for the next meaningful checkpoint; do not cancel the live CI with a receipt-only push.
+
 ## Mobile sampled-observation provenance work — 2026-10-09
 
 Published checkpoint 5397452694d89cd772422ae0d63513c05871ee50 passed Quality Gates 37852533600, 27/27. TODO-20 remains PASS; Key Vault unchanged, with the previously validated older enabled administrator secret approved.
