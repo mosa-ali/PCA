@@ -85,6 +85,36 @@ class DeviceSessionManagerTest {
     }
 
     @Test
+    fun `isAuthenticated rejects a cached session after key custody is lost`() = runTest {
+        val delegate = FakeRelayHttpClient()
+        var challengeCalls = 0
+        val relay = object : org.pca.app.runtime.sync.transport.RelayHttpClient by delegate {
+            override suspend fun issueChallenge(deviceId: String): org.pca.app.runtime.sync.transport.ChallengeResponse {
+                challengeCalls += 1
+                return delegate.issueChallenge(deviceId)
+            }
+        }
+        var keyAvailable = true
+        val manager = DeviceSessionManager(
+            relay,
+            "device-1",
+            signer = { "sig-1" },
+            assertKeyCustody = { check(keyAvailable) },
+        )
+        manager.requireSessionToken()
+        assertEquals(1, challengeCalls)
+        assertTrue(manager.isAuthenticated())
+
+        keyAvailable = false
+
+        assertTrue(!manager.isAuthenticated())
+
+        keyAvailable = true
+        manager.requireSessionToken()
+        assertEquals(2, challengeCalls)
+    }
+
+    @Test
     fun `requireSessionToken authenticates on first use`() = runTest {
         val relay = FakeRelayHttpClient()
         var signedNonce: String? = null

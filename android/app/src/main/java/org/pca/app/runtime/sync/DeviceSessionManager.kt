@@ -39,6 +39,15 @@ class DeviceSessionManager(
     private var session: DeviceSessionInfo? = null
 
     fun isAuthenticated(): Boolean {
+        return try {
+            verifyKeyCustody()
+            hasUnexpiredSession()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun hasUnexpiredSession(): Boolean {
         val current = session ?: return false
         return try {
             Instant.parse(current.expiresAt).toEpochMilli() > nowEpochMillis()
@@ -64,14 +73,14 @@ class DeviceSessionManager(
 
     suspend fun requireSessionToken(): String {
         verifyKeyCustody()
-        if (isAuthenticated()) return (session as DeviceSessionInfo).sessionToken
+        if (hasUnexpiredSession()) return (session as DeviceSessionInfo).sessionToken
         return authenticate().sessionToken
     }
 
     /** Continuity check only: never authenticate a replacement across an awaited operation. */
     fun assertCurrentSession(expectedToken: String) {
         verifyKeyCustody()
-        if (!isAuthenticated() || session?.sessionToken != expectedToken) throw DeviceSessionChanged()
+        if (!hasUnexpiredSession() || session?.sessionToken != expectedToken) throw DeviceSessionChanged()
     }
 
     /** A rejected token cannot clear a replacement authenticated by another caller. */
