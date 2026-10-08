@@ -3,7 +3,11 @@ import SwiftUI
 @MainActor struct ContentView: View {
     @ObservedObject private var model: PCAApplicationModel
 
-    init(model: PCAApplicationModel = PCAProductionCompositionRoot.make()) {
+    init() {
+        self.model = PCAProductionCompositionRoot.make()
+    }
+
+    init(model: PCAApplicationModel) {
         self.model = model
     }
 
