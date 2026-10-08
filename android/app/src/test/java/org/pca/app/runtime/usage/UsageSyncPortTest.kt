@@ -3,11 +3,14 @@ package org.pca.app.runtime.usage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.persistence.PcaLocalDatabase
 import org.pca.app.persistence.PersistenceTestSupport
+import org.pca.app.persistence.crypto.EncryptedField
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.dao.UsageSessionDao
 import org.pca.app.persistence.entity.SourceConfidence
@@ -63,6 +66,8 @@ class UsageSyncPortTest {
         assertEquals("session-1", payload.sessionId)
         assertEquals("device-1", payload.deviceId)
         assertEquals("abcd1234abcd1234", payload.appOrCategoryToken)
+        assertFalse(payload.toString().contains(payload.appOrCategoryToken))
+        assertTrue(payload.toString().contains("appOrCategoryToken=<redacted>"))
         assertEquals(1_000L, payload.startedAtEpochMillis)
         assertEquals(61_000L, payload.endedAtEpochMillis)
         assertEquals(60_000L, payload.durationMillis)
@@ -89,9 +94,16 @@ class UsageSyncPortTest {
                 if (deviceId == "device-1") delegate.getForDevice("device-2")
                 else delegate.getForDevice(deviceId)
         }
-        val port = RepositoryBackedUsageSyncPayloadSource(
-            UsageSessionRepository(misScopedDao, cipher),
-        )
+        var decryptCalls = 0
+        val trackingCipher = object : LocalRecordCipher {
+            override fun encrypt(plaintext: String): EncryptedField = cipher.encrypt(plaintext)
+
+            override fun decrypt(field: EncryptedField): String {
+                decryptCalls += 1
+                return cipher.decrypt(field)
+            }
+        }
+        val port = RepositoryBackedUsageSyncPayloadSource(UsageSessionRepository(misScopedDao, trackingCipher))
 
         var failure: IllegalStateException? = null
         try {
@@ -100,8 +112,9 @@ class UsageSyncPortTest {
             failure = caught
         }
         assertEquals(
-            "Usage session repository returned a row outside the requested device scope",
+            "Usage session DAO returned a row outside the requested device scope",
             failure?.message,
         )
+        assertEquals(0, decryptCalls)
     }
 }

@@ -57,7 +57,12 @@ class UsageSessionRepository(
     }
 
     suspend fun getForDevice(deviceId: String): List<UsageSession> =
-        dao.getForDevice(deviceId).map { it.toDomain(cipher) }
+        dao.getForDevice(deviceId).map { entity ->
+            check(entity.deviceId == deviceId) {
+                "Usage session DAO returned a row outside the requested device scope"
+            }
+            entity.toDomain(cipher)
+        }
 
     private fun UsageSessionEntity.toDomain(cipher: LocalRecordCipher): UsageSession = UsageSession(
         id = id,

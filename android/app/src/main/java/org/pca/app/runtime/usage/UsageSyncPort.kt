@@ -20,7 +20,12 @@ data class UsageSessionSyncPayload(
     val endedAtEpochMillis: Long,
     val durationMillis: Long,
     val sourceConfidence: SourceConfidence,
-)
+) {
+    override fun toString(): String =
+        "UsageSessionSyncPayload(sessionId=$sessionId, deviceId=$deviceId, appOrCategoryToken=<redacted>, " +
+            "startedAtEpochMillis=$startedAtEpochMillis, endedAtEpochMillis=$endedAtEpochMillis, " +
+            "durationMillis=$durationMillis, sourceConfidence=$sourceConfidence)"
+}
 
 /**
  * Clean port boundary for the sync layer: exposes locally-recorded sessions as

@@ -13,7 +13,7 @@ class DeviceSessionManagerTest {
             override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) =
                 relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "session-${++sequence}")
         }
-        val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" })
+        val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" }, assertKeyCustody = {})
         val old = manager.authenticate().sessionToken
         val replacement = manager.authenticate().sessionToken
         manager.invalidateRejectedSession(old)
@@ -88,7 +88,13 @@ class DeviceSessionManagerTest {
     fun `requireSessionToken authenticates on first use`() = runTest {
         val relay = FakeRelayHttpClient()
         var signedNonce: String? = null
-        val manager = DeviceSessionManager(relay, "device-1", signer = { nonce -> signedNonce = nonce; "sig-1" }, nowEpochMillis = { 0L })
+        val manager = DeviceSessionManager(
+            relay,
+            "device-1",
+            signer = { nonce -> signedNonce = nonce; "sig-1" },
+            assertKeyCustody = {},
+            nowEpochMillis = { 0L },
+        )
 
         val token = manager.requireSessionToken()
 
@@ -106,7 +112,13 @@ class DeviceSessionManagerTest {
                 return relay.issueChallenge(deviceId)
             }
         }
-        val manager = DeviceSessionManager(countingRelay, "device-1", signer = { "sig-1" }, nowEpochMillis = { 0L })
+        val manager = DeviceSessionManager(
+            countingRelay,
+            "device-1",
+            signer = { "sig-1" },
+            assertKeyCustody = {},
+            nowEpochMillis = { 0L },
+        )
 
         manager.requireSessionToken()
         manager.requireSessionToken()
@@ -117,7 +129,7 @@ class DeviceSessionManagerTest {
     @Test
     fun `isAuthenticated is false before the first authenticate call`() {
         val relay = FakeRelayHttpClient()
-        val manager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" })
+        val manager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, assertKeyCustody = {})
         assertTrue(!manager.isAuthenticated())
     }
 }

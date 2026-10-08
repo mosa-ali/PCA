@@ -32,8 +32,8 @@ class DeviceSessionManager(
     private val relayHttpClient: RelayHttpClient,
     private val deviceId: String,
     private val signer: ChallengeSigner,
+    private val assertKeyCustody: () -> Unit,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
-    private val assertKeyCustody: () -> Unit = {},
 ) {
     val configuredDeviceId: String get() = deviceId
     private var session: DeviceSessionInfo? = null

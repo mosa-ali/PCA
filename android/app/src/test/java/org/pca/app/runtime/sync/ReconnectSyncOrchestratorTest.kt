@@ -463,7 +463,13 @@ class ReconnectSyncOrchestratorTest {
         val relay = FakeRelayHttpClient()
         var time = 0L
         val orchestrator = buildOrchestrator(store, relay, now = time)
-        val sessionManager = DeviceSessionManager(relay, "device-1", signer = { "sig-1" }, nowEpochMillis = { time })
+        val sessionManager = DeviceSessionManager(
+            relay,
+            "device-1",
+            signer = { "sig-1" },
+            assertKeyCustody = {},
+            nowEpochMillis = { time },
+        )
         val realOrchestrator = ReconnectSyncOrchestrator(FakeConnectivitySource(), sessionManager, relay, outbox, RecordingInboundHandler(), nowEpochMillis = { time }, expectedFamilyId = "family-1")
 
         repeat(org.pca.app.runtime.sync.backoff.MAX_RETRY_COUNT + 2) {
