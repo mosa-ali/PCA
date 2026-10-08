@@ -1,8 +1,13 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent TODO-19 / release-route / TODO-20 re-entry — 2026-10-08
+
+Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` and its docs-only CI-result checkpoint `c6945079f0e2f1de56de9ec587618118bcc9502a` are pushed to `pca-dev`. Fresh fetch and direct server lookup verify local/tracking/server equality at c694. Quality Gates run `37798823066` passed 27/27 at c694; source checkpoint run `37797038084` passed 27/27 at 4e. No Platform product source changed.
+Read-only Child App GET checks returned `/child-app/` 404, `/enroll/` 404, and `/.well-known/assetlinks.json` 403. TODO-20 DNS resolves the DB host to `4.161.89.178`, but TCP/3306 is unreachable; no live SQL or grants were read. Keep `HOLD_PARENT_DEPENDENCY`, Parent-owned projection, owner localhost acceptance, Azure and production gates open.
+
 ## Parent TODO-19 publication result — 2026-10-08
 
-Parent checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` was pushed by ordinary fast-forward under the existing owner authorization. Fresh fetch and direct server lookup prove local/tracking/server equality; all five changed tracked paths exist in the remote tree. Exact-head Quality Gates run `37797038084` completed SUCCESS 27/27 at that SHA. This Parent publication does not change Platform product scope or close `HOLD_PARENT_DEPENDENCY`, Enrollment identity requirements, owner `LOCALHOST ACCEPTED`, or Azure/production gates.
+Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` was pushed by ordinary fast-forward under the existing owner authorization; its docs-only CI-result synchronization is `c6945079f0e2f1de56de9ec587618118bcc9502a`. Fresh fetch and direct server lookup prove local/tracking/server equality at c694. Exact-head Quality Gates run `37798823066` passed 27/27 at c694; source run `37797038084` passed 27/27 at 4e. This Parent publication does not change Platform product scope or close `HOLD_PARENT_DEPENDENCY`, Enrollment identity requirements, owner `LOCALHOST ACCEPTED`, or Azure/production gates.
 
 ## Parent TODO-15 mobile regression checkpoint — 2026-10-08
 
@@ -884,7 +889,7 @@ DONE_WHEN = intended Platform files committed with unrelated files = 0
 STATUS = PASS
 OWNER = Coordinator  
 FILES = Current Parent + Platform checkpoint source and CI  
-EVIDENCE = Parent checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` is published with local/tracking/server equality; Quality Gates run `37797038084` passed 27/27 at that exact SHA. No Platform source changed. Only the CI-result ledger sync is pending publication.
+EVIDENCE = Parent source checkpoint `4e722cde2a590916cb02e18fca83428e0ac1c135` and docs-only CI-result ledger checkpoint `c6945079f0e2f1de56de9ec587618118bcc9502a` are published with local/tracking/server equality. Quality Gates run `37798823066` passed 27/27 at c694; source run `37797038084` passed 27/27 at 4e. No Platform source changed.
 BLOCKER = None for this publication checkpoint. Parent authority/owner gates still hold Enrollment.
 DONE_WHEN = local=remote and exact-head CI PASS
 

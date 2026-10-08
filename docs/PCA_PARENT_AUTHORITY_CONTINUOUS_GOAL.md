@@ -1,5 +1,15 @@
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
+## Re-entry checkpoint — 2026-10-08
+
+CONTINUITY_STATUS = PASS; branch `pca-dev`; fresh fetch and direct server lookup verify `LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = c6945079f0e2f1de56de9ec587618118bcc9502a`. The c694 commit updates only the three ledgers; product source remains at `4e722cde2a590916cb02e18fca83428e0ac1c135`. Five excluded untracked files remain preserved.
+EXACT_HEAD_CI = Quality Gates run `37798823066` completed SUCCESS 27/27 at c694; the product-source checkpoint run `37797038084` passed 27/27 at 4e.
+TODO20 = Fresh read-only DNS/TCP preflight resolved `pca-mysql.mysql.database.azure.com` to `4.161.89.178`, with TCP/3306 false. No live credentials, SQL, schema/grant read, or mutation occurred.
+CHILD_APP_RELEASE_ROUTES = Read-only GETs returned `/child-app/` 404, `/enroll/` 404, and `/.well-known/assetlinks.json` 403 on `www.pcasafe.com`; source/build exists, but deployment and App Links remain open.
+TODO12_14_15 = Five independent mobile/security reviewers found no safe ordinary Trust Set submission/retry or recipient policy-application change under current contracts. R1's source-only baseline does not define the ordinary request/retry contract; its Parent Genesis design is superseded by DEC-037. Existing codecs, vectors, scope checks, and fail-closed composition remain; no source changed. TODO-14 remains `GLOBAL_AGGREGATE_STATUS=NOT_YET_PROVEN`.
+MISSION_STATE = Parent 15 PASS / 4 IN_PROGRESS (12/14/15/20) / 4 TODO or owner/release gated (18/21/22/23) / 0 BLOCKED. Platform remains `HOLD_PARENT_DEPENDENCY`. Physical-device, live DB, owner localhost acceptance, Azure and production gates remain separate/open; `READY_FOR_AZURE_DEPLOYMENT=NO`.
+NEXT = Continue TODO-20 live schema/grant comparison when its approved endpoint is reachable; continue authority/device implementation only when the required crypto, custody and wire contracts have been reviewed. No Azure or production deployment is authorized by this checkpoint.
+
 ## TODO-19 post-push verification — 2026-10-08
 
 Ordinary fast-forward push of `4e722cde2a590916cb02e18fca83428e0ac1c135` succeeded under the owner's existing checkpoint authorization. Fresh fetch and direct server lookup prove `LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD`; ahead/behind counts are zero and all five changed tracked paths exist remotely. Exact-head Quality Gates run `37797038084` completed SUCCESS 27/27 at the pushed SHA. This ledger sync records the CI result and changes no product source. Five excluded untracked files remain preserved. TODO-12/14/15/20 and the owner, Platform, device, Azure, and production gates remain open.
