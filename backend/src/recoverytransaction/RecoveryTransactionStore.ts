@@ -31,6 +31,7 @@ export interface RecoveryTransactionStore {
    */
   beginOrGetExisting(input: BeginRecoveryTransactionInput): Promise<RecoveryTransactionRecord>;
   get(recoveryTransactionId: string): Promise<RecoveryTransactionRecord | null>;
+  /** The first terminal transition wins; durable implementations must enforce this atomically. */
   markComplete(recoveryTransactionId: string, now: Date): Promise<RecoveryTransactionRecord | null>;
   markFailed(recoveryTransactionId: string, reason: string, now: Date): Promise<RecoveryTransactionRecord | null>;
 }
@@ -73,6 +74,7 @@ export class InMemoryRecoveryTransactionStore implements RecoveryTransactionStor
   async markComplete(recoveryTransactionId: string, now: Date): Promise<RecoveryTransactionRecord | null> {
     const existing = this.records.get(recoveryTransactionId);
     if (!existing) return null;
+    if (existing.status !== 'INITIATED') return cloneRecord(existing);
     const updated: RecoveryTransactionRecord = {
       ...existing,
       status: 'COMPLETE',
@@ -86,6 +88,7 @@ export class InMemoryRecoveryTransactionStore implements RecoveryTransactionStor
   async markFailed(recoveryTransactionId: string, reason: string, now: Date): Promise<RecoveryTransactionRecord | null> {
     const existing = this.records.get(recoveryTransactionId);
     if (!existing) return null;
+    if (existing.status !== 'INITIATED') return cloneRecord(existing);
     const updated: RecoveryTransactionRecord = {
       ...existing,
       status: 'FAILED',

@@ -13,10 +13,60 @@ export type FinalizeRecoveryOutcome =
   | { outcome: 'COMPLETE'; record: RecoveryTransactionRecord }
   | { outcome: 'REJECTED'; reason: RecoveryFtsRejectionReason; record: RecoveryTransactionRecord };
 
+const finalizeQueues = new WeakMap<RecoveryTransactionStore, Map<string, Promise<void>>>();
+
+/**
+ * Serialize finalization for one transaction within this process, including
+ * calls made through different coordinators that share the same store object.
+ * A durable multi-process implementation must additionally serialize
+ * finalization by transaction ID and enforce terminal transitions atomically
+ * in its persistence layer; this queue is not a distributed lock.
+ */
+async function withFinalizeQueue<T>(
+  store: RecoveryTransactionStore,
+  recoveryTransactionId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let byTransactionId = finalizeQueues.get(store);
+  if (!byTransactionId) {
+    byTransactionId = new Map();
+    finalizeQueues.set(store, byTransactionId);
+  }
+
+  const previous = byTransactionId.get(recoveryTransactionId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => gate);
+  byTransactionId.set(recoveryTransactionId, queued);
+
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (byTransactionId.get(recoveryTransactionId) === queued) {
+      byTransactionId.delete(recoveryTransactionId);
+      if (byTransactionId.size === 0) finalizeQueues.delete(store);
+    }
+  }
+}
+
 function assertCandidateEpoch(candidateEpoch: Pick<FamilyTrustSetEpoch, 'trustSetEpoch' | 'keyEpoch'>): void {
   if (!isFamilyEpochNumber(candidateEpoch.trustSetEpoch, 1) || !isFamilyEpochNumber(candidateEpoch.keyEpoch, 1)) {
     throw new Error('Recovery candidate epochs must be exact integers within the supported family epoch range.');
   }
+}
+
+function snapshotCandidateEpoch(candidateEpoch: FamilyTrustSetEpoch): FamilyTrustSetEpoch {
+  return {
+    ...candidateEpoch,
+    entries: Array.isArray(candidateEpoch.entries)
+      ? candidateEpoch.entries.map((entry) => entry !== null && typeof entry === 'object' ? { ...entry } : entry)
+      : candidateEpoch.entries,
+    issuedAt: candidateEpoch.issuedAt instanceof Date
+      ? new Date(candidateEpoch.issuedAt.getTime())
+      : candidateEpoch.issuedAt,
+  };
 }
 
 function isBoundOpenedEnvelope(
@@ -98,43 +148,64 @@ export class RecoveryTransactionCoordinator {
     ledger: RecoveryTransactionLedger,
     now: Date,
   ): Promise<FinalizeRecoveryOutcome> {
-    assertCandidateEpoch(candidateEpoch);
+    const candidateSnapshot = snapshotCandidateEpoch(candidateEpoch);
+    const openedSnapshot = { ...opened };
+    const nowSnapshot = new Date(now.getTime());
+    assertCandidateEpoch(candidateSnapshot);
     // The opened value is the recovery authority. Check its immutable
     // transaction/family binding before creating or retrieving lifecycle
     // state, so an unrelated envelope cannot create or consume a record.
-    if (!isBoundOpenedEnvelope(recoveryTransactionId, candidateEpoch.familyId, opened)) {
+    if (!isBoundOpenedEnvelope(recoveryTransactionId, candidateSnapshot.familyId, openedSnapshot)) {
       throw new Error('Opened recovery envelope does not match the requested transaction and candidate family.');
     }
 
-    const existing = await this.transactions.beginOrGetExisting({
-      recoveryTransactionId,
-      familyId: candidateEpoch.familyId,
-      proposedTrustSetEpoch: candidateEpoch.trustSetEpoch,
-      proposedKeyEpoch: candidateEpoch.keyEpoch,
-      now,
-    });
+    return withFinalizeQueue(this.transactions, recoveryTransactionId, async () => {
+      const existing = await this.transactions.beginOrGetExisting({
+        recoveryTransactionId,
+        familyId: candidateSnapshot.familyId,
+        proposedTrustSetEpoch: candidateSnapshot.trustSetEpoch,
+        proposedKeyEpoch: candidateSnapshot.keyEpoch,
+        now: nowSnapshot,
+      });
 
-    if (!transactionMatchesCandidate(existing, recoveryTransactionId, candidateEpoch)) {
-      return { outcome: 'REJECTED', reason: 'ENVELOPE_EPOCH_MISMATCH', record: existing };
-    }
+      if (!transactionMatchesCandidate(existing, recoveryTransactionId, candidateSnapshot)) {
+        return { outcome: 'REJECTED', reason: 'ENVELOPE_EPOCH_MISMATCH', record: existing };
+      }
 
-    if (existing.status === 'COMPLETE') {
-      return { outcome: 'COMPLETE', record: existing };
-    }
-    if (existing.status === 'FAILED') {
+      if (existing.status === 'COMPLETE') {
+        return { outcome: 'COMPLETE', record: existing };
+      }
+      if (existing.status === 'FAILED') {
+        return {
+          outcome: 'REJECTED',
+          reason: (existing.failureReason ?? 'RECOVERY_TRANSACTION_ALREADY_USED') as RecoveryFtsRejectionReason,
+          record: existing,
+        };
+      }
+
+      const verdict = await acceptRecoveryEpoch(candidateSnapshot, openedSnapshot, store, verifier, ledger);
+      if (verdict.accepted) {
+        const completed = await this.transactions.markComplete(recoveryTransactionId, nowSnapshot);
+        if (!completed) throw new Error('Recovery transaction disappeared after accepted recovery.');
+        if (completed.status === 'FAILED') {
+          return {
+            outcome: 'REJECTED',
+            reason: (completed.failureReason ?? 'RECOVERY_TRANSACTION_ALREADY_USED') as RecoveryFtsRejectionReason,
+            record: completed,
+          };
+        }
+        if (completed.status !== 'COMPLETE') throw new Error('Recovery transaction did not reach a terminal state.');
+        return { outcome: 'COMPLETE', record: completed };
+      }
+      const failed = await this.transactions.markFailed(recoveryTransactionId, verdict.reason, nowSnapshot);
+      if (!failed) throw new Error('Recovery transaction disappeared after rejected recovery.');
+      if (failed.status === 'COMPLETE') return { outcome: 'COMPLETE', record: failed };
+      if (failed.status !== 'FAILED') throw new Error('Recovery transaction did not reach a terminal state.');
       return {
         outcome: 'REJECTED',
-        reason: (existing.failureReason ?? 'RECOVERY_TRANSACTION_ALREADY_USED') as RecoveryFtsRejectionReason,
-        record: existing,
+        reason: (failed.failureReason ?? verdict.reason) as RecoveryFtsRejectionReason,
+        record: failed,
       };
-    }
-
-    const verdict = await acceptRecoveryEpoch(candidateEpoch, opened, store, verifier, ledger);
-    if (verdict.accepted) {
-      const completed = await this.transactions.markComplete(recoveryTransactionId, now);
-      return { outcome: 'COMPLETE', record: completed! };
-    }
-    const failed = await this.transactions.markFailed(recoveryTransactionId, verdict.reason, now);
-    return { outcome: 'REJECTED', reason: verdict.reason, record: failed! };
+    });
   }
 }

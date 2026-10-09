@@ -79,3 +79,21 @@ test('terminal transition inputs and returned records are detached snapshots', a
   assert.equal(storedFailure.failureReason, 'REJECTED');
   assert.equal(storedFailure.completedAtUtc.toISOString(), '2026-02-03T00:00:00.000Z');
 });
+
+test('the first terminal status is preserved when a duplicate transition arrives later', async () => {
+  const completeStore = new InMemoryRecoveryTransactionStore();
+  await completeStore.beginOrGetExisting(beginInput());
+  const completed = await completeStore.markComplete('recovery-txn-1', NOW);
+  const lateFailure = await completeStore.markFailed('recovery-txn-1', 'REJECTED', new Date('2026-02-02T00:00:00.000Z'));
+  assert.equal(lateFailure.status, 'COMPLETE');
+  assert.equal(lateFailure.completedAtUtc.toISOString(), NOW.toISOString());
+  assert.equal((await completeStore.get('recovery-txn-1')).status, completed.status);
+
+  const failedStore = new InMemoryRecoveryTransactionStore();
+  await failedStore.beginOrGetExisting(beginInput());
+  const failed = await failedStore.markFailed('recovery-txn-1', 'REJECTED', NOW);
+  const lateCompletion = await failedStore.markComplete('recovery-txn-1', new Date('2026-02-02T00:00:00.000Z'));
+  assert.equal(lateCompletion.status, 'FAILED');
+  assert.equal(lateCompletion.failureReason, 'REJECTED');
+  assert.equal((await failedStore.get('recovery-txn-1')).status, failed.status);
+});

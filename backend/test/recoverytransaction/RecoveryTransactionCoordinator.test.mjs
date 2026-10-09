@@ -113,6 +113,76 @@ test('finalize on a valid recovery completes the transaction and applies the epo
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 2);
 });
 
+test('concurrent finalize calls through separate coordinators sharing a store return the persisted COMPLETE result', async () => {
+  const trustSetStore = new InMemoryFamilyTrustSetStore();
+  await acceptEpoch(buildEpoch('owner-dsk-pub'), trustSetStore, createTestOnlyTrustSetSignatureVerifier());
+
+  let signalVerificationStarted;
+  const verificationStarted = new Promise((resolve) => { signalVerificationStarted = resolve; });
+  let releaseVerification;
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  let verificationCalls = 0;
+  const verifier = {
+    async verify(publicKey, canonicalBytes, signature) {
+      verificationCalls += 1;
+      signalVerificationStarted();
+      await verificationGate;
+      return signature === signTestOnlyEpoch(publicKey, canonicalBytes);
+    },
+  };
+
+  const transactions = new InMemoryRecoveryTransactionStore();
+  const firstCoordinator = new RecoveryTransactionCoordinator(transactions);
+  const secondCoordinator = new RecoveryTransactionCoordinator(transactions);
+  let ledgerCalls = 0;
+  const ledger = { async claimTransaction() { ledgerCalls += 1; return true; } };
+  const candidate = buildRecoveryEpoch();
+  const proof = opened();
+
+  const first = firstCoordinator.finalize('txn-1', candidate, proof, trustSetStore, verifier, ledger, NOW);
+  await verificationStarted;
+  const duplicateCandidate = buildRecoveryEpoch();
+  const duplicate = secondCoordinator.finalize('txn-1', duplicateCandidate, proof, trustSetStore, verifier, ledger, NOW);
+  duplicateCandidate.trustSetEpoch = 99;
+  releaseVerification();
+
+  const outcomes = await Promise.all([first, duplicate]);
+  assert.deepEqual(outcomes.map((result) => result.outcome), ['COMPLETE', 'COMPLETE']);
+  assert.equal(verificationCalls, 1, 'shared-store finalization is serialized across coordinator instances');
+  assert.equal(ledgerCalls, 1);
+  assert.equal(trustSetStore.getCurrentEpoch().trustSetEpoch, 2);
+  const persisted = await transactions.get('txn-1');
+  assert.equal(persisted.status, 'COMPLETE');
+  assert.deepEqual(outcomes.map((result) => result.record.status), ['COMPLETE', 'COMPLETE']);
+});
+
+test('a thrown acceptance attempt leaves INITIATED resumable and releases the per-transaction queue', async () => {
+  const { store, ledger, transactions } = await harness();
+  let failOnce = true;
+  const verifier = {
+    async verify(publicKey, canonicalBytes, signature) {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error('temporary verifier failure');
+      }
+      return signature === signTestOnlyEpoch(publicKey, canonicalBytes);
+    },
+  };
+  const coordinator = new RecoveryTransactionCoordinator(transactions);
+  const candidate = buildRecoveryEpoch();
+  const proof = opened();
+
+  await assert.rejects(
+    () => coordinator.finalize('txn-1', candidate, proof, store, verifier, ledger, NOW),
+    /temporary verifier failure/,
+  );
+  assert.equal((await transactions.get('txn-1')).status, 'INITIATED');
+
+  const resumed = await coordinator.finalize('txn-1', candidate, proof, store, verifier, ledger, NOW);
+  assert.equal(resumed.outcome, 'COMPLETE');
+  assert.equal((await transactions.get('txn-1')).status, 'COMPLETE');
+});
+
 test('out-of-range recovery candidate is rejected before creating a transaction record or verifying', async () => {
   const { store, verifier, ledger, coordinator, transactions } = await harness();
   const valid = buildRecoveryEpoch();
