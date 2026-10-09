@@ -29,6 +29,11 @@ const NOT_TRUSTED_SNAPSHOT: TrustedBrowserSnapshot = {
   actorDeviceSessionToken: null,
 };
 
+const TRUSTED_WITHOUT_DEVICE_SESSION: TrustedBrowserSnapshot = {
+  ...TRUSTED_SNAPSHOT,
+  actorDeviceSessionToken: null,
+};
+
 class StubTrustedBrowserProvider implements TrustedBrowserProvider {
   constructor(private readonly snapshot: TrustedBrowserSnapshot) {}
   async getSnapshot() {
@@ -51,13 +56,23 @@ describe('RealProtectionAlertDeliveryClient', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reports pending when the Parent session cannot be resolved, without requiring browser trust', async () => {
-    const fetchMock = vi.fn();
+  it('does not fetch the device queue until the browser has a trusted actor-device session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { familyId: 'fam-1' }));
     vi.stubGlobal('fetch', fetchMock);
     const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(NOT_TRUSTED_SNAPSHOT));
     const result = await client.list();
     expect(result).toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/parent/session');
+  });
+
+  it('fails closed when the trusted browser has no actor-device session token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { familyId: 'fam-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(TRUSTED_WITHOUT_DEVICE_SESSION));
+    await expect(client.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/parent/session');
   });
 
   it('fetches real opaque alert envelopes and maps only their safe routing metadata (never the encrypted payload) when trusted, resolving READY', async () => {
@@ -88,7 +103,7 @@ describe('RealProtectionAlertDeliveryClient', () => {
     const alertsCall = fetchMock.mock.calls.find(([input]) => (typeof input === 'string' ? input : input.toString()).includes('/protection-alerts'));
     expect(alertsCall).toBeTruthy();
     const [, init] = alertsCall as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer actor-device-session-token');
   });
 
   it('reports READY with an empty list when the family genuinely has zero alerts -- never conflated with pending', async () => {

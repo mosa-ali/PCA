@@ -1,7 +1,9 @@
 /**
  * PCA product-completion programme: active family Administrators and
- * Viewers can read the family's opaque protection-alert envelopes through
- * their Parent session. Encrypted payloads stay opaque at this route.
+ * Viewers can read opaque protection-alert envelopes queued for their
+ * authenticated Parent browser device. The Parent session establishes family
+ * and role scope; a verified device-session bearer narrows the queue to that
+ * browser device. Encrypted payloads stay opaque at this route.
  *
  * This route returns the SAME fields ProtectionAlertEvent already exposes
  * as non-content routing metadata (alertId/deviceId/trigger/keyEpoch/
@@ -18,9 +20,12 @@ import { ParentAccountError, type ParentAccountService } from '../../parentaccou
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import type { ProtectionAlertLedger } from '../../alerts/ProtectionAlertLedger.js';
 import type { ProtectionAlertEvent } from '../../alerts/types.js';
+import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 
 export interface ProtectionAlertRoutesDeps {
   parentAccountService: ParentAccountService;
+  /** Optional for older non-production composition sites; when absent, the registered route fails closed with 503. */
+  deviceSessionService?: DeviceSessionService;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- when omitted, this file registers nothing (mirrors registerFamilyAuditEventRoutes' own optional-feature convention). */
   protectionAlertLedger?: ProtectionAlertLedger;
 }
@@ -43,7 +48,7 @@ function toAlertDto(event: ProtectionAlertEvent): Record<string, unknown> {
 
 export function registerProtectionAlertRoutes(app: FastifyInstance, deps: ProtectionAlertRoutesDeps): void {
   if (!deps.protectionAlertLedger) return;
-  const { parentAccountService, protectionAlertLedger } = deps;
+  const { parentAccountService, deviceSessionService, protectionAlertLedger } = deps;
 
   app.get('/api/parent/families/:familyId/protection-alerts', async (request: FastifyRequest, reply: FastifyReply) => {
     const token = readSessionCookie(request);
@@ -67,8 +72,25 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
 
     const role = await parentAccountService.activeFamilyRole(accountId! as never, familyId);
     if (role !== 'ADMINISTRATOR' && role !== 'VIEWER') return reply.code(403).send({ error: 'forbidden' });
+    if (!deviceSessionService) return reply.code(503).send({ error: 'not_configured' });
 
-    const alerts = await protectionAlertLedger.listForFamily(familyId);
+    const authorizationHeader = request.headers.authorization;
+    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
+      return reply.code(401).send({ error: 'actor_device_session_required' });
+    }
+    let actorDeviceId: string;
+    try {
+      const identity = await deviceSessionService.requireActorDeviceInFamily(
+        authorizationHeader.slice('Bearer '.length),
+        familyId,
+      );
+      actorDeviceId = identity.deviceId;
+    } catch (error) {
+      if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'actor_device_session_invalid' });
+      throw error;
+    }
+
+    const alerts = await protectionAlertLedger.listForParentDevice(familyId, actorDeviceId);
     return reply.code(200).send({ alerts: alerts.map(toAlertDto) });
   });
 }

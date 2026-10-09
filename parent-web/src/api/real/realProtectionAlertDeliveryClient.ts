@@ -13,6 +13,7 @@
 // deliberately never read or surfaced past this file.
 import type { ProtectionAlertDeliveryClient, ProtectionAlertFeedResult } from '../interfaces';
 import type { ParentProtectionAlert, ParentProtectionAlertTrigger } from '../../pages/security/ProtectionAlertPanel';
+import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { cookieSessionFamilyId } from './realBillingClient';
 
 const KNOWN_TRIGGERS: readonly ParentProtectionAlertTrigger[] = [
@@ -68,7 +69,7 @@ function toParentProtectionAlert(envelope: OpaqueProtectionAlertEnvelope): Paren
 export class RealProtectionAlertDeliveryClient implements ProtectionAlertDeliveryClient {
   constructor(
     private readonly apiBaseUrl: string,
-    _legacyBrowserAuthority?: unknown,
+    private readonly trustedBrowser: TrustedBrowserProvider,
   ) {}
 
   private url(path: string): string {
@@ -79,11 +80,23 @@ export class RealProtectionAlertDeliveryClient implements ProtectionAlertDeliver
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) return { status: 'PENDING_TRUSTED_DECRYPTION' };
 
+    let actorDeviceSessionToken: string | null;
+    try {
+      const snapshot = await this.trustedBrowser.getSnapshot();
+      actorDeviceSessionToken = snapshot.state === 'TRUSTED' &&
+        typeof snapshot.actorDeviceSessionToken === 'string' && snapshot.actorDeviceSessionToken.length > 0
+        ? snapshot.actorDeviceSessionToken
+        : null;
+    } catch {
+      return { status: 'PENDING_TRUSTED_DECRYPTION' };
+    }
+    if (!actorDeviceSessionToken) return { status: 'PENDING_TRUSTED_DECRYPTION' };
+
     let envelopes: OpaqueProtectionAlertEnvelope[];
     try {
       const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/protection-alerts`), {
         credentials: 'include',
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', Authorization: `Bearer ${actorDeviceSessionToken}` },
       });
       if (!response.ok) return { status: 'PENDING_TRUSTED_DECRYPTION' };
       const body: unknown = await response.json();

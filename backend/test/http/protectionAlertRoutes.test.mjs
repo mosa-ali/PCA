@@ -3,6 +3,7 @@ import test, { after } from 'node:test';
 import Fastify from 'fastify';
 import { registerProtectionAlertRoutes } from '../../dist/http/routes/protectionAlertRoutes.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
+import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 const PROTECTION_ALERTS_ROUTE = '/api/parent/families/:familyId/protection-alerts';
@@ -20,7 +21,7 @@ const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
 const FAMILY = 'family-protection-alerts-http-1';
 const OTHER_FAMILY = 'family-protection-alerts-http-other';
 
-function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW) } = {}) {
+function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW), role = 'ADMINISTRATOR' } = {}) {
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
     ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
@@ -32,17 +33,29 @@ function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW)
       if (!session) throw new Error('unauthorized');
       return session;
     },
-    async activeFamilyRole() { return 'ADMINISTRATOR'; },
+    async activeFamilyRole() { return role; },
+  };
+  const deviceSessions = new Map([
+    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
+    ['dev-token-other-parent-device', { deviceId: 'dev-other-parent-device', familyId: FAMILY }],
+    ['dev-token-other-family', { deviceId: 'dev-other-family', familyId: OTHER_FAMILY }],
+  ]);
+  const deviceSessionService = {
+    async requireActorDeviceInFamily(token, familyId) {
+      const identity = deviceSessions.get(token);
+      if (!identity || identity.familyId !== familyId) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+      return identity;
+    },
   };
 
   const app = Fastify();
-  registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger: ledger });
+  registerProtectionAlertRoutes(app, { parentAccountService, deviceSessionService, protectionAlertLedger: ledger });
   return { app, ledger };
 }
 
-const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
+const ownerHeaders = { cookie: 'pca_family_session=session-owner', authorization: 'Bearer dev-token-owner' };
 
-test('an active Parent session receives family-scoped opaque protection-alert envelopes, never another family', async () => {
+test('an active Parent browser receives only its own device-scoped opaque protection-alert envelopes', async () => {
   const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   await ledger.record({
     alertId: 'alert-owner-1',
@@ -87,14 +100,15 @@ test('an active Parent session receives family-scoped opaque protection-alert en
     assert.equal(response.statusCode, 200);
     recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
-    assert.equal(body.alerts.length, 2);
-    assert.deepEqual(body.alerts.map((alert) => alert.alertId), ['alert-owner-1', 'alert-someone-else-1']);
+    assert.equal(body.alerts.length, 1);
+    assert.deepEqual(body.alerts.map((alert) => alert.alertId), ['alert-owner-1']);
     assert.equal(body.alerts.some((alert) => alert.alertId === 'alert-other-family-1'), false);
+    assert.equal(body.alerts.some((alert) => alert.alertId === 'alert-someone-else-1'), false);
     assert.equal(body.alerts[0].trigger, 'PROTECTION_DEGRADED');
     assert.equal(body.alerts[0].encryptedPayloadB64, 'b3BhcXVl');
     // The route's own response-shape check: no family-scoped internal field
     // (familyId/parentDeviceId) is ever present -- only the fields a
-    // caller's own device is entitled to see for its own queue, and the
+    // caller's authenticated device is entitled to see for its own queue, and the
     // payload/nonce stay fully opaque (base64 ciphertext, never decoded or
     // interpreted server-side).
     const keys = Object.keys(body.alerts[0]).sort();
@@ -104,11 +118,16 @@ test('an active Parent session receives family-scoped opaque protection-alert en
   }
 });
 
-test('Parent session reads do not require an actor-device-session bearer token', async () => {
+test('missing actor-device-session bearer token is rejected even with an active Parent session', async () => {
   const { app } = buildApp();
   try {
-    const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
-    assert.equal(response.statusCode, 200);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/protection-alerts`,
+      headers: { cookie: ownerHeaders.cookie },
+    });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().error, 'actor_device_session_required');
   } finally {
     await app.close();
   }
@@ -131,7 +150,7 @@ test('a device from a different family cannot read this family’s protection-al
   }
 });
 
-test('an unrelated device bearer token cannot change the authenticated Parent family scope', async () => {
+test('a same-family bearer selects only its authenticated Parent-device queue', async () => {
   const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   await ledger.record({
     alertId: 'alert-owner-1',
@@ -144,14 +163,82 @@ test('an unrelated device bearer token cannot change the authenticated Parent fa
     encryptedPayloadB64: 'eA',
     nonceB64: 'eQ',
   });
+  await ledger.record({
+    alertId: 'alert-other-parent-device-1',
+    familyId: FAMILY,
+    deviceId: null,
+    parentDeviceId: 'dev-other-parent-device',
+    trigger: 'UNENROLLMENT',
+    keyEpoch: 1,
+    generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
+    encryptedPayloadB64: 'b3RoZXItZGV2aWNl',
+    nonceB64: 'eQ',
+  });
   const { app } = buildApp({ ledger });
   try {
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/protection-alerts`,
-      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-other-owner' },
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-other-parent-device' },
     });
     assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().alerts.map((alert) => alert.alertId), ['alert-other-parent-device-1']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('invalid and foreign-family actor-device sessions fail closed', async () => {
+  const { app } = buildApp();
+  try {
+    for (const token of ['unknown-token', 'dev-token-other-family']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/parent/families/${FAMILY}/protection-alerts`,
+        headers: { ...ownerHeaders, authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.statusCode, 401);
+      assert.equal(response.json().error, 'actor_device_session_invalid');
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('an active Viewer Parent session can read only its own device queue', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  await ledger.record({
+    alertId: 'viewer-alert', familyId: FAMILY, deviceId: null, parentDeviceId: 'dev-owner',
+    trigger: 'PROTECTION_DEGRADED', keyEpoch: 2, generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
+    encryptedPayloadB64: 'eA', nonceB64: 'eQ',
+  });
+  const { app } = buildApp({ ledger, role: 'VIEWER' });
+  try {
+    const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().alerts.map((alert) => alert.alertId), ['viewer-alert']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('when actor-device session verification is not configured, the route fails closed', async () => {
+  const app = Fastify();
+  registerProtectionAlertRoutes(app, {
+    parentAccountService: {
+      async readSession() { return { accountId: 'acct-owner', familyId: FAMILY }; },
+      async activeFamilyRole() { return 'ADMINISTRATOR'; },
+    },
+    protectionAlertLedger: new InMemoryProtectionAlertLedger(() => LEDGER_NOW),
+  });
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/protection-alerts`,
+      headers: ownerHeaders,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().error, 'not_configured');
   } finally {
     await app.close();
   }
