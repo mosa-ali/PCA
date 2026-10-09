@@ -91,10 +91,47 @@ class SchedulePolicyStructureConformanceTest {
 
     @Test
     fun `unpaired surrogate window identity is rejected as invalid configuration`() {
-        val malformedIdentity = window("bad\uD800id")
+        for (id in listOf("bad\uD800id", "bad\uDC00id")) {
+            val malformedIdentity = window(id)
+            assertTrue(validateScheduleWindow(malformedIdentity).any { it.contains("valid UTF-8") })
+            assertEquals(ScheduleRuntimeState.INVALID,
+                SchedulePolicyValidator.evaluate(input(policy(listOf(malformedIdentity)))).state)
+        }
+    }
 
-        assertTrue(validateScheduleWindow(malformedIdentity).any { it.contains("valid UTF-8") })
-        assertEquals(ScheduleRuntimeState.INVALID, SchedulePolicyValidator.evaluate(input(policy(listOf(malformedIdentity)))).state)
+    @Test
+    fun `policy timezone is validated even when no daily limit needs it`() {
+        val accepted = policy(emptyList())
+        assertEquals(ScheduleRuntimeState.CURRENT, SchedulePolicyValidator.evaluate(input(accepted)).state)
+
+        for (timezone in listOf("", "Not/A_Zone", "GMT+3", "+03:00")) {
+            val result = SchedulePolicyValidator.evaluate(input(accepted.copy(policyRevision = 2, timezone = timezone), accepted))
+            assertEquals("timezone=$timezone", ScheduleRuntimeState.INVALID, result.state)
+            assertEquals(accepted, result.effectivePolicy)
+        }
+    }
+
+    @Test
+    fun `schedule evaluator rejects an invalid policy timezone before default allow`() {
+        fun evaluate(timezone: String) = ScheduleEvaluator.evaluate(
+            ScheduleEvaluationInput(
+                nowUtc = now,
+                timezone = timezone,
+                appToken = "app",
+                windows = emptyList(),
+                bonusGrants = emptyList(),
+                exceptions = emptyList(),
+                enforcementCapability = EnforcementCapabilityState.ENFORCED,
+                connectivity = Connectivity.ONLINE,
+            ),
+        )
+
+        for (timezone in listOf("", "Not/A_Zone", "GMT+3", "+03:00")) {
+            val result = evaluate(timezone)
+            assertEquals("timezone=$timezone", ScheduleDecisionKind.INVALID_CONFIG, result.decision)
+            assertTrue(result.configErrors.orEmpty().any { it.contains("policy timezone") })
+        }
+        assertEquals(ScheduleDecisionKind.ALLOWED, evaluate("Asia/Riyadh").decision)
     }
 
     @Test

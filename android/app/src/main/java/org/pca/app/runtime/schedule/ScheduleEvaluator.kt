@@ -36,7 +36,12 @@ object ScheduleEvaluator {
             return EmergencyAccessFloor.ALWAYS_ALLOWED_DECISION
         }
 
-        val configErrors = validateScheduleWindows(input.windows)
+        val configErrors = buildList {
+            if (!isRecognizedTimezone(input.timezone)) {
+                add("policy timezone is required and must be a recognized IANA timezone")
+            }
+            addAll(validateScheduleWindows(input.windows))
+        }
         if (configErrors.isNotEmpty()) {
             return ScheduleDecision(
                 decision = ScheduleDecisionKind.INVALID_CONFIG,

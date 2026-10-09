@@ -86,6 +86,7 @@ object SchedulePolicyValidator {
 
     private fun isStructurallyValid(policy: SchedulePolicyV1): Boolean {
         if (policy.policyRevision <= 0) return false
+        if (!isRecognizedTimezone(policy.timezone)) return false
         return validateScheduleWindows(policy.windows).isEmpty()
     }
 

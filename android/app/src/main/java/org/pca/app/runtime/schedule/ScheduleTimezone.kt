@@ -51,9 +51,5 @@ fun toZonedWallClock(instant: Instant, timeZone: String): ZonedWallClock {
 
 fun minutesOfDay(hour: Int, minute: Int): Int = hour * 60 + minute
 
-internal fun isRecognizedTimezone(timeZone: String): Boolean = try {
-    ZoneId.of(timeZone)
-    true
-} catch (e: Exception) {
-    false
-}
+internal fun isRecognizedTimezone(timeZone: String): Boolean =
+    timeZone.isNotEmpty() && timeZone in ZoneId.getAvailableZoneIds()

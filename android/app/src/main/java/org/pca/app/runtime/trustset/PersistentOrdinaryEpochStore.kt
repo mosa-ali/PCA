@@ -17,20 +17,28 @@ class PersistentOrdinaryEpochStore(
             val json = JSONObject(raw)
             val version = json.get("version")
             val rootAnchor: AcceptedEpochRecord?
+            val pendingBase: AcceptedEpochRecord?
             when (version) {
                 1 -> {
                     require(json.keys().asSequence().toSet() == LEGACY_STATE_KEYS)
                     rootAnchor = null
+                    pendingBase = null
                 }
                 2 -> {
                     require(json.keys().asSequence().toSet() == CURRENT_STATE_KEYS)
                     rootAnchor = if (json.isNull("rootAnchor")) null else readAccepted(json.getJSONObject("rootAnchor"))
+                    pendingBase = null
+                }
+                3 -> {
+                    require(json.keys().asSequence().toSet() == CURRENT_V3_STATE_KEYS)
+                    rootAnchor = if (json.isNull("rootAnchor")) null else readAccepted(json.getJSONObject("rootAnchor"))
+                    pendingBase = if (json.isNull("pendingBase")) null else readAccepted(json.getJSONObject("pendingBase"))
                 }
                 else -> error("unsupported_ordinary_trust_set_version")
             }
             val accepted = readAccepted(json.getJSONObject("accepted"))
             val pending = if (json.isNull("pending")) null else readRequest(json.getJSONObject("pending"))
-            OrdinaryEpochState(accepted, pending, rootAnchor).also(::validateState)
+            OrdinaryEpochState(accepted, pending, rootAnchor, pendingBase).also(::validateState)
         } catch (_: Exception) {
             throw IllegalStateException("corrupt_ordinary_trust_set_state")
         }
@@ -85,6 +93,23 @@ class PersistentOrdinaryEpochStore(
             require(acceptedEpoch.trustSetEpoch >= 1 && acceptedEpoch.keyEpoch >= 1)
             if (acceptedEpoch.trustSetEpoch == 1) require(state.accepted == root)
         }
+        if (state.pending == null) {
+            require(state.pendingBase == null)
+        } else {
+            state.pendingBase?.let { baseRecord ->
+                val base = validateAccepted(baseRecord)
+                val currentOwner = acceptedEpoch.entries.single { it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE }
+                val baseOwner = base.entries.single { it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE }
+                require(base.familyId == acceptedEpoch.familyId && base.trustSetEpoch <= acceptedEpoch.trustSetEpoch &&
+                    base.keyEpoch <= acceptedEpoch.keyEpoch)
+                if (base.trustSetEpoch == acceptedEpoch.trustSetEpoch) require(baseRecord == state.accepted)
+                require(baseOwner.deviceId == currentOwner.deviceId && baseOwner.dskKeyId == currentOwner.dskKeyId &&
+                    baseOwner.dskPublicKey == currentOwner.dskPublicKey)
+                val candidate = TrustSetEpochCodec.decodeCanonical(decodeCanonicalRequest(state.pending))
+                require(candidate.familyId == base.familyId && candidate.trustSetEpoch > base.trustSetEpoch &&
+                    candidate.supersedesEpoch == base.trustSetEpoch && candidate.keyEpoch >= base.keyEpoch)
+            }
+        }
     }
 
     private fun validateAccepted(record: AcceptedEpochRecord): UntrustedTrustSetEpoch {
@@ -137,10 +162,12 @@ class PersistentOrdinaryEpochStore(
     private fun writeDurably(next: OrdinaryEpochState): Boolean {
         val accepted = encodeAccepted(next.accepted)
         val rootAnchor = next.rootAnchor?.let(::encodeAccepted) ?: JSONObject.NULL
+        val pendingBase = next.pendingBase?.let(::encodeAccepted) ?: JSONObject.NULL
         store.putString(
             key,
-            JSONObject().put("version", 2).put("accepted", accepted)
-                .put("rootAnchor", rootAnchor).put("pending", next.pending?.let(::encodeRequest) ?: JSONObject.NULL).toString(),
+            JSONObject().put("version", 3).put("accepted", accepted)
+                .put("rootAnchor", rootAnchor).put("pending", next.pending?.let(::encodeRequest) ?: JSONObject.NULL)
+                .put("pendingBase", pendingBase).toString(),
         )
         store.flush()
         return read() == next
@@ -152,5 +179,6 @@ class PersistentOrdinaryEpochStore(
         val ACCEPTED_KEYS = REQUEST_KEYS + setOf("signerDeviceId", "signerKeyId", "trustSetEpoch", "keyEpoch")
         val LEGACY_STATE_KEYS = setOf("version", "accepted", "pending")
         val CURRENT_STATE_KEYS = setOf("version", "accepted", "rootAnchor", "pending")
+        val CURRENT_V3_STATE_KEYS = CURRENT_STATE_KEYS + "pendingBase"
     }
 }

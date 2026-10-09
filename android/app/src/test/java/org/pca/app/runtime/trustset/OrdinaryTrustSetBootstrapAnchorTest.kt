@@ -43,11 +43,13 @@ class OrdinaryTrustSetBootstrapAnchorTest {
         acceptedEpoch1 = if (includeAnchor) FirstDeviceAcceptedEpochAnchor(canonical, signature) else null,
     )
 
-    private class NoNetworkApi : OrdinaryTrustSetApi {
+    private class NoNetworkApi(private val acceptedHead: AcceptedEpochRecord) : OrdinaryTrustSetApi {
         override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse = error("no network expected")
         override suspend fun status(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse = error("no network expected")
         override suspend fun getEpoch(familyId: String, trustSetEpoch: Int): AcceptedEpochRecord = error("no network expected")
-        override suspend fun getHead(familyId: String): AcceptedEpochRecord = error("no network expected")
+        override suspend fun getHead(familyId: String): AcceptedEpochRecord = acceptedHead.also {
+            check(familyId == "family")
+        }
     }
 
     private fun rootStore(record: FirstDeviceRootRecord = rootRecord()) = InMemoryFirstDeviceRootStore().apply { save(record) }
@@ -95,7 +97,7 @@ class OrdinaryTrustSetBootstrapAnchorTest {
             }
         }
         val coordinator = OrdinaryTrustSetCoordinator(
-            ordinaryStore, NoNetworkApi(), signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+            ordinaryStore, NoNetworkApi(accepted), signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
             seed.deviceId, seed.signingKeyId, seed.dskAlias,
         )
         assertTrue(runBlocking { coordinator.prepare(epoch(2)) })
@@ -181,7 +183,9 @@ class OrdinaryTrustSetBootstrapAnchorTest {
                 return ByteArray(64)
             }
         }
-        val coordinator = OrdinaryTrustSetCoordinator(ordinaryStore, NoNetworkApi(), signer,
+        val coordinator = OrdinaryTrustSetCoordinator(ordinaryStore, NoNetworkApi(
+            AcceptedEpochRecord(request, seed.deviceId, seed.signingKeyId, 1, 1),
+        ), signer,
             OrdinaryEpochSignatureVerifier { _, _, _ -> true }, seed.deviceId, seed.signingKeyId, seed.dskAlias)
         assertFalse(runBlocking { coordinator.prepare(epoch(2)) })
         assertFalse(signed)

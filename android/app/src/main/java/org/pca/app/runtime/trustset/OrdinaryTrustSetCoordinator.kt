@@ -31,6 +31,8 @@ data class OrdinaryEpochState(
     val pending: OrdinaryEpochRequest? = null,
     /** Immutable device-local bootstrap root. Legacy states decode with no root and cannot be upgraded. */
     val rootAnchor: AcceptedEpochRecord? = null,
+    /** Exact accepted predecessor used to sign pending, retained across catch-up and process death. */
+    val pendingBase: AcceptedEpochRecord? = null,
 )
 interface OrdinaryEpochStore {
     /** Present corrupt state must throw; absence must never be inferred from decoding failure. */
@@ -66,7 +68,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         require(signature.size == 64)
         val request = OrdinaryEpochRequest(Base64.getEncoder().encodeToString(bytes), Base64.getEncoder().encodeToString(signature))
         require(verifier.verify(owner.dskPublicKey, bytes, request.signatureBase64))
-        store.compareAndSetDurably(current, current.copy(pending = request))
+        store.compareAndSetDurably(current, current.copy(pending = request, pendingBase = current.accepted))
     }
 
     /** A timeout leaves the persisted request unchanged. Restart callers invoke this without preparing again. */
@@ -78,16 +80,54 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         require(maximumRecords in 1..32)
         val initial = store.read() ?: return@withLock 0
         if (!hasTrustedFloor(initial)) return@withLock 0
+        // Newer states retain the exact predecessor used to sign a pending request. Older v1/v2
+        // states did not, and catch-up could already have advanced their accepted floor while
+        // leaving the request behind. Authenticate a legacy request only if its claimed
+        // predecessor can be proven on the accepted chain; otherwise preserve it while allowing
+        // independent server catch-up to proceed.
+        var provenPendingBase = initial.pendingBase
+        val pendingEpoch = initial.pending?.let { pending ->
+            if (initial.pendingBase != null) {
+                verifyPending(initial, pending).first
+            } else {
+                val candidate = try {
+                    TrustSetEpochCodec.decodeCanonical(canonicalBytes(pending))
+                } catch (_: Exception) {
+                    null
+                }
+                val predecessor = candidate?.supersedesEpoch?.let { epoch ->
+                    findAcceptedAncestor(initial, epoch, maximumRecords)
+                }
+                if (predecessor == null) {
+                    null
+                } else {
+                    try {
+                        verifyPending(initial, pending, predecessor).also { provenPendingBase = predecessor }.first
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }
+        }
         val anchor = decode(initial.accepted)
         val chain = mutableListOf<AcceptedEpochRecord>()
         var cursor = try { api.getHead(anchor.familyId) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return@withLock 0 }
+        val targetHead = cursor
         while (true) {
             val candidate = decode(cursor)
             require(candidate.familyId == anchor.familyId)
             if (candidate.trustSetEpoch == anchor.trustSetEpoch) {
                 require(cursor == initial.accepted)
+                if (initial.pending != null && pendingEpoch?.trustSetEpoch?.let { it <= candidate.trustSetEpoch } == true) {
+                    if (store.confirmDurable(initial) &&
+                        store.compareAndSetDurably(initial, initial.copy(pending = null, pendingBase = null))) {
+                        return@withLock 0
+                    }
+                }
                 break
             }
             require(candidate.trustSetEpoch > anchor.trustSetEpoch && chain.size < maximumRecords)
@@ -100,30 +140,40 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             catch (_: Exception) { return@withLock 0 }
             require(cursor.trustSetEpoch == predecessor)
         }
-        var progressed = 0
+        // Verify the complete chain before persisting any hop. A malformed late hop must not
+        // leave a partial floor advance that strands pending custody without its original base.
+        val verifiedHops = mutableListOf<Pair<AcceptedEpochRecord, UntrustedTrustSetEpoch>>()
+        var verificationFloor = anchor
         for (accepted in chain.asReversed()) {
-            val current = store.read() ?: return@withLock progressed
-            if (!store.confirmDurable(current)) return@withLock progressed
-            val prior = decode(current.accepted)
+            val prior = verificationFloor
             val candidate = decode(accepted)
             validateTransition(prior, candidate)
             val owner = owner(prior)
             require(accepted.signerDeviceId == owner.deviceId && accepted.signerKeyId == owner.dskKeyId)
             require(verifier.verify(owner.dskPublicKey, TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8),
                 accepted.request.signatureBase64))
-            // A different, fully verified record at the pending request's epoch is an
-            // authoritative conflict: that epoch is immutable, so retrying these exact bytes
-            // can never succeed. Retire only after the competing record has passed the same
-            // predecessor, signer, canonical-byte, and signature checks above. A later accepted
-            // epoch does not by itself retire a pending request; it may still need exact status
-            // reconciliation.
-            val pendingRequest = current.pending
-            val pending = pendingRequest?.let { request ->
-                if (request == accepted.request ||
-                    TrustSetEpochCodec.decodeCanonical(canonicalBytes(request)).trustSetEpoch == candidate.trustSetEpoch) null else request
-            }
-            if (!store.compareAndSetDurably(current, OrdinaryEpochState(accepted, pending, current.rootAnchor))) return@withLock progressed
+            verifiedHops += accepted to candidate
+            verificationFloor = candidate
+        }
+        require(verificationFloor == decode(targetHead))
+
+        var progressed = 0
+        var expected = initial
+        for ((accepted, candidate) in verifiedHops) {
+            val current = store.read() ?: return@withLock progressed
+            if (current != expected || !store.confirmDurable(current)) return@withLock progressed
+            // A verified accepted floor at or beyond the exact pending candidate makes that
+            // persisted attempt stale. Keep its original predecessor until that point so a
+            // restart during a multi-hop catch-up can still verify its signature.
+            val clearPending = current.pending != null && pendingEpoch?.trustSetEpoch?.let { it <= candidate.trustSetEpoch } == true
+            val next = OrdinaryEpochState(accepted,
+                pending = if (clearPending) null else current.pending,
+                rootAnchor = current.rootAnchor,
+                pendingBase = if (clearPending) null else current.pending?.let { current.pendingBase ?: provenPendingBase },
+            )
+            if (!store.compareAndSetDurably(current, next)) return@withLock progressed
             progressed++
+            expected = next
         }
         progressed
     }
@@ -133,12 +183,20 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         if (!hasTrustedFloor(current)) return false
         val pending = current.pending ?: return false
         if (!store.confirmDurable(current)) return false
+        val (pendingEpoch, pendingBytes) = try {
+            verifyPending(current, pending)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            // Preserve the established corruption signal for v3 custody, but make a legacy
+            // request with no provable predecessor a normal fail-closed no-op.
+            if (current.pendingBase != null) throw failure
+            return false
+        }
+        // A request signed from a prior accepted floor is never resubmitted after catch-up has
+        // advanced that floor. Catch-up alone decides when the signed candidate is stale.
+        if (current.pendingBase != null && current.pendingBase != current.accepted) return false
         val prior = decode(current.accepted)
-        val priorOwner = owner(prior)
-        require(priorOwner.deviceId == localDeviceId && priorOwner.dskKeyId == localSigningKeyId)
-        val pendingBytes = canonicalBytes(pending)
-        validateTransition(prior, TrustSetEpochCodec.decodeCanonical(pendingBytes))
-        require(verifier.verify(priorOwner.dskPublicKey, pendingBytes, pending.signatureBase64))
         val response = try {
             if (status) api.status(prior.familyId, pending) else api.submit(prior.familyId, pending)
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -151,6 +209,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         if (accepted.request != pending) return false
         val candidate = decode(accepted)
         validateTransition(prior, candidate)
+        require(candidate == pendingEpoch)
         val projectedHead = decode(response.acceptedHead)
         require(projectedHead.familyId == prior.familyId &&
             projectedHead.trustSetEpoch >= candidate.trustSetEpoch && projectedHead.keyEpoch >= candidate.keyEpoch)
@@ -197,6 +256,95 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /** Validate durable request custody against the exact current accepted owner and floor. */
+    private fun verifyPending(
+        state: OrdinaryEpochState,
+        request: OrdinaryEpochRequest,
+        priorRecord: AcceptedEpochRecord = state.pendingBase ?: state.accepted,
+    ): Pair<UntrustedTrustSetEpoch, ByteArray> {
+        val prior = decode(priorRecord)
+        val current = decode(state.accepted)
+        val rootRecord = state.rootAnchor ?: error("missing_ordinary_trust_set_root")
+        val root = decode(rootRecord)
+        val priorOwner = owner(prior)
+        val rootOwner = owner(root)
+        val currentOwner = owner(current)
+        require(prior.familyId == current.familyId && prior.familyId == root.familyId)
+        require(prior.trustSetEpoch <= current.trustSetEpoch && prior.keyEpoch <= current.keyEpoch)
+        if (prior.trustSetEpoch == current.trustSetEpoch) require(priorRecord == state.accepted)
+        require(priorOwner.deviceId == rootOwner.deviceId && priorOwner.dskKeyId == rootOwner.dskKeyId &&
+            priorOwner.dskPublicKey == rootOwner.dskPublicKey && currentOwner.deviceId == rootOwner.deviceId &&
+            currentOwner.dskKeyId == rootOwner.dskKeyId && currentOwner.dskPublicKey == rootOwner.dskPublicKey)
+        require(priorRecord.signerDeviceId == rootOwner.deviceId && priorRecord.signerKeyId == rootOwner.dskKeyId)
+        require(verifier.verify(rootOwner.dskPublicKey, canonicalBytes(priorRecord.request), priorRecord.request.signatureBase64))
+        require(priorOwner.deviceId == localDeviceId && priorOwner.dskKeyId == localSigningKeyId)
+        val bytes = canonicalBytes(request)
+        val candidate = TrustSetEpochCodec.decodeCanonical(bytes)
+        validateTransition(prior, candidate)
+        require(verifier.verify(priorOwner.dskPublicKey, bytes, request.signatureBase64))
+        return candidate to bytes
+    }
+
+    /**
+     * Resolve a legacy pending request's claimed predecessor from the already trusted local
+     * accepted floor. Every edge from that floor back to the requested epoch is checked with the
+     * same owner key and exact predecessor link. An absent, skipped, malformed, or unavailable
+     * ancestor is not a reason to stop unrelated catch-up; it simply means the request cannot be
+     * retired yet.
+     */
+    private suspend fun findAcceptedAncestor(
+        state: OrdinaryEpochState,
+        targetEpoch: Int,
+        maximumRecords: Int,
+    ): AcceptedEpochRecord? {
+        val rootRecord = state.rootAnchor ?: return null
+        val root = try { decode(rootRecord) } catch (_: Exception) { return null }
+        val rootOwner = try { owner(root) } catch (_: Exception) { return null }
+        val familyId = try { decode(state.accepted).familyId } catch (_: Exception) { return null }
+        if (targetEpoch !in 1..decode(state.accepted).trustSetEpoch) return null
+
+        var cursor = state.accepted
+        var traversed = 0
+        while (true) {
+            val current = try { decode(cursor) } catch (_: Exception) { return null }
+            if (current.familyId != familyId || current.trustSetEpoch < targetEpoch) return null
+            if (current.trustSetEpoch == targetEpoch) {
+                if (targetEpoch == 1 && cursor != rootRecord) return null
+                if (cursor.signerDeviceId != rootOwner.deviceId || cursor.signerKeyId != rootOwner.dskKeyId ||
+                    owner(current).dskPublicKey != rootOwner.dskPublicKey) return null
+                val bytes = TrustSetEpochCodec.canonicalize(current).toByteArray(Charsets.UTF_8)
+                return if (verifier.verify(rootOwner.dskPublicKey, bytes, cursor.request.signatureBase64)) cursor else null
+            }
+            if (traversed >= maximumRecords) return null
+            val predecessorEpoch = current.supersedesEpoch ?: return null
+            // If the accepted chain skips the requested epoch, that record is not a proven
+            // predecessor even if an API happens to return a record for that number.
+            if (predecessorEpoch < targetEpoch) return null
+            val predecessor = try {
+                api.getEpoch(familyId, predecessorEpoch)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return null
+            }
+            if (predecessor.trustSetEpoch != predecessorEpoch) return null
+            val prior = try { decode(predecessor) } catch (_: Exception) { return null }
+            try {
+                validateTransition(prior, current)
+                val signer = owner(prior)
+                require(cursor.signerDeviceId == signer.deviceId && cursor.signerKeyId == signer.dskKeyId)
+                require(signer.deviceId == rootOwner.deviceId && signer.dskKeyId == rootOwner.dskKeyId &&
+                    signer.dskPublicKey == rootOwner.dskPublicKey)
+                require(verifier.verify(signer.dskPublicKey,
+                    TrustSetEpochCodec.canonicalize(current).toByteArray(Charsets.UTF_8), cursor.request.signatureBase64))
+            } catch (_: Exception) {
+                return null
+            }
+            cursor = predecessor
+            traversed++
         }
     }
 
