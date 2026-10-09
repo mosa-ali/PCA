@@ -86,7 +86,7 @@ object SchedulePolicyValidator {
 
     private fun isStructurallyValid(policy: SchedulePolicyV1): Boolean {
         if (policy.policyRevision <= 0) return false
-        return policy.windows.all { validateScheduleWindow(it).isEmpty() }
+        return validateScheduleWindows(policy.windows).isEmpty()
     }
 
     private fun hasValidEpochs(policy: SchedulePolicyV1): Boolean =

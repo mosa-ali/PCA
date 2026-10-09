@@ -150,6 +150,59 @@ class SchedulePolicyEnvelopePayloadTest {
     }
 
     @Test
+    fun `envelope payload accepts integral decimal and exponent schedule fields`() {
+        val encoded = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+        val decimalHour = encoded.replace("\"hour\":22", "\"hour\":22.0")
+        val exponentWeekday = encoded.replace("\"daysOfWeek\":[0,1,2,3,4,5,6]", "\"daysOfWeek\":[0e0,1,2,3,4,5,6]")
+
+        assertEquals(samplePolicy(), SchedulePolicyEnvelopePayload.decode(decimalHour))
+        assertEquals(samplePolicy(), SchedulePolicyEnvelopePayload.decode(exponentWeekday))
+    }
+
+    @Test
+    fun `envelope payload rejects string fractional and overflowing schedule integers`() {
+        val encoded = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+
+        val stringHour = JSONObject(encoded)
+        stringHour.getJSONObject("policy").getJSONArray("windows").getJSONObject(0)
+            .getJSONObject("start").put("hour", "22")
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(stringHour.toString()) }
+
+        val fractionalDay = JSONObject(encoded)
+        fractionalDay.getJSONObject("policy").getJSONArray("windows").getJSONObject(0)
+            .getJSONArray("daysOfWeek").put(0, 1.5)
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(fractionalDay.toString()) }
+
+        val overflowLimit = JSONObject(encoded)
+        overflowLimit.getJSONObject("policy").getJSONArray("dailyLimits").getJSONObject(0)
+            .put("limitMinutes", Int.MAX_VALUE.toLong() + 1L)
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(overflowLimit.toString()) }
+    }
+
+    @Test
+    fun `persisted schedule decoder rejects coerced and fractional window integers`() {
+        val encoded = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(
+                candidatePolicy = samplePolicy(),
+                lastKnownGoodPolicy = null,
+                lastPolicySyncAtUtc = null,
+                deviceTrustSetEpoch = 0,
+                deviceKeyEpoch = 0,
+            ),
+        )
+        val window = encoded.getJSONObject("candidatePolicy").getJSONArray("windows").getJSONObject(0)
+        window.getJSONArray("daysOfWeek").put(0, "0")
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(encoded) }
+
+        val fractional = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(samplePolicy(), null, null, 0, 0),
+        )
+        fractional.getJSONObject("candidatePolicy").getJSONArray("windows").getJSONObject(0)
+            .getJSONObject("end").put("minute", 0.25)
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(fractional) }
+    }
+
+    @Test
     fun `persistent snapshot decoder keeps zero floors and exact maximum`() {
         val encoded = SchedulePolicyJson.encodeSnapshot(
             SchedulePolicySnapshot(

@@ -1,10 +1,15 @@
 package org.pca.app.runtime.schedule
 
 import java.time.Instant
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 /** Field-for-field conforming mirror of `backend/src/schedule/policy.ts`. */
 fun validateScheduleWindow(window: ScheduleWindow): List<String> {
     val errors = mutableListOf<String>()
+    if (exactUtf8Identity(window.id) == null) errors.add("window id must be valid UTF-8 text")
     for ((label, tod) in listOf("start" to window.start, "end" to window.end)) {
         if (tod.hour < 0 || tod.hour > 23) errors.add("window ${window.id}: $label.hour out of range")
         if (tod.minute < 0 || tod.minute > 59) errors.add("window ${window.id}: $label.minute out of range")
@@ -15,6 +20,31 @@ fun validateScheduleWindow(window: ScheduleWindow): List<String> {
     }
     if (!isRecognizedTimezone(window.timezone)) errors.add("window ${window.id}: invalid timezone ${window.timezone}")
     return errors
+}
+
+/** Validates a complete policy window set, including the persistence-merge uniqueness rule.
+ * Window identity is the exact UTF-8 byte sequence: no Unicode normalization or locale-sensitive
+ * comparison is applied. Malformed UTF-16 that cannot represent a UTF-8 identity is rejected. */
+fun validateScheduleWindows(windows: List<ScheduleWindow>): List<String> {
+    val errors = windows.flatMap(::validateScheduleWindow).toMutableList()
+    val seenIds = HashSet<String>()
+    for (window in windows) {
+        val identity = exactUtf8Identity(window.id) ?: continue
+        if (!seenIds.add(identity)) errors.add("duplicate window id")
+    }
+    return errors
+}
+
+private fun exactUtf8Identity(value: String): String? = try {
+    val encoded = StandardCharsets.UTF_8.newEncoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .encode(CharBuffer.wrap(value))
+    val bytes = ByteArray(encoded.remaining())
+    encoded.get(bytes)
+    Base64.getEncoder().encodeToString(bytes)
+} catch (_: java.nio.charset.CharacterCodingException) {
+    null
 }
 
 /** PCA-FR-043B: owner-approved baseline used when a policy has not supplied a weaker bedtime

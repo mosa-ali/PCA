@@ -62,7 +62,7 @@ object SchedulePolicyEnvelopePayload {
     private fun decodePolicy(json: JSONObject): SchedulePolicyV1 = SchedulePolicyV1(
         version = json.getString("version"),
         policyId = json.getString("policyId"),
-        policyRevision = json.getInt("policyRevision"),
+        policyRevision = json.scheduleInt("policyRevision"),
         familyId = json.getString("familyId"),
         childProfileId = json.getString("childProfileId"),
         timezone = json.getString("timezone"),
@@ -84,7 +84,7 @@ object SchedulePolicyEnvelopePayload {
      * payload authored before this field existed (key absent entirely) round-trips the same way
      * as one that explicitly nulls it out. */
     private fun decodeOptionalInt(json: JSONObject, key: String): Int? =
-        if (json.isNull(key)) null else json.getInt(key)
+        if (json.isNull(key)) null else json.scheduleInt(key)
 
     private fun encodeAppScope(scope: AppScope): Any = when (scope) {
         is AppScope.All -> "ALL"
@@ -113,9 +113,9 @@ object SchedulePolicyEnvelopePayload {
     private fun decodeWindow(json: JSONObject): ScheduleWindow = ScheduleWindow(
         id = json.getString("id"),
         kind = ScheduleWindowKind.valueOf(json.getString("kind")),
-        daysOfWeek = json.getJSONArray("daysOfWeek").let { array -> (0 until array.length()).map { array.getInt(it) } },
-        start = json.getJSONObject("start").let { TimeOfDay(it.getInt("hour"), it.getInt("minute")) },
-        end = json.getJSONObject("end").let { TimeOfDay(it.getInt("hour"), it.getInt("minute")) },
+        daysOfWeek = json.getJSONArray("daysOfWeek").let { array -> (0 until array.length()).map { array.scheduleInt(it, "daysOfWeek") } },
+        start = json.getJSONObject("start").let { TimeOfDay(it.scheduleInt("hour"), it.scheduleInt("minute")) },
+        end = json.getJSONObject("end").let { TimeOfDay(it.scheduleInt("hour"), it.scheduleInt("minute")) },
         appScope = decodeAppScope(json.get("appScope")),
         timezone = json.getString("timezone"),
     )
@@ -131,7 +131,7 @@ object SchedulePolicyEnvelopePayload {
     private fun decodeBonusGrant(json: JSONObject): BonusGrant = BonusGrant(
         id = json.getString("id"),
         appScope = decodeAppScope(json.get("appScope")),
-        extraMinutes = json.getInt("extraMinutes"),
+        extraMinutes = json.scheduleInt("extraMinutes"),
         grantedAtUtc = Instant.parse(json.getString("grantedAtUtc")),
         expiresAtUtc = Instant.parse(json.getString("expiresAtUtc")),
     )
@@ -161,8 +161,8 @@ object SchedulePolicyEnvelopePayload {
 
     private fun decodeDailyLimit(json: JSONObject): DailyAppLimit = DailyAppLimit(
         appScope = decodeAppScope(json.get("appScope")),
-        limitMinutes = json.getInt("limitMinutes"),
-        usedMinutesToday = json.getInt("usedMinutesToday"),
+        limitMinutes = json.scheduleInt("limitMinutes"),
+        usedMinutesToday = json.scheduleInt("usedMinutesToday"),
         anchorLocalDate = json.getString("anchorLocalDate"),
     )
 }

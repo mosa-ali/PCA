@@ -67,7 +67,7 @@ internal object SchedulePolicyJson {
         return SchedulePolicyV1(
             version = version,
             policyId = json.getString("policyId"),
-            policyRevision = json.getInt("policyRevision"),
+            policyRevision = json.scheduleInt("policyRevision"),
             familyId = json.getString("familyId"),
             childProfileId = json.getString("childProfileId"),
             timezone = json.getString("timezone"),
@@ -80,8 +80,8 @@ internal object SchedulePolicyJson {
             issuedAt = Instant.parse(json.getString("issuedAt")),
             effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
             expiresAt = optionalNullableInstant(json, "expiresAt"),
-            continuousUseLimitMinutes = if (json.isNull("continuousUseLimitMinutes")) null else json.getInt("continuousUseLimitMinutes"),
-            breakDurationMinutes = if (json.isNull("breakDurationMinutes")) null else json.getInt("breakDurationMinutes"),
+            continuousUseLimitMinutes = if (json.isNull("continuousUseLimitMinutes")) null else json.scheduleInt("continuousUseLimitMinutes"),
+            breakDurationMinutes = if (json.isNull("breakDurationMinutes")) null else json.scheduleInt("breakDurationMinutes"),
         )
     }
 
@@ -135,9 +135,9 @@ internal object SchedulePolicyJson {
     private fun decodeWindow(json: JSONObject): ScheduleWindow = ScheduleWindow(
         id = json.getString("id"),
         kind = ScheduleWindowKind.valueOf(json.getString("kind")),
-        daysOfWeek = json.getJSONArray("daysOfWeek").let { arr -> (0 until arr.length()).map { arr.getInt(it) } },
-        start = json.getJSONObject("start").let { TimeOfDay(it.getInt("hour"), it.getInt("minute")) },
-        end = json.getJSONObject("end").let { TimeOfDay(it.getInt("hour"), it.getInt("minute")) },
+        daysOfWeek = json.getJSONArray("daysOfWeek").let { arr -> (0 until arr.length()).map { arr.scheduleInt(it, "daysOfWeek") } },
+        start = json.getJSONObject("start").let { TimeOfDay(it.scheduleInt("hour"), it.scheduleInt("minute")) },
+        end = json.getJSONObject("end").let { TimeOfDay(it.scheduleInt("hour"), it.scheduleInt("minute")) },
         appScope = decodeAppScope(json.getJSONObject("appScope")),
         timezone = json.getString("timezone"),
     )
@@ -152,7 +152,7 @@ internal object SchedulePolicyJson {
     private fun decodeBonus(json: JSONObject): BonusGrant = BonusGrant(
         id = json.getString("id"),
         appScope = decodeAppScope(json.getJSONObject("appScope")),
-        extraMinutes = json.getInt("extraMinutes"),
+        extraMinutes = json.scheduleInt("extraMinutes"),
         grantedAtUtc = Instant.parse(json.getString("grantedAtUtc")),
         expiresAtUtc = Instant.parse(json.getString("expiresAtUtc")),
     )
@@ -180,8 +180,8 @@ internal object SchedulePolicyJson {
 
     private fun decodeDailyLimit(json: JSONObject): DailyAppLimit = DailyAppLimit(
         appScope = decodeAppScope(json.getJSONObject("appScope")),
-        limitMinutes = json.getInt("limitMinutes"),
-        usedMinutesToday = json.getInt("usedMinutesToday"),
+        limitMinutes = json.scheduleInt("limitMinutes"),
+        usedMinutesToday = json.scheduleInt("usedMinutesToday"),
         anchorLocalDate = json.getString("anchorLocalDate"),
     )
 }

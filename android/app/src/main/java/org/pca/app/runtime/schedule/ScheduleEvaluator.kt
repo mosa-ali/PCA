@@ -36,7 +36,7 @@ object ScheduleEvaluator {
             return EmergencyAccessFloor.ALWAYS_ALLOWED_DECISION
         }
 
-        val configErrors = input.windows.flatMap { validateScheduleWindow(it) }
+        val configErrors = validateScheduleWindows(input.windows)
         if (configErrors.isNotEmpty()) {
             return ScheduleDecision(
                 decision = ScheduleDecisionKind.INVALID_CONFIG,
