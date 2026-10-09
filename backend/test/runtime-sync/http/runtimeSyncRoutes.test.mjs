@@ -456,6 +456,88 @@ test('an invalid protectionLevel value is rejected with 400', async () => {
   }
 });
 
+test('malformed protection-status bodies are rejected with 400 and never reach the repository', async () => {
+  let writes = 0;
+  const deviceProtectionStatusRepository = {
+    async findForDevice() { return null; },
+    async upsert() { writes += 1; },
+  };
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    for (const payload of [null, [], 'PROTECTED', 7]) {
+      const response = await app.inject({
+        method: 'POST', url: '/v1/runtime-sync/protection-status',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        payload: JSON.stringify(payload),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), { error: 'invalid_request' });
+    }
+    assert.equal(writes, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('protection-status server receipt time is captured before the alert lookup can delay the write', async () => {
+  let resolveLookupStarted;
+  const lookupStarted = new Promise((resolve) => { resolveLookupStarted = resolve; });
+  let releaseLookup;
+  const lookupGate = new Promise((resolve) => { releaseLookup = resolve; });
+  let stored = null;
+  const deviceProtectionStatusRepository = {
+    async findForDevice() {
+      resolveLookupStarted();
+      await lookupGate;
+      return null;
+    },
+    async upsert(record) { stored = record; },
+  };
+  const protectionStatusAlerting = {
+    producer: { async produce() {} },
+    alertsEnabled: true,
+    async resolveParentDevices() { return []; },
+  };
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+    const responsePromise = app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        protectionLevel: 'PROTECTED',
+        familyId: `forged-${randomUUID()}`,
+        deviceId: `forged-${randomUUID()}`,
+        updatedAt: '1999-01-01T00:00:00.000Z',
+      },
+    });
+    await lookupStarted;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const beforeLookupRelease = Date.now();
+    releaseLookup();
+    const response = await responsePromise;
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(stored.deviceId, deviceId);
+    assert.equal(stored.familyId, familyId);
+    assert.equal(stored.protectionLevel, 'PROTECTED');
+    assert.ok(stored.updatedAt instanceof Date);
+    assert.ok(stored.updatedAt.getTime() < beforeLookupRelease,
+      'the server receipt timestamp must be captured before awaiting the prior-status lookup');
+    assert.ok(stored.updatedAt.getTime() > Date.parse('1999-01-01T00:00:00.000Z'),
+      'the timestamp must come from the server, not the request body');
+  } finally {
+    releaseLookup();
+    await app.close();
+  }
+});
+
 test('a real device-session-authenticated report is recorded under the SESSION identity, and RealProtectiveAuthorityResolver then resolves true for that exact family/device', async () => {
   const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
   const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository });

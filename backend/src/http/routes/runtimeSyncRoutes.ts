@@ -356,20 +356,28 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       '/v1/runtime-sync/protection-status',
       { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
       async (request: FastifyRequest, reply: FastifyReply) => {
-        const body = request.body as { protectionLevel?: unknown };
+        const rawBody: unknown = request.body;
+        if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) {
+          return reply.code(400).send({ error: 'invalid_request' });
+        }
+        const body = rawBody as { protectionLevel?: unknown };
         if (typeof body.protectionLevel !== 'string' || !PROTECTION_LEVELS.has(body.protectionLevel)) {
           return reply.code(400).send({ error: 'invalid_request' });
         }
         const deviceId = request.runtimeSyncDeviceId as string;
         const familyId = request.runtimeSyncFamilyId as string;
         const nextLevel = body.protectionLevel as ProtectionLevel;
+        // Capture the server receipt clock before any repository awaits. In
+        // particular, alert-transition lookup latency must not change the
+        // timestamp assigned to this report, and the client never supplies it.
+        const receivedAt = new Date();
         // Read before write: a transition INTO DEGRADED is only detectable
         // by diffing against the prior single-row-per-device value (the
         // table is an upsert, never a history log -- see this repository's
         // own doc comment) -- so the previous level must be captured before
         // it's overwritten below, not after.
         const previous = deps.protectionStatusAlerting ? await protectionStatusRepository.findForDevice(familyId, deviceId) : null;
-        await protectionStatusRepository.upsert({ deviceId, familyId, protectionLevel: nextLevel, updatedAt: new Date() });
+        await protectionStatusRepository.upsert({ deviceId, familyId, protectionLevel: nextLevel, updatedAt: receivedAt });
         if (nextLevel === 'DEGRADED' && previous?.protectionLevel !== 'DEGRADED') {
           await emitProtectionDegradedAlert(deps.protectionStatusAlerting, familyId, deviceId, deps.alertComposeFailureLogger);
         }
