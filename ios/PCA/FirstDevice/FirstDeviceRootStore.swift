@@ -304,6 +304,11 @@ public final class InMemoryFirstDeviceRootStore: FirstDeviceRootStoring {
 /// JSON encoding; malformed or legacy records decode to nil (fail safe to
 /// "no ceremony", never a fabricated state).
 public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
+    /// Bound persisted JSON before decoding or writing. This matches the
+    /// other durable iOS snapshot stores and leaves ample room for the
+    /// first-device submit contract (including its 256 KiB canonical epoch).
+    static let maximumRecordBytes = 1_048_576
+
     private enum StoredRecord {
         case missing
         case invalid
@@ -425,6 +430,7 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
         } catch {
             return .invalid
         }
+        guard data.count <= Self.maximumRecordBytes else { return .invalid }
         guard let record = try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data) else {
             return .invalid
         }
@@ -442,7 +448,7 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
     }
 
     private func saveUnlocked(_ record: FirstDeviceRootRecord) -> Bool {
-        guard let data = try? JSONEncoder().encode(record) else { return false }
+        guard let data = try? JSONEncoder().encode(record), data.count <= Self.maximumRecordBytes else { return false }
         do {
             try keychain.storeReplacingAtomically(
                 data,

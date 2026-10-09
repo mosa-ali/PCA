@@ -603,6 +603,42 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(keychain.storedData, malformed, "an unreadable root must not be replaced as if the slot were empty")
     }
 
+    func testOversizedKeychainRootIsRejectedWithoutTreatingItAsMissing() throws {
+        let oversized = Data(repeating: 0x41, count: KeychainFirstDeviceRootStore.maximumRecordBytes + 1)
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = oversized
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let candidate = FirstDeviceRootRecord(seed: makeSeed())
+
+        XCTAssertNil(store.current())
+        XCTAssertFalse(store.writeIfCurrent(expected: nil, record: candidate))
+        XCTAssertFalse(store.captureSeed(candidate, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertFalse(store.withConfirmedCurrentRecord { _ in XCTFail("oversized root must not authorize cleanup") })
+        XCTAssertEqual(keychain.storedData, oversized, "oversized unreadable state must be preserved, not overwritten as empty")
+        XCTAssertEqual(keychain.atomicReplaceCalls, 0)
+    }
+
+    func testOversizedRootWriteIsRejectedBeforeReplacingExistingKeychainValue() throws {
+        let retained = approvedRecord()
+        let original = try JSONEncoder().encode(retained)
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = original
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        var oversized = retained
+        oversized.submission = FirstDeviceSubmissionPayload(
+            proofBytes: "proof",
+            proofSignature: "signature",
+            epoch1Bytes: "epoch",
+            epoch1Signature: "signature",
+            attestationEvidence: String(repeating: "x", count: KeychainFirstDeviceRootStore.maximumRecordBytes)
+        )
+
+        XCTAssertFalse(store.save(oversized))
+        XCTAssertEqual(keychain.storedData, original)
+        XCTAssertEqual(keychain.atomicReplaceCalls, 0, "oversized data must be rejected before the Keychain write")
+        XCTAssertEqual(store.current(), retained)
+    }
+
     func testConditionalWriteAndSeedCaptureFailClosedOnKeychainReadError() {
         let keychain = FailingOverwriteKeychainStore()
         let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
