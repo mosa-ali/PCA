@@ -121,7 +121,7 @@ test('revoke never extends a grant that already expired earlier on its own', () 
   assert.equal(stored.expiresAtUtc.getTime(), new Date('2026-01-07T09:15:00.000Z').getTime());
 });
 
-test('recording the SAME grant id twice (replay) replaces in place -- it is never applied twice', () => {
+test('recording the SAME grant id twice is idempotent and cannot overwrite or resurrect it', () => {
   const ledger = new BonusGrantLedger();
   const g = grant();
   ledger.record('child-1', g, g.grantedAtUtc);
@@ -129,11 +129,52 @@ test('recording the SAME grant id twice (replay) replaces in place -- it is neve
 
   assert.equal(ledger.listAll('child-1').length, 1);
   assert.equal(ledger.listActive('child-1', new Date('2026-01-07T09:10:00.000Z')).length, 1);
+  ledger.record('child-1', grant({ extraMinutes: 90, expiresAtUtc: new Date('2026-01-07T10:30:00.000Z') }), g.grantedAtUtc);
+  assert.deepEqual(ledger.listAll('child-1'), [g], 'a reused grant id cannot replace the originally authorized content');
+
   assert.equal(ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:05:00.000Z'), 'acct-parent'), true);
+  const revocation = ledger.getRevocationMetadata('child-1', 'grant-1');
   ledger.record('child-1', g, g.grantedAtUtc);
-  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1'), null, 'a replayed active grant must not retain stale revocation attribution');
-  assert.equal(ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:10:00.000Z'), 'acct-next'), true);
-  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1').revokedByParentAccountId, 'acct-next');
+  assert.deepEqual(ledger.listActive('child-1', new Date('2026-01-07T09:10:00.000Z')), [], 'replaying the old approval cannot reactivate a revoked grant');
+  assert.deepEqual(ledger.getRevocationMetadata('child-1', 'grant-1'), revocation, 'an approval replay cannot erase revocation actor metadata');
+  assert.equal(ledger.revoke('child-1', 'grant-1', new Date('2026-01-07T09:10:00.000Z'), 'acct-next'), false);
+  assert.equal(ledger.getRevocationMetadata('child-1', 'grant-1').revokedByParentAccountId, 'acct-parent');
+});
+
+test('grant input and list results are detached, including app scope and date fields', () => {
+  const ledger = new BonusGrantLedger();
+  const grantStart = new Date('2026-01-07T09:00:00.000Z');
+  const expiresAt = new Date('2026-01-07T09:30:00.000Z');
+  const expectedGrantStartMs = grantStart.getTime();
+  const expectedExpiresAtMs = expiresAt.getTime();
+  const now = new Date(grantStart);
+  const input = grant({
+    id: 'snapshot-grant',
+    appScope: { apps: ['game-app'] },
+    grantedAtUtc: grantStart,
+    expiresAtUtc: expiresAt,
+  });
+  ledger.record('child-1', input, now);
+
+  input.appScope.apps.push('video-app');
+  input.extraMinutes = 240;
+  input.grantedAtUtc.setTime(0);
+  input.expiresAtUtc.setTime(new Date('2026-01-08T00:00:00Z').getTime());
+  now.setTime(new Date('2026-01-08T00:00:00Z').getTime());
+
+  const fromHistory = ledger.listAll('child-1')[0];
+  assert.deepEqual(fromHistory.appScope, { apps: ['game-app'] });
+  assert.equal(fromHistory.extraMinutes, 30);
+  assert.equal(fromHistory.grantedAtUtc.getTime(), expectedGrantStartMs);
+  assert.equal(fromHistory.expiresAtUtc.getTime(), expectedExpiresAtMs);
+
+  fromHistory.appScope.apps.push('mutated-app');
+  fromHistory.grantedAtUtc.setTime(0);
+  fromHistory.expiresAtUtc.setTime(0);
+  const active = ledger.listActive('child-1', new Date('2026-01-07T09:15:00Z'))[0];
+  assert.deepEqual(active.appScope, { apps: ['game-app'] });
+  assert.equal(active.grantedAtUtc.getTime(), expectedGrantStartMs);
+  assert.equal(active.expiresAtUtc.getTime(), expectedExpiresAtMs);
 });
 
 test('revoking an unknown grant id is a safe no-op', () => {

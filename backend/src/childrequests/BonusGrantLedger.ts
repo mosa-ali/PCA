@@ -67,36 +67,38 @@ export class BonusGrantLedger {
    * of this codebase's time-handling.
    *
    * Replay-safe by construction: a grant sharing an already-recorded `id`
-   * (e.g. `ChildRequestService.decide()`'s own idempotent-replay path
-   * returning the SAME decided request a second time, whose
-   * `toBonusGrant()` projection is therefore byte-identical) REPLACES the
-   * existing entry in place rather than appending a duplicate -- callers
-   * never need to de-duplicate by id themselves, and `listActive` can never
-   * return two entries for what is really one decision.
+   * (e.g. `ChildRequestService.decide()`'s own idempotent-replay path)
+   * leaves the existing entry unchanged. In particular, an old approval
+   * replay cannot undo a later revocation or restore a grant superseded by a
+   * newer one.
    */
   record(childProfileId: string, grant: BonusGrant, nowUtc: Date): void {
     const existing = this.grantsByChild.get(childProfileId) ?? [];
-    const withoutSameId = existing.filter((prior) => prior.id !== grant.id);
-    // A replay can replace a previously revoked entry with a current grant;
-    // keep actor metadata attached only to the grant's current lifecycle.
-    this.revocationsByChildAndGrant.delete(revocationKey(childProfileId, grant.id));
-    const superseded = withoutSameId.map((prior) => {
-      if (prior.expiresAtUtc.getTime() <= nowUtc.getTime()) return prior; // already inactive -- nothing to supersede
-      if (!scopesOverlap(prior.appScope, grant.appScope)) return prior;
-      return { ...prior, expiresAtUtc: nowUtc };
+    const capturedGrant = snapshotGrant(grant);
+    const capturedNow = new Date(nowUtc.getTime());
+    // A same-ID call is a replay, not a new authorization. In particular,
+    // do not replace a revoked/superseded entry with its original later
+    // expiry; a newly authorized grant must have a new decision ID.
+    if (existing.some((prior) => prior.id === capturedGrant.id)) return;
+    const superseded = existing.map((prior) => {
+      if (prior.expiresAtUtc.getTime() <= capturedNow.getTime()) return prior; // already inactive -- nothing to supersede
+      if (!scopesOverlap(prior.appScope, capturedGrant.appScope)) return prior;
+      return { ...prior, expiresAtUtc: new Date(capturedNow) };
     });
-    this.grantsByChild.set(childProfileId, [...superseded, grant]);
+    this.grantsByChild.set(childProfileId, [...superseded, capturedGrant]);
   }
 
   /** Every grant for `childProfileId` whose window currently covers `nowUtc` -- the exact shape `ScheduleEvaluationInput.bonusGrants` expects, already offline-safe (pure read of already-recorded absolute-UTC instants, no I/O). */
   listActive(childProfileId: string, nowUtc: Date): BonusGrant[] {
     const all = this.grantsByChild.get(childProfileId) ?? [];
-    return all.filter((g) => g.grantedAtUtc.getTime() <= nowUtc.getTime() && nowUtc.getTime() < g.expiresAtUtc.getTime());
+    return all
+      .filter((g) => g.grantedAtUtc.getTime() <= nowUtc.getTime() && nowUtc.getTime() < g.expiresAtUtc.getTime())
+      .map(snapshotGrant);
   }
 
   /** Every grant ever recorded for `childProfileId`, active or not -- for audit/history views. Returns a defensive copy. */
   listAll(childProfileId: string): BonusGrant[] {
-    return [...(this.grantsByChild.get(childProfileId) ?? [])];
+    return (this.grantsByChild.get(childProfileId) ?? []).map(snapshotGrant);
   }
 
   /** Process-local attribution for a successful revoke; this is not a durable audit record. */
@@ -116,20 +118,21 @@ export class BonusGrantLedger {
   revoke(childProfileId: string, grantId: string, nowUtc: Date, revokedByParentAccountId: string): boolean {
     const existing = this.grantsByChild.get(childProfileId);
     if (!existing) return false;
+    const capturedNow = new Date(nowUtc.getTime());
     let revoked = false;
     const next = existing.map((grant) => {
       if (grant.id !== grantId) return grant;
-      const isActive = grant.grantedAtUtc.getTime() <= nowUtc.getTime() && nowUtc.getTime() < grant.expiresAtUtc.getTime();
+      const isActive = grant.grantedAtUtc.getTime() <= capturedNow.getTime() && capturedNow.getTime() < grant.expiresAtUtc.getTime();
       if (!isActive) return grant;
       revoked = true;
-      return { ...grant, expiresAtUtc: nowUtc };
+      return { ...grant, expiresAtUtc: new Date(capturedNow) };
     });
     if (revoked) {
       this.grantsByChild.set(childProfileId, next);
       this.revocationsByChildAndGrant.set(revocationKey(childProfileId, grantId), {
         grantId,
         childProfileId,
-        revokedAtUtc: new Date(nowUtc),
+        revokedAtUtc: new Date(capturedNow),
         revokedByParentAccountId,
       });
     }
@@ -144,4 +147,13 @@ function revocationKey(childProfileId: string, grantId: string): string {
 function scopesOverlap(a: AppScope, b: AppScope): boolean {
   if (a === 'ALL' || b === 'ALL') return true;
   return a.apps.some((token) => appScopeIncludes(b, token));
+}
+
+function snapshotGrant(grant: BonusGrant): BonusGrant {
+  return {
+    ...grant,
+    appScope: grant.appScope === 'ALL' ? 'ALL' : { apps: [...grant.appScope.apps] },
+    grantedAtUtc: new Date(grant.grantedAtUtc.getTime()),
+    expiresAtUtc: new Date(grant.expiresAtUtc.getTime()),
+  };
 }
