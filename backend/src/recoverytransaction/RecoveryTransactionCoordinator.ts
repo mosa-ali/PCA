@@ -108,12 +108,16 @@ function transactionMatchesCandidate(
  *     transaction reaches COMPLETE or FAILED, a repeat call returns the
  *     cached outcome WITHOUT re-invoking acceptRecoveryEpoch (so it never
  *     touches the store or the RecoveryTransactionLedger a second time).
- *     A repeat call while still INITIATED (the crash-mid-flight case)
- *     safely re-attempts acceptance -- RecoveryTransactionLedger's own
- *     atomicity means this can only ever resolve to the same eventual
- *     state as the original attempt, never a second successful
- *     application (see FamilyTrustSetRecoveryEngine's doc comment on the
- *     claim-then-commit ordering and its limitations).
+ *     A repeat call while still INITIATED can safely retry an attempt that
+ *     failed before the Trust Set commit. The accepted epoch and this
+ *     lifecycle record are written through separate ports: if the epoch
+ *     commits but `markComplete` fails or the process exits before it, the
+ *     one-time ledger has no read receipt that proves which transaction
+ *     applied it. Retrying can therefore observe an already-advanced Trust
+ *     Set without safely reconstructing the transaction outcome. The
+ *     current transaction store and ledger are in-memory references; a
+ *     durable implementation needs an approved atomic outcome/receipt
+ *     boundary before this case can be called crash-safe.
  *
  * This class delivers no envelopes and talks to no transport itself --
  * "opaque transport, device-side authority verification" (PCA-13 Section
