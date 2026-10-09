@@ -1,11 +1,13 @@
 package org.pca.app.persistence.sync
 
+import kotlinx.coroutines.sync.Mutex
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.crypto.decryptFromColumns
 import org.pca.app.persistence.crypto.encryptToColumns
 import org.pca.app.persistence.dao.SyncOutboxDao
 import org.pca.app.persistence.entity.SyncOutboxRecordEntity
 import org.pca.app.persistence.entity.SyncOutboxState
+import java.util.WeakHashMap
 
 /**
  * PCA-RUNTIME-PERSIST-1 Section 13: local delivery-scheduling priority
@@ -60,6 +62,27 @@ class SyncOutboxRepository(
     private val bounds: OutboxQueueBounds = OutboxQueueBounds(),
 ) : OutboxSyncStorage {
 
+    /**
+     * Repository wrappers around the same DAO must share one queue mutation
+     * lock. Room serializes each individual query, but the cap check, optional
+     * eviction/coalesce, and insert span several queries and otherwise race.
+     * Weak keys avoid retaining closed database/DAO instances for the process
+     * lifetime; callers hold the DAO strongly while using its lock.
+     */
+    private fun queueMutationLock(): Mutex = synchronized(daoMutationLocks) {
+        daoMutationLocks.getOrPut(dao) { Mutex() }
+    }
+
+    private suspend fun <T> withQueueMutationLock(block: suspend () -> T): T {
+        val lock = queueMutationLock()
+        lock.lock()
+        try {
+            return block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
     /** Returns [EnqueueOutcome.ENQUEUED]/[EnqueueOutcome.ALREADY_QUEUED]/[EnqueueOutcome.COALESCED] on success, [EnqueueOutcome.REJECTED_QUEUE_FULL] if bounds could not be satisfied without evicting an equally-or-more urgent message. */
     suspend fun enqueue(
         messageId: String,
@@ -71,8 +94,8 @@ class SyncOutboxRepository(
         createdAtEpochMillis: Long,
         priority: OutboxPriority = OutboxPriority.PARENT_CHILD_DECISION,
         coalesceKey: String? = null,
-    ): EnqueueOutcome {
-        if (dao.getById(messageId) != null) return EnqueueOutcome.ALREADY_QUEUED
+    ): EnqueueOutcome = withQueueMutationLock {
+        if (dao.getById(messageId) != null) return@withQueueMutationLock EnqueueOutcome.ALREADY_QUEUED
 
         val (enc, iv) = cipher.encryptToColumns(envelopeCiphertextBase64)
 
@@ -80,11 +103,11 @@ class SyncOutboxRepository(
             val existing = dao.getByCoalesceKey(coalesceKey, SyncOutboxState.PENDING)
             if (existing != null) {
                 dao.coalesceUpdate(existing.messageId, enc, iv, sequence, expiresAtEpochMillis)
-                return EnqueueOutcome.COALESCED
+                return@withQueueMutationLock EnqueueOutcome.COALESCED
             }
         }
 
-        if (!makeRoomFor(priority, familyScope)) return EnqueueOutcome.REJECTED_QUEUE_FULL
+        if (!makeRoomFor(priority, familyScope)) return@withQueueMutationLock EnqueueOutcome.REJECTED_QUEUE_FULL
 
         val rowId = dao.enqueue(
             SyncOutboxRecordEntity(
@@ -103,7 +126,7 @@ class SyncOutboxRepository(
                 coalesceKey = coalesceKey,
             ),
         )
-        return if (rowId != -1L) EnqueueOutcome.ENQUEUED else EnqueueOutcome.ALREADY_QUEUED
+        if (rowId != -1L) EnqueueOutcome.ENQUEUED else EnqueueOutcome.ALREADY_QUEUED
     }
 
     /** Evicts at most one least-urgent row per bound that would otherwise be exceeded. Returns false if a bound remains exceeded and no eligible eviction candidate exists. */
@@ -124,18 +147,19 @@ class SyncOutboxRepository(
         }
 
     override suspend fun markSent(messageId: String) {
-        dao.updateState(messageId, SyncOutboxState.SENT)
+        withQueueMutationLock { dao.updateState(messageId, SyncOutboxState.SENT) }
     }
 
     override suspend fun markFailedForRetry(messageId: String, nextRetryAtEpochMillis: Long) {
-        dao.markRetry(messageId, SyncOutboxState.PENDING, nextRetryAtEpochMillis)
+        withQueueMutationLock { dao.markRetry(messageId, SyncOutboxState.PENDING, nextRetryAtEpochMillis) }
     }
 
     override suspend fun acknowledgeAndRemove(messageId: String) {
-        dao.deleteById(messageId)
+        withQueueMutationLock { dao.deleteById(messageId) }
     }
 
-    override suspend fun deleteExpired(nowEpochMillis: Long): Int = dao.deleteExpired(nowEpochMillis)
+    override suspend fun deleteExpired(nowEpochMillis: Long): Int =
+        withQueueMutationLock { dao.deleteExpired(nowEpochMillis) }
 
     override suspend fun pendingCount(): Int = dao.countByState(SyncOutboxState.PENDING)
 
@@ -143,4 +167,8 @@ class SyncOutboxRepository(
         dao.countByFamilyAndState(familyScope, SyncOutboxState.PENDING)
 
     override suspend fun pendingByteSize(): Long = dao.totalCiphertextLengthByState(SyncOutboxState.PENDING)
+
+    private companion object {
+        private val daoMutationLocks = WeakHashMap<SyncOutboxDao, Mutex>()
+    }
 }

@@ -1,18 +1,29 @@
 package org.pca.app.persistence
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pca.app.persistence.crypto.encryptToColumns
+import org.pca.app.persistence.dao.SyncOutboxDao
 import org.pca.app.persistence.sync.EnqueueOutcome
 import org.pca.app.persistence.sync.OutboxPriority
 import org.pca.app.persistence.sync.OutboxQueueBounds
 import org.pca.app.persistence.sync.SyncOutboxRepository
+import org.pca.app.persistence.entity.SyncOutboxState
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * PCA-RUNTIME-PERSIST-1 Sections 12-14: a bounded outbox must never let a
@@ -92,5 +103,94 @@ class SyncOutboxQueueBoundsTest {
         val ready = outbox.getReadyForDelivery(2000L)
 
         assertEquals("msg-security", ready.first().first.messageId)
+    }
+
+    @Test
+    fun `concurrent repository wrappers sharing a DAO keep all bounds after database reopen`() = runTest {
+        val fileName = "outbox_concurrent_bounds.db"
+        val context = PersistenceTestSupport.context()
+        context.deleteDatabase(fileName)
+
+        val cipher = PersistenceTestSupport.testCipher()
+        // Both messages have this exact plaintext length, so one row reaches
+        // but does not exceed the ciphertext-byte limit and two rows exceed it.
+        val maxBytes = cipher.encryptToColumns("same-size").first.length.toLong()
+        val bounds = OutboxQueueBounds(maxTotalRecords = 1, maxTotalBytes = maxBytes, maxPerFamily = 1)
+        val firstDb = PersistenceTestSupport.fileBackedDb(fileName)
+        val raceProbe = ConcurrentZeroFamilySnapshotDao(firstDb.syncOutboxDao())
+        val firstRepository = SyncOutboxRepository(raceProbe, cipher, bounds)
+        val secondRepository = SyncOutboxRepository(raceProbe, cipher, bounds)
+        val bothReady = CountDownLatch(2)
+        val startTogether = CountDownLatch(1)
+
+        try {
+            val outcomes = coroutineScope {
+                listOf(
+                    async(Dispatchers.IO) {
+                        bothReady.countDown()
+                        check(startTogether.await(3, TimeUnit.SECONDS)) { "outbox_concurrency_start_timeout" }
+                        firstRepository.enqueue(
+                            "message-a", "family-a", "device-a", "same-size",
+                            1L, 999_999L, 1_000L,
+                        )
+                    },
+                    async(Dispatchers.IO) {
+                        bothReady.countDown()
+                        check(startTogether.await(3, TimeUnit.SECONDS)) { "outbox_concurrency_start_timeout" }
+                        secondRepository.enqueue(
+                            "message-b", "family-a", "device-a", "same-size",
+                            2L, 999_999L, 1_000L,
+                        )
+                    },
+                ).also {
+                    assertTrue("both enqueue callers should be ready", bothReady.await(3, TimeUnit.SECONDS))
+                    startTogether.countDown()
+                }.awaitAll()
+            }
+
+            assertEquals(1, outcomes.count { it == EnqueueOutcome.ENQUEUED })
+            assertEquals(1, outcomes.count { it == EnqueueOutcome.REJECTED_QUEUE_FULL })
+            // Exactly one caller observed an empty family snapshot and waited
+            // at the gate; the second wrapper could not enter the same
+            // read/modify/write sequence while the first held the DAO lock.
+            assertEquals(1, raceProbe.emptyFamilySnapshots.get())
+            assertEquals(1, raceProbe.gateTimeouts.get())
+            assertEquals(1, firstDb.syncOutboxDao().countByState(SyncOutboxState.PENDING))
+            assertEquals(1, firstDb.syncOutboxDao().countByFamilyAndState("family-a", SyncOutboxState.PENDING))
+            assertTrue(firstDb.syncOutboxDao().totalCiphertextLengthByState(SyncOutboxState.PENDING) <= maxBytes)
+        } finally {
+            firstDb.close()
+        }
+
+        val reopened = PersistenceTestSupport.fileBackedDb(fileName)
+        try {
+            assertEquals(1, reopened.syncOutboxDao().countByState(SyncOutboxState.PENDING))
+            assertEquals(1, reopened.syncOutboxDao().countByFamilyAndState("family-a", SyncOutboxState.PENDING))
+            assertTrue(reopened.syncOutboxDao().totalCiphertextLengthByState(SyncOutboxState.PENDING) <= maxBytes)
+            assertEquals(1, listOf("message-a", "message-b").count { reopened.syncOutboxDao().getById(it) != null })
+        } finally {
+            reopened.close()
+            context.deleteDatabase(fileName)
+        }
+    }
+
+    /** Holds two stale empty-family observations together if repository writes are not serialized. */
+    private class ConcurrentZeroFamilySnapshotDao(
+        private val delegate: SyncOutboxDao,
+    ) : SyncOutboxDao by delegate {
+        private val zeroFamilyReaders = CountDownLatch(2)
+        private val observedEmptyFamilyCount = AtomicInteger()
+        val emptyFamilySnapshots = AtomicInteger()
+        val gateTimeouts = AtomicInteger()
+
+        override suspend fun countByFamilyAndState(familyScope: String, state: SyncOutboxState): Int {
+            val count = delegate.countByFamilyAndState(familyScope, state)
+            if (count == 0 && observedEmptyFamilyCount.getAndIncrement() < 2) {
+                emptyFamilySnapshots.incrementAndGet()
+                zeroFamilyReaders.countDown()
+                if (!zeroFamilyReaders.await(2, TimeUnit.SECONDS)) gateTimeouts.incrementAndGet()
+            }
+            return count
+        }
     }
 }
