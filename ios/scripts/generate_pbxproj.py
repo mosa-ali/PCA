@@ -327,3 +327,6 @@ print("Done. Allocated %d new object IDs." % _counter)
 print("PCA host sources added: %d" % len(sources_files_by_target["PCA"]))
 print("PCATests sources added: %d" % len(sources_files_by_target["PCATests"]))
 print("Extension targets added: %s" % [n for _t, n in ext_target_ids])
+
+from wire_ordinary_trust_set import wire_project as wire_ordinary_trust_set
+wire_ordinary_trust_set()
