@@ -82,6 +82,11 @@ export class OutboundRelayService {
     if (!recipient) {
       return { messageId: item.messageId, outcome: 'CROSS_FAMILY_RECIPIENT' };
     }
+    // BROWSER endpoints have no DEK and are never family E2EE recipients;
+    // reject before the ciphertext reaches the opaque relay store.
+    if (recipient.platform === 'BROWSER') {
+      return { messageId: item.messageId, outcome: 'INVALID' };
+    }
 
     try {
       await this.relayService.queueEnvelope({

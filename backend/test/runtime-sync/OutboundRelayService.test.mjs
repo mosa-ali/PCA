@@ -7,13 +7,13 @@ import { MAX_OUTBOUND_BATCH_SIZE } from '../../dist/runtime-sync/policy.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 
-async function registerDevice(deviceRepository, familyId) {
+async function registerDevice(deviceRepository, familyId, platform = 'ANDROID') {
   const deviceId = `device-${randomUUID()}`;
   await deviceRepository.createDeviceWithKey(
     {
       deviceId,
       familyId,
-      platform: 'ANDROID',
+      platform,
       status: 'ACTIVE',
       createdAt: new Date(),
       revokedAt: null,
@@ -86,6 +86,20 @@ test('IDOR: a recipientDeviceId that does not exist at all is rejected identical
     item({ recipientDeviceId: 'totally-unknown-device' }),
   ]);
   assert.equal(result.results[0].outcome, 'CROSS_FAMILY_RECIPIENT');
+});
+
+test('a BROWSER endpoint without a DEK is rejected as an E2EE recipient before relay storage', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const browserDeviceId = await registerDevice(deviceRepository, familyId, 'BROWSER');
+
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [
+    item({ recipientDeviceId: browserDeviceId, messageId: 'browser-recipient' }),
+  ]);
+
+  assert.deepEqual(result.results, [{ messageId: 'browser-recipient', outcome: 'INVALID' }]);
+  assert.equal((await relayService.listQueuedForRecipient(browserDeviceId)).length, 0);
 });
 
 test('a batch larger than MAX_OUTBOUND_BATCH_SIZE only attempts the bound, reporting the rest as explicitly dropped', async () => {
