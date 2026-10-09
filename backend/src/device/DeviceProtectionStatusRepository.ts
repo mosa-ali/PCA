@@ -67,13 +67,20 @@ export class MySqlDeviceProtectionStatusRepository implements DeviceProtectionSt
 export class InMemoryDeviceProtectionStatusRepository implements DeviceProtectionStatusRepository {
   private readonly records = new Map<string, DeviceProtectionStatusRecord>();
 
+  private snapshot(record: DeviceProtectionStatusRecord): DeviceProtectionStatusRecord {
+    return { ...record, updatedAt: new Date(record.updatedAt.getTime()) };
+  }
+
   async upsert(record: DeviceProtectionStatusRecord): Promise<void> {
-    this.records.set(record.deviceId, { ...record });
+    // Date is mutable even though the record's TypeScript property is readonly.
+    // Copy the server receipt clock both on write and read so a caller cannot
+    // backdate or refresh the stored protection report through a shared object.
+    this.records.set(record.deviceId, this.snapshot(record));
   }
 
   async findForDevice(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceProtectionStatusRecord | null> {
     const record = this.records.get(deviceId);
     if (record === undefined || record.familyId !== familyId) return null;
-    return { ...record };
+    return this.snapshot(record);
   }
 }
