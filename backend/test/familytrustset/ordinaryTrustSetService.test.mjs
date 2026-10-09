@@ -122,6 +122,43 @@ test('indexed signed history is bounded, family scoped and requires current acti
   assert.equal(f.appends, 2);
 });
 
+test('indexed history does not expose a record when membership is revoked during lookup', async () => {
+  const f = fixture(); const second = f.request(2);
+  await f.bootstrap(); await f.service.submit(scope, second);
+  const child = { familyId: FAMILY, deviceId: 'child-device' };
+
+  const readAcceptedEpoch = f.acceptance.readAcceptedEpoch.bind(f.acceptance);
+  let signalLookupStarted;
+  let releaseLookup;
+  const lookupStarted = new Promise((resolve) => { signalLookupStarted = resolve; });
+  const lookupGate = new Promise((resolve) => { releaseLookup = resolve; });
+  let held = false;
+  f.acceptance.readAcceptedEpoch = async (familyId, epoch) => {
+    if (epoch === 1 && !held) {
+      held = true;
+      signalLookupStarted();
+      await lookupGate;
+    }
+    return readAcceptedEpoch(familyId, epoch);
+  };
+
+  const read = f.service.epoch(child, 1);
+  try {
+    await lookupStarted;
+    const entries = (await import('../../dist/familytrustset/decode.js'))
+      .decodeCanonicalTrustSetEpochBytes(Buffer.from(second.canonicalEpochBase64, 'base64')).entries;
+    entries[1].status = 'REVOKED';
+    await f.service.submit(scope, f.request(3, { entries }));
+  } finally {
+    releaseLookup();
+  }
+
+  // The first membership check passed, but the accepted head now revokes this
+  // device. The second check must reject before the previously read record is
+  // returned to the caller.
+  await assert.rejects(read, rejectsCode('DEVICE_NOT_ACTIVE'));
+});
+
 test('head is available to active child but submit and exact status require current owner', async () => {
   const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device' };
   assert.equal((await f.service.head(child)).trustSetEpoch, 1);
