@@ -35,43 +35,64 @@ export interface RecoveryTransactionStore {
   markFailed(recoveryTransactionId: string, reason: string, now: Date): Promise<RecoveryTransactionRecord | null>;
 }
 
+function cloneRecord(record: RecoveryTransactionRecord): RecoveryTransactionRecord {
+  return {
+    ...record,
+    initiatedAtUtc: new Date(record.initiatedAtUtc.getTime()),
+    completedAtUtc: record.completedAtUtc === null
+      ? null
+      : new Date(record.completedAtUtc.getTime()),
+  };
+}
+
 export class InMemoryRecoveryTransactionStore implements RecoveryTransactionStore {
   private readonly records = new Map<string, RecoveryTransactionRecord>();
 
   async beginOrGetExisting(input: BeginRecoveryTransactionInput): Promise<RecoveryTransactionRecord> {
     const existing = this.records.get(input.recoveryTransactionId);
-    if (existing) return existing;
+    if (existing) return cloneRecord(existing);
     const record: RecoveryTransactionRecord = {
       recoveryTransactionId: input.recoveryTransactionId,
       familyId: input.familyId,
       status: 'INITIATED',
       proposedTrustSetEpoch: input.proposedTrustSetEpoch,
       proposedKeyEpoch: input.proposedKeyEpoch,
-      initiatedAtUtc: input.now,
+      initiatedAtUtc: new Date(input.now.getTime()),
       completedAtUtc: null,
       failureReason: null,
     };
     this.records.set(input.recoveryTransactionId, record);
-    return record;
+    return cloneRecord(record);
   }
 
   async get(recoveryTransactionId: string): Promise<RecoveryTransactionRecord | null> {
-    return this.records.get(recoveryTransactionId) ?? null;
+    const existing = this.records.get(recoveryTransactionId);
+    return existing ? cloneRecord(existing) : null;
   }
 
   async markComplete(recoveryTransactionId: string, now: Date): Promise<RecoveryTransactionRecord | null> {
     const existing = this.records.get(recoveryTransactionId);
     if (!existing) return null;
-    const updated: RecoveryTransactionRecord = { ...existing, status: 'COMPLETE', completedAtUtc: now, failureReason: null };
+    const updated: RecoveryTransactionRecord = {
+      ...existing,
+      status: 'COMPLETE',
+      completedAtUtc: new Date(now.getTime()),
+      failureReason: null,
+    };
     this.records.set(recoveryTransactionId, updated);
-    return updated;
+    return cloneRecord(updated);
   }
 
   async markFailed(recoveryTransactionId: string, reason: string, now: Date): Promise<RecoveryTransactionRecord | null> {
     const existing = this.records.get(recoveryTransactionId);
     if (!existing) return null;
-    const updated: RecoveryTransactionRecord = { ...existing, status: 'FAILED', completedAtUtc: now, failureReason: reason };
+    const updated: RecoveryTransactionRecord = {
+      ...existing,
+      status: 'FAILED',
+      completedAtUtc: new Date(now.getTime()),
+      failureReason: reason,
+    };
     this.records.set(recoveryTransactionId, updated);
-    return updated;
+    return cloneRecord(updated);
   }
 }
