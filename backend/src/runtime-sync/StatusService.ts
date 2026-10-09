@@ -24,7 +24,7 @@ export class DeviceSyncStatusTracker {
   }
 
   markSyncSuccess(deviceId: string, atUtc: Date): void {
-    this.byDevice.set(deviceId, { isSyncing: false, lastSuccessfulSyncAtUtc: atUtc });
+    this.byDevice.set(deviceId, { isSyncing: false, lastSuccessfulSyncAtUtc: new Date(atUtc.getTime()) });
   }
 
   markSyncEnd(deviceId: string): void {
@@ -67,6 +67,7 @@ export class DeviceSyncStatusTracker {
    * header comment on why that is honest, not a bug).
    */
   getLastSuccessfulSync(deviceId: string): Date | null {
-    return this.byDevice.get(deviceId)?.lastSuccessfulSyncAtUtc ?? null;
+    const lastSuccessfulSyncAtUtc = this.byDevice.get(deviceId)?.lastSuccessfulSyncAtUtc ?? null;
+    return lastSuccessfulSyncAtUtc === null ? null : new Date(lastSuccessfulSyncAtUtc.getTime());
   }
 }
