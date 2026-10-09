@@ -38,6 +38,10 @@ function toEnvelope(row: FamilyAuditEventRow): FamilyAuditEventEnvelope {
   };
 }
 
+function snapshotEnvelope(envelope: FamilyAuditEventEnvelope): FamilyAuditEventEnvelope {
+  return { ...envelope, generatedAtUtc: new Date(envelope.generatedAtUtc.getTime()) };
+}
+
 function sameEnvelope(a: FamilyAuditEventEnvelope, b: FamilyAuditEventEnvelope): boolean {
   return (
     a.familyId === b.familyId &&
@@ -65,7 +69,11 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
   }
 
   async record(envelope: FamilyAuditEventEnvelope): Promise<RecordFamilyAuditEventResult> {
-    if (!isFamilyEpochNumber(envelope.keyEpoch)) {
+    // Capture all accepted routing and payload fields before expiry
+    // housekeeping yields. Callers may reuse or mutate their envelope while
+    // cleanup is in flight; persistence and replay checks must use one value.
+    const captured = snapshotEnvelope(envelope);
+    if (!isFamilyEpochNumber(captured.keyEpoch)) {
       throw new Error('Family audit key epoch is outside the supported family epoch range.');
     }
     // Best-effort housekeeping, exactly as RelayService purges around each
@@ -81,23 +89,23 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
              (envelope_id, family_id, parent_device_id, key_epoch, generated_at_utc, encrypted_payload_b64, nonce_b64, expires_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            envelope.envelopeId,
-            envelope.familyId,
-            envelope.parentDeviceId,
-            envelope.keyEpoch,
-            envelope.generatedAtUtc,
-            envelope.encryptedPayloadB64,
-            envelope.nonceB64,
+            captured.envelopeId,
+            captured.familyId,
+            captured.parentDeviceId,
+            captured.keyEpoch,
+            captured.generatedAtUtc,
+            captured.encryptedPayloadB64,
+            captured.nonceB64,
             // Server retention policy, never a caller-supplied field.
-            computeServerCiphertextExpiry(envelope.generatedAtUtc),
+            computeServerCiphertextExpiry(captured.generatedAtUtc),
           ],
         ),
       );
       return { outcome: 'RECORDED' };
     } catch (error) {
       if (!isDuplicateEntry(error)) throw error;
-      const existing = await this.get(envelope.envelopeId);
-      return existing !== null && sameEnvelope(existing, envelope) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
+      const existing = await this.get(captured.envelopeId);
+      return existing !== null && sameEnvelope(existing, captured) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
     }
   }
 

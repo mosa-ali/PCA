@@ -17,6 +17,12 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 const T0 = new Date('2026-01-01T00:00:00.000Z');
 const plus = (ms) => new Date(T0.getTime() + ms);
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function alert(familyId, parentDeviceId, overrides = {}) {
   return {
     alertId: `alert-${randomUUID()}`,
@@ -133,6 +139,48 @@ test('MySQL: family_audit_events gets the same expiry, feed filtering, and purge
   assert.ok((await ledger.purgeExpired(now)) >= 1);
   assert.equal(await ledger.get(stale.envelopeId), null);
   assert.equal(await countRows('family_audit_events', familyId), 1);
+});
+
+test('MySQL: FamilyAudit record snapshots routing and opaque payload before expiry cleanup', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const parentDeviceId = `parent-${randomUUID()}`;
+  const ledger = new MySqlFamilyAuditEventLedger(() => T0);
+  const event = envelope(familyId, parentDeviceId);
+  const accepted = { ...event, generatedAtUtc: new Date(event.generatedAtUtc) };
+  const cleanupEntered = deferred();
+  const releaseCleanup = deferred();
+  const originalPurgeExpired = ledger.purgeExpired.bind(ledger);
+  ledger.purgeExpired = async (now) => {
+    cleanupEntered.resolve();
+    await releaseCleanup.promise;
+    return originalPurgeExpired(now);
+  };
+
+  try {
+    const pending = ledger.record(event);
+    await cleanupEntered.promise;
+
+    event.envelopeId = `mutated-${randomUUID()}`;
+    event.familyId = `mutated-${randomUUID()}`;
+    event.parentDeviceId = `mutated-${randomUUID()}`;
+    event.keyEpoch = 7;
+    event.generatedAtUtc.setTime(event.generatedAtUtc.getTime() + 60_000);
+    event.encryptedPayloadB64 = 'CCCC';
+    event.nonceB64 = 'DDDD';
+
+    releaseCleanup.resolve();
+    assert.deepEqual(await pending, { outcome: 'RECORDED' });
+
+    const fetched = await ledger.get(accepted.envelopeId);
+    assert.deepEqual(fetched, accepted, 'the stored envelope stays bound to its accepted routing, date, and ciphertext');
+    assert.deepEqual(await ledger.listForParentDevice(familyId, parentDeviceId), [accepted]);
+    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId), []);
+    assert.deepEqual(await ledger.record(accepted), { outcome: 'IDEMPOTENT_MATCH' });
+    assert.deepEqual(await ledger.record({ ...accepted, encryptedPayloadB64: 'EEEE' }), { outcome: 'CONFLICT' });
+  } finally {
+    releaseCleanup.resolve();
+    ledger.purgeExpired = originalPurgeExpired;
+  }
 });
 
 test('MySQL: idempotent record() still works unchanged with the expiry column present', async () => {
