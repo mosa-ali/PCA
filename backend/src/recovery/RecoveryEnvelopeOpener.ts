@@ -40,7 +40,10 @@ export async function openStoredRecoveryEnvelope(
   cipher: RecoveryEnvelopeCipher,
 ): Promise<OpenedRecoveryEnvelope | null> {
   const record = await repository.getEnvelope(request.familyId);
-  if (!record) return null;
+  // Keep the family binding at the crypto boundary too. A mismatched
+  // repository implementation must not send another family's ciphertext
+  // through KDF or AEAD work.
+  if (!record || record.familyId !== request.familyId) return null;
 
   const rwk = await kdf.derive(request.recoverySecret, request.kdfSalt, request.kdfSuite);
   const opened = await cipher.open(rwk, record.ciphertext, request.associatedData);

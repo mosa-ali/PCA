@@ -65,6 +65,45 @@ test('RS lost / no stored envelope for the family -- returns null, never fabrica
   assert.equal(opened, null);
 });
 
+test('a repository record returned for another family is rejected before KDF or cipher use', async () => {
+  let kdfCalls = 0;
+  let cipherCalls = 0;
+  const repository = {
+    async getEnvelope() {
+      return {
+        familyId: 'family-other',
+        ciphertext: Buffer.from('foreign-family-ciphertext'),
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    },
+  };
+  const kdf = {
+    async derive() {
+      kdfCalls += 1;
+      return Buffer.from('derived-rwk');
+    },
+  };
+  const cipher = {
+    async open() {
+      cipherCalls += 1;
+      return null;
+    },
+  };
+
+  const opened = await openStoredRecoveryEnvelope(
+    { familyId: 'family-1', recoverySecret: RS, kdfSalt: SALT, kdfSuite: SUITE, associatedData: ASSOCIATED_DATA },
+    repository,
+    kdf,
+    cipher,
+  );
+
+  assert.equal(opened, null);
+  assert.equal(kdfCalls, 0);
+  assert.equal(cipherCalls, 0);
+});
+
 test('a wrong Recovery Secret derives the wrong RWK and fails to open the envelope -- no support/master-key substitute can succeed here either', async () => {
   const kdf = createTestOnlyRecoveryKdf();
   const cipher = createTestOnlyRecoveryEnvelopeCipher();
