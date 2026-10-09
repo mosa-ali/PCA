@@ -118,6 +118,23 @@ test('malformed timestamps, versions, allow entries and duplicate domains never 
   }
 });
 
+test('signed security-package domains must already be canonical before verification', async () => {
+  for (const domain of ['MALWARE.example', 'malware.example.', 'https://malware.example/path', 'münchen.example']) {
+    let verified = false;
+    const consumer = new SignedRulePackageConsumer(
+      new InMemoryWebRuleRepository(),
+      { verify: async () => { verified = true; return true; } },
+      () => new Date('2026-01-15'),
+    );
+    assert.deepEqual(
+      await consumer.apply(pkg({ rules: [{ domain, listType: 'DENY' }] })),
+      { status: 'REJECTED_MALFORMED', reason: 'MALFORMED_PACKAGE' },
+      domain,
+    );
+    assert.equal(verified, false, domain);
+  }
+});
+
 test('captured signed input survives caller mutation while verification waits', async () => {
   const repo = new InMemoryWebRuleRepository();
   let resolveVerification;

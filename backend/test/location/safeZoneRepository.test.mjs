@@ -28,20 +28,32 @@ test('repository accepts only canonical opaque Safe Zone envelope input', () => 
 });
 
 test('repository patch validation rejects plaintext fields and unsafe epochs', () => {
-  assert.doesNotThrow(() => validateSafeZonePatch({ ciphertextB64: 'BAUG' }));
-  assert.doesNotThrow(() => validateSafeZonePatch({ nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 4 }));
+  assert.doesNotThrow(() => validateSafeZonePatch({ ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' }));
+  assert.doesNotThrow(() => validateSafeZonePatch({ ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 4 }));
+  assert.throws(
+    () => validateSafeZonePatch({ ciphertextB64: 'BAUG' }),
+    (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => validateSafeZonePatch({ nonceB64: 'AAECAwQFBgcICQoL' }),
+    (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => validateSafeZonePatch({ keyEpoch: 4 }),
+    (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
+  );
   assert.throws(
     () => validateSafeZonePatch({ label: 'Home' }),
     (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
   );
   assert.throws(
-    () => validateSafeZonePatch({ keyEpoch: 0 }),
+    () => validateSafeZonePatch({ ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 0 }),
     (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
   );
   assert.doesNotThrow(() => validateNewSafeZone({ ...valid, keyEpoch: MAX_FAMILY_EPOCH }));
-  assert.doesNotThrow(() => validateSafeZonePatch({ keyEpoch: MAX_FAMILY_EPOCH }));
+  assert.doesNotThrow(() => validateSafeZonePatch({ ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: MAX_FAMILY_EPOCH }));
   assert.throws(
-    () => validateSafeZonePatch({ keyEpoch: MAX_FAMILY_EPOCH + 1 }),
+    () => validateSafeZonePatch({ ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: MAX_FAMILY_EPOCH + 1 }),
     (error) => error instanceof SafeZoneError && error.code === 'INVALID_INPUT',
   );
   assert.throws(

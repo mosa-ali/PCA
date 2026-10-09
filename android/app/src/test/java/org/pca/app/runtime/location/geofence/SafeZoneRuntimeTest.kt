@@ -60,8 +60,11 @@ class SafeZoneRuntimeTest {
 
     @Test
     fun `accepted policy reaches local geofence alert port`() = runTest {
-        val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
-        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
+        val backing = InMemoryPersistentStateStore()
+        val scope = GeofenceStorageScope("family-a", "child-a")
+        val scopeProvider = { scope }
+        val zoneStore = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
+        val stateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
         val alerts = RecordingGeofenceAlertPort()
         val runtime = SafeZoneRuntime(
             SafeZonePolicyReceiver(
@@ -102,7 +105,11 @@ class SafeZoneRuntimeTest {
 
     @Test
     fun `crypto-gated policy never creates a local zone or alert`() = runTest {
-        val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
+        val backing = InMemoryPersistentStateStore()
+        val scope = GeofenceStorageScope("family-a", "child-a")
+        val scopeProvider = { scope }
+        val zoneStore = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
+        val stateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
         val alerts = RecordingGeofenceAlertPort()
         val runtime = SafeZoneRuntime(
             SafeZonePolicyReceiver(
@@ -114,11 +121,11 @@ class SafeZoneRuntimeTest {
                 },
                 decryptor = RejectingSafeZonePayloadDecryptor(),
                 zoneStore = zoneStore,
-                zoneStateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore()),
+                zoneStateStore = stateStore,
             ),
             GeofenceMonitor(
                 zoneStore,
-                GeofenceZoneStateStore(InMemoryPersistentStateStore()),
+                stateStore,
                 alerts,
             ),
         )

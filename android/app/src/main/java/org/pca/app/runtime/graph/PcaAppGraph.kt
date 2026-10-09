@@ -569,11 +569,19 @@ class PcaAppGraph private constructor(
      * [geofenceZoneStore] is ready for a future UI to call [org.pca.app.runtime.location.geofence.GeofenceZoneStore.addOrReplace]
      * directly. Each store uses its own `EncryptedSharedPreferences` file, same at-rest-protection
      * discipline as every other [PersistentStateStore] binding in this graph. */
+    private val geofenceStorageScopeProvider =
+        org.pca.app.runtime.location.geofence.PersistentGeofenceStorageScopeProvider(
+            familyStateStore = familyStateStore,
+            deviceIdentityProvider = deviceIdentityProvider,
+        )
+
     val geofenceZoneStore = org.pca.app.runtime.location.geofence.GeofenceZoneStore(
         EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zones"),
+        scopeProvider = geofenceStorageScopeProvider,
     )
     val geofenceZoneStateStore = org.pca.app.runtime.location.geofence.GeofenceZoneStateStore(
         EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zone_state"),
+        scopeProvider = geofenceStorageScopeProvider,
     )
     val geofenceAlertDelivery = org.pca.app.runtime.location.geofence.AndroidGeofenceAlertDelivery(context.applicationContext)
     val geofenceMonitor = org.pca.app.runtime.location.geofence.GeofenceMonitor(

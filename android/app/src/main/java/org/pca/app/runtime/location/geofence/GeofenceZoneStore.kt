@@ -2,8 +2,14 @@ package org.pca.app.runtime.location.geofence
 
 import org.pca.app.foundation.PersistentStateStore
 
+/** A persisted zone snapshot is ambiguous and must not be partially enforced or overwritten. */
+class CorruptGeofenceZoneStoreException : IllegalStateException("Safe Zone policy snapshot is corrupt")
+
 /**
- * Durable local storage for the parent-defined [GeofenceZone] list (PCA-FR-063). Backed by the
+ * Durable local storage for the parent-defined [GeofenceZone] list (PCA-FR-063), partitioned by
+ * the locally persisted family projection and enrolled device. An unscoped, missing, non-paired/
+ * non-active, or corrupt enrollment identity cannot read or write any policy namespace. This
+ * local scope does not refresh server status. Backed by the
  * same [PersistentStateStore] port every other feature store in this codebase uses -- the
  * production binding is `EncryptedSharedPreferencesStateStore` (Android-Keystore-backed at-rest
  * protection), so zone centers get the same at-rest protection as every other locally-stored value
@@ -15,33 +21,71 @@ import org.pca.app.foundation.PersistentStateStore
  */
 class GeofenceZoneStore(
     private val store: PersistentStateStore,
-    private val key: String = KEY,
+    private val scopeProvider: () -> GeofenceStorageScope?,
+    private val keyPrefix: String = KEY_PREFIX,
 ) {
-    fun loadZones(): List<GeofenceZone> {
-        val raw = store.getString(key) ?: return emptyList()
+    /** Reads one identity snapshot together with the zones stored under that exact family/device. */
+    fun loadScopedZones(): ScopedGeofenceZones? {
+        val scope = currentScope() ?: return null
+        return ScopedGeofenceZones(scope, loadZones(scope))
+    }
+
+    fun loadZones(): List<GeofenceZone> = loadScopedZones()?.zones ?: emptyList()
+
+    internal fun loadZones(scope: GeofenceStorageScope): List<GeofenceZone> {
+        if (!scope.isValid()) return emptyList()
+        val raw = store.getString(scope.zoneStoreKey(keyPrefix)) ?: return emptyList()
         if (raw.isEmpty()) return emptyList()
-        return raw.split(ZONE_SEP).mapNotNull { decodeZone(it) }
+        val zones = raw.split(ZONE_SEP).map { encoded ->
+            decodeZone(encoded) ?: throw CorruptGeofenceZoneStoreException()
+        }
+        if (zones.map { it.zoneId }.distinct().size != zones.size) {
+            throw CorruptGeofenceZoneStoreException()
+        }
+        return zones
     }
 
     fun addOrReplace(zone: GeofenceZone) {
-        val updated = loadZones().filterNot { it.zoneId == zone.zoneId } + zone
-        saveZones(updated)
+        val scope = currentScope() ?: throw IllegalStateException("Safe Zone family authority is unavailable")
+        addOrReplace(scope, zone)
+    }
+
+    internal fun addOrReplace(scope: GeofenceStorageScope, zone: GeofenceZone) {
+        require(scope.isValid())
+        val updated = loadZones(scope).filterNot { it.zoneId == zone.zoneId } + zone
+        saveZones(scope, updated)
     }
 
     fun remove(zoneId: String) {
-        saveZones(loadZones().filterNot { it.zoneId == zoneId })
+        currentScope()?.let { remove(it, zoneId) }
+    }
+
+    internal fun remove(scope: GeofenceStorageScope, zoneId: String) {
+        if (!scope.isValid()) return
+        saveZones(scope, loadZones(scope).filterNot { it.zoneId == zoneId })
     }
 
     fun clear() {
-        store.remove(key)
+        currentScope()?.let { scope -> clear(scope) }
     }
 
-    private fun saveZones(zones: List<GeofenceZone>) {
+    internal fun clear(scope: GeofenceStorageScope) {
+        if (scope.isValid()) store.remove(scope.zoneStoreKey(keyPrefix))
+    }
+
+    internal fun isCurrentScope(scope: GeofenceStorageScope): Boolean = currentScope() == scope
+
+    private fun currentScope(): GeofenceStorageScope? = runCatching { scopeProvider() }
+        .getOrNull()
+        ?.takeIf { it.isValid() }
+
+    private fun saveZones(scope: GeofenceStorageScope, zones: List<GeofenceZone>) {
+        val scopedKey = scope.zoneStoreKey(keyPrefix)
         if (zones.isEmpty()) {
-            store.remove(key)
+            store.remove(scopedKey)
             return
         }
-        store.putString(key, zones.joinToString(ZONE_SEP) { encodeZone(it) })
+        store.putString(scopedKey, zones.joinToString(ZONE_SEP) { encodeZone(it) })
     }
 
     // zoneId/label may never legitimately contain FIELD_SEP or ZONE_SEP -- sanitized defensively
@@ -102,7 +146,7 @@ class GeofenceZoneStore(
     }
 
     private companion object {
-        const val KEY = "geofence_zones_v1"
+        const val KEY_PREFIX = "geofence_zones_v2"
         const val ZONE_SEP = "\n"
         const val FIELD_SEP = "|"
         const val TRANSITION_SEP = ","

@@ -99,6 +99,26 @@ public final class PCAInboundReplayDenialLedger {
         guard pcaOpaqueEqual(scope.recipientDeviceId, expectedDeviceId) else { throw PCAInboundInboxError.unavailable }
         guard let boundary = try load().boundaries.first(where: { $0.scope == scope }),
               let prefix = boundary.closedNumericPrefixes.first(where: { pcaOpaqueEqual($0.senderKeyId, envelope.senderKeyId) }) else { return false }
+        return permanentlyCovers(envelope, prefix: prefix)
+    }
+    /// Loads and validates the durable boundary once for a bounded reclaim batch.
+    /// Coverage is monotonic: `install` cannot lower epochs or remove/decrease a
+    /// closed prefix, so this snapshot remains a safe proof for the batch while
+    /// the caller independently revalidates authority and cancellation per item.
+    fileprivate func permanentCoverageChecker(scope: PCAInboundScope) throws -> (PCAInboundEnvelope) throws -> Bool {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard pcaOpaqueEqual(scope.recipientDeviceId, expectedDeviceId) else { throw PCAInboundInboxError.unavailable }
+        let boundary = try load().boundaries.first(where: { $0.scope == scope })
+        return { [self] envelope in
+            try envelope.validate(scope: scope)
+            guard pcaOpaqueEqual(scope.recipientDeviceId, expectedDeviceId), let boundary,
+                  let prefix = boundary.closedNumericPrefixes.first(where: {
+                      pcaOpaqueEqual($0.senderKeyId, envelope.senderKeyId)
+                  }) else { return false }
+            return permanentlyCovers(envelope, prefix: prefix)
+        }
+    }
+    private func permanentlyCovers(_ envelope: PCAInboundEnvelope, prefix: PCAInboundReplayNumericPrefix) -> Bool {
         let bytes = Array(envelope.sequenceOrNonce.utf8)
         guard !bytes.isEmpty, bytes.count <= 15, bytes.allSatisfy({ $0 >= 48 && $0 <= 57 }),
               bytes.count == 1 || bytes[0] != 48, let sequence = UInt64(envelope.sequenceOrNonce) else { return true }
@@ -260,8 +280,11 @@ public enum PCAInboundRetirementVerification {
         try check()
         guard case .accepted(let boundary, let revalidate) = verification else { return 0 }
         guard boundary.scope == scope else { throw PCAInboundInboxError.unavailable }
+        func revalidateAuthority() throws {
+            try check(); try revalidate(); try check()
+        }
         func freshAuthority() throws {
-            try check(); try revalidate(); _ = try denial.boundaries(); try check()
+            try revalidateAuthority(); _ = try denial.boundaries(); try check()
         }
         try freshAuthority()
         try journal.requireReplayDenial(scope: scope)
@@ -270,30 +293,60 @@ public enum PCAInboundRetirementVerification {
         try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
         var reclaimed = 0
         let journalAtStart = try journal.records().filter { $0.intent.scope == scope }
-        for record in journalAtStart.filter({ $0.outcome != nil }) {
-            try freshAuthority()
-            guard try denial.coversReplayIdentityPermanently(record.intent.envelope, scope: scope) else { continue }
-            func coverage() throws {
-                try freshAuthority()
-                try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
-                guard try denial.coversReplayIdentityPermanently(record.intent.envelope, scope: scope) else { throw PCAInboundInboxError.unavailable }
+        let terminalCoverage = try denial.permanentCoverageChecker(scope: scope)
+        var coveredTerminal: [PCAInboundApplicationRecord] = []
+        for record in journalAtStart where record.outcome != nil {
+            try revalidateAuthority()
+            guard try terminalCoverage(record.intent.envelope) else { continue }
+            coveredTerminal.append(record)
+        }
+
+        // Read, revalidate and remove all ACKed terminal ciphertext under one
+        // inbox lock.  The journal remains until a fresh returned snapshot
+        // proves that its ciphertext is absent; interruption therefore keeps
+        // the existing ciphertext-first, resumable ordering.
+        try freshAuthority()
+        try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
+        let inboxAfterTerminal = try inbox.removeRetiredAcknowledgedForTerminalEnvelopes(
+            coveredTerminal.map { $0.intent.envelope }, scope: scope) { envelope in
+                try revalidateAuthority()
+                guard try terminalCoverage(envelope) else {
+                    throw PCAInboundInboxError.unavailable
+                }
             }
-            if let held = try inbox.pendingCrypto(scope: scope).first(where: { pcaOpaqueEqual($0.envelope.messageId, record.intent.envelope.messageId) }) {
+        try freshAuthority()
+        var removableTerminal: [PCAInboundApplicationRecord] = []
+        for record in coveredTerminal {
+            try revalidateAuthority()
+            if let held = inboxAfterTerminal.first(where: {
+                pcaOpaqueEqual($0.envelope.messageId, record.intent.envelope.messageId)
+            }) {
                 guard held.envelope == record.intent.envelope else { throw PCAInboundInboxError.unavailable }
-                guard held.relayAcknowledged else { continue }
-                _ = try inbox.removeRetiredAcknowledged(held, scope: scope, assertPermanentCoverage: coverage)
+                // An unacknowledged entry remains pending. An ACKed entry that
+                // remains after the batch is also retained fail-closed.
+                continue
             }
-            // Absence within the retained scope resumes interrupted ciphertext-first cleanup.
-            try coverage()
-            if try journal.removeRetiredTerminal(record, assertPermanentCoverage: coverage) { reclaimed += 1 }
+            removableTerminal.append(record)
+        }
+        if !removableTerminal.isEmpty {
+            try freshAuthority()
+            try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
+            reclaimed += try journal.removeRetiredTerminalBatch(removableTerminal) { record in
+                try revalidateAuthority()
+                guard try terminalCoverage(record.intent.envelope) else {
+                    throw PCAInboundInboxError.unavailable
+                }
+            }
+            try freshAuthority()
         }
         // A denied redelivery can be captured after its terminal journal record was retired.
         // Preserve all journal-backed items (including prepared operations), and reclaim only
         // exact, already-acknowledged inbox entries whose replay identity has permanent coverage.
         let remaining = try journal.records().filter { $0.intent.scope == scope }
-        var acknowledgedInboxOnly: [PCAStoredInboundEnvelope] = []
+        let inboxOnlyCoverage = try denial.permanentCoverageChecker(scope: scope)
+        var inboxOnly: [PCAStoredInboundEnvelope] = []
         for held in try inbox.pendingCrypto(scope: scope) {
-            try freshAuthority()
+            try revalidateAuthority()
             try held.envelope.validate(scope: scope)
             if let prior = remaining.first(where: {
                 pcaOpaqueEqual($0.intent.envelope.messageId, held.envelope.messageId)
@@ -308,18 +361,21 @@ public enum PCAInboundRetirementVerification {
                 continue
             }
             guard held.relayAcknowledged,
-                  try denial.coversReplayIdentityPermanently(held.envelope, scope: scope) else { continue }
-            acknowledgedInboxOnly.append(held)
+                  try inboxOnlyCoverage(held.envelope) else { continue }
+            inboxOnly.append(held)
         }
-        if !acknowledgedInboxOnly.isEmpty {
-            reclaimed += try inbox.removeRetiredAcknowledgedBatch(acknowledgedInboxOnly, scope: scope) { held in
-                try freshAuthority()
-                try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
-                guard try denial.coversReplayIdentityPermanently(held.envelope, scope: scope) else {
+        if !inboxOnly.isEmpty {
+            try freshAuthority()
+            try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
+            reclaimed += try inbox.removeRetiredAcknowledgedBatch(inboxOnly, scope: scope) { held in
+                try revalidateAuthority()
+                guard try inboxOnlyCoverage(held.envelope) else {
                     throw PCAInboundInboxError.unavailable
                 }
             }
+            try freshAuthority()
         }
+        try check()
         return reclaimed
     }
 }
@@ -569,17 +625,34 @@ public final class PCAInboundApplicationJournal {
         snapshot.records[index].completedAt = at
         try persist(snapshot)
     }
-    fileprivate func removeRetiredTerminal(_ expected: PCAInboundApplicationRecord, assertPermanentCoverage: () throws -> Void) throws -> Bool {
+    fileprivate func removeRetiredTerminalBatch(_ expected: [PCAInboundApplicationRecord],
+        assertPermanentCoverage: (PCAInboundApplicationRecord) throws -> Void) throws -> Int {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        try expected.intent.validate()
-        guard expected.outcome != nil, expected.completedAt.map({ $0.timeIntervalSince1970.isFinite && $0 >= expected.intent.preparedAt }) == true else { throw PCAInboundInboxError.unavailable }
+        guard expected.count <= 64 else { throw PCAInboundInboxError.unavailable }
+        guard !expected.isEmpty else { return 0 }
+        var operationIds = Set<Data>()
         var snapshot = try load()
-        let prior = snapshot.records.first(where: { pcaOpaqueEqual($0.intent.operationId, expected.intent.operationId) })
-        guard prior == nil || prior == expected else { throw PCAInboundInboxError.unavailable }
-        try assertPermanentCoverage()
-        snapshot.records.removeAll { pcaOpaqueEqual($0.intent.operationId, expected.intent.operationId) }
+        var removed = 0
+        for record in expected {
+            try record.intent.validate()
+            guard record.outcome != nil,
+                  record.completedAt.map({ $0.timeIntervalSince1970.isFinite && $0 >= record.intent.preparedAt }) == true,
+                  operationIds.insert(Data(record.intent.operationId.utf8)).inserted else {
+                throw PCAInboundInboxError.unavailable
+            }
+            let prior = snapshot.records.first(where: {
+                pcaOpaqueEqual($0.intent.operationId, record.intent.operationId)
+            })
+            guard prior == nil || prior == record else { throw PCAInboundInboxError.unavailable }
+            try assertPermanentCoverage(record)
+            if prior != nil { removed += 1 }
+        }
+        let retiring = Set(operationIds)
+        snapshot.records.removeAll { retiring.contains(Data($0.intent.operationId.utf8)) }
+        // One atomic snapshot replacement for the bounded journal (max 64).
+        // Coverage is rechecked per record before any deletion is persisted.
         try persist(snapshot)
-        return prior != nil
+        return removed
     }
     private func load() throws -> Snapshot {
         let data: Data
@@ -820,6 +893,37 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
         for index in indexesToAcknowledge { snapshot.entries[index].relayAcknowledged = true }
         try persist(snapshot)
     }
+    fileprivate func removeRetiredAcknowledgedForTerminalEnvelopes(_ expected: [PCAInboundEnvelope],
+        scope: PCAInboundScope,
+        assertPermanentCoverage: (PCAInboundEnvelope) throws -> Void) throws -> [PCAStoredInboundEnvelope] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard expected.count <= 64 else { throw PCAInboundInboxError.unavailable }
+        var messageIds = Set<Data>()
+        var snapshot = try confirmed(scope: scope)
+        var currentByMessageId: [Data: PCAStoredInboundEnvelope] = [:]
+        for entry in snapshot.entries {
+            currentByMessageId[Data(entry.envelope.messageId.utf8)] = entry
+        }
+        var removedIds = Set<Data>()
+        for envelope in expected {
+            try envelope.validate(scope: scope)
+            let messageId = Data(envelope.messageId.utf8)
+            guard messageIds.insert(messageId).inserted else { throw PCAInboundInboxError.unavailable }
+            guard let prior = currentByMessageId[messageId] else { continue }
+            guard prior.envelope == envelope else { throw PCAInboundInboxError.unavailable }
+            guard prior.relayAcknowledged else { continue }
+            try assertPermanentCoverage(envelope)
+            removedIds.insert(messageId)
+        }
+        if !removedIds.isEmpty {
+            snapshot.entries.removeAll { removedIds.contains(Data($0.envelope.messageId.utf8)) }
+            // Persist all ciphertext deletions together. If any per-item check
+            // fails, no deletion from this bounded batch reaches Keychain.
+            try persist(snapshot)
+        }
+        return snapshot.entries
+    }
+
     fileprivate func removeRetiredAcknowledged(_ expected: PCAStoredInboundEnvelope, scope: PCAInboundScope,
                                               assertPermanentCoverage: () throws -> Void) throws -> Bool {
         try removeRetiredAcknowledgedBatch([expected], scope: scope) { _ in try assertPermanentCoverage() } > 0

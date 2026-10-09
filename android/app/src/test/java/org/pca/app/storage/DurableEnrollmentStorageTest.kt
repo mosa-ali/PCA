@@ -44,6 +44,55 @@ class DurableEnrollmentStorageTest {
         assertNull(PersistentPendingEnrollmentAttemptStore(DiskStore(backing.disk)).current())
     }
 
+    @Test fun `family v2 migration and clear tombstone survive disk-only restarts`() {
+        val legacyRaw = "legacy-family|legacy-device|PAIRING_PENDING|0|0"
+        val backing = DiskStore(mapOf("family_state_v1" to legacyRaw))
+        val family = PersistentFamilyStateStore(backing)
+        assertEquals("legacy-family", family.currentState()!!.familyId)
+
+        val replacement = LocalFamilyState(
+            "family|with|separators", "device|with|separators", PairingState.PAIRED, 3, 2,
+            childProfileId = "child|opaque|👧",
+        )
+        family.save(replacement)
+        val afterSaveRestart = PersistentFamilyStateStore(DiskStore(backing.disk))
+        assertEquals(replacement, afterSaveRestart.currentState())
+
+        family.clear()
+        val afterClearRestart = PersistentFamilyStateStore(DiskStore(backing.disk))
+        assertNull(afterClearRestart.currentState())
+        assertEquals(legacyRaw, backing.disk["family_state_v1"])
+    }
+
+    @Test fun `failed family v2 write rolls back and keeps legacy state readable`() {
+        val legacyRaw = "legacy-family|legacy-device|PAIRING_PENDING|0|0"
+        val backing = DiskStore(mapOf("family_state_v1" to legacyRaw))
+        val family = PersistentFamilyStateStore(backing)
+        val before = backing.disk
+        backing.failingFlushes = 1
+
+        assertThrows(EnrollmentPersistenceException::class.java) {
+            family.save(LocalFamilyState("replacement", "device", PairingState.PAIRED, 1, 1))
+        }
+
+        assertEquals(before, backing.disk)
+        assertEquals("legacy-family", PersistentFamilyStateStore(DiskStore(backing.disk)).currentState()!!.familyId)
+    }
+
+    @Test fun `failed family clear restores the prior v2 identity`() {
+        val backing = DiskStore()
+        val family = PersistentFamilyStateStore(backing)
+        val state = LocalFamilyState("family", "device", PairingState.PAIRED, 1, 1)
+        family.save(state)
+        val before = backing.disk
+        backing.failingFlushes = 1
+
+        assertThrows(EnrollmentPersistenceException::class.java) { family.clear() }
+
+        assertEquals(before, backing.disk)
+        assertEquals(state, PersistentFamilyStateStore(DiskStore(backing.disk)).currentState())
+    }
+
     @Test fun `legacy pending record decodes without an invitation binding`() {
         val legacyRaw = listOf(
             "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "dsk-alias",

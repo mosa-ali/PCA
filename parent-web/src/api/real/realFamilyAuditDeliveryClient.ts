@@ -11,6 +11,7 @@
 // must never turn any of these into a false empty-history claim.
 import type { AuditTrailFeedResult, FamilyAuditDeliveryClient } from '../interfaces';
 import type { FamilyAuditEnvelopeDecryptionBoundary, OpaqueFamilyAuditEnvelope } from '../familyAuditDecryption';
+import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { cookieSessionFamilyId } from './realBillingClient';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,28 +30,43 @@ function isOpaqueEnvelope(value: unknown): value is OpaqueFamilyAuditEnvelope {
 }
 
 export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient {
-  private readonly decryption: FamilyAuditEnvelopeDecryptionBoundary;
   constructor(
     private readonly apiBaseUrl: string,
-    decryptionOrLegacyAuthority: FamilyAuditEnvelopeDecryptionBoundary | unknown,
-    legacyDecryption?: FamilyAuditEnvelopeDecryptionBoundary,
-  ) {
-    this.decryption = legacyDecryption ?? decryptionOrLegacyAuthority as FamilyAuditEnvelopeDecryptionBoundary;
-  }
+    private readonly trustedBrowser: TrustedBrowserProvider,
+    private readonly decryption: FamilyAuditEnvelopeDecryptionBoundary,
+  ) {}
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
+  }
+
+  private async actorHeaders(): Promise<Record<string, string>> {
+    const snapshot = await this.trustedBrowser.getSnapshot();
+    if (snapshot.state !== 'TRUSTED' || !snapshot.browserEndpointId || !snapshot.actorDeviceSessionToken) {
+      throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+    }
+    return {
+      Accept: 'application/json',
+      Authorization: `Bearer ${snapshot.actorDeviceSessionToken}`,
+    };
   }
 
   async list(): Promise<AuditTrailFeedResult> {
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) return { status: 'PENDING_TRUSTED_DECRYPTION' };
 
+    let actorHeaders: Record<string, string>;
+    try {
+      actorHeaders = await this.actorHeaders();
+    } catch {
+      return { status: 'PENDING_TRUSTED_DECRYPTION' };
+    }
+
     let envelopes: OpaqueFamilyAuditEnvelope[];
     try {
       const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/audit-events`), {
         credentials: 'include',
-        headers: { Accept: 'application/json' },
+        headers: actorHeaders,
       });
       if (!response.ok) return { status: 'PENDING_TRUSTED_DECRYPTION' };
       const body: unknown = await response.json();

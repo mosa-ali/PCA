@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GLOBAL_BODY_LIMIT_BYTES } from '../../dist/http/buildServer.js';
 import { MAX_OUTBOUND_BODY_BYTES } from '../../dist/http/routes/runtimeSyncRoutes.js';
+import { MAX_CANONICAL_TRUST_SET_LENGTH } from '../../dist/familytrustset/decode.js';
 
 const HTTP_DIR = fileURLToPath(new URL('../../src/http/', import.meta.url));
 const BUILD_SERVER_PATH = fileURLToPath(new URL('../../src/http/buildServer.ts', import.meta.url));
@@ -63,7 +64,8 @@ function perRouteBodyLimits() {
       if (value === null) {
         throw new Error(`unrecognised body-limit expression in ${entry}: ${match[2].trim()}`);
       }
-      found.set(`${entry}:${match[1]}`, value);
+      // Keep the register stable across Windows and Unix source trees.
+      found.set(`${String(entry).replaceAll(String.fromCharCode(92), '/')}:${match[1]}`, value);
     }
   }
   return found;
@@ -86,42 +88,55 @@ test('NEGATIVE CONTROL: the byte-expression evaluator handles both real forms an
  * inheriting the ceiling would reject contract-legal requests with 413, and
  * raising the ceiling globally would weaken every other route at once.
  */
-// MAX_SUBMIT_BODY_BYTES (Wave 6B first-device trust-root bootstrap submit)
-// carries a contract-maximum canonical epoch-1 (up to exactly 256 KiB, the
-// same MAX_CANONICAL_TRUST_SET_LENGTH bound Wave 5B certifies) PLUS the
-// domain-separated bootstrap proof and both signatures, so a contract-legal
-// maximum submit inherently exceeds the 256 KiB ceiling.
-// MAX_BODY_BYTES (ordinary Trust Set epoch transport) carries up to 256 KiB
-// of canonical epoch bytes after padded Base64 expansion, plus its signature
-// and JSON framing. The route bound remains local to this authenticated
-// device-only endpoint so other routes keep the tighter global ceiling.
-const DELIBERATE_CEILING_OVERRIDES = new Set([
-  'MAX_OUTBOUND_BODY_BYTES',
-  'MAX_SUBMIT_BODY_BYTES',
-  'MAX_BODY_BYTES',
+const DELIBERATE_CEILING_OVERRIDES = new Map([
+  ['routes/runtimeSyncRoutes.ts:MAX_OUTBOUND_BODY_BYTES',
+    'The outbound contract allows bounded batches of encrypted envelopes whose combined Base64 payload exceeds 256 KiB; keep the exception local to that route.'],
+  ['routes/firstDeviceBootstrapRoutes.ts:MAX_SUBMIT_BODY_BYTES',
+    'A maximum 256 KiB canonical epoch-1 must travel with its domain-separated bootstrap proof and both signatures, so the legal JSON request exceeds 256 KiB.'],
+  ['routes/ordinaryTrustSetRoutes.ts:MAX_BODY_BYTES',
+    'A 256 KiB canonical epoch expands to 349,528 padded Base64 bytes; the 88-byte Base64 signature and JSON framing require a bounded 352 KiB device-only transport body.'],
 ]);
 
 test('PCA-P2-13: every route either sits under the ceiling or deliberately overrides it', () => {
   const limits = perRouteBodyLimits();
+  assert.equal(
+    GLOBAL_BODY_LIMIT_BYTES,
+    256 * 1024,
+    'the shared global body ceiling remains exactly 256 KiB; protocol-specific exceptions belong on individual routes',
+  );
   assert.ok(limits.size >= 25, `expected to find the route body limits; found only ${limits.size}`);
 
   const overrides = [...limits.entries()]
     .filter(([, value]) => value > GLOBAL_BODY_LIMIT_BYTES)
-    .map(([name, value]) => ({ name: name.split(':').pop(), value }));
+    .map(([key, value]) => ({ key, value }));
 
-  for (const { name, value } of overrides) {
+  for (const { key, value } of overrides) {
+    const reason = DELIBERATE_CEILING_OVERRIDES.get(key);
     assert.ok(
-      DELIBERATE_CEILING_OVERRIDES.has(name),
-      `${name} (${value}) exceeds the global ceiling (${GLOBAL_BODY_LIMIT_BYTES}) but is not registered in ` +
-        'DELIBERATE_CEILING_OVERRIDES; a route may exceed the ceiling only deliberately -- either lower it, ' +
-        'or record the contract reason that requires it',
+      reason && reason.trim().length >= 40,
+      `${key} (${value}) exceeds the global ceiling (${GLOBAL_BODY_LIMIT_BYTES}) but lacks an explicit ` +
+        'DELIBERATE_CEILING_OVERRIDES protocol reason',
     );
   }
 
   assert.deepEqual(
-    overrides.map((entry) => entry.name).sort(),
-    [...DELIBERATE_CEILING_OVERRIDES].sort(),
-    'the register must match reality in both directions, so it cannot rot into a stale allowlist',
+    overrides.map((entry) => entry.key).sort(),
+    [...DELIBERATE_CEILING_OVERRIDES.keys()].sort(),
+    'the route-and-reason register must match reality in both directions, so it cannot rot into a stale allowlist',
+  );
+
+  const ordinaryTrustSetLimit = limits.get('routes/ordinaryTrustSetRoutes.ts:MAX_BODY_BYTES');
+  const maximumOrdinaryRequestBytes = Buffer.byteLength(JSON.stringify({
+    canonicalEpochBase64: Buffer.alloc(MAX_CANONICAL_TRUST_SET_LENGTH).toString('base64'),
+    signatureBase64: 'A'.repeat(88),
+  }));
+  assert.ok(
+    ordinaryTrustSetLimit >= maximumOrdinaryRequestBytes,
+    `ordinary Trust Set body limit (${ordinaryTrustSetLimit}) must fit the contract maximum request (${maximumOrdinaryRequestBytes})`,
+  );
+  assert.ok(
+    ordinaryTrustSetLimit <= 352 * 1024,
+    `ordinary Trust Set body limit (${ordinaryTrustSetLimit}) must remain tightly bounded at or below 352 KiB`,
   );
 
   const bounded = limits.size - overrides.length;

@@ -700,10 +700,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerFamilyAuditEventRoutes(app, {
     parentAccountService: deps.parentAccountService,
     familyAuditEventLedger: deps.familyAuditEventLedger,
+    deviceSessionService: deps.deviceSessionService,
   });
   registerProtectionAlertRoutes(app, {
     parentAccountService: deps.parentAccountService,
     protectionAlertLedger: deps.protectionAlertLedger,
+    deviceSessionService: deps.deviceSessionService,
   });
   registerDashboardRoutes(app, {
     parentAccountService: deps.parentAccountService,

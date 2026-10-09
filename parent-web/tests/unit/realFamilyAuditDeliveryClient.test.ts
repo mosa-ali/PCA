@@ -113,7 +113,8 @@ describe('RealFamilyAuditDeliveryClient', () => {
     const auditCall = fetchMock.mock.calls.find(([input]) => (typeof input === 'string' ? input : input.toString()).includes('/audit-events'));
     expect(auditCall).toBeTruthy();
     const [, init] = auditCall as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer actor-device-session-token');
+    expect(init.credentials).toBe('include');
   });
 
   it('reports pending for an empty envelope list until feed completeness is established', async () => {

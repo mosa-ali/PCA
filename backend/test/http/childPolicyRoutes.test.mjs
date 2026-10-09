@@ -10,6 +10,8 @@ import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleRe
 import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
+import { parseFamilyEnvelope } from '../../dist/familyenvelope/parse.js';
+import { envelopeFromRelayCiphertext, envelopeToRelayCiphertext } from '../../dist/runtime-sync/envelopeWireCodec.js';
 import { recordParentRouteScenario, writeParentRouteScenarioReport } from '../helpers/parentRouteOutcomeCollector.mjs';
 
 const FAMILY = 'family-schedule-http-1';
@@ -19,7 +21,24 @@ const CHILD_PROFILE_FAMILY_MAP = new Map([
   ['child-in-other-family', OTHER_FAMILY],
 ]);
 const T0 = new Date('2026-01-07T09:00:00.000Z');
-const VALID_ENVELOPE = { recipientDeviceId: 'dev-child', ciphertextB64: 'YWJjZGVmZ2g', nonceB64: 'MDEyMzQ1Njc4OTAxMjM0NQ', keyEpoch: 3 };
+const VALID_ENVELOPE = {
+  protocolMajor: 1,
+  protocolMinor: 0,
+  messageId: 'schedule-policy-message-1',
+  familyId: FAMILY,
+  senderDeviceId: 'dev-owner',
+  recipientDeviceId: 'dev-child',
+  senderKeyId: 'owner-key-1',
+  messageType: 'POLICY_UPDATE',
+  trustSetEpoch: 5,
+  keyEpoch: 3,
+  sequenceOrNonce: 'schedule-policy-sequence-1',
+  issuedAt: T0.toISOString(),
+  expiresAt: new Date(T0.getTime() + 5 * 60_000).toISOString(),
+  semanticVersion: '1.0.0',
+  payload: Buffer.from('opaque-encrypted-policy').toString('base64'),
+  signature: 'opaque-signature',
+};
 const SCHEDULE_POLICY_ROUTE = '/api/parent/families/:familyId/children/:childProfileId/schedule-policy';
 
 after(async () => {
@@ -107,7 +126,7 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
 
-test('an Owner can submit a schedule-policy envelope: authorized, relayed, and PENDING -- never APPLIED', async () => {
+test('an Owner can submit a canonical POLICY_UPDATE envelope: authorized, serialized, and PENDING -- never APPLIED', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
   const { app, submittedBatches } = buildApp({ authorization });
   try {
@@ -121,7 +140,7 @@ test('an Owner can submit a schedule-policy envelope: authorized, relayed, and P
     recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 202, response });
     const body = response.json();
     assert.equal(body.status, 'PENDING');
-    assert.equal(typeof body.messageId, 'string');
+    assert.equal(body.messageId, VALID_ENVELOPE.messageId);
     assert.notEqual(body.status, 'APPLIED');
     assert.notEqual(body.status, 'DELIVERED');
 
@@ -129,24 +148,37 @@ test('an Owner can submit a schedule-policy envelope: authorized, relayed, and P
     assert.equal(submittedBatches[0].senderDeviceId, 'dev-owner');
     assert.equal(submittedBatches[0].familyId, FAMILY);
     assert.equal(submittedBatches[0].items[0].recipientDeviceId, 'dev-child');
-    assert.equal(submittedBatches[0].items[0].messageType, 'SCHEDULE_POLICY_V1');
+    assert.equal(submittedBatches[0].items[0].messageId, VALID_ENVELOPE.messageId);
+    assert.equal(submittedBatches[0].items[0].messageType, 'POLICY_UPDATE');
+    assert.equal(submittedBatches[0].items[0].enqueuedAtEpochMillis, Date.parse(VALID_ENVELOPE.issuedAt));
+    const relayed = envelopeFromRelayCiphertext(submittedBatches[0].items[0].ciphertext);
+    assert.ok(relayed);
+    assert.equal(relayed.messageId, VALID_ENVELOPE.messageId);
+    assert.equal(relayed.messageType, 'POLICY_UPDATE');
+    assert.equal(relayed.familyId, FAMILY);
+    assert.equal(relayed.senderDeviceId, 'dev-owner');
+    assert.equal(relayed.recipient.kind, 'DEVICE');
+    assert.equal(relayed.recipient.recipientDeviceId, 'dev-child');
+    assert.deepEqual(submittedBatches[0].items[0].ciphertext, envelopeToRelayCiphertext(parseFamilyEnvelope(VALID_ENVELOPE)));
   } finally {
     await app.close();
   }
 });
 
-test('schedule-policy accepts the maximum supported key epoch', async () => {
+test('schedule-policy accepts protocol-boundary key epochs including zero', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
   const { app, submittedBatches } = buildApp({ authorization });
   try {
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
-      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
-      payload: { ...VALID_ENVELOPE, keyEpoch: MAX_FAMILY_EPOCH },
-    });
-    assert.equal(response.statusCode, 202);
-    assert.equal(submittedBatches.length, 1);
+    for (const keyEpoch of [0, MAX_FAMILY_EPOCH]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: { ...VALID_ENVELOPE, keyEpoch },
+      });
+      assert.equal(response.statusCode, 202, `keyEpoch=${keyEpoch}`);
+    }
+    assert.equal(submittedBatches.length, 2);
   } finally {
     await app.close();
   }
@@ -160,7 +192,7 @@ test('a VIEWER cannot edit child policy: DENY from the real OPERATION_MATRIX, no
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
       headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
-      payload: VALID_ENVELOPE,
+      payload: { ...VALID_ENVELOPE, senderDeviceId: 'dev-viewer' },
     });
     assert.equal(response.statusCode, 403);
     recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_viewer_device_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });
@@ -368,7 +400,7 @@ test('schedule-policy rejects malformed envelopes before role, actor-device, aut
   };
   const { app, submittedBatches, callCounts } = buildApp({ authorization });
   try {
-    for (const keyEpoch of [MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, '3', 0, -1]) {
+    for (const keyEpoch of [MAX_FAMILY_EPOCH + 1, Number.MAX_SAFE_INTEGER + 1, 1.5, '3', -1]) {
       const response = await app.inject({
         method: 'POST',
         url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
@@ -386,7 +418,7 @@ test('schedule-policy rejects malformed envelopes before role, actor-device, aut
   }
 });
 
-test('schedule-policy rejects noncanonical base64url and payloads above decoded byte bounds before authorization', async () => {
+test('schedule-policy rejects noncanonical envelope payload encoding and payloads above protocol bounds before authorization', async () => {
   let authorizationCalls = 0;
   const authorization = {
     async authorize() {
@@ -397,10 +429,12 @@ test('schedule-policy rejects noncanonical base64url and payloads above decoded 
   const { app, submittedBatches, callCounts } = buildApp({ authorization });
   try {
     const invalidBodies = [
-      { ...VALID_ENVELOPE, ciphertextB64: 'AB' }, // same decoded byte as canonical "AA", noncanonical trailing bits
-      { ...VALID_ENVELOPE, nonceB64: 'AB' },
-      { ...VALID_ENVELOPE, ciphertextB64: Buffer.alloc(65536).toString('base64url') }, // route cap implies 65535 decoded bytes
-      { ...VALID_ENVELOPE, nonceB64: Buffer.alloc(67).toString('base64url') }, // route cap implies 66 decoded bytes
+      { ...VALID_ENVELOPE, payload: 'AB==' }, // noncanonical trailing bits
+      { ...VALID_ENVELOPE, payload: Buffer.alloc(64 * 1024 + 1).toString('base64') },
+      { ...VALID_ENVELOPE, expiresAt: VALID_ENVELOPE.issuedAt },
+      { ...VALID_ENVELOPE, extraPlaintext: 'schedule contents must stay encrypted' },
+      { ...VALID_ENVELOPE, recipientGroup: 'all-devices' },
+      { ...VALID_ENVELOPE, messageType: 'SCHEDULE_POLICY_V1' },
     ];
     for (const payload of invalidBodies) {
       const response = await app.inject({
@@ -417,5 +451,64 @@ test('schedule-policy rejects noncanonical base64url and payloads above decoded 
     assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
+  }
+});
+
+test('schedule-policy rejects family or sender metadata not bound to the authenticated Parent device', async () => {
+  let authorizationCalls = 0;
+  const authorization = {
+    async authorize() {
+      authorizationCalls += 1;
+      return { verdict: 'ALLOW' };
+    },
+  };
+  const { app, submittedBatches, callCounts } = buildApp({ authorization });
+  try {
+    const wrongFamily = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, familyId: OTHER_FAMILY },
+    });
+    assert.equal(wrongFamily.statusCode, 400);
+
+    const wrongSender = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, senderDeviceId: 'dev-viewer' },
+    });
+    assert.equal(wrongSender.statusCode, 400);
+    assert.equal(callCounts.activeFamilyRole, 1); // family mismatch rejected before role; sender mismatch after actor binding
+    assert.equal(callCounts.actorDevice, 1);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy only reports PENDING when the exact messageId is explicitly queued', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const cases = [
+    { name: 'missing result', result: { results: [], droppedForBatchBound: [] } },
+    { name: 'different result id', result: { results: [{ messageId: 'different-message', outcome: 'QUEUED' }], droppedForBatchBound: [] } },
+    { name: 'batch-bound drop', result: { results: [], droppedForBatchBound: [VALID_ENVELOPE.messageId] } },
+  ];
+  for (const scenario of cases) {
+    const { app, submittedBatches } = buildApp({ authorization, submitBatchImpl: () => scenario.result });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: VALID_ENVELOPE,
+      });
+      assert.equal(response.statusCode, 503, scenario.name);
+      assert.deepEqual(response.json(), { error: 'relay_unavailable' }, scenario.name);
+      assert.equal(submittedBatches.length, 1);
+    } finally {
+      await app.close();
+    }
   }
 });

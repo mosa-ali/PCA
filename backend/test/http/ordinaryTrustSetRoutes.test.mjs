@@ -109,6 +109,24 @@ test('real facade missing-record error remains 404 rather than a conflict', asyn
   assert.deepEqual(result.json(), { error: 'trust_set_record_unavailable' });
 });
 
+test('accepted-head integrity rejection stays generic across submit, status, head, and history routes', async (t) => {
+  const rejectCorruptHead = async () => { throw new OrdinaryTrustSetError('NO_TRUST_SET'); };
+  const { request } = fixture(t, { service: {
+    submit: rejectCorruptHead, status: rejectCorruptHead, head: rejectCorruptHead, epoch: rejectCorruptHead,
+  } });
+  for (const [method, url, payload] of [
+    ['POST', BASE, BODY],
+    ['POST', `${BASE}/status`, BODY],
+    ['GET', `${BASE}/head`, undefined],
+    ['GET', `${BASE}/records/2`, undefined],
+  ]) {
+    const result = await request(method, url, payload);
+    assert.equal(result.statusCode, 409);
+    assert.deepEqual(result.json(), { error: 'trust_set_rejected' });
+    assert.ok(!result.body.includes('signature') && !result.body.includes('key'));
+  }
+});
+
 test('body limit prevents oversized canonical payload reaching service', async (t) => {
   const { request, calls } = fixture(t);
   const result = await request('POST', BASE, { ...BODY, canonicalEpochBase64: 'A'.repeat(370000) });

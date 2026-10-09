@@ -51,6 +51,7 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
   const { parentAccountService, deviceSessionService, protectionAlertLedger } = deps;
 
   app.get('/api/parent/families/:familyId/protection-alerts', async (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Cache-Control', 'private, no-store');
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     let familyIdFromSession: string;
@@ -75,7 +76,8 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
     if (!deviceSessionService) return reply.code(503).send({ error: 'not_configured' });
 
     const authorizationHeader = request.headers.authorization;
-    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
+    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') ||
+        authorizationHeader.length <= 'Bearer '.length || authorizationHeader.length > 4096 || /[\r\n]/.test(authorizationHeader)) {
       return reply.code(401).send({ error: 'actor_device_session_required' });
     }
     let actorDeviceId: string;
@@ -84,6 +86,9 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
         authorizationHeader.slice('Bearer '.length),
         familyId,
       );
+      if (!identity.deviceId || identity.familyId !== familyId) {
+        return reply.code(401).send({ error: 'actor_device_session_invalid' });
+      }
       actorDeviceId = identity.deviceId;
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'actor_device_session_invalid' });

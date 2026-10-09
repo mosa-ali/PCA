@@ -74,6 +74,15 @@ export function validateSafeZonePatch(patch: SafeZonePatch): void {
   if (keys.length === 0 || keys.some((key) => !['ciphertextB64', 'nonceB64', 'keyEpoch'].includes(key))) {
     throw new SafeZoneError('INVALID_INPUT');
   }
+  const hasCiphertext = patch.ciphertextB64 !== undefined;
+  const hasNonce = patch.nonceB64 !== undefined;
+  // Ciphertext and nonce form one authenticated-encryption payload. Updating
+  // only one can persist a pair that was never produced together.
+  if (hasCiphertext !== hasNonce) throw new SafeZoneError('INVALID_INPUT');
+  // keyEpoch binds the ciphertext to its family-key generation. Changing
+  // that binding without replacing the complete encrypted payload would
+  // relabel old bytes as if they had been encrypted under another key.
+  if (patch.keyEpoch !== undefined && !hasCiphertext) throw new SafeZoneError('INVALID_INPUT');
   if (patch.ciphertextB64 !== undefined) assertCanonicalBase64Url(patch.ciphertextB64, 1, 65_535);
   if (patch.nonceB64 !== undefined) assertCanonicalBase64Url(patch.nonceB64, 12, 64);
   if (patch.keyEpoch !== undefined && !isFamilyEpochNumber(patch.keyEpoch, 1)) {

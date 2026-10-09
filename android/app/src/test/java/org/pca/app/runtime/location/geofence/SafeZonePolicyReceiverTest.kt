@@ -11,8 +11,12 @@ import org.pca.app.platform.LocationSample
 
 class SafeZonePolicyReceiverTest {
 
-    private val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
-    private val zoneStateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
+    private val familyScope = GeofenceStorageScope("family-a", "child-a")
+    private var activeScope: GeofenceStorageScope? = familyScope
+    private val scopeProvider = { activeScope }
+    private val backing = InMemoryPersistentStateStore()
+    private val zoneStore = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
+    private val zoneStateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
 
     private val zone = GeofenceZone(
         zoneId = "zone-home",
@@ -227,7 +231,7 @@ class SafeZonePolicyReceiverTest {
 
     @Test
     fun `verified owner payload applies locally and monitor emits only local entry notification`() = runTest {
-        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
+        val stateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
         val receiver = SafeZonePolicyReceiver(
             localFamilyId = "family-a",
             localEndpointId = "child-a",
@@ -266,6 +270,33 @@ class SafeZonePolicyReceiverTest {
         assertEquals(1, events.size)
         assertEquals(GeofenceTransitionType.ENTRY, events.single().transitionType)
         assertEquals(1, alerts.delivered.size)
+    }
+
+    @Test
+    fun `corrupt persisted zone snapshot blocks receive without resetting prior revision`() = runTest {
+        val key = familyScope.zoneStoreKey("geofence_zones_v2")
+        val corrupt = "zone-home|Home|25.0|55.0|100.0|true|ENTRY,EXIT|7\nnot|enough|fields"
+        backing.putString(key, corrupt)
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray? =
+                    SafeZonePolicyPayloadCodec.encode(
+                        SafeZonePolicyPayload("family-a", "child-a", "zone-home", 2L, 3L, zone.copy(revision = 2L)),
+                    )
+            },
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+        )
+
+        assertEquals(
+            SafeZonePolicyReceiveResult.REJECTED,
+            receiver.receive(envelope().copy(revision = 2L), nowEpochMillis = 2_000L),
+        )
+        assertEquals(corrupt, backing.getString(key))
     }
 
     @Test
@@ -316,7 +347,7 @@ class SafeZonePolicyReceiverTest {
     @Test
     fun `disabled policy is stored locally but cannot manufacture an exit alert`() = runTest {
         val disabledZone = zone.copy(enabled = false, transitionTypes = setOf(GeofenceTransitionType.EXIT))
-        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
+        val stateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
         val receiver = SafeZonePolicyReceiver(
             localFamilyId = "family-a",
             localEndpointId = "child-a",
@@ -341,6 +372,34 @@ class SafeZonePolicyReceiverTest {
 
         assertTrue(alerts.delivered.isEmpty())
         assertEquals(false, zoneStore.loadZones().single().enabled)
+    }
+
+    @Test
+    fun `receiver captured for previous family cannot read or replace current family policy`() = runTest {
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray =
+                    envelope.payloadForTest()
+            },
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+        )
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), 2_000L))
+
+        activeScope = GeofenceStorageScope("family-b", "child-b")
+        assertTrue(zoneStore.loadZones().isEmpty())
+        assertEquals(
+            SafeZonePolicyReceiveResult.REJECTED,
+            receiver.receive(envelope().copy(revision = 2L), 2_000L),
+        )
+        assertTrue(zoneStore.loadZones().isEmpty())
+
+        val restartedFamilyAStore = GeofenceZoneStore(backing, scopeProvider = { familyScope })
+        assertEquals("Home", restartedFamilyAStore.loadZones().single().label)
     }
 
     private fun SafeZonePolicyEnvelope.payloadForTest(): ByteArray =

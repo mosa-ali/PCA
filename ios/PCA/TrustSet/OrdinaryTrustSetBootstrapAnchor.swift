@@ -19,9 +19,12 @@ public enum OrdinaryTrustSetBootstrapAnchor {
     public static func makeCoordinator(rootStore: FirstDeviceRootStoring, keychain: KeychainStoreProtocol,
                                        keyMaterial: FirstDeviceDskSigning, sessionStore: PCADeviceSessionStore,
                                        baseURL: URL) throws -> OrdinaryTrustSetCoordinator {
-        guard let root = rootStore.current(), root.state == .rootCommitted, let familyId = root.familyId else {
+        guard let root = rootStore.current(), root.state == .rootCommitted,
+              let familyId = root.familyId, let acceptedEpoch1 = root.acceptedEpoch1 else {
             throw OrdinaryTrustSetError.malformedState
         }
+        let trustedRootAnchor = OrdinaryTrustSetHead(familyId: familyId,
+            canonicalBytes: Data(acceptedEpoch1.canonicalBytes.utf8), signature: acceptedEpoch1.signature)
         let seed = root.seed
         let store = KeychainOrdinaryTrustSetStore(keychain: keychain, account: seed.deviceId)
         let verifier = P256OrdinaryTrustSetSignatureVerifier()
@@ -35,6 +38,7 @@ public enum OrdinaryTrustSetBootstrapAnchor {
             return session.sessionToken
         })
         return OrdinaryTrustSetCoordinator(store: store, signer: keyMaterial, verifier: verifier, transport: api,
+            trustedRootAnchor: trustedRootAnchor,
             familyId: familyId, deviceId: seed.deviceId, dskKeyId: seed.signingKeyId, dskAlias: seed.dskAlias)
     }
     #endif

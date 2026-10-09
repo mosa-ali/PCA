@@ -45,15 +45,33 @@ data class PolicyAcceptanceInput(
 object SchedulePolicyValidator {
 
     fun evaluate(input: PolicyAcceptanceInput): PolicyAcceptanceResult {
-        val candidate = input.candidatePolicy
-            ?: return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
-
-        // A corrupt or out-of-domain persisted floor cannot authorize policy application.
+        // A corrupt or out-of-domain persisted floor cannot authorize policy application,
+        // including through a previously accepted fallback.
         if (!EpochBounds.isValid(input.deviceTrustSetEpoch) || !EpochBounds.isValid(input.deviceKeyEpoch)) {
             return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
         }
 
-        val safeFallback = input.lastKnownGoodPolicy?.takeIf(::hasValidEpochs)
+        val safeFallback = input.lastKnownGoodPolicy?.takeIf { policy ->
+            hasValidEpochs(policy) &&
+                isStructurallyValid(policy) &&
+                !isExpired(policy, input.nowUtc) &&
+                !isEpochBehind(policy, input.deviceTrustSetEpoch, input.deviceKeyEpoch)
+        }
+
+        val candidate = input.candidatePolicy
+        if (candidate == null) {
+            val lastKnownGood = input.lastKnownGoodPolicy
+                ?: return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
+
+            if (!hasValidEpochs(lastKnownGood) || !isStructurallyValid(lastKnownGood) || isExpired(lastKnownGood, input.nowUtc)) {
+                return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
+            }
+            if (isEpochBehind(lastKnownGood, input.deviceTrustSetEpoch, input.deviceKeyEpoch)) {
+                return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, null)
+            }
+
+            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
+        }
 
         if (!hasValidEpochs(candidate) || !isStructurallyValid(candidate)) {
             return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
@@ -64,13 +82,11 @@ object SchedulePolicyValidator {
         }
 
         if (isEpochBehind(candidate, input.deviceTrustSetEpoch, input.deviceKeyEpoch)) {
-            // A last-known-good snapshot cannot supersede a newer device floor. If both
-            // policies are behind, retain the newest persisted candidate rather than
-            // selecting an even older fallback.
-            val currentFallback = safeFallback?.takeIf {
-                !isEpochBehind(it, input.deviceTrustSetEpoch, input.deviceKeyEpoch)
-            }
-            return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, currentFallback ?: candidate)
+            // A last-known-good snapshot may be applied only when it is itself structurally
+            // valid, unexpired, epoch-valid, and current with respect to both device floors.
+            // If no such fallback exists, retain the structurally valid candidate for honest
+            // diagnostics; the production port keeps EPOCH_STALE unavailable.
+            return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, safeFallback ?: candidate)
         }
 
         if (input.connectivity == Connectivity.OFFLINE) {

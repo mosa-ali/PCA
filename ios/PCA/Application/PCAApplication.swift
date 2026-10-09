@@ -137,6 +137,9 @@ public struct PCAProductionDependencies {
     /// the fail-closed posture when Secure Enclave/App Attest composition is
     /// unavailable on this device.
     public let firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating?
+    /// Ordinary signed Trust Set epoch progression uses the committed first
+    /// device root and the same device-session/Secure Enclave custody.
+    public let ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging?
     public let policyRuntime: PCAProtectionPolicyRuntime
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
@@ -159,6 +162,7 @@ public struct PCAProductionDependencies {
         keyDeletion: FirstDeviceKeyPairDeletion? = nil,
         firstDeviceRootStore: FirstDeviceRootStoring? = nil,
         firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating? = nil,
+        ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging? = nil,
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
@@ -180,6 +184,7 @@ public struct PCAProductionDependencies {
         self.keyDeletion = keyDeletion
         self.firstDeviceRootStore = firstDeviceRootStore
         self.firstDeviceTrustRootCoordinator = firstDeviceTrustRootCoordinator
+        self.ordinaryTrustSetCoordinator = ordinaryTrustSetCoordinator
         self.policyRuntime = policyRuntime
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
@@ -1091,6 +1096,47 @@ enum PCAFirstDeviceTrustRootComposition {
         catch { syncConnectionState = .stale }
     }
 
+    /// Submits an already-authorized next epoch through the durable, device-
+    /// signed coordinator. Candidate creation remains with the product flow;
+    /// this boundary never accepts Parent/browser credentials or raw keys.
+    @MainActor public func submitOrdinaryTrustSetEpoch(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult {
+        guard let coordinator = dependencies.ordinaryTrustSetCoordinator,
+              let rootStore = dependencies.firstDeviceRootStore,
+              let root = rootStore.current(), root.state == .rootCommitted,
+              let familyId = root.familyId,
+              let session = try dependencies.sessionStore.loadSession(),
+              session.expiresAt > now(),
+              pcaOpaqueEqual(session.deviceId, root.seed.deviceId),
+              pcaOpaqueEqual(candidate.familyId, familyId),
+              rootStore.confirmDurable(root) else {
+            throw PCADeviceProofError.secureKeyUnavailable
+        }
+        do {
+            _ = try await coordinator.resumePending()
+            guard try await coordinator.catchUp(maximumRecords: 32) else { throw OrdinaryTrustSetError.staleCandidate }
+            try dependencies.assertRuntimeKeyCustody(session.deviceId)
+            guard rootStore.current() == root, rootStore.confirmDurable(root),
+                  try dependencies.sessionStore.loadSession() == session else {
+                throw PCADeviceProofError.secureKeyUnavailable
+            }
+            return try await coordinator.prepareAndSubmit(candidate)
+        } catch let error as PCAAPIError {
+            if (try? dependencies.sessionStore.loadSession()) == session {
+                switch error {
+                case .unauthorized:
+                    try? dependencies.sessionStore.clearSession()
+                    syncConnectionState = .stale
+                    applicationState = .recovering
+                case .forbidden:
+                    syncConnectionState = .stale
+                    applicationState = .error(.authorization)
+                default: break
+                }
+            }
+            throw error
+        }
+    }
+
     /// Existing-session-only transport campaign, shared with OS background recovery.
     /// No enrollment, authentication creation, permission prompt or crypto application.
     @MainActor func synchronizeRuntimeCampaign() async throws -> PCARuntimeCustodyOutcome {
@@ -1158,6 +1204,11 @@ enum PCAFirstDeviceTrustRootComposition {
             try assertContinuity()
             guard let consumer = dependencies.inboundConsumer else { return }
             guard ProcessInfo.processInfo.systemUptime - started < 30 else { return }
+            guard let trustSet = dependencies.ordinaryTrustSetCoordinator,
+                  try await trustSet.catchUp(maximumRecords: 32) else {
+                throw PCAInboundInboxError.unavailable
+            }
+            try assertContinuity()
             _ = try await consumer.consume(try inbox.pendingCrypto(scope: scope), scope: scope,
                 now: { self.now() }, assertAuthority: {
                     try assertContinuity()
@@ -1168,6 +1219,12 @@ enum PCAFirstDeviceTrustRootComposition {
         syncConnectionState = .syncing
         do {
             try assertContinuity()
+            if let trustSet = dependencies.ordinaryTrustSetCoordinator {
+                _ = try await trustSet.resumePending()
+                try assertContinuity()
+                guard try await trustSet.catchUp(maximumRecords: 32) else { throw PCAInboundInboxError.unavailable }
+                try assertContinuity()
+            }
             var cursor = try inbox.navigation(sessionIncarnation: incarnation)?.nextCursor
             var resetRejectedCursor = false
             if let scope = try inbox.retainedScope() { try await consumeStored(scope) }
@@ -1222,8 +1279,11 @@ enum PCAFirstDeviceTrustRootComposition {
                 }
                 if ProcessInfo.processInfo.systemUptime - started < 30 {
                     try assertContinuity()
-                    await reportProtectionStatusIfPossible(session: session)
+                    let statusError = await reportProtectionStatusIfPossible(session: session)
                     try assertContinuity()
+                    if let statusError, statusError == .unauthorized || statusError == .forbidden {
+                        throw statusError
+                    }
                 }
                 return .complete
             }
@@ -1233,9 +1293,13 @@ enum PCAFirstDeviceTrustRootComposition {
             syncConnectionState = .stale
             throw CancellationError()
         } catch let error as PCAAPIError {
-            syncConnectionState = (error == .unauthorized) ? .stale : .offline
+            syncConnectionState = (error == .unauthorized || error == .forbidden) ? .stale : .offline
             if error == .unauthorized, (try? dependencies.sessionStore.loadSession()) == session {
                 try? dependencies.sessionStore.clearSession()
+            }
+            if error == .forbidden {
+                applicationState = .error(.authorization)
+                return .blocked
             }
             applicationState = error == .unauthorized ? .recovering : .offline
             switch error {
@@ -1253,11 +1317,30 @@ enum PCAFirstDeviceTrustRootComposition {
         }
     }
 
-    private func reportProtectionStatusIfPossible(session suppliedSession: PCADeviceSession? = nil) async {
+    private func reportProtectionStatusIfPossible(session suppliedSession: PCADeviceSession? = nil) async -> PCAAPIError? {
         guard let runtimeSyncClient = dependencies.runtimeSyncClient,
               let session = suppliedSession ?? (try? dependencies.sessionStore.loadSession()),
-              session.expiresAt > now() else { return }
-        try? await runtimeSyncClient.reportProtectionStatus(dependencies.protectionRuntime.status, session: session)
+              session.expiresAt > now() else { return nil }
+        do {
+            try await runtimeSyncClient.reportProtectionStatus(dependencies.protectionRuntime.status, session: session)
+            return nil
+        } catch let error as PCAAPIError {
+            if (try? dependencies.sessionStore.loadSession()) == session {
+                switch error {
+                case .unauthorized:
+                    try? dependencies.sessionStore.clearSession()
+                    syncConnectionState = .stale
+                    applicationState = .recovering
+                case .forbidden:
+                    syncConnectionState = .stale
+                    applicationState = .error(.authorization)
+                default: break
+                }
+            }
+            return error
+        } catch {
+            return nil
+        }
     }
 
     private func stateForCurrentData() -> PCAApplicationState {
@@ -1280,6 +1363,7 @@ enum PCAFirstDeviceTrustRootComposition {
         switch error {
         case .invalidConfiguration: return .configuration
         case .unauthorized: return .session
+        case .forbidden: return .authorization
         case .transport(.timeout), .transport(.network), .unavailable: return .network
         case .malformedResponse: return .permanent
         case .invalidRequest, .rejected, .transport(_), .attemptAbandoned, .preparationRejected, .enrollmentOutcomeUnknown: return .recoverable
@@ -1290,6 +1374,7 @@ enum PCAFirstDeviceTrustRootComposition {
         switch error {
         case .transport(.timeout), .transport(.network), .unavailable: return .offline
         case .unauthorized: return .recovering
+        case .forbidden: return .error(.authorization)
         case .invalidConfiguration: return .error(.configuration)
         case .malformedResponse: return .error(.permanent)
         case .invalidRequest, .rejected, .transport(_), .attemptAbandoned, .preparationRejected, .enrollmentOutcomeUnknown: return .error(.recoverable)
@@ -1362,6 +1447,18 @@ public enum PCAProductionCompositionRoot {
         #else
         firstDeviceTrustRootCoordinator = nil
         #endif
+        let ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging?
+        #if canImport(Security) && canImport(CryptoKit)
+        ordinaryTrustSetCoordinator = try? OrdinaryTrustSetBootstrapAnchor.makeCoordinator(
+            rootStore: firstDeviceRootStore,
+            keychain: keychain,
+            keyMaterial: secureEnclaveProvider,
+            sessionStore: stateStore,
+            baseURL: productionAPIBaseURL
+        )
+        #else
+        ordinaryTrustSetCoordinator = nil
+        #endif
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
         let profileStore = UserDefaultsPCAEnrollmentProfileStore()
@@ -1395,6 +1492,7 @@ public enum PCAProductionCompositionRoot {
             keyDeletion: keyDeletion,
             firstDeviceRootStore: firstDeviceRootStore,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
+            ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()

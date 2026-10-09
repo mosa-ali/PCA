@@ -104,6 +104,10 @@ interface DeviceRow extends RowDataPacket {
   status: string;
 }
 
+interface DeviceKeyRow extends RowDataPacket {
+  key_id: string;
+}
+
 interface FamilyRow extends RowDataPacket {
   provisioned_for_account_id: string | null;
   status: string;
@@ -162,6 +166,14 @@ class EpochAppendRefusedError extends Error {
   constructor(readonly appendOutcome: string) {
     super(`epoch append refused: ${appendOutcome}`);
     this.name = 'EpochAppendRefusedError';
+  }
+}
+
+/** A stale/revoked bootstrap device must roll back any provisional floors row. */
+class BootstrapDeviceNotEligibleError extends Error {
+  constructor() {
+    super('first-device bootstrap device is no longer eligible');
+    this.name = 'BootstrapDeviceNotEligibleError';
   }
 }
 
@@ -353,20 +365,48 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
           return { outcome: 'NOT_ELIGIBLE' };
         }
 
-        // Non-locking device re-check (amendment H2): PAIRING_PENDING -> PAIRED owner-side pairing
-        // may land while the ceremony is open; REVOKED / ACTIVE device states fail closed. No lock
-        // is taken here, so the ceremony->floors lock order above is the only order the store uses.
-        const [deviceRows] = await conn.execute<DeviceRow[]>(
-          'SELECT family_id, status FROM devices WHERE device_id = ?',
-          [row.device_id],
-        );
-        const device = deviceRows[0];
-        if (!device || device.family_id !== row.family_id || !CERTIFICATE_STATES.has(device.status)) {
-          return { outcome: 'DEVICE_NOT_ELIGIBLE' };
-        }
-
         // ---- 4. Shared per-family serialization latch (same as every epoch append) ----
         await ensureAndLockFamilyFloors(conn, row.family_id, input.now);
+
+        // Revalidate under a transaction-held row lock after the shared floor
+        // latch. This is the same floor -> device/family order used by ordinary
+        // epoch acceptance, so revoke/move/suspension and bootstrap linearize:
+        // either this bootstrap commits first, or it observes the changed
+        // authority and rolls back the provisional floor row as well.
+        const [deviceRows] = await conn.execute<DeviceRow[]>(
+          `SELECT d.family_id, d.status
+             FROM devices d
+             JOIN families f ON f.family_id = d.family_id
+            WHERE d.device_id = ?
+              AND d.family_id = ?
+              AND f.status = 'ACTIVE'
+              AND f.deleted_at IS NULL
+            LIMIT 1
+            FOR UPDATE`,
+          [row.device_id, row.family_id],
+        );
+        const device = deviceRows[0];
+        if (!device || !CERTIFICATE_STATES.has(device.status)) {
+          // Throw so a floor row inserted by ensureAndLockFamilyFloors is not
+          // committed for an ineligible/revoked signer.
+          throw new BootstrapDeviceNotEligibleError();
+        }
+
+        // Revalidate the exact proof-signing DSK while the commit transaction
+        // still owns device authority. A different active key cannot replace
+        // the DSK recorded by the approved ceremony.
+        const [activeDskRows] = await conn.execute<DeviceKeyRow[]>(
+          `SELECT key_id
+             FROM device_public_keys
+            WHERE device_id = ?
+              AND key_id = ?
+              AND key_purpose = 'DSK'
+              AND status = 'ACTIVE'
+            LIMIT 1
+            FOR UPDATE`,
+          [row.device_id, row.dsk_key_id],
+        );
+        if (activeDskRows.length === 0) throw new BootstrapDeviceNotEligibleError();
 
         // ---- 5. Exactly one root per family: anchored durable absence check ----
         const [anchorRows] = await conn.execute<AnchorRow[]>(
@@ -420,6 +460,7 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
       // A refused epoch append rolled the ENTIRE commit transaction back: no anchor, no epoch,
       // no consumed challenge -- the request may be retried while the ceremony is valid.
       if (error instanceof EpochAppendRefusedError) return { outcome: 'EPOCH_REJECTED' };
+      if (error instanceof BootstrapDeviceNotEligibleError) return { outcome: 'DEVICE_NOT_ELIGIBLE' };
       // PK(family_id) on the anchor table is the invariant of record: losing the race to a
       // concurrent ceremony surfaces as a duplicate entry, mapped to ALREADY_BOOTSTRAPPED (H3).
       if (isDuplicateEntry(error)) return { outcome: 'ALREADY_BOOTSTRAPPED' };

@@ -96,7 +96,8 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     }
     private func result(_ response: PCAHTTPResponse, request: OrdinaryTrustSetPending, status: Bool) throws -> OrdinaryTrustSetSubmissionResult {
         guard response.statusCode == 200 || response.statusCode == 201 else {
-            if response.statusCode == 401 || response.statusCode == 403 { throw PCAAPIError.unauthorized }
+            if response.statusCode == 401 { throw PCAAPIError.unauthorized }
+            if response.statusCode == 403 { throw PCAAPIError.forbidden }
             if response.statusCode == 409 || response.statusCode == 422 { return .rejected }
             throw PCAAPIError.unavailable
         }

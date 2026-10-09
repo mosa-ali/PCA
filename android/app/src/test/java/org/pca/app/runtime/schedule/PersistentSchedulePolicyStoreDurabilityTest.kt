@@ -3,8 +3,36 @@ package org.pca.app.runtime.schedule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
+import java.time.Instant
 
 class PersistentSchedulePolicyStoreDurabilityTest {
+    private fun policy(revision: Int, policyId: String = "policy-1", timezone: String = "UTC") = SchedulePolicyV1(
+        policyId = policyId,
+        policyRevision = revision,
+        familyId = "family-1",
+        childProfileId = "child-1",
+        timezone = timezone,
+        windows = emptyList(),
+        bonusGrants = emptyList(),
+        parentExceptions = emptyList(),
+        dailyLimits = emptyList(),
+        trustSetEpoch = 1,
+        keyEpoch = 1,
+        issuedAt = Instant.parse("2026-10-05T00:00:00Z"),
+        effectiveFrom = Instant.parse("2026-10-05T00:00:00Z"),
+    )
+
+    private fun policySnapshot(
+        policy: SchedulePolicyV1,
+        syncAt: Instant = Instant.parse("2026-10-05T01:00:00Z"),
+    ) = SchedulePolicySnapshot(
+        candidatePolicy = policy,
+        lastKnownGoodPolicy = policy,
+        lastPolicySyncAtUtc = syncAt,
+        deviceTrustSetEpoch = policy.trustSetEpoch,
+        deviceKeyEpoch = policy.keyEpoch,
+    )
+
     private fun snapshot(epoch: Int) = SchedulePolicySnapshot(
         candidatePolicy = null,
         lastKnownGoodPolicy = null,
@@ -22,6 +50,134 @@ class PersistentSchedulePolicyStoreDurabilityTest {
 
         val restarted = PersistentSchedulePolicyStore(disk.afterProcessDeath())
         assertEquals(SchedulePolicyStoreRead.Present(accepted), restarted.read())
+    }
+
+    @Test
+    fun `higher policy revision is durably accepted and survives restart`() {
+        val disk = DiskBackedPersistentStateStore()
+        val store = PersistentSchedulePolicyStore(disk)
+        store.save(policySnapshot(policy(revision = 4)))
+        val accepted = policySnapshot(
+            policy(revision = 5, timezone = "Asia/Riyadh"),
+            syncAt = Instant.parse("2026-10-05T02:00:00Z"),
+        )
+
+        store.save(accepted)
+
+        assertEquals(SchedulePolicyStoreRead.Present(accepted), store.read())
+        assertEquals(SchedulePolicyStoreRead.Present(accepted), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+    }
+
+    @Test
+    fun `exact same revision replay is idempotent and does not advance durable generation`() {
+        val disk = DiskBackedPersistentStateStore()
+        val store = PersistentSchedulePolicyStore(disk)
+        val accepted = policySnapshot(policy(revision = 4))
+        store.save(accepted)
+        val pointerBeforeReplay = disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"]
+
+        store.save(accepted.copy())
+
+        assertEquals(pointerBeforeReplay, disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"])
+        assertEquals(SchedulePolicyStoreRead.Present(accepted), store.read())
+        assertEquals(SchedulePolicyStoreRead.Present(accepted), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+    }
+
+    @Test
+    fun `literal retry remains idempotent when only the last known good policy is present`() {
+        val disk = DiskBackedPersistentStateStore()
+        val store = PersistentSchedulePolicyStore(disk)
+        val accepted = SchedulePolicySnapshot(
+            candidatePolicy = null,
+            lastKnownGoodPolicy = policy(revision = 4),
+            lastPolicySyncAtUtc = Instant.parse("2026-10-05T01:00:00Z"),
+            deviceTrustSetEpoch = 1,
+            deviceKeyEpoch = 1,
+        )
+        store.save(accepted)
+        val pointerBeforeReplay = disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"]
+
+        store.save(accepted)
+
+        assertEquals(pointerBeforeReplay, disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"])
+        assertEquals(SchedulePolicyStoreRead.Present(accepted), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+    }
+
+    @Test
+    fun `same revision cannot refresh sync time or replace persisted policy bytes or identity`() {
+        val original = policySnapshot(policy(revision = 4))
+        val attempts = listOf(
+            original.copy(lastPolicySyncAtUtc = Instant.parse("2026-10-05T02:00:00Z")),
+            policySnapshot(policy(revision = 4, timezone = "Asia/Riyadh")),
+            policySnapshot(policy(revision = 4, policyId = "policy-2")),
+        )
+
+        attempts.forEach { attempted ->
+            val disk = DiskBackedPersistentStateStore()
+            val store = PersistentSchedulePolicyStore(disk)
+            store.save(original)
+            val pointerBeforeAttempt = disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"]
+
+            assertSaveFails { store.save(attempted) }
+
+            assertEquals(SchedulePolicyStoreRead.Present(original), store.read())
+            assertEquals(SchedulePolicyStoreRead.Present(original), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+            assertEquals(pointerBeforeAttempt, disk.durableSnapshot()["schedule_policy_snapshot_v1.active_generation"])
+        }
+    }
+
+    @Test
+    fun `lower policy revision and device floors are rejected without replacing persisted state`() {
+        val original = policySnapshot(policy(revision = 4))
+        val disk = DiskBackedPersistentStateStore()
+        val store = PersistentSchedulePolicyStore(disk)
+        store.save(original)
+
+        assertSaveFails {
+            store.save(policySnapshot(policy(revision = 3, timezone = "Asia/Riyadh")))
+        }
+        assertSaveFails {
+            store.save(original.copy(deviceTrustSetEpoch = 0))
+        }
+        assertSaveFails {
+            store.save(original.copy(deviceKeyEpoch = 0))
+        }
+
+        assertEquals(SchedulePolicyStoreRead.Present(original), store.read())
+        assertEquals(SchedulePolicyStoreRead.Present(original), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+    }
+
+    @Test
+    fun `stable policy identity cannot be replaced even with a higher revision`() {
+        val original = policySnapshot(policy(revision = 4))
+        val disk = DiskBackedPersistentStateStore()
+        val store = PersistentSchedulePolicyStore(disk)
+        store.save(original)
+
+        assertSaveFails {
+            store.save(policySnapshot(policy(revision = 5, policyId = "policy-2")))
+        }
+
+        assertEquals(SchedulePolicyStoreRead.Present(original), store.read())
+        assertEquals(SchedulePolicyStoreRead.Present(original), PersistentSchedulePolicyStore(disk.afterProcessDeath()).read())
+    }
+
+    @Test
+    fun `corrupt active policy bytes cannot be overwritten by a later save`() {
+        val accepted = policySnapshot(policy(revision = 4))
+        val originalDisk = DiskBackedPersistentStateStore().also { PersistentSchedulePolicyStore(it).save(accepted) }
+        val damagedState = originalDisk.durableSnapshot().toMutableMap().apply {
+            put("schedule_policy_snapshot_v1.slot.0.snapshot", "{}")
+        }
+        val damagedDisk = DiskBackedPersistentStateStore(damagedState)
+        val damagedStore = PersistentSchedulePolicyStore(damagedDisk)
+
+        assertSame(SchedulePolicyStoreRead.Corrupt, damagedStore.read())
+        assertSaveFails { damagedStore.save(policySnapshot(policy(revision = 5))) }
+
+        assertEquals("{}", damagedDisk.durableSnapshot()["schedule_policy_snapshot_v1.slot.0.snapshot"])
+        assertSame(SchedulePolicyStoreRead.Corrupt, damagedStore.read())
+        assertSame(SchedulePolicyStoreRead.Corrupt, PersistentSchedulePolicyStore(damagedDisk.afterProcessDeath()).read())
     }
 
     @Test

@@ -68,22 +68,27 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
     if (!isFamilyEpochNumber(envelope.keyEpoch)) {
       throw new Error('Family audit key epoch is outside the supported family epoch range.');
     }
+    // Capture all caller-owned values before the first await. The expiry
+    // cleanup below yields; retaining the input object would let a caller
+    // change the append-only recipient/content while record() is pending.
+    const captured = cloneEnvelope(envelope);
     await this.purgeExpired(this.now());
-    const existing = this.envelopes.get(envelope.envelopeId);
-    if (existing) return sameEnvelope(existing, envelope) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
-    this.envelopes.set(envelope.envelopeId, envelope);
+    const existing = this.envelopes.get(captured.envelopeId);
+    if (existing) return sameEnvelope(existing, captured) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
+    this.envelopes.set(captured.envelopeId, captured);
     return { outcome: 'RECORDED' };
   }
 
   async get(envelopeId: string): Promise<FamilyAuditEventEnvelope | null> {
-    return this.envelopes.get(envelopeId) ?? null;
+    const envelope = this.envelopes.get(envelopeId);
+    return envelope ? cloneEnvelope(envelope) : null;
   }
 
   async listForFamily(familyId: string, options: FamilyAuditEventListOptions = {}): Promise<FamilyAuditEventEnvelope[]> {
     const ascending = [...this.envelopes.values()]
       .filter((envelope) => envelope.familyId === familyId)
       .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
-    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit);
+    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(cloneEnvelope);
   }
 
   async listForParentDevice(
@@ -94,7 +99,7 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
     const ascending = [...this.envelopes.values()]
       .filter((envelope) => envelope.familyId === familyId && envelope.parentDeviceId === parentDeviceId)
       .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
-    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit);
+    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(cloneEnvelope);
   }
 
   async purgeExpired(now: Date): Promise<number> {
@@ -107,6 +112,13 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
     }
     return purged;
   }
+}
+
+function cloneEnvelope(envelope: FamilyAuditEventEnvelope): FamilyAuditEventEnvelope {
+  return {
+    ...envelope,
+    generatedAtUtc: new Date(envelope.generatedAtUtc.getTime()),
+  };
 }
 
 function sameEnvelope(a: FamilyAuditEventEnvelope, b: FamilyAuditEventEnvelope): boolean {

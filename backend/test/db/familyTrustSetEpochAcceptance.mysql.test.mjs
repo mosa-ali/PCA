@@ -56,7 +56,7 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 
 /** Every case gets its own family id, so cases can never collide with each other or across runs. */
 function uniqueFamilyId() {
-  return `fts-accept-${randomUUID()}`;
+  return randomUUID();
 }
 
 /**
@@ -175,20 +175,47 @@ function newService() {
 }
 
 /**
- * Seeds the family's durable genesis anchor (migration 0011 columns) with
- * the three identity fields the acceptance flow reads: the OWNER device
- * that will sign the genesis candidate. Raw SQL on purpose -- createIfAbsent
- * is the anchor's only production writer, and this fixture only needs the
- * row to exist; the acceptance flow itself only ever READS through
- * MySqlGenesisAnchorSource.
+ * Seeds the family, ACTIVE signer device, and durable genesis anchor
+ * (migration 0011 columns) needed by the acceptance flow. Raw SQL on
+ * purpose: createIfAbsent is the anchor's only production writer, while
+ * this fixture creates the authoritative lifecycle rows the epoch store
+ * now locks and revalidates before ordinary acceptance.
  */
 async function seedAnchor(familyId, device) {
+  const now = stamp();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at, status)
+     VALUES (?, ?, ?, 'ACTIVE')`,
+    [familyId, randomBytes(32), now],
+  );
+  await getPool().query(
+    `INSERT INTO devices (device_id, family_id, platform, status, created_at)
+     VALUES (?, ?, 'ANDROID', 'ACTIVE', ?)`,
+    [device.deviceId, familyId, now],
+  );
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [device.deviceId, device.dskKeyId, device.dskPublicKey, now],
+  );
+
   await getPool().query(
     `INSERT INTO family_authority_genesis_anchors
        (family_id, genesis_device_id, genesis_dsk_key_id, genesis_dsk_public_key, protocol_version, created_at, signature)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [familyId, device.deviceId, device.dskKeyId, device.dskPublicKey, 1, stamp(), `genesis-anchor-sig-${randomUUID()}`],
+    [familyId, device.deviceId, device.dskKeyId, device.dskPublicKey, 1, now, `genesis-anchor-sig-${randomUUID()}`],
   );
+}
+
+/** Adds a distinct active DSK on an existing device to prove signer checks bind the exact key id. */
+async function addOtherActiveDsk(deviceId, label) {
+  const other = makeDevice(label);
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [deviceId, other.dskKeyId, other.dskPublicKey, stamp()],
+  );
+  return other;
 }
 
 async function countEpochRows(familyId, trustSetEpoch = null) {
@@ -445,6 +472,95 @@ test('IDEMPOTENT_RETRY: re-submitting the identical ts=2 candidate is IDEMPOTENT
   assert.equal(await countEpochRows(familyId, 2), 1, 'still exactly one ts=2 row');
   assert.equal(await countEpochRows(familyId), 2, 'no additional row of any kind');
   assert.deepEqual(await snapshotAcceptedState(familyId), before, 'an idempotent retry must not move any durable value');
+});
+
+test('REVOKED_DSK_REPLAY: a revoked exact signer key cannot replay an accepted epoch or advance the head', async () => {
+  const service = newService();
+  const familyId = uniqueFamilyId();
+  const owner = makeDevice('revoked-replay-owner');
+  await seedAnchor(familyId, owner);
+  await addOtherActiveDsk(owner.deviceId, 'other-active-replay-dsk');
+
+  await acceptOk(service, familyId, ownerEpochFields(familyId, 1, 1, owner), owner.dskPrivateKey);
+  const acceptedTs2 = await acceptOk(service, familyId, ownerEpochFields(familyId, 2, 2, owner), owner.dskPrivateKey);
+  const before = await snapshotAcceptedState(familyId);
+
+  await getPool().query(
+    `UPDATE device_public_keys
+        SET status = 'REVOKED', revoked_at = ?
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK' AND status = 'ACTIVE'`,
+    [stamp(), owner.deviceId, owner.dskKeyId],
+  );
+
+  assert.deepEqual(
+    await service.acceptCandidate(inputFor(familyId, acceptedTs2)),
+    { outcome: 'REJECTED', reason: 'STALE_AUTHORITY' },
+    'a revoked signer cannot obtain an idempotent response for its old accepted epoch',
+  );
+  assert.deepEqual(
+    await service.acceptCandidate(
+      inputFor(familyId, signedCandidate(ownerEpochFields(familyId, 3, 3, owner), owner.dskPrivateKey)),
+    ),
+    { outcome: 'REJECTED', reason: 'STALE_AUTHORITY' },
+    'a revoked signer cannot append a new successor either',
+  );
+  assert.deepEqual(await snapshotAcceptedState(familyId), before, 'revoked signer attempts must not alter rows or floors');
+});
+
+test('REVOKE_APPEND_RACE: an append waiting on the exact DSK row observes committed revocation and rolls back', async () => {
+  const service = newService();
+  const familyId = uniqueFamilyId();
+  const owner = makeDevice('revocation-race-owner');
+  await seedAnchor(familyId, owner);
+  await addOtherActiveDsk(owner.deviceId, 'other-active-race-dsk');
+
+  await acceptOk(service, familyId, ownerEpochFields(familyId, 1, 1, owner), owner.dskPrivateKey);
+  await acceptOk(service, familyId, ownerEpochFields(familyId, 2, 2, owner), owner.dskPrivateKey);
+  const before = await snapshotAcceptedState(familyId);
+  const candidate = signedCandidate(ownerEpochFields(familyId, 3, 3, owner), owner.dskPrivateKey);
+
+  const revocation = await getPool().getConnection();
+  let inTransaction = false;
+  try {
+    await revocation.beginTransaction();
+    inTransaction = true;
+    const [update] = await revocation.query(
+      `UPDATE device_public_keys
+          SET status = 'REVOKED', revoked_at = ?
+        WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK' AND status = 'ACTIVE'`,
+      [stamp(), owner.deviceId, owner.dskKeyId],
+    );
+    assert.equal(update.affectedRows, 1, 'the revocation transaction must hold the exact active DSK row');
+
+    let appendSettled = false;
+    const append = service.acceptCandidate(inputFor(familyId, candidate)).then(
+      (result) => {
+        appendSettled = true;
+        return { result };
+      },
+      (error) => {
+        appendSettled = true;
+        return { error };
+      },
+    );
+
+    // The append can lock the family floor and ACTIVE device, but it must wait
+    // at the exact DSK row until this revocation commits. An implementation
+    // that checks only device status would incorrectly finish while the key
+    // update is still uncommitted.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(appendSettled, false, 'append must be serialized behind the in-flight exact-key revocation');
+
+    await revocation.commit();
+    inTransaction = false;
+    const appendResult = await append;
+    assert.equal(appendResult.error, undefined, 'revoked-key outcome should be a handled rejection, not a storage error');
+    assert.deepEqual(appendResult.result, { outcome: 'REJECTED', reason: 'STALE_AUTHORITY' });
+    assert.deepEqual(await snapshotAcceptedState(familyId), before, 'racing revoked-key append must roll back row and floors');
+  } finally {
+    if (inTransaction) await revocation.rollback();
+    revocation.release();
+  }
 });
 
 // ---------------------------------------------------------------------

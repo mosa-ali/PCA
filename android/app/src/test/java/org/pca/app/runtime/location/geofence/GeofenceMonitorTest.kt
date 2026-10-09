@@ -1,6 +1,7 @@
 package org.pca.app.runtime.location.geofence
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -9,8 +10,12 @@ import org.pca.app.platform.LocationSample
 
 class GeofenceMonitorTest {
 
-    private val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
-    private val zoneStateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
+    private val storage = InMemoryPersistentStateStore()
+    private val familyA = GeofenceStorageScope("family-a", "device-a")
+    private var activeScope: GeofenceStorageScope? = familyA
+    private val scopeProvider = { activeScope }
+    private val zoneStore = GeofenceZoneStore(storage, scopeProvider = scopeProvider)
+    private val zoneStateStore = GeofenceZoneStateStore(storage, scopeProvider = scopeProvider)
     private val alertPort = RecordingGeofenceAlertPort()
     private val config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1)
     private lateinit var monitor: GeofenceMonitor
@@ -87,5 +92,42 @@ class GeofenceMonitorTest {
         assertEquals(1, events.size)
         assertEquals("home", events.first().zoneId)
         assertEquals(GeofenceTransitionType.ENTRY, events.first().transitionType)
+    }
+
+    @Test
+    fun `family switch after zone snapshot prevents mixed-scope state and alerts`() {
+        zoneStore.addOrReplace(homeZone)
+        var scopeReads = 0
+        val switchingProvider = {
+            scopeReads += 1
+            if (scopeReads == 1) familyA else GeofenceStorageScope("family-b", "device-b")
+        }
+        val switchingStore = GeofenceZoneStore(storage, scopeProvider = switchingProvider)
+        val switchingStateStore = GeofenceZoneStateStore(storage, scopeProvider = switchingProvider)
+        val switchingMonitor = GeofenceMonitor(switchingStore, switchingStateStore, alertPort, config)
+
+        val events = switchingMonitor.evaluateSample(sampleAtDistance(homeZone, 10.0), 9L)
+
+        assertTrue(events.isEmpty())
+        assertTrue(alertPort.delivered.isEmpty())
+        assertNull(switchingStateStore.load(GeofenceStorageScope("family-a", "device-a"), homeZone.zoneId))
+    }
+
+    @Test
+    fun `corrupt duplicate zone snapshot cannot advance debounce twice or emit an alert`() {
+        val key = familyA.zoneStoreKey("geofence_zones_v2")
+        val duplicate = listOf(
+            "home|Home A|25.0|55.0|100.0|true|ENTRY,EXIT|1",
+            "home|Home B|25.0|55.0|100.0|true|ENTRY,EXIT|2",
+        ).joinToString("\n")
+        storage.putString(key, duplicate)
+        val prior = GeofenceZoneState(zoneId = "home", confirmedMembership = GeofenceMembership.OUTSIDE)
+        zoneStateStore.save(prior)
+
+        val events = monitor.evaluateSample(sampleAtDistance(homeZone, 10.0), nowMonotonicNanos = 0L)
+
+        assertTrue(events.isEmpty())
+        assertTrue(alertPort.delivered.isEmpty())
+        assertEquals(prior, zoneStateStore.load("home"))
     }
 }

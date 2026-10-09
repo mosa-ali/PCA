@@ -6,6 +6,7 @@ import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicaliz
 import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
 import { OrdinaryTrustSetService } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
+import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 
 const FAMILY = 'ordinary-family';
 const OWNER = 'ordinary-owner';
@@ -14,6 +15,10 @@ function fixture() {
   const keys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwk = keys.publicKey.export({ format: 'jwk' });
   const publicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]).toString('base64url');
+  const ownerEntry = { deviceId: OWNER, role: 'OWNER', status: 'ACTIVE', dskKeyId: 'owner-dsk', dskPublicKey: publicKey,
+    dekKeyId: 'owner-dek', dekPublicKey: 'distinct-dek' };
+  const childEntry = { deviceId: 'child-device', role: 'CHILD', status: 'ACTIVE', dskKeyId: 'child-dsk', dskPublicKey: 'child-dsk-public',
+    dekKeyId: 'child-dek', dekPublicKey: 'child-dek-public' };
   const rows = new Map();
   let floor = null;
   let appends = 0;
@@ -36,18 +41,29 @@ function fixture() {
       return { outcome: 'APPENDED' };
     },
   };
+  const deviceStatuses = new Map([[OWNER, 'ACTIVE'], [childEntry.deviceId, 'ACTIVE']]);
+  const keyStatuses = new Map([[OWNER, 'ACTIVE'], [childEntry.deviceId, 'ACTIVE']]);
+  const deviceRepository = {
+    isDeviceSessionActive: async (familyId, deviceId) => familyId === FAMILY && deviceStatuses.get(deviceId) === 'ACTIVE',
+    findKeysByDeviceForFamily: async (familyId, deviceId) => {
+      if (familyId !== FAMILY) return [];
+      const entry = [ownerEntry, childEntry].find((candidate) => candidate.deviceId === deviceId);
+      if (!entry) return [];
+      return [{ deviceId, keyId: entry.dskKeyId, keyPurpose: 'DSK', publicKey: entry.dskPublicKey,
+        status: keyStatuses.get(deviceId) }];
+    },
+  };
+  const verifier = new P256TrustSetSignatureVerifier();
   const acceptance = new TrustSetEpochAcceptanceService({ epochStore: store,
     floorStore: { readFloors: async () => floor },
     keyEpochStore: { readCanonicalKeyEpoch: async () => latest() && { trustSetEpoch: latest().trustSetEpoch, keyEpoch: latest().keyEpoch } },
     genesisAnchorSource: { readGenesisAnchor: async () => ({ genesisDeviceId: OWNER, genesisDskKeyId: 'owner-dsk', genesisDskPublicKey: publicKey }) },
-    verifier: new P256TrustSetSignatureVerifier() });
-  const service = new OrdinaryTrustSetService(acceptance);
+    verifier });
+  const roleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: store, deviceRepository, verifier });
+  const service = new OrdinaryTrustSetService(acceptance, roleResolver);
   function request(epochNumber, overrides = {}) {
     const fields = { familyId: FAMILY, trustSetEpoch: epochNumber, keyEpoch: 1,
-      entries: [{ deviceId: OWNER, role: 'OWNER', status: 'ACTIVE', dskKeyId: 'owner-dsk', dskPublicKey: publicKey,
-        dekKeyId: 'owner-dek', dekPublicKey: 'distinct-dek' },
-      { deviceId: 'child-device', role: 'CHILD', status: 'ACTIVE', dskKeyId: 'child-dsk', dskPublicKey: 'child-dsk-public',
-        dekKeyId: 'child-dek', dekPublicKey: 'child-dek-public' }],
+      entries: [structuredClone(ownerEntry), structuredClone(childEntry)],
       issuedAt: new Date('2026-10-09T00:00:00.000Z'), supersedesEpoch: epochNumber === 1 ? null : epochNumber - 1, ...overrides };
     const bytes = canonicalizeTrustSetEpoch(fields);
     const signature = canonicalizeP256Signature(sign('sha256', Buffer.from(bytes), { key: keys.privateKey, dsaEncoding: 'ieee-p1363' }));
@@ -60,7 +76,9 @@ function fixture() {
       signature: Buffer.from(first.signatureBase64, 'base64').toString('base64url'), receivedAt: new Date() }), { outcome: 'ACCEPTED' });
     return first;
   }
-  return { service, acceptance, request, bootstrap, store, rows, get appends() { return appends; }, setFloor(value) { floor = value; } };
+  return { service, acceptance, request, bootstrap, store, rows, ownerEntry, childEntry, deviceStatuses, keyStatuses,
+    createService: () => new OrdinaryTrustSetService(acceptance, roleResolver),
+    get appends() { return appends; }, setFloor(value) { floor = value; } };
 }
 const rejectsCode = (code) => (error) => error.code === code;
 
@@ -72,7 +90,7 @@ test('ordinary epoch accepts once and exact restart/lost-response retry is immut
   assert.deepEqual(result.acceptedEpoch, result.acceptedHead);
   assert.equal(result.acceptedEpoch.canonicalEpochBase64, request.canonicalEpochBase64);
   assert.equal(result.acceptedEpoch.signatureBase64, request.signatureBase64);
-  const restarted = new OrdinaryTrustSetService(f.acceptance);
+  const restarted = f.createService();
   assert.equal((await restarted.submit(scope, structuredClone(request))).outcome, 'IDEMPOTENT_MATCH');
   assert.equal(f.appends, 2);
   assert.equal((await restarted.status(scope, request)).outcome, 'ACCEPTED');
@@ -197,6 +215,69 @@ test('accepted metadata, byte corruption, and signature corruption fail closed',
     await assert.rejects(f.service.head(scope), /inconsistent durable state/);
     assert.equal(f.appends, 1);
   }
+});
+
+test('accepted-head signer is revalidated against the independent directory DSK on every read and replay path', async () => {
+  const f = fixture(); await f.bootstrap();
+  const row = f.rows.get(`${FAMILY}/1`);
+  const decoded = (await import('../../dist/familytrustset/decode.js'))
+    .decodeCanonicalTrustSetEpochBytes(row.signedEpochBytes);
+  const untrustedSigner = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = untrustedSigner.publicKey.export({ format: 'jwk' });
+  const unregisteredPublicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+    Buffer.from(jwk.y, 'base64url')]).toString('base64url');
+  const changedEpoch = { ...decoded, entries: decoded.entries.map((entry) => entry.deviceId === OWNER
+    ? { ...entry, dskKeyId: 'unregistered-dsk', dskPublicKey: unregisteredPublicKey } : entry) };
+  const changedBytes = canonicalizeTrustSetEpoch(changedEpoch);
+  const forgedSignature = canonicalizeP256Signature(sign('sha256', Buffer.from(changedBytes), {
+    key: untrustedSigner.privateKey, dsaEncoding: 'ieee-p1363',
+  })).toString('base64url');
+  // The accepted-row checker can validate these bytes/signature against the
+  // payload's claimed DSK. Only the independent device key directory reveals
+  // that this key was never registered for the owner.
+  row.signedEpochBytes = Buffer.from(changedBytes, 'utf8');
+  row.signature = forgedSignature;
+  row.signerKeyId = 'unregistered-dsk';
+  assert.equal((await f.acceptance.readAcceptedHead(FAMILY)).signature, forgedSignature);
+
+  for (const operation of [
+    () => f.service.head(scope),
+    () => f.service.epoch(scope, 1),
+    () => f.service.status(scope, f.request(2)),
+    () => f.service.submit(scope, f.request(2)),
+  ]) {
+    await assert.rejects(operation(), rejectsCode('NO_TRUST_SET'));
+  }
+  assert.equal(f.appends, 1, 'corrupt persisted authority cannot create an append');
+});
+
+test('accepted-head role resolution rejects a revoked current DSK even when the signed row still says ACTIVE', async () => {
+  const f = fixture(); await f.bootstrap();
+  f.keyStatuses.set(OWNER, 'REVOKED');
+  await assert.rejects(f.service.head(scope), rejectsCode('NO_TRUST_SET'));
+
+  f.keyStatuses.set(OWNER, 'ACTIVE');
+  f.keyStatuses.set('child-device', 'REVOKED');
+  await assert.rejects(f.service.head({ familyId: FAMILY, deviceId: 'child-device' }), rejectsCode('DEVICE_NOT_ACTIVE'));
+  assert.equal(f.appends, 1);
+});
+
+test('accepted-head resolver dependency is mandatory and mixed-head projections fail closed', async () => {
+  const f = fixture(); await f.bootstrap();
+  assert.throws(() => new OrdinaryTrustSetService(f.acceptance), /requires a trusted accepted-head role resolver/);
+  const movedHeadResolver = { resolveActor: async (familyId, deviceId) => ({
+    familyId, deviceId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1,
+  }) };
+  const mixed = new OrdinaryTrustSetService(f.acceptance, movedHeadResolver);
+  await assert.rejects(mixed.head(scope), rejectsCode('CONFLICT'));
+});
+
+test('resolver infrastructure failure is propagated and never treated as accepted authority', async () => {
+  const f = fixture(); await f.bootstrap();
+  const unavailable = new OrdinaryTrustSetService(f.acceptance, {
+    resolveActor: async () => { throw new Error('device directory unavailable'); },
+  });
+  await assert.rejects(unavailable.head(scope), /device directory unavailable/);
 });
 
 test('malformed, noncanonical base64, invalid UTF8, high-S and huge bodies rejected before storage', async () => {

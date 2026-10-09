@@ -6,13 +6,16 @@ import { generateKeyPairSync, randomUUID, randomBytes, sign } from 'node:crypto'
 import { getPool, closePool } from '../../dist/db/pool.js';
 import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { decodeCanonicalTrustSetEpochBytes } from '../../dist/familytrustset/decode.js';
 import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
 import { MySqlKeyEpochStore } from '../../dist/familytrustset/MySqlKeyEpochStore.js';
 import { MySqlEpochFloorStore } from '../../dist/familytrustset/MySqlEpochFloorStore.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { MySqlGenesisAnchorSource } from '../../dist/familytrustset/GenesisAnchorSource.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
 import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
 import { OrdinaryTrustSetService } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
+import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 
 function createDevice(role) {
   const keys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -25,13 +28,17 @@ function createDevice(role) {
 }
 function compose() {
   const store = new MySqlTrustSetEpochStore();
+  const verifier = new P256TrustSetSignatureVerifier();
+  const roleResolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: store, deviceRepository: new MySqlDeviceRepository(), verifier,
+  });
   const acceptance = new TrustSetEpochAcceptanceService({ epochStore: store,
     keyEpochStore: new MySqlKeyEpochStore(), floorStore: new MySqlEpochFloorStore(),
-    genesisAnchorSource: new MySqlGenesisAnchorSource(), verifier: new P256TrustSetSignatureVerifier() });
-  return { store, acceptance, service: new OrdinaryTrustSetService(acceptance) };
+    genesisAnchorSource: new MySqlGenesisAnchorSource(), verifier });
+  return { store, acceptance, roleResolver, service: new OrdinaryTrustSetService(acceptance, roleResolver) };
 }
 async function fixture() {
-  const familyId = `ordinary-db-${randomUUID()}`;
+  const familyId = randomUUID();
   const owner = createDevice('OWNER'), child = createDevice('CHILD');
   const scope = { familyId, deviceId: owner.entry.deviceId };
   const receivedAt = new Date('2026-10-09T00:00:00.000Z');
@@ -43,6 +50,23 @@ async function fixture() {
     const signature = canonicalizeP256Signature(sign('sha256', Buffer.from(canonical), { key: owner.privateKey, dsaEncoding: 'ieee-p1363' }));
     return { canonicalEpochBase64: Buffer.from(canonical).toString('base64'), signatureBase64: signature.toString('base64') };
   };
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at, status)
+     VALUES (?, ?, ?, 'ACTIVE')`,
+    [familyId, randomBytes(32), receivedAt],
+  );
+  for (const device of [owner, child]) {
+    await getPool().query(
+      `INSERT INTO devices (device_id, family_id, platform, status, created_at)
+       VALUES (?, ?, 'ANDROID', 'ACTIVE', ?)`,
+      [device.entry.deviceId, familyId, receivedAt],
+    );
+    await getPool().query(
+      `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+       VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+      [device.entry.deviceId, device.entry.dskKeyId, device.entry.dskPublicKey, receivedAt],
+    );
+  }
   await getPool().query(`INSERT INTO family_authority_genesis_anchors
     (family_id, genesis_device_id, genesis_dsk_key_id, genesis_dsk_public_key, protocol_version, created_at, signature)
     VALUES (?, ?, ?, ?, ?, ?, ?)`, [familyId, owner.entry.deviceId, owner.entry.dskKeyId,
@@ -153,6 +177,60 @@ test('MySQL competing same-number signed submissions have one winner, exact retr
   assert.ok(replays.every(result => result.outcome === 'IDEMPOTENT_MATCH'));
   assert.deepEqual(await new MySqlEpochFloorStore().readFloors(f.familyId), {
     minimumAcceptedTrustSetEpoch: 2, minimumAcceptedKeyEpoch: 1 });
+});
+
+test('MySQL read/status/replay facade rejects a structurally valid head signed by a key outside the active DSK directory', async () => {
+  const f = await fixture();
+  const head = await f.store.readLatestEpoch(f.familyId);
+  const attacker = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = attacker.publicKey.export({ format: 'jwk' });
+  const unregisteredPublicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+    Buffer.from(jwk.y, 'base64url')]).toString('base64url');
+  const decoded = decodeCanonicalTrustSetEpochBytes(head.signedEpochBytes);
+  const changedEpoch = { ...decoded, entries: decoded.entries.map((entry) => entry.deviceId === f.owner.entry.deviceId
+    ? { ...entry, dskKeyId: 'unregistered-dsk', dskPublicKey: unregisteredPublicKey } : entry) };
+  const changedBytes = Buffer.from(canonicalizeTrustSetEpoch(changedEpoch), 'utf8');
+  const forgedSignature = canonicalizeP256Signature(sign('sha256', changedBytes, {
+    key: attacker.privateKey, dsaEncoding: 'ieee-p1363',
+  })).toString('base64url');
+  await getPool().query(
+    `UPDATE family_trust_set_epochs SET signed_epoch_bytes = ?, signer_key_id = ?, signature = ?
+     WHERE family_id = ? AND trust_set_epoch = ?`,
+    [changedBytes, 'unregistered-dsk', forgedSignature, f.familyId, head.trustSetEpoch],
+  );
+  const before = await snapshot(f.familyId);
+  const pending = f.request(2);
+  for (const operation of [
+    () => f.service.head(f.scope),
+    () => f.service.epoch(f.scope, 1),
+    () => f.service.status(f.scope, pending),
+    () => f.service.submit(f.scope, pending),
+  ]) {
+    await assert.rejects(operation(), error => error.code === 'NO_TRUST_SET');
+  }
+  assert.deepEqual(await snapshot(f.familyId), before, 'denied reads/replays must not alter history or floors');
+});
+
+test('MySQL read facade denies current owner/member when their independent DSK directory row is revoked', async () => {
+  const f = await fixture();
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = ? WHERE device_id = ? AND key_id = ?`,
+    [new Date(), f.owner.entry.deviceId, f.owner.entry.dskKeyId],
+  );
+  await assert.rejects(f.service.head(f.scope), error => error.code === 'NO_TRUST_SET');
+
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'ACTIVE', revoked_at = NULL WHERE device_id = ? AND key_id = ?`,
+    [f.owner.entry.deviceId, f.owner.entry.dskKeyId],
+  );
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = ? WHERE device_id = ? AND key_id = ?`,
+    [new Date(), f.child.entry.deviceId, f.child.entry.dskKeyId],
+  );
+  await assert.rejects(
+    f.service.head({ familyId: f.familyId, deviceId: f.child.entry.deviceId }),
+    error => error.code === 'DEVICE_NOT_ACTIVE',
+  );
 });
 
 test.after(async () => { await closePool(); });

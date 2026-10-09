@@ -14,12 +14,13 @@ class VerifiedInboundReplayReclaimerTest {
         val cache = mutableMapOf<String, String>()
         val disk = mutableMapOf<String, String>()
         var ignoredKey: String? = null
+        var flushCount = 0
         override fun getString(key: String) = cache[key]
         override fun putString(key: String, value: String) { if (ignoredKey?.let { key.contains(it) } != true) cache[key] = value }
         override fun remove(key: String) { cache.remove(key) }
         override fun contains(key: String) = cache.containsKey(key)
         override fun clear() { cache.clear() }
-        override fun flush() { disk.clear(); disk.putAll(cache) }
+        override fun flush() { flushCount++; disk.clear(); disk.putAll(cache) }
         fun restart() = Backing().also { it.cache.putAll(disk); it.disk.putAll(disk) }
     }
     private val scope = RuntimeInboxScope("family-1", "device-1")
@@ -40,6 +41,14 @@ class VerifiedInboundReplayReclaimerTest {
         if (terminal) journal.complete(intent, InboundApplicationOutcome.APPLIED, 2000)
         if (acknowledged) inbox.markAcknowledged(scope, id, wire)
         return intent
+    }
+
+    private fun acknowledgedAliases(store: Backing, count: Int): List<CiphertextInboxRecord> {
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val wires = (0 until count).map { index -> wire("alias-$index", 1) }
+        inbox.capture(scope, wires)
+        wires.forEachIndexed { index, value -> inbox.markAcknowledged(scope, "alias-$index", value) }
+        return inbox.pendingCrypto(scope)
     }
 
     @Test fun `more than 256 verified applications reclaim bounded journals and deny replay aliases`() = runBlocking {
@@ -106,6 +115,92 @@ class VerifiedInboundReplayReclaimerTest {
         assertEquals(1, reclaimer.reclaim(scope) {})
         assertTrue(inbox.pendingCrypto(scope).isEmpty())
         assertTrue(journal.records().isEmpty())
+    }
+
+    @Test fun `batch retirement writes one filtered snapshot and preserves unrelated pending ACK`() {
+        val store = Backing()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val aliases = acknowledgedAliases(store, 8)
+        inbox.capture(scope, listOf(wire("unrelated-pending-ack", 9)))
+        val flushesBefore = store.flushCount
+        var checked = 0
+
+        assertEquals(8, inbox.removeRetiredAcknowledgedBatch(scope, aliases) { checked++ })
+
+        assertEquals(8, checked)
+        // One confirmation barrier and exactly one filtered-snapshot commit, independent of batch size.
+        assertEquals(2, store.flushCount - flushesBefore)
+        assertEquals(listOf("unrelated-pending-ack"), inbox.pendingAcknowledgements(scope).map { it.messageId })
+        val restarted = PersistentCiphertextInbox(store.restart(), "device-1")
+        assertEquals(listOf("unrelated-pending-ack"), restarted.pendingCrypto(scope).map { it.messageId })
+        assertTrue(restarted.pendingCrypto(scope).single().acknowledgementPending)
+    }
+
+    @Test fun `batch retirement rejects scope mismatch without changing persisted aliases`() {
+        val store = Backing()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val aliases = acknowledgedAliases(store, 2)
+        val inboxKey = store.disk.keys.single { it.startsWith("runtime.ciphertext-inbox.v1.") }
+        val before = store.disk[inboxKey]
+
+        try {
+            inbox.removeRetiredAcknowledgedBatch(RuntimeInboxScope("other-family", "device-1"), aliases) {}
+            fail("A batch from another family must not remove ciphertext")
+        } catch (_: CiphertextInboxUnavailable) { }
+
+        assertEquals(before, store.disk[inboxKey])
+        assertEquals(2, inbox.pendingCrypto(scope).size)
+        assertEquals(2, PersistentCiphertextInbox(store.restart(), "device-1").pendingCrypto(scope).size)
+    }
+
+    @Test fun `batch retirement coverage loss leaves every alias intact`() {
+        val store = Backing()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val aliases = acknowledgedAliases(store, 3)
+        val inboxKey = store.disk.keys.single { it.startsWith("runtime.ciphertext-inbox.v1.") }
+        val before = store.disk[inboxKey]
+        var checked = 0
+
+        try {
+            inbox.removeRetiredAcknowledgedBatch(scope, aliases) {
+                checked++
+                if (checked == 2) throw InboundReplayDenialUnavailable()
+            }
+            fail("Lost permanent coverage must stop the whole batch before persistence")
+        } catch (_: InboundReplayDenialUnavailable) { }
+
+        assertEquals(2, checked)
+        assertEquals(before, store.disk[inboxKey])
+        assertEquals(3, inbox.pendingCrypto(scope).size)
+        assertEquals(3, PersistentCiphertextInbox(store.restart(), "device-1").pendingCrypto(scope).size)
+    }
+
+    @Test fun `failed batch durability retains aliases and restart recovery can retire them`() = runBlocking {
+        val store = Backing()
+        val aliases = acknowledgedAliases(store, 3)
+        assertEquals(3, aliases.size)
+        val denial = denial(store)
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val inboxKey = store.disk.keys.single { it.startsWith("runtime.ciphertext-inbox.v1.") }
+        val before = store.disk[inboxKey]
+        store.ignoredKey = "runtime.ciphertext-inbox.v1."
+
+        try {
+            VerifiedInboundReplayReclaimer(journal, inbox, denial, verifier(1)).reclaim(scope) {}
+            fail("Filtered snapshot readback failure must keep the batch unavailable")
+        } catch (_: CiphertextInboxUnavailable) { }
+
+        assertEquals(before, store.disk[inboxKey])
+        assertEquals(3, PersistentCiphertextInbox(store.restart(), "device-1").pendingCrypto(scope).size)
+
+        val restored = store.restart()
+        val restoredInbox = PersistentCiphertextInbox(restored, "device-1")
+        val restoredJournal = PersistentInboundApplicationJournal(restored, "device-1")
+        val restoredDenial = PersistentInboundReplayDenialLedger(restored, "device-1")
+        assertEquals(3, VerifiedInboundReplayReclaimer(restoredJournal, restoredInbox, restoredDenial, verifier(1)).reclaim(scope) {})
+        assertTrue(restoredInbox.pendingCrypto(scope).isEmpty())
+        assertTrue(PersistentCiphertextInbox(restored.restart(), "device-1").pendingCrypto(scope).isEmpty())
     }
 
     @Test fun `cleanup preserves prepared operations and pending ACKs`() = runBlocking {

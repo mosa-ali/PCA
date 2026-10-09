@@ -4,6 +4,7 @@ public enum PCAAPIError: Error, Equatable {
     case invalidConfiguration
     case invalidRequest
     case unauthorized
+    case forbidden
     case unavailable
     case rejected
     case attemptAbandoned
@@ -205,6 +206,7 @@ public struct PCAEnrollmentBootstrapClient {
             }
         case 400: throw PCAAPIError.invalidRequest
         case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
         case 404:
             throw Self.isInvitationUnavailableEnvelope(response.data)
                 ? PCAAPIError.unavailable
@@ -245,6 +247,7 @@ public struct PCAEnrollmentBootstrapClient {
         case 200...299: break
         case 400: throw PCAAPIError.invalidRequest
         case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
         case 404:
             throw Self.isInvitationUnavailableEnvelope(response.data)
                 ? PCAAPIError.unavailable
@@ -374,6 +377,7 @@ public struct PCADeviceSessionClient {
         switch response.statusCode {
         case 200...299: break
         case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
         case 400: throw PCAAPIError.invalidRequest
         case 404: throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected

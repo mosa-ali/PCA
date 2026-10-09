@@ -63,6 +63,14 @@ function isEpochBehind(policy, deviceTrustSetEpoch, deviceKeyEpoch) {
   return policy.trustSetEpoch < deviceTrustSetEpoch || policy.keyEpoch < deviceKeyEpoch;
 }
 
+function isValidEpoch(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 2_147_483_647;
+}
+
+function hasValidEpochs(policy) {
+  return isValidEpoch(policy?.trustSetEpoch) && isValidEpoch(policy?.keyEpoch);
+}
+
 /**
  * @param {{
  *   candidatePolicy: object|null,
@@ -79,23 +87,39 @@ function isEpochBehind(policy, deviceTrustSetEpoch, deviceKeyEpoch) {
 export function evaluatePolicyAcceptance(input) {
   const { candidatePolicy, lastKnownGoodPolicy, nowUtc, deviceTrustSetEpoch, deviceKeyEpoch, connectivity, lastPolicySyncAtUtc, remoteStalenessThresholdMillis } = input;
 
-  if (!candidatePolicy) {
-    return { state: ScheduleRuntimeState.NO_ACCEPTED_POLICY, effectivePolicy: null };
+  if (!isValidEpoch(deviceTrustSetEpoch) || !isValidEpoch(deviceKeyEpoch)) {
+    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: null };
   }
 
-  if (!isStructurallyValidPolicy(candidatePolicy)) {
-    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: lastKnownGoodPolicy ?? null };
+  const safeFallback = lastKnownGoodPolicy && hasValidEpochs(lastKnownGoodPolicy) &&
+    isStructurallyValidPolicy(lastKnownGoodPolicy) && !isExpired(lastKnownGoodPolicy, nowUtc) &&
+    !isEpochBehind(lastKnownGoodPolicy, deviceTrustSetEpoch, deviceKeyEpoch)
+    ? lastKnownGoodPolicy
+    : null;
+
+  if (!candidatePolicy) {
+    if (!lastKnownGoodPolicy) return { state: ScheduleRuntimeState.NO_ACCEPTED_POLICY, effectivePolicy: null };
+    if (!hasValidEpochs(lastKnownGoodPolicy) || !isStructurallyValidPolicy(lastKnownGoodPolicy) ||
+      isExpired(lastKnownGoodPolicy, nowUtc)) {
+      return { state: ScheduleRuntimeState.INVALID, effectivePolicy: null };
+    }
+    if (isEpochBehind(lastKnownGoodPolicy, deviceTrustSetEpoch, deviceKeyEpoch)) {
+      return { state: ScheduleRuntimeState.EPOCH_STALE, effectivePolicy: null };
+    }
+    if (!safeFallback) return { state: ScheduleRuntimeState.INVALID, effectivePolicy: null };
+    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: safeFallback };
+  }
+
+  if (!hasValidEpochs(candidatePolicy) || !isStructurallyValidPolicy(candidatePolicy)) {
+    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: safeFallback };
   }
 
   if (isExpired(candidatePolicy, nowUtc)) {
-    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: lastKnownGoodPolicy ?? null };
+    return { state: ScheduleRuntimeState.INVALID, effectivePolicy: safeFallback };
   }
 
   if (isEpochBehind(candidatePolicy, deviceTrustSetEpoch, deviceKeyEpoch)) {
-    const currentFallback = lastKnownGoodPolicy &&
-      !isEpochBehind(lastKnownGoodPolicy, deviceTrustSetEpoch, deviceKeyEpoch)
-      ? lastKnownGoodPolicy
-      : null;
+    const currentFallback = safeFallback;
     return { state: ScheduleRuntimeState.EPOCH_STALE, effectivePolicy: currentFallback ?? candidatePolicy };
   }
 

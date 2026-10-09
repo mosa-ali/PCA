@@ -98,6 +98,7 @@ test('an active Parent browser receives only its own device-scoped opaque protec
       headers: ownerHeaders,
     });
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'protection_alerts_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response });
     const body = response.json();
     assert.equal(body.alerts.length, 1);

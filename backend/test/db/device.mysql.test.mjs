@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService, DeviceDirectoryError } from '../../dist/device/DeviceDirectoryService.js';
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
@@ -26,6 +27,49 @@ test('MySQL: device + initial key creation persists atomically', async () => {
   assert.equal(active.length, 1);
   assert.equal(active[0].keyId, registeredKey.keyId);
   assert.equal(active[0].keyPurpose, 'DSK');
+});
+
+test('MySQL: mismatched initial key device binding fails before either row is inserted', async () => {
+  const targetFamilyId = family();
+  const target = await service.registerDevice({
+    familyId: targetFamilyId,
+    platform: 'ANDROID',
+    keyPurpose: 'DSK',
+    publicKey: key(),
+  });
+  const targetKeysBefore = await repository.findKeysByDeviceForFamily(targetFamilyId, target.device.deviceId);
+  const newFamilyId = family();
+  const newDeviceId = randomUUID();
+  const mismatchedKey = {
+    deviceId: target.device.deviceId,
+    keyId: randomUUID(),
+    keyPurpose: 'DEK',
+    publicKey: key(),
+    status: 'ACTIVE',
+    createdAt: new Date(),
+    revokedAt: null,
+  };
+
+  await assert.rejects(
+    () => repository.createDeviceWithKey(
+      {
+        deviceId: newDeviceId,
+        familyId: newFamilyId,
+        platform: 'ANDROID',
+        status: 'PAIRING_PENDING',
+        createdAt: new Date(),
+        revokedAt: null,
+        pairedAt: null,
+        pairedByAccountId: null,
+      },
+      mismatchedKey,
+    ),
+    { name: 'TypeError', message: 'The initial device key must belong to the created device.' },
+  );
+
+  assert.equal(await repository.findDeviceForFamily(newFamilyId, newDeviceId), null);
+  const targetKeysAfter = await repository.findKeysByDeviceForFamily(targetFamilyId, target.device.deviceId);
+  assert.deepEqual(targetKeysAfter, targetKeysBefore, 'the cross-family target device and key rows must be unchanged');
 });
 
 test('MySQL: public-key uniqueness is DB-enforced across devices', async () => {
@@ -204,6 +248,23 @@ test('MySQL CONCURRENCY: many genuinely simultaneous device-revocation calls con
 
   const [rows] = await getPool().query(`SELECT DISTINCT revoked_at FROM device_public_keys WHERE device_id = ?`, [device.deviceId]);
   assert.equal(rows.length, 1, 'the cascaded keys must also agree on exactly one revocation instant under real concurrency');
+});
+
+test('MySQL CONCURRENCY: concurrent and repeated device revocation emits one transition audit', async () => {
+  const familyId = family();
+  const auditRepository = new InMemoryFamilyAuditRepository();
+  const auditService = new FamilyAuditService(auditRepository);
+  const auditedService = new DeviceDirectoryService(repository, () => new Date(), auditService);
+  const { device } = await auditedService.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 20 }, () => auditedService.revokeDevice(familyId, device.deviceId)),
+  );
+  assert.equal(attempts.every((attempt) => attempt.status === 'fulfilled'), true);
+  await auditedService.revokeDevice(familyId, device.deviceId);
+
+  const events = await auditRepository.listForFamily(familyId);
+  assert.equal(events.filter((event) => event.freeTextNote === 'DEVICE_REVOKED').length, 1);
 });
 
 test('MySQL CONCURRENCY: many genuinely simultaneous single-key revocation calls converge on one winning revoked_at', async () => {

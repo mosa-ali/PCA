@@ -3,7 +3,7 @@
   "description": "Shared TS/Kotlin conformance vectors for the schedule-runtime policy-acceptance gate (SchedulePolicyValidator / ScheduleRuntimeState). This layer sits IN FRONT OF the evaluator: it decides which locally-persisted SchedulePolicyV1 record the evaluator should be fed for a given evaluation, distinguishing CURRENT / STALE_REMOTE / INVALID / EPOCH_STALE / NO_ACCEPTED_POLICY (mission section 11). Unlike schedule-conformance-v1.json this has no pre-existing backend/src/schedule reference implementation -- it is new logic invented for this mission, defined once here and mirrored by a same-semantics reference implementation in backend/test/runtime-schedule-conformance (test-only, NOT backend/src) and the production Kotlin implementation in android/.../runtime/schedule.",
   "notes": [
     "effectivePolicy is the policyId+policyRevision the evaluator should actually be fed for this tick; it is expressed here as one of null | \"candidate\" | \"lastKnownGood\" (never a full inline policy) to keep vectors compact -- conformance tests resolve those tags against the vector's own candidatePolicy / lastKnownGoodPolicy fields.",
-    "Fail-safe rule under test throughout: INVALID and EPOCH_STALE never resolve to an *unrestricted* outcome merely by returning null when a previously-accepted-valid policy is available as a fallback -- they only resolve to null when nothing has ever been validly accepted, which is behaviorally identical to NO_ACCEPTED_POLICY at the evaluator (empty windows => ALLOWED), never to a smaller/different restriction set.",
+    "Fail-safe rule under test throughout: INVALID and EPOCH_STALE never resolve to an *unrestricted* outcome merely by returning null when an eligible, current-floor last-known-good policy is available. A fallback behind a known device trust/key floor is not eligible; EPOCH_STALE with no effective policy is refused by the production enforcement port as UNAVAILABLE rather than applied as an empty policy.",
     "STALE_REMOTE never changes effectivePolicy from the candidate -- it is a labeling-only state for honest parent-facing sync-freshness UI; enforcement is unaffected by connectivity per PCA-4 offline-first."
   ],
   "remoteStalenessThresholdMillis": 259200000,
@@ -21,6 +21,76 @@
         "lastPolicySyncAtUtc": null
       },
       "expected": { "state": "NO_ACCEPTED_POLICY", "effectivePolicy": null }
+    },
+    {
+      "id": "missing-candidate-retains-last-known-good",
+      "description": "A missing current candidate does not erase a previously accepted policy; the runtime reports INVALID and continues enforcing the last-known-good policy.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": "lastKnownGood" }
+    },
+    {
+      "id": "missing-candidate-rejects-trust-stale-last-known-good",
+      "description": "A missing candidate cannot fall back to a last-known-good policy behind the device trust-set floor; the production enforcement port reports UNAVAILABLE.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "EPOCH_STALE", "effectivePolicy": null }
+    },
+    {
+      "id": "missing-candidate-rejects-key-stale-last-known-good",
+      "description": "A missing candidate cannot fall back to a last-known-good policy behind the device key floor; the production enforcement port reports UNAVAILABLE.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 2, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "EPOCH_STALE", "effectivePolicy": null }
+    },
+    {
+      "id": "missing-candidate-rejects-expired-last-known-good",
+      "description": "A missing candidate cannot restore an already-expired last-known-good policy.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": "2026-01-06T00:00:00.000Z", "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
+    },
+    {
+      "id": "missing-candidate-rejects-malformed-last-known-good",
+      "description": "A missing candidate cannot authorize an LKG whose persisted schedule is structurally invalid.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [ { "id": "w1", "kind": "BEDTIME", "daysOfWeek": [], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 1, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" } ] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
     },
     {
       "id": "current-online-fresh",
@@ -133,6 +203,48 @@
         "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
       },
       "expected": { "state": "INVALID", "effectivePolicy": "lastKnownGood" }
+    },
+    {
+      "id": "invalid-malformed-policy-rejects-trust-stale-last-known-good",
+      "description": "A malformed candidate is INVALID and cannot fall back to a last-known-good policy behind the device trust-set floor.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 2, "keyEpoch": 2, "expiresAt": null, "windows": [ { "id": "w1", "kind": "BEDTIME", "daysOfWeek": [], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 1, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" } ] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
+    },
+    {
+      "id": "invalid-expired-policy-rejects-key-stale-last-known-good",
+      "description": "An expired candidate is INVALID and cannot fall back to a last-known-good policy behind the device key floor.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 2, "keyEpoch": 2, "expiresAt": "2026-01-06T00:00:00.000Z", "windows": [] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 2, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
+    },
+    {
+      "id": "invalid-malformed-policy-rejects-expired-last-known-good",
+      "description": "A malformed candidate is INVALID and cannot fall back to an expired last-known-good policy.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 2, "keyEpoch": 2, "expiresAt": null, "windows": [ { "id": "w1", "kind": "BEDTIME", "daysOfWeek": [], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 1, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" } ] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 2, "keyEpoch": 2, "expiresAt": "2026-01-06T00:00:00.000Z", "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
     },
     {
       "id": "current-not-yet-expired-is-still-current",

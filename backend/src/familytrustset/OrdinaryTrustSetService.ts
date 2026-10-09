@@ -5,6 +5,7 @@ import { isPlausibleOpaqueId } from './policy.js';
 import type { TrustSetEpochAcceptanceService, TrustSetEpochAcceptanceRejectionReason } from './TrustSetEpochAcceptance.js';
 import type { TrustSetEpochRecord } from './TrustSetEpochStore.js';
 import type { FamilyTrustSetEpoch } from './types.js';
+import type { TrustSetRoleResolver } from '../familyrbac/TrustSetRoleResolver.js';
 
 /** Scope must come from verified device-session authentication, never request body or Parent credentials. */
 export interface OrdinaryTrustSetScope { familyId: string; deviceId: string }
@@ -84,7 +85,14 @@ function dto(record: TrustSetEpochRecord): AcceptedTrustSetEpochDto {
  * Production activation still requires independent cryptographic contract review.
  */
 export class OrdinaryTrustSetService {
-  constructor(private readonly acceptanceService: TrustSetEpochAcceptanceService) {}
+  constructor(
+    private readonly acceptanceService: TrustSetEpochAcceptanceService,
+    private readonly trustSetRoleResolver: TrustSetRoleResolver,
+  ) {
+    if (!trustSetRoleResolver || typeof trustSetRoleResolver.resolveActor !== 'function') {
+      throw new TypeError('OrdinaryTrustSetService requires a trusted accepted-head role resolver.');
+    }
+  }
 
   private async authorizedHead(scope: OrdinaryTrustSetScope, ownerOnly: boolean): Promise<TrustSetEpochRecord> {
     if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId)) {
@@ -95,7 +103,29 @@ export class OrdinaryTrustSetService {
     const epoch = decodeCanonicalTrustSetEpochBytes(head.signedEpochBytes);
     const member = epoch.entries.find((entry) => entry.deviceId === scope.deviceId);
     if (!member || member.status !== 'ACTIVE') throw new OrdinaryTrustSetError('DEVICE_NOT_ACTIVE');
-    if (ownerOnly && member.role !== 'OWNER') throw new OrdinaryTrustSetError('OWNER_REQUIRED');
+
+    // Never derive route authority solely from the persisted epoch payload.
+    // The production resolver revalidates canonical bytes, row metadata, the
+    // accepted-head signature against the device-key directory, and current
+    // ACTIVE DSK lifecycle. Requiring it here keeps all read/replay paths
+    // fail-closed when production wiring is incomplete.
+    const resolved = await this.trustSetRoleResolver.resolveActor(scope.familyId, scope.deviceId);
+    if (typeof resolved === 'string') {
+      if (resolved === 'FAMILY_MISMATCH') throw new OrdinaryTrustSetError('FAMILY_MISMATCH');
+      if (resolved === 'DEVICE_NOT_IN_TRUST_SET' || resolved === 'DEVICE_NOT_ACTIVE') {
+        throw new OrdinaryTrustSetError('DEVICE_NOT_ACTIVE');
+      }
+      throw new OrdinaryTrustSetError('NO_TRUST_SET');
+    }
+    if (resolved.trustSetEpoch !== head.trustSetEpoch || resolved.keyEpoch !== head.keyEpoch) {
+      // A concurrent accepted append moved the resolver snapshot after the
+      // row read above. Do not return or authorize a mixed-head projection.
+      throw new OrdinaryTrustSetError('CONFLICT');
+    }
+    if (resolved.deviceId !== scope.deviceId || resolved.role !== member.role) {
+      throw new OrdinaryTrustSetError('NO_TRUST_SET');
+    }
+    if (ownerOnly && resolved.role !== 'OWNER') throw new OrdinaryTrustSetError('OWNER_REQUIRED');
     return head;
   }
 

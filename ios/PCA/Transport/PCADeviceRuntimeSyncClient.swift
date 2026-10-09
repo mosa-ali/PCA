@@ -298,6 +298,7 @@ public final class PCADeviceRuntimeSyncClient {
         switch response.statusCode {
         case 200...299: return
         case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
         case 400: throw PCAAPIError.invalidRequest
         case 404: throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected
@@ -315,6 +316,7 @@ public final class PCADeviceRuntimeSyncClient {
         switch response.statusCode {
         case 200...299: break
         case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
         case 400:
             if request.url?.path == baseURL.appendingPathComponent("v1/runtime-sync/inbound").path,
                request.url?.query != nil,

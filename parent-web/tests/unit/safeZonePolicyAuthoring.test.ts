@@ -97,14 +97,31 @@ describe('safe-zone policy authoring boundary', () => {
     );
   });
 
-  it('rejects unsafe partial updates, including a short nonce', () => {
+  it('requires ciphertext and nonce to be patched together, with key epoch bound to the pair', () => {
     expect(() => validateOpaqueSafeZonePatch({ label: 'Home' })).toThrow(
+      SafeZonePolicyAuthoringError,
+    );
+    expect(() => validateOpaqueSafeZonePatch({ ciphertextB64: 'AQID' })).toThrow(
+      SafeZonePolicyAuthoringError,
+    );
+    expect(() => validateOpaqueSafeZonePatch({ nonceB64: 'AAECAwQFBgcICQoL' })).toThrow(
+      SafeZonePolicyAuthoringError,
+    );
+    expect(() => validateOpaqueSafeZonePatch({ keyEpoch: 4 })).toThrow(
       SafeZonePolicyAuthoringError,
     );
     expect(() => validateOpaqueSafeZonePatch({ nonceB64: 'AQID' })).toThrow(
       SafeZonePolicyAuthoringError,
     );
-    expect(() => validateOpaqueSafeZonePatch({ ciphertextB64: 'AQID' })).not.toThrow();
+    expect(() => validateOpaqueSafeZonePatch({
+      ciphertextB64: 'AQID',
+      nonceB64: 'AAECAwQFBgcICQoL',
+    })).not.toThrow();
+    expect(() => validateOpaqueSafeZonePatch({
+      ciphertextB64: 'AQID',
+      nonceB64: 'AAECAwQFBgcICQoL',
+      keyEpoch: 4,
+    })).not.toThrow();
   });
 
   it('publishes only the locally authored opaque envelope to transport', async () => {

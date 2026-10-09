@@ -4,8 +4,8 @@ import org.pca.app.foundation.PersistentStateStore
 
 /**
  * Durable local storage for each zone's [GeofenceZoneState] (confirmed membership + in-progress
- * debounce candidate), keyed per zone so an unrelated zone's state is never disturbed by writing
- * another's. Persisting this (rather than keeping it only in memory) matters because
+ * debounce candidate), keyed by family, device, and zone so another identity cannot inherit this
+ * device's state. Persisting this (rather than keeping it only in memory) matters because
  * [GeofenceEngine]'s hysteresis/debounce logic depends on the PREVIOUS confirmed membership --
  * without durability, a process restart would reset every zone to [GeofenceMembership.UNKNOWN] and
  * (correctly, per [GeofenceEngine]'s cold-start rule, but wastefully) suppress the very next real
@@ -13,21 +13,42 @@ import org.pca.app.foundation.PersistentStateStore
  */
 class GeofenceZoneStateStore(
     private val store: PersistentStateStore,
+    private val scopeProvider: () -> GeofenceStorageScope?,
 ) {
     fun load(zoneId: String): GeofenceZoneState? {
-        val raw = store.getString(keyFor(zoneId)) ?: return null
-        return decode(zoneId, raw)
+        val scope = currentScope() ?: return null
+        return load(scope, zoneId)
     }
 
     fun save(state: GeofenceZoneState) {
-        store.putString(keyFor(state.zoneId), encode(state))
+        val scope = currentScope() ?: throw IllegalStateException("Safe Zone family authority is unavailable")
+        save(scope, state)
     }
 
     fun clear(zoneId: String) {
-        store.remove(keyFor(zoneId))
+        currentScope()?.let { clear(it, zoneId) }
     }
 
-    private fun keyFor(zoneId: String) = "$KEY_PREFIX$zoneId"
+    internal fun load(scope: GeofenceStorageScope, zoneId: String): GeofenceZoneState? {
+        if (!scope.isValid() || !ZONE_TOKEN.matches(zoneId)) return null
+        val raw = store.getString(scope.zoneStateStoreKey(KEY_PREFIX, zoneId)) ?: return null
+        return decode(zoneId, raw)
+    }
+
+    internal fun save(scope: GeofenceStorageScope, state: GeofenceZoneState) {
+        require(scope.isValid() && ZONE_TOKEN.matches(state.zoneId))
+        store.putString(scope.zoneStateStoreKey(KEY_PREFIX, state.zoneId), encode(state))
+    }
+
+    internal fun clear(scope: GeofenceStorageScope, zoneId: String) {
+        if (scope.isValid() && ZONE_TOKEN.matches(zoneId)) {
+            store.remove(scope.zoneStateStoreKey(KEY_PREFIX, zoneId))
+        }
+    }
+
+    private fun currentScope(): GeofenceStorageScope? = runCatching { scopeProvider() }
+        .getOrNull()
+        ?.takeIf { it.isValid() }
 
     private fun encode(state: GeofenceZoneState): String = listOf(
         state.confirmedMembership.name,
@@ -55,7 +76,8 @@ class GeofenceZoneStateStore(
     }
 
     private companion object {
-        const val KEY_PREFIX = "geofence_zone_state_v1_"
+        const val KEY_PREFIX = "geofence_zone_state_v2"
+        val ZONE_TOKEN = Regex("^[A-Za-z0-9_-]{1,128}$")
         const val SEP = "|"
         const val LEGACY_FIELD_COUNT = 4
         const val FIELD_COUNT = 5

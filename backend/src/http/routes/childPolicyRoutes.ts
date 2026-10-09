@@ -10,12 +10,11 @@
  * DeviceSessionService session token presented as `Authorization: Bearer
  * <token>`, never a client-supplied field.
  *
- * The request body is an OPAQUE, already-encrypted envelope
- * (ciphertextB64/nonceB64/keyEpoch) plus a recipientDeviceId the CALLING
- * PARENT BROWSER supplies -- this route never parses or validates policy
- * content, exactly like parentAccountRoutes.ts's Safe Zone routes never
- * parse coordinates. recipientDeviceId is deliberately client-supplied
- * (not resolved server-side from childProfileId) because this schema has
+ * The request body is the existing signed FamilyEnvelope wire shape. This
+ * route validates its structure and binds family/sender/recipient metadata,
+ * but does not verify the envelope signature or decrypt/apply its opaque
+ * payload. recipientDeviceId is deliberately envelope-bound (not resolved
+ * server-side from childProfileId) because this schema has
  * no child-profile-to-device mapping anywhere (checked: devices/
  * DeviceRepository carry no child_profile_id column, and
  * ChildProfileMembershipResolver's own doc comment says a readable
@@ -30,11 +29,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
-import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
 import type { OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
+import { parseFamilyEnvelope } from '../../familyenvelope/parse.js';
+import { envelopeToRelayCiphertext } from '../../runtime-sync/envelopeWireCodec.js';
 
 const MAX_BODY_BYTES = 96 * 1024; // matches parentAccountRoutes.ts's MAX_SAFE_ZONE_BODY_BYTES order of magnitude
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -65,30 +65,28 @@ function csrfOk(request: FastifyRequest): boolean {
   return cookieToken === headerToken;
 }
 
-function validOpaqueBase64(value: unknown, maxLength: number): value is string {
-  if (typeof value !== 'string' || value.length < 2 || value.length > maxLength || !/^[A-Za-z0-9_-]+$/.test(value)) {
-    return false;
+const SCHEDULE_POLICY_ENVELOPE_FIELDS = new Set([
+  'protocolMajor', 'protocolMinor', 'messageId', 'familyId', 'senderDeviceId',
+  'recipientDeviceId', 'recipientGroup', 'senderKeyId', 'messageType',
+  'trustSetEpoch', 'keyEpoch', 'sequenceOrNonce', 'issuedAt', 'expiresAt',
+  'semanticVersion', 'correlationId', 'payload', 'signature',
+]);
+
+type ParsedFamilyEnvelope = NonNullable<ReturnType<typeof parseFamilyEnvelope>>;
+type DevicePolicyEnvelope = Omit<ParsedFamilyEnvelope, 'messageType' | 'recipient'> & {
+  messageType: 'POLICY_UPDATE';
+  recipient: Extract<ParsedFamilyEnvelope['recipient'], { kind: 'DEVICE' }>;
+};
+
+function parseSchedulePolicyEnvelope(body: unknown): DevicePolicyEnvelope | null {
+  if (!isPlainObject(body) || Object.keys(body).some((key) => !SCHEDULE_POLICY_ENVELOPE_FIELDS.has(key))) {
+    return null;
   }
-  const decoded = Buffer.from(value, 'base64url');
-  const maxDecodedBytes = Math.floor(maxLength * 3 / 4);
-  return decoded.length >= 1 && decoded.length <= maxDecodedBytes && decoded.toString('base64url') === value;
-}
-
-interface SchedulePolicyBody {
-  recipientDeviceId: string;
-  ciphertextB64: string;
-  nonceB64: string;
-  keyEpoch: number;
-}
-
-function validSchedulePolicyBody(body: unknown): body is SchedulePolicyBody {
-  if (!isPlainObject(body)) return false;
-  return (
-    typeof body.recipientDeviceId === 'string' && OPAQUE_TOKEN.test(body.recipientDeviceId) &&
-    validOpaqueBase64(body.ciphertextB64, 87380) &&
-    validOpaqueBase64(body.nonceB64, 88) &&
-    isFamilyEpochNumber(body.keyEpoch, 1)
-  );
+  const envelope = parseFamilyEnvelope(body);
+  if (!envelope || envelope.messageType !== 'POLICY_UPDATE' || envelope.recipient.kind !== 'DEVICE') {
+    return null;
+  }
+  return { ...envelope, messageType: 'POLICY_UPDATE', recipient: envelope.recipient };
 }
 
 export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolicyRoutesDeps): void {
@@ -159,16 +157,19 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (!validSchedulePolicyBody(request.body)) {
+      const envelope = parseSchedulePolicyEnvelope(request.body);
+      if (!envelope || envelope.familyId !== session.familyId) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      const body = request.body;
 
       if (await deps.parentAccountService.activeFamilyRole(session.accountId as never, session.familyId) !== 'ADMINISTRATOR') {
         return reply.code(403).send({ error: 'forbidden' });
       }
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
+      if (envelope.senderDeviceId !== actorDeviceId) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
 
       // TRUE authority is the receiving device's own signed-envelope
       // verification against its own trust set -- this call is a pre-check
@@ -192,29 +193,32 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(403).send({ error: 'forbidden' });
       }
 
-      const messageId = randomUUID();
       const result = await deps.outboundRelayService.submitBatch(actorDeviceId, session.familyId, [
         {
-          messageId,
-          recipientDeviceId: body.recipientDeviceId,
-          ciphertext: Buffer.from(body.ciphertextB64, 'base64url'),
-          messageType: 'SCHEDULE_POLICY_V1',
-          enqueuedAtEpochMillis: issuedAt.getTime(),
+          messageId: envelope.messageId,
+          recipientDeviceId: envelope.recipient.recipientDeviceId,
+          ciphertext: envelopeToRelayCiphertext(envelope),
+          messageType: 'POLICY_UPDATE',
+          enqueuedAtEpochMillis: envelope.issuedAt.getTime(),
         },
       ]);
-      const outcome = result.results[0]?.outcome;
+      const outcome = result.results.find((item) => item.messageId === envelope.messageId)?.outcome;
       if (outcome === 'CROSS_FAMILY_RECIPIENT' || outcome === 'INVALID') {
         return reply.code(400).send({ error: 'invalid_recipient' });
       }
       if (outcome === 'CONFLICT') {
         return reply.code(409).send({ error: 'conflict' });
       }
-      // QUEUED, or dropped for batch bound (a single-item batch never hits
-      // the bound, but the honest response follows OutboundBatchResult's
-      // own contract regardless) -- either way this is PENDING, never
-      // DELIVERED/APPLIED (see PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md's
-      // PENDING/DELIVERED/APPLIED_SEMANTICS section).
-      return reply.code(202).send({ status: 'PENDING', messageId });
+      // A pending receipt is truthful only when the exact signed messageId
+      // was accepted by the relay. Missing outcomes and batch-bound drops
+      // leave the caller free to retry the same envelope without claiming
+      // that the server queued it.
+      if (outcome !== 'QUEUED') {
+        return reply.code(503).send({ error: 'relay_unavailable' });
+      }
+      // This is queue acceptance only, never DELIVERED/APPLIED (see the
+      // architecture's PENDING/DELIVERED/APPLIED semantics).
+      return reply.code(202).send({ status: 'PENDING', messageId: envelope.messageId });
     },
   );
 }

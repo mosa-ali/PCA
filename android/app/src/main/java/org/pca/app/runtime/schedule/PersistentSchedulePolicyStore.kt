@@ -16,13 +16,25 @@ class PersistentSchedulePolicyStore(
     private val store: PersistentStateStore,
     private val key: String = KEY,
 ) : SchedulePolicyStore {
+    private val coordinationLock: Any = store.coordinationLock
 
     override fun save(snapshot: SchedulePolicySnapshot) {
         val raw = SchedulePolicyJson.encodeSnapshot(snapshot).toString()
-        synchronized(store) {
+        synchronized(coordinationLock) {
             val previous = readUnlocked()
             check(previous !is SchedulePolicyStoreRead.Corrupt) {
                 "Cannot replace corrupt persisted schedule policy state"
+            }
+            val previousSnapshot = (previous as? SchedulePolicyStoreRead.Present)?.snapshot
+            previousSnapshot?.let { current ->
+                check(snapshot.deviceTrustSetEpoch >= current.deviceTrustSetEpoch &&
+                    snapshot.deviceKeyEpoch >= current.deviceKeyEpoch) {
+                    "Cannot roll back the persisted Trust Set or key epoch floor"
+                }
+                // A literal retry is a no-op. In particular it cannot refresh lastPolicySyncAtUtc
+                // or advance the durable slot generation merely by replaying the same snapshot.
+                if (snapshot == current) return
+                enforcePolicyRevision(current, snapshot)
             }
 
             val previousPointer = store.getString(activePointerKey)
@@ -106,7 +118,7 @@ class PersistentSchedulePolicyStore(
         is SchedulePolicyStoreRead.Present -> result.snapshot
     }
 
-    override fun read(): SchedulePolicyStoreRead = synchronized(store) { readUnlocked() }
+    override fun read(): SchedulePolicyStoreRead = synchronized(coordinationLock) { readUnlocked() }
 
     private fun readUnlocked(): SchedulePolicyStoreRead {
         if (writeStateUncertain) return SchedulePolicyStoreRead.Corrupt
@@ -139,6 +151,33 @@ class PersistentSchedulePolicyStore(
     } catch (_: Exception) {
         // Do not remove or rewrite raw bytes. Keep them for diagnosis and recovery.
         SchedulePolicyStoreRead.Corrupt
+    }
+
+    /** Defense in depth for the envelope's authoritative POLICY_UPDATE version ledger. */
+    private fun enforcePolicyRevision(current: SchedulePolicySnapshot, next: SchedulePolicySnapshot) {
+        val priorPolicy = current.candidatePolicy ?: current.lastKnownGoodPolicy ?: return
+        val nextPolicy = next.candidatePolicy
+            ?: error("Cannot erase a persisted schedule policy without an authorized replacement")
+        // SchedulePolicyV1 defines policyId as the stable identifier for this child's schedule,
+        // not a per-revision identifier. Do not permit a local snapshot write to reset that
+        // identity or its strictly increasing revision stream.
+        check(nextPolicy.policyId == priorPolicy.policyId) {
+            "Cannot change the stable schedule policy identity"
+        }
+        check(nextPolicy.policyRevision == priorPolicy.policyRevision ||
+            SchedulePolicyValidator.isAcceptableRevision(nextPolicy.policyRevision, priorPolicy.policyRevision)) {
+            "Schedule policy revision is stale"
+        }
+
+        if (nextPolicy.policyRevision == priorPolicy.policyRevision) {
+            val samePolicyIdentityAndBytes = priorPolicy.policyId == nextPolicy.policyId &&
+                SchedulePolicyEnvelopePayload.encode(priorPolicy) ==
+                SchedulePolicyEnvelopePayload.encode(nextPolicy)
+            check(samePolicyIdentityAndBytes && current.lastKnownGoodPolicy == next.lastKnownGoodPolicy &&
+                current.lastPolicySyncAtUtc == next.lastPolicySyncAtUtc) {
+                "Conflicting schedule policy replay or freshness update at the same revision"
+            }
+        }
     }
 
     private fun restore(storageKey: String, value: String?) {

@@ -1,4 +1,4 @@
-import { canonicalizeDomain } from './canonicalize.js';
+import { isCanonicalDomain } from './canonicalize.js';
 import { isPlausiblePackageVersion, isPlausibleSignature, MAX_RULES_PER_PACKAGE } from './policy.js';
 import type { SignedRulePackage, WebRule } from './types.js';
 import type { SecurityRulePackageRepository } from './WebRuleStore.js';
@@ -44,10 +44,15 @@ export class SignedRulePackageConsumer {
       if (rule === null || typeof rule !== 'object' || rule.listType !== 'DENY') {
         return { status: 'REJECTED_MALFORMED', reason: 'MALFORMED_PACKAGE' };
       }
-      const domain = canonicalizeDomain(rule.domain);
-      if (domain === null || domains.has(domain)) return { status: 'REJECTED_MALFORMED', reason: 'MALFORMED_PACKAGE' };
-      domains.add(domain);
-      canonicalRules.push({ domain, listType: rule.listType });
+      // The verifier authenticates the signed package bytes. Requiring the
+      // producer's declared CanonicalDomain here ensures the exact domain
+      // string that was signed is also the key that reaches the repository;
+      // silently normalizing after verification would apply different data.
+      if (!isCanonicalDomain(rule.domain) || domains.has(rule.domain)) {
+        return { status: 'REJECTED_MALFORMED', reason: 'MALFORMED_PACKAGE' };
+      }
+      domains.add(rule.domain);
+      canonicalRules.push({ domain: rule.domain, listType: rule.listType });
     }
     const receivedAt = this.now();
     if (!Number.isFinite(receivedAt.getTime()) || pkg.issuedAt.getTime() > receivedAt.getTime() ||

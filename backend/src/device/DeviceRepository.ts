@@ -11,7 +11,7 @@ export type AddKeyResult =
   | { outcome: 'DEVICE_REVOKED' };
 
 export type RevokeDeviceResult =
-  | { outcome: 'REVOKED'; device: DeviceRecord; keys: DeviceKeyRecord[] }
+  | { outcome: 'REVOKED'; device: DeviceRecord; keys: DeviceKeyRecord[]; transitioned: boolean }
   | { outcome: 'DEVICE_NOT_FOUND' };
 
 export type RevokeKeyResult =

@@ -40,8 +40,13 @@ class ProductionScheduleRuntimePort(
                 } else {
                     ScheduleRuntimeStatus.AVAILABLE
                 }
+            ScheduleRuntimeState.INVALID -> when {
+                result.effectivePolicy == null -> ScheduleRuntimeStatus.NOT_READY
+                result.decision.decision == ScheduleDecisionKind.ENFORCEMENT_UNAVAILABLE -> ScheduleRuntimeStatus.UNAVAILABLE
+                else -> ScheduleRuntimeStatus.AVAILABLE
+            }
             ScheduleRuntimeState.EPOCH_STALE -> ScheduleRuntimeStatus.EPOCH_STALE
-            ScheduleRuntimeState.NO_ACCEPTED_POLICY, ScheduleRuntimeState.INVALID -> ScheduleRuntimeStatus.NOT_READY
+            ScheduleRuntimeState.NO_ACCEPTED_POLICY -> ScheduleRuntimeStatus.NOT_READY
             ScheduleRuntimeState.CORRUPT_LOCAL_STATE -> ScheduleRuntimeStatus.UNAVAILABLE
         }
     }
@@ -57,7 +62,11 @@ class ProductionScheduleRuntimePort(
             enforcementCapability = enforcementCapabilityProvider(),
             connectivity = connectivity,
         )
-        if (result.runtimeState !in setOf(ScheduleRuntimeState.CURRENT, ScheduleRuntimeState.STALE_REMOTE)) {
+        val hasEnforceablePolicy = result.runtimeState in setOf(
+            ScheduleRuntimeState.CURRENT,
+            ScheduleRuntimeState.STALE_REMOTE,
+        ) || (result.runtimeState == ScheduleRuntimeState.INVALID && result.effectivePolicy != null)
+        if (!hasEnforceablePolicy) {
             return ScheduleEnforcementOutcome.UNAVAILABLE
         }
         return enforcementConsumer.apply(

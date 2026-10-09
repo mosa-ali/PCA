@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService, DeviceDirectoryError } from '../../dist/device/DeviceDirectoryService.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 
 function key() {
@@ -102,6 +103,40 @@ test('revokeDevice atomically cascades to revoke every active key', async () => 
   assert.equal(revoked.status, 'REVOKED');
   const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
   assert.equal(active.length, 0);
+});
+
+test('revokeDevice emits one lifecycle audit only for the winning transition', async () => {
+  const repository = createInMemoryDeviceRepository();
+  let currentTime = new Date('2026-01-01T00:00:00.000Z');
+  const auditRepository = new InMemoryFamilyAuditRepository();
+  const auditService = new FamilyAuditService(auditRepository, () => currentTime);
+  const service = new DeviceDirectoryService(repository, () => currentTime, auditService);
+
+  // Adapt the reference repository to the production transition-result
+  // contract without changing the shared test double: one call wins, and
+  // subsequent calls report that the durable state was already REVOKED.
+  const revoke = repository.revokeDeviceAndKeysAtomically.bind(repository);
+  let transitionCommitted = false;
+  repository.revokeDeviceAndKeysAtomically = async (...args) => {
+    const result = await revoke(...args);
+    if (result.outcome !== 'REVOKED') return result;
+    const transitioned = !transitionCommitted;
+    transitionCommitted = true;
+    return { ...result, transitioned };
+  };
+
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  await service.revokeDevice(FAMILY_A, device.deviceId);
+  currentTime = new Date(currentTime.getTime() + 60_000);
+  await service.revokeDevice(FAMILY_A, device.deviceId);
+
+  const records = await auditRepository.listForFamily(FAMILY_A);
+  const deviceRevocations = records.filter(
+    (record) => record.actionType === 'DEVICE_LIFECYCLE_TRANSITION' &&
+      record.targetScope.kind === 'DEVICE' && record.targetScope.id === device.deviceId,
+  );
+  assert.equal(deviceRevocations.length, 1);
+  assert.equal(deviceRevocations[0].freeTextNote, 'DEVICE_REVOKED');
 });
 
 test('revoked key material is permanently tombstoned: it can never be re-registered on the same device after full device revocation', async () => {

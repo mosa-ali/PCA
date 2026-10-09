@@ -245,9 +245,9 @@ export async function ensureAndLockFamilyFloors(
  *      legitimate -- a trust-set-metadata-only epoch need not rotate FDEK
  *      material -- but the floor can never fall).
  *
- * The duplicate check intentionally runs BEFORE the staleness check, so a
- * retry of the CURRENT latest epoch resolves as IDEMPOTENT_MATCH (or
- * CONFLICT) rather than degrading into a vague stale rejection.
+ * The device/family lifecycle check intentionally runs before duplicate and
+ * head checks, so a revoked or moved signer cannot use an old accepted epoch
+ * as an idempotent post-revocation response.
  *
  * Persistence here still grants NO authority: this class never verifies
  * signatures and never decides acceptance; callers may only invoke
@@ -266,7 +266,7 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     const now = new Date();
     try {
       return await runInTransaction<AppendTrustSetEpochOutcome>((conn) =>
-        this.appendAcceptedEpochOnConnection(conn, record, now, headSnapshot, true),
+        this.appendAcceptedEpochOnConnection(conn, record, now, headSnapshot, true, true),
       );
     } catch (error) {
       if (error instanceof AppendWithoutCommitError) return error.appendOutcome;
@@ -291,7 +291,7 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     if (record.trustSetEpoch !== 1 || record.keyEpoch !== 1 || record.supersedesEpoch !== null) {
       throw new TrustSetEpochStoreError('genesis append must be epoch 1/key epoch 1 with no predecessor');
     }
-    return this.appendAcceptedEpochOnConnection(conn, record, now, null, false);
+    return this.appendAcceptedEpochOnConnection(conn, record, now, null, false, false);
   }
 
   private async appendAcceptedEpochOnConnection(
@@ -300,9 +300,59 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     now: Date,
     expectedHead: ExpectedTrustSetEpochHead | null,
     rollbackNoWriteOutcomes: boolean,
+    requireActiveSigner: boolean,
   ): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
     const { trustSetFloor: floorTrustSetEpoch, keyFloor: floorKeyEpoch } = await ensureAndLockFamilyFloors(conn, record.familyId, now);
+
+    if (requireActiveSigner) {
+      // Serialize epoch acceptance with device revocation/moves and family
+      // suspension. The row lock and the epoch/floor writes share this
+      // transaction, so acceptance linearizes either before revocation or
+      // observes the revoked/moved authority and rolls back every write,
+      // including a newly-created floor row.
+      const { rows: activeSignerRows } = await execute<{ device_id: string }>(
+        conn,
+        `SELECT d.device_id
+           FROM devices d
+           JOIN families f ON f.family_id = d.family_id
+          WHERE d.device_id = ?
+            AND d.family_id = ?
+            AND d.status = 'ACTIVE'
+            AND f.status = 'ACTIVE'
+            AND f.deleted_at IS NULL
+          LIMIT 1
+          FOR UPDATE`,
+        [record.signerDeviceId, record.familyId],
+      );
+      if (activeSignerRows.length === 0) {
+        const outcome = { outcome: 'REJECTED_STALE_AUTHORITY' } as const;
+        if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError(outcome);
+        return outcome;
+      }
+
+      // The service-level resolver checked this DSK before acceptance, but a
+      // revocation can commit before this append transaction. Lock and
+      // revalidate the exact signer key in device-then-key order so another
+      // active DSK on the same device cannot authorize this request.
+      const { rows: activeSignerKeyRows } = await execute<{ key_id: string }>(
+        conn,
+        `SELECT key_id
+           FROM device_public_keys
+          WHERE device_id = ?
+            AND key_id = ?
+            AND key_purpose = 'DSK'
+            AND status = 'ACTIVE'
+          LIMIT 1
+          FOR UPDATE`,
+        [record.signerDeviceId, record.signerKeyId],
+      );
+      if (activeSignerKeyRows.length === 0) {
+        const outcome = { outcome: 'REJECTED_STALE_AUTHORITY' } as const;
+        if (rollbackNoWriteOutcomes) throw new AppendWithoutCommitError(outcome);
+        return outcome;
+      }
+    }
 
     const { rows: existingRows } = await execute<EpochRow>(
       conn,

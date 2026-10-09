@@ -268,8 +268,12 @@ function buildRealClients(): PcaApiClients {
     // honest rejection/denial behavior unchanged.
     familyAuthority: new RealFamilyAuthorityGateway(config.apiBaseUrl),
     familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl),
-    familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
-    protectionAlertDelivery: new RealProtectionAlertDeliveryClient(config.apiBaseUrl),
+    familyAuditDelivery: new RealFamilyAuditDeliveryClient(
+      config.apiBaseUrl,
+      trustedBrowser,
+      new UnavailableFamilyAuditEnvelopeDecryptionBoundary(),
+    ),
+    protectionAlertDelivery: new RealProtectionAlertDeliveryClient(config.apiBaseUrl, trustedBrowser),
     parentFamilyData: new RealParentFamilyDataGateway(
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
       new RealSchedulePolicyClient(config.apiBaseUrl, trustedBrowser),

@@ -18,6 +18,12 @@
 //   - ONE ROOT PER FAMILY: after a root exists, a second device's fully
 //     approved ceremony can never commit (ALREADY_BOOTSTRAPPED), and two
 //     CONCURRENT approved ceremonies resolve to exactly one committed root.
+//   - REVOCATION ORDERING: bootstrap holds the device lifecycle row lock
+//     through anchor/epoch commit, and a revocation that wins first prevents
+//     all bootstrap writes including a provisional floor row.
+//   - DSK REVOCATION ORDERING: bootstrap also locks the exact attempt DSK;
+//     revocation that wins before commit rejects even if a different DSK on
+//     the same device remains active.
 //   - ATOMIC ROLLBACK (H8 seam): a forced failure after the anchor INSERT
 //     rolls back everything (no anchor, no epoch, no floors, challenge not
 //     consumed) and the same ceremony then commits cleanly on retry.
@@ -53,6 +59,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { closePool, getPool } from '../../dist/db/pool.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
 import { MySqlFirstDeviceBootstrapStore } from '../../dist/familytrustset/MySqlFirstDeviceBootstrapStore.js';
 import { FirstDeviceBootstrapService } from '../../dist/familytrustset/FirstDeviceBootstrapService.js';
@@ -182,6 +189,11 @@ async function seedDeviceChain({ familyId, device, attemptId, rawRecoveryToken, 
   await getPool().query(
     `INSERT INTO devices (device_id, family_id, platform, status, created_at) VALUES (?, ?, 'ANDROID', ?, NOW(3))`,
     [device.deviceId, familyId, deviceStatus],
+  );
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', NOW(3), NULL)`,
+    [device.deviceId, device.dskKeyId, device.dskPublicKey],
   );
   await getPool().query(
     `INSERT INTO enrollment_invitations
@@ -529,6 +541,137 @@ test('ATOMIC ROLLBACK: a failure after the anchor INSERT leaves zero partial sta
   assert.deepEqual(await freshService().submit(input), { status: 'ACCEPTED' });
   assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 1);
   assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 1);
+});
+
+test('DEVICE REVOCATION RACE: bootstrap holds the lifecycle lock through commit before revocation transitions the device', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'bootstrap-revoke-race' });
+  const { ceremony, input } = await runCeremonyToApproved(freshService(), seed);
+
+  let notifyCommitPaused;
+  let releaseCommit;
+  const commitPaused = new Promise((resolve) => { releaseCommit = resolve; });
+  const commitReachedAnchor = new Promise((resolve) => { notifyCommitPaused = resolve; });
+  const service = makeService({
+    commitHooks: {
+      afterAnchorInsert: async () => {
+        notifyCommitPaused();
+        await commitPaused;
+      },
+    },
+  });
+
+  const bootstrap = service.submit(input);
+  await commitReachedAnchor;
+
+  let revokeSettled = false;
+  const revoke = new MySqlDeviceRepository()
+    .revokeDeviceAndKeysAtomically(seed.familyId, seed.device.deviceId, new Date())
+    .finally(() => { revokeSettled = true; });
+
+  // A consistent read must still see the pre-revoke state while the bootstrap
+  // transaction is paused with the device row lock held. Without that lock the
+  // revoke commits during this window, leaving a root accepted after revocation.
+  const lockWindowDeadline = Date.now() + 500;
+  let statusDuringBootstrap;
+  while (Date.now() < lockWindowDeadline && !revokeSettled) {
+    const [rows] = await getPool().query('SELECT status FROM devices WHERE device_id = ?', [seed.device.deviceId]);
+    statusDuringBootstrap = rows[0]?.status;
+    if (statusDuringBootstrap === 'REVOKED') break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const revokeWaitedForBootstrap = !revokeSettled && statusDuringBootstrap !== 'REVOKED';
+
+  releaseCommit();
+  const [bootstrapResult, revokeResult] = await Promise.all([bootstrap, revoke]);
+
+  assert.equal(revokeWaitedForBootstrap, true, 'device revocation must wait for the in-flight bootstrap transaction');
+  assert.deepEqual(bootstrapResult, { status: 'ACCEPTED' });
+  assert.equal(revokeResult.outcome, 'REVOKED');
+  assert.equal(revokeResult.transitioned, true);
+  assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 1);
+  assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 1);
+  const committed = await ceremonyRowFor(ceremony.ceremonyId);
+  assert.equal(committed.status, 'COMMITTED');
+  const [deviceRows] = await getPool().query('SELECT status FROM devices WHERE device_id = ?', [seed.device.deviceId]);
+  assert.equal(deviceRows[0].status, 'REVOKED');
+});
+
+test('DEVICE REVOCATION FIRST: a revoked signer cannot commit bootstrap or leave a floor row', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'bootstrap-revoked-before-commit' });
+  const { ceremony, input } = await runCeremonyToApproved(freshService(), seed);
+  const revoked = await new MySqlDeviceRepository().revokeDeviceAndKeysAtomically(
+    seed.familyId,
+    seed.device.deviceId,
+    new Date(),
+  );
+  assert.equal(revoked.outcome, 'REVOKED');
+  assert.equal(revoked.transitioned, true);
+
+  assert.deepEqual(await freshService().submit(input), { status: 'REJECTED' });
+  assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 0);
+  assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 0);
+  assert.equal(await countRows('family_epoch_floors', seed.familyId), 0);
+  const unchangedCeremony = await ceremonyRowFor(ceremony.ceremonyId);
+  assert.equal(unchangedCeremony.status, 'APPROVED');
+  assert.equal(unchangedCeremony.consumed_at, null);
+});
+
+test('DSK REVOCATION FIRST: a revoked exact ceremony DSK cannot commit genesis while another DSK remains active', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'bootstrap-revoked-dsk-before-commit' });
+  const { ceremony, input } = await runCeremonyToApproved(freshService(), seed);
+  const other = makeP256Device('bootstrap-other-active-dsk');
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', NOW(3), NULL)`,
+    [seed.device.deviceId, other.dskKeyId, other.dskPublicKey],
+  );
+
+  const revocation = await getPool().getConnection();
+  let inTransaction = false;
+  try {
+    await revocation.beginTransaction();
+    inTransaction = true;
+    const [update] = await revocation.query(
+      `UPDATE device_public_keys
+          SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK' AND status = 'ACTIVE'`,
+      [seed.device.deviceId, seed.device.dskKeyId],
+    );
+    assert.equal(update.affectedRows, 1, 'the revocation transaction must hold the exact ceremony DSK row');
+
+    let submissionSettled = false;
+    const submission = freshService().submit(input).then(
+      (result) => {
+        submissionSettled = true;
+        return { result };
+      },
+      (error) => {
+        submissionSettled = true;
+        return { error };
+      },
+    );
+
+    // Submission validates the signed proof before the store opens its commit
+    // transaction. Once it reaches the exact DSK locking read, it must wait
+    // until this revocation commits.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(submissionSettled, false, 'bootstrap commit must serialize behind exact DSK revocation');
+
+    await revocation.commit();
+    inTransaction = false;
+    const outcome = await submission;
+    assert.equal(outcome.error, undefined, 'revoked DSK should be a handled lifecycle rejection');
+    assert.deepEqual(outcome.result, { status: 'REJECTED' });
+    assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 0);
+    assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 0);
+    assert.equal(await countRows('family_epoch_floors', seed.familyId), 0, 'provisional floors must roll back');
+    const unchangedCeremony = await ceremonyRowFor(ceremony.ceremonyId);
+    assert.equal(unchangedCeremony.status, 'APPROVED');
+    assert.equal(unchangedCeremony.consumed_at, null);
+  } finally {
+    if (inTransaction) await revocation.rollback();
+    revocation.release();
+  }
 });
 
 test('ELIGIBILITY FAILS CLOSED: non-provisioned family, disabled account, VIEWER membership and SUSPENDED family all refuse approval', async () => {

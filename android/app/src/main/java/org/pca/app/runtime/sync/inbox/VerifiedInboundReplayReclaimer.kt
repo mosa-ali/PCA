@@ -74,9 +74,10 @@ class VerifiedInboundReplayReclaimer(
         }
         // A denied redelivery can be captured after its terminal journal record was retired.
         // Preserve all journal-backed items (including prepared operations), and reclaim only
-        // exact, already-acknowledged inbox entries whose replay identity has permanent coverage.
+        // exact, already-acknowledged inbox-only entries whose replay identity has permanent coverage.
         val remaining = journal.records().filter { it.intent.scope == scope }
         val journalAtStartByMessageId = journalAtStart.associateBy { it.intent.messageId }
+        val inboxOnlyAliases = mutableListOf<CiphertextInboxRecord>()
         for (held in inbox.pendingCrypto(scope)) {
             freshAuthority()
             val envelope = PersistentCiphertextInbox.validateEnvelope(held.envelopeWire, scope)
@@ -92,11 +93,16 @@ class VerifiedInboundReplayReclaimer(
                 continue
             }
             if (held.acknowledgementPending || !denial.coversReplayIdentityPermanently(envelope, scope)) continue
-            fun coverage() {
+            inboxOnlyAliases += held
+        }
+        if (inboxOnlyAliases.isNotEmpty()) {
+            val removed = inbox.removeRetiredAcknowledgedBatch(scope, inboxOnlyAliases) { held ->
                 freshAuthority()
-                if (!denial.coversReplayIdentityPermanently(envelope, scope)) throw InboundReplayDenialUnavailable()
+                val envelope = PersistentCiphertextInbox.validateEnvelope(held.envelopeWire, scope)
+                if (envelope.messageId != held.messageId ||
+                    !denial.coversReplayIdentityPermanently(envelope, scope)) throw InboundReplayDenialUnavailable()
             }
-            if (inbox.removeRetiredAcknowledged(scope, held, ::coverage)) reclaimed++
+            reclaimed += removed
         }
         reclaimed
     }

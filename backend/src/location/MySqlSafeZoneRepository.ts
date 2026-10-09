@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
-import { familyEpochFromStorage, isFamilyEpochNumber, MAX_FAMILY_EPOCH } from '../familyepoch/bounds.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRepository } from './SafeZoneRepository.js';
 
 interface SafeZoneRow {
@@ -59,11 +59,55 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
     validateSafeZonePatch(patch);
     const now = new Date();
-    const { rowCount } = await runInTransaction((conn) => execute(conn, `UPDATE safe_zones SET ciphertext = COALESCE(?, ciphertext), nonce = COALESCE(?, nonce), key_epoch = COALESCE(?, key_epoch), revision = revision + 1, delivery_state = 'PENDING_OFFLINE', updated_at = ? WHERE zone_id = ? AND family_id = ? AND key_epoch BETWEEN 1 AND ?`, [patch.ciphertextB64 === undefined ? null : Buffer.from(patch.ciphertextB64, 'base64url'), patch.nonceB64 === undefined ? null : Buffer.from(patch.nonceB64, 'base64url'), patch.keyEpoch ?? null, now, zoneId, familyId, MAX_FAMILY_EPOCH]));
-    if (rowCount === 0) throw new SafeZoneError('NOT_FOUND');
-    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, familyId]));
-    if (!rows[0]) throw new SafeZoneError('NOT_FOUND');
-    return toSafeZone(rows[0]);
+    const row = await runInTransaction(async (conn) => {
+      // Serialize concurrent edits for the same family-owned row so keyEpoch
+      // can never move backwards, even when two callers race.
+      const current = await execute<Pick<SafeZoneRow, 'key_epoch'>>(
+        conn,
+        `SELECT key_epoch FROM safe_zones WHERE zone_id = ? AND family_id = ? FOR UPDATE`,
+        [zoneId, familyId],
+      );
+      if (!current.rows[0]) throw new SafeZoneError('NOT_FOUND');
+
+      let currentKeyEpoch: number;
+      try {
+        currentKeyEpoch = familyEpochFromStorage(current.rows[0].key_epoch);
+      } catch {
+        throw new SafeZoneError('INVALID_INPUT');
+      }
+      if (!isFamilyEpochNumber(currentKeyEpoch, 1)) throw new SafeZoneError('INVALID_INPUT');
+      if (patch.keyEpoch !== undefined && patch.keyEpoch < currentKeyEpoch) {
+        throw new SafeZoneError('INVALID_INPUT');
+      }
+
+      const nextKeyEpoch = patch.keyEpoch ?? currentKeyEpoch;
+      const updated = await execute(
+        conn,
+        `UPDATE safe_zones
+            SET ciphertext = ?, nonce = ?, key_epoch = ?, revision = revision + 1,
+                delivery_state = 'PENDING_OFFLINE', updated_at = ?
+          WHERE zone_id = ? AND family_id = ? AND key_epoch = ?`,
+        [
+          Buffer.from(patch.ciphertextB64!, 'base64url'),
+          Buffer.from(patch.nonceB64!, 'base64url'),
+          nextKeyEpoch,
+          now,
+          zoneId,
+          familyId,
+          currentKeyEpoch,
+        ],
+      );
+      if (updated.rowCount !== 1) throw new SafeZoneError('NOT_FOUND');
+
+      const persisted = await execute<SafeZoneRow>(
+        conn,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`,
+        [zoneId, familyId],
+      );
+      if (!persisted.rows[0]) throw new SafeZoneError('NOT_FOUND');
+      return persisted.rows[0];
+    });
+    return toSafeZone(row);
   }
 
   async remove(familyId: string, zoneId: string): Promise<boolean> {

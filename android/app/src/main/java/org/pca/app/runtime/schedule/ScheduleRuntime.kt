@@ -19,7 +19,12 @@ class ScheduleRuntime(
 
     /** The full decision, including which [ScheduleRuntimeState] the underlying policy was in
      * (for honest parent-facing/UI freshness reporting) alongside the enforcement [ScheduleDecision]. */
-    data class Result(val runtimeState: ScheduleRuntimeState, val decision: ScheduleDecision)
+    data class Result(
+        val runtimeState: ScheduleRuntimeState,
+        val decision: ScheduleDecision,
+        /** The policy selected by the acceptance gate, if one is safe to evaluate. */
+        val effectivePolicy: SchedulePolicyV1?,
+    )
 
     fun evaluate(
         nowUtc: Instant,
@@ -35,6 +40,7 @@ class ScheduleRuntime(
                     decision = ScheduleDecisionKind.ENFORCEMENT_UNAVAILABLE,
                     reason = "Persisted schedule policy is unreadable; enforcement cannot be determined.",
                 ),
+                effectivePolicy = null,
             )
         }
         val snapshot = (stored as? SchedulePolicyStoreRead.Present)?.snapshot
@@ -49,7 +55,7 @@ class ScheduleRuntime(
             communicationSurfaces = communicationSurfacesProvider(),
         ) ?: emptyEvaluationInput(nowUtc, appToken, enforcementCapability, connectivity, snapshot?.lastPolicySyncAtUtc)
 
-        return Result(acceptance.state, ScheduleEvaluator.evaluate(evaluationInput))
+        return Result(acceptance.state, ScheduleEvaluator.evaluate(evaluationInput), acceptance.effectivePolicy)
     }
 
     /** WELL-3 closure support (mission section 15): whether a BEDTIME window is active right

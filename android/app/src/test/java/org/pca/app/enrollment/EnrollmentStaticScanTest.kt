@@ -2,8 +2,10 @@ package org.pca.app.enrollment
 
 import java.io.File
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -136,10 +138,49 @@ class EnrollmentStaticScanTest {
         coordinator.submitInvitationLink("pca://enroll?token=$rawToken")
 
         coordinator.beginBootstrap()
+        coordinator.confirmProfile()
 
-        // Reach into the backing store's own persisted strings for every key it holds.
-        assertFalse(backing.getString("family_state_v1")?.contains(rawToken) ?: false)
+        // Reach into both the preserved legacy and current versioned family-state keys, as well
+        // as the pending-attempt record, after the complete success/confirmation flow.
+        val familyStateRecords = listOf("family_state_v1", "family_state_v1.v2")
+            .mapNotNull(backing::getString)
+        assertTrue(familyStateRecords.isNotEmpty())
+        assertTrue(familyStateRecords.none { it.contains(rawToken) })
         assertFalse(backing.getString("pending_enrollment_attempt_v1")?.contains(rawToken) ?: false)
+    }
+
+    @Test
+    fun `persisted family state remains an allowlisted local record with no enrollment credentials`() = runTest {
+        val backing = InMemoryPersistentStateStore()
+        // Base64url for 32 random bytes has restricted low bits in its last character.
+        val rawToken = "A".repeat(42) + "E"
+        val familyStateStore = PersistentFamilyStateStore(backing)
+        val pendingAttemptStore = PersistentPendingEnrollmentAttemptStore(backing)
+        val coordinator = EnrollmentCoordinator(
+            UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST),
+            apiClientReturning(rawToken, DeviceBootstrapResult("device-id-protected", "PAIRING_PENDING")),
+            TestConformanceDeviceKeyPairGenerator(),
+            familyStateStore,
+            pendingAttemptStore,
+        )
+        coordinator.submitInvitationLink("pca://enroll?token=$rawToken")
+        coordinator.beginBootstrap()
+        coordinator.confirmProfile()
+
+        assertEquals(EnrollmentState.PairingPending("device-id-protected"), coordinator.state.value)
+        val rawFamilyState = backing.getString("family_state_v1.v2")
+        assertNotNull(rawFamilyState)
+        val familyStateJson = JSONObject(rawFamilyState!!)
+        assertEquals(
+            setOf("version", "familyId", "deviceId", "pairingState", "trustSetEpoch", "keyEpoch",
+                "childProfileId", "ageUxTier", "initialPolicyProfile"),
+            familyStateJson.keys().asSequence().toSet(),
+        )
+        assertFalse(rawFamilyState.contains(rawToken))
+        assertFalse(rawFamilyState.contains("attemptRecoveryToken"))
+        assertFalse(rawFamilyState.contains("signingPrivateKeyAlias"))
+        assertFalse(rawFamilyState.contains("encryptionPrivateKeyAlias"))
+        assertNull(pendingAttemptStore.current())
     }
 
     @Test

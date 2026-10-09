@@ -23,6 +23,7 @@ import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustS
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { decodeCanonicalTrustSetEpochBytes } from '../../dist/familytrustset/decode.js';
 
 const FAMILY_ID = 'family-5b-acceptance';
 const RECEIVED_AT = new Date('2026-09-29T10:15:30.250Z');
@@ -276,6 +277,36 @@ function createHarness({ anchors = [], appendOutcome = null, readErrors = {} } =
     },
   };
   return { state, deps, service: new TrustSetEpochAcceptanceService(deps) };
+}
+
+function createStoreBackedResolver(harness, devices = [], { inactiveDevices = [], revokedDskIds = [] } = {}) {
+  const deviceById = new Map(devices.map((device) => [device.deviceId, device]));
+  const inactive = new Set(inactiveDevices);
+  const revoked = new Set(revokedDskIds);
+  const deviceRepository = {
+    async isDeviceSessionActive(familyId, deviceId) {
+      if (familyId !== FAMILY_ID) return false;
+      const device = deviceById.get(deviceId);
+      return Boolean(device && !inactive.has(deviceId));
+    },
+    async findKeysByDeviceForFamily(familyId, deviceId) {
+      if (familyId !== FAMILY_ID) return [];
+      const device = deviceById.get(deviceId);
+      if (!device) return [];
+      return [{
+        deviceId,
+        keyId: device.dskKeyId,
+        keyPurpose: 'DSK',
+        publicKey: device.dskPublicKey,
+        status: revoked.has(device.dskKeyId) ? 'REVOKED' : 'ACTIVE',
+      }];
+    },
+  };
+  return new StoreBackedTrustSetRoleResolver({
+    epochStore: harness.deps.epochStore,
+    deviceRepository,
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
 }
 
 function assertRejectedClean(result, reason, state) {
@@ -1012,7 +1043,7 @@ test('READ_ERROR_PROPAGATES: a failing durable read throws out of acceptance (ne
 
 test('RESOLVER_EMPTY_STORE: resolving against a family with no accepted epoch is NO_TRUST_SET', async () => {
   const harness = createHarness({});
-  const resolver = new StoreBackedTrustSetRoleResolver({ epochStore: harness.deps.epochStore });
+  const resolver = createStoreBackedResolver(harness);
   assert.equal(await resolver.resolveActor(FAMILY_ID, 'device-1'), 'NO_TRUST_SET');
 });
 
@@ -1042,7 +1073,7 @@ test('RESOLVER_ACCEPTED_EPOCH: the latest accepted epoch maps entries exactly li
     }),
     owner,
   );
-  const resolver = new StoreBackedTrustSetRoleResolver({ epochStore: harness.deps.epochStore });
+  const resolver = createStoreBackedResolver(harness, [owner, admin, viewer, offline, removed]);
 
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, owner.deviceId), {
     deviceId: owner.deviceId,
@@ -1073,7 +1104,7 @@ test('RESOLVER_ACCEPTED_EPOCH: the latest accepted epoch maps entries exactly li
 
 test('RESOLVER_READ_ERROR: a store read failure resolves fail-closed as NO_TRUST_SET', async () => {
   const harness = createHarness({ readErrors: { epochStore: new Error('resolver-boom') } });
-  const resolver = new StoreBackedTrustSetRoleResolver({ epochStore: harness.deps.epochStore });
+  const resolver = createStoreBackedResolver(harness);
   assert.equal(await resolver.resolveActor(FAMILY_ID, 'device-1'), 'NO_TRUST_SET');
 });
 
@@ -1091,11 +1122,11 @@ test('RESOLVER_UNDECODABLE_BYTES: stored bytes that fail strict decode resolve f
     issuedAt: ISSUED_AT,
     receivedAt: RECEIVED_AT,
   });
-  const resolver = new StoreBackedTrustSetRoleResolver({ epochStore: harness.deps.epochStore });
+  const resolver = createStoreBackedResolver(harness);
   assert.equal(await resolver.resolveActor(FAMILY_ID, 'device-1'), 'NO_TRUST_SET');
 });
 
-test('RESOLVER_FOREIGN_PAYLOAD: stored bytes declaring a different family resolve FAMILY_MISMATCH (deny)', async () => {
+test('RESOLVER_FOREIGN_PAYLOAD: stored bytes declaring a different family fail closed', async () => {
   const owner = makeDevice('owner');
   const harness = createHarness({});
   const foreignBytes = canonicalizeTrustSetEpoch(
@@ -1113,8 +1144,82 @@ test('RESOLVER_FOREIGN_PAYLOAD: stored bytes declaring a different family resolv
     issuedAt: ISSUED_AT,
     receivedAt: RECEIVED_AT,
   });
-  const resolver = new StoreBackedTrustSetRoleResolver({ epochStore: harness.deps.epochStore });
-  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'FAMILY_MISMATCH');
+  const resolver = createStoreBackedResolver(harness, [owner]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_TAMPERED_BYTES: a changed but still canonical accepted payload fails signature validation', async () => {
+  const owner = makeDevice('owner');
+  const admin = makeDevice('admin');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner), entryFor(admin, { role: 'ADMINISTRATOR' })] }), owner);
+  const stored = harness.state.epochs[0];
+  const changed = decodeCanonicalTrustSetEpochBytes(stored.signedEpochBytes);
+  changed.entries[1].role = 'VIEWER';
+  stored.signedEpochBytes = Buffer.from(canonicalizeTrustSetEpoch(changed), 'utf8');
+
+  const resolver = createStoreBackedResolver(harness, [owner, admin]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, admin.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_TAMPERED_SIGNATURE: a signature from a different DSK cannot authorize the stored epoch', async () => {
+  const owner = makeDevice('owner');
+  const attacker = makeDevice('attacker');
+  const harness = createHarness({});
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.signature = signEpochBytes(attacker.dskPrivateKey, stored.signedEpochBytes.toString('utf8'));
+
+  const resolver = createStoreBackedResolver(harness, [owner, attacker]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_SIGNER_KEY_ID_MISMATCH: persisted signer key id must match the signed active owner and current DSK', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.signerKeyId = 'different-key-id';
+
+  const resolver = createStoreBackedResolver(harness, [owner]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_SIGNER_DEVICE_ID_MISMATCH: persisted signer device id must match the signed active owner and current DSK', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.signerDeviceId = 'different-device-id';
+
+  const resolver = createStoreBackedResolver(harness, [owner]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_REVOKED_SIGNER_DSK: authority resolution fails when the accepted epoch signer DSK is no longer active', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+
+  const resolver = createStoreBackedResolver(harness, [owner], { revokedDskIds: [owner.dskKeyId] });
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_REVOKED_MEMBER_DSK: an otherwise-active Trust Set member is rejected when its current DSK was revoked', async () => {
+  const owner = makeDevice('owner');
+  const admin = makeDevice('admin');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner), entryFor(admin, { role: 'ADMINISTRATOR' })] }), owner);
+
+  const resolver = createStoreBackedResolver(harness, [owner, admin], { revokedDskIds: [admin.dskKeyId] });
+  assert.equal(await resolver.resolveActor(FAMILY_ID, admin.deviceId), 'DEVICE_NOT_ACTIVE');
+});
+
+test('RESOLVER_INACTIVE_MEMBER_DEVICE: an ACTIVE Trust Set entry is denied after the device leaves ACTIVE lifecycle', async () => {
+  const owner = makeDevice('owner');
+  const admin = makeDevice('admin');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner), entryFor(admin, { role: 'ADMINISTRATOR' })] }), owner);
+
+  const resolver = createStoreBackedResolver(harness, [owner, admin], { inactiveDevices: [admin.deviceId] });
+  assert.equal(await resolver.resolveActor(FAMILY_ID, admin.deviceId), 'DEVICE_NOT_ACTIVE');
 });
 
 // --- Read-set consistency (closure-review hardening) ------------------------

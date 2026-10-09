@@ -1,42 +1,15 @@
-// WAVE 5B — FTS production-wiring ATOMIC-SET guard.
+// PCA mobile authority production-wiring guard.
 //
-// The approved Wave-4 sequence (Wave 5B) activated the store-backed
-// trust-set ROLE RESOLVER in production composition (main.ts) while the
-// cryptographic ACCEPTANCE writer stays UNWIRED and the envelope-context
-// epoch floors stay REJECTING (unattainable). Those three facts are one
-// atomic set: a resolution swap is safe ONLY while no accepted epoch can
-// ever be created and no non-rejecting envelope floor/verifier exists, so
-// the resolver can only ever answer NO_TRUST_SET. If a future wave wires
-// ingestion -- the acceptance service into any production path, a
-// non-rejecting envelope verifier, or attainable envelope floors --
-// WITHOUT replacing the whole set together, this gate fails loudly instead
-// of letting production drift into a partially-wired authority state.
+// Ordinary signed Trust Set acceptance is composed in main.ts from durable
+// epoch/key/floor stores, the genesis anchor source, and the strict P-256
+// verifier. Keep that production path pinned to the shared accepted epoch
+// store and OrdinaryTrustSetService, and keep it out of route modules.
+// Envelope-context verification remains independently rejecting; this
+// ordinary device-session path must not silently activate that authority.
 //
-// WAVE 6B amendment: the set above stays in force, and a SECOND activation
-// lane is added to the composition -- the first-device trust-root bootstrap
-// ceremony (owner rulings D4/F4). That lane may exist in production ONLY
-// terminated by the fail-closed attestation boundary: main.ts constructs
-// FailClosedAttestationVerifier (which can never answer VERIFIED), so no
-// submission -- valid or not -- can ever reach the ceremony's
-// single-transaction commit. The acceptance writer keeps its Wave-5B pin,
-// the bootstrap lane gains positive construction pins, and permissive
-// attestation verifier tokens are banned everywhere.
-//
-// This file intentionally checks SOURCE TEXT (like
-// productionInMemoryStores.test.mjs / productionPathCertification.test.mjs
-// already do for their own composition invariants) and includes a GATE
-// SELF-TEST proving the checks can actually fail (the permanent principle:
-// a gate must be demonstrably able to fail).
-//
-// WAVE 6C amendment: the temporary 6B fail-closed pin is replaced by the
-// REAL platform attestation router (createPlatformAttestationVerifier),
-// which is itself fail-closed by construction: with absent/empty/malformed
-// pinned-root configuration the Android lane answers UNAVAILABLE and never
-// VERIFIED, and iOS stays unimplemented. main.ts must construct the router
-// (never a bare fail-closed class, never a permissive double), pinned roots
-// may never appear as PEM literals in src (configuration only), and the
-// permissive-verifier token bans are extended with test/mock/fake/bypass
-// names so no such construction can ever enter production composition.
+// First-device trust-root bootstrap remains a separate lane behind the
+// configured platform attestation router. Permissive attestation verifier
+// tokens and compiled-in PEM roots remain banned.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -62,11 +35,21 @@ function listSourceFiles(dir) {
 export function findFtsWiringViolations(mainText, sourceFiles) {
   const violations = [];
 
-  // 1. The store-backed resolver is the ONE production resolver, wired with
-  //    the durable accepted-epoch store; the Unavailable construction must
-  //    be gone from production composition.
-  if (!mainText.includes('new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore })')) {
-    violations.push('main.ts must construct the store-backed trust-set role resolver over the shared trustSetEpochStore');
+  // 1. The store-backed resolver is the ONE production resolver. Persisted
+  //    epoch bytes must be checked against the active device/key directory
+  //    and the same strict verifier used by acceptance.
+  const resolverMatch = mainText.match(/new StoreBackedTrustSetRoleResolver\(\{([\s\S]*?)\}\)/);
+  if (!resolverMatch) {
+    violations.push('main.ts must construct exactly one store-backed trust-set role resolver');
+  } else {
+    for (const pin of ['epochStore: trustSetEpochStore', 'deviceRepository', 'verifier: trustSetSignatureVerifier']) {
+      if (!resolverMatch[1].includes(pin)) {
+        violations.push(`store-backed role resolver must receive ${pin}`);
+      }
+    }
+  }
+  if ((mainText.match(/new StoreBackedTrustSetRoleResolver\(/g) || []).length !== 1) {
+    violations.push('main.ts must construct exactly one store-backed trust-set role resolver');
   }
   if (mainText.includes('new UnavailableTrustSetRoleResolver(')) {
     violations.push('main.ts must not still construct the Unavailable trust-set role resolver');
@@ -83,22 +66,40 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
     }
   }
 
-  // 2b. The production root itself must never construct the acceptance
-  //     service/verifier or call the append writers: activation requires the
-  //     owner-authorized coordinate set swap, not a drive-by wiring.
-  for (const needle of [
-    'new TrustSetEpochAcceptanceService(',
+  // 2b. Ordinary signed epoch acceptance is a production path, but it must
+  //     use the shared durable epoch store and strict verifier composition.
+  for (const pin of [
+    'const trustSetEpochStore = new MySqlTrustSetEpochStore();',
+    'const trustSetSignatureVerifier = new P256TrustSetSignatureVerifier();',
+    'new TrustSetEpochAcceptanceService({',
+    'epochStore: trustSetEpochStore,',
+    'keyEpochStore: new MySqlKeyEpochStore(),',
+    'floorStore: new MySqlEpochFloorStore(),',
+    'genesisAnchorSource: new GenesisAnchorStoreSource(new MySqlFamilyAuthorityGenesisStore()),',
+    'verifier: trustSetSignatureVerifier,',
+    'new OrdinaryTrustSetService(',
+    'ordinaryTrustSetService,',
+  ]) {
+    if (!mainText.includes(pin)) {
+      violations.push('main.ts must keep the ordinary Trust Set acceptance wiring pin: ' + pin);
+    }
+  }
+  if (!/const ordinaryTrustSetService = new OrdinaryTrustSetService\(\s*trustSetEpochAcceptanceService,\s*trustSetRoleResolver,\s*\);/s.test(mainText)) {
+    violations.push('main.ts must inject the shared verified Trust Set role resolver into OrdinaryTrustSetService');
+  }
+  if ((mainText.match(/new TrustSetEpochAcceptanceService\(/g) || []).length !== 1) {
+    violations.push('main.ts must construct exactly one ordinary Trust Set acceptance service');
+  }
+  for (const forbidden of [
     '.appendAcceptedEpoch(',
     'appendAcceptedEpochOnConnection',
     'appendGenesisEpochOnConnection',
-    'P256TrustSetSignatureVerifier',
     'decodeCanonicalTrustSetEpoch',
   ]) {
-    if (mainText.includes(needle)) {
-      violations.push(`main.ts must not reference ${needle} (the acceptance writer/verifier stay unwired)`);
+    if (mainText.includes(forbidden)) {
+      violations.push('main.ts must delegate acceptance to OrdinaryTrustSetService, not call ' + forbidden);
     }
   }
-
   // 2c. Wave 6B/6C: the first-device trust-root bootstrap lane must be
   //     wired in exactly its real-but-fail-closed shape -- the service over
   //     the MySQL store over the SHARED epoch store, terminated by the
@@ -110,6 +111,7 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
     'attestationVerifier: platformAttestationVerifier,',
     'createPlatformAttestationVerifier(process.env)',
     'firstDeviceBootstrapService,',
+
   ]) {
     if (!mainText.includes(pin)) {
       violations.push(`main.ts must keep the fail-closed bootstrap wiring pin: ${pin}`);
@@ -162,7 +164,7 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
 
   // 3. The acceptance writer/verifier/decoder stay out of production paths:
   //    never in http routes, and (outside the familytrustset module itself)
-  //    referenced by main.ts's resolver swap only as allowed below.
+  //    referenced by main.ts's production composition only as allowed below.
   for (const [file, text] of Object.entries(sourceFiles)) {
     const normalized = file.replace(/\\/g, '/');
     const inFamilytrustsetModule = normalized.startsWith('src/familytrustset/');
@@ -209,16 +211,33 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
   return violations;
 }
 
-test('GATE SELF-TEST: the checker detects a partially-wired composition and accepts the frozen one', () => {
+test('GATE SELF-TEST: the checker detects partial ordinary acceptance and bootstrap compositions', () => {
   const goodMain = [
     'const trustSetEpochStore = new MySqlTrustSetEpochStore();',
-    'const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore });',
+    'const trustSetSignatureVerifier = new P256TrustSetSignatureVerifier();',
+    'const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({',
+    '  epochStore: trustSetEpochStore,',
+    '  deviceRepository,',
+    '  verifier: trustSetSignatureVerifier,',
+    '});',
+    'const trustSetEpochAcceptanceService = new TrustSetEpochAcceptanceService({',
+    '  epochStore: trustSetEpochStore,',
+    '  keyEpochStore: new MySqlKeyEpochStore(),',
+    '  floorStore: new MySqlEpochFloorStore(),',
+    '  genesisAnchorSource: new GenesisAnchorStoreSource(new MySqlFamilyAuthorityGenesisStore()),',
+    '  verifier: trustSetSignatureVerifier,',
+    '});',
+    'const ordinaryTrustSetService = new OrdinaryTrustSetService(',
+    '  trustSetEpochAcceptanceService,',
+    '  trustSetRoleResolver,',
+    ');',
     'const platformAttestationVerifier = createPlatformAttestationVerifier(process.env);',
     'const firstDeviceBootstrapService = new FirstDeviceBootstrapService({',
     '  store: new MySqlFirstDeviceBootstrapStore({ epochStore: trustSetEpochStore }),',
     '  attestationVerifier: platformAttestationVerifier,',
     '});',
     'firstDeviceBootstrapService,',
+    'ordinaryTrustSetService,',
     'resolveEnvelopeContext: rejectingResolveEnvelopeContext,',
     'RejectingEnvelopeSignatureVerifier',
     'RejectingDeviceSignatureVerifier',
@@ -227,8 +246,18 @@ test('GATE SELF-TEST: the checker detects a partially-wired composition and acce
 
   // Each mutation of the frozen set must be reported.
   assert.notDeepEqual(
-    findFtsWiringViolations(goodMain.replace('new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore })', 'new UnavailableTrustSetRoleResolver()'), {}),
+    findFtsWiringViolations(goodMain.replace('new StoreBackedTrustSetRoleResolver({', 'new UnavailableTrustSetRoleResolver({'), {}),
     [],
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain.replace('verifier: trustSetSignatureVerifier,', 'verifier: otherVerifier,'), {}),
+    [],
+    'persisted role resolution must share the strict production signature verifier',
+  );
+  assert.notDeepEqual(
+    findFtsWiringViolations(goodMain.replace('  trustSetRoleResolver,', '  undefined,'), {}),
+    [],
+    'the ordinary Trust Set service must receive the shared role resolver',
   );
   assert.notDeepEqual(
     findFtsWiringViolations(goodMain.replace('rejectingResolveEnvelopeContext', 'realResolveEnvelopeContext'), {}),
@@ -322,7 +351,7 @@ test('GENESIS APPEND WIRING GUARD: connection-scoped genesis writes stay out of 
   assert.notDeepEqual(violations, []);
 });
 
-test('WAVE 6B ATOMIC SET: main.ts wires the store-backed resolver AND the fail-closed bootstrap lane, keeps the rejecting floor/verifier set, and no production path references the acceptance writer', () => {
+test('PRODUCTION SET: ordinary signed acceptance is wired safely while bootstrap and envelope boundaries stay pinned', () => {
   const mainText = read('src/main.ts');
   const sourceFiles = {};
   for (const file of listSourceFiles('src')) {

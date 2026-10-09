@@ -580,6 +580,78 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
     }
 }
 
+/// The authority inputs a caller has already authenticated for one policy
+/// application. The authority binding is a non-secret accepted revision or
+/// fingerprint; it must never contain credentials or a bearer token.
+public struct DeviceActivityUsageAssociationAuthoritySnapshot {
+    public let scope: DeviceActivityUsageAssociationScope
+    public let authorityBinding: Data
+
+    public init(scope: DeviceActivityUsageAssociationScope, authorityBinding: Data) {
+        self.scope = scope
+        self.authorityBinding = authorityBinding
+    }
+
+    fileprivate var isValid: Bool {
+        scope.isValid && !authorityBinding.isEmpty && authorityBinding.count <= 8_192
+    }
+}
+
+/// Bridges an already-authorized, persisted logical-app/token association to
+/// local usage planning. This does not discover or create identity: callers
+/// must supply a current family/device scope, accepted authority binding, and
+/// revalidator from their approved authority source. Missing or stale authority
+/// fails closed as no binding, so the policy runtime can report usage coverage
+/// as degraded instead of inferring from a picker selection.
+public final class DeviceActivityUsageAssociationBindingResolver<Token: Hashable & Codable> {
+    private let associations: DeviceActivityUsageAssociationStore<Token>
+    private let coordination: DeviceActivityPolicyCoordination
+    private let currentAuthority: () throws -> DeviceActivityUsageAssociationAuthoritySnapshot?
+    private let revalidateAuthority: DeviceActivityUsageAssociationAuthorityRevalidator
+
+    public init(
+        associations: DeviceActivityUsageAssociationStore<Token>,
+        coordination: DeviceActivityPolicyCoordination,
+        currentAuthority: @escaping () throws -> DeviceActivityUsageAssociationAuthoritySnapshot?,
+        revalidateAuthority: @escaping DeviceActivityUsageAssociationAuthorityRevalidator
+    ) {
+        self.associations = associations
+        self.coordination = coordination
+        self.currentAuthority = currentAuthority
+        self.revalidateAuthority = revalidateAuthority
+    }
+
+    /// Resolves only for daily-limit policies and only while the caller's exact
+    /// policy lock token remains active. The accepted association store then
+    /// performs its own scope/token/revision checks and pre/post revalidation.
+    public func resolve(
+        policy: DecodedSchedulePolicy,
+        selectedTokens: Set<Token>,
+        under access: DeviceActivityPolicyLockAccess
+    ) -> DeviceActivityUsageSelectionBinding? {
+        guard policy.dailyLimit != nil else { return nil }
+        let resolution: Result<DeviceActivityUsageSelectionBinding?, Error>? = access.withActiveUse(for: coordination) {
+            do {
+                guard let authority = try currentAuthority(), authority.isValid else {
+                    return .success(nil)
+                }
+                return .success(try associations.resolveAcceptedAssociation(
+                    scope: authority.scope,
+                    logicalAppToken: policy.appToken,
+                    selectedTokens: selectedTokens,
+                    currentAuthorityBinding: authority.authorityBinding,
+                    under: access,
+                    revalidateAuthority: revalidateAuthority
+                ))
+            } catch {
+                return .failure(error)
+            }
+        }
+        guard let resolution, case .success(let binding) = resolution else { return nil }
+        return binding
+    }
+}
+
 /// Separate from diagnostic callback history. All operations must run under the shared
 /// policy coordination lock; no nested flock acquisition or in-memory authority fallback.
 public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable> {

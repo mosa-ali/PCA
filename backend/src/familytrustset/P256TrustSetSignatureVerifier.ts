@@ -29,16 +29,12 @@ import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
  * (Buffer.from(canonicalBytes, 'utf8')). `publicKey` is always a DSK; a DEK
  * must never be accepted here (see TrustSetSignatureVerifier.ts).
  *
- * WIRING STATUS (corrected 2026-10-02, Wave 6C): this class IS constructed
- * in production -- the Wave-6B first-device trust-root bootstrap service
- * constructs it internally as its epoch-1 (statement B) verifier, and the
- * Wave-6C platform attestation router terminates that same ceremony lane.
- * What remains owner-gated is the GENERAL production ingestion path: the
- * ordinary TrustSetEpochAcceptanceService still has no production caller,
- * and no other production composition constructs this verifier; the
- * ceremony's own reachability additionally requires configured pinned
- * attestation roots plus genuine hardware-backed Android evidence.
- */
+ * WIRING STATUS (updated 2026-10-09): this strict verifier is used by both
+ * the first-device epoch-1 bootstrap and the ordinary signed epoch-N
+ * acceptance service. The latter is composed at the production root with
+ * durable epoch/key/floor stores and the family genesis-anchor source.
+ * Independent cryptographic contract review and genuine hardware-backed
+ * Android attestation remain separate release gates. */
 export class P256TrustSetSignatureVerifier implements TrustSetSignatureVerifier {
   async verify(publicKey: string, canonicalBytes: string, signature: string): Promise<boolean> {
     try {

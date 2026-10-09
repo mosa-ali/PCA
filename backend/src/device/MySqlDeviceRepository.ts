@@ -61,6 +61,13 @@ type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 
 
 export class MySqlDeviceRepository implements DeviceRepository {
   async createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult> {
+    // The transaction inserts the device and then the key. A foreign key on
+    // device_public_keys only proves that key.deviceId exists; without this
+    // binding check it could attach the initial key to a different device
+    // (including one in another family) while creating a keyless device here.
+    if (key.deviceId !== device.deviceId) {
+      throw new TypeError('The initial device key must belong to the created device.');
+    }
     try {
       return await runInTransaction(async (conn) => {
         await execute(
@@ -160,8 +167,9 @@ export class MySqlDeviceRepository implements DeviceRepository {
            WHERE device_id = ? AND family_id = ? AND status != 'REVOKED'`,
           [revokedAt, deviceId, familyId],
         );
+        const transitioned = updateResult.rowCount > 0;
         let deviceRow: DeviceRow | undefined;
-        if (updateResult.rowCount > 0) {
+        if (transitioned) {
           const reread = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ?`, [deviceId]);
           deviceRow = reread.rows[0];
         } else {
@@ -184,7 +192,7 @@ export class MySqlDeviceRepository implements DeviceRepository {
         const keysResult = await execute<DeviceKeyRow>(conn, `SELECT * FROM device_public_keys WHERE device_id = ?`, [
           deviceId,
         ]);
-        return { outcome: 'REVOKED', device: mapDevice(deviceRow), keys: keysResult.rows.map(mapKey) } as const;
+        return { outcome: 'REVOKED', transitioned, device: mapDevice(deviceRow), keys: keysResult.rows.map(mapKey) } as const;
       });
     } catch (error) {
       if (error instanceof SoftFailure) return { outcome: 'DEVICE_NOT_FOUND' };

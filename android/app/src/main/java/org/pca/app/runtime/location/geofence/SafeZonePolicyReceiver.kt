@@ -199,10 +199,12 @@ data class SafeZoneAuthorizedSender(
 )
 
 /**
- * Coordinator/runtime binding to the verified local Family Trust Set. A
+ * Coordinator/runtime binding to the locally accepted Family Trust Set. A
  * service session or an endpoint ID alone is never enough. Implementations
- * must return null/false generically for unknown, revoked, or cross-family
- * identities and must enforce the current trust/key epoch.
+ * must return null/false generically for unknown, locally revoked, or
+ * cross-family identities and enforce the latest locally accepted trust/key
+ * epoch. This interface does not establish fresh server status or remote
+ * revocation freshness.
  */
 interface SafeZoneFamilyAuthority {
     suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long, keyEpoch: Long): Boolean
@@ -259,6 +261,8 @@ class SafeZonePolicyReceiver(
     private val zoneStore: GeofenceZoneStore,
     private val zoneStateStore: GeofenceZoneStateStore,
 ) {
+    private val receiverScope = GeofenceStorageScope(localFamilyId, localEndpointId)
+
     suspend fun receive(
         envelope: SafeZonePolicyEnvelope,
         nowEpochMillis: Long,
@@ -270,6 +274,10 @@ class SafeZonePolicyReceiver(
         if (envelope.familyId != localFamilyId || envelope.recipientEndpointId != localEndpointId) {
             return SafeZonePolicyReceiveResult.REJECTED
         }
+        // A receiver is bound to the identity captured at its construction.
+        // If local enrollment changed since then, do not allow an old
+        // receiver instance to read or apply under the replacement family.
+        if (!zoneStore.isCurrentScope(receiverScope)) return SafeZonePolicyReceiveResult.REJECTED
 
         val recipientAuthorized = runCatching {
             authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)
@@ -297,7 +305,8 @@ class SafeZonePolicyReceiver(
         return try {
             val payload = SafeZonePolicyPayloadCodec.decode(plaintext, envelope)
                 ?: return SafeZonePolicyReceiveResult.REJECTED
-            val current = zoneStore.loadZones().firstOrNull { it.zoneId == payload.zoneId }
+            if (!zoneStore.isCurrentScope(receiverScope)) return SafeZonePolicyReceiveResult.REJECTED
+            val current = zoneStore.loadZones(receiverScope).firstOrNull { it.zoneId == payload.zoneId }
             if (current != null && payload.revision <= current.revision) {
                 return SafeZonePolicyReceiveResult.REJECTED
             }
@@ -306,8 +315,8 @@ class SafeZonePolicyReceiver(
             // re-enable; clear it before replacing the zone so a state-store
             // failure leaves the previously applied policy in place rather
             // than pairing new geometry with an old baseline.
-            zoneStateStore.clear(payload.zoneId)
-            zoneStore.addOrReplace(payload.zone)
+            zoneStateStore.clear(receiverScope, payload.zoneId)
+            zoneStore.addOrReplace(receiverScope, payload.zone)
             SafeZonePolicyReceiveResult.APPLIED
         } catch (_: Exception) {
             SafeZonePolicyReceiveResult.REJECTED

@@ -8,7 +8,10 @@ import org.pca.app.foundation.InMemoryPersistentStateStore
 class GeofenceZoneStateStoreTest {
 
     private val backing = InMemoryPersistentStateStore()
-    private val store = GeofenceZoneStateStore(backing)
+    private val familyA = GeofenceStorageScope("family-a", "device-a")
+    private val familyB = GeofenceStorageScope("family-b", "device-b")
+    private var activeScope: GeofenceStorageScope? = familyA
+    private val store = GeofenceZoneStateStore(backing, scopeProvider = { activeScope })
 
     @Test
     fun `unknown zone returns null, never a fabricated default`() {
@@ -50,19 +53,49 @@ class GeofenceZoneStateStoreTest {
 
     @Test
     fun `corrupt raw value degrades to null rather than crashing`() {
-        backing.putString("geofence_zone_state_v1_zone-1", "garbage")
+        backing.putString(familyA.zoneStateStoreKey("geofence_zone_state_v2", "zone-1"), "garbage")
         assertNull(store.load("zone-1"))
     }
 
     @Test
     fun `reads legacy four-field state rows without inventing a sample timestamp`() {
         backing.putString(
-            "geofence_zone_state_v1_zone-1",
+            familyA.zoneStateStoreKey("geofence_zone_state_v2", "zone-1"),
             "INSIDE|INSIDE|0|123456789",
         )
 
         val state = store.load("zone-1")
         assertEquals(GeofenceMembership.INSIDE, state?.confirmedMembership)
         assertNull(state?.lastAcceptedSampleElapsedRealtimeMillis)
+    }
+
+    @Test
+    fun `membership state does not follow a reused zone id into another family`() {
+        store.save(GeofenceZoneState(zoneId = "zone-1", confirmedMembership = GeofenceMembership.INSIDE))
+        activeScope = familyB
+        assertNull(store.load("zone-1"))
+
+        store.save(GeofenceZoneState(zoneId = "zone-1", confirmedMembership = GeofenceMembership.OUTSIDE))
+        activeScope = familyA
+        assertEquals(GeofenceMembership.INSIDE, store.load("zone-1")?.confirmedMembership)
+        activeScope = familyB
+        assertEquals(GeofenceMembership.OUTSIDE, store.load("zone-1")?.confirmedMembership)
+    }
+
+    @Test
+    fun `missing trusted scope never reads or writes membership state`() {
+        store.save(GeofenceZoneState(zoneId = "zone-1", confirmedMembership = GeofenceMembership.INSIDE))
+        activeScope = null
+        assertNull(store.load("zone-1"))
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            store.save(GeofenceZoneState(zoneId = "zone-2"))
+        }
+    }
+
+    @Test
+    fun `unscoped legacy membership is not adopted into a family namespace`() {
+        backing.putString("geofence_zone_state_v1_zone-1", "INSIDE|INSIDE|0|123456789")
+
+        assertNull(store.load("zone-1"))
     }
 }

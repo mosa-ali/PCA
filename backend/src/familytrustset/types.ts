@@ -42,7 +42,9 @@ export interface FamilyTrustSetEntry {
  * require exact N -> N+1 chaining (see FamilyTrustSetEngine), since a
  * device that was offline through several rotations must be able to adopt
  * the latest epoch directly on reconnect (doc 09 Section 3.5/PCA-SEC-020).
- * `null` only for the genesis epoch (no prior epoch exists).
+ * Genesis MUST use `null`. Ordinary non-genesis epochs may also use `null`
+ * when lineage metadata is omitted; acceptance is governed by the monotonic
+ * epoch/key floors and active-owner signature, not an exact predecessor link.
  *
  * Doc 09 Section 3.2 also lists an "authorization rule" field and permits
  * "signature(s)" (plural, for the Section 10 recovery-transaction path).

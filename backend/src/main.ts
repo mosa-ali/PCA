@@ -46,6 +46,13 @@ import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotenc
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
 import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStore.js';
+import { MySqlKeyEpochStore } from './familytrustset/MySqlKeyEpochStore.js';
+import { MySqlEpochFloorStore } from './familytrustset/MySqlEpochFloorStore.js';
+import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
+import { GenesisAnchorStoreSource } from './familytrustset/GenesisAnchorSource.js';
+import { P256TrustSetSignatureVerifier } from './familytrustset/P256TrustSetSignatureVerifier.js';
+import { TrustSetEpochAcceptanceService } from './familytrustset/TrustSetEpochAcceptance.js';
+import { OrdinaryTrustSetService } from './familytrustset/OrdinaryTrustSetService.js';
 import { MySqlFirstDeviceBootstrapStore } from './familytrustset/MySqlFirstDeviceBootstrapStore.js';
 import { FirstDeviceBootstrapService } from './familytrustset/FirstDeviceBootstrapService.js';
 import { createPlatformAttestationVerifier } from './familytrustset/PlatformAttestationVerifier.js';
@@ -577,31 +584,39 @@ async function start(): Promise<void> {
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
+  // Ordinary mobile Trust Set epoch progression is composed as one verified
+  // production path: the accepted-epoch store is shared with the role
+  // resolver and first-device bootstrap, canonical key/floor reads use the
+  // same MySQL schema, the genesis anchor uses the family-authority mapper,
+  // and epoch-N signatures are checked with the strict P-256 verifier.
+  // The ordinary service rejects genesis; only the separate first-device
+  // ceremony may create epoch 1. Envelope-context verification remains
+  // independently fail-closed until its own verified receiver is composed.
+  // The ftsProductionWiring test pins these boundaries together.
   // Safe Zone routes are composed through the shared family-action matrix.
-  // WAVE 5B (approved Wave-4 sequence: "server trust-set verification +
-  // role resolver activation"): the resolver is now backed by the durable,
-  // signature-gated accepted-epoch store (migration 0060). The store can
-  // only ever gain rows through the verified acceptance service
-  // (TrustSetEpochAcceptance), which has NO production caller -- so this
-  // resolver returns NO_TRUST_SET for every family today, and on any read
-  // failure, exactly as the previous Unavailable resolver did. Swapping
-  // this resolver is safe only while the acceptance writer stays unwired
-  // and the envelope-context floors stay rejecting; that atomic-set
-  // invariant is pinned by test/tooling/ftsProductionWiring.test.mjs and
-  // must be honored together if a future wave wires ingestion.
-  // WAVE 6B adds exactly ONE further writer of the same store: the
-  // first-device bootstrap ceremony commit (below), which is wired but can
-  // never append in production while it is bound to the fail-closed
-  // attestation verifier; the acceptance service STILL has no production
-  // caller. The ftsProductionWiring guard pins both halves of that
-  // invariant together.
   // Shared across every consumer of the family-action authorization matrix
   // (Safe Zone below, and RemovalDecisionAuthority further down) -- one
   // resolver instance, not a second independently-constructed one, per the
   // one-production-composition-boundary rule the Unavailable stub's doc
   // comment established.
   const trustSetEpochStore = new MySqlTrustSetEpochStore();
-  const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({ epochStore: trustSetEpochStore });
+  const trustSetSignatureVerifier = new P256TrustSetSignatureVerifier();
+  const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: trustSetEpochStore,
+    deviceRepository,
+    verifier: trustSetSignatureVerifier,
+  });
+  const trustSetEpochAcceptanceService = new TrustSetEpochAcceptanceService({
+    epochStore: trustSetEpochStore,
+    keyEpochStore: new MySqlKeyEpochStore(),
+    floorStore: new MySqlEpochFloorStore(),
+    genesisAnchorSource: new GenesisAnchorStoreSource(new MySqlFamilyAuthorityGenesisStore()),
+    verifier: trustSetSignatureVerifier,
+  });
+  const ordinaryTrustSetService = new OrdinaryTrustSetService(
+    trustSetEpochAcceptanceService,
+    trustSetRoleResolver,
+  );
   // WAVE 6B (owner rulings D4/F4): first-device trust-root bootstrap. The
   // ceremony store shares the SAME epoch store instance above, so anchor +
   // epoch-1 + floors commit through one per-family serialization.
@@ -923,6 +938,7 @@ async function start(): Promise<void> {
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
+    ordinaryTrustSetService,
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
     // PCA runtime-sync parent-facing read gap: reuses the SAME
     // deviceRepository/relayService instances constructed above -- never a

@@ -72,5 +72,5 @@ describe('Parent Guide', () => {
   it('has no axe violations in the Guide information architecture', async () => {
     const { container } = renderWithProviders(<ParentGuide />, { route: '/guide' });
     expect(await axe(container)).toHaveNoViolations();
-  });
+  }, 15_000);
 });

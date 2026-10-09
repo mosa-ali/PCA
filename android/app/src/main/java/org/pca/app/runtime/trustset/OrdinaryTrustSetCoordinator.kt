@@ -54,6 +54,10 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         val prior = decode(current.accepted)
         val owner = owner(prior)
         require(owner.deviceId == localDeviceId && owner.dskKeyId == localSigningKeyId)
+        // Locally-created pending requests retain the exact accepted signing base. The wire
+        // field is lineage metadata at the server boundary, but this client writes the precise
+        // current floor so its durable custody record can be verified after restart.
+        require(candidate.supersedesEpoch == prior.trustSetEpoch)
         validateTransition(prior, candidate)
         // A valid local owner signature proves authorship, not that the server accepted this
         // persisted floor. Before using it to authorize another DSK signature, require the
@@ -75,7 +79,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
     suspend fun submitExact(): Boolean = flight.withLock { contact(false) }
     suspend fun reconcile(): Boolean = flight.withLock { contact(true) }
 
-    /** Walk signed predecessor links backwards, then verify forward from the trusted floor. */
+    /** Reconcile authenticated server records back to the trusted local floor. */
     suspend fun catchUp(maximumRecords: Int = 32): Int = flight.withLock {
         require(maximumRecords in 1..32)
         val initial = store.read() ?: return@withLock 0
@@ -96,7 +100,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
                     null
                 }
                 val predecessor = candidate?.supersedesEpoch?.let { epoch ->
-                    findAcceptedAncestor(initial, epoch, maximumRecords)
+                    resolveProvenPendingBase(initial, epoch)
                 }
                 if (predecessor == null) {
                     null
@@ -132,9 +136,12 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             }
             require(candidate.trustSetEpoch > anchor.trustSetEpoch && chain.size < maximumRecords)
             chain.add(cursor)
-            val predecessor = candidate.supersedesEpoch ?: error("missing_ordinary_predecessor")
-            require(predecessor >= anchor.trustSetEpoch && predecessor < candidate.trustSetEpoch)
-            if (predecessor == anchor.trustSetEpoch) break
+            val predecessor = candidate.supersedesEpoch
+            require(predecessor == null || predecessor < candidate.trustSetEpoch)
+            // `supersedesEpoch` is lineage metadata and may be absent or point to an older
+            // accepted epoch. The immutable epoch-1 owner DSK authenticates each fetched hop;
+            // never require metadata to form an immediate predecessor edge to the local floor.
+            if (predecessor == null || predecessor <= anchor.trustSetEpoch) break
             cursor = try { api.getEpoch(anchor.familyId, predecessor) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { return@withLock 0 }
@@ -183,6 +190,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         if (!hasTrustedFloor(current)) return false
         val pending = current.pending ?: return false
         if (!store.confirmDurable(current)) return false
+        val acceptedFloorEpoch = decode(current.accepted).trustSetEpoch
         val (pendingEpoch, pendingBytes) = try {
             verifyPending(current, pending)
         } catch (cancelled: CancellationException) {
@@ -193,6 +201,10 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             if (current.pendingBase != null) throw failure
             return false
         }
+        // A legacy state has no durable custody base. Its signed lineage pointer can establish
+        // the base only when it names the exact still-current accepted record. A null or older
+        // pointer must never inherit the current floor just because the signature verifies.
+        if (current.pendingBase == null && pendingEpoch.supersedesEpoch != acceptedFloorEpoch) return false
         // A request signed from a prior accepted floor is never resubmitted after catch-up has
         // advanced that floor. Catch-up alone decides when the signed candidate is stale.
         if (current.pendingBase != null && current.pendingBase != current.accepted) return false
@@ -249,7 +261,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             if (accepted.trustSetEpoch == 1) {
                 require(state.accepted == rootRecord)
             } else {
-                require(accepted.supersedesEpoch != null && accepted.supersedesEpoch < accepted.trustSetEpoch)
+                require(accepted.supersedesEpoch == null || accepted.supersedesEpoch < accepted.trustSetEpoch)
             }
             require(verifier.verify(rootOwner.dskPublicKey, canonicalBytes(state.accepted.request),
                 state.accepted.request.signatureBase64))
@@ -284,68 +296,47 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         val bytes = canonicalBytes(request)
         val candidate = TrustSetEpochCodec.decodeCanonical(bytes)
         validateTransition(prior, candidate)
+        // A persisted pending request is locally signed from this exact durable base. Keep
+        // custody separate from the server's looser lineage metadata contract: without this
+        // binding a modified pendingBase could authorize replay from an invented floor.
+        require(candidate.supersedesEpoch == prior.trustSetEpoch)
         require(verifier.verify(priorOwner.dskPublicKey, bytes, request.signatureBase64))
         return candidate to bytes
     }
 
-    /**
-     * Resolve a legacy pending request's claimed predecessor from the already trusted local
-     * accepted floor. Every edge from that floor back to the requested epoch is checked with the
-     * same owner key and exact predecessor link. An absent, skipped, malformed, or unavailable
-     * ancestor is not a reason to stop unrelated catch-up; it simply means the request cannot be
-     * retired yet.
-     */
-    private suspend fun findAcceptedAncestor(
+    /** Resolve the accepted epoch named by a legacy pending request's signed metadata. */
+    private suspend fun resolveProvenPendingBase(
         state: OrdinaryEpochState,
         targetEpoch: Int,
-        maximumRecords: Int,
     ): AcceptedEpochRecord? {
         val rootRecord = state.rootAnchor ?: return null
         val root = try { decode(rootRecord) } catch (_: Exception) { return null }
         val rootOwner = try { owner(root) } catch (_: Exception) { return null }
-        val familyId = try { decode(state.accepted).familyId } catch (_: Exception) { return null }
-        if (targetEpoch !in 1..decode(state.accepted).trustSetEpoch) return null
-
-        var cursor = state.accepted
-        var traversed = 0
-        while (true) {
-            val current = try { decode(cursor) } catch (_: Exception) { return null }
-            if (current.familyId != familyId || current.trustSetEpoch < targetEpoch) return null
-            if (current.trustSetEpoch == targetEpoch) {
-                if (targetEpoch == 1 && cursor != rootRecord) return null
-                if (cursor.signerDeviceId != rootOwner.deviceId || cursor.signerKeyId != rootOwner.dskKeyId ||
-                    owner(current).dskPublicKey != rootOwner.dskPublicKey) return null
-                val bytes = TrustSetEpochCodec.canonicalize(current).toByteArray(Charsets.UTF_8)
-                return if (verifier.verify(rootOwner.dskPublicKey, bytes, cursor.request.signatureBase64)) cursor else null
-            }
-            if (traversed >= maximumRecords) return null
-            val predecessorEpoch = current.supersedesEpoch ?: return null
-            // If the accepted chain skips the requested epoch, that record is not a proven
-            // predecessor even if an API happens to return a record for that number.
-            if (predecessorEpoch < targetEpoch) return null
-            val predecessor = try {
-                api.getEpoch(familyId, predecessorEpoch)
+        val accepted = try { decode(state.accepted) } catch (_: Exception) { return null }
+        if (targetEpoch !in 1..accepted.trustSetEpoch || root.familyId != accepted.familyId) return null
+        val predecessor = when (targetEpoch) {
+            root.trustSetEpoch -> rootRecord
+            accepted.trustSetEpoch -> state.accepted
+            else -> try {
+                api.getEpoch(accepted.familyId, targetEpoch)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 return null
             }
-            if (predecessor.trustSetEpoch != predecessorEpoch) return null
-            val prior = try { decode(predecessor) } catch (_: Exception) { return null }
-            try {
-                validateTransition(prior, current)
-                val signer = owner(prior)
-                require(cursor.signerDeviceId == signer.deviceId && cursor.signerKeyId == signer.dskKeyId)
-                require(signer.deviceId == rootOwner.deviceId && signer.dskKeyId == rootOwner.dskKeyId &&
-                    signer.dskPublicKey == rootOwner.dskPublicKey)
-                require(verifier.verify(signer.dskPublicKey,
-                    TrustSetEpochCodec.canonicalize(current).toByteArray(Charsets.UTF_8), cursor.request.signatureBase64))
-            } catch (_: Exception) {
-                return null
-            }
-            cursor = predecessor
-            traversed++
         }
+        val prior = try { decode(predecessor) } catch (_: Exception) { return null }
+        if (predecessor.trustSetEpoch != targetEpoch || prior.familyId != accepted.familyId ||
+            prior.trustSetEpoch > accepted.trustSetEpoch || prior.keyEpoch > accepted.keyEpoch ||
+            (prior.supersedesEpoch != null && prior.supersedesEpoch >= prior.trustSetEpoch)) return null
+        if (targetEpoch == root.trustSetEpoch && predecessor != rootRecord) return null
+        val priorOwner = try { owner(prior) } catch (_: Exception) { return null }
+        if (priorOwner.deviceId != rootOwner.deviceId || priorOwner.dskKeyId != rootOwner.dskKeyId ||
+            priorOwner.dskPublicKey != rootOwner.dskPublicKey || predecessor.signerDeviceId != rootOwner.deviceId ||
+            predecessor.signerKeyId != rootOwner.dskKeyId) return null
+        val bytes = try { TrustSetEpochCodec.canonicalize(prior).toByteArray(Charsets.UTF_8) }
+        catch (_: Exception) { return null }
+        return if (verifier.verify(rootOwner.dskPublicKey, bytes, predecessor.request.signatureBase64)) predecessor else null
     }
 
     private fun canonicalBytes(request: OrdinaryEpochRequest): ByteArray {
@@ -363,7 +354,8 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
 
     private fun validateTransition(prior: UntrustedTrustSetEpoch, next: UntrustedTrustSetEpoch) {
         require(next.familyId == prior.familyId && next.trustSetEpoch > prior.trustSetEpoch)
-        require(prior.keyEpoch >= 1 && next.keyEpoch >= prior.keyEpoch && next.supersedesEpoch == prior.trustSetEpoch)
+        require(prior.keyEpoch >= 1 && next.keyEpoch >= prior.keyEpoch &&
+            (next.supersedesEpoch == null || next.supersedesEpoch < next.trustSetEpoch))
         val beforeOwner = owner(prior)
         val afterOwner = owner(next)
         require(afterOwner.deviceId == beforeOwner.deviceId && afterOwner.dskKeyId == beforeOwner.dskKeyId &&

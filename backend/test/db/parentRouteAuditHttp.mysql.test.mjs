@@ -156,7 +156,7 @@ const actorDeviceAuth = new DeviceAuthService(
 );
 const actorDeviceSessionService = new DeviceSessionService(actorDeviceAuth, actorSessionRepository, clock.now);
 
-async function testActorHeaders(session) {
+async function testActorIdentity(session) {
   const deviceId = await insertFamilyDevice(session.familyId);
   const familySessionEpoch = await actorDeviceRepository.getActiveDeviceSessionEpoch(session.familyId, deviceId);
   assert.notEqual(familySessionEpoch, null, 'the fixture requires an active persisted device and family');
@@ -168,7 +168,12 @@ async function testActorHeaders(session) {
   });
   assert.deepEqual(await actorDeviceSessionService.requireActorDeviceInFamily(rawToken, session.familyId),
     { deviceId, familyId: session.familyId });
-  return { authorization: `Bearer ${rawToken}` };
+  return { authorization: `Bearer ${rawToken}`, deviceId };
+}
+
+async function testActorHeaders(session) {
+  const { authorization } = await testActorIdentity(session);
+  return { authorization };
 }
 
 let emailSender;
@@ -195,8 +200,8 @@ function buildApp({ schedulePolicyHarness } = {}) {
     freeAccessAccountRepository: new MySqlFreeAccessAccountRepository(),
   });
   registerDashboardRoutes(app, { parentAccountService, dashboardAggregatorService });
-  registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger });
-  registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger });
+  registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger, deviceSessionService: actorDeviceSessionService });
+  registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger, deviceSessionService: actorDeviceSessionService });
   registerWebRuleRoutes(app, {
     parentAccountService,
     deviceSessionService: actorDeviceSessionService,
@@ -279,12 +284,30 @@ test('schedule-policy route denies a real Parent session until a signed Trust Se
     const { epochStore, actorSessions } = schedulePolicyHarness;
     actorSessions.set('test-only-actor-session', { deviceId: 'test-parent-actor', familyId: session.familyId });
     assert.equal(await epochStore.readLatestEpoch(session.familyId), null, 'the disposable family has no accepted signed epoch');
+    const issuedAt = new Date(Date.now() - 1_000);
 
     const response = await app.inject({
       method: 'POST',
       url: `/api/parent/families/${session.familyId}/children/child-audit-schedule/schedule-policy`,
       headers: { ...mutationHeaders(session), authorization: 'Bearer test-only-actor-session' },
-      payload: { recipientDeviceId: 'test-recipient', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+      payload: {
+        protocolMajor: 1,
+        protocolMinor: 0,
+        messageId: `schedule-policy-${randomUUID()}`,
+        familyId: session.familyId,
+        senderDeviceId: 'test-parent-actor',
+        recipientDeviceId: 'test-recipient',
+        senderKeyId: 'test-parent-key',
+        messageType: 'POLICY_UPDATE',
+        trustSetEpoch: 1,
+        keyEpoch: 1,
+        sequenceOrNonce: `schedule-policy-sequence-${randomUUID()}`,
+        issuedAt: issuedAt.toISOString(),
+        expiresAt: new Date(issuedAt.getTime() + 5 * 60_000).toISOString(),
+        semanticVersion: '1.0.0',
+        payload: Buffer.from('opaque-encrypted-policy').toString('base64'),
+        signature: 'opaque-signature',
+      },
     });
 
     assert.equal(response.statusCode, 403, JSON.stringify(response.json()));
@@ -926,12 +949,12 @@ test('MYSQL HTTP safe zones: role/CSRF/validation boundaries and missing actor a
         const denied = await app.inject({ method,
           url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`,
           headers: { ...mutationHeaders(owner), ...(actor ?? {}) },
-          ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG' } } : {}) });
+          ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } } : {}) });
         assert.equal(denied.statusCode, 401);
         assert.deepEqual(denied.json(), { error: actor ? 'actor_device_session_invalid' : 'actor_device_session_required' });
       }
     }
-    const patchUnavailable = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: { ...mutationHeaders(owner), ...actorHeaders }, payload: { ciphertextB64: 'BAUG' } });
+    const patchUnavailable = await app.inject({ method: 'PATCH', url: `/api/parent/families/${owner.familyId}/safe-zones/${fixture.zoneId}`, headers: { ...mutationHeaders(owner), ...actorHeaders }, payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } });
     assert.equal(patchUnavailable.statusCode, 503);
     assert.deepEqual(patchUnavailable.json(), { error: 'family_authority_unavailable' });
     recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'mysql_safe_zones_update_actor_authority_unavailable', classification: 'AUTHORITY_UNAVAILABLE', expectedStatus: 503, response: patchUnavailable, evidenceTier: 'MYSQL_HTTP' });
@@ -958,12 +981,13 @@ test('MYSQL HTTP family audit events: anonymous 401, owner 200, cross-family 403
   try {
     const owner = await registerVerifyLogin(app, uniqueEmail('audit-events-owner'));
     const other = await registerVerifyLogin(app, uniqueEmail('audit-events-other'));
+    const actorHeaders = await testActorHeaders(owner);
 
     const anonymous = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/audit-events` });
     assert.equal(anonymous.statusCode, 401);
     recordParentRouteScenario({ method: 'GET', route: AUDIT_EVENTS_ROUTE, scenarioId: 'mysql_audit_events_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: anonymous, evidenceTier: 'MYSQL_HTTP' });
 
-    const read = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/audit-events`, headers: sessionHeaders(owner) });
+    const read = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/audit-events`, headers: { ...sessionHeaders(owner), ...actorHeaders } });
     assert.equal(read.statusCode, 200);
     recordParentRouteScenario({ method: 'GET', route: AUDIT_EVENTS_ROUTE, scenarioId: 'mysql_audit_events_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: read, evidenceTier: 'MYSQL_HTTP' });
 
@@ -980,12 +1004,13 @@ test('MYSQL HTTP protection alerts: anonymous 401, owner 200 with a durably reco
   try {
     const owner = await registerVerifyLogin(app, uniqueEmail('audit-alerts-owner'));
     const other = await registerVerifyLogin(app, uniqueEmail('audit-alerts-other'));
+    const actor = await testActorIdentity(owner);
     const alertId = `alert-audit-${randomUUID()}`;
     await protectionAlertLedger.record({
       alertId,
       familyId: owner.familyId,
       deviceId: null,
-      parentDeviceId: 'dev-audit-parent',
+      parentDeviceId: actor.deviceId,
       trigger: 'PROTECTION_DEGRADED',
       keyEpoch: 1,
       generatedAtUtc: new Date(),
@@ -997,7 +1022,7 @@ test('MYSQL HTTP protection alerts: anonymous 401, owner 200 with a durably reco
     assert.equal(anonymous.statusCode, 401);
     recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'mysql_protection_alerts_requires_session', classification: 'EXPECTED_DENIAL', expectedStatus: 401, response: anonymous, evidenceTier: 'MYSQL_HTTP' });
 
-    const read = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/protection-alerts`, headers: sessionHeaders(owner) });
+    const read = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/protection-alerts`, headers: { ...sessionHeaders(owner), authorization: actor.authorization } });
     assert.equal(read.statusCode, 200);
     recordParentRouteScenario({ method: 'GET', route: PROTECTION_ALERTS_ROUTE, scenarioId: 'mysql_protection_alerts_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: read, evidenceTier: 'MYSQL_HTTP' });
     assert.ok(read.json().alerts.some((alert) => alert.alertId === alertId), 'the durably recorded alert must be readable');

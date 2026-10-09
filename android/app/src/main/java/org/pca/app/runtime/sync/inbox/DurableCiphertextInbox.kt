@@ -156,6 +156,36 @@ class PersistentCiphertextInbox(
         prior != null
     }
 
+    /**
+     * Removes a bounded set of acknowledged inbox-only aliases after revalidating permanent
+     * replay denial for every exact envelope. The filtered inbox snapshot is persisted once;
+     * pending ACKs and any entry that differs from the caller's confirmed snapshot fail closed.
+     */
+    internal fun removeRetiredAcknowledgedBatch(
+        scope: RuntimeInboxScope,
+        expectedRecords: List<CiphertextInboxRecord>,
+        assertPermanentCoverage: (CiphertextInboxRecord) -> Unit,
+    ): Int = synchronized(coordinationLock) {
+        if (expectedRecords.isEmpty()) return@synchronized 0
+        if (expectedRecords.size > maxRecords) unavailable()
+        checkScope(scope)
+        if (expectedRecords.any { it.acknowledgementPending } ||
+            expectedRecords.map { it.messageId }.toSet().size != expectedRecords.size) unavailable()
+
+        val snapshot = confirmedSnapshot(scope)
+        val currentById = snapshot.records.associateBy { it.messageId }
+        expectedRecords.forEach { expected ->
+            val envelope = validateEnvelope(expected.envelopeWire, scope)
+            if (envelope.messageId != expected.messageId || currentById[expected.messageId] != expected) unavailable()
+            // Recheck exact, permanent authority immediately before the single snapshot mutation.
+            assertPermanentCoverage(expected)
+        }
+
+        val retiredIds = expectedRecords.map { it.messageId }.toSet()
+        persist(snapshot.copy(records = snapshot.records.filterNot { it.messageId in retiredIds }))
+        expectedRecords.size
+    }
+
     fun markAcknowledged(scope: RuntimeInboxScope, messageId: String, expectedEnvelopeWire: String) = synchronized(coordinationLock) {
         val snapshot = confirmedSnapshot(scope)
         val expected = validateEnvelope(expectedEnvelopeWire, scope)

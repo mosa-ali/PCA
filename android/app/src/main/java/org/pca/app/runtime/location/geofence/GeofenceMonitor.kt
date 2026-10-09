@@ -24,16 +24,30 @@ class GeofenceMonitor(
     /** Returns every confirmed transition produced by this sample (usually empty). Safe to call
      * repeatedly and with stale/duplicate samples -- see [GeofenceEngine]'s own doc. */
     fun evaluateSample(sample: LocationSample, nowMonotonicNanos: Long): List<GeofenceEvent> {
-        val zones = zoneStore.loadZones()
+        val snapshot = try {
+            zoneStore.loadScopedZones()
+        } catch (_: CorruptGeofenceZoneStoreException) {
+            // Never partially enforce a snapshot whose record set cannot be authenticated by
+            // strict local decoding. The receiver and authoring path also refuse to overwrite it.
+            return emptyList()
+        } ?: return emptyList()
+        val scope = snapshot.scope
+        val zones = snapshot.zones
         if (zones.isEmpty()) return emptyList()
+        // The scope provider can change while a location tick is running
+        // (for example after enrollment is cleared/replaced). A stale zone
+        // snapshot must not be evaluated as the new family's policy.
+        if (!zoneStore.isCurrentScope(scope)) return emptyList()
 
         val events = mutableListOf<GeofenceEvent>()
         for (zone in zones) {
-            val priorState = zoneStateStore.load(zone.zoneId) ?: GeofenceZoneState(zoneId = zone.zoneId)
+            if (!zoneStore.isCurrentScope(scope)) return events
+            val priorState = zoneStateStore.load(scope, zone.zoneId) ?: GeofenceZoneState(zoneId = zone.zoneId)
             val evaluation = GeofenceEngine.evaluate(zone, priorState, sample, nowMonotonicNanos, config)
-            zoneStateStore.save(evaluation.newState)
+            zoneStateStore.save(scope, evaluation.newState)
 
             val transition = evaluation.transition ?: continue
+            if (!zoneStore.isCurrentScope(scope)) return events
             val event = GeofenceEvent(
                 zoneId = zone.zoneId,
                 zoneLabel = zone.label,

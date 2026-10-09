@@ -5,6 +5,30 @@ import CryptoKit
 @testable import PCA
 
 final class ProductionIntegrationTests: XCTestCase {
+    private final class ThrowingOrdinaryTrustSetRuntimeManager: OrdinaryTrustSetRuntimeManaging {
+        let failure: PCAAPIError
+        init(_ failure: PCAAPIError) { self.failure = failure }
+        func resumePending() async throws -> OrdinaryTrustSetSubmissionResult? { throw failure }
+        func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult { throw failure }
+        func catchUp(maximumRecords: Int) async throws -> Bool { throw failure }
+    }
+    private final class RecordingOrdinaryTrustSetRuntimeManager: OrdinaryTrustSetRuntimeManaging {
+        private let events: NSMutableArray
+        init(events: NSMutableArray) { self.events = events }
+        func resumePending() async throws -> OrdinaryTrustSetSubmissionResult? {
+            events.add("resume")
+            return nil
+        }
+        func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult {
+            events.add("submit")
+            return .unknown
+        }
+        func catchUp(maximumRecords: Int) async throws -> Bool {
+            events.add("catchUp")
+            return true
+        }
+    }
+
     private func replayEnvelope(id: String = "message-1", nonce: String = "1", sender: String = "key-1",
                                 trust: Int = 1, key: Int = 1) throws -> (PCAInboundEnvelope, PCAInboundScope) {
         let response = try inboundResponse()
@@ -194,7 +218,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(remaining.first(where: { $0.intent.envelope.messageId == "prepared" })?.outcome)
     }
     @MainActor func testReplayReclaimerClearsAcknowledgedInboxOnlyAliasesWithoutEvictingPendingACKs() async throws {
-        let keychain = InMemoryKeychainStore(), scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
+        let keychain = CountingKeychainStore(), scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
         let first = try inboundResponse(id: "retired-original") { $0["sequenceOrNonce"] = "1" }
         let original = try XCTUnwrap(first.applied.first)
         let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
@@ -231,8 +255,19 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertTrue(try inbox.pendingAcknowledgements(scope: scope).isEmpty)
         let overflow = try inboundResponse(id: "overflow-alias") { $0["sequenceOrNonce"] = "1" }
         XCTAssertThrowsError(try inbox.capture(overflow, sessionDeviceId: scope.recipientDeviceId))
+        keychain.resetCounts()
         let aliasesReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})
         XCTAssertEqual(aliasesReclaimed, 256)
+        XCTAssertLessThanOrEqual(
+            keychain.writeCount(account: "current.ciphertext-inbox", service: "reclaimer-inbox-only.ciphertext-inbox"),
+            4,
+            "reclaim must persist the inbox snapshot a bounded number of times, not once per alias"
+        )
+        XCTAssertEqual(
+            keychain.deleteCount(account: "current.ciphertext-inbox", service: "reclaimer-inbox-only.ciphertext-inbox"),
+            0,
+            "batch reclaim removes aliases from the single scoped snapshot and must not issue per-item Keychain deletes"
+        )
         XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
         XCTAssertTrue(try journal.records().isEmpty)
         let restoredInbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-inbox-only")
@@ -257,6 +292,13 @@ final class ProductionIntegrationTests: XCTestCase {
         let legitimate = try inboundResponse(id: "after-retirement") { $0["sequenceOrNonce"] = "2" }
         try inbox.capture(legitimate, sessionDeviceId: scope.recipientDeviceId)
         XCTAssertEqual(try consumer.pending(try inbox.pendingCrypto(scope: scope), scope: scope).count, 1)
+    }
+    func testInboxKeychainDeleteCountsTowardWriteBudget() throws {
+        let keychain = CountingKeychainStore()
+        let account = "current.ciphertext-inbox", service = "reclaimer-delete-counter.ciphertext-inbox"
+        try keychain.delete(forAccount: account, service: service)
+        XCTAssertEqual(keychain.writeCount(account: account, service: service), 1)
+        XCTAssertEqual(keychain.deleteCount(account: account, service: service), 1)
     }
     @MainActor func testReplayReclaimerResumesAfterCiphertextDeletionAndJournalWriteFailure() async throws {
         let keychain = JournalKeychain(), response = try inboundResponse()
@@ -703,6 +745,155 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).map(\.envelope), [envelope])
         XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).map(\.envelope), [envelope])
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
+    @MainActor func testRuntimeTrustSetForbiddenRetainsSessionButUnauthorizedClearsIt() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        for (failure, shouldClearSession) in [(PCAAPIError.rejected, false), (.unauthorized, true)] {
+            let state = InMemoryPCADeviceStateStore()
+            try state.saveSession(session)
+            let root = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1"))
+            let unusedTransport = InMemoryPCAHTTPTransport { _ in
+                XCTFail("runtime API must not be reached after Trust Set status failure")
+                return PCAHTTPResponse(statusCode: 500, data: Data())
+            }
+            let trustSet = ThrowingOrdinaryTrustSetRuntimeManager(failure)
+            let model = try makeEnrollmentModel(
+                identityStore: RecordingDeviceIdentityStore(),
+                attemptStore: state,
+                firstDeviceRootStore: root,
+                runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: unusedTransport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "trustset-auth-status"),
+                ordinaryTrustSetCoordinator: trustSet
+            )
+
+            let result = try await model.synchronizeRuntimeCampaign()
+            XCTAssertEqual(result, .retryableFailure)
+            XCTAssertEqual(try state.loadSession(), shouldClearSession ? nil : session)
+        }
+    }
+    @MainActor func testOrdinaryTrustSetSubmissionClearsOnlyUnauthorizedSession() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let candidate = UntrustedTrustSetEpoch(familyId: "family-1", trustSetEpoch: 2, keyEpoch: 1,
+            entries: [], issuedAt: "2026-10-09T00:00:00Z", supersedesEpoch: 1)
+
+        for (failure, shouldClearSession) in [(PCAAPIError.unauthorized, true), (.forbidden, false)] {
+            let state = InMemoryPCADeviceStateStore()
+            try state.saveSession(session)
+            let model = try makeEnrollmentModel(
+                identityStore: RecordingDeviceIdentityStore(),
+                attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+                ordinaryTrustSetCoordinator: ThrowingOrdinaryTrustSetRuntimeManager(failure)
+            )
+
+            do {
+                _ = try await model.submitOrdinaryTrustSetEpoch(candidate)
+                XCTFail("Trust Set API failure must be propagated")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, failure)
+            }
+            XCTAssertEqual(try state.loadSession(), shouldClearSession ? nil : session)
+            XCTAssertEqual(model.syncConnectionState, .stale)
+            XCTAssertEqual(model.applicationState, shouldClearSession ? .recovering : .error(.authorization))
+        }
+    }
+    @MainActor func testRuntimeSyncHTTPForbiddenRetainsSessionAndUnauthorizedClearsIt() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        for (statusCode, expectedOutcome) in [(403, PCARuntimeCustodyOutcome.blocked), (401, .retryableFailure)] {
+            let state = InMemoryPCADeviceStateStore()
+            try state.saveSession(session)
+            let transport = InMemoryPCAHTTPTransport { request in
+                XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer device-session")
+                return PCAHTTPResponse(statusCode: statusCode, data: Data())
+            }
+            let runtimeClient = try PCADeviceRuntimeSyncClient(
+                baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let inbox = PCAKeychainInboundInboxStore(
+                keychain: InMemoryKeychainStore(), serviceNamespace: "runtime-http-auth-\(statusCode)")
+            let model = try makeEnrollmentModel(
+                identityStore: RecordingDeviceIdentityStore(),
+                attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+                runtimeSyncClient: runtimeClient,
+                inboundInbox: inbox
+            )
+
+            let outcome = try await model.synchronizeRuntimeCampaign()
+            XCTAssertEqual(outcome, expectedOutcome)
+            XCTAssertEqual(try state.loadSession(), statusCode == 401 ? nil : session)
+            XCTAssertEqual(model.syncConnectionState, .stale)
+            XCTAssertEqual(model.applicationState, statusCode == 403 ? .error(.authorization) : .recovering)
+        }
+    }
+    @MainActor func testProtectionStatusUnauthorizedCannotCompleteRuntimeCampaign() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let inboundResponse = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
+
+        for (statusCode, expectedOutcome) in [(401, PCARuntimeCustodyOutcome.retryableFailure), (403, .blocked)] {
+            let state = InMemoryPCADeviceStateStore()
+            try state.saveSession(session)
+            var paths: [String] = []
+            let transport = InMemoryPCAHTTPTransport { request in
+                let path = request.url?.path ?? ""
+                paths.append(path)
+                if path == "/v1/runtime-sync/inbound" {
+                    return PCAHTTPResponse(statusCode: 200, data: inboundResponse)
+                }
+                XCTAssertEqual(path, "/v1/runtime-sync/protection-status")
+                return PCAHTTPResponse(statusCode: statusCode, data: Data())
+            }
+            let runtimeClient = try PCADeviceRuntimeSyncClient(
+                baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let inbox = PCAKeychainInboundInboxStore(
+                keychain: InMemoryKeychainStore(), serviceNamespace: "runtime-status-auth-\(statusCode)")
+            let model = try makeEnrollmentModel(
+                identityStore: RecordingDeviceIdentityStore(),
+                attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+                runtimeSyncClient: runtimeClient,
+                inboundInbox: inbox
+            )
+
+            let outcome = try await model.synchronizeRuntimeCampaign()
+            XCTAssertEqual(outcome, expectedOutcome)
+            XCTAssertEqual(paths, ["/v1/runtime-sync/inbound", "/v1/runtime-sync/protection-status"])
+            XCTAssertEqual(try state.loadSession(), statusCode == 401 ? nil : session)
+            XCTAssertEqual(model.syncConnectionState, .stale)
+            XCTAssertEqual(model.applicationState, statusCode == 401 ? .recovering : .error(.authorization))
+        }
+    }
+    @MainActor func testRuntimeReconcilesTrustSetBeforePullingInboundPolicy() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let state = InMemoryPCADeviceStateStore()
+        try state.saveSession(session)
+        let events = NSMutableArray()
+        let response = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.httpMethod == "GET" {
+                events.add("pull")
+                return PCAHTTPResponse(statusCode: 200, data: response)
+            }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: state,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "trustset-runtime-order"),
+            ordinaryTrustSetCoordinator: RecordingOrdinaryTrustSetRuntimeManager(events: events)
+        )
+
+        let outcome = try await model.synchronizeRuntimeCampaign()
+        XCTAssertEqual(outcome, .complete)
+        XCTAssertGreaterThanOrEqual(events.count, 3)
+        XCTAssertEqual(events.object(at: 0) as? String, "resume")
+        XCTAssertEqual(events.object(at: 1) as? String, "catchUp")
+        XCTAssertEqual(events.object(at: 2) as? String, "pull")
     }
     private func journalIntent(id: String = "message-1", operationId: String = UUID().uuidString.lowercased()) throws -> PCAInboundApplicationIntent {
         let response = try inboundResponse(id: id)
@@ -3650,6 +3841,7 @@ final class ProductionIntegrationTests: XCTestCase {
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
         inboundInbox: PCAInboundInboxStoring? = nil,
         inboundConsumer: PCAInboundCommandConsumer? = nil,
+        ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         authorizationStatus: RawAuthorizationStatus = .approved,
@@ -3675,6 +3867,7 @@ final class ProductionIntegrationTests: XCTestCase {
             runtimeSyncClient: runtimeSyncClient,
             inboundInbox: inboundInbox,
             inboundConsumer: inboundConsumer,
+            ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             assertRuntimeKeyCustody: assertRuntimeKeyCustody,
             sessionStore: attemptStore,
             attemptStore: attemptStore,
@@ -4479,4 +4672,64 @@ private final class FaultingInboxKeychain: KeychainStoreProtocol {
         return corruptReadback ? Data("{}".utf8) : data
     }
     func delete(forAccount account: String, service: String) throws { data = nil }
+}
+
+private final class CountingKeychainStore: KeychainStoreProtocol {
+    private struct Item: Hashable {
+        let account: String
+        let service: String
+    }
+
+    private let backing = InMemoryKeychainStore()
+    private let lock = NSLock()
+    private var writes: [Item: Int] = [:]
+    private var deletes: [Item: Int] = [:]
+
+    func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        recordWrite(account: account, service: service)
+        try backing.store(data, forAccount: account, service: service, accessibility: accessibility)
+    }
+
+    func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        recordWrite(account: account, service: service)
+        try backing.storeReplacingAtomically(data, forAccount: account, service: service, accessibility: accessibility)
+    }
+
+    func retrieve(forAccount account: String, service: String) throws -> Data {
+        try backing.retrieve(forAccount: account, service: service)
+    }
+
+    func delete(forAccount account: String, service: String) throws {
+        let item = Item(account: account, service: service)
+        lock.lock()
+        writes[item, default: 0] += 1
+        deletes[item, default: 0] += 1
+        lock.unlock()
+        try backing.delete(forAccount: account, service: service)
+    }
+
+    func writeCount(account: String, service: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes[Item(account: account, service: service), default: 0]
+    }
+
+    func deleteCount(account: String, service: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return deletes[Item(account: account, service: service), default: 0]
+    }
+
+    func resetCounts() {
+        lock.lock()
+        writes.removeAll()
+        deletes.removeAll()
+        lock.unlock()
+    }
+
+    private func recordWrite(account: String, service: String) {
+        lock.lock()
+        writes[Item(account: account, service: service), default: 0] += 1
+        lock.unlock()
+    }
 }

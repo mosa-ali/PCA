@@ -55,7 +55,15 @@ export class MySqlDeviceProtectionStatusRepository implements DeviceProtectionSt
     const { rows } = await runInTransaction((conn) =>
       execute<DeviceProtectionStatusRow>(
         conn,
-        `SELECT device_id, family_id, protection_level, updated_at FROM device_protection_status WHERE device_id = ? AND family_id = ?`,
+        `SELECT s.device_id, s.family_id, s.protection_level, s.updated_at
+           FROM device_protection_status s
+           JOIN devices d ON d.device_id = s.device_id AND d.family_id = s.family_id
+           JOIN families f ON f.family_id = d.family_id
+          WHERE s.device_id = ?
+            AND s.family_id = ?
+            AND d.status = 'ACTIVE'
+            AND f.status = 'ACTIVE'
+            AND f.deleted_at IS NULL`,
         [deviceId, familyId],
       ),
     );

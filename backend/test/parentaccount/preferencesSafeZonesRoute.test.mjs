@@ -341,7 +341,10 @@ test('safe-zone HTTP validation enforces canonical bytes, repository epoch bound
   const invalidUpdates = [
     { ciphertextB64: 'AB' },
     { nonceB64: 'AAECAwQFBgcICQ' },
-    { keyEpoch: 0x1_0000_0000 },
+    { ciphertextB64: 'BAUG' },
+    { nonceB64: 'AAECAwQFBgcICQoL' },
+    { keyEpoch: 4 },
+    { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 0x1_0000_0000 },
     { label: 'Home' },
   ];
   for (const payload of invalidUpdates) {
@@ -385,7 +388,7 @@ test('safe-zone repository validation errors are returned as client errors', asy
     method: 'PATCH',
     url: '/api/parent/families/family-a/safe-zones/zone-a',
     headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-    payload: { ciphertextB64: 'BAUG' },
+    payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' },
   });
   assert.equal(update.statusCode, 400);
 });
@@ -394,7 +397,7 @@ test('safe-zone update and delete re-authorize the stored recipient endpoint', a
   const app = buildApp();
   app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'device-b' });
 
-  const update = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG' } });
+  const update = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } });
   assert.equal(update.statusCode, 404);
   recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_update_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: update });
 
@@ -403,7 +406,7 @@ test('safe-zone update and delete re-authorize the stored recipient endpoint', a
   recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_delete_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: remove });
 
   app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'device-a' });
-  const allowedUpdate = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG' } });
+  const allowedUpdate = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } });
   assert.equal(allowedUpdate.statusCode, 200);
   recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_update_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: allowedUpdate });
 
@@ -439,7 +442,7 @@ test('safe-zone update and delete deny inactive roles before looking up zone exi
           method,
           url: `/api/parent/families/family-a/safe-zones/${zoneId}`,
           headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-          ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG' } } : {}),
+          ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } } : {}),
         });
         assert.equal(response.statusCode, 403, `${role ?? 'revoked'} ${method} ${zoneId}`);
         assert.equal(listReads, 0, `${role ?? 'revoked'} ${method} ${zoneId} must not read family zones`);
@@ -483,7 +486,7 @@ test('safe-zone update and delete return the same denial if membership is revoke
         method,
         url: `/api/parent/families/family-a/safe-zones/${zoneId}`,
         headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-        ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG' } } : {}),
+        ...(method === 'PATCH' ? { payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } } : {}),
       });
       assert.equal(response.statusCode, 403, `${method} ${zoneId} after in-flight membership revocation`);
       assert.equal(listReads, 1);
