@@ -16,8 +16,10 @@ public enum DeviceActivityBoundaryPlanError: Error, Equatable {
 }
 
 public enum DeviceActivityScheduleMapper {
-    /// Apple supports twenty activities app-wide. Reserve one for health;
-    /// reject the complete plan rather than silently dropping required edges.
+    /// Apple supports twenty activities app-wide. Reserve one for the host
+    /// monitor; reject the complete plan rather than silently dropping edges.
+    public static let maximumMonitoredActivities = 20
+
     public static func boundaryTriggers(for policy: DecodedSchedulePolicy, now: Date) throws -> [DeviceActivityBoundaryTrigger] {
         guard now.timeIntervalSince1970.isFinite else { throw DeviceActivityBoundaryPlanError.malformedBoundary }
         var triggers = Set<DeviceActivityBoundaryTrigger>()
@@ -38,7 +40,7 @@ public enum DeviceActivityScheduleMapper {
             if date > now { triggers.insert(trigger) }
         }
         guard triggers.allSatisfy({ $0.isValid }) else { throw DeviceActivityBoundaryPlanError.malformedBoundary }
-        guard triggers.count <= 19 else { throw DeviceActivityBoundaryPlanError.excessiveMonitors }
+        guard triggers.count < maximumMonitoredActivities else { throw DeviceActivityBoundaryPlanError.excessiveMonitors }
         // Stable ordering makes installation failure-position tests reproducible.
         return triggers.sorted { sortKey($0) < sortKey($1) }
     }

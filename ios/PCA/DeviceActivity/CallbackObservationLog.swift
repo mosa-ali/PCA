@@ -146,7 +146,8 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
               TimeZone(identifier: value.timeZoneIdentifier) != nil else { return nil }
         guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 else { return nil }
         if value.schemaVersion == 2 || value.schemaVersion == 3 {
-            guard let boundaries = value.boundaryMonitors, boundaries.count <= 19,
+            guard let boundaries = value.boundaryMonitors,
+                  boundaries.count < DeviceActivityScheduleMapper.maximumMonitoredActivities,
                   boundaries.allSatisfy({ $0.trigger.isValid }),
                   Set(boundaries.map(\.trigger)).count == boundaries.count else { return nil }
         } else if value.boundaryMonitors != nil { return nil }
@@ -154,7 +155,7 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
             guard let usage = value.usageDayPlan, usage.isValid,
                   usage.generation == value.generation,
                   usage.policyActivityId.utf8.elementsEqual(value.policyActivityId.utf8),
-                  value.allMonitorActivityIds.count <= 20 else { return nil }
+            value.allMonitorActivityIds.count <= DeviceActivityScheduleMapper.maximumMonitoredActivities else { return nil }
         } else if value.usageDayPlan != nil { return nil }
         let ids = value.allMonitorActivityIds
         guard Set(ids).count == ids.count,

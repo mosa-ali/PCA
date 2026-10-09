@@ -208,12 +208,13 @@ final class InstalledPolicyGenerationTests: XCTestCase {
         }
         XCTAssertNil(loader.load(monitorActivityId: "pca-monitor-44444444-4444-4444-8444-444444444444"))
     }
-    func testStartingOrMissingPointerDoesNotResolveAnyMonitor() throws {
+    func testStartingDoesNotResolveButCommittedManifestSurvivesMissingPointer() throws {
         let store = GenerationPolicyTestStore(); try seed(store, state: .starting)
         let loader = InstalledDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store)
         XCTAssertNil(loader.load(monitorActivityId: auxiliary))
         try seed(store); store.remove(forKey: "activeActivityId")
-        XCTAssertNil(loader.load(monitorActivityId: anchor))
+        XCTAssertNotNil(loader.load(monitorActivityId: anchor),
+            "the atomically replaced manifest is authoritative if the process dies before repairing its mirror pointer")
     }
     func testMissingOrCorruptGenerationPayloadNeverFallsBackToLegacy() throws {
         for key in ["schedule.policy.\(generation)", "applicationTokens.policy.\(generation)", "protectedApplicationTokens.\(generation)"] {

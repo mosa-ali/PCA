@@ -134,7 +134,10 @@ public enum DeviceActivityUsagePlanner {
             }
         }
         guard now.timeIntervalSince1970.isFinite, UUID(uuidString: generation) != nil,
-              otherMonitorCount >= 0, otherMonitorCount < 20 else { throw DeviceActivityUsageError.excessiveMonitors }
+              otherMonitorCount >= 0,
+              otherMonitorCount < DeviceActivityScheduleMapper.maximumMonitoredActivities else {
+            throw DeviceActivityUsageError.excessiveMonitors
+        }
         guard (0...maximumMinutes).contains(limit.limitMinutes), (0...maximumMinutes).contains(limit.usedMinutesToday),
               policy.bonusGrants.count <= 64, policy.bonusGrants.allSatisfy({
                   (0...maximumMinutes).contains($0.extraMinutes) && $0.grantedAt.timeIntervalSince1970.isFinite &&
@@ -599,9 +602,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
               let installation = DeviceActivityMonitorInstallation.decodeValidated(data),
               installation.usageDayPlan == plan,
               store.read(forKey: deviceActivityMonitorInstallationStorageKey) == data else { return nil }
-        let pointer = store.read(forKey: "activeActivityId")
-        if installation.state == .active && pointer == Data(installation.policyActivityId.utf8) { return .active }
-        if installation.state == .starting && pointer == nil { return .starting }
+        if installation.state == .active { return .active }
+        if installation.state == .starting, store.read(forKey: "activeActivityId") == nil { return .starting }
         return nil
     }
 
@@ -770,7 +772,7 @@ public struct DeviceActivityUsageCallbackProcessor<Token: Hashable & Codable> {
             try usage.stage(plan: plan, activityId: activityId, eventId: eventId, at: at, deviceTimeZone: deviceTimeZone)
             return false
         }
-        guard store.read(forKey: "activeActivityId") == Data(installation.policyActivityId.utf8) else {
+        guard installation.state == .active else {
             throw DeviceActivityUsageError.staleCallback
         }
         try usage.activate(plan: plan)

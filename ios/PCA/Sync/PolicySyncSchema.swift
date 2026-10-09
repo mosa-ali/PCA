@@ -56,8 +56,10 @@ public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
     }
 }
 
-/// Active manifest resolution shared by extension and tests. A present
-/// malformed/starting installation never downgrades to legacy policy slots.
+/// The installation manifest is the single durable publication point shared
+/// by the host and extension. `activeActivityId` is a repairable compatibility
+/// pointer and cannot override a committed manifest after a process restart.
+/// A present malformed/starting installation never downgrades to legacy slots.
 public struct InstalledDeviceActivityPolicyLoader<Token: Hashable & Codable> {
     private let scheduleStore: OpaqueBlobStore
     private let tokenStore: OpaqueBlobStore
@@ -70,10 +72,8 @@ public struct InstalledDeviceActivityPolicyLoader<Token: Hashable & Codable> {
             guard let installation = DeviceActivityMonitorInstallation.decodeValidated(data),
                   installation.state == .active,
                   installation.containsMonitor(monitorActivityId),
-                  scheduleStore.read(forKey: "activeActivityId") == Data(installation.policyActivityId.utf8),
                   let snapshot = loader.load(activityId: installation.policyActivityId, storageGeneration: installation.payloadStorageGeneration),
-                  scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == data,
-                  scheduleStore.read(forKey: "activeActivityId") == Data(installation.policyActivityId.utf8) else { return nil }
+                  scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == data else { return nil }
             return snapshot
         }
         guard scheduleStore.read(forKey: "activeActivityId") == Data(monitorActivityId.utf8) else { return nil }

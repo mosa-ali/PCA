@@ -971,8 +971,9 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             eventId: event.eventId, at: now, deviceTimeZone: utc))
         try store.write(originalTokens, forKey: tokenKey)
         store.remove(forKey: "activeActivityId")
-        XCTAssertThrowsError(try processor.consume(activityId: value.monitorActivityId,
-            eventId: event.eventId, at: now, deviceTimeZone: utc))
+        XCTAssertNoThrow(try processor.consume(activityId: value.monitorActivityId,
+            eventId: event.eventId, at: now, deviceTimeZone: utc),
+            "usage callbacks follow the committed active manifest, not its repairable pointer")
     }
     func testObservedQuotaIsExtendedOnlyDuringBonusAndRestoredAtExpiry() throws {
         let bonus = BonusGrant(id: "bonus", appScope: .all, extraMinutes: 15,
