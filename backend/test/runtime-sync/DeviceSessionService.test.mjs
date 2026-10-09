@@ -190,6 +190,55 @@ test('a replayed (already-consumed) challenge is rejected on the second attempt 
   );
 });
 
+test('concurrent completeChallenge replay creates exactly one session', async () => {
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness();
+  const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const signature = signTestOnlyChallenge(publicKey, challenge.nonce);
+  let createCalls = 0;
+  const create = sessionRepository.create.bind(sessionRepository);
+  sessionRepository.create = async (record) => {
+    createCalls += 1;
+    return create(record);
+  };
+
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 20 }, () => sessionService.completeChallenge(challenge.challengeId, signature)),
+  );
+
+  const succeeded = attempts.filter((attempt) => attempt.status === 'fulfilled');
+  const rejected = attempts.filter((attempt) => attempt.status === 'rejected');
+  assert.equal(succeeded.length, 1);
+  assert.equal(rejected.length, 19);
+  assert.equal(createCalls, 1, 'only the atomic challenge-consumption winner may mint a session');
+  for (const attempt of rejected) {
+    assert.ok(attempt.reason instanceof RuntimeSyncAuthError);
+    assert.equal(attempt.reason.code, 'UNAUTHORIZED');
+  }
+  assert.deepEqual(await sessionService.validateSession(succeeded[0].value.rawToken), { deviceId, familyId });
+});
+
+test('a lost session response requires a fresh challenge and can recover without replaying the consumed challenge', async () => {
+  const { deviceRepository, sessionService } = buildHarness();
+  const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
+  const firstChallenge = await sessionService.issueChallengeSafely(deviceId);
+  const firstSignature = signTestOnlyChallenge(publicKey, firstChallenge.nonce);
+
+  // Simulate the server committing the session while the HTTP response is lost.
+  await sessionService.completeChallenge(firstChallenge.challengeId, firstSignature);
+  await assert.rejects(
+    () => sessionService.completeChallenge(firstChallenge.challengeId, firstSignature),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
+
+  const retryChallenge = await sessionService.issueChallengeSafely(deviceId);
+  const recovered = await sessionService.completeChallenge(
+    retryChallenge.challengeId,
+    signTestOnlyChallenge(publicKey, retryChallenge.nonce),
+  );
+  assert.deepEqual(await sessionService.validateSession(recovered.rawToken), { deviceId, familyId });
+});
+
 test('validateSession rejects an unknown token generically', async () => {
   const { sessionService } = buildHarness();
   await assert.rejects(
@@ -219,8 +268,11 @@ test('validateSession rejects a session once its TTL has elapsed, even though th
   // Sanity check: immediately after issuance, well within the TTL, the session is still valid.
   await sessionService.validateSession(session.rawToken);
 
-  // Advance the injected clock strictly past the session's TTL and confirm expiry is actually enforced.
-  currentTime = new Date(currentTime.getTime() + DEVICE_SESSION_TTL_MS + 1);
+  // The session remains valid immediately before expiry, then is rejected at
+  // the exact expiry boundary (inclusive) rather than one millisecond later.
+  currentTime = new Date(currentTime.getTime() + DEVICE_SESSION_TTL_MS - 1);
+  await sessionService.validateSession(session.rawToken);
+  currentTime = new Date(currentTime.getTime() + 1);
   await assert.rejects(
     () => sessionService.validateSession(session.rawToken),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
