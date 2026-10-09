@@ -11,7 +11,8 @@ export interface ResolveFamilyParentDevices {
 
 export interface FamilyAuditEventDeliveryOutcome {
   readonly parentDeviceId: string;
-  readonly outcome: 'DELIVERED' | 'FAILED';
+  /** QUEUED means persisted to the append-only ledger; it does not mean the device received or applied it. */
+  readonly outcome: 'QUEUED' | 'FAILED';
 }
 
 /**
@@ -65,8 +66,10 @@ function shouldLogFailure(occurrences: number): boolean {
  * ledger outage, silent forever. Rate-limiting keeps the log bounded at 1/N of
  * the event volume without ever going fully silent, and resetting on success
  * means a recovered-and-failed-again dependency reports immediately rather than
- * waiting out the interval. The return contract is unchanged -- still
- * `[]`/`FAILED`, still never throwing -- so no caller depends on the logging.
+ * waiting out the interval. A successful outcome means the opaque envelope
+ * was persisted to the append-only ledger (`QUEUED`); it does not prove device
+ * receipt, retrieval, decryption, acknowledgement, or application. The
+ * producer never throws.
  */
 export class FamilyAuditEventProducer {
   /** Counted, rate-limited logging -- see this class's doc comment. */
@@ -177,7 +180,7 @@ export class FamilyAuditEventProducer {
         if (recordResult.outcome !== 'RECORDED' && recordResult.outcome !== 'IDEMPOTENT_MATCH') {
           throw new Error('family audit ledger returned an unsupported record outcome');
         }
-        outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'DELIVERED' });
+        outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'QUEUED' });
         this.deviceDeliveryFailureCount = 0;
       } catch {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });
@@ -192,7 +195,7 @@ export class FamilyAuditEventProducer {
               parentDeviceId: parentDevice.deviceId,
               occurrences: this.deviceDeliveryFailureCount,
               failureStage,
-              note: 'this audit event did not reach this parent device. Logged on the first failure and every Nth thereafter.',
+              note: 'this audit event was not queued for this parent device. Logged on the first failure and every Nth thereafter.',
             }),
           );
         }

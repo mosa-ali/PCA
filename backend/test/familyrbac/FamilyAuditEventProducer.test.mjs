@@ -57,7 +57,7 @@ function sampleRecord(overrides = {}) {
   };
 }
 
-test('delivers one opaque envelope per resolved parent device', async () => {
+test('queues one opaque envelope per resolved parent device without claiming device receipt', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composed = [];
   const composer = async (input) => {
@@ -72,7 +72,7 @@ test('delivers one opaque envelope per resolved parent device', async () => {
   const outcomes = await producer.deliver(sampleRecord());
 
   assert.equal(outcomes.length, 2);
-  assert.ok(outcomes.every((o) => o.outcome === 'DELIVERED'));
+  assert.ok(outcomes.every((o) => o.outcome === 'QUEUED'));
   assert.equal(composed.length, 2);
   assert.equal(composed[0].record.eventId, 'event-1');
   assert.equal(composed[0].parentDeviceId, 'parent-device-a');
@@ -85,7 +85,7 @@ test('delivers one opaque envelope per resolved parent device', async () => {
   assert.equal(forA[0].encryptedPayloadB64, 'ZW5jcnlwdGVk');
 });
 
-test('a family with zero resolved parent devices delivers to no one, never throws, and does NOT log a failure', async () => {
+test('a family with zero resolved parent devices queues to no device, never throws, and does NOT log a failure', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(ledger, async () => {
     throw new Error('composer must never be called with zero recipients');
@@ -98,7 +98,7 @@ test('a family with zero resolved parent devices delivers to no one, never throw
   assert.deepEqual(warnings, [], 'legitimately having no parent devices must not log a delivery failure');
 });
 
-test('a per-device composer failure is isolated -- other devices still receive delivery', async () => {
+test('a per-device composer failure is isolated -- other devices can still be queued', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composer = async (input) => {
     if (input.parentDeviceId === 'parent-device-fails') throw new Error('composition rejected');
@@ -112,7 +112,7 @@ test('a per-device composer failure is isolated -- other devices still receive d
   const outcomes = await producer.deliver(sampleRecord());
   const byDevice = Object.fromEntries(outcomes.map((o) => [o.parentDeviceId, o.outcome]));
   assert.equal(byDevice['parent-device-fails'], 'FAILED');
-  assert.equal(byDevice['parent-device-ok'], 'DELIVERED');
+  assert.equal(byDevice['parent-device-ok'], 'QUEUED');
 });
 
 test('out-of-range resolved parent key epoch fails before composition or ledger write', async () => {
@@ -177,7 +177,7 @@ test('malformed resolved parent recipient is contained before composition and le
   const outcomes = await producer.deliver(sampleRecord());
   assert.deepEqual(outcomes, [
     { parentDeviceId: '', outcome: 'FAILED' },
-    { parentDeviceId: 'parent-device-good', outcome: 'DELIVERED' },
+    { parentDeviceId: 'parent-device-good', outcome: 'QUEUED' },
   ]);
   assert.equal(composerCalls, 1);
   assert.equal(stored.length, 1);
@@ -197,13 +197,13 @@ test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array
 
   const { result: outcomes, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
   assert.equal(outcomes.find((o) => o.parentDeviceId === 'parent-device-fails').outcome, 'FAILED');
-  assert.equal(warnings.length, 1, 'a device that did not receive the event must be observable');
+  assert.equal(warnings.length, 1, 'an event that could not be queued for a device must be observable');
   assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
   assert.match(warnings[0], /parent-device-fails/);
   assert.match(warnings[0], /OPAQUE_COMPOSITION/);
 });
 
-test('a successful recipient delivery resets the device-failure warning counter', async () => {
+test('a successful queue resets the device-failure warning counter', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   let failComposition = true;
   const producer = new FamilyAuditEventProducer(ledger, async () => {
@@ -221,7 +221,7 @@ test('a successful recipient delivery resets the device-failure warning counter'
   });
 
   assert.deepEqual(result.firstFailure, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
-  assert.deepEqual(result.recovered, [{ parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' }]);
+  assert.deepEqual(result.recovered, [{ parentDeviceId: 'parent-device-a', outcome: 'QUEUED' }]);
   assert.deepEqual(result.secondFailure, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
   assert.equal(warnings.length, 2);
   assert.match(warnings[0], /"occurrences":1/);
@@ -328,7 +328,53 @@ test('MySqlFamilyAuditEventLedger-shaped idempotency: a re-record of the exact s
   assert.deepEqual(await ledger.record({ ...envelope, encryptedPayloadB64: 'different' }), { outcome: 'CONFLICT' });
 });
 
-test('ledger conflicts fail only the affected device while RECORDED and IDEMPOTENT_MATCH remain delivered', async () => {
+test('in-memory family audit ledger snapshots envelope input and every returned boundary', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  const expected = {
+    envelopeId: 'env-snapshot',
+    familyId: 'fam-snapshot',
+    parentDeviceId: 'parent-device-snapshot',
+    keyEpoch: 3,
+    generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
+    encryptedPayloadB64: 'cipher-original',
+    nonceB64: 'nonce-original',
+  };
+  const input = { ...expected, generatedAtUtc: new Date(expected.generatedAtUtc) };
+  const pendingRecord = ledger.record(input);
+
+  // record() crosses an await during expiry cleanup; the caller cannot
+  // rewrite the captured append-only envelope while it is pending.
+  input.envelopeId = 'env-mutated';
+  input.familyId = 'family-mutated';
+  input.parentDeviceId = 'device-mutated';
+  input.keyEpoch = 9;
+  input.generatedAtUtc.setTime(0);
+  input.encryptedPayloadB64 = 'cipher-mutated';
+  input.nonceB64 = 'nonce-mutated';
+  assert.deepEqual(await pendingRecord, { outcome: 'RECORDED' });
+
+  const fromGet = await ledger.get(expected.envelopeId);
+  assert.deepEqual(fromGet, expected);
+  fromGet.familyId = 'get-mutated';
+  fromGet.generatedAtUtc.setTime(0);
+  fromGet.encryptedPayloadB64 = 'get-cipher-mutated';
+
+  const fromFamilyFeed = await ledger.listForFamily(expected.familyId);
+  assert.deepEqual(fromFamilyFeed, [expected]);
+  fromFamilyFeed[0].parentDeviceId = 'family-feed-mutated';
+  fromFamilyFeed[0].generatedAtUtc.setTime(0);
+  fromFamilyFeed[0].nonceB64 = 'family-feed-nonce-mutated';
+
+  const fromDeviceFeed = await ledger.listForParentDevice(expected.familyId, expected.parentDeviceId);
+  assert.deepEqual(fromDeviceFeed, [expected]);
+  fromDeviceFeed[0].envelopeId = 'device-feed-mutated';
+  fromDeviceFeed[0].generatedAtUtc.setTime(0);
+
+  assert.deepEqual(await ledger.get(expected.envelopeId), expected);
+  assert.deepEqual(await ledger.record(expected), { outcome: 'IDEMPOTENT_MATCH' });
+});
+
+test('ledger conflicts fail only the affected device while RECORDED and IDEMPOTENT_MATCH remain queued', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const ids = ['env-a', 'env-b', 'env-a', 'env-b'];
   const compositionCount = new Map();
@@ -351,14 +397,14 @@ test('ledger conflicts fail only the affected device while RECORDED and IDEMPOTE
 
   const first = await producer.deliver(sampleRecord());
   assert.deepEqual(first, [
-    { parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' },
-    { parentDeviceId: 'parent-device-b', outcome: 'DELIVERED' },
+    { parentDeviceId: 'parent-device-a', outcome: 'QUEUED' },
+    { parentDeviceId: 'parent-device-b', outcome: 'QUEUED' },
   ]);
 
   const { result: second, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
   assert.deepEqual(second, [
     { parentDeviceId: 'parent-device-a', outcome: 'FAILED' },
-    { parentDeviceId: 'parent-device-b', outcome: 'DELIVERED' },
+    { parentDeviceId: 'parent-device-b', outcome: 'QUEUED' },
   ]);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
@@ -406,7 +452,7 @@ test('audit composition captures caller routing, target and timestamp before rec
   record.targetScope.id = 'foreign-target';
   record.occurredAtUtc.setTime(LEDGER_NOW.getTime() + 86400000);
   resolveRecipients([{ deviceId: 'parent-device-a', keyEpoch: 1 }]);
-  assert.deepEqual(await pending, [{ parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' }]);
+  assert.deepEqual(await pending, [{ parentDeviceId: 'parent-device-a', outcome: 'QUEUED' }]);
   assert.equal(seen[0].record.familyId, 'fam-1');
   assert.equal(seen[0].record.targetScope.id, 'fam-1');
   assert.equal(stored[0].familyId, 'fam-1');
@@ -423,7 +469,7 @@ test('audit composer routing smuggling or timestamp mutation fails only that rec
     }, async () => ['bad-extra', 'bad-date', 'good'].map(deviceId => ({ deviceId, keyEpoch: 1 })));
   const record = sampleRecord();
   const { result } = await withCapturedWarnings(() => producer.deliver(record));
-  assert.deepEqual(result.map(outcome => outcome.outcome), ['FAILED', 'FAILED', 'DELIVERED']);
+  assert.deepEqual(result.map(outcome => outcome.outcome), ['FAILED', 'FAILED', 'QUEUED']);
   assert.equal(stored.length, 1);
   assert.equal(stored[0].familyId, 'fam-1');
   assert.equal(stored[0].parentDeviceId, 'good');
