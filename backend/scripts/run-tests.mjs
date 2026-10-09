@@ -160,6 +160,7 @@ const files = [
   "test/runtime-sync/priority.test.mjs",
   "test/runtime-sync/envelopeWireCodec.test.mjs",
   "test/runtime-sync/DeviceSessionService.test.mjs",
+  "test/runtime-sync/StatusService.test.mjs",
   "test/runtime-sync/OutboundRelayService.test.mjs",
   "test/runtime-sync/InboundReconnectService.test.mjs",
   "test/runtime-sync/relayContinuation.test.mjs",
