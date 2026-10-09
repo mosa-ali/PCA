@@ -83,7 +83,7 @@ describe('RealProtectionAlertDeliveryClient', () => {
       keyEpoch: 5,
       generatedAtUtc: '2026-01-01T00:00:00.000Z',
       encryptedPayloadB64: 'ZW5jcnlwdGVk',
-      nonceB64: 'bm9uY2U',
+      nonceB64: 'bm9uY2U=',
     };
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -159,6 +159,78 @@ describe('RealProtectionAlertDeliveryClient', () => {
 
     const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT));
     await expect(client.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+  });
+
+  it('rejects malformed and noncanonical ciphertext or nonce encodings before mapping alerts', async () => {
+    const valid = {
+      alertId: 'alert-1',
+      deviceId: 'device-1',
+      trigger: 'PROTECTION_DEGRADED',
+      keyEpoch: 5,
+      generatedAtUtc: '2026-01-01T00:00:00.000Z',
+      encryptedPayloadB64: 'AQID',
+      nonceB64: 'BAUG',
+    };
+    for (const invalidAlert of [
+      { ...valid, encryptedPayloadB64: 'AQI-' },
+      { ...valid, encryptedPayloadB64: 'AB==' },
+      { ...valid, encryptedPayloadB64: 'AQID=' },
+      { ...valid, nonceB64: 'AAB=' },
+      { ...valid, nonceB64: 'BAUG_' },
+    ]) {
+      const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+        if (url.includes('/protection-alerts')) return Promise.resolve(jsonResponse(200, { alerts: [invalidAlert] }));
+        return Promise.resolve(jsonResponse(404, {}));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT));
+      await expect(client.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+    }
+  });
+
+  it('accepts canonical alert payloads at backend byte ceilings and rejects values above them', async () => {
+    const baseAlert = {
+      alertId: 'alert-1',
+      deviceId: 'device-1',
+      trigger: 'PROTECTION_DEGRADED',
+      keyEpoch: 5,
+      generatedAtUtc: '2026-01-01T00:00:00.000Z',
+    };
+    const atCeiling = {
+      ...baseAlert,
+      encryptedPayloadB64: `${'A'.repeat(21_844)}AA==`, // 16 KiB decoded bytes
+      nonceB64: `${'A'.repeat(84)}AA==`, // 64 decoded bytes
+    };
+    const maxFetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+      if (url.includes('/protection-alerts')) return Promise.resolve(jsonResponse(200, { alerts: [atCeiling] }));
+      return Promise.resolve(jsonResponse(404, {}));
+    });
+    vi.stubGlobal('fetch', maxFetch);
+
+    const client = new RealProtectionAlertDeliveryClient('https://api.example.test', new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT));
+    await expect(client.list()).resolves.toEqual({
+      status: 'READY',
+      alerts: [{ alertId: 'alert-1', deviceId: 'device-1', trigger: 'PROTECTION_DEGRADED', generatedAtUtc: '2026-01-01T00:00:00.000Z' }],
+    });
+
+    for (const invalidAlert of [
+      { ...atCeiling, encryptedPayloadB64: 'A'.repeat(21_852) }, // 16 KiB + 3 bytes
+      { ...atCeiling, nonceB64: `${'A'.repeat(84)}AAE=` }, // 65 decoded bytes
+    ]) {
+      const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+        if (url.includes('/protection-alerts')) return Promise.resolve(jsonResponse(200, { alerts: [invalidAlert] }));
+        return Promise.resolve(jsonResponse(404, {}));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      await expect(client.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+    }
   });
 
   it('reports PENDING_TRUSTED_DECRYPTION when no family can be resolved from the session', async () => {
