@@ -195,16 +195,16 @@ export class InboundReconnectService {
       }
     }
 
-    const dedupedApplied = [...new Map(applied.map((envelope) => [envelope.messageId, envelope])).values()];
-
     // A result first reported HOLD_PENDING can be promoted later in this
     // same reconnect call when its predecessor is drained from another
-    // sender group. Keep the latest decision for each message, not the
-    // first receipt, so callers never see stale HOLD_PENDING beside an
-    // applied envelope.
+    // sender group, and a later base-group delivery recheck can then reject
+    // it if authority changed. Keep the latest decision for each message,
+    // then expose ciphertext only when that final decision is still APPLIED.
     const receiptsByMessageId = new Map<string, SyncReceipt>();
     for (const receipt of receipts) receiptsByMessageId.set(receipt.messageId, receipt);
     const dedupedReceipts = [...receiptsByMessageId.values()];
+    const dedupedApplied = [...new Map(applied.map((envelope) => [envelope.messageId, envelope])).values()]
+      .filter((envelope) => receiptsByMessageId.get(envelope.messageId)?.outcome === 'APPLIED');
     const hasUnresolved = unparseableMessageIds.length > 0 || droppedForListBound.length > 0
       || dedupedReceipts.some((receipt) => receipt.outcome !== 'APPLIED');
     return { applied: dedupedApplied, receipts: dedupedReceipts, unparseableMessageIds, droppedForListBound,

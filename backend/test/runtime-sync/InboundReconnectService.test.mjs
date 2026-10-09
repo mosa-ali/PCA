@@ -338,6 +338,45 @@ test('correlationId dependency: a PARENT_DECISION from a different sender waits 
   assert.equal(outcome.hasUnresolved, false);
 });
 
+test('a later authority rejection removes a previously promoted envelope from reconnect delivery', async () => {
+  const { relayService, inboundService, syncCoordinator } = buildHarness();
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const childRequest = buildEnvelope({ messageType: 'CHILD_REQUEST', senderKeyId: 'child-key', senderDeviceId: 'child-device' });
+  const parentDecision = buildEnvelope({
+    messageType: 'PARENT_DECISION', senderKeyId: 'parent-key', senderDeviceId: 'parent-device',
+    correlationId: childRequest.messageId,
+  });
+
+  await queueForRecipient(relayService, parentDecision);
+  const initial = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now);
+  assert.equal(initial.receipts.find((receipt) => receipt.messageId === parentDecision.messageId)?.outcome, 'HELD_PENDING');
+
+  await queueForRecipient(relayService, childRequest);
+  let parentContextReads = 0;
+  const context = (senderKeyId) => {
+    if (senderKeyId === 'child-key') {
+      return { ...resolveContext(now)(), senderPublicKey: 'sender-public-key' };
+    }
+    parentContextReads += 1;
+    const accepted = { ...resolveContext(now)(), senderPublicKey: 'sender-public-key' };
+    // The existing pending decision is promoted under the prior authority.
+    // The later base-group delivery recheck sees a newly raised trust floor.
+    return parentContextReads >= 4 ? { ...accepted, minimumAcceptedTrustSetEpoch: 2 } : accepted;
+  };
+
+  const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', context, now);
+
+  assert.equal(parentContextReads, 4, 'the cross-sender drain and later base-group recheck both ran');
+  assert.deepEqual(outcome.applied.map((envelope) => envelope.messageId), [childRequest.messageId]);
+  assert.equal(outcome.receipts.find((receipt) => receipt.messageId === parentDecision.messageId)?.outcome, 'REJECTED');
+  assert.equal(outcome.receipts.find((receipt) => receipt.messageId === parentDecision.messageId)?.reason, 'STALE_TRUST_SET_EPOCH');
+  assert.equal(outcome.hasUnresolved, true);
+  assert.ok(await syncCoordinator.messageIdempotencyLedger.getAcceptedCanonicalBytes('family-1', parentDecision.messageId),
+    'the acceptance record can remain while current delivery authority denies returning the ciphertext');
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 2,
+    'delivery denial never ACKs either retained relay record');
+});
+
 test('a structurally malformed relay entry is left queued (not acknowledged) rather than silently discarded', async () => {
   const { relayService, inboundService } = buildHarness();
   await relayService.queueEnvelope({
