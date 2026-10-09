@@ -545,7 +545,7 @@ test('a report that transitions a device INTO DEGRADED emits PROTECTION_DEGRADED
 
 test('FABLE-A013: a swallowed alert compose failure is logged once, bounded, and the report still succeeds', async () => {
   const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
-  const composeError = new Error('PCA-DEC-020: no reviewed production alert-payload composer is available yet.');
+  const composeError = new Error('PRIVATE NOTE SECRET CIPHERTEXT RAW SQL KEY MATERIAL');
   const alerting = {
     producer: { async produce() { throw composeError; } },
     alertsEnabled: true,
@@ -576,7 +576,8 @@ test('FABLE-A013: a swallowed alert compose failure is logged once, bounded, and
     assert.equal(warnCalls[0].detail.familyId, familyId);
     assert.equal(warnCalls[0].detail.deviceId, deviceId);
     assert.equal(warnCalls[0].detail.trigger, 'PROTECTION_DEGRADED');
-    assert.equal(warnCalls[0].detail.error, composeError.message);
+    assert.equal(warnCalls[0].detail.error, 'ALERT_DELIVERY_FAILED');
+    assert.doesNotMatch(JSON.stringify(warnCalls), /PRIVATE NOTE|SECRET CIPHERTEXT|RAW SQL|KEY MATERIAL/);
   } finally {
     await app.close();
   }

@@ -502,7 +502,7 @@ test('disabled alerting never invokes the composer and never blocks redemption',
 
 test('an alert composer failure never blocks or reverses redemption, and FABLE-A013 logs it once, bounded', async () => {
   const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
-  const composeError = new Error('composer unavailable');
+  const composeError = new Error('PRIVATE NOTE SECRET CIPHERTEXT RAW SQL KEY MATERIAL');
   const producer = new ProtectionAlertProducer(ledger, async () => {
     throw composeError;
   }, () => new Date(BASE_TIME));
@@ -524,7 +524,8 @@ test('an alert composer failure never blocks or reverses redemption, and FABLE-A
   assert.equal(warnCalls[0].event, 'invitation.protection_alert.compose_failed');
   assert.equal(warnCalls[0].detail.familyId, record.familyId);
   assert.equal(warnCalls[0].detail.trigger, 'INVITATION_REDEEMED');
-  assert.equal(warnCalls[0].detail.error, composeError.message);
+  assert.equal(warnCalls[0].detail.error, 'ALERT_DELIVERY_FAILED');
+  assert.doesNotMatch(JSON.stringify(warnCalls), /PRIVATE NOTE|SECRET CIPHERTEXT|RAW SQL|KEY MATERIAL/);
 });
 
 // -----------------------------------------------------------------------
