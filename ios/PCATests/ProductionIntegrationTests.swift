@@ -673,9 +673,10 @@ final class ProductionIntegrationTests: XCTestCase {
         let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: handler)
         var networkCalls = 0
         let transport = InMemoryPCAHTTPTransport { _ in networkCalls += 1; throw PCAHTTPTransportError.network }
+        let trustSet = RecordingOrdinaryTrustSetRuntimeManager(events: NSMutableArray())
         let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
             runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
-            inboundInbox: inbox, inboundConsumer: consumer)
+            inboundInbox: inbox, inboundConsumer: consumer, ordinaryTrustSetCoordinator: trustSet)
         _ = try await model.synchronizeRuntimeCampaign()
         XCTAssertEqual(try journal.records().first?.outcome, .applied)
         XCTAssertTrue(handler.applied.isEmpty)
@@ -726,7 +727,8 @@ final class ProductionIntegrationTests: XCTestCase {
         }
         let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
             runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
-            inboundInbox: inbox, inboundConsumer: consumer)
+            inboundInbox: inbox, inboundConsumer: consumer,
+            ordinaryTrustSetCoordinator: RecordingOrdinaryTrustSetRuntimeManager(events: NSMutableArray()))
 
         let synchronization = Task { @MainActor in try await model.synchronizeRuntimeCampaign() }
         await fulfillment(of: [recoveryBegan], timeout: 5)

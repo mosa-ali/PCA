@@ -128,7 +128,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             throw OrdinaryTrustSetError.scopeMismatch
         }
         let response = try await call(suffix: "/records/\(epoch)", pending: nil)
-        guard response.statusCode == 200 else { throw PCAAPIError.unavailable }
+        try requireAcceptedRead(response)
         let head = try JSONDecoder().decode(RecordResult.self, from: response.data).acceptedEpoch.head(familyId: familyId)
         guard try head.epoch().trustSetEpoch == epoch else { throw PCAAPIError.malformedResponse }
         return head
@@ -136,7 +136,16 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     public func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead {
         guard Data(familyId.utf8) == Data(self.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
         let response = try await call(suffix: "/head", pending: nil)
-        guard response.statusCode == 200 else { throw PCAAPIError.unavailable }
+        try requireAcceptedRead(response)
         return try JSONDecoder().decode(HeadResult.self, from: response.data).acceptedHead.head(familyId: familyId)
+    }
+
+    private func requireAcceptedRead(_ response: PCAHTTPResponse) throws {
+        switch response.statusCode {
+        case 200: return
+        case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
+        default: throw PCAAPIError.unavailable
+        }
     }
 }

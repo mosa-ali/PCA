@@ -239,6 +239,42 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             XCTAssertEqual(error, .forbidden)
         }
 
+        let forbiddenRecordHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 403, data: Data())
+        }
+        let forbiddenRecord = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!, familyId: "family-test",
+            sessionToken: { "still-valid-device-session" }, http: forbiddenRecordHTTP)
+        do {
+            _ = try await forbiddenRecord.acceptedRecord(familyId: "family-test", epoch: 1)
+            XCTFail("forbidden accepted-record response must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .forbidden)
+        }
+
+        let unauthorizedHeadHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 401, data: Data())
+        }
+        let unauthorizedHead = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!, familyId: "family-test",
+            sessionToken: { "expired-device-session" }, http: unauthorizedHeadHTTP)
+        do {
+            _ = try await unauthorizedHead.acceptedHead(familyId: "family-test")
+            XCTFail("unauthorized accepted-head response must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .unauthorized)
+        }
+
+        let unauthorizedRecordHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 401, data: Data())
+        }
+        let unauthorizedRecord = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!, familyId: "family-test",
+            sessionToken: { "expired-device-session" }, http: unauthorizedRecordHTTP)
+        do {
+            _ = try await unauthorizedRecord.acceptedRecord(familyId: "family-test", epoch: 1)
+            XCTFail("unauthorized accepted-record response must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .unauthorized)
+        }
+
         let expiredSessionHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
             PCAHTTPResponse(statusCode: 401, data: Data())
         }

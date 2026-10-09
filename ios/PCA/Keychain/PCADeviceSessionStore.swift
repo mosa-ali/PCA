@@ -305,15 +305,23 @@ public enum PCAInboundRetirementVerification {
         // inbox lock.  The journal remains until a fresh returned snapshot
         // proves that its ciphertext is absent; interruption therefore keeps
         // the existing ciphertext-first, resumable ordering.
-        try freshAuthority()
-        try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
-        let inboxAfterTerminal = try inbox.removeRetiredAcknowledgedForTerminalEnvelopes(
-            coveredTerminal.map { $0.intent.envelope }, scope: scope) { envelope in
-                try revalidateAuthority()
-                guard try terminalCoverage(envelope) else {
-                    throw PCAInboundInboxError.unavailable
+        let inboxAfterTerminal: [PCAStoredInboundEnvelope]
+        if coveredTerminal.isEmpty {
+            // Avoid a durable no-op rewrite when this batch contains no
+            // terminal journal records. The inbox-only path below reads the
+            // snapshot once and performs its single ciphertext deletion write.
+            inboxAfterTerminal = []
+        } else {
+            try freshAuthority()
+            try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
+            inboxAfterTerminal = try inbox.removeRetiredAcknowledgedForTerminalEnvelopes(
+                coveredTerminal.map { $0.intent.envelope }, scope: scope) { envelope in
+                    try revalidateAuthority()
+                    guard try terminalCoverage(envelope) else {
+                        throw PCAInboundInboxError.unavailable
+                    }
                 }
-            }
+        }
         try freshAuthority()
         var removableTerminal: [PCAInboundApplicationRecord] = []
         for record in coveredTerminal {
