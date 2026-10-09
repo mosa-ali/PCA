@@ -1,89 +1,96 @@
 #!/usr/bin/env python3
 """
-FABLE-A033: the PCADeviceActivityMonitor extension target's Sources build
-phase compiled only its own DeviceActivityMonitorExtension.swift, but that
-file references types defined in 7 host-app-only source files (already
-compiled into the PCA target, never into this extension target) --
-CallbackObservationLog, DeviceActivityCallbackHealth,
-FamilyActivitySelectionStore, ShieldSafetyValidator, ScheduleEngine,
-ScheduleModels, PolicySyncSchema. Every dependency file imports only
-Foundation (one conditionally FamilyControls, which the extension is
-already entitled for) -- extension-safe, no host-lifecycle/UIKit
-dependency -- so this is purely a build-phase/target-membership omission,
-not a source change. This script adds 7 new PBXBuildFile entries (each
+FABLE-A033 originally wired seven host sources into the
+PCADeviceActivityMonitor extension target. This follow-up adds the missing
+DeviceActivityScheduleMapper source: the extension also compiles
+DeviceActivityUsageAttribution and CallbackObservationLog, both of which
+refer to DeviceActivityScheduleMapper.maximumMonitoredActivities. The
+mapper's DeviceActivity and ManagedSettings imports are extension-safe;
+this remains a build-phase/target-membership correction, not a source
+behavior change. From the original unwired project, this script adds eight
+PBXBuildFile entries (each
 referencing an EXISTING PBXFileReference already used by the PCA target;
 no new file references, no PBXGroup edit -- group membership is a
 Navigator-only concern independent of a target's Compile Sources
 membership) and appends them to the PCADeviceActivityMonitor target's
-Sources build phase.
+Sources build phase. Embedded validation checks exact target membership
+without relying on the host app's separate Sources phase.
 
 Same '%'-style formatting and generate_pbxproj.py-style must_replace
 discipline as ios/scripts/generate_pbxproj.py, for the same reason (PBX
 object syntax is brace-heavy). Kept as a permanent, reviewable record,
 matching that script's own convention, since this workspace has no Xcode
-to generate/verify it interactively -- see
-docs/MAC_XCODE_VALIDATION_CHECKLIST.md Section 0, updated alongside this
-script to list the additional files that should now appear in the
-extension's Compile Sources.
+to generate/verify it interactively. The CI Xcode build remains the
+compiler-level confirmation for the extension target.
 
-Deterministic and idempotent-checked: run once against the current
-project.pbxproj (which already has PCADeviceActivityMonitor's Sources
-phase from generate_pbxproj.py); running it again is a no-op guarded by
-_already_wired() below, rather than corrupting the file with duplicate
-entries.
+Deterministic and idempotent-checked: it repairs the original unwired
+phase or adds only the missing mapper to the existing seven-file phase.
+Repeated runs validate the exact monitor target membership and make no
+duplicate project entries.
 """
 import re
 
 PROJECT_PATH = "PCA.xcodeproj/project.pbxproj"
 
-_counter = 0
-def nid():
-    global _counter
-    _counter += 1
-    # A different fixed prefix from generate_pbxproj.py's "B1" + generate_pbxproj.py's
-    # own counter range (which stops well under 0x100) so IDs can never collide with
-    # that script's output even if both were (hypothetically) re-run in sequence.
-    return "B2%022X" % _counter
-
 # (filename, existing PBXFileReference id) -- verified directly against the
 # current project.pbxproj before writing this script, not assumed.
 SHARED_FILES = [
-    ("CallbackObservationLog.swift", "B10000000000000000000004"),
-    ("DeviceActivityCallbackHealth.swift", "B10000000000000000000006"),
-    ("FamilyActivitySelectionStore.swift", "B10000000000000000000012"),
-    ("ShieldSafetyValidator.swift", "B10000000000000000000021"),
-    ("ScheduleEngine.swift", "B1000000000000000000002D"),
-    ("ScheduleModels.swift", "B1000000000000000000002F"),
-    ("PolicySyncSchema.swift", "B10000000000000000000034"),
+    ("CallbackObservationLog.swift", "B10000000000000000000004", "B20000000000000000000001"),
+    ("DeviceActivityCallbackHealth.swift", "B10000000000000000000006", "B20000000000000000000002"),
+    ("DeviceActivityScheduleMapper.swift", "B10000000000000000000008", "B20000000000000000000008"),
+    ("FamilyActivitySelectionStore.swift", "B10000000000000000000012", "B20000000000000000000003"),
+    ("ShieldSafetyValidator.swift", "B10000000000000000000021", "B20000000000000000000004"),
+    ("ScheduleEngine.swift", "B1000000000000000000002D", "B20000000000000000000005"),
+    ("ScheduleModels.swift", "B1000000000000000000002F", "B20000000000000000000006"),
+    ("PolicySyncSchema.swift", "B10000000000000000000034", "B20000000000000000000007"),
 ]
 
 SOURCES_PHASE_ID = "B1000000000000000000005C"
+MAPPER_BUILD_FILE_ID = "B20000000000000000000008"
+MAPPER_BUILD_FILE = "%s /* DeviceActivityScheduleMapper.swift in Sources */" % MAPPER_BUILD_FILE_ID
+MAPPER_BUILD_FILE_DEFINITION = (
+    '\t\t%s /* DeviceActivityScheduleMapper.swift in Sources */ = {isa = PBXBuildFile; '
+    'fileRef = B10000000000000000000008 /* DeviceActivityScheduleMapper.swift */; };'
+) % MAPPER_BUILD_FILE_ID
 OLD_SOURCES_PHASE = (
     '\t\t%s /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; '
     'files = (B10000000000000000000057 /* DeviceActivityMonitorExtension.swift in Sources */); '
     'runOnlyForDeploymentPostprocessing = 0; };'
 ) % SOURCES_PHASE_ID
 
+
+def monitor_sources_phase(text):
+    matches = re.findall(
+        r"(?m)^\s*%s /\* Sources \*/ = \{isa = PBXSourcesBuildPhase;[^\n]*\};"
+        % re.escape(SOURCES_PHASE_ID), text
+    )
+    assert len(matches) == 1, "PCADeviceActivityMonitor Sources phase is missing or duplicated"
+    return matches[0]
+
+
+def validate(text):
+    phase = monitor_sources_phase(text)
+    assert phase.count(MAPPER_BUILD_FILE) == 1, \
+        "DeviceActivityScheduleMapper is not wired exactly once to the monitor target"
+    definitions = re.findall(
+        r"(?m)^\s*%s /\* DeviceActivityScheduleMapper.swift in Sources \*/ = \{[^\n]*\};"
+        % re.escape(MAPPER_BUILD_FILE_ID), text
+    )
+    assert len(definitions) == 1 and definitions[0].strip() == MAPPER_BUILD_FILE_DEFINITION.strip(), \
+        "DeviceActivityScheduleMapper build-file reference is missing or incorrect"
+    file_refs = re.findall(
+        r"(?m)^\s*B10000000000000000000008 /\* DeviceActivityScheduleMapper.swift \*/ = \{isa = PBXFileReference;[^\n]*\};",
+        text
+    )
+    assert len(file_refs) == 1, "DeviceActivityScheduleMapper file reference is missing or duplicated"
+
 with open(PROJECT_PATH, "r", encoding="utf-8") as f:
     text = f.read()
 
-if OLD_SOURCES_PHASE not in text:
-    # Either already wired by a prior run of this exact script (the
-    # extension's Sources phase no longer matches the pre-wiring text
-    # because it already carries the 7 shared build files -- a real
-    # idempotency check, not a filename guess that would false-positive on
-    # the identically-named PBXBuildFile entries the PCA host target has
-    # always had for these same files), or the file has drifted for some
-    # other reason and needs a fresh look before re-running this script.
-    already_wired = "B10000000000000000000057 /* DeviceActivityMonitorExtension.swift in Sources */, " in text
-    assert already_wired, "NOT FOUND: PCADeviceActivityMonitor Sources phase in its expected pre-wiring form, and it does not look already-wired either -- the file has drifted since this script was written; inspect before re-running."
-    print("Already wired -- no changes made (idempotent no-op).")
-else:
-
+if OLD_SOURCES_PHASE in text:
     new_buildfile_lines = []
     new_buildfile_ids = []
-    for filename, fileref_id in SHARED_FILES:
-        bfile = nid()
+    for filename, fileref_id, bfile in SHARED_FILES:
         new_buildfile_lines.append(
             '\t\t%s /* %s in Sources */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };'
             % (bfile, filename, fileref_id, filename)
@@ -109,3 +116,33 @@ else:
     print("Done. Added %d PBXBuildFile entries to PCADeviceActivityMonitor's Sources phase:" % len(new_buildfile_ids))
     for _bid, name in new_buildfile_ids:
         print("  -", name)
+else:
+    # Existing project snapshots may already carry the seven shared-source
+    # entries and usage-attribution entry. Validate those exact entries, then
+    # add only the missing mapper file to this extension target.
+    phase = monitor_sources_phase(text)
+    if MAPPER_BUILD_FILE in phase:
+        validate(text)
+        print("Already wired -- no changes made (idempotent no-op).")
+    else:
+        for filename, _fileref_id, buildfile_id in SHARED_FILES:
+            if filename == "DeviceActivityScheduleMapper.swift":
+                continue
+            expected = "%s /* %s in Sources */" % (buildfile_id, filename)
+            assert phase.count(expected) == 1, "Monitor shared-source phase drifted at " + filename
+        assert MAPPER_BUILD_FILE_ID not in text, "Mapper build-file ID is already used elsewhere"
+        assert text.count("B10000000000000000000008 /* DeviceActivityScheduleMapper.swift */ = {isa = PBXFileReference;") == 1, \
+            "Mapper PBXFileReference is missing or duplicated"
+        text = text.replace(
+            "/* End PBXBuildFile section */",
+            MAPPER_BUILD_FILE_DEFINITION + "\n/* End PBXBuildFile section */",
+            1,
+        )
+        updated_phase = phase.replace("files = (", "files = (" + MAPPER_BUILD_FILE + ", ", 1)
+        text = text.replace(phase, updated_phase, 1)
+        validate(text)
+        with open(PROJECT_PATH, "w", encoding="utf-8") as f:
+            f.write(text)
+        print("Added DeviceActivityScheduleMapper.swift to PCADeviceActivityMonitor Sources.")
+
+validate(text)
