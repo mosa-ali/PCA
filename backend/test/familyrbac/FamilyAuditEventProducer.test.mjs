@@ -130,6 +130,52 @@ test('out-of-range resolved parent key epoch fails before composition or ledger 
   assert.deepEqual(await ledger.listForFamily('fam-1'), []);
 });
 
+test('malformed captured family scope is rejected before recipient resolution, composition, or ledger write', async () => {
+  let resolverCalls = 0;
+  let composerCalls = 0;
+  const ledger = {
+    async record() { throw new Error('ledger must not be called'); },
+  };
+  const producer = new FamilyAuditEventProducer(ledger, async () => {
+    composerCalls += 1;
+    return { encryptedPayloadB64: 'eA==', nonceB64: 'eQ==' };
+  }, async () => {
+    resolverCalls += 1;
+    return [{ deviceId: 'parent-device-a', keyEpoch: 1 }];
+  });
+
+  assert.deepEqual(await producer.deliver(sampleRecord({ familyId: '' })), []);
+  assert.equal(resolverCalls, 0);
+  assert.equal(composerCalls, 0);
+});
+
+test('malformed resolved parent recipient is contained before composition and ledger while valid recipients continue', async () => {
+  let composerCalls = 0;
+  const stored = [];
+  const ledger = {
+    async record(envelope) {
+      stored.push(envelope);
+      return { outcome: 'RECORDED' };
+    },
+  };
+  const producer = new FamilyAuditEventProducer(ledger, async () => {
+    composerCalls += 1;
+    return { encryptedPayloadB64: 'eA==', nonceB64: 'eQ==' };
+  }, async () => [
+    { deviceId: '', keyEpoch: 1 },
+    { deviceId: 'parent-device-good', keyEpoch: 1 },
+  ]);
+
+  const outcomes = await producer.deliver(sampleRecord());
+  assert.deepEqual(outcomes, [
+    { parentDeviceId: '', outcome: 'FAILED' },
+    { parentDeviceId: 'parent-device-good', outcome: 'DELIVERED' },
+  ]);
+  assert.equal(composerCalls, 1);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].parentDeviceId, 'parent-device-good');
+});
+
 test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array is discarded by the real caller, so silence would leave the failure existing only in a value nobody reads', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composer = async (input) => {

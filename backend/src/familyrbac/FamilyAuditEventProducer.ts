@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isPlausibleOpaqueId } from '../alerts/policy.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { FamilyAuditEventLedger } from './FamilyAuditEventLedger.js';
 import type { OpaqueFamilyAuditEventComposer } from './FamilyAuditEventComposer.js';
@@ -81,6 +82,9 @@ export class FamilyAuditEventProducer {
 
   async deliver(record: FamilyAuditRecord): Promise<FamilyAuditEventDeliveryOutcome[]> {
     const familyId = record.familyId;
+    // The resolver is family-scoped; reject malformed scope before asking it
+    // for recipients so invalid input cannot trigger cross-scope work.
+    if (!isPlausibleOpaqueId(familyId)) return [];
     const generatedAtMillis = record.occurredAtUtc.getTime();
     const capturedRecord = Object.freeze({ ...record,
       targetScope: Object.freeze({ ...record.targetScope }),
@@ -113,8 +117,9 @@ export class FamilyAuditEventProducer {
     for (const parentDevice of parentDevices) {
       let failureStage: 'RECIPIENT_VALIDATION' | 'OPAQUE_COMPOSITION' | 'LEDGER_RECORD' = 'RECIPIENT_VALIDATION';
       try {
-        if (!Number.isFinite(generatedAtMillis) || !isFamilyEpochNumber(parentDevice.keyEpoch)) {
-          throw new Error('resolved parent key epoch is outside the supported family epoch range');
+        if (!isPlausibleOpaqueId(parentDevice.deviceId) || !Number.isFinite(generatedAtMillis) ||
+          !isFamilyEpochNumber(parentDevice.keyEpoch)) {
+          throw new Error('resolved parent recipient or key epoch is invalid');
         }
         failureStage = 'OPAQUE_COMPOSITION';
         // Each recipient gets its own Date copy; no composer can mutate the
