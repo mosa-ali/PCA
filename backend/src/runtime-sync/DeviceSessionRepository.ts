@@ -3,7 +3,8 @@ import type { DeviceSessionRecord, ValidateDeviceSessionResult } from './types.j
 export interface DeviceSessionRepository {
   create(record: DeviceSessionRecord): Promise<void>;
   validate(tokenHash: string, now: Date): Promise<ValidateDeviceSessionResult>;
-  revoke(tokenHash: string, now: Date): Promise<void>;
+  /** Atomically marks an unrevoked token and returns true only for that transition. */
+  revoke(tokenHash: string, now: Date): Promise<boolean>;
 }
 
 /**
@@ -29,8 +30,10 @@ export class InMemoryDeviceSessionRepository implements DeviceSessionRepository 
     return { outcome: 'VALID', session: { ...record } };
   }
 
-  async revoke(tokenHash: string, now: Date): Promise<void> {
+  async revoke(tokenHash: string, now: Date): Promise<boolean> {
     const record = this.byTokenHash.get(tokenHash);
-    if (record && !record.revokedAt) record.revokedAt = now;
+    if (!record || record.revokedAt) return false;
+    record.revokedAt = now;
+    return true;
   }
 }

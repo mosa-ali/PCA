@@ -13,7 +13,7 @@ import { createInMemoryDeviceChallengeRepository } from '../support/inMemoryDevi
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../support/testOnlyDeviceSignatureVerifier.mjs';
 
-function buildHarness(now = () => new Date()) {
+function buildHarness(now = () => new Date(), auditService = undefined) {
   const deviceRepository = createInMemoryDeviceRepository();
   const sessionRepository = new InMemoryDeviceSessionRepository();
   const deviceAuthService = new DeviceAuthService(
@@ -21,7 +21,7 @@ function buildHarness(now = () => new Date()) {
     deviceRepository,
     createTestOnlyDeviceSignatureVerifier(),
   );
-  const sessionService = new DeviceSessionService(deviceAuthService, sessionRepository, now);
+  const sessionService = new DeviceSessionService(deviceAuthService, sessionRepository, now, auditService);
   return { deviceRepository, deviceAuthService, sessionRepository, sessionService };
 }
 
@@ -255,6 +255,45 @@ test('revokeSession makes a previously valid token unusable, and is idempotent',
 
   await sessionService.revokeSession(session.rawToken);
   await sessionService.revokeSession(session.rawToken); // idempotent, no throw
+  await assert.rejects(() => sessionService.validateSession(session.rawToken));
+});
+
+test('concurrent revocations emit exactly one lifecycle transition audit', async () => {
+  const auditEvents = [];
+  const auditService = { async record(event) { auditEvents.push(event); } };
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness(() => new Date(), auditService);
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+
+  const originalValidate = sessionRepository.validate.bind(sessionRepository);
+  let priorReads = 0;
+  let signalBothValidated;
+  let releaseReads;
+  const bothValidated = new Promise(resolve => { signalBothValidated = resolve; });
+  const readGate = new Promise(resolve => { releaseReads = resolve; });
+  sessionRepository.validate = async (tokenHash, now) => {
+    const result = await originalValidate(tokenHash, now);
+    priorReads += 1;
+    if (priorReads <= 2) {
+      if (priorReads === 2) signalBothValidated();
+      await readGate;
+    }
+    return result;
+  };
+
+  const first = sessionService.revokeSession(session.rawToken);
+  const second = sessionService.revokeSession(session.rawToken);
+  try {
+    await bothValidated;
+  } finally {
+    releaseReads();
+  }
+  await Promise.all([first, second]);
+
+  assert.equal(auditEvents.length, 1);
+  assert.equal(auditEvents[0].actionType, 'DEVICE_LIFECYCLE_TRANSITION');
+  assert.equal(auditEvents[0].freeTextNote, 'DEVICE_SESSION_REVOKED');
   await assert.rejects(() => sessionService.validateSession(session.rawToken));
 });
 

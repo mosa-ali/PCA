@@ -165,8 +165,8 @@ export class DeviceSessionService {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const tokenHash = hashSessionToken(rawToken);
     const priorState = await this.sessionRepository.validate(tokenHash, this.now());
-    await this.sessionRepository.revoke(tokenHash, this.now());
-    if (priorState.outcome === 'VALID') {
+    const revoked = await this.sessionRepository.revoke(tokenHash, this.now());
+    if (priorState.outcome === 'VALID' && revoked) {
       await this.auditService.record({
         familyId: priorState.session.familyId,
         actionType: 'DEVICE_LIFECYCLE_TRANSITION',
