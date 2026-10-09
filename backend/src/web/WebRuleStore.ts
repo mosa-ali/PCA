@@ -28,6 +28,16 @@ export interface SecurityRulePackageRepository {
   ): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }>;
 }
 
+function cloneRule(rule: WebRule): WebRule {
+  return {
+    domain: rule.domain,
+    listType: rule.listType,
+    source: rule.source,
+    familyId: rule.familyId,
+    createdAt: new Date(rule.createdAt),
+  };
+}
+
 export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRulePackageRepository {
   private rules = new Map<string, WebRule>();
   private securityPackageVersion: string | null = null;
@@ -37,7 +47,8 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
   }
 
   async put(rule: WebRule): Promise<void> {
-    this.rules.set(this.key(rule.familyId, rule.domain, rule.listType, rule.source), rule);
+    const snapshot = cloneRule(rule);
+    this.rules.set(this.key(snapshot.familyId, snapshot.domain, snapshot.listType, snapshot.source), snapshot);
   }
 
   async remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType, source: WebRuleSource): Promise<void> {
@@ -50,7 +61,7 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
       if (rule.domain !== domain) continue;
       if (rule.familyId === null || rule.familyId === familyId) matched.push(rule);
     }
-    return matched;
+    return matched.map(cloneRule);
   }
 
   async listByFamily(familyId: OpaqueFamilyId): Promise<WebRule[]> {
@@ -58,7 +69,7 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
     for (const rule of this.rules.values()) {
       if (rule.familyId === familyId) matched.push(rule);
     }
-    return matched;
+    return matched.map(cloneRule);
   }
 
   async replaceSecurityPackageIfNewer(packageVersion: string, rules: readonly WebRule[]): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }> {
@@ -74,7 +85,8 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
       if (rule.familyId === null && rule.source === 'SECURITY_DENYLIST') replacement.delete(key);
     }
     for (const rule of rules) {
-      replacement.set(this.key(null, rule.domain, rule.listType, rule.source), { ...rule, createdAt: new Date(rule.createdAt) });
+      const snapshot = cloneRule(rule);
+      replacement.set(this.key(null, snapshot.domain, snapshot.listType, snapshot.source), snapshot);
     }
     // No suspension between the floor check and these assignments. Consumers
     // sharing this fixture cannot race a lower version over a newer snapshot.

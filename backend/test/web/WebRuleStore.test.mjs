@@ -51,6 +51,38 @@ test('removeParentRule deletes a previously stored rule', async () => {
   assert.equal(matched.length, 0);
 });
 
+test('in-memory web rule reads and writes snapshot scope, key fields and Date values', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const createdAt = new Date('2026-01-01T00:00:00.000Z');
+  const submitted = { domain: 'example.com', listType: 'DENY', source: 'PARENT_DENYLIST', familyId: 'fam-1', createdAt };
+  await repo.put(submitted);
+
+  submitted.familyId = 'fam-2';
+  submitted.domain = 'foreign.example';
+  submitted.createdAt.setTime(createdAt.getTime() + 86400000);
+  assert.deepEqual(await repo.findMatching('fam-2', 'example.com'), []);
+
+  const matched = await repo.findMatching('fam-1', 'example.com');
+  assert.equal(matched.length, 1);
+  matched[0].familyId = 'fam-3';
+  matched[0].domain = 'changed.example';
+  matched[0].createdAt.setTime(createdAt.getTime() + 172800000);
+
+  const listed = await repo.listByFamily('fam-1');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].domain, 'example.com');
+  assert.equal(listed[0].familyId, 'fam-1');
+  assert.equal(listed[0].createdAt.getTime(), new Date('2026-01-01T00:00:00.000Z').getTime());
+  listed[0].createdAt.setTime(createdAt.getTime() + 259200000);
+  listed[0].familyId = 'fam-4';
+
+  const final = await repo.findMatching('fam-1', 'example.com');
+  assert.equal(final.length, 1);
+  assert.equal(final[0].familyId, 'fam-1');
+  assert.equal(final[0].domain, 'example.com');
+  assert.equal(final[0].createdAt.getTime(), new Date('2026-01-01T00:00:00.000Z').getTime());
+});
+
 test('parent writes and removals preserve same-key category and schedule rules', async () => {
   const repo = new InMemoryWebRuleRepository();
   const service = new WebRuleService(repo);
