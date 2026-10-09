@@ -2,7 +2,7 @@ import { computeSyncConnectionState } from '../familysync/connectionState.js';
 import type { SyncConnectionState } from '../familysync/types.js';
 
 interface DeviceHeartbeat {
-  isSyncing: boolean;
+  activeSyncCount: number;
   lastSuccessfulSyncAtUtc: Date | null;
 }
 
@@ -20,20 +20,31 @@ export class DeviceSyncStatusTracker {
 
   markSyncStart(deviceId: string): void {
     const existing = this.byDevice.get(deviceId);
-    this.byDevice.set(deviceId, { isSyncing: true, lastSuccessfulSyncAtUtc: existing?.lastSuccessfulSyncAtUtc ?? null });
+    this.byDevice.set(deviceId, {
+      activeSyncCount: (existing?.activeSyncCount ?? 0) + 1,
+      lastSuccessfulSyncAtUtc: existing?.lastSuccessfulSyncAtUtc ?? null,
+    });
   }
 
   markSyncSuccess(deviceId: string, atUtc: Date): void {
-    this.byDevice.set(deviceId, { isSyncing: false, lastSuccessfulSyncAtUtc: new Date(atUtc.getTime()) });
+    const existing = this.byDevice.get(deviceId);
+    this.byDevice.set(deviceId, {
+      activeSyncCount: existing?.activeSyncCount ?? 0,
+      lastSuccessfulSyncAtUtc: new Date(atUtc.getTime()),
+    });
   }
 
   markSyncEnd(deviceId: string): void {
     const existing = this.byDevice.get(deviceId);
-    this.byDevice.set(deviceId, { isSyncing: false, lastSuccessfulSyncAtUtc: existing?.lastSuccessfulSyncAtUtc ?? null });
+    const activeSyncCount = Math.max(0, (existing?.activeSyncCount ?? 0) - 1);
+    this.byDevice.set(deviceId, {
+      activeSyncCount,
+      lastSuccessfulSyncAtUtc: existing?.lastSuccessfulSyncAtUtc ?? null,
+    });
   }
 
   computeState(deviceId: string, hasPendingLocalWork: boolean, nowUtc: Date): SyncConnectionState {
-    const heartbeat = this.byDevice.get(deviceId) ?? { isSyncing: false, lastSuccessfulSyncAtUtc: null };
+    const heartbeat = this.byDevice.get(deviceId) ?? { activeSyncCount: 0, lastSuccessfulSyncAtUtc: null };
     // A device that can reach this HTTP route at all is, by construction,
     // transport-connected right now -- this endpoint is itself the
     // transport-connectivity signal.
@@ -50,7 +61,7 @@ export class DeviceSyncStatusTracker {
     // rather than a fabricated OFFLINE this tracker cannot actually prove.
     return computeSyncConnectionState({
       isTransportConnected: true,
-      isSyncing: heartbeat.isSyncing,
+      isSyncing: heartbeat.activeSyncCount > 0,
       hasPendingLocalWork,
       lastSuccessfulSyncAtUtc: heartbeat.lastSuccessfulSyncAtUtc,
       nowUtc,
