@@ -229,4 +229,32 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(try first.load(), advanced)
     }
 
+    func testCatchUpRecoversLostResponsePendingWithoutReSignOrRollback() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        transport.records[2] = pending.candidate
+        transport.head = OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(3)), signature: "third")
+        let complete = try await coordinator.catchUp()
+        XCTAssertTrue(complete)
+        XCTAssertNil(store.value.pending)
+        XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 3)
+        XCTAssertEqual(signer.calls, 1)
+        XCTAssertTrue(transport.sent.isEmpty)
+    }
+    func testConflictingCatchUpKeepsPendingUntilAuthoritativeExactReceipt() async throws {
+        let (store, _, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        transport.head = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: pending.candidate.canonicalBytes, signature: "different-valid-signature")
+        let complete = try await coordinator.catchUp()
+        XCTAssertTrue(complete)
+        XCTAssertEqual(store.value.pending, pending)
+        transport.statusValue = .rejected
+        let reconciled = try await coordinator.reconcile()
+        XCTAssertFalse(reconciled)
+        XCTAssertEqual(store.value.pending, pending)
+    }
+
 }

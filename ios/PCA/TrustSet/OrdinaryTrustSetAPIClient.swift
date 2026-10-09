@@ -61,7 +61,10 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
                 .replacingOccurrences(of: "=", with: "")
             let value = OrdinaryTrustSetHead(familyId: familyId, canonicalBytes: bytes, signature: signature)
             let epoch = try value.epoch()
-            guard epoch.trustSetEpoch == trustSetEpoch, epoch.keyEpoch == keyEpoch else { throw PCAAPIError.malformedResponse }
+            let owners = epoch.entries.filter { $0.role == .owner && $0.status == .active }
+            guard owners.count == 1, Data(owners[0].deviceId.utf8) == Data(signerDeviceId.utf8),
+                  Data(owners[0].dskKeyId.utf8) == Data(signerKeyId.utf8),
+                  epoch.trustSetEpoch == trustSetEpoch, epoch.keyEpoch == keyEpoch else { throw PCAAPIError.malformedResponse }
             return value
         }
     }

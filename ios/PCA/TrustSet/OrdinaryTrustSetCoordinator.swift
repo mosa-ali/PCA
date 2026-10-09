@@ -80,15 +80,18 @@ public struct OrdinaryTrustSetRecord: Codable, Equatable {
         }
         if let pending {
             try pending.validate()
-            guard pending.previousHead == head else { throw OrdinaryTrustSetError.malformedState }
+            let previous = try pending.previousHead.epoch()
+            guard Data(previous.familyId.utf8) == Data(current.familyId.utf8),
+                  previous.trustSetEpoch <= current.trustSetEpoch, previous.keyEpoch <= current.keyEpoch else {
+                throw OrdinaryTrustSetError.malformedState
+            }
+            if previous.trustSetEpoch == current.trustSetEpoch, pending.previousHead != head { throw OrdinaryTrustSetError.malformedState }
         }
     }
 }
 
 public protocol OrdinaryTrustSetStoring {
     func load() throws -> OrdinaryTrustSetRecord
-    /// Must durably replace atomically, retaining the old value on failure.
-    func save(_ value: OrdinaryTrustSetRecord) throws
     func compareAndSetDurably(expected: OrdinaryTrustSetRecord?, next: OrdinaryTrustSetRecord) throws -> Bool
     func confirmDurable(_ expected: OrdinaryTrustSetRecord) throws -> Bool
 }
@@ -108,10 +111,6 @@ public final class KeychainOrdinaryTrustSetStore: OrdinaryTrustSetStoring {
         guard bytes.count <= 1_048_576 else { throw OrdinaryTrustSetError.malformedState }
         let value = try JSONDecoder().decode(OrdinaryTrustSetRecord.self, from: bytes)
         try value.validate(); return value
-    }
-    public func save(_ value: OrdinaryTrustSetRecord) throws {
-        Self.custodyLock.lock(); defer { Self.custodyLock.unlock() }
-        try saveUnlocked(value)
     }
     private func saveUnlocked(_ value: OrdinaryTrustSetRecord) throws {
         try value.validate()
@@ -228,7 +227,6 @@ public final class OrdinaryTrustSetCoordinator {
         guard (1...64).contains(maximumRecords) else { throw OrdinaryTrustSetError.malformedState }
         return try await gate.run {
             var record = try self.checkedRecord()
-            guard record.pending == nil else { throw OrdinaryTrustSetError.pendingSubmission }
             let target = try await self.transport.acceptedHead(familyId: self.familyId)
             let targetEpoch = try target.epoch()
             let localEpoch = try record.head.epoch()
@@ -265,6 +263,7 @@ public final class OrdinaryTrustSetCoordinator {
                 try self.verifyPending(hop)
                 let expected = record
                 record.head = next
+                if record.pending?.candidate == next { record.pending = nil }
                 guard try self.store.compareAndSetDurably(expected: expected, next: record) else { throw OrdinaryTrustSetError.responseMismatch }
             }
             return record.head == target
@@ -287,7 +286,15 @@ public final class OrdinaryTrustSetCoordinator {
         _ = try head.epoch()
         try verifyPending(pending)
         guard head == pending.candidate else { throw OrdinaryTrustSetError.responseMismatch }
-        var updated = record; updated.head = head; updated.pending = nil
+        var updated = record
+        let currentEpoch = try record.head.epoch(), acceptedEpoch = try head.epoch()
+        if acceptedEpoch.trustSetEpoch > currentEpoch.trustSetEpoch {
+            updated.head = head
+        } else if acceptedEpoch.trustSetEpoch == currentEpoch.trustSetEpoch, head != record.head {
+            throw OrdinaryTrustSetError.responseMismatch
+        }
+        // Historical exact acceptance acknowledges custody without regressing a newer verified floor.
+        updated.pending = nil
         guard try store.compareAndSetDurably(expected: record, next: updated) else { throw OrdinaryTrustSetError.responseMismatch }
     }
 }
