@@ -298,6 +298,8 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         let record = try! XCTUnwrap(store.current())
         XCTAssertEqual(record.state, .rootCommitted)
         XCTAssertNil(record.submission)
+        XCTAssertEqual(record.acceptedEpoch1?.canonicalBytes, sent["epoch1Bytes"])
+        XCTAssertEqual(record.acceptedEpoch1?.signature, sent["epoch1Signature"])
         XCTAssertNil(record.nonce)
         XCTAssertEqual(record.seed.attemptRecoveryToken, "", "the one-time recovery token must be cleared on commit")
     }

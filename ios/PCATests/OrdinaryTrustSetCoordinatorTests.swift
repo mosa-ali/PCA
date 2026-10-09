@@ -12,6 +12,12 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             if fail { throw OrdinaryTrustSetError.malformedState }
             self.value = value
         }
+        func compareAndSetDurably(expected: OrdinaryTrustSetRecord?, next: OrdinaryTrustSetRecord) throws -> Bool {
+            guard expected == value else { return false }
+            try save(next); return value == next
+        }
+        func confirmDurable(_ expected: OrdinaryTrustSetRecord) throws -> Bool { value == expected }
+
     }
     private final class Signer: FirstDeviceDskSigning {
         var calls = 0
@@ -24,12 +30,14 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
     private final class Transport: OrdinaryTrustSetTransport {
         var sent: [OrdinaryTrustSetPending] = []
         var failure = false
+        var beforeReply: (() -> Void)?
         var statusValue: OrdinaryTrustSetSubmissionResult = .unknown
         var head: OrdinaryTrustSetHead?
         var records: [Int: OrdinaryTrustSetHead] = [:]
         func submit(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult {
             sent.append(request)
             if failure { throw PCAHTTPTransportError.timeout }
+            beforeReply?()
             return .accepted(request.candidate)
         }
         func status(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult { statusValue }
@@ -160,6 +168,65 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         let original = store.value
         do { _ = try await coordinator.catchUp(); XCTFail("invalid signature accepted") } catch {}
         XCTAssertEqual(store.value, original)
+    }
+
+    func testStaleNetworkResponseCannotOverwriteAdvancedCustody() async throws {
+        let (store, _, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let advanced = OrdinaryTrustSetRecord(head: OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(3)), signature: "third"))
+        transport.beforeReply = { store.value = advanced }
+        do { _ = try await coordinator.submitPending(); XCTFail("stale CAS should reject") } catch {}
+        XCTAssertEqual(store.value, advanced)
+        XCTAssertEqual(transport.sent, [pending])
+    }
+
+    private func committedRoot() throws -> FirstDeviceRootRecord {
+        let owner = epoch(1).entries[0]
+        let seed = FirstDeviceCeremonySeed(attemptId: "attempt", attemptRecoveryToken: "", serverBaseUrl: "https://api.example.test",
+            deviceId: owner.deviceId, signingKeyId: owner.dskKeyId, encryptionKeyId: owner.dekKeyId,
+            dskPublicKeyBase64: owner.dskPublicKey, dekPublicKeyBase64: owner.dekPublicKey, dskAlias: "pca.dsk.attempt", dekAlias: "pca.dek.attempt")
+        return FirstDeviceRootRecord(seed: seed, state: .rootCommitted, familyId: "family-test", committedAtMillis: 1,
+            acceptedEpoch1: FirstDeviceAcceptedEpochAnchor(canonicalBytes: String(decoding: try FamilyTrustSetCodec.canonicalize(epoch(1)), as: UTF8.self), signature: "root-signature"))
+    }
+    func testConfirmedBootstrapSeedsExactSignedAnchorAndNeverResetsAdvancedHead() throws {
+        let root = try committedRoot()
+        let roots = InMemoryFirstDeviceRootStore(record: root)
+        let custody = KeychainOrdinaryTrustSetStore(keychain: InMemoryKeychainStore(), account: "owner-device")
+        let head = try OrdinaryTrustSetBootstrapAnchor.seed(rootStore: roots, ordinaryStore: custody, verifier: Verifier())
+        XCTAssertEqual(head.canonicalBytes, Data(try XCTUnwrap(root.acceptedEpoch1).canonicalBytes.utf8))
+        XCTAssertEqual(try custody.load().rootAnchor, head)
+        let current = try custody.load()
+        let advanced = OrdinaryTrustSetRecord(head: OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(2)), signature: "epoch-two"), rootAnchor: head)
+        XCTAssertTrue(try custody.compareAndSetDurably(expected: current, next: advanced))
+        let reseeded = try OrdinaryTrustSetBootstrapAnchor.seed(rootStore: roots, ordinaryStore: custody, verifier: Verifier())
+        XCTAssertEqual(reseeded, advanced.head)
+    }
+    func testLegacyRootMissingAnchorAndMismatchedEnrollmentKeyFailClosed() throws {
+        var root = try committedRoot()
+        let custody = KeychainOrdinaryTrustSetStore(keychain: InMemoryKeychainStore(), account: "owner-device")
+        root.acceptedEpoch1 = nil
+        XCTAssertThrowsError(try OrdinaryTrustSetBootstrapAnchor.seed(rootStore: InMemoryFirstDeviceRootStore(record: root), ordinaryStore: custody, verifier: Verifier()))
+        root = try committedRoot()
+        root.seed.dskPublicKeyBase64 = "substituted-key"
+        XCTAssertThrowsError(try OrdinaryTrustSetBootstrapAnchor.seed(rootStore: InMemoryFirstDeviceRootStore(record: root), ordinaryStore: custody, verifier: Verifier()))
+        XCTAssertThrowsError(try custody.load())
+    }
+    func testIndependentKeychainStoreInstancesRejectStaleCASAndFloorRollback() throws {
+        let keychain = InMemoryKeychainStore()
+        let first = KeychainOrdinaryTrustSetStore(keychain: keychain, account: "owner-device")
+        let second = KeychainOrdinaryTrustSetStore(keychain: keychain, account: "owner-device")
+        let original = OrdinaryTrustSetRecord(head: OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(1)), signature: "root"))
+        XCTAssertTrue(try first.compareAndSetDurably(expected: nil, next: original))
+        let advanced = OrdinaryTrustSetRecord(head: OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(2)), signature: "next"))
+        XCTAssertTrue(try second.compareAndSetDurably(expected: original, next: advanced))
+        XCTAssertFalse(try first.compareAndSetDurably(expected: original, next: original))
+        XCTAssertThrowsError(try first.compareAndSetDurably(expected: advanced, next: original))
+        XCTAssertEqual(try first.load(), advanced)
     }
 
 }

@@ -402,6 +402,8 @@ public final class FirstDeviceTrustRootCoordinator {
     private func finalizeCommitted(_ current: FirstDeviceRootRecord) {
         var committed = current
         committed.state = .rootCommitted
+        guard let submission = current.submission else { return }
+        committed.acceptedEpoch1 = FirstDeviceAcceptedEpochAnchor(canonicalBytes: submission.epoch1Bytes, signature: submission.epoch1Signature)
         committed.seed.attemptRecoveryToken = ""
         committed.submission = nil
         committed.nonce = nil

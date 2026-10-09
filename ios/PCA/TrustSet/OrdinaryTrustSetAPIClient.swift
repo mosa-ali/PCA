@@ -87,6 +87,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
                 "signatureBase64": bytes.base64EncodedString()], options: [.sortedKeys])
         }
         let response = try await http.send(request)
+        guard Data(try sessionToken().utf8) == Data(token.utf8) else { throw PCAAPIError.unauthorized }
         guard response.data.count <= 1_048_576 else { throw PCAAPIError.malformedResponse }
         return response
     }

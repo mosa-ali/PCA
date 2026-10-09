@@ -120,6 +120,15 @@ public struct FirstDeviceSubmissionPayload: Codable, Equatable {
 
 }
 
+public struct FirstDeviceAcceptedEpochAnchor: Codable, Equatable {
+    public let canonicalBytes: String
+    public let signature: String
+    public init(canonicalBytes: String, signature: String) { self.canonicalBytes = canonicalBytes; self.signature = signature }
+    public static func == (left: Self, right: Self) -> Bool {
+        Data(left.canonicalBytes.utf8) == Data(right.canonicalBytes.utf8) && Data(left.signature.utf8) == Data(right.signature.utf8)
+    }
+}
+
 public struct FirstDeviceRootRecord: Codable, Equatable {
     public var seed: FirstDeviceCeremonySeed
     public var state: FirstDeviceRootState
@@ -131,6 +140,9 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
     public var familyId: String?
     public var submission: FirstDeviceSubmissionPayload?
     public var committedAtMillis: Int64?
+    /// Exact signed statement B retained after accepted bootstrap; no evidence packet/recovery secret.
+    /// Older records decode nil and cannot invent a root anchor from server projections.
+    public var acceptedEpoch1: FirstDeviceAcceptedEpochAnchor?
 
     public init(
         seed: FirstDeviceCeremonySeed,
@@ -141,7 +153,8 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
         expiresAt: String? = nil,
         familyId: String? = nil,
         submission: FirstDeviceSubmissionPayload? = nil,
-        committedAtMillis: Int64? = nil
+        committedAtMillis: Int64? = nil,
+        acceptedEpoch1: FirstDeviceAcceptedEpochAnchor? = nil
     ) {
         self.seed = seed
         self.state = state
@@ -152,6 +165,7 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
         self.familyId = familyId
         self.submission = submission
         self.committedAtMillis = committedAtMillis
+        self.acceptedEpoch1 = acceptedEpoch1
     }
     /// Compare persisted authority snapshots without Unicode normalization.
     public static func == (left: FirstDeviceRootRecord, right: FirstDeviceRootRecord) -> Bool {
@@ -163,7 +177,7 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
         (left.expiresAt.map { Data($0.utf8) } == right.expiresAt.map { Data($0.utf8) }) &&
         (left.familyId.map { Data($0.utf8) } == right.familyId.map { Data($0.utf8) }) &&
         (left.submission == right.submission) &&
-        (left.committedAtMillis == right.committedAtMillis)
+        (left.committedAtMillis == right.committedAtMillis) && (left.acceptedEpoch1 == right.acceptedEpoch1)
     }
 
 }

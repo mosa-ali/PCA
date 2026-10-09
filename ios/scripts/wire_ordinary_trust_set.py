@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-FILES = [('01','02','OrdinaryTrustSetCoordinator.swift','D10000000000000000000005','A10000000000000000000601'),('03','04','OrdinaryTrustSetAPIClient.swift','D10000000000000000000005','A10000000000000000000601'),('05','06','OrdinaryTrustSetCoordinatorTests.swift','A10000000000000000000303','A10000000000000000000602')]
+FILES = [('07','08','OrdinaryTrustSetBootstrapAnchor.swift','D10000000000000000000005','A10000000000000000000601'),('01','02','OrdinaryTrustSetCoordinator.swift','D10000000000000000000005','A10000000000000000000601'),('03','04','OrdinaryTrustSetAPIClient.swift','D10000000000000000000005','A10000000000000000000601'),('05','06','OrdinaryTrustSetCoordinatorTests.swift','A10000000000000000000303','A10000000000000000000602')]
 
 def wire_project(project_path='PCA.xcodeproj/project.pbxproj'):
     path=Path(project_path)
