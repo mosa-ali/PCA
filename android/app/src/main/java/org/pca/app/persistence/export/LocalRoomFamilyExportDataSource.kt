@@ -50,8 +50,7 @@ class LocalRoomFamilyExportDataSource(
         val locationCandidates = mutableListOf<FamilyExportRecord>()
 
         for (deviceId in deviceIds) {
-            usageRepository.getForDevice(deviceId)
-                .filter { it.startedAtEpochMillis >= generalCutoff }
+            usageRepository.getForDeviceSince(deviceId, generalCutoff)
                 .forEach { usage ->
                     records += FamilyExportRecord(
                         entityClass = "USAGE_SESSION",

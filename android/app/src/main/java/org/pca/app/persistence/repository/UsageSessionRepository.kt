@@ -80,6 +80,21 @@ class UsageSessionRepository(
             entity.toDomain(cipher)
         }
 
+    /**
+     * Retention-bounded query for export/reporting. The cutoff is applied by Room before any
+     * encrypted app token or provenance is decrypted, so expired rows cannot enter plaintext
+     * processing merely because the periodic deletion worker has not run yet.
+     */
+    suspend fun getForDeviceSince(deviceId: String, cutoffEpochMillis: Long): List<UsageSession> {
+        require(deviceId.isNotBlank())
+        return dao.getForDeviceSince(deviceId, cutoffEpochMillis).map { entity ->
+            check(entity.deviceId == deviceId && entity.startedAtEpochMillis >= cutoffEpochMillis) {
+                "Usage session DAO violated requested device or retention scope"
+            }
+            entity.toDomain(cipher)
+        }
+    }
+
     /** Bounded read-only local observations. Missing metadata is legacy/unknown;
      * malformed present metadata fails the read rather than becoming qualified capture. */
     suspend fun getRecentObservations(deviceId: String, limit: Int): UsageObservationPage {

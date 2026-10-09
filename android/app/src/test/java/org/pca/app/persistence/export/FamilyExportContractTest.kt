@@ -1,5 +1,6 @@
 package org.pca.app.persistence.export
 
+import android.util.Base64
 import java.io.File
 import java.nio.file.Files
 import java.time.Instant
@@ -145,6 +146,41 @@ class FamilyExportContractTest {
         assertFalse("other family audit is excluded", "audit-other-family" in ids)
         assertTrue("latest location is retained", "location-fresh" in ids)
         assertFalse("CURRENT_LAST_ONLY does not export superseded points", "location-old" in ids)
+    }
+
+    @Test
+    fun `expired usage ciphertext is excluded by the database query before token decryption`() = runTest {
+        val usageRepository = UsageSessionRepository(database.usageSessionDao(), cipher)
+        usageRepository.record(
+            id = "usage-current",
+            deviceId = "device-a",
+            appOrCategoryToken = "current-token",
+            startedAtEpochMillis = now.minusSeconds(60).toEpochMilli(),
+            endedAtEpochMillis = now.toEpochMilli(),
+            durationMillis = 60_000,
+            sourceConfidence = SourceConfidence.PLATFORM_API,
+        )
+        usageRepository.record(
+            id = "usage-expired-corrupt",
+            deviceId = "device-a",
+            appOrCategoryToken = "expired-token",
+            startedAtEpochMillis = now.minusSeconds(20L * 24 * 60 * 60).toEpochMilli(),
+            endedAtEpochMillis = now.minusSeconds(20L * 24 * 60 * 60 - 60).toEpochMilli(),
+            durationMillis = 60_000,
+            sourceConfidence = SourceConfidence.PLATFORM_API,
+        )
+        val expired = database.usageSessionDao().getForDevice("device-a").single { it.id == "usage-expired-corrupt" }
+        val encrypted = cipher.encrypt("corrupt-expired-token")
+        val tampered = encrypted.ciphertext.copyOf().also { bytes -> bytes[0] = (bytes[0].toInt() xor 1).toByte() }
+        database.usageSessionDao().upsert(
+            expired.copy(
+                appOrCategoryTokenEnc = Base64.encodeToString(tampered, Base64.NO_WRAP),
+                appOrCategoryTokenIv = Base64.encodeToString(encrypted.iv, Base64.NO_WRAP),
+            ),
+        )
+
+        val records = LocalRoomFamilyExportDataSource(database, cipher).collect("family-a", scope, now)
+        assertEquals(setOf("usage-current"), records.filter { it.entityClass == "USAGE_SESSION" }.map { it.id }.toSet())
     }
 
     /**

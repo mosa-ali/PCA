@@ -14,6 +14,10 @@ interface UsageSessionDao {
     @Query("SELECT * FROM usage_sessions WHERE deviceId = :deviceId ORDER BY startedAtEpochMillis DESC")
     suspend fun getForDevice(deviceId: String): List<UsageSessionEntity>
 
+    /** Apply export/sync retention cutoffs in SQLite before encrypted fields are decrypted. */
+    @Query("SELECT * FROM usage_sessions WHERE deviceId = :deviceId AND startedAtEpochMillis >= :cutoffEpochMillis ORDER BY startedAtEpochMillis DESC, id DESC")
+    suspend fun getForDeviceSince(deviceId: String, cutoffEpochMillis: Long): List<UsageSessionEntity>
+
     @Query("SELECT * FROM usage_sessions WHERE deviceId = :deviceId ORDER BY startedAtEpochMillis DESC, id DESC LIMIT :rowLimit")
     suspend fun getRecentForDevice(deviceId: String, rowLimit: Int): List<UsageSessionEntity>
 
