@@ -41,7 +41,11 @@ export class RecoveryService {
   async fetchEnvelope(familyId: OpaqueFamilyId): Promise<RecoveryEnvelopeRecord> {
     if (!isPlausibleOpaqueId(familyId)) throw new RecoveryError('INVALID_INPUT');
     const record = await this.repository.getEnvelope(familyId);
-    if (!record) throw new RecoveryError('NOT_FOUND');
+    if (!record || record.familyId !== familyId || !isPlausibleEnvelopeCiphertext(record.ciphertext)) {
+      // Treat corrupt/out-of-contract repository rows like no readable
+      // envelope: do not expose another family's record or unbounded bytes.
+      throw new RecoveryError('NOT_FOUND');
+    }
     return record;
   }
 

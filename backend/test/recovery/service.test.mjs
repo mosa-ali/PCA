@@ -40,6 +40,29 @@ test('fetchEnvelope returns the stored ciphertext intact', async () => {
   assert.equal(fetched.ciphertext.equals(ciphertext), true);
 });
 
+test('fetchEnvelope fails closed for a wrong-family or out-of-contract stored record', async () => {
+  const invalidRecords = [
+    { familyId: FAMILY_B, ciphertext: Buffer.from('foreign-family-envelope') },
+    { familyId: FAMILY_A, ciphertext: Buffer.alloc(0) },
+    { familyId: FAMILY_A, ciphertext: Buffer.alloc(MAX_ENVELOPE_BYTES + 1) },
+    { familyId: FAMILY_A, ciphertext: 'not-a-buffer' },
+  ].map((record) => ({
+    ...record,
+    version: 1,
+    createdAt: new Date(BASE_TIME),
+    updatedAt: new Date(BASE_TIME),
+  }));
+
+  for (const invalidRecord of invalidRecords) {
+    const repository = {
+      async getEnvelope() { return invalidRecord; },
+      async storeEnvelope() { throw new Error('not used in this test'); },
+      async deleteEnvelope() { throw new Error('not used in this test'); },
+    };
+    const service = new RecoveryService(repository, () => new Date(BASE_TIME));
+    await assert.rejects(() => service.fetchEnvelope(FAMILY_A), { code: 'NOT_FOUND' });
+  }
+});
 test('creating with expectedVersion 0 when an envelope already exists is a version mismatch, not a silent overwrite', async () => {
   const { service } = buildService();
   await service.storeEnvelope(FAMILY_A, Buffer.from('first'), 0);
