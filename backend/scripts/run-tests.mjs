@@ -257,6 +257,7 @@ const files = [
   "test/alerts/AlertComposeFailureLogger.test.mjs",
   "test/alerts/RejectingOpaqueProtectionAlertComposer.test.mjs",
   "test/device/BrowserEndpointService.test.mjs",
+  "test/device/DeviceProtectionStatusRepository.test.mjs",
   "test/http/browserEndpointRoutes.test.mjs",
   "test/http/childRequestRoutes.test.mjs",
   "test/http/childPolicyRoutes.test.mjs",
