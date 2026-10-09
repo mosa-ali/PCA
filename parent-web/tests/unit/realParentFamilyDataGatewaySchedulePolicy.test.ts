@@ -66,10 +66,23 @@ function stubDeviceStatus(records: DeviceProtectionStatus[]): DeviceStatusClient
 }
 
 const OPAQUE_ENVELOPE: SchedulePolicyEnvelopeInput = {
+  protocolMajor: 1,
+  protocolMinor: 0,
+  messageId: 'schedule-policy-message-1',
+  familyId: 'family-1',
+  senderDeviceId: 'parent-device-1',
   recipientDeviceId: REAL_DEVICE_ID,
-  ciphertextB64: 'YWJjZGVmZ2g',
-  nonceB64: 'MDEyMzQ1Njc4OTAxMjM0NQ',
+  senderKeyId: 'parent-signing-key-1',
+  messageType: 'POLICY_UPDATE',
+  trustSetEpoch: 4,
   keyEpoch: 3,
+  sequenceOrNonce: 'schedule-policy-sequence-1',
+  issuedAt: '2026-01-07T09:00:00.000Z',
+  expiresAt: '2026-01-07T09:05:00.000Z',
+  semanticVersion: '1.0.0',
+  correlationId: null,
+  payload: 'b3BhcXVlLWVuY3J5cHRlZC1wb2xpY3k=',
+  signature: 'opaque-signature',
 };
 
 function fakeAuthoring(
@@ -189,10 +202,47 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
 describe('schedule-policy authoring epoch bound', () => {
   it('accepts INT32_MAX and rejects key epochs above the shared family protocol bound', () => {
     const maxEpochEnvelope = { ...OPAQUE_ENVELOPE, keyEpoch: 2_147_483_647 };
-    expect(() => validateOpaqueSchedulePolicyInput(maxEpochEnvelope, REAL_DEVICE_ID)).not.toThrow();
+    expect(() => validateOpaqueSchedulePolicyInput(maxEpochEnvelope, {
+      familyId: 'family-1', senderDeviceId: 'parent-device-1', recipientDeviceId: REAL_DEVICE_ID,
+    })).not.toThrow();
 
     const outOfRangeEnvelope = { ...OPAQUE_ENVELOPE, keyEpoch: 2_147_483_648 };
-    expect(() => validateOpaqueSchedulePolicyInput(outOfRangeEnvelope, REAL_DEVICE_ID)).toThrow('ENCRYPTION_UNAVAILABLE');
+    expect(() => validateOpaqueSchedulePolicyInput(outOfRangeEnvelope, {
+      familyId: 'family-1', senderDeviceId: 'parent-device-1', recipientDeviceId: REAL_DEVICE_ID,
+    })).toThrow('ENCRYPTION_UNAVAILABLE');
+  });
+
+  it('rejects the obsolete partial ciphertext/nonce/keyEpoch body', () => {
+    const partial = {
+      recipientDeviceId: REAL_DEVICE_ID,
+      ciphertextB64: 'YWJjZGVmZ2g',
+      nonceB64: 'MDEyMzQ1Njc4OTAxMjM0NQ',
+      keyEpoch: 3,
+    };
+    expect(() => validateOpaqueSchedulePolicyInput(partial, {
+      familyId: 'family-1', senderDeviceId: 'parent-device-1', recipientDeviceId: REAL_DEVICE_ID,
+    })).toThrow('ENCRYPTION_UNAVAILABLE');
+  });
+
+  it('accepts the RawFamilyEnvelope contract when optional correlationId is omitted', () => {
+    const envelope = { ...OPAQUE_ENVELOPE };
+    delete envelope.correlationId;
+    expect(() => validateOpaqueSchedulePolicyInput(envelope, {
+      familyId: 'family-1', senderDeviceId: 'parent-device-1', recipientDeviceId: REAL_DEVICE_ID,
+    })).not.toThrow();
+  });
+
+  it('rejects envelope metadata that is not bound to the expected family, actor, recipient, and POLICY_UPDATE type', () => {
+    const binding = { familyId: 'family-1', senderDeviceId: 'parent-device-1', recipientDeviceId: REAL_DEVICE_ID };
+    for (const invalid of [
+      { ...OPAQUE_ENVELOPE, familyId: 'foreign-family' },
+      { ...OPAQUE_ENVELOPE, senderDeviceId: 'foreign-parent' },
+      { ...OPAQUE_ENVELOPE, recipientDeviceId: 'foreign-child' },
+      { ...OPAQUE_ENVELOPE, messageType: 'SCHEDULE_POLICY_V1' as never },
+      { ...OPAQUE_ENVELOPE, recipientGroup: 'all-devices' } as unknown,
+    ]) {
+      expect(() => validateOpaqueSchedulePolicyInput(invalid, binding)).toThrow('ENCRYPTION_UNAVAILABLE');
+    }
   });
 });
 

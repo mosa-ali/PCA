@@ -54,7 +54,6 @@ export class SchedulePolicyAuthoringError extends Error {
 }
 
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
-const OPAQUE_BASE64 = /^[A-Za-z0-9_-]{2,87380}$/;
 // Shared family epoch protocol bound (INT32_MAX), matching backend and mobile.
 const MAX_FAMILY_EPOCH = 2_147_483_647;
 
@@ -83,33 +82,109 @@ export function validateSchedulePolicyPlaintextDefinition(definition: SchedulePo
   }
 }
 
-/** The opaque service contract this authoring boundary must produce -- mirrors NewSafeZoneInput's shape, addressed to a specific child device rather than a generic recipient endpoint. */
+/** Full signed wire envelope accepted by backend/src/http/routes/childPolicyRoutes.ts.
+ * This mirrors RawFamilyEnvelope with canonical wire encodings (ISO date
+ * strings and base64 payload), bound to one device recipient. The Parent
+ * transport does not create signatures or encrypt payloads; it only accepts
+ * and forwards an envelope produced by the reviewed family-crypto boundary. */
 export interface SchedulePolicyEnvelopeInput {
+  protocolMajor: number;
+  protocolMinor: number;
+  messageId: string;
+  familyId: string;
+  senderDeviceId: string;
   recipientDeviceId: string;
-  ciphertextB64: string;
-  nonceB64: string;
+  senderKeyId: string;
+  messageType: 'POLICY_UPDATE';
+  trustSetEpoch: number;
   keyEpoch: number;
+  sequenceOrNonce: string;
+  issuedAt: string;
+  expiresAt: string;
+  semanticVersion: string;
+  correlationId?: string | null;
+  payload: string;
+  signature: string;
 }
 
-/** Keep the opaque-envelope check at the parent-side crypto boundary too, same rationale as validateOpaqueSafeZoneInput. */
-export function validateOpaqueSchedulePolicyInput(value: unknown, expectedRecipientDeviceId: string): asserts value is SchedulePolicyEnvelopeInput {
+export interface SchedulePolicyEnvelopeBinding {
+  familyId: string;
+  senderDeviceId: string;
+  recipientDeviceId: string;
+}
+
+const MAX_FAMILY_ENVELOPE_PAYLOAD_BYTES = 64 * 1024;
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const SEMANTIC_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+const SCHEDULE_POLICY_ENVELOPE_KEYS = [
+  'expiresAt', 'familyId', 'issuedAt', 'keyEpoch', 'messageId',
+  'messageType', 'payload', 'protocolMajor', 'protocolMinor', 'recipientDeviceId',
+  'semanticVersion', 'senderDeviceId', 'senderKeyId', 'sequenceOrNonce',
+  'signature', 'trustSetEpoch',
+];
+const SCHEDULE_POLICY_ENVELOPE_KEYS_WITH_CORRELATION = [...SCHEDULE_POLICY_ENVELOPE_KEYS, 'correlationId'].sort();
+const BASE64_VALUES = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function isOpaqueId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 128;
+}
+
+function isCanonicalPayloadBase64(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length % 4 !== 0 || !CANONICAL_BASE64.test(value)) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  const decodedBytes = value.length / 4 * 3 - padding;
+  if (decodedBytes < 1 || decodedBytes > MAX_FAMILY_ENVELOPE_PAYLOAD_BYTES) return false;
+  if (padding === 2 && (BASE64_VALUES.indexOf(value[value.length - 3]!) & 0x0f) !== 0) return false;
+  if (padding === 1 && (BASE64_VALUES.indexOf(value[value.length - 2]!) & 0x03) !== 0) return false;
+  return true;
+}
+
+function isCanonicalIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.toISOString() === value;
+}
+
+/** Validate the canonical opaque wire object before any transport call. This
+ * intentionally rejects the former partial `{ciphertextB64, nonceB64,
+ * keyEpoch}` body: it cannot be accepted by the signed FamilyEnvelope route
+ * or be verified/replayed by the device-side protocol. */
+export function validateOpaqueSchedulePolicyInput(
+  value: unknown,
+  expected: SchedulePolicyEnvelopeBinding,
+): asserts value is SchedulePolicyEnvelopeInput {
   if (!isRecord(value)) throw new SchedulePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
   const keys = Object.keys(value).sort();
-  if (keys.join('|') !== 'ciphertextB64|keyEpoch|nonceB64|recipientDeviceId') {
+  const serializedKeys = keys.join('|');
+  if (
+    serializedKeys !== SCHEDULE_POLICY_ENVELOPE_KEYS.join('|') &&
+    serializedKeys !== SCHEDULE_POLICY_ENVELOPE_KEYS_WITH_CORRELATION.join('|')
+  ) {
     throw new SchedulePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
   }
+  const issuedAt = isCanonicalIsoDate(value.issuedAt) ? new Date(value.issuedAt).getTime() : Number.NaN;
+  const expiresAt = isCanonicalIsoDate(value.expiresAt) ? new Date(value.expiresAt).getTime() : Number.NaN;
   if (
-    value.recipientDeviceId !== expectedRecipientDeviceId ||
+    value.familyId !== expected.familyId ||
+    value.senderDeviceId !== expected.senderDeviceId ||
+    value.recipientDeviceId !== expected.recipientDeviceId ||
     typeof value.recipientDeviceId !== 'string' ||
-    !OPAQUE_TOKEN.test(value.recipientDeviceId) ||
-    typeof value.ciphertextB64 !== 'string' ||
-    !OPAQUE_BASE64.test(value.ciphertextB64) ||
-    typeof value.nonceB64 !== 'string' ||
-    !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64) ||
-    typeof value.keyEpoch !== 'number' ||
-    !Number.isSafeInteger(value.keyEpoch) ||
-    value.keyEpoch <= 0 ||
-    value.keyEpoch > MAX_FAMILY_EPOCH
+    !isOpaqueId(value.familyId) ||
+    !isOpaqueId(value.senderDeviceId) ||
+    !isOpaqueId(value.recipientDeviceId) ||
+    !isOpaqueId(value.senderKeyId) ||
+    !isOpaqueId(value.messageId) ||
+    !isOpaqueId(value.sequenceOrNonce) ||
+    value.messageType !== 'POLICY_UPDATE' ||
+    !Number.isSafeInteger(value.protocolMajor) || (value.protocolMajor as number) < 1 ||
+    !Number.isSafeInteger(value.protocolMinor) || (value.protocolMinor as number) < 0 ||
+    !Number.isSafeInteger(value.trustSetEpoch) || (value.trustSetEpoch as number) < 0 || (value.trustSetEpoch as number) > MAX_FAMILY_EPOCH ||
+    !Number.isSafeInteger(value.keyEpoch) || (value.keyEpoch as number) < 0 || (value.keyEpoch as number) > MAX_FAMILY_EPOCH ||
+    (value.correlationId !== undefined && value.correlationId !== null && !isOpaqueId(value.correlationId)) ||
+    typeof value.semanticVersion !== 'string' || value.semanticVersion.length > 32 || !SEMANTIC_VERSION.test(value.semanticVersion) ||
+    !isCanonicalPayloadBase64(value.payload) ||
+    typeof value.signature !== 'string' || value.signature.length < 1 || value.signature.length > 512 ||
+    !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || expiresAt <= issuedAt
   ) {
     throw new SchedulePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
   }
@@ -142,7 +217,11 @@ export class VerifiedFamilySchedulePolicyPublisher implements SchedulePolicyPubl
 
   async publish(familyId: string, recipientDeviceId: string, definition: SchedulePolicyPlaintextDefinition): Promise<SchedulePolicySubmissionResult> {
     const envelope = await this.authoring.encrypt(familyId, recipientDeviceId, definition);
-    validateOpaqueSchedulePolicyInput(envelope, recipientDeviceId);
+    validateOpaqueSchedulePolicyInput(envelope, {
+      familyId,
+      senderDeviceId: envelope.senderDeviceId,
+      recipientDeviceId,
+    });
     return this.transport.submit(familyId, definition.childProfileId, envelope);
   }
 }
@@ -152,7 +231,10 @@ export interface SchedulePolicyFamilyAuthority {
   authorizePolicyMutation(input: { familyId: string; actorEndpointId: string; childProfileId: string }): Promise<'ALLOW' | 'DENY'>;
 }
 
-/** Reviewed family encryption boundary -- intentionally injected, defines the plaintext-to-opaque contract without selecting an unapproved KDF/AEAD/KEM construction. This is also where a future implementer maps this plaintext definition onto the real SCHEDULE_POLICY_V1 wire bytes (see this file's header for the current mapping gap). */
+/** Reviewed family envelope boundary -- intentionally injected, accepts the
+ * plaintext definition and returns the existing signed FamilyEnvelope wire
+ * contract without selecting an unapproved KDF/AEAD/KEM/signature construction.
+ * The separate plaintext-to-SchedulePolicyV1 field mapping remains unresolved. */
 export interface SchedulePolicyFamilyEncryptionBoundary {
   encrypt(input: { familyId: string; actorEndpointId: string; recipientDeviceId: string; definition: SchedulePolicyPlaintextDefinition }): Promise<SchedulePolicyEnvelopeInput>;
 }
@@ -191,7 +273,7 @@ export class VerifiedFamilySchedulePolicyAuthoring implements SchedulePolicyAuth
     }
 
     const opaque = await this.encryption.encrypt({ familyId, actorEndpointId, recipientDeviceId, definition });
-    validateOpaqueSchedulePolicyInput(opaque, recipientDeviceId);
+    validateOpaqueSchedulePolicyInput(opaque, { familyId, senderDeviceId: actorEndpointId, recipientDeviceId });
     return opaque;
   }
 }

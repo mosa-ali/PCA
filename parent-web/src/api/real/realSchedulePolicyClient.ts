@@ -9,7 +9,12 @@
 // caller must be a TRUSTED, paired browser endpoint with a real device-
 // session token, sent as `Authorization: Bearer <token>` -- never a
 // self-reported device id.
-import type { SchedulePolicyEnvelopeInput, SchedulePolicySubmissionResult, SchedulePolicyTransport } from '../schedulePolicyAuthoring';
+import {
+  validateOpaqueSchedulePolicyInput,
+  type SchedulePolicyEnvelopeInput,
+  type SchedulePolicySubmissionResult,
+  type SchedulePolicyTransport,
+} from '../schedulePolicyAuthoring';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -33,6 +38,16 @@ export class RealSchedulePolicyClient implements SchedulePolicyTransport {
   }
 
   async submit(familyId: string, childProfileId: string, envelope: SchedulePolicyEnvelopeInput): Promise<SchedulePolicySubmissionResult> {
+    const snapshot = await this.trustedBrowser.getSnapshot();
+    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
+    if (!snapshot.browserEndpointId) throw new Error('DEVICE_IDENTITY_UNAVAILABLE');
+    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+    validateOpaqueSchedulePolicyInput(envelope, {
+      familyId,
+      senderDeviceId: snapshot.browserEndpointId,
+      recipientDeviceId: envelope.recipientDeviceId,
+    });
+
     const csrf = readCsrfCookie();
     const response = await fetch(
       this.url(`/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childProfileId)}/schedule-policy`),
@@ -42,7 +57,7 @@ export class RealSchedulePolicyClient implements SchedulePolicyTransport {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          ...(await this.actorHeaders()),
+          Authorization: `Bearer ${snapshot.actorDeviceSessionToken}`,
           ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}),
         },
         body: JSON.stringify(envelope),
@@ -55,18 +70,9 @@ export class RealSchedulePolicyClient implements SchedulePolicyTransport {
     } catch {
       throw new Error('SCHEDULE_POLICY_RESPONSE_INVALID');
     }
-    if (!isRecord(body) || body.status !== 'PENDING' || typeof body.messageId !== 'string') {
+    if (!isRecord(body) || body.status !== 'PENDING' || body.messageId !== envelope.messageId) {
       throw new Error('SCHEDULE_POLICY_RESPONSE_INVALID');
     }
     return { status: 'PENDING', messageId: body.messageId };
-  }
-
-  /** Same actor-identity-binding rationale as RealSafeZoneClient.actorHeaders -- see that file's doc comment. */
-  private async actorHeaders(): Promise<Record<string, string>> {
-    const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
-    if (!snapshot.browserEndpointId) throw new Error('DEVICE_IDENTITY_UNAVAILABLE');
-    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
-    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 }
