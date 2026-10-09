@@ -22,6 +22,7 @@ import { registerPairingRoutes } from './routes/pairingRoutes.js';
 import { registerBrowserEndpointRoutes } from './routes/browserEndpointRoutes.js';
 import type { BrowserEndpointService } from '../device/BrowserEndpointService.js';
 import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext, type ProtectionStatusAlerting } from './routes/runtimeSyncRoutes.js';
+import { registerOrdinaryTrustSetRoutes, type OrdinaryTrustSetRouteService } from './routes/ordinaryTrustSetRoutes.js';
 import type { AlertComposeFailureLogger } from '../alerts/AlertComposeFailureLogger.js';
 // PCA runtime-sync parent-facing read gap: PARENT-session-authenticated
 // read-only counterpart to registerRuntimeSyncRoutes' DEVICE-authenticated
@@ -193,6 +194,8 @@ export interface ServerDependencies {
   enrollmentCoordinator: EnrollmentCoordinator;
   pairingService: PairingService;
   deviceSessionService: DeviceSessionService;
+  /** Ordinary mobile authority composition remains unavailable until the reviewed service is supplied. */
+  ordinaryTrustSetService?: OrdinaryTrustSetRouteService;
   outboundRelayService: OutboundRelayService;
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
@@ -527,6 +530,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     rateLimiter,
     authAttemptLimiter,
   });
+  registerOrdinaryTrustSetRoutes(app, {
+    deviceSessionService: deps.deviceSessionService,
+    ordinaryTrustSetService: deps.ordinaryTrustSetService,
+    rateLimiter,
+  });
+
   registerRuntimeSyncRoutes(app, {
     deviceSessionService: deps.deviceSessionService,
     outboundRelayService: deps.outboundRelayService,

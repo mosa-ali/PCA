@@ -437,12 +437,18 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest
 
-      - name: Run the existing instrumentation tests
+      - name: Run emulator-compatible instrumentation tests
         working-directory: android
         shell: bash
         run: |
           set +e
-          ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest 2>&1 | tee artifacts/android/instrumentation.log
+          # This class explicitly requires real secure hardware. The physical
+          # Android job below continues to run the complete suite without filters.
+          printf 'ANDROID_EVIDENCE_LEVEL=EMULATOR\nPHYSICAL_KEY_CUSTODY=NOT_EXECUTED\n' \
+            | tee artifacts/android/evidence-scope.txt >> "$GITHUB_STEP_SUMMARY"
+          ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.notClass=org.pca.app.firstdevice.HardwareKeyCustodyInstrumentedTest \
+            2>&1 | tee artifacts/android/instrumentation.log
           status="${PIPESTATUS[0]}"
           set -e
           adb logcat -d -v threadtime -t 2000 \

@@ -1,4 +1,5 @@
 import { isCanonicalP256Signature } from '../deviceauth/P256DeviceSignatureVerifier.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { decodeCanonicalTrustSetEpochBytes } from './decode.js';
 import { isPlausibleOpaqueId } from './policy.js';
 import type { TrustSetEpochAcceptanceService, TrustSetEpochAcceptanceRejectionReason } from './TrustSetEpochAcceptance.js';
@@ -28,7 +29,7 @@ export type OrdinaryTrustSetStatusResult = {
 };
 export class OrdinaryTrustSetError extends Error {
   constructor(readonly code: 'INVALID_REQUEST' | 'NO_TRUST_SET' | 'DEVICE_NOT_ACTIVE' | 'OWNER_REQUIRED' |
-    'GENESIS_NOT_ALLOWED' | 'FAMILY_MISMATCH' | 'CONFLICT' | 'REJECTED',
+    'GENESIS_NOT_ALLOWED' | 'FAMILY_MISMATCH' | 'CONFLICT' | 'REJECTED' | 'EPOCH_NOT_FOUND',
     readonly reason?: TrustSetEpochAcceptanceRejectionReason) {
     super(`ordinary_trust_set_${code.toLowerCase()}`);
     this.name = 'OrdinaryTrustSetError';
@@ -100,6 +101,17 @@ export class OrdinaryTrustSetService {
 
   async head(scope: OrdinaryTrustSetScope): Promise<AcceptedTrustSetEpochDto> {
     return dto(await this.authorizedHead(snapshotScope(scope), false));
+  }
+
+  /** Indexed signed predecessor lookup for client-verified, bounded chain catch-up. */
+  async epoch(sourceScope: OrdinaryTrustSetScope, trustSetEpoch: number): Promise<AcceptedTrustSetEpochDto> {
+    const scope = snapshotScope(sourceScope);
+    if (!isFamilyEpochNumber(trustSetEpoch, 1)) throw new OrdinaryTrustSetError('INVALID_REQUEST');
+    await this.authorizedHead(scope, false);
+    const record = await this.acceptanceService.readAcceptedEpoch(scope.familyId, trustSetEpoch);
+    if (record === null) throw new OrdinaryTrustSetError('EPOCH_NOT_FOUND');
+    await this.authorizedHead(scope, false);
+    return dto(record);
   }
 
   async status(sourceScope: OrdinaryTrustSetScope, input: unknown): Promise<OrdinaryTrustSetStatusResult> {

@@ -105,6 +105,23 @@ test('ordinary endpoint cannot bootstrap epoch one or invent root for a virgin f
   assert.equal(f.appends, 0);
 });
 
+test('indexed signed history is bounded, family scoped and requires current active membership', async () => {
+  const f = fixture(); const first = await f.bootstrap();
+  await f.service.submit(scope, f.request(2));
+  const child = { familyId: FAMILY, deviceId: 'child-device' };
+  const historical = await f.service.epoch(child, 1);
+  assert.equal(historical.canonicalEpochBase64, first.canonicalEpochBase64);
+  assert.equal(historical.signatureBase64, first.signatureBase64);
+  assert.equal(historical.trustSetEpoch, 1);
+  await assert.rejects(f.service.epoch(child, 3), rejectsCode('EPOCH_NOT_FOUND'));
+  for (const invalid of [0, -1, 1.5, NaN, 2_147_483_648]) {
+    await assert.rejects(f.service.epoch(child, invalid), rejectsCode('INVALID_REQUEST'));
+  }
+  await assert.rejects(f.service.epoch({ ...scope, deviceId: 'foreign-device' }, 1), rejectsCode('DEVICE_NOT_ACTIVE'));
+  await assert.rejects(f.service.epoch({ ...scope, familyId: 'another-family' }, 1));
+  assert.equal(f.appends, 2);
+});
+
 test('head is available to active child but submit and exact status require current owner', async () => {
   const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device' };
   assert.equal((await f.service.head(child)).trustSetEpoch, 1);

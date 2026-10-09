@@ -55,6 +55,7 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
   function failed(error: unknown, reply: FastifyReply) {
     if (error instanceof OrdinaryTrustSetError) {
       if (error.code === 'INVALID_REQUEST') return reply.code(400).send({ error: 'invalid_request' });
+      if (error.code === 'EPOCH_NOT_FOUND') return reply.code(404).send({ error: 'trust_set_record_unavailable' });
       if (['DEVICE_NOT_ACTIVE', 'OWNER_REQUIRED', 'FAMILY_MISMATCH'].includes(error.code)) {
         return reply.code(403).send({ error: 'forbidden' });
       }

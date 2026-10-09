@@ -91,7 +91,15 @@ test('NEGATIVE CONTROL: the byte-expression evaluator handles both real forms an
 // same MAX_CANONICAL_TRUST_SET_LENGTH bound Wave 5B certifies) PLUS the
 // domain-separated bootstrap proof and both signatures, so a contract-legal
 // maximum submit inherently exceeds the 256 KiB ceiling.
-const DELIBERATE_CEILING_OVERRIDES = new Set(['MAX_OUTBOUND_BODY_BYTES', 'MAX_SUBMIT_BODY_BYTES']);
+// MAX_BODY_BYTES (ordinary Trust Set epoch transport) carries up to 256 KiB
+// of canonical epoch bytes after padded Base64 expansion, plus its signature
+// and JSON framing. The route bound remains local to this authenticated
+// device-only endpoint so other routes keep the tighter global ceiling.
+const DELIBERATE_CEILING_OVERRIDES = new Set([
+  'MAX_OUTBOUND_BODY_BYTES',
+  'MAX_SUBMIT_BODY_BYTES',
+  'MAX_BODY_BYTES',
+]);
 
 test('PCA-P2-13: every route either sits under the ceiling or deliberately overrides it', () => {
   const limits = perRouteBodyLimits();

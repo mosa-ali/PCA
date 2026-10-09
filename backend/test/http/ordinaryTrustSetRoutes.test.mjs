@@ -11,7 +11,7 @@ const HEAD = { canonicalEpochBase64: 'Ynl0ZXM=', signatureBase64: Buffer.alloc(6
   signerDeviceId: 'device-one', signerKeyId: 'dsk-one', trustSetEpoch: 2, keyEpoch: 1 };
 const BODY = { canonicalEpochBase64: HEAD.canonicalEpochBase64, signatureBase64: HEAD.signatureBase64 };
 function fixture(t, options = {}) {
-  const calls = []; const app = Fastify({ logger: false });
+  const calls = []; const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
   const service = {
     submit: async (scope, body) => { calls.push(['submit', scope, body]); return { outcome: 'ACCEPTED', acceptedEpoch: HEAD, acceptedHead: HEAD }; },
     status: async (scope, body) => { calls.push(['status', scope, body]); return { outcome: 'ACCEPTED', acceptedEpoch: HEAD, acceptedHead: HEAD }; },
@@ -102,10 +102,27 @@ test('unconfigured production facade and storage/auth infrastructure failures st
   }
 });
 
+test('real facade missing-record error remains 404 rather than a conflict', async (t) => {
+  const { request } = fixture(t, { service: { epoch: async () => { throw new OrdinaryTrustSetError('EPOCH_NOT_FOUND'); } } });
+  const result = await request('GET', `${BASE}/records/3`);
+  assert.equal(result.statusCode, 404);
+  assert.deepEqual(result.json(), { error: 'trust_set_record_unavailable' });
+});
+
 test('body limit prevents oversized canonical payload reaching service', async (t) => {
   const { request, calls } = fixture(t);
   const result = await request('POST', BASE, { ...BODY, canonicalEpochBase64: 'A'.repeat(370000) });
   assert.equal(result.statusCode, 413); assert.equal(calls.length, 0);
+});
+
+test('route override accepts maximum-sized canonical epoch transport under the ordinary global body limit', async (t) => {
+  const { request, calls } = fixture(t);
+  const canonicalEpochBase64 = Buffer.alloc(256 * 1024, 7).toString('base64');
+  assert.equal(canonicalEpochBase64.length, 349_528);
+  const result = await request('POST', BASE, { ...BODY, canonicalEpochBase64 });
+  assert.equal(result.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][2].canonicalEpochBase64.length, 349_528);
 });
 
 test('independent route buckets throttle submission without exhausting read/status budgets', async (t) => {

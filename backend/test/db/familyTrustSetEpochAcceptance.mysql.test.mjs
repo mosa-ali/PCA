@@ -313,6 +313,16 @@ test('CHAIN_NEXT_EPOCH_EXACTLY_ONCE: the ts=2 key=2 successor signed by epoch 1 
   assert.equal(latest.trustSetEpoch, 2);
   assert.equal(latest.keyEpoch, 2);
   assert.ok(latest.signedEpochBytes.equals(Buffer.from(second.bytes, 'utf8')));
+  const indexed = new MySqlTrustSetEpochStore();
+  const exact = await indexed.readEpoch(familyId, 2);
+  assert.ok(exact.signedEpochBytes.equals(Buffer.from(second.bytes, 'utf8')));
+  assert.equal(exact.signature, latest.signature);
+  assert.equal((await indexed.readEpoch(familyId, 1)).trustSetEpoch, 1);
+  assert.equal(await indexed.readEpoch(familyId, 3), null);
+  assert.equal(await indexed.readEpoch(uniqueFamilyId(), 2), null);
+  await assert.rejects(indexed.readEpoch('', 2));
+  await assert.rejects(indexed.readEpoch(familyId, 0));
+  await assert.rejects(indexed.readEpoch(familyId, 2_147_483_648));
   assert.deepEqual(await readKeyEpoch(familyId), { trustSetEpoch: 2, keyEpoch: 2 });
 });
 

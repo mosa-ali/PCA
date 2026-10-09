@@ -256,7 +256,8 @@ export class TrustSetEpochAcceptanceService {
       throw inconsistentState('accepted bytes failed strict canonical decoding');
     }
     const owner = findActiveOwner(epoch);
-    if (record.familyId !== familyId || epoch.familyId !== familyId ||
+    if (!isFamilyEpochNumber(epoch.trustSetEpoch, 1) || !isFamilyEpochNumber(epoch.keyEpoch, 1) ||
+        record.familyId !== familyId || epoch.familyId !== familyId ||
         epoch.trustSetEpoch !== record.trustSetEpoch || epoch.keyEpoch !== record.keyEpoch ||
         epoch.supersedesEpoch !== record.supersedesEpoch || !isValidDate(record.issuedAt) ||
         epoch.issuedAt.getTime() !== record.issuedAt.getTime() || !isValidDate(record.receivedAt) ||
