@@ -103,7 +103,17 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             require(accepted.signerDeviceId == owner.deviceId && accepted.signerKeyId == owner.dskKeyId)
             require(verifier.verify(owner.dskPublicKey, TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8),
                 accepted.request.signatureBase64))
-            val pending = current.pending.takeUnless { it == accepted.request }
+            // A different, fully verified record at the pending request's epoch is an
+            // authoritative conflict: that epoch is immutable, so retrying these exact bytes
+            // can never succeed. Retire only after the competing record has passed the same
+            // predecessor, signer, canonical-byte, and signature checks above. A later accepted
+            // epoch does not by itself retire a pending request; it may still need exact status
+            // reconciliation.
+            val pendingRequest = current.pending
+            val pending = pendingRequest?.let { request ->
+                if (request == accepted.request ||
+                    TrustSetEpochCodec.decodeCanonical(canonicalBytes(request)).trustSetEpoch == candidate.trustSetEpoch) null else request
+            }
             if (!store.compareAndSetDurably(current, OrdinaryEpochState(accepted, pending, current.rootAnchor))) return@withLock progressed
             progressed++
         }

@@ -203,6 +203,43 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(bootstrapAnchor, store.read()!!.rootAnchor)
         assertNull(store.read()!!.pending)
     }
+    @Test fun verifiedSameEpochConflictRetiresPendingAndAllowsNextSigningAttempt() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val localPending = record(epoch(2))
+        installPending(store, localPending.request)
+        val competing = record(epoch(2).copy(issuedAt = "2026-10-09T00:01:00.000Z"))
+        assertNotEquals(localPending.request, competing.request)
+        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, competing, competing) }
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) = ByteArray(64) { 2 }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertEquals(1, coordinator.catchUp(1))
+        assertEquals(competing, store.read()!!.accepted)
+        assertNull("the server's immutable same-epoch conflict retires this exact pending attempt", store.read()!!.pending)
+        assertTrue("a new attempt can proceed from the now-authoritative floor", coordinator.prepare(epoch(3)))
+        assertNotNull(store.read()!!.pending)
+    }
+    @Test fun forgedSameEpochConflictCannotRetirePending() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val localPending = record(epoch(2))
+        installPending(store, localPending.request)
+        val before = store.read()!!
+        val competing = record(epoch(2).copy(issuedAt = "2026-10-09T00:01:00.000Z"))
+        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, competing, competing) }
+        val rootBytes = Base64.getDecoder().decode(before.accepted.request.canonicalEpochBase64)
+        val rootSignature = before.accepted.request.signatureBase64
+        val coordinator = OrdinaryTrustSetCoordinator(store, api,
+            object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("must not sign") },
+            OrdinaryEpochSignatureVerifier { _, bytes, signature -> bytes.contentEquals(rootBytes) && signature == rootSignature },
+            "owner", "dsk", "alias")
+
+        try { coordinator.catchUp(1); fail("unverified competing signature accepted") } catch (_: IllegalArgumentException) { }
+        assertEquals(before, store.read())
+        assertEquals(localPending.request, store.read()!!.pending)
+    }
     @Test fun signedHeadMaySkipNumbersButMustLinkToTrustedPredecessor() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         seedStore(store)
