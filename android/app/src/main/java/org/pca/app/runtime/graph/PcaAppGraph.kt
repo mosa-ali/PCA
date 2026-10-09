@@ -71,6 +71,11 @@ import org.pca.app.firstdevice.FirstDeviceTrustRootCoordinator
 import org.pca.app.firstdevice.HttpFirstDeviceBootstrapApiClient
 import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
 import org.pca.app.firstdevice.FirstDeviceRootState
+import org.pca.app.runtime.trustset.HttpOrdinaryTrustSetApi
+import org.pca.app.runtime.trustset.OrdinaryTrustSetRuntime
+import org.pca.app.runtime.trustset.PersistentOrdinaryEpochStore
+import org.pca.app.runtime.trustset.P256OrdinaryEpochVerifier
+import org.pca.app.runtime.trustset.UntrustedTrustSetEpoch
 import org.pca.app.runtime.sync.DeviceSessionManager
 import org.pca.app.runtime.sync.ReconnectSyncOrchestrator
 import org.pca.app.runtime.sync.InboundEnvelopeHandler
@@ -429,6 +434,8 @@ class PcaAppGraph private constructor(
     private var custodyDeviceId: String? = null
     private var custodyRoot: org.pca.app.firstdevice.FirstDeviceRootRecord? = null
     private var custodyOrchestrator: ReconnectSyncOrchestrator? = null
+    private var custodySessionManager: DeviceSessionManager? = null
+    private var ordinaryTrustSetRuntime: OrdinaryTrustSetRuntime? = null
     private var custodyJob: Job? = null
     private val custodyMutex = Mutex()
 
@@ -461,6 +468,7 @@ class PcaAppGraph private constructor(
                 check(current == root && current.state == FirstDeviceRootState.ROOT_COMMITTED && current.seed.deviceId == deviceId)
                 androidKeystoreDskProvider.assertSigningKeyCustody(current.seed.dskAlias, current.seed.dskPublicKeyBase64)
             })
+            custodySessionManager = session
             custodyOrchestrator = ReconnectSyncOrchestrator(
                 AndroidConnectivityMonitor(context), session, relay,
                 SyncOutboxRepositoryAdapter(persistence.syncOutboxRepository),
@@ -474,9 +482,41 @@ class PcaAppGraph private constructor(
             )
             custodyDeviceId = deviceId
             custodyRoot = root
+            ordinaryTrustSetRuntime = null
         }
         if (!connectivityObserver.isCurrentlyOnline()) return org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+        if (ordinaryTrustSetRuntime == null) {
+            val session = custodySessionManager
+                ?: return org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+            // Missing/legacy epoch-1 anchors remain a closed Trust Set gate; do not synthesize a
+            // root and keep the independent runtime-custody sync path available.
+            ordinaryTrustSetRuntime = runCatching {
+                OrdinaryTrustSetRuntime.create(
+                    rootStore = firstDeviceRootStore,
+                    ordinaryStore = PersistentOrdinaryEpochStore(runtimeStateStore),
+                    api = HttpOrdinaryTrustSetApi("https://api.pcasafe.com", session),
+                    signer = androidKeystoreDskProvider,
+                    verifier = P256OrdinaryEpochVerifier(),
+                )
+            }.getOrNull()
+        }
+        val trustSetRuntime = ordinaryTrustSetRuntime
+        if (trustSetRuntime != null) {
+            try {
+                trustSetRuntime.reconcile()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+            }
+        }
         return custodyOrchestrator?.syncNow() ?: org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+    }
+
+    /** Actual product call point for owner-approved Trust Set changes; it never activates a device. */
+    suspend fun submitOrdinaryTrustSetCandidate(candidate: UntrustedTrustSetEpoch): Boolean = custodyMutex.withLock {
+        val runtime = ordinaryTrustSetRuntime ?: return@withLock false
+        runtime.prepareAndSubmit(candidate)
     }
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports

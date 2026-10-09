@@ -42,6 +42,7 @@ class OrdinaryTrustSetCoordinatorTest {
         val sent = mutableListOf<OrdinaryEpochRequest>()
         var loseResponse = false
         var response: OrdinaryEpochResponse? = null
+        var head: AcceptedEpochRecord? = null
         var headReads = 0
         val records = mutableMapOf<Int, AcceptedEpochRecord>()
         override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
@@ -53,7 +54,7 @@ class OrdinaryTrustSetCoordinatorTest {
         override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = records[trustSetEpoch] ?: response!!.acceptedHead
         override suspend fun getHead(familyId: String): AcceptedEpochRecord {
             headReads++
-            return response!!.acceptedHead
+            return head ?: response!!.acceptedHead
         }
     }
     private class MemoryStore(var state: OrdinaryEpochState) : OrdinaryEpochStore {
@@ -116,11 +117,34 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(0, signs)
         assertEquals(0, api.headReads)
     }
+    @Test fun signedButUnacceptedLocalFloorCannotAuthorizeAnotherDskSignature() = runBlocking {
+        val root = record(epoch(1))
+        val phantomFloor = record(epoch(2))
+        val store = MemoryStore(OrdinaryEpochState(phantomFloor, rootAnchor = root))
+        val api = Api().apply { head = root }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 9 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertFalse(coordinator.prepare(epoch(3)))
+
+        assertEquals(1, api.headReads)
+        assertEquals(0, signs)
+        assertNull(store.read()!!.pending)
+        assertEquals(phantomFloor, store.read()!!.accepted)
+        assertTrue(api.sent.isEmpty())
+    }
     @Test fun restartAndLostResponseReuseExactPersistedSignature() = runBlocking {
         val backing = InMemoryPersistentStateStore()
         val store = PersistentOrdinaryEpochStore(backing)
         seedStore(store)
-        val api = Api().apply { loseResponse = true }
+        val api = Api().apply { loseResponse = true; head = record(epoch(1)) }
         var signs = 0
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
             signs++; return ByteArray(64) { signs.toByte() }
@@ -141,6 +165,35 @@ class OrdinaryTrustSetCoordinatorTest {
         assertNull(store.read()!!.pending)
         assertEquals(2, store.read()!!.accepted.trustSetEpoch)
         assertEquals(bootstrapAnchor, store.read()!!.rootAnchor)
+    }
+    @Test fun exactStatusProofAdvancesPendingBeforeNewerHeadCatchUp() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val acceptedPending = record(epoch(2))
+        installPending(store, acceptedPending.request)
+        val advancedHead = record(epoch(3))
+        val api = Api().apply {
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, acceptedPending, advancedHead)
+        }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 2 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertTrue("exact accepted request should clear even when the projected head advanced", coordinator.reconcile())
+        assertEquals(acceptedPending, store.read()!!.accepted)
+        assertNull(store.read()!!.pending)
+        assertEquals(0, signs)
+
+        // The next reconciliation verifies the newer head from the now-durable epoch-2 floor.
+        api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, advancedHead, advancedHead)
+        assertEquals(1, coordinator.catchUp(1))
+        assertEquals(advancedHead, store.read()!!.accepted)
+        assertNull(store.read()!!.pending)
     }
     @Test fun corruptCustodyCannotBecomeAnEmptyInstall() {
         val backing = InMemoryPersistentStateStore().apply { putString("ordinary_trust_set_v1", "bad") }
@@ -254,7 +307,7 @@ class OrdinaryTrustSetCoordinatorTest {
         val backing = DiskBackedPersistentStateStore()
         val store = PersistentOrdinaryEpochStore(backing)
         seedStore(store)
-        val api = Api().apply { loseResponse = true }
+        val api = Api().apply { loseResponse = true; head = record(epoch(1)) }
         var signs = 0
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
             signs++; return ByteArray(64) { 1 }

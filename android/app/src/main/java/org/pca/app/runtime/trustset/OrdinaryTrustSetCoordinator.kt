@@ -53,6 +53,14 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         val owner = owner(prior)
         require(owner.deviceId == localDeviceId && owner.dskKeyId == localSigningKeyId)
         validateTransition(prior, candidate)
+        // A valid local owner signature proves authorship, not that the server accepted this
+        // persisted floor. Before using it to authorize another DSK signature, require the
+        // authenticated server projection to match the exact durable record. If the server
+        // advanced, runtime reconciliation must verify/catch up the chain before retrying.
+        val serverHead = try { api.getHead(prior.familyId) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { return@withLock false }
+        if (serverHead != current.accepted || !store.confirmDurable(current)) return@withLock false
         val bytes = TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8)
         val signature = signer.signCanonicalDer(signingAlias, bytes)
         require(signature.size == 64)
@@ -137,10 +145,16 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         catch (_: Exception) { return false }
         if (response.outcome == OrdinaryEpochOutcome.NOT_ACCEPTED || response.outcome == OrdinaryEpochOutcome.CONFLICT) return false
         val accepted = response.acceptedEpoch ?: return false
-        // Never skip unseen epochs. Reconcile a chain separately; preserve pending until this exact proof is available.
-        if (accepted.request != pending || response.acceptedHead != accepted) return false
+        // The exact accepted record is sufficient proof for this persisted request even when the
+        // server head advanced concurrently. Adopt only this verified request now; the caller's
+        // subsequent catchUp walks and verifies the newer head separately before advancing past it.
+        if (accepted.request != pending) return false
         val candidate = decode(accepted)
         validateTransition(prior, candidate)
+        val projectedHead = decode(response.acceptedHead)
+        require(projectedHead.familyId == prior.familyId &&
+            projectedHead.trustSetEpoch >= candidate.trustSetEpoch && projectedHead.keyEpoch >= candidate.keyEpoch)
+        if (projectedHead.trustSetEpoch == candidate.trustSetEpoch) require(response.acceptedHead == accepted)
         val owner = owner(prior)
         require(accepted.signerDeviceId == owner.deviceId && accepted.signerKeyId == owner.dskKeyId)
         val bytes = TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8)
