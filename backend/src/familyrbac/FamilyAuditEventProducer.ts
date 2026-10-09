@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isPlausibleOpaqueId } from '../alerts/policy.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { isPlausibleOpaqueId } from './policy.js';
 import type { FamilyAuditEventLedger } from './FamilyAuditEventLedger.js';
 import type { OpaqueFamilyAuditEventComposer } from './FamilyAuditEventComposer.js';
 import type { FamilyAuditRecord } from './FamilyAuditStore.js';
