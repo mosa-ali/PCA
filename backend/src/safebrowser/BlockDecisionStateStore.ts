@@ -31,15 +31,21 @@ export interface BlockDecisionStateRepository {
   listRecentForFamily(familyId: OpaqueFamilyId, profileId: OpaqueProfileId | null, limit: number): Promise<BlockDecisionState[]>;
 }
 
+function snapshotBlockDecision(state: BlockDecisionState): BlockDecisionState {
+  return { ...state, createdAt: new Date(state.createdAt.getTime()) };
+}
+
 export class InMemoryBlockDecisionStateRepository implements BlockDecisionStateRepository {
   private readonly states = new Map<BlockDecisionId, BlockDecisionState>();
 
   async put(state: BlockDecisionState): Promise<void> {
-    this.states.set(state.id, state);
+    const captured = snapshotBlockDecision(state);
+    this.states.set(captured.id, captured);
   }
 
   async get(id: BlockDecisionId): Promise<BlockDecisionState | null> {
-    return this.states.get(id) ?? null;
+    const state = this.states.get(id);
+    return state ? snapshotBlockDecision(state) : null;
   }
 
   async listRecentForFamily(familyId: OpaqueFamilyId, profileId: OpaqueProfileId | null, limit: number): Promise<BlockDecisionState[]> {
@@ -47,7 +53,7 @@ export class InMemoryBlockDecisionStateRepository implements BlockDecisionStateR
       (state) => state.familyId === familyId && (profileId === null || state.profileId === profileId),
     );
     matches.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    return matches.slice(0, Math.max(0, limit));
+    return matches.slice(0, Math.max(0, limit)).map(snapshotBlockDecision);
   }
 }
 

@@ -5,6 +5,11 @@ import {
   InMemoryBlockDecisionStateRepository,
   SafeBrowserError,
 } from '../../dist/safebrowser/BlockDecisionStateStore.js';
+import {
+  InMemoryParentUnblockRequestRepository,
+  ParentUnblockRequestService,
+  UnblockRequestError,
+} from '../../dist/safebrowser/ParentUnblockRequestService.js';
 
 function decision(overrides = {}) {
   return {
@@ -36,6 +41,54 @@ test('record marks a SECURITY_DENYLIST block as not requestable', async () => {
     decision({ domain: 'malware.example', source: 'SECURITY_DENYLIST' }),
   );
   assert.equal(state.requestable, false);
+});
+
+test('repository snapshots block decision input and read results, preserving security decision state', async () => {
+  const repository = new InMemoryBlockDecisionStateRepository();
+  const service = new BlockDecisionStateService(repository, () => new Date('2026-01-01T00:00:00Z'));
+  const returned = await service.record(
+    'fam-1', 'prof-1', 'https://malware.example/path', 'Malware Page',
+    decision({ domain: 'malware.example', source: 'SECURITY_DENYLIST' }),
+  );
+
+  returned.requestable = true;
+  returned.familyId = 'foreign-family';
+  returned.profileId = 'foreign-profile';
+  returned.domain = 'safe.example';
+  returned.url = 'https://safe.example/';
+  returned.pageTitle = 'changed';
+  returned.createdAt.setTime(0);
+
+  const unblockService = new ParentUnblockRequestService(
+    new InMemoryParentUnblockRequestRepository(), repository,
+    () => new Date('2026-01-01T00:00:00Z'),
+  );
+  await assert.rejects(
+    () => unblockService.submit('fam-1', 'prof-1', returned.id),
+    (err) => err instanceof UnblockRequestError && err.code === 'NOT_REQUESTABLE',
+  );
+
+  const fromGet = await repository.get(returned.id);
+  assert.equal(fromGet.familyId, 'fam-1');
+  assert.equal(fromGet.profileId, 'prof-1');
+  assert.equal(fromGet.domain, 'malware.example');
+  assert.equal(fromGet.url, 'https://malware.example/path');
+  assert.equal(fromGet.pageTitle, 'Malware Page');
+  assert.equal(fromGet.requestable, false);
+  assert.equal(fromGet.createdAt.toISOString(), '2026-01-01T00:00:00.000Z');
+
+  fromGet.requestable = true;
+  fromGet.createdAt.setTime(0);
+  const fromList = (await repository.listRecentForFamily('fam-1', 'prof-1', 10))[0];
+  assert.equal(fromList.requestable, false);
+  assert.equal(fromList.createdAt.toISOString(), '2026-01-01T00:00:00.000Z');
+
+  fromList.url = 'https://mutated.example/';
+  fromList.createdAt.setTime(0);
+  const retained = await repository.get(returned.id);
+  assert.equal(retained.requestable, false);
+  assert.equal(retained.url, 'https://malware.example/path');
+  assert.equal(retained.createdAt.toISOString(), '2026-01-01T00:00:00.000Z');
 });
 
 test('record marks an ALLOW decision as not requestable', async () => {
