@@ -9,6 +9,7 @@ import { hashSessionToken } from '../../auth/token.js';
 import { InvalidRelayCursorError, MAX_RELAY_CURSOR_BYTES } from '../../runtime-sync/relayContinuation.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
+import { MAX_RELAY_TTL_MS } from '../../relay/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
 import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
@@ -150,7 +151,9 @@ function parseOutboundItem(raw: unknown): OutboundEnvelopeItem | null {
   if (!isNonEmptyString(candidate.recipientDeviceId, 128)) return null;
   if (!isNonEmptyString(candidate.ciphertext, MAX_CIPHERTEXT_BASE64_LENGTH)) return null;
   if (!isNonEmptyString(candidate.messageType, 64)) return null;
-  if (candidate.ttlMs !== undefined && typeof candidate.ttlMs !== 'number') return null;
+  if (candidate.ttlMs !== undefined &&
+      (typeof candidate.ttlMs !== 'number' || !Number.isSafeInteger(candidate.ttlMs) ||
+        candidate.ttlMs <= 0 || candidate.ttlMs > MAX_RELAY_TTL_MS)) return null;
 
   let ciphertext: Buffer;
   try {

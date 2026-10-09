@@ -36,6 +36,7 @@ import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '..
 import { createTestOnlyEnvelopeSignatureVerifier, signTestOnlyEnvelope } from '../../support/testOnlyEnvelopeSignatureVerifier.mjs';
 import { InMemoryDeviceProtectionStatusRepository } from '../../../dist/device/DeviceProtectionStatusRepository.js';
 import { RealProtectiveAuthorityResolver } from '../../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
+import { MAX_RELAY_TTL_MS } from '../../../dist/relay/policy.js';
 import { ProtectionAlertProducer } from '../../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAlertLedger.js';
 
@@ -166,6 +167,74 @@ test('full device auth flow: challenge -> session -> authenticated outbound subm
     });
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().results[0].outcome, 'QUEUED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('outbound accepts both valid relay TTL boundaries', async () => {
+  const { app, deviceRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: senderId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: recipientId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, senderId, publicKey);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/outbound',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { items: [1, MAX_RELAY_TTL_MS].map((ttlMs) => ({
+        messageId: `ttl-${ttlMs}-${randomUUID()}`,
+        recipientDeviceId: recipientId,
+        ciphertext: Buffer.from('bounded test').toString('base64'),
+        messageType: 'STATUS_SNAPSHOT',
+        ttlMs,
+      })) },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().results.map((result) => result.outcome), ['QUEUED', 'QUEUED']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('outbound rejects invalid, non-integer, non-finite, and out-of-range relay TTLs before queueing', async () => {
+  const { app, deviceRepository, relayService } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: senderId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: recipientId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, senderId, publicKey);
+    const invalidTtls = [0, -1, 1.5, MAX_RELAY_TTL_MS + 1, '1000', null];
+    for (const ttlMs of invalidTtls) {
+      const response = await app.inject({
+        method: 'POST', url: '/v1/runtime-sync/outbound',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { items: [{
+          messageId: `invalid-ttl-${randomUUID()}`,
+          recipientDeviceId: recipientId,
+          ciphertext: Buffer.from('bounded test').toString('base64'),
+          messageType: 'STATUS_SNAPSHOT',
+          ttlMs,
+        }] },
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), { error: 'invalid_request' });
+    }
+
+    const nonFinite = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/outbound',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      payload: JSON.stringify({ items: [{
+        messageId: `invalid-ttl-${randomUUID()}`,
+        recipientDeviceId: recipientId,
+        ciphertext: Buffer.from('bounded test').toString('base64'),
+        messageType: 'STATUS_SNAPSHOT',
+        ttlMs: 'NON_FINITE_SENTINEL',
+      }] }).replace('"NON_FINITE_SENTINEL"', '1e400'),
+    });
+    assert.equal(nonFinite.statusCode, 400);
+    assert.deepEqual(nonFinite.json(), { error: 'invalid_request' });
+    assert.deepEqual(await relayService.listQueuedForRecipient(recipientId), []);
   } finally {
     await app.close();
   }
