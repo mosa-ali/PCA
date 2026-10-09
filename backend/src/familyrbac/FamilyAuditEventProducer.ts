@@ -80,16 +80,23 @@ export class FamilyAuditEventProducer {
   ) {}
 
   async deliver(record: FamilyAuditRecord): Promise<FamilyAuditEventDeliveryOutcome[]> {
+    const familyId = record.familyId;
+    const generatedAtMillis = record.occurredAtUtc.getTime();
+    const capturedRecord = Object.freeze({ ...record,
+      targetScope: Object.freeze({ ...record.targetScope }),
+      occurredAtUtc: new Date(generatedAtMillis),
+    });
     let parentDevices: Array<{ deviceId: string; keyEpoch: number }>;
     try {
-      parentDevices = await this.resolveParentDevices(record.familyId);
+      parentDevices = (await this.resolveParentDevices(familyId)).map(device =>
+        Object.freeze({ deviceId: device.deviceId, keyEpoch: device.keyEpoch }));
     } catch {
       this.recipientResolutionFailureCount += 1;
       if (shouldLogFailure(this.recipientResolutionFailureCount)) {
         console.warn(
           JSON.stringify({
             event: 'family_audit_event_recipient_resolution_failed',
-            familyId: record.familyId,
+            familyId,
             occurrences: this.recipientResolutionFailureCount,
             failureStage: 'RECIPIENT_RESOLUTION',
             note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged on the first failure and every Nth thereafter.',
@@ -106,23 +113,43 @@ export class FamilyAuditEventProducer {
     for (const parentDevice of parentDevices) {
       let failureStage: 'RECIPIENT_VALIDATION' | 'OPAQUE_COMPOSITION' | 'LEDGER_RECORD' = 'RECIPIENT_VALIDATION';
       try {
-        if (!isFamilyEpochNumber(parentDevice.keyEpoch)) {
+        if (!Number.isFinite(generatedAtMillis) || !isFamilyEpochNumber(parentDevice.keyEpoch)) {
           throw new Error('resolved parent key epoch is outside the supported family epoch range');
         }
         failureStage = 'OPAQUE_COMPOSITION';
-        const opaquePayload = await this.composeOpaquePayload({
-          record,
+        // Each recipient gets its own Date copy; no composer can mutate the
+        // original record or alter a later recipient's routing or timestamp.
+        const compositionRecord = Object.freeze({ ...capturedRecord, occurredAtUtc: new Date(generatedAtMillis) });
+        const opaquePayload = await this.composeOpaquePayload(Object.freeze({
+          record: compositionRecord,
           parentDeviceId: parentDevice.deviceId,
           keyEpoch: parentDevice.keyEpoch,
-        });
+        }));
+        if (compositionRecord.occurredAtUtc.getTime() !== generatedAtMillis) {
+          throw new Error('audit composition timestamp changed');
+        }
+        if (opaquePayload === null || typeof opaquePayload !== 'object' || Array.isArray(opaquePayload) ||
+          Object.keys(opaquePayload).length !== 2 || !Object.hasOwn(opaquePayload, 'encryptedPayloadB64') ||
+          !Object.hasOwn(opaquePayload, 'nonceB64')) throw new Error('invalid opaque audit payload');
+        const encryptedPayloadB64 = opaquePayload.encryptedPayloadB64;
+        const nonceB64 = opaquePayload.nonceB64;
+        // Existing migration 0028 bounds, without inventing a crypto encoding
+        // or suite. Its ASCII columns are part of the persisted contract.
+        // Never spread a composer object into authoritative metadata.
+        if (typeof encryptedPayloadB64 !== 'string' || encryptedPayloadB64.length < 1 || encryptedPayloadB64.length > 4194304 ||
+          !isAscii(encryptedPayloadB64) || typeof nonceB64 !== 'string' || nonceB64.length < 1 || nonceB64.length > 64 ||
+          !isAscii(nonceB64)) {
+          throw new Error('invalid opaque audit payload');
+        }
         failureStage = 'LEDGER_RECORD';
         const recordResult = await this.ledger.record({
           envelopeId: this.nextEnvelopeId(),
-          familyId: record.familyId,
+          familyId,
           parentDeviceId: parentDevice.deviceId,
           keyEpoch: parentDevice.keyEpoch,
-          generatedAtUtc: record.occurredAtUtc,
-          ...opaquePayload,
+          generatedAtUtc: new Date(generatedAtMillis),
+          encryptedPayloadB64,
+          nonceB64,
         });
         if (recordResult.outcome === 'CONFLICT') {
           throw new Error('family audit envelope id conflicts with existing content');
@@ -140,7 +167,7 @@ export class FamilyAuditEventProducer {
           console.warn(
             JSON.stringify({
               event: 'family_audit_event_device_delivery_failed',
-              familyId: record.familyId,
+              familyId,
               parentDeviceId: parentDevice.deviceId,
               occurrences: this.deviceDeliveryFailureCount,
               failureStage,
@@ -152,4 +179,11 @@ export class FamilyAuditEventProducer {
     }
     return outcomes;
   }
+}
+
+function isAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) return false;
+  }
+  return true;
 }

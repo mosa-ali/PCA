@@ -313,3 +313,57 @@ test('audit delivery warnings never expose dependency exception text or stringif
   }
   assert.equal(stringified, false);
 });
+
+test('audit composition captures caller routing, target and timestamp before recipient resolution', async () => {
+  let resolveRecipients;
+  const seen = [];
+  const stored = [];
+  const record = sampleRecord();
+  const producer = new FamilyAuditEventProducer({ record: async envelope => { stored.push(envelope); return { outcome: 'RECORDED' }; } },
+    async input => { seen.push(input); return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
+    () => new Promise(resolve => { resolveRecipients = resolve; }));
+  const pending = producer.deliver(record);
+  record.familyId = 'foreign-family';
+  record.targetScope.id = 'foreign-target';
+  record.occurredAtUtc.setTime(LEDGER_NOW.getTime() + 86400000);
+  resolveRecipients([{ deviceId: 'parent-device-a', keyEpoch: 1 }]);
+  assert.deepEqual(await pending, [{ parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' }]);
+  assert.equal(seen[0].record.familyId, 'fam-1');
+  assert.equal(seen[0].record.targetScope.id, 'fam-1');
+  assert.equal(stored[0].familyId, 'fam-1');
+  assert.equal(stored[0].generatedAtUtc.getTime(), LEDGER_NOW.getTime());
+});
+
+test('audit composer routing smuggling or timestamp mutation fails only that recipient', async () => {
+  const stored = [];
+  const producer = new FamilyAuditEventProducer({ record: async envelope => { stored.push(envelope); return { outcome: 'RECORDED' }; } },
+    async input => {
+      if (input.parentDeviceId === 'bad-extra') return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce', familyId: 'foreign-family', keyEpoch: 99 };
+      if (input.parentDeviceId === 'bad-date') input.record.occurredAtUtc.setTime(LEDGER_NOW.getTime() + 86400000);
+      return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' };
+    }, async () => ['bad-extra', 'bad-date', 'good'].map(deviceId => ({ deviceId, keyEpoch: 1 })));
+  const record = sampleRecord();
+  const { result } = await withCapturedWarnings(() => producer.deliver(record));
+  assert.deepEqual(result.map(outcome => outcome.outcome), ['FAILED', 'FAILED', 'DELIVERED']);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].familyId, 'fam-1');
+  assert.equal(stored[0].parentDeviceId, 'good');
+  assert.equal(stored[0].generatedAtUtc.getTime(), LEDGER_NOW.getTime());
+  assert.equal(record.occurredAtUtc.getTime(), LEDGER_NOW.getTime());
+});
+
+test('audit malformed opaque payload shapes and persisted bounds fail before ledger writes', async () => {
+  const invalid = [null, [], {}, { encryptedPayloadB64: '', nonceB64: 'nonce' },
+    { encryptedPayloadB64: 'x'.repeat(4194305), nonceB64: 'nonce' },
+    { encryptedPayloadB64: 'opaque', nonceB64: 'x'.repeat(65) },
+    { encryptedPayloadB64: 'opaque-é', nonceB64: 'nonce' },
+    { encryptedPayloadB64: 'opaque', nonceB64: 'nonce-é' }];
+  for (const payload of invalid) {
+    let stored = false;
+    const producer = new FamilyAuditEventProducer({ record: async () => { stored = true; return { outcome: 'RECORDED' }; } },
+      async () => payload, async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }]);
+    const { result } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+    assert.deepEqual(result, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+    assert.equal(stored, false);
+  }
+});
