@@ -23,20 +23,33 @@
 // same commit that adds migration 0060 (which must run before this file).
 // It requires PCA_DATABASE_URL like every file in this directory.
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { getPool, closePool } from '../../dist/db/pool.js';
 import { TrustSetEpochStoreError } from '../../dist/familytrustset/TrustSetEpochStore.js';
-import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
+import { MySqlTrustSetEpochStore as MySqlTrustSetEpochStoreBase } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
 import { MySqlKeyEpochStore } from '../../dist/familytrustset/MySqlKeyEpochStore.js';
 import { MySqlEpochFloorStore } from '../../dist/familytrustset/MySqlEpochFloorStore.js';
-import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
+import { isFamilyEpochNumber, MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
+import { isPlausibleOpaqueId, isPlausibleSignature } from '../../dist/familytrustset/policy.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
 /** Every case gets its own family id, so cases can never collide with each other or across runs. */
 function uniqueFamilyId() {
-  return `fts-epoch-${randomUUID()}`;
+  return randomUUID();
+}
+
+const fixtureDeviceIds = new Map();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function fixtureDeviceId(familyId) {
+  let deviceId = fixtureDeviceIds.get(familyId);
+  if (!deviceId) {
+    deviceId = randomUUID();
+    fixtureDeviceIds.set(familyId, deviceId);
+  }
+  return deviceId;
 }
 
 /**
@@ -60,12 +73,85 @@ function makeRecord(familyId, trustSetEpoch, keyEpoch, overrides = {}) {
     supersedesEpoch: trustSetEpoch > 1 ? trustSetEpoch - 1 : null,
     signedEpochBytes: Buffer.from(`signed-epoch|${familyId}|${trustSetEpoch}|${randomUUID()}`, 'utf8'),
     signature: `sig-${randomUUID()}`,
-    signerKeyId: `key-${randomUUID()}`,
-    signerDeviceId: `dev-${randomUUID()}`,
+    // device_public_keys.key_id is CHAR(36); use the same UUID shape as
+    // production device DSK identifiers so the lifecycle fixture can bind
+    // this persisted signer exactly.
+    signerKeyId: randomUUID(),
+    signerDeviceId: fixtureDeviceId(familyId),
     issuedAt: stamp(),
     receivedAt: stamp(),
     ...overrides,
   };
+}
+
+/** A unique valid P-256 point for the synthetic DSK row used by store-only tests. */
+function makeTestDskPublicKey() {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  const decode = (value) => Buffer.from(value, 'base64url');
+  return Buffer.concat([Buffer.from([0x04]), decode(jwk.x), decode(jwk.y)]).toString('base64url');
+}
+
+async function insertActiveDsk(deviceId, keyId) {
+  await getPool().query(
+    `INSERT IGNORE INTO device_public_keys
+       (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [deviceId, keyId, makeTestDskPublicKey(), new Date()],
+  );
+}
+
+async function ensureActiveLifecycleFixture(record) {
+  const recordShapeIsValid = Boolean(record) &&
+    isPlausibleOpaqueId(record.familyId) &&
+    isFamilyEpochNumber(record.trustSetEpoch, 1) &&
+    isFamilyEpochNumber(record.keyEpoch, 1) &&
+    (record.supersedesEpoch === null ||
+      (isFamilyEpochNumber(record.supersedesEpoch, 1) && record.supersedesEpoch <= record.trustSetEpoch - 1)) &&
+    Buffer.isBuffer(record.signedEpochBytes) && record.signedEpochBytes.length >= 1 && record.signedEpochBytes.length <= 262_144 &&
+    isPlausibleSignature(record.signature) &&
+    typeof record.signerKeyId === 'string' && record.signerKeyId.length > 0 && record.signerKeyId.length <= 64 &&
+    typeof record.signerDeviceId === 'string' && record.signerDeviceId.length > 0 && record.signerDeviceId.length <= 64 &&
+    record.issuedAt instanceof Date && !Number.isNaN(record.issuedAt.getTime()) &&
+    record.receivedAt instanceof Date && !Number.isNaN(record.receivedAt.getTime());
+  if (
+    !recordShapeIsValid ||
+    !UUID_RE.test(record.familyId) ||
+    !UUID_RE.test(record.signerDeviceId)
+  ) return;
+
+  const now = new Date();
+  await getPool().query(
+    `INSERT IGNORE INTO families (family_id, family_reference_hash, created_at, status)
+     VALUES (?, ?, ?, 'ACTIVE')`,
+    [record.familyId, randomBytes(32), now],
+  );
+  await getPool().query(
+    `INSERT IGNORE INTO devices (device_id, family_id, platform, status, created_at)
+     VALUES (?, ?, 'ANDROID', 'ACTIVE', ?)`,
+    [record.signerDeviceId, record.familyId, now],
+  );
+  await insertActiveDsk(record.signerDeviceId, record.signerKeyId);
+}
+
+// Existing persistence cases exercise the production store while keeping
+// their normal fixture concise. New lifecycle-rejection tests below use the
+// unwrapped base store and seed/mutate these rows explicitly.
+class MySqlTrustSetEpochStore extends MySqlTrustSetEpochStoreBase {
+  async appendAcceptedEpoch(record, expectedHead) {
+    // Preserve the production method's synchronous input snapshot semantics
+    // even though this test-only wrapper must await fixture creation.
+    const expectedHeadSnapshot = expectedHead === null || expectedHead === undefined
+      ? expectedHead
+      : {
+          ...expectedHead,
+          signedEpochBytes: Buffer.isBuffer(expectedHead.signedEpochBytes)
+            ? Buffer.from(expectedHead.signedEpochBytes)
+            : expectedHead.signedEpochBytes,
+        };
+    if (expectedHead !== undefined) await ensureActiveLifecycleFixture(record);
+    return super.appendAcceptedEpoch(record, expectedHeadSnapshot);
+  }
 }
 
 function expectedHeadFrom(record) {
@@ -113,6 +199,21 @@ async function countEpochRows(familyId, trustSetEpoch = null) {
           trustSetEpoch,
         ]);
   return Number(rows[0].n);
+}
+
+async function insertFamilyAndActiveDevice(familyId, deviceId, signerKeyId) {
+  const now = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at, status)
+     VALUES (?, ?, ?, 'ACTIVE')`,
+    [familyId, randomBytes(32), now],
+  );
+  await getPool().query(
+    `INSERT INTO devices (device_id, family_id, platform, status, created_at)
+     VALUES (?, ?, 'ANDROID', 'ACTIVE', ?)`,
+    [deviceId, familyId, now],
+  );
+  if (signerKeyId) await insertActiveDsk(deviceId, signerKeyId);
 }
 
 /**
@@ -457,9 +558,8 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
   async function assertInvalidInput(mutate) {
     const store = new MySqlTrustSetEpochStore();
     const familyId = uniqueFamilyId();
-    const record = mutate(makeRecord(familyId, 1, 1));
-    const checkedFamilyId =
-      typeof record.familyId === 'string' && record.familyId.length > 0 ? record.familyId : familyId;
+    const validRecord = makeRecord(familyId, 1, 1);
+    const record = mutate(validRecord);
 
     await assert.rejects(
       () => store.appendAcceptedEpoch(record, null),
@@ -472,12 +572,16 @@ test('INVALID_INPUT: malformed submissions throw before any SQL and create neith
         return true;
       },
     );
-    assert.equal(await countEpochRows(checkedFamilyId), 0, 'malformed input must never create an epoch row');
+    assert.equal(await countEpochRows(familyId), 0, 'malformed input must never create an epoch row');
     assert.equal(
-      await new MySqlEpochFloorStore().readFloors(checkedFamilyId),
+      await new MySqlEpochFloorStore().readFloors(familyId),
       null,
       'malformed input must never create a floors row (validation runs before any SQL)',
     );
+    const [[families]] = await getPool().query('SELECT COUNT(*) AS n FROM families WHERE family_id = ?', [familyId]);
+    const [[devices]] = await getPool().query('SELECT COUNT(*) AS n FROM devices WHERE device_id = ?', [validRecord.signerDeviceId]);
+    assert.equal(Number(families.n), 0, 'invalid records must not cause the fixture wrapper to create a family');
+    assert.equal(Number(devices.n), 0, 'invalid records must not cause the fixture wrapper to create a device');
   }
 
   await assertInvalidInput((record) => ({ ...record, trustSetEpoch: 0 }));
@@ -622,6 +726,152 @@ test('DUPLICATE_ROLLBACK: exact replay and same-epoch conflict preserve duplicat
     assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
     assert.equal(await countEpochRows(familyId), 1);
   }
+});
+
+test('LIFECYCLE RACE: revocation and ordinary epoch append serialize on the signer row', async () => {
+  const familyId = uniqueFamilyId();
+  const deviceId = randomUUID();
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  const first = makeRecord(familyId, 1, 1, { signerDeviceId: deviceId });
+  await insertFamilyAndActiveDevice(familyId, deviceId, first.signerKeyId);
+  assert.deepEqual(await store.appendAcceptedEpoch(first, null), { outcome: 'APPENDED' });
+  const floorsBeforeRace = await floorStore.readFloors(familyId);
+  const next = makeRecord(familyId, 2, 2, { signerDeviceId: deviceId, signerKeyId: first.signerKeyId });
+
+  // Competing real transactions contend on devices.device_id. If the append
+  // obtains the lock first it may commit before revocation; if revocation
+  // wins, append must return stale authority without committing its floor or
+  // history changes.
+  const [appendOutcome] = await Promise.all([
+    store.appendAcceptedEpoch(next, expectedHeadFrom(first)),
+    getPool().query(
+      `UPDATE devices SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+      [deviceId, familyId],
+    ),
+  ]);
+
+  const [[deviceState]] = await getPool().query(
+    'SELECT status FROM devices WHERE device_id = ? AND family_id = ?',
+    [deviceId, familyId],
+  );
+  assert.equal(deviceState?.status, 'REVOKED');
+  assert.ok(
+    appendOutcome.outcome === 'APPENDED' || appendOutcome.outcome === 'REJECTED_STALE_AUTHORITY',
+    `unexpected serialized outcome: ${appendOutcome.outcome}`,
+  );
+
+  if (appendOutcome.outcome === 'APPENDED') {
+    assert.equal(await countEpochRows(familyId), 2, 'the append linearized before revocation');
+    assert.deepEqual(await floorStore.readFloors(familyId), {
+      minimumAcceptedTrustSetEpoch: 2,
+      minimumAcceptedKeyEpoch: 2,
+    });
+    assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 2);
+  } else {
+    assert.equal(await countEpochRows(familyId), 1, 'revocation won before the append');
+    assert.deepEqual(await floorStore.readFloors(familyId), floorsBeforeRace, 'rejected append leaves floors unchanged');
+    assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 1);
+  }
+});
+
+test('LIFECYCLE SCOPE: revoked, moved, and cross-family signer devices cannot append or mutate floors/history', async () => {
+  const familyA = uniqueFamilyId();
+  const familyB = uniqueFamilyId();
+  const familyC = uniqueFamilyId();
+  const deviceA = randomUUID();
+  const deviceB = randomUUID();
+  const deviceC = randomUUID();
+  const first = makeRecord(familyA, 1, 1, { signerDeviceId: deviceA });
+  await insertFamilyAndActiveDevice(familyA, deviceA, first.signerKeyId);
+  await insertFamilyAndActiveDevice(familyB, deviceB);
+  await insertFamilyAndActiveDevice(familyC, deviceC);
+
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  assert.deepEqual(await store.appendAcceptedEpoch(first, null), { outcome: 'APPENDED' });
+  const floorsBefore = await floorStore.readFloors(familyA);
+
+  const foreignSigner = makeRecord(familyA, 2, 2, { signerDeviceId: deviceB });
+  assert.deepEqual(await store.appendAcceptedEpoch(foreignSigner, expectedHeadFrom(first)), {
+    outcome: 'REJECTED_STALE_AUTHORITY',
+  });
+
+  await getPool().query(
+    'UPDATE devices SET family_id = ? WHERE device_id = ? AND family_id = ? AND status = \'ACTIVE\'',
+    [familyB, deviceA, familyA],
+  );
+  const movedSigner = makeRecord(familyA, 2, 2, { signerDeviceId: deviceA });
+  assert.deepEqual(await store.appendAcceptedEpoch(movedSigner, expectedHeadFrom(first)), {
+    outcome: 'REJECTED_STALE_AUTHORITY',
+  });
+
+  assert.equal(await countEpochRows(familyA), 1);
+  assert.equal(await countEpochRows(familyB), 0);
+  assert.deepEqual(await floorStore.readFloors(familyA), floorsBefore);
+  assert.equal(await floorStore.readFloors(familyB), null, 'foreign signer rejection must not create another family floor');
+  assert.equal((await store.readLatestEpoch(familyA))?.trustSetEpoch, 1);
+  assert.equal(await store.readLatestEpoch(familyB), null);
+
+  await getPool().query(
+    `UPDATE devices SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+    [deviceC, familyC],
+  );
+  const firstAttemptAfterRevocation = makeRecord(familyC, 1, 1, { signerDeviceId: deviceC });
+  assert.deepEqual(await store.appendAcceptedEpoch(firstAttemptAfterRevocation, null), {
+    outcome: 'REJECTED_STALE_AUTHORITY',
+  });
+  assert.equal(await countEpochRows(familyC), 0);
+  assert.equal(await floorStore.readFloors(familyC), null, 'revoked first append must roll back its provisional floor');
+});
+
+test('LIFECYCLE REPLAY: an exact accepted epoch replay after signer revocation is rejected without changing history or floors', async () => {
+  const familyId = uniqueFamilyId();
+  const deviceId = randomUUID();
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  const accepted = makeRecord(familyId, 1, 1, { signerDeviceId: deviceId });
+  await insertFamilyAndActiveDevice(familyId, deviceId, accepted.signerKeyId);
+  assert.deepEqual(await store.appendAcceptedEpoch(accepted, null), { outcome: 'APPENDED' });
+  const floorsBefore = await floorStore.readFloors(familyId);
+
+  await getPool().query(
+    `UPDATE devices SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+    [deviceId, familyId],
+  );
+
+  assert.deepEqual(await store.appendAcceptedEpoch(accepted, expectedHeadFrom(accepted)), {
+    outcome: 'REJECTED_STALE_AUTHORITY',
+  });
+  assert.equal(await countEpochRows(familyId), 1, 'revoked replay must not add an epoch-history row');
+  assert.deepEqual(await floorStore.readFloors(familyId), floorsBefore, 'revoked replay must leave both floors unchanged');
+  const latest = await store.readLatestEpoch(familyId);
+  assert.equal(latest?.trustSetEpoch, accepted.trustSetEpoch);
+  assert.equal(latest?.keyEpoch, accepted.keyEpoch);
+  assert.ok(latest?.signedEpochBytes.equals(accepted.signedEpochBytes));
+});
+
+test('LIFECYCLE INACTIVE DEVICE: a PAIRED device cannot append and leaves no history or floor rows', async () => {
+  const familyId = uniqueFamilyId();
+  const deviceId = randomUUID();
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  const pairedCandidate = makeRecord(familyId, 1, 1, { signerDeviceId: deviceId });
+  await insertFamilyAndActiveDevice(familyId, deviceId, pairedCandidate.signerKeyId);
+  await getPool().query(
+    `UPDATE devices SET status = 'PAIRED'
+      WHERE device_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+    [deviceId, familyId],
+  );
+  assert.deepEqual(await store.appendAcceptedEpoch(pairedCandidate, null), {
+    outcome: 'REJECTED_STALE_AUTHORITY',
+  });
+  assert.equal(await countEpochRows(familyId), 0, 'non-active device rejection must not create history');
+  assert.equal(await floorStore.readFloors(familyId), null, 'non-active device rejection must roll back provisional floors');
+  assert.equal(await store.readLatestEpoch(familyId), null);
 });
 
 // ---------------------------------------------------------------------
