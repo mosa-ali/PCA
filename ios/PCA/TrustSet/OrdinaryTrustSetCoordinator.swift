@@ -21,6 +21,15 @@ public struct OrdinaryTrustSetHead: Codable, Equatable {
         guard Data(value.familyId.utf8) == Data(familyId.utf8),
               try FamilyTrustSetCodec.canonicalize(value) == canonicalBytes,
               value.keyEpoch >= 1 else { throw OrdinaryTrustSetError.malformedState }
+        guard value.entries.filter({ $0.role == .owner && $0.status == .active }).count == 1 else { throw OrdinaryTrustSetError.malformedState }
+        var devices = Set<Data>(), ids = Set<Data>(), keys = Set<Data>()
+        for entry in value.entries {
+            guard devices.insert(Data(entry.deviceId.utf8)).inserted,
+                  ids.insert(Data(entry.dskKeyId.utf8)).inserted, ids.insert(Data(entry.dekKeyId.utf8)).inserted,
+                  keys.insert(Data(entry.dskPublicKey.utf8)).inserted, keys.insert(Data(entry.dekPublicKey.utf8)).inserted else {
+                throw OrdinaryTrustSetError.malformedState
+            }
+        }
         return value
     }
 }
@@ -39,7 +48,7 @@ public struct OrdinaryTrustSetPending: Codable, Equatable {
         let before = try previousHead.epoch(), after = try candidate.epoch()
         guard Data(before.familyId.utf8) == Data(after.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
         guard before.trustSetEpoch < Int(Int32.max),
-              after.trustSetEpoch == before.trustSetEpoch + 1,
+              after.trustSetEpoch > before.trustSetEpoch,
               after.supersedesEpoch == before.trustSetEpoch,
               after.keyEpoch >= before.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
         let owners = before.entries.filter { $0.role == .owner && $0.status == .active }
@@ -105,6 +114,7 @@ public enum OrdinaryTrustSetSubmissionResult {
 public protocol OrdinaryTrustSetTransport {
     func submit(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult
     func status(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult
+    func acceptedRecord(familyId: String, epoch: Int) async throws -> OrdinaryTrustSetHead
     func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead
 }
 
@@ -129,6 +139,7 @@ public final class OrdinaryTrustSetCoordinator {
         try await gate.run {
             var record = try self.checkedRecord()
             guard record.pending == nil else { throw OrdinaryTrustSetError.pendingSubmission }
+            guard candidate.trustSetEpoch == (try record.head.epoch()).trustSetEpoch + 1 else { throw OrdinaryTrustSetError.staleCandidate }
             let bytes = try FamilyTrustSetCodec.canonicalize(candidate)
             let unsigned = OrdinaryTrustSetHead(familyId: self.familyId, canonicalBytes: bytes, signature: "pending")
             let draft = OrdinaryTrustSetPending(previousHead: record.head, candidate: unsigned,
@@ -166,6 +177,55 @@ public final class OrdinaryTrustSetCoordinator {
             guard case let .accepted(head) = result else { return false }
             try self.acceptExact(head, record: record, pending: pending)
             return true
+        }
+    }
+    /// Walk a bounded signed predecessor chain from the persisted trusted floor. Head projection
+    /// chooses a target only; every linked hop is verified with its prior owner before durable adoption.
+    /// Progress remains valid after timeout/process death; a later invocation resumes from that floor.
+    @discardableResult
+    public func catchUp(maximumRecords: Int = 32) async throws -> Bool {
+        guard (1...64).contains(maximumRecords) else { throw OrdinaryTrustSetError.malformedState }
+        return try await gate.run {
+            var record = try self.checkedRecord()
+            guard record.pending == nil else { throw OrdinaryTrustSetError.pendingSubmission }
+            let target = try await self.transport.acceptedHead(familyId: self.familyId)
+            let targetEpoch = try target.epoch()
+            let localEpoch = try record.head.epoch()
+            guard targetEpoch.trustSetEpoch >= localEpoch.trustSetEpoch,
+                  targetEpoch.keyEpoch >= localEpoch.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
+            if targetEpoch.trustSetEpoch == localEpoch.trustSetEpoch {
+                guard target == record.head else { throw OrdinaryTrustSetError.responseMismatch }
+                return true
+            }
+            var chain = [OrdinaryTrustSetHead]()
+            var current = target
+            var anchored = false
+            for _ in 0..<maximumRecords {
+                let currentEpoch = try current.epoch()
+                guard Data(current.familyId.utf8) == Data(self.familyId.utf8),
+                      currentEpoch.trustSetEpoch > localEpoch.trustSetEpoch,
+                      let predecessor = currentEpoch.supersedesEpoch,
+                      predecessor >= localEpoch.trustSetEpoch, predecessor < currentEpoch.trustSetEpoch else {
+                    throw OrdinaryTrustSetError.staleCandidate
+                }
+                chain.append(current)
+                if predecessor == localEpoch.trustSetEpoch { anchored = true; break }
+                current = try await self.transport.acceptedRecord(familyId: self.familyId, epoch: predecessor)
+                guard try current.epoch().trustSetEpoch == predecessor else { throw OrdinaryTrustSetError.responseMismatch }
+            }
+            guard anchored else { return false }
+            for next in chain.reversed() {
+                let before = try record.head.epoch()
+                guard let owner = before.entries.first(where: { $0.role == .owner && $0.status == .active }) else {
+                    throw OrdinaryTrustSetError.unauthorizedSigner
+                }
+                let hop = OrdinaryTrustSetPending(previousHead: record.head, candidate: next,
+                    signerDeviceId: owner.deviceId, signerKeyId: owner.dskKeyId)
+                try self.verifyPending(hop)
+                record.head = next
+                try self.store.save(record)
+            }
+            return record.head == target
         }
     }
     private func checkedRecord() throws -> OrdinaryTrustSetRecord {

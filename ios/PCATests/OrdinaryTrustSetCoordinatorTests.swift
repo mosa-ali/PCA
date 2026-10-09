@@ -25,13 +25,16 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         var sent: [OrdinaryTrustSetPending] = []
         var failure = false
         var statusValue: OrdinaryTrustSetSubmissionResult = .unknown
+        var head: OrdinaryTrustSetHead?
+        var records: [Int: OrdinaryTrustSetHead] = [:]
         func submit(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult {
             sent.append(request)
             if failure { throw PCAHTTPTransportError.timeout }
             return .accepted(request.candidate)
         }
         func status(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult { statusValue }
-        func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead { throw PCAAPIError.unavailable }
+        func acceptedRecord(familyId: String, epoch: Int) async throws -> OrdinaryTrustSetHead { guard let value = records[epoch] else { throw PCAAPIError.unavailable }; return value }
+        func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead { guard let value = head else { throw PCAAPIError.unavailable }; return value }
     }
     private func epoch(_ number: Int, family: String = "family-test", key: Int = 1) -> UntrustedTrustSetEpoch {
         UntrustedTrustSetEpoch(familyId: family, trustSetEpoch: number, keyEpoch: key,
@@ -134,6 +137,29 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         let corrupt = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!, familyId: "family-test",
             sessionToken: { "device-session" }, http: corruptHTTP)
         do { _ = try await corrupt.submit(pending); XCTFail("corrupt projection accepted") } catch {}
+    }
+
+    func testCatchUpWalksSkippedEpochPredecessorsAndPersistsOnlyVerifiedProgress() async throws {
+        let (store, _, transport, coordinator) = try fixture()
+        let third = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 3, keyEpoch: 1,
+            entries: epoch(1).entries, issuedAt: epoch(1).issuedAt, supersedesEpoch: 1)
+        let eighth = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 8, keyEpoch: 2,
+            entries: epoch(1).entries, issuedAt: epoch(1).issuedAt, supersedesEpoch: 3)
+        transport.records[3] = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(third), signature: "third")
+        transport.head = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(eighth), signature: "eighth")
+        let bounded = try await coordinator.catchUp(maximumRecords: 1)
+        XCTAssertFalse(bounded)
+        XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 1)
+        let complete = try await coordinator.catchUp()
+        XCTAssertTrue(complete)
+        XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 8)
+    }
+    func testCatchUpRefusesUnanchoredOrBadSignatureHeadWithoutChangingFloor() async throws {
+        let (store, _, transport, coordinator) = try fixture(verifier: Verifier(accepted: false))
+        transport.head = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(2)), signature: "bad")
+        let original = store.value
+        do { _ = try await coordinator.catchUp(); XCTFail("invalid signature accepted") } catch {}
+        XCTAssertEqual(store.value, original)
     }
 
 }

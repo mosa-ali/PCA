@@ -67,6 +67,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     }
     private struct Result: Decodable { let outcome: String; let acceptedEpoch: Record?; let acceptedHead: Record }
     private struct HeadResult: Decodable { let acceptedHead: Record }
+    private struct RecordResult: Decodable { let acceptedEpoch: Record }
     private func call(suffix: String, pending: OrdinaryTrustSetPending?) async throws -> PCAHTTPResponse {
         let token = try sessionToken()
         guard !token.isEmpty, token.utf8.count <= 4096, !token.contains("\r"), !token.contains("\n") else { throw PCAAPIError.unauthorized }
@@ -116,6 +117,16 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     }
     public func status(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult {
         try result(await call(suffix: "/status", pending: request), request: request, status: true)
+    }
+    public func acceptedRecord(familyId: String, epoch: Int) async throws -> OrdinaryTrustSetHead {
+        guard Data(familyId.utf8) == Data(self.familyId.utf8), (1...Int(Int32.max)).contains(epoch) else {
+            throw OrdinaryTrustSetError.scopeMismatch
+        }
+        let response = try await call(suffix: "/records/\(epoch)", pending: nil)
+        guard response.statusCode == 200 else { throw PCAAPIError.unavailable }
+        let head = try JSONDecoder().decode(RecordResult.self, from: response.data).acceptedEpoch.head(familyId: familyId)
+        guard try head.epoch().trustSetEpoch == epoch else { throw PCAAPIError.malformedResponse }
+        return head
     }
     public func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead {
         guard Data(familyId.utf8) == Data(self.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
