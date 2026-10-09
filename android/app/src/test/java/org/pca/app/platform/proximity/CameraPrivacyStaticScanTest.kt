@@ -106,7 +106,7 @@ class CameraPrivacyStaticScanTest {
         // the close() call must be the last statement inside a finally block wrapping the frame
         // conversion, not inside an if/success-only branch.
         val onFrameAvailableBody = Regex(
-            """internal fun onFrameAvailable\(imageProxy: ImageProxy\)\s*\{(.*?)\n {4}\}""",
+            """internal fun onFrameAvailable\(imageProxy: ImageProxy(?:,\s*generation: Long)?\)\s*\{(.*?)\n {4}\}""",
             RegexOption.DOT_MATCHES_ALL,
         ).find(text)?.groupValues?.get(1) ?: error("Could not locate onFrameAvailable body")
         assertTrue("imageProxy.close() must be called unconditionally", onFrameAvailableBody.contains("finally"))
@@ -114,6 +114,21 @@ class CameraPrivacyStaticScanTest {
             "imageProxy.close() must appear inside the finally block",
             onFrameAvailableBody.substringAfter("finally").contains("imageProxy.close()"),
         )
+        val admissionCheck = onFrameAvailableBody.indexOf("isAccepting(generation)")
+        val conversion = onFrameAvailableBody.indexOf("convertToBitmapFrame(imageProxy)")
+        assertTrue("the captured session generation must be checked before frame conversion", admissionCheck >= 0 && conversion > admissionCheck)
+    }
+
+    @Test
+    fun `CameraXFrameSource closes admission before posting main-thread unbind work`() {
+        val text = locateMainDir("src/main/java/org/pca/app/platform/proximity/CameraXFrameSource.kt").readText()
+        val setRunningBody = Regex(
+            """override fun setRunning\(running: Boolean\)\s*\{(.*?)\n {4}\}""",
+            RegexOption.DOT_MATCHES_ALL,
+        ).find(text)?.groupValues?.get(1) ?: error("Could not locate setRunning body")
+        val admissionUpdate = setRunningBody.indexOf("frameBuffer.setAccepting(running)")
+        val mainQueuePost = setRunningBody.indexOf("mainHandler.post")
+        assertTrue("frame admission must close synchronously before main-thread unbind is queued", admissionUpdate >= 0 && mainQueuePost > admissionUpdate)
     }
 
     @Test

@@ -19,15 +19,16 @@ import com.google.common.util.concurrent.ListenableFuture
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The concrete, CameraX-backed [EphemeralCameraFrameSource] the composition root binds into
  * [CameraProximitySource] (doc 13 Section 4, Tier 2). Hard rules enforced here, mirroring
  * [EphemeralCameraFrameSource]'s and [FaceProximityEstimator]'s own doc comments:
- *  - the camera session is only ever bound while [setRunning] is currently `true` -- CameraX only
- *    starts producing frames once [ControllableLifecycleOwner] is moved to [Lifecycle.State.RESUMED],
- *    and [setRunning]`(false)` immediately unbinds and tears the session down;
+ *  - [setRunning]`(false)` synchronously closes frame admission and clears the pending frame before
+ *    the required main-thread unbind; callbacks from an older camera-session generation are
+ *    discarded and never converted or retained;
  *  - [SingleSlotFrameBuffer] holds at most ONE unconsumed frame at a time -- a new analysis frame
  *    always replaces (and closes/recycles) whatever frame was not yet consumed by [nextFrame],
  *    never appending to a queue or buffer of frames;
@@ -57,6 +58,8 @@ class CameraXFrameSource(
     private val frameBuffer = SingleSlotFrameBuffer()
 
     @Volatile private var boundProvider: ProcessCameraProvider? = null
+    @Volatile private var boundGeneration: Long? = null
+    @Volatile private var requestedRunning: Boolean = false
 
     /** Camera-hardware presence only -- never claims permission is granted (that is
      * [CameraProximitySource]'s own [CameraPermissionStateSource] concern, checked upstream on
@@ -70,8 +73,12 @@ class CameraXFrameSource(
      * [CameraProximitySource]'s own doc comment), so the actual bind/unbind work is always
      * marshalled onto [mainHandler] regardless of the calling thread. */
     override fun setRunning(running: Boolean) {
+        requestedRunning = running
+        // Update admission immediately. CameraX binding itself must remain on main, but no frame
+        // may be converted or retained after the privacy/lifecycle owner asks us to stop.
+        frameBuffer.setAccepting(running)
         mainHandler.post {
-            if (running) startOnMainThread() else stopOnMainThread()
+            if (requestedRunning) startOnMainThread() else stopOnMainThread()
         }
     }
 
@@ -81,25 +88,36 @@ class CameraXFrameSource(
     override fun nextFrame(): EphemeralCameraFrame? = frameBuffer.take()
 
     private fun startOnMainThread() {
-        if (boundProvider != null) return
+        if (!requestedRunning) return
+        val generation = frameBuffer.admissionToken() ?: return
+        if (boundProvider != null && boundGeneration == generation) return
+        if (boundProvider != null) stopOnMainThread()
         runCatching {
             val provider = cameraProviderFuture().get()
+            if (!requestedRunning || frameBuffer.admissionToken() != generation) return@runCatching
             val analysis = ImageAnalysis.Builder()
                 // Deliberate: only the single latest frame is ever handed to the analyzer, never a
                 // backlog -- consistent with this feature never buffering more than one frame.
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            analysis.setAnalyzer(analysisExecutor, ::onFrameAvailable)
+            analysis.setAnalyzer(analysisExecutor) { imageProxy -> onFrameAvailable(imageProxy, generation) }
             provider.unbindAll()
             lifecycleOwner.moveTo(Lifecycle.State.RESUMED)
             provider.bindToLifecycle(lifecycleOwner, cameraSelector, analysis)
-            boundProvider = provider
+            if (requestedRunning && frameBuffer.admissionToken() == generation) {
+                boundProvider = provider
+                boundGeneration = generation
+            } else {
+                provider.unbindAll()
+                lifecycleOwner.moveTo(Lifecycle.State.CREATED)
+            }
         }
     }
 
     private fun stopOnMainThread() {
         val provider = boundProvider
         boundProvider = null
+        boundGeneration = null
         runCatching { provider?.unbindAll() }
         lifecycleOwner.moveTo(Lifecycle.State.CREATED)
         frameBuffer.clear()
@@ -108,9 +126,10 @@ class CameraXFrameSource(
     /** The analyzer callback CameraX invokes on [analysisExecutor] for every frame while bound.
      * [imageProxy] is ALWAYS closed before returning, whether conversion succeeds, fails, or
      * throws -- no code path here can leak or retain the platform image past this single call. */
-    internal fun onFrameAvailable(imageProxy: ImageProxy) {
+    internal fun onFrameAvailable(imageProxy: ImageProxy, generation: Long) {
         try {
-            convertToBitmapFrame(imageProxy)?.let { frameBuffer.publish(it) }
+            if (!frameBuffer.isAccepting(generation)) return
+            convertToBitmapFrame(imageProxy)?.let { frameBuffer.publishIfAccepting(it, generation) }
         } finally {
             imageProxy.close()
         }
@@ -144,11 +163,39 @@ private class ControllableLifecycleOwner : LifecycleOwner {
  */
 internal class SingleSlotFrameBuffer {
     private val slot = AtomicReference<AndroidBitmapCameraFrame?>(null)
+    // The low bit is admission state; each state transition advances the generation in the upper
+    // bits. Encoding them in one atomic value means an old callback can never become valid again
+    // after a stop/start race.
+    private val admissionState = AtomicLong(0L)
 
-    /** Publishes [frame] as the current frame, closing (recycling) whatever unconsumed frame it
-     * replaces -- a frame that is never [take]n is never left to accumulate. */
-    fun publish(frame: AndroidBitmapCameraFrame) {
+    fun setAccepting(accepting: Boolean) {
+        while (true) {
+            val current = admissionState.get()
+            val wasAccepting = current and 1L == 1L
+            if (wasAccepting == accepting) break
+            val nextGeneration = (current and -2L) + 2L
+            val next = nextGeneration or if (accepting) 1L else 0L
+            if (admissionState.compareAndSet(current, next)) break
+        }
+        if (!accepting) clear()
+    }
+
+    fun admissionToken(): Long? = admissionState.get().takeIf { it and 1L == 1L }
+
+    fun isAccepting(generation: Long): Boolean = admissionState.get() == generation && generation and 1L == 1L
+
+    /** Publish only for the camera session that captured this frame; rejected frames are recycled. */
+    fun publishIfAccepting(frame: AndroidBitmapCameraFrame, generation: Long): Boolean {
+        if (!isAccepting(generation)) {
+            frame.close()
+            return false
+        }
         slot.getAndSet(frame)?.close()
+        if (!isAccepting(generation)) {
+            if (slot.compareAndSet(frame, null)) frame.close()
+            return false
+        }
+        return true
     }
 
     /** Consumes and returns the current frame exactly once; a second call before the next
