@@ -82,6 +82,12 @@ export class OutboundRelayService {
     if (!recipient) {
       return { messageId: item.messageId, outcome: 'CROSS_FAMILY_RECIPIENT' };
     }
+    // Device revocation is terminal: the recipient cannot establish or
+    // retain a runtime-sync session, so accepting new relay ciphertext for
+    // it would leave inaccessible ciphertext queued until expiry.
+    if (recipient.status === 'REVOKED') {
+      return { messageId: item.messageId, outcome: 'INVALID' };
+    }
     // BROWSER endpoints have no DEK and are never family E2EE recipients;
     // reject before the ciphertext reaches the opaque relay store.
     if (recipient.platform === 'BROWSER') {

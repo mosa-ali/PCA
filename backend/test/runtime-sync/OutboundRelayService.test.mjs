@@ -102,6 +102,23 @@ test('a BROWSER endpoint without a DEK is rejected as an E2EE recipient before r
   assert.equal((await relayService.listQueuedForRecipient(browserDeviceId)).length, 0);
 });
 
+test('a REVOKED same-family recipient is rejected before new relay ciphertext is stored', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const revokedRecipientId = await registerDevice(deviceRepository, familyId);
+  const revocation = await deviceRepository.revokeDeviceAndKeysAtomically(familyId, revokedRecipientId, new Date());
+  assert.equal(revocation.outcome, 'REVOKED');
+
+  const messageId = `revoked-${randomUUID()}`;
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [
+    item({ recipientDeviceId: revokedRecipientId, messageId }),
+  ]);
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'INVALID' }]);
+  assert.equal((await relayService.listQueuedForRecipient(revokedRecipientId)).length, 0);
+});
+
 test('a batch larger than MAX_OUTBOUND_BATCH_SIZE only attempts the bound, reporting the rest as explicitly dropped', async () => {
   const { deviceRepository, outboundService } = buildHarness();
   const familyId = `family-${randomUUID()}`;
