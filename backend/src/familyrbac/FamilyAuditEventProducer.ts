@@ -178,6 +178,7 @@ export class FamilyAuditEventProducer {
           throw new Error('family audit ledger returned an unsupported record outcome');
         }
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'DELIVERED' });
+        this.deviceDeliveryFailureCount = 0;
       } catch {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });
         // The returned array is discarded by FamilyAuditService.record, so

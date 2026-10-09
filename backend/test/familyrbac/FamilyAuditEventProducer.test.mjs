@@ -203,6 +203,31 @@ test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array
   assert.match(warnings[0], /OPAQUE_COMPOSITION/);
 });
 
+test('a successful recipient delivery resets the device-failure warning counter', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let failComposition = true;
+  const producer = new FamilyAuditEventProducer(ledger, async () => {
+    if (failComposition) throw new Error('composition rejected');
+    return { encryptedPayloadB64: 'b2s', nonceB64: 'bm9uY2U' };
+  }, async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }]);
+
+  const { result, warnings } = await withCapturedWarnings(async () => {
+    const firstFailure = await producer.deliver(sampleRecord());
+    failComposition = false;
+    const recovered = await producer.deliver(sampleRecord());
+    failComposition = true;
+    const secondFailure = await producer.deliver(sampleRecord());
+    return { firstFailure, recovered, secondFailure };
+  });
+
+  assert.deepEqual(result.firstFailure, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+  assert.deepEqual(result.recovered, [{ parentDeviceId: 'parent-device-a', outcome: 'DELIVERED' }]);
+  assert.deepEqual(result.secondFailure, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /"occurrences":1/);
+  assert.match(warnings[1], /"occurrences":1/);
+});
+
 test('a resolver failure resolves to zero deliveries rather than propagating, AND is distinguishable from an empty recipient list', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(
