@@ -121,6 +121,9 @@ export interface TrustSetEpochStore {
    */
   readLatestEpoch(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord | null>;
 
+  /** Indexed immutable acceptance lookup for exact retry/status; read errors must propagate. */
+  readEpoch?(familyId: OpaqueFamilyId, trustSetEpoch: number): Promise<TrustSetEpochRecord | null>;
+
   /** All accepted epochs for the family, ASCENDING by trustSetEpoch. */
   listEpochs(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord[]>;
 }

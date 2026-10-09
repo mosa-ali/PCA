@@ -408,6 +408,18 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     return rows[0] ? toRecord(rows[0]) : null;
   }
 
+  async readEpoch(familyId: OpaqueFamilyId, trustSetEpoch: number): Promise<TrustSetEpochRecord | null> {
+    if (!isPlausibleOpaqueId(familyId) || !isFamilyEpochNumber(trustSetEpoch, 1)) {
+      throw invalidInput('readEpoch requires a valid family and epoch.');
+    }
+    const { rows } = await runInTransaction((conn) =>
+      execute<EpochRow>(conn,
+        `SELECT ${EPOCH_COLUMNS} FROM family_trust_set_epochs WHERE family_id = ? AND trust_set_epoch = ? LIMIT 1`,
+        [familyId, trustSetEpoch]),
+    );
+    return rows[0] ? toRecord(rows[0]) : null;
+  }
+
   async listEpochs(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord[]> {
     const { rows } = await runInTransaction((conn) =>
       execute<EpochRow>(

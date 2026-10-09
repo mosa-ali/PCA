@@ -1,5 +1,5 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
-import { decodeCanonicalTrustSetEpoch } from './decode.js';
+import { decodeCanonicalTrustSetEpoch, decodeCanonicalTrustSetEpochBytes } from './decode.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { activeOwnerCount, findActiveOwner, findDuplicateIdentity } from './FamilyTrustSetEngine.js';
 import {
@@ -229,6 +229,47 @@ export class TrustSetEpochAcceptanceService {
       lastInconsistency = inconsistency;
     }
     throw inconsistentState(lastInconsistency);
+  }
+
+  /** Read a coherent durable head for mobile reconciliation, never a genesis fallback on failure. */
+  async readAcceptedHead(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord | null> {
+    if (!isPlausibleOpaqueId(familyId)) throw new Error('Invalid family scope.');
+    const { latest } = await this.readConsistentState(familyId);
+    return latest === null ? null : this.validateAcceptedRecord(familyId, latest);
+  }
+
+  /** Immutable indexed lookup; required by exact request status and historical retry. */
+  async readAcceptedEpoch(familyId: OpaqueFamilyId, trustSetEpoch: number): Promise<TrustSetEpochRecord | null> {
+    if (!isPlausibleOpaqueId(familyId) || !isFamilyEpochNumber(trustSetEpoch, 1)) throw new Error('Invalid epoch scope.');
+    if (!this.deps.epochStore.readEpoch) throw new Error('Indexed accepted epoch lookup is not configured.');
+    const record = await this.deps.epochStore.readEpoch(familyId, trustSetEpoch);
+    if (record !== null && record.trustSetEpoch !== trustSetEpoch) throw inconsistentState('indexed epoch lookup returned another epoch');
+    return record === null ? null : this.validateAcceptedRecord(familyId, record);
+  }
+
+  private async validateAcceptedRecord(familyId: OpaqueFamilyId, record: TrustSetEpochRecord): Promise<TrustSetEpochRecord> {
+    let epoch: FamilyTrustSetEpoch;
+    try {
+      if (!Buffer.isBuffer(record.signedEpochBytes) || record.signedEpochBytes.length > MAX_SIGNED_EPOCH_BYTES) throw new Error();
+      epoch = decodeCanonicalTrustSetEpochBytes(record.signedEpochBytes);
+    } catch {
+      throw inconsistentState('accepted bytes failed strict canonical decoding');
+    }
+    const owner = findActiveOwner(epoch);
+    if (record.familyId !== familyId || epoch.familyId !== familyId ||
+        epoch.trustSetEpoch !== record.trustSetEpoch || epoch.keyEpoch !== record.keyEpoch ||
+        epoch.supersedesEpoch !== record.supersedesEpoch || !isValidDate(record.issuedAt) ||
+        epoch.issuedAt.getTime() !== record.issuedAt.getTime() || !isValidDate(record.receivedAt) ||
+        activeOwnerCount(epoch.entries) !== 1 || findDuplicateIdentity(epoch.entries) ||
+        owner === null || owner.deviceId !== record.signerDeviceId || owner.dskKeyId !== record.signerKeyId ||
+        canonicalizeTrustSetEpoch(epoch) !== record.signedEpochBytes.toString('utf8')) {
+      throw inconsistentState('accepted epoch metadata disagrees with its signed bytes');
+    }
+    if (!await this.deps.verifier.verify(owner.dskPublicKey, record.signedEpochBytes.toString('utf8'), record.signature)) {
+      throw inconsistentState('accepted epoch signature is invalid');
+    }
+    return { ...record, signedEpochBytes: Buffer.from(record.signedEpochBytes),
+      issuedAt: new Date(record.issuedAt), receivedAt: new Date(record.receivedAt) };
   }
 
   async acceptCandidate(input: TrustSetEpochAcceptanceInput): Promise<TrustSetEpochAcceptanceResult> {
