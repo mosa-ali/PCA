@@ -96,6 +96,7 @@ const files = [
   "test/tamper/TrustedTimeHighWaterMark.test.mjs",
   "test/tamper/ReleaseIntegrityEvaluator.test.mjs",
   "test/recoverytransaction/RecoveryTransactionCoordinator.test.mjs",
+  "test/recoverytransaction/RecoveryTransactionStore.test.mjs",
   "test/usage/normalize.test.mjs",
   "test/schedule/timezone.test.mjs",
   "test/schedule/engine.test.mjs",
