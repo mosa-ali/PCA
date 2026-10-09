@@ -3867,7 +3867,6 @@ final class ProductionIntegrationTests: XCTestCase {
             runtimeSyncClient: runtimeSyncClient,
             inboundInbox: inboundInbox,
             inboundConsumer: inboundConsumer,
-            ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             assertRuntimeKeyCustody: assertRuntimeKeyCustody,
             sessionStore: attemptStore,
             attemptStore: attemptStore,
@@ -3877,6 +3876,7 @@ final class ProductionIntegrationTests: XCTestCase {
             keyDeletion: keyDeletion,
             firstDeviceRootStore: runtimeRoot,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
+            ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: identityStore
