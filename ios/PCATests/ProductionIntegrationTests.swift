@@ -220,13 +220,15 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertTrue(try journal.records().isEmpty)
         XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
 
-        for index in 0..<256 {
-            let response = try inboundResponse(id: "retired-alias-\(index)") { $0["sequenceOrNonce"] = "1" }
-            let alias = try XCTUnwrap(response.applied.first)
-            try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
-            XCTAssertTrue(try consumer.pending(try inbox.pendingCrypto(scope: scope), scope: scope).isEmpty)
-            try inbox.markAcknowledged(alias, scope: scope)
+        let aliases = try (0..<256).map { index in
+            try XCTUnwrap(inboundResponse(id: "retired-alias-\(index)") { $0["sequenceOrNonce"] = "1" }.applied.first)
         }
+        let aliasBatch = PCAInboundRuntimeSyncResponse(scope: scope, applied: aliases,
+            unparseableMessageIds: [], droppedForListBound: [])
+        try inbox.capture(aliasBatch, sessionDeviceId: scope.recipientDeviceId)
+        XCTAssertTrue(try consumer.pending(try inbox.pendingCrypto(scope: scope), scope: scope).isEmpty)
+        try inbox.markAcknowledged(aliases, scope: scope)
+        XCTAssertTrue(try inbox.pendingAcknowledgements(scope: scope).isEmpty)
         let overflow = try inboundResponse(id: "overflow-alias") { $0["sequenceOrNonce"] = "1" }
         XCTAssertThrowsError(try inbox.capture(overflow, sessionDeviceId: scope.recipientDeviceId))
         let aliasesReclaimed = try await reclaimer.reclaim(scope: scope, assertAuthority: {})

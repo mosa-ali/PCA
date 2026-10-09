@@ -291,6 +291,7 @@ public enum PCAInboundRetirementVerification {
         // Preserve all journal-backed items (including prepared operations), and reclaim only
         // exact, already-acknowledged inbox entries whose replay identity has permanent coverage.
         let remaining = try journal.records().filter { $0.intent.scope == scope }
+        var acknowledgedInboxOnly: [PCAStoredInboundEnvelope] = []
         for held in try inbox.pendingCrypto(scope: scope) {
             try freshAuthority()
             try held.envelope.validate(scope: scope)
@@ -308,12 +309,16 @@ public enum PCAInboundRetirementVerification {
             }
             guard held.relayAcknowledged,
                   try denial.coversReplayIdentityPermanently(held.envelope, scope: scope) else { continue }
-            func coverage() throws {
+            acknowledgedInboxOnly.append(held)
+        }
+        if !acknowledgedInboxOnly.isEmpty {
+            reclaimed += try inbox.removeRetiredAcknowledgedBatch(acknowledgedInboxOnly, scope: scope) { held in
                 try freshAuthority()
                 try journal.assertReplayDenialConfiguration(scope: scope, denial: denial)
-                guard try denial.coversReplayIdentityPermanently(held.envelope, scope: scope) else { throw PCAInboundInboxError.unavailable }
+                guard try denial.coversReplayIdentityPermanently(held.envelope, scope: scope) else {
+                    throw PCAInboundInboxError.unavailable
+                }
             }
-            if try inbox.removeRetiredAcknowledged(held, scope: scope, assertPermanentCoverage: coverage) { reclaimed += 1 }
         }
         return reclaimed
     }
@@ -789,25 +794,65 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
     }
 
     public func markAcknowledged(_ envelope: PCAInboundEnvelope, scope: PCAInboundScope) throws {
+        try markAcknowledged([envelope], scope: scope)
+    }
+
+    /// Persist a relay acknowledgement batch with one snapshot readback.
+    public func markAcknowledged(_ envelopes: [PCAInboundEnvelope], scope: PCAInboundScope) throws {
+        guard !envelopes.isEmpty else { return }
         Self.lock.lock(); defer { Self.lock.unlock() }
         var snapshot = try confirmed(scope: scope)
-        guard let index = snapshot.entries.firstIndex(where: { pcaOpaqueEqual($0.envelope.messageId, envelope.messageId) }),
-              snapshot.entries[index].envelope == envelope else { throw PCAInboundInboxError.unavailable }
-        snapshot.entries[index].relayAcknowledged = true
+        guard envelopes.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+        var indexesByMessageId: [Data: Int] = [:]
+        for (index, entry) in snapshot.entries.enumerated() {
+            indexesByMessageId[Data(entry.envelope.messageId.utf8)] = index
+        }
+        var seen = Set<Data>()
+        var indexesToAcknowledge: [Int] = []
+        for envelope in envelopes {
+            try envelope.validate(scope: scope)
+            let messageId = Data(envelope.messageId.utf8)
+            guard seen.insert(messageId).inserted,
+                  let index = indexesByMessageId[messageId],
+                  snapshot.entries[index].envelope == envelope else { throw PCAInboundInboxError.unavailable }
+            indexesToAcknowledge.append(index)
+        }
+        for index in indexesToAcknowledge { snapshot.entries[index].relayAcknowledged = true }
         try persist(snapshot)
     }
     fileprivate func removeRetiredAcknowledged(_ expected: PCAStoredInboundEnvelope, scope: PCAInboundScope,
                                               assertPermanentCoverage: () throws -> Void) throws -> Bool {
+        try removeRetiredAcknowledgedBatch([expected], scope: scope) { _ in try assertPermanentCoverage() } > 0
+    }
+    fileprivate func removeRetiredAcknowledgedBatch(_ expected: [PCAStoredInboundEnvelope], scope: PCAInboundScope,
+                                                    assertPermanentCoverage: (PCAStoredInboundEnvelope) throws -> Void) throws -> Int {
+        guard !expected.isEmpty else { return 0 }
         Self.lock.lock(); defer { Self.lock.unlock() }
-        try expected.envelope.validate(scope: scope)
-        guard expected.relayAcknowledged else { throw PCAInboundInboxError.unavailable }
+        guard expected.count <= maxRecords else { throw PCAInboundInboxError.unavailable }
+        var expectedByMessageId: [Data: PCAStoredInboundEnvelope] = [:]
+        for record in expected {
+            try record.envelope.validate(scope: scope)
+            let messageId = Data(record.envelope.messageId.utf8)
+            guard record.relayAcknowledged, expectedByMessageId[messageId] == nil else {
+                throw PCAInboundInboxError.unavailable
+            }
+            expectedByMessageId[messageId] = record
+        }
         var snapshot = try confirmed(scope: scope)
-        let prior = snapshot.entries.first(where: { pcaOpaqueEqual($0.envelope.messageId, expected.envelope.messageId) })
-        guard prior == nil || prior == expected else { throw PCAInboundInboxError.unavailable }
-        try assertPermanentCoverage()
-        snapshot.entries.removeAll { pcaOpaqueEqual($0.envelope.messageId, expected.envelope.messageId) }
+        var currentByMessageId: [Data: PCAStoredInboundEnvelope] = [:]
+        for record in snapshot.entries {
+            currentByMessageId[Data(record.envelope.messageId.utf8)] = record
+        }
+        var removedMessageIds = Set<Data>()
+        for (messageId, record) in expectedByMessageId {
+            let prior = currentByMessageId[messageId]
+            guard prior == nil || prior == record else { throw PCAInboundInboxError.unavailable }
+            try assertPermanentCoverage(record)
+            if prior != nil { removedMessageIds.insert(messageId) }
+        }
+        snapshot.entries.removeAll { removedMessageIds.contains(Data($0.envelope.messageId.utf8)) }
         try persist(snapshot)
-        return prior != nil
+        return removedMessageIds.count
     }
 
     private func confirmed(scope: PCAInboundScope) throws -> Snapshot {
