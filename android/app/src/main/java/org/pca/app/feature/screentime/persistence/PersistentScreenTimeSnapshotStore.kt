@@ -32,6 +32,7 @@ class PersistentScreenTimeSnapshotStore(
     internal fun encode(snapshot: ScreenTimeSnapshot): String {
         val s = snapshot.state
         val fields = listOf(
+            VERSION_2,
             s.mode.name,
             s.activeElapsedNanos.toString(),
             s.breakElapsedNanos.toString(),
@@ -44,21 +45,32 @@ class PersistentScreenTimeSnapshotStore(
             s.preEmergencyActiveElapsedNanos.toString(),
             s.preEmergencyBreakElapsedNanos.toString(),
             s.preEmergencyPauseElapsedNanos.toString(),
+            s.preCommunicationMode?.name ?: NULL_SENTINEL,
+            s.preCommunicationActiveElapsedNanos.toString(),
+            s.preCommunicationBreakElapsedNanos.toString(),
+            s.preCommunicationPauseElapsedNanos.toString(),
             snapshot.snapshotWallClockMillis.toString(),
             snapshot.bootId ?: NULL_SENTINEL,
         )
         return fields.joinToString(FIELD_SEPARATOR)
     }
 
-    internal fun decode(raw: String): ScreenTimeSnapshot? {
-        val parts = raw.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (parts.size != FIELD_COUNT) return null
+    internal fun decode(raw: String): ScreenTimeSnapshot? =
+        if (raw.startsWith("$VERSION_2$FIELD_SEPARATOR")) decodeV2(raw) else decodeV1(raw)
+
+    private fun decodeV1(raw: String): ScreenTimeSnapshot? {
+        val parts = raw.split(FIELD_SEPARATOR, limit = V1_FIELD_COUNT)
+        if (parts.size != V1_FIELD_COUNT) return null
         return try {
+            val mode = ScreenTimeMode.valueOf(parts[0])
+            val activeElapsed = parts[1].toLong()
+            val breakElapsed = parts[2].toLong()
+            val pauseElapsed = parts[3].toLong()
             val state = ScreenTimeState(
-                mode = ScreenTimeMode.valueOf(parts[0]),
-                activeElapsedNanos = parts[1].toLong(),
-                breakElapsedNanos = parts[2].toLong(),
-                pauseElapsedNanos = parts[3].toLong(),
+                mode = mode,
+                activeElapsedNanos = activeElapsed,
+                breakElapsedNanos = breakElapsed,
+                pauseElapsedNanos = pauseElapsed,
                 dhikrInteractionCount = parts[4].toInt(),
                 completedBreakCount = parts[5].toInt(),
                 overriddenBreakCount = parts[6].toInt(),
@@ -67,6 +79,15 @@ class PersistentScreenTimeSnapshotStore(
                 preEmergencyActiveElapsedNanos = parts[9].toLong(),
                 preEmergencyBreakElapsedNanos = parts[10].toLong(),
                 preEmergencyPauseElapsedNanos = parts[11].toLong(),
+                // V1 already persisted the current active/break/pause counters but omitted the
+                // communication exception's prior mode and copies. Restore those copies from
+                // the preserved counters. A positive break/pause cursor proves its mode; at an
+                // exact break boundary the unchanged active counter reaches its configured
+                // threshold and the next engine tick enters BREAK_SHIELD before crediting time.
+                preCommunicationMode = legacyCommunicationMode(mode, breakElapsed, pauseElapsed),
+                preCommunicationActiveElapsedNanos = if (mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) activeElapsed else 0L,
+                preCommunicationBreakElapsedNanos = if (mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) breakElapsed else 0L,
+                preCommunicationPauseElapsedNanos = if (mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) pauseElapsed else 0L,
             )
             ScreenTimeSnapshot(
                 state = state,
@@ -81,10 +102,56 @@ class PersistentScreenTimeSnapshotStore(
         }
     }
 
+    private fun decodeV2(raw: String): ScreenTimeSnapshot? {
+        val parts = raw.split(FIELD_SEPARATOR, limit = V2_FIELD_COUNT)
+        if (parts.size != V2_FIELD_COUNT || parts[0] != VERSION_2) return null
+        return try {
+            val state = ScreenTimeState(
+                mode = ScreenTimeMode.valueOf(parts[1]),
+                activeElapsedNanos = parts[2].toLong(),
+                breakElapsedNanos = parts[3].toLong(),
+                pauseElapsedNanos = parts[4].toLong(),
+                dhikrInteractionCount = parts[5].toInt(),
+                completedBreakCount = parts[6].toInt(),
+                overriddenBreakCount = parts[7].toInt(),
+                lastTickMonotonicNanos = parts[8].toLong(),
+                preEmergencyMode = parts[9].takeIf { it != NULL_SENTINEL }?.let { ScreenTimeMode.valueOf(it) },
+                preEmergencyActiveElapsedNanos = parts[10].toLong(),
+                preEmergencyBreakElapsedNanos = parts[11].toLong(),
+                preEmergencyPauseElapsedNanos = parts[12].toLong(),
+                preCommunicationMode = parts[13].takeIf { it != NULL_SENTINEL }?.let { ScreenTimeMode.valueOf(it) },
+                preCommunicationActiveElapsedNanos = parts[14].toLong(),
+                preCommunicationBreakElapsedNanos = parts[15].toLong(),
+                preCommunicationPauseElapsedNanos = parts[16].toLong(),
+            )
+            ScreenTimeSnapshot(
+                state = state,
+                snapshotWallClockMillis = parts[17].toLong(),
+                bootId = parts[18].takeIf { it != NULL_SENTINEL },
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun legacyCommunicationMode(
+        mode: ScreenTimeMode,
+        breakElapsedNanos: Long,
+        pauseElapsedNanos: Long,
+    ): ScreenTimeMode? = if (mode != ScreenTimeMode.COMMUNICATION_EXCEPTION) {
+        null
+    } else when {
+        breakElapsedNanos > 0L -> ScreenTimeMode.BREAK_SHIELD
+        pauseElapsedNanos > 0L -> ScreenTimeMode.PAUSED
+        else -> ScreenTimeMode.ACTIVE
+    }
+
     private companion object {
         const val KEY = "screen_time_snapshot_v1"
         const val FIELD_SEPARATOR = "|"
-        const val FIELD_COUNT = 14
+        const val VERSION_2 = "v2"
+        const val V1_FIELD_COUNT = 14
+        const val V2_FIELD_COUNT = 19
         const val NULL_SENTINEL = "NULL"
     }
 }
