@@ -1,5 +1,8 @@
 package org.pca.app.firstdevice
 
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.util.Base64
 import org.pca.app.foundation.PersistentStateStore
 
 /**
@@ -73,6 +76,12 @@ data class FirstDeviceSubmissionPayload(
     val attestationEvidence: String,
 )
 
+/** Exact signed epoch-1 statement B retained after server-authoritative root acceptance. */
+data class FirstDeviceAcceptedEpochAnchor(
+    val canonicalBytes: String,
+    val signatureBase64Url: String,
+)
+
 data class FirstDeviceRootRecord(
     val seed: FirstDeviceCeremonySeed,
     val state: FirstDeviceRootState = FirstDeviceRootState.NOT_STARTED,
@@ -84,6 +93,8 @@ data class FirstDeviceRootRecord(
     val familyId: String? = null,
     val submission: FirstDeviceSubmissionPayload? = null,
     val committedAtMillis: Long? = null,
+    /** Older durable records have no accepted anchor and cannot reconstruct one from server state. */
+    val acceptedEpoch1: FirstDeviceAcceptedEpochAnchor? = null,
 )
 
 /** Distinguishes an empty slot from unreadable/corrupt root state. */
@@ -303,6 +314,12 @@ class PersistentFirstDeviceRootStore(
     internal fun encode(record: FirstDeviceRootRecord): String {
         require(record.seed.dskAlias == ALIAS_PREFIX_DSK + record.seed.attemptId)
         require(record.seed.dekAlias == ALIAS_PREFIX_DEK + record.seed.attemptId)
+        val acceptedEpoch1 = record.acceptedEpoch1
+        require(acceptedEpoch1 == null || record.state == FirstDeviceRootState.ROOT_COMMITTED)
+        acceptedEpoch1?.let {
+            require(it.canonicalBytes.length in 1..MAX_CANONICAL_EPOCH_UNITS)
+            require(isCanonicalSignatureBase64Url(it.signatureBase64Url))
+        }
         val submission = record.submission
         val fields = listOf(
             record.seed.attemptId,
@@ -327,6 +344,8 @@ class PersistentFirstDeviceRootStore(
             submission?.epoch1Signature ?: "",
             submission?.attestationEvidence ?: "",
             record.committedAtMillis?.toString() ?: "",
+            acceptedEpoch1?.let { Base64.getEncoder().encodeToString(it.canonicalBytes.toByteArray(Charsets.UTF_8)) } ?: "",
+            acceptedEpoch1?.signatureBase64Url ?: "",
         )
         for (field in fields) {
             require(!field.contains(FIELD_SEPARATOR)) { "ceremony record field must not contain the separator" }
@@ -336,7 +355,7 @@ class PersistentFirstDeviceRootStore(
 
     internal fun decode(raw: String): FirstDeviceRootRecord? {
         val parts = raw.split(FIELD_SEPARATOR)
-        if (parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
         return try {
             val attemptId = parts[0]
             require(parts[8] == ALIAS_PREFIX_DSK + attemptId)
@@ -352,6 +371,22 @@ class PersistentFirstDeviceRootStore(
                     attestationEvidence = parts[20],
                 )
             }
+            val acceptedEpoch1 = if (parts.size == LEGACY_FIELD_COUNT || (parts[22].isEmpty() && parts[23].isEmpty())) {
+                null
+            } else {
+                require(parts[22].isNotEmpty() && parts[23].isNotEmpty())
+                val canonicalBytes = Base64.getDecoder().decode(parts[22])
+                require(Base64.getEncoder().encodeToString(canonicalBytes) == parts[22])
+                val canonicalText = Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(canonicalBytes)).toString()
+                require(canonicalText.length in 1..MAX_CANONICAL_EPOCH_UNITS)
+                require(isCanonicalSignatureBase64Url(parts[23]))
+                FirstDeviceAcceptedEpochAnchor(canonicalText, parts[23])
+            }
+            val state = FirstDeviceRootState.valueOf(parts[10])
+            require(acceptedEpoch1 == null || state == FirstDeviceRootState.ROOT_COMMITTED)
             FirstDeviceRootRecord(
                 seed = FirstDeviceCeremonySeed(
                     attemptId = parts[0],
@@ -365,7 +400,7 @@ class PersistentFirstDeviceRootStore(
                     dskAlias = parts[8],
                     dekAlias = parts[9],
                 ),
-                state = FirstDeviceRootState.valueOf(parts[10]),
+                state = state,
                 ceremonyId = parts[11].ifEmpty { null },
                 challengeId = parts[12].ifEmpty { null },
                 nonce = parts[13].ifEmpty { null },
@@ -373,16 +408,26 @@ class PersistentFirstDeviceRootStore(
                 familyId = parts[15].ifEmpty { null },
                 submission = submission,
                 committedAtMillis = parts[21].ifEmpty { null }?.toLong(),
+                acceptedEpoch1 = acceptedEpoch1,
             )
-        } catch (_: IllegalArgumentException) {
+        } catch (_: Exception) {
             null
         }
+    }
+
+    private fun isCanonicalSignatureBase64Url(value: String): Boolean = try {
+        val decoded = Base64.getUrlDecoder().decode(value)
+        decoded.size == 64 && Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) == value
+    } catch (_: IllegalArgumentException) {
+        false
     }
 
     private companion object {
         const val KEY = "first_device_root_v1"
         const val FIELD_SEPARATOR = "|"
-        const val FIELD_COUNT = 22
+        const val LEGACY_FIELD_COUNT = 22
+        const val FIELD_COUNT = 24
+        const val MAX_CANONICAL_EPOCH_UNITS = 262144
         const val ALIAS_PREFIX_DSK = "pca.dsk."
         const val ALIAS_PREFIX_DEK = "pca.dek."
     }

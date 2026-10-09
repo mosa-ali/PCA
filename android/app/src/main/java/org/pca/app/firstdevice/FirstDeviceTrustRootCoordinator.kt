@@ -323,6 +323,9 @@ class FirstDeviceTrustRootCoordinator(
      * evidence around is the privacy-preferred posture.
      */
     private fun finalizeCommitted(current: FirstDeviceRootRecord, payload: FirstDeviceSubmissionPayload?) {
+        // A server status is not enough to reconstruct bootstrap authority. Keep
+        // the exact signed statement B that this device durably submitted.
+        val acceptedPayload = payload ?: current.submission ?: return
         val committed = current.copy(
             state = FirstDeviceRootState.ROOT_COMMITTED,
             seed = current.seed.copy(attemptRecoveryToken = ""),
@@ -331,6 +334,10 @@ class FirstDeviceTrustRootCoordinator(
             challengeId = null,
             expiresAt = null,
             committedAtMillis = now().time,
+            acceptedEpoch1 = FirstDeviceAcceptedEpochAnchor(
+                canonicalBytes = acceptedPayload.epoch1Bytes,
+                signatureBase64Url = acceptedPayload.epoch1Signature,
+            ),
         )
         persistIfCurrent(expected = current, record = committed)
         // payload intentionally dropped; referenced only so the trimming

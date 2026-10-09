@@ -282,6 +282,8 @@ class FirstDeviceTrustRootCoordinatorTest {
         assertEquals(FirstDeviceRootState.ROOT_COMMITTED, record.state)
         assertNotNull(record.committedAtMillis)
         assertNull(record.submission)
+        assertEquals("e", record.acceptedEpoch1?.canonicalBytes)
+        assertEquals("es", record.acceptedEpoch1?.signatureBase64Url)
     }
 
     // ---------- submit ----------
@@ -299,6 +301,8 @@ class FirstDeviceTrustRootCoordinatorTest {
         // Trimmed: submission bytes + token cleared on commit.
         assertNull(record.submission)
         assertEquals("", record.seed.attemptRecoveryToken)
+        assertEquals(rig.api.submitCalls.single()["epoch1Bytes"], record.acceptedEpoch1?.canonicalBytes)
+        assertEquals(rig.api.submitCalls.single()["epoch1Signature"], record.acceptedEpoch1?.signatureBase64Url)
     }
 
     @Test

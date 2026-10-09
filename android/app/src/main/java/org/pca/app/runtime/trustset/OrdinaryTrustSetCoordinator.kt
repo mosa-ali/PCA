@@ -26,7 +26,12 @@ interface OrdinaryTrustSetApi {
 fun interface OrdinaryEpochSignatureVerifier {
     fun verify(publicKey: String, canonicalBytes: ByteArray, signature: String): Boolean
 }
-data class OrdinaryEpochState(val accepted: AcceptedEpochRecord, val pending: OrdinaryEpochRequest? = null)
+data class OrdinaryEpochState(
+    val accepted: AcceptedEpochRecord,
+    val pending: OrdinaryEpochRequest? = null,
+    /** Immutable device-local bootstrap root. Legacy states decode with no root and cannot be upgraded. */
+    val rootAnchor: AcceptedEpochRecord? = null,
+)
 interface OrdinaryEpochStore {
     /** Present corrupt state must throw; absence must never be inferred from decoding failure. */
     fun read(): OrdinaryEpochState?
@@ -42,6 +47,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
 
     suspend fun prepare(candidate: UntrustedTrustSetEpoch): Boolean = flight.withLock {
         val current = store.read() ?: return@withLock false
+        if (!hasTrustedFloor(current)) return@withLock false
         if (current.pending != null) return@withLock false
         val prior = decode(current.accepted)
         val owner = owner(prior)
@@ -63,6 +69,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
     suspend fun catchUp(maximumRecords: Int = 32): Int = flight.withLock {
         require(maximumRecords in 1..32)
         val initial = store.read() ?: return@withLock 0
+        if (!hasTrustedFloor(initial)) return@withLock 0
         val anchor = decode(initial.accepted)
         val chain = mutableListOf<AcceptedEpochRecord>()
         var cursor = try { api.getHead(anchor.familyId) }
@@ -97,7 +104,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             require(verifier.verify(owner.dskPublicKey, TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8),
                 accepted.request.signatureBase64))
             val pending = current.pending.takeUnless { it == accepted.request }
-            if (!store.compareAndSetDurably(current, OrdinaryEpochState(accepted, pending))) return@withLock progressed
+            if (!store.compareAndSetDurably(current, OrdinaryEpochState(accepted, pending, current.rootAnchor))) return@withLock progressed
             progressed++
         }
         progressed
@@ -105,14 +112,13 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
 
     private suspend fun contact(status: Boolean): Boolean {
         val current = store.read() ?: return false
+        if (!hasTrustedFloor(current)) return false
         val pending = current.pending ?: return false
         if (!store.confirmDurable(current)) return false
         val prior = decode(current.accepted)
         val priorOwner = owner(prior)
         require(priorOwner.deviceId == localDeviceId && priorOwner.dskKeyId == localSigningKeyId)
-        require(pending.canonicalEpochBase64.length <= TrustSetEpochCodec.MAX_CANONICAL_UTF16_UNITS * 4)
-        val pendingBytes = Base64.getDecoder().decode(pending.canonicalEpochBase64)
-        require(Base64.getEncoder().encodeToString(pendingBytes) == pending.canonicalEpochBase64)
+        val pendingBytes = canonicalBytes(pending)
         validateTransition(prior, TrustSetEpochCodec.decodeCanonical(pendingBytes))
         require(verifier.verify(priorOwner.dskPublicKey, pendingBytes, pending.signatureBase64))
         val response = try {
@@ -129,18 +135,55 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         require(accepted.signerDeviceId == owner.deviceId && accepted.signerKeyId == owner.dskKeyId)
         val bytes = TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8)
         require(verifier.verify(owner.dskPublicKey, bytes, accepted.request.signatureBase64))
-        return store.compareAndSetDurably(current, OrdinaryEpochState(accepted))
+        return store.compareAndSetDurably(current, OrdinaryEpochState(accepted, rootAnchor = current.rootAnchor))
     }
 
     private fun decode(record: AcceptedEpochRecord): UntrustedTrustSetEpoch {
-        val request = record.request
-        require(request.canonicalEpochBase64.length <= TrustSetEpochCodec.MAX_CANONICAL_UTF16_UNITS * 4)
-        val bytes = Base64.getDecoder().decode(request.canonicalEpochBase64)
-        require(Base64.getEncoder().encodeToString(bytes) == request.canonicalEpochBase64)
+        val bytes = canonicalBytes(record.request)
         val candidate = TrustSetEpochCodec.decodeCanonical(bytes)
         require(candidate.trustSetEpoch == record.trustSetEpoch && candidate.keyEpoch == record.keyEpoch)
         require(candidate.keyEpoch >= 1)
         return candidate
+    }
+
+    /** Re-check both the immutable epoch-1 proof and the locally accepted signing floor. */
+    private fun hasTrustedFloor(state: OrdinaryEpochState): Boolean {
+        val rootRecord = state.rootAnchor ?: return false
+        return try {
+            val root = decode(rootRecord)
+            require(root.trustSetEpoch == 1 && root.keyEpoch == 1 && root.supersedesEpoch == null)
+            val rootOwner = owner(root)
+            require(rootRecord.signerDeviceId == rootOwner.deviceId && rootRecord.signerKeyId == rootOwner.dskKeyId)
+            require(verifier.verify(rootOwner.dskPublicKey, canonicalBytes(rootRecord.request),
+                rootRecord.request.signatureBase64))
+
+            val accepted = decode(state.accepted)
+            val acceptedOwner = owner(accepted)
+            require(accepted.familyId == root.familyId && accepted.trustSetEpoch >= 1 && accepted.keyEpoch >= 1)
+            require(acceptedOwner.deviceId == rootOwner.deviceId && acceptedOwner.dskKeyId == rootOwner.dskKeyId &&
+                acceptedOwner.dskPublicKey == rootOwner.dskPublicKey &&
+                state.accepted.signerDeviceId == rootOwner.deviceId && state.accepted.signerKeyId == rootOwner.dskKeyId)
+            if (accepted.trustSetEpoch == 1) {
+                require(state.accepted == rootRecord)
+            } else {
+                require(accepted.supersedesEpoch != null && accepted.supersedesEpoch < accepted.trustSetEpoch)
+            }
+            require(verifier.verify(rootOwner.dskPublicKey, canonicalBytes(state.accepted.request),
+                state.accepted.request.signatureBase64))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun canonicalBytes(request: OrdinaryEpochRequest): ByteArray {
+        require(request.canonicalEpochBase64.length <= TrustSetEpochCodec.MAX_CANONICAL_UTF8_BYTES * 4)
+        val bytes = Base64.getDecoder().decode(request.canonicalEpochBase64)
+        require(bytes.size <= TrustSetEpochCodec.MAX_CANONICAL_UTF8_BYTES &&
+            Base64.getEncoder().encodeToString(bytes) == request.canonicalEpochBase64)
+        val epoch = TrustSetEpochCodec.decodeCanonical(bytes)
+        require(TrustSetEpochCodec.canonicalize(epoch).toByteArray(Charsets.UTF_8).contentEquals(bytes))
+        return bytes
     }
 
     private fun owner(epoch: UntrustedTrustSetEpoch): UntrustedTrustSetEntry =

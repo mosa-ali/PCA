@@ -10,6 +10,7 @@ import org.pca.app.runtime.EpochBounds
 /** Backend familytrustset structural grammar only. Nothing decoded here can authorize an ACK or application. */
 object TrustSetEpochCodec {
     const val MAX_CANONICAL_UTF16_UNITS = 262144
+    const val MAX_CANONICAL_UTF8_BYTES = 262144
     private const val MAX_WIRE_UTF16_UNITS = 1048576
     private val decimal = Regex("^(0|[1-9][0-9]*)$")
     private val iso = Regex("^([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\\.([0-9]{3})Z$")
@@ -47,17 +48,18 @@ object TrustSetEpochCodec {
         // Explicit field list deliberately excludes the signature.
         fields.joinToString("") { "${it.toByteArray(Charsets.UTF_8).size}:$it" }.also {
             require(it.length <= MAX_CANONICAL_UTF16_UNITS)
+            require(it.toByteArray(Charsets.UTF_8).size <= MAX_CANONICAL_UTF8_BYTES)
         }
     }
 
     fun decodeCanonical(input: String): UntrustedTrustSetEpoch = checked {
         require(input.length <= MAX_CANONICAL_UTF16_UNITS && wellFormed(input))
-        decodeCanonical(input.toByteArray(Charsets.UTF_8))
+        input.toByteArray(Charsets.UTF_8).also { require(it.size <= MAX_CANONICAL_UTF8_BYTES) }
+            .let(::decodeCanonical)
     }
 
     fun decodeCanonical(bytes: ByteArray): UntrustedTrustSetEpoch = checked {
-        // At most three UTF-8 bytes per UTF-16 unit; reject abusive input before decoding.
-        require(bytes.size <= MAX_CANONICAL_UTF16_UNITS * 3)
+        require(bytes.size <= MAX_CANONICAL_UTF8_BYTES)
         require(strictUtf8(bytes).length <= MAX_CANONICAL_UTF16_UNITS)
         var cursor = 0
         fun field(): String {

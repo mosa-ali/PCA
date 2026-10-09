@@ -100,6 +100,7 @@ class TrustSetEpochCodecTest {
         rejected { TrustSetEpochCodec.decodeCanonical(canonical + "0:") }
         rejected { TrustSetEpochCodec.decodeCanonical("999999999999999999999:") }
         rejected { TrustSetEpochCodec.decodeCanonical("x".repeat(TrustSetEpochCodec.MAX_CANONICAL_UTF16_UNITS + 1)) }
+        rejected { TrustSetEpochCodec.decodeCanonical(ByteArray(TrustSetEpochCodec.MAX_CANONICAL_UTF8_BYTES + 1) { 'x'.code.toByte() }) }
         val raw = fixtures().getJSONArray("vectors").getJSONObject(0).getJSONObject("wire")
         rejected { TrustSetEpochCodec.parseWire(JSONObject(raw.toString()).put("signature", "s".repeat(513)).toString()) }
         rejected { TrustSetEpochCodec.parseWire(JSONObject(raw.toString()).put("signature", JSONObject.NULL).toString()) }

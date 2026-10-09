@@ -68,6 +68,55 @@ class FirstDeviceRootStoreTest {
     }
 
     @Test
+    fun `committed signed epoch one anchor round-trips while legacy 22-field records stay anchorless`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        val anchor = FirstDeviceAcceptedEpochAnchor(
+            canonicalBytes = FirstDeviceCanonical.encodeEpoch1("family", "device-1", seed().signingKeyId,
+                seed().dskPublicKeyBase64, seed().encryptionKeyId, seed().dekPublicKeyBase64, "2026-10-02T01:00:00.000Z"),
+            signatureBase64Url = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(64) { 1 }),
+        )
+        val committed = FirstDeviceRootRecord(
+            seed = seed().copy(attemptRecoveryToken = ""),
+            state = FirstDeviceRootState.ROOT_COMMITTED,
+            familyId = "family",
+            committedAtMillis = 123L,
+            acceptedEpoch1 = anchor,
+        )
+        store.save(committed)
+        assertEquals(anchor, store.current()?.acceptedEpoch1)
+
+        val oldRecord = backing.values.getValue("first_device_root_v1").split('|').take(22).joinToString("|")
+        backing.values["first_device_root_v1"] = oldRecord
+        assertNull(store.current()?.acceptedEpoch1)
+        assertEquals(FirstDeviceRootReadResult.Present(committed.copy(acceptedEpoch1 = null)), store.readState())
+    }
+
+    @Test
+    fun `partially persisted or malformed accepted anchor is unreadable`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        val committed = FirstDeviceRootRecord(
+            seed = seed().copy(attemptRecoveryToken = ""),
+            state = FirstDeviceRootState.ROOT_COMMITTED,
+            familyId = "family",
+            committedAtMillis = 123L,
+            acceptedEpoch1 = FirstDeviceAcceptedEpochAnchor("canonical", "invalid-signature"),
+        )
+        assertFalse(store.writeIfCurrent(null, committed))
+
+        val valid = committed.copy(acceptedEpoch1 = FirstDeviceAcceptedEpochAnchor(
+            canonicalBytes = "canonical",
+            signatureBase64Url = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(64) { 1 }),
+        ))
+        store.save(valid)
+        val fields = backing.values.getValue("first_device_root_v1").split('|').toMutableList()
+        fields[22] = ""
+        backing.values["first_device_root_v1"] = fields.joinToString("|")
+        assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+    }
+
+    @Test
     fun `null ceremony fields round-trip as null and flush reaches the backing store`() {
         val backing = RecordingStore()
         val store = PersistentFirstDeviceRootStore(backing)
