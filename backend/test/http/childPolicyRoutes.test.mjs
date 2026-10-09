@@ -385,3 +385,37 @@ test('schedule-policy rejects malformed envelopes before role, actor-device, aut
     await app.close();
   }
 });
+
+test('schedule-policy rejects noncanonical base64url and payloads above decoded byte bounds before authorization', async () => {
+  let authorizationCalls = 0;
+  const authorization = {
+    async authorize() {
+      authorizationCalls += 1;
+      return { verdict: 'ALLOW' };
+    },
+  };
+  const { app, submittedBatches, callCounts } = buildApp({ authorization });
+  try {
+    const invalidBodies = [
+      { ...VALID_ENVELOPE, ciphertextB64: 'AB' }, // same decoded byte as canonical "AA", noncanonical trailing bits
+      { ...VALID_ENVELOPE, nonceB64: 'AB' },
+      { ...VALID_ENVELOPE, ciphertextB64: Buffer.alloc(65536).toString('base64url') }, // route cap implies 65535 decoded bytes
+      { ...VALID_ENVELOPE, nonceB64: Buffer.alloc(67).toString('base64url') }, // route cap implies 66 decoded bytes
+    ];
+    for (const payload of invalidBodies) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload,
+      });
+      assert.equal(response.statusCode, 400);
+    }
+    assert.equal(callCounts.activeFamilyRole, 0);
+    assert.equal(callCounts.actorDevice, 0);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});

@@ -66,7 +66,12 @@ function csrfOk(request: FastifyRequest): boolean {
 }
 
 function validOpaqueBase64(value: unknown, maxLength: number): value is string {
-  return typeof value === 'string' && value.length >= 2 && value.length <= maxLength && /^[A-Za-z0-9_-]+$/.test(value);
+  if (typeof value !== 'string' || value.length < 2 || value.length > maxLength || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    return false;
+  }
+  const decoded = Buffer.from(value, 'base64url');
+  const maxDecodedBytes = Math.floor(maxLength * 3 / 4);
+  return decoded.length >= 1 && decoded.length <= maxDecodedBytes && decoded.toString('base64url') === value;
 }
 
 interface SchedulePolicyBody {
