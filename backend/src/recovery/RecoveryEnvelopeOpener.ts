@@ -2,6 +2,7 @@ import type { RecoveryRepository } from './RecoveryRepository.js';
 import type { RecoveryKdf, RecoveryKdfSuite } from './RecoveryKdf.js';
 import type { OpenedRecoveryEnvelope, RecoveryEnvelopeCipher } from './RecoveryEnvelopeCipher.js';
 import type { OpaqueFamilyId } from './types.js';
+import { isPlausibleEnvelopeCiphertext } from './policy.js';
 
 export interface RecoveryEnvelopeOpenRequest {
   familyId: OpaqueFamilyId;
@@ -43,7 +44,11 @@ export async function openStoredRecoveryEnvelope(
   // Keep the family binding at the crypto boundary too. A mismatched
   // repository implementation must not send another family's ciphertext
   // through KDF or AEAD work.
-  if (!record || record.familyId !== request.familyId) return null;
+  if (
+    !record ||
+    record.familyId !== request.familyId ||
+    !isPlausibleEnvelopeCiphertext(record.ciphertext)
+  ) return null;
 
   const rwk = await kdf.derive(request.recoverySecret, request.kdfSalt, request.kdfSuite);
   const opened = await cipher.open(rwk, record.ciphertext, request.associatedData);

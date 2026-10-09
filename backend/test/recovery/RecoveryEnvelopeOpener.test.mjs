@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { openStoredRecoveryEnvelope } from '../../dist/recovery/RecoveryEnvelopeOpener.js';
+import { MAX_ENVELOPE_BYTES } from '../../dist/recovery/policy.js';
 import {
   createTestOnlyRecoveryKdf,
   createTestOnlyRecoveryEnvelopeCipher,
@@ -102,6 +103,36 @@ test('a repository record returned for another family is rejected before KDF or 
   assert.equal(opened, null);
   assert.equal(kdfCalls, 0);
   assert.equal(cipherCalls, 0);
+});
+
+test('malformed or oversized stored ciphertext is rejected before KDF or cipher use', async () => {
+  const invalidCiphertexts = [Buffer.alloc(0), Buffer.alloc(MAX_ENVELOPE_BYTES + 1), 'not-a-buffer'];
+
+  for (const ciphertext of invalidCiphertexts) {
+    let kdfCalls = 0;
+    let cipherCalls = 0;
+    const repository = {
+      async getEnvelope() {
+        return {
+          familyId: 'family-1', ciphertext, version: 1,
+          createdAt: new Date(), updatedAt: new Date(),
+        };
+      },
+    };
+    const kdf = { async derive() { kdfCalls += 1; return Buffer.from('derived-rwk'); } };
+    const cipher = { async open() { cipherCalls += 1; return null; } };
+
+    const opened = await openStoredRecoveryEnvelope(
+      { familyId: 'family-1', recoverySecret: RS, kdfSalt: SALT, kdfSuite: SUITE, associatedData: ASSOCIATED_DATA },
+      repository,
+      kdf,
+      cipher,
+    );
+
+    assert.equal(opened, null);
+    assert.equal(kdfCalls, 0, `KDF must not process stored ciphertext of shape ${typeof ciphertext}`);
+    assert.equal(cipherCalls, 0);
+  }
 });
 
 test('a wrong Recovery Secret derives the wrong RWK and fails to open the envelope -- no support/master-key substitute can succeed here either', async () => {
