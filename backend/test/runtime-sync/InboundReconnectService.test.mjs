@@ -244,6 +244,7 @@ test('accepted ciphertext remains queued across response loss until explicit ack
   assert.equal(outcome.applied.length, 1);
   assert.equal(outcome.applied[0].messageId, envelope.messageId);
   assert.equal(outcome.receipts.some((r) => r.messageId === envelope.messageId && r.outcome === 'APPLIED'), true);
+  assert.equal(outcome.hasUnresolved, false);
 
   const stillQueued = await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID);
   assert.equal(stillQueued.length, 1);
@@ -251,6 +252,27 @@ test('accepted ciphertext remains queued across response loss until explicit ack
   assert.deepEqual(retry.applied, outcome.applied);
   assert.equal(retry.receipts[0].reason, 'idempotent redelivery');
   await relayService.acknowledgeEnvelope(RECIPIENT_DEVICE_ID, envelope.messageId);
+  await relayService.acknowledgeEnvelope(RECIPIENT_DEVICE_ID, envelope.messageId);
+  assert.deepEqual(await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID), []);
+});
+
+test('concurrent reconnect retries return idempotent accepted state and leave ACK ownership with the recipient', async () => {
+  const { relayService, inboundService } = buildHarness();
+  const envelope = buildEnvelope();
+  await queueForRecipient(relayService, envelope);
+  const now = new Date('2026-01-01T01:00:00.000Z');
+
+  const [first, second] = await Promise.all([
+    inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now),
+    inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now),
+  ]);
+
+  for (const outcome of [first, second]) {
+    assert.deepEqual(outcome.applied.map((item) => item.messageId), [envelope.messageId]);
+    assert.deepEqual(outcome.receipts.map((receipt) => [receipt.messageId, receipt.outcome]), [[envelope.messageId, 'APPLIED']]);
+    assert.equal(outcome.hasUnresolved, false);
+  }
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 1);
   await relayService.acknowledgeEnvelope(RECIPIENT_DEVICE_ID, envelope.messageId);
   assert.deepEqual(await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID), []);
 });
@@ -311,6 +333,9 @@ test('correlationId dependency: a PARENT_DECISION from a different sender waits 
   const outcome = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(), new Date('2026-01-01T01:00:00.000Z'));
   const appliedIds = outcome.applied.map((e) => e.messageId).sort();
   assert.deepEqual(appliedIds, [childRequest.messageId, parentDecision.messageId].sort());
+  assert.deepEqual(new Map(outcome.receipts.map((receipt) => [receipt.messageId, receipt.outcome])),
+    new Map([[childRequest.messageId, 'APPLIED'], [parentDecision.messageId, 'APPLIED']]));
+  assert.equal(outcome.hasUnresolved, false);
 });
 
 test('a structurally malformed relay entry is left queued (not acknowledged) rather than silently discarded', async () => {
@@ -439,6 +464,8 @@ for (const rotateParentKey of [false, true]) {
     await queueForRecipient(relayService, parent);
     const held = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', context, now);
     assert.deepEqual(held.applied, []);
+    assert.equal(held.receipts.find((receipt) => receipt.messageId === parent.messageId)?.outcome, 'HELD_PENDING');
+    assert.equal(held.hasUnresolved, true);
     if (rotateParentKey) currentParentKey = 'rotated-parent-public-key';
     await queueForRecipient(relayService, child);
     const result = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', context, now);
