@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
-import { generateProtectionAlert } from './ProtectionAlertGenerator.js';
+import { generateProtectionAlert, InvalidProtectionAlertInputError } from './ProtectionAlertGenerator.js';
+import {
+  isPlausibleEncryptedPayload,
+  isPlausibleNonce,
+  isPlausibleOpaqueId,
+  MAX_ENCRYPTED_PAYLOAD_BYTES,
+  MAX_NONCE_BYTES,
+  PROTECTION_ALERT_POLICY,
+} from './policy.js';
 import type { ProtectionAlertLedger, RecordProtectionAlertResult } from './ProtectionAlertLedger.js';
 import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
 
@@ -80,20 +88,58 @@ export class ProtectionAlertProducer {
     }
 
     const alertId = input.alertId ?? this.nextAlertId();
-    const generatedAtUtc = input.generatedAtUtc ?? this.now();
-    const compositionInput: ProtectionAlertCompositionInput = {
+    if (!isPlausibleOpaqueId(alertId)) throw new InvalidProtectionAlertInputError('invalid alertId');
+    if (!isPlausibleOpaqueId(input.familyId)) throw new InvalidProtectionAlertInputError('invalid familyId');
+    if (input.deviceId !== null && !isPlausibleOpaqueId(input.deviceId)) {
+      throw new InvalidProtectionAlertInputError('invalid deviceId');
+    }
+    if (!isPlausibleOpaqueId(input.parentDeviceId)) throw new InvalidProtectionAlertInputError('invalid parentDeviceId');
+    const triggerPolicy = typeof input.trigger === 'string' && Object.hasOwn(PROTECTION_ALERT_POLICY, input.trigger)
+      ? PROTECTION_ALERT_POLICY[input.trigger]
+      : undefined;
+    if (!triggerPolicy) throw new InvalidProtectionAlertInputError('invalid trigger');
+    if (triggerPolicy.requiresDeviceId && input.deviceId === null) {
+      throw new InvalidProtectionAlertInputError(`trigger ${input.trigger} requires a deviceId`);
+    }
+    const suppliedTime = input.generatedAtUtc ?? this.now();
+    if (!(suppliedTime instanceof Date) || !Number.isFinite(suppliedTime.getTime())) {
+      throw new InvalidProtectionAlertInputError('invalid generatedAtUtc');
+    }
+    const generatedAtMillis = suppliedTime.getTime();
+    // Capture primitive routing metadata before any await. Neither caller
+    // mutation nor a mutable Date shared with the composer may change storage.
+    const routing = Object.freeze({
       alertId,
       familyId: input.familyId,
       deviceId: input.deviceId,
       parentDeviceId: input.parentDeviceId,
       trigger: input.trigger,
       keyEpoch: input.keyEpoch,
-      generatedAtUtc,
-    };
+    });
+    const compositionInput: ProtectionAlertCompositionInput = Object.freeze({
+      ...routing, generatedAtUtc: new Date(generatedAtMillis),
+    });
     const opaquePayload = await this.composeOpaquePayload(compositionInput);
+    if (compositionInput.generatedAtUtc.getTime() !== generatedAtMillis) {
+      throw new InvalidProtectionAlertInputError('alert composition timestamp changed');
+    }
+    if (opaquePayload === null || typeof opaquePayload !== 'object' || Array.isArray(opaquePayload) ||
+      Object.keys(opaquePayload).length !== 2 ||
+      !Object.hasOwn(opaquePayload, 'encryptedPayloadB64') || !Object.hasOwn(opaquePayload, 'nonceB64')) {
+      throw new InvalidProtectionAlertInputError('invalid opaque alert payload');
+    }
+    const encryptedPayloadB64 = opaquePayload.encryptedPayloadB64;
+    const nonceB64 = opaquePayload.nonceB64;
+    if (typeof encryptedPayloadB64 !== 'string' || encryptedPayloadB64.length > Math.ceil(MAX_ENCRYPTED_PAYLOAD_BYTES / 3) * 4 ||
+      typeof nonceB64 !== 'string' || nonceB64.length > Math.ceil(MAX_NONCE_BYTES / 3) * 4 ||
+      !isPlausibleEncryptedPayload(encryptedPayloadB64) || !isPlausibleNonce(nonceB64)) {
+      throw new InvalidProtectionAlertInputError('invalid opaque alert payload');
+    }
     const event = generateProtectionAlert({
-      ...compositionInput,
-      ...opaquePayload,
+      ...routing,
+      generatedAtUtc: new Date(generatedAtMillis),
+      encryptedPayloadB64,
+      nonceB64,
       alertsEnabled: true,
     });
     // `alertsEnabled` was checked above; this guard keeps the result total if

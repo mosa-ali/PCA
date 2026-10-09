@@ -127,3 +127,83 @@ test('out-of-range key epoch is rejected before encryption composition or ledger
   assert.equal(composerCalls, 0);
   assert.deepEqual(await ledger.listForFamily('family-1'), []);
 });
+
+function alertInput(overrides = {}) {
+  return { familyId: 'family-1', deviceId: 'device-1', parentDeviceId: 'parent-1',
+    trigger: 'TIME_TAMPERING', keyEpoch: 4, alertsEnabled: true,
+    generatedAtUtc: new Date(NOW), ...overrides };
+}
+
+test('caller mutation during deferred composition cannot change captured routing or timestamp', async () => {
+  let resolveComposition;
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const producer = createProducer(() => new Promise(resolve => { resolveComposition = resolve; }), { ledger });
+  const input = alertInput();
+  const pending = producer.produce(input);
+  input.familyId = 'foreign-family';
+  input.deviceId = 'foreign-device';
+  input.parentDeviceId = 'foreign-parent';
+  input.keyEpoch = 99;
+  input.generatedAtUtc.setTime(NOW.getTime() + 86400000);
+  resolveComposition(OPAQUE);
+  const result = await pending;
+  assert.equal(result.event.familyId, 'family-1');
+  assert.equal(result.event.deviceId, 'device-1');
+  assert.equal(result.event.parentDeviceId, 'parent-1');
+  assert.equal(result.event.keyEpoch, 4);
+  assert.equal(result.event.generatedAtUtc.getTime(), NOW.getTime());
+  assert.equal((await ledger.listForFamily('foreign-family')).length, 0);
+});
+
+test('composer timestamp mutation is isolated from the caller and rejected before storage', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const input = alertInput();
+  const producer = createProducer(async composition => {
+    composition.generatedAtUtc.setTime(NOW.getTime() + 86400000);
+    return OPAQUE;
+  }, { ledger });
+  await assert.rejects(producer.produce(input), /composition timestamp changed/);
+  assert.equal(input.generatedAtUtc.getTime(), NOW.getTime());
+  assert.equal((await ledger.listForFamily('family-1')).length, 0);
+});
+
+test('composer extra routing fields and malformed opaque shapes never reach storage', async () => {
+  const invalid = [
+    { ...OPAQUE, familyId: 'foreign-family', deviceId: 'foreign-device', parentDeviceId: 'foreign-parent', keyEpoch: 99, generatedAtUtc: new Date() },
+    { ...OPAQUE, alertsEnabled: false }, null, [], {},
+    { ...OPAQUE, encryptedPayloadB64: 'not base64' },
+    { ...OPAQUE, encryptedPayloadB64: Buffer.alloc(16385).toString('base64') },
+    { ...OPAQUE, nonceB64: Buffer.alloc(65).toString('base64') },
+  ];
+  for (const payload of invalid) {
+    let stored = false;
+    const producer = createProducer(async () => payload, { ledger: { record: async () => { stored = true; return { outcome: 'RECORDED' }; } } });
+    await assert.rejects(producer.produce(alertInput()), /invalid opaque alert payload/);
+    assert.equal(stored, false);
+  }
+});
+
+test('invalid routing metadata and inherited trigger names are rejected before composition', async () => {
+  const invalid = [
+    { alertId: '' },
+    { alertId: 'a'.repeat(129) },
+    { familyId: '' },
+    { deviceId: '' },
+    { deviceId: null },
+    { parentDeviceId: '' },
+    { trigger: 'toString' },
+    { trigger: '__proto__' },
+    { trigger: 'constructor' },
+  ];
+  for (const overrides of invalid) {
+    let composerCalls = 0;
+    let ledgerCalls = 0;
+    const producer = createProducer(async () => {
+      composerCalls += 1;
+      return OPAQUE;
+    }, { ledger: { record: async () => { ledgerCalls += 1; return { outcome: 'RECORDED' }; } } });
+    await assert.rejects(producer.produce(alertInput(overrides)));
+    assert.equal(composerCalls, 0, `invalid routing reached composer: ${JSON.stringify(overrides)}`);
+    assert.equal(ledgerCalls, 0, `invalid routing reached ledger: ${JSON.stringify(overrides)}`);
+  }
+});
