@@ -70,6 +70,7 @@ function shouldLogFailure(occurrences: number): boolean {
  */
 export class FamilyAuditEventProducer {
   /** Counted, rate-limited logging -- see this class's doc comment. */
+  private scopeValidationFailureCount = 0;
   private recipientResolutionFailureCount = 0;
   private deviceDeliveryFailureCount = 0;
 
@@ -84,7 +85,21 @@ export class FamilyAuditEventProducer {
     const familyId = record.familyId;
     // The resolver is family-scoped; reject malformed scope before asking it
     // for recipients so invalid input cannot trigger cross-scope work.
-    if (!isPlausibleOpaqueId(familyId)) return [];
+    if (!isPlausibleOpaqueId(familyId)) {
+      this.scopeValidationFailureCount += 1;
+      if (shouldLogFailure(this.scopeValidationFailureCount)) {
+        console.warn(
+          JSON.stringify({
+            event: 'family_audit_event_scope_validation_failed',
+            occurrences: this.scopeValidationFailureCount,
+            failureStage: 'SCOPE_VALIDATION',
+            note: 'audit delivery rejected malformed family scope before recipient resolution; no record content or scope value is logged.',
+          }),
+        );
+      }
+      return [];
+    }
+    this.scopeValidationFailureCount = 0;
     const generatedAtMillis = record.occurredAtUtc.getTime();
     const capturedRecord = Object.freeze({ ...record,
       targetScope: Object.freeze({ ...record.targetScope }),

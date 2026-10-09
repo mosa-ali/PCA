@@ -144,7 +144,15 @@ test('malformed captured family scope is rejected before recipient resolution, c
     return [{ deviceId: 'parent-device-a', keyEpoch: 1 }];
   });
 
-  assert.deepEqual(await producer.deliver(sampleRecord({ familyId: '' })), []);
+  const malformedScope = `family-invalid-${'x'.repeat(129)}`;
+  const { result, warnings } = await withCapturedWarnings(() =>
+    producer.deliver(sampleRecord({ familyId: malformedScope })),
+  );
+  assert.deepEqual(result, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /family_audit_event_scope_validation_failed/);
+  assert.match(warnings[0], /SCOPE_VALIDATION/);
+  assert.equal(warnings[0].includes(malformedScope), false);
   assert.equal(resolverCalls, 0);
   assert.equal(composerCalls, 0);
 });
