@@ -17,7 +17,7 @@ const SAFE_ZONE_KEYS = new Set([
   'updatedAtUtc',
 ]);
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
-const OPAQUE_BASE64 = /^[A-Za-z0-9_-]{2,87380}$/;
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 function assertSafeZoneIdentifier(value: string): void {
   if (!OPAQUE_TOKEN.test(value)) throw new Error('SAFE_ZONE_REQUEST_INVALID');
@@ -45,6 +45,19 @@ function isUtcTimestamp(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
+/** Matches SafeZoneRepository's canonical unpadded base64url byte bounds. */
+function isCanonicalBase64Url(value: unknown, minimumBytes: number, maximumBytes: number): value is string {
+  if (typeof value !== 'string' || value.length === 0 || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+  const remainder = value.length % 4;
+  if (remainder === 1) return false;
+
+  const finalSymbol = BASE64URL_ALPHABET.indexOf(value[value.length - 1]!);
+  if ((remainder === 2 && (finalSymbol & 0x0f) !== 0) || (remainder === 3 && (finalSymbol & 0x03) !== 0)) return false;
+
+  const decodedBytes = Math.floor(value.length * 3 / 4);
+  return decodedBytes >= minimumBytes && decodedBytes <= maximumBytes;
+}
+
 /**
  * Accepts only the opaque Safe Zone service contract. In particular, this
  * rejects any response that adds readable label/coordinate/radius/policy
@@ -58,8 +71,8 @@ function parseSafeZone(value: unknown, familyId: string): SafeZone {
     typeof value.zoneId !== 'string' || !OPAQUE_TOKEN.test(value.zoneId) ||
     value.familyId !== familyId ||
     typeof value.recipientEndpointId !== 'string' || !OPAQUE_TOKEN.test(value.recipientEndpointId) ||
-    typeof value.ciphertextB64 !== 'string' || !OPAQUE_BASE64.test(value.ciphertextB64) ||
-    typeof value.nonceB64 !== 'string' || !OPAQUE_BASE64.test(value.nonceB64) ||
+    !isCanonicalBase64Url(value.ciphertextB64, 1, 65_535) ||
+    !isCanonicalBase64Url(value.nonceB64, 12, 64) ||
     typeof value.keyEpoch !== 'number' || !Number.isInteger(value.keyEpoch) || value.keyEpoch <= 0 ||
     typeof value.revision !== 'number' || !Number.isInteger(value.revision) || value.revision <= 0 ||
     (value.deliveryState !== 'PENDING_OFFLINE' && value.deliveryState !== 'READY') ||

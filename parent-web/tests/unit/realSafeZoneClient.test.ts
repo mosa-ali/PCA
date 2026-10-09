@@ -12,8 +12,8 @@ const safeZone = {
   zoneId: 'zone-1',
   familyId: 'family-1',
   recipientEndpointId: 'device-1',
-  ciphertextB64: 'ciphertext-_1',
-  nonceB64: 'nonce-_1',
+  ciphertextB64: 'AQID',
+  nonceB64: 'AQIDBAUGBwgJCgsM',
   keyEpoch: 7,
   revision: 2,
   deliveryState: 'READY' as const,
@@ -42,6 +42,53 @@ describe('RealSafeZoneClient opaque response boundary', () => {
 
     await expect(new RealSafeZoneClient('https://pca.example', browser()).list('family-1'))
       .rejects.toThrow('SAFE_ZONE_RESPONSE_INVALID');
+  });
+
+  it('rejects malformed, padded, and noncanonical base64url envelope bytes', async () => {
+    for (const invalidEnvelope of [
+      { ...safeZone, ciphertextB64: '' },
+      { ...safeZone, ciphertextB64: 'AQID+' },
+      { ...safeZone, ciphertextB64: 'AQID=' },
+      { ...safeZone, ciphertextB64: 'AB' },
+      { ...safeZone, nonceB64: 'AA' },
+      { ...safeZone, nonceB64: 'AQIDBAUGBwgJCgs=' },
+      { ...safeZone, nonceB64: `${'A'.repeat(17)}B` },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ safeZones: [invalidEnvelope] }),
+      })));
+
+      await expect(new RealSafeZoneClient('https://pca.example', browser()).list('family-1'))
+        .rejects.toThrow('SAFE_ZONE_RESPONSE_INVALID');
+    }
+  });
+
+  it('accepts ciphertext and nonce exactly at the repository byte ceilings', async () => {
+    const atCeiling = {
+      ...safeZone,
+      ciphertextB64: 'A'.repeat(87_380), // 65,535 decoded bytes
+      nonceB64: 'A'.repeat(86), // 64 decoded bytes
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ safeZones: [atCeiling] }) })));
+
+    await expect(new RealSafeZoneClient('https://pca.example', browser()).list('family-1'))
+      .resolves.toEqual([atCeiling]);
+  });
+
+  it('rejects ciphertext and nonce that exceed repository byte ceilings', async () => {
+    for (const invalidEnvelope of [
+      { ...safeZone, ciphertextB64: 'A'.repeat(87_382) }, // 65,536 decoded bytes
+      { ...safeZone, nonceB64: 'A'.repeat(87) }, // 65 decoded bytes
+    ]) {
+      vi.stubGlobal('fetch', vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ safeZones: [invalidEnvelope] }),
+      })));
+
+      await expect(new RealSafeZoneClient('https://pca.example', browser()).list('family-1'))
+        .rejects.toThrow('SAFE_ZONE_RESPONSE_INVALID');
+    }
   });
 
   it('reads family safe zones through the Parent session without a browser trust provider', async () => {
