@@ -71,17 +71,22 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
     if (!isFamilyEpochNumber(event.keyEpoch)) {
       throw new Error('Protection alert key epoch is outside the supported family epoch range.');
     }
+    // Snapshot before the asynchronous cleanup boundary. A caller may reuse
+    // or mutate its event while purgeExpired is pending; the stored routing
+    // and ciphertext fields must reflect the accepted record call.
+    const captured = snapshotEvent(event);
     // Best-effort housekeeping on the write path, mirroring
     // RelayService's own purge-on-operation discipline.
     await this.purgeExpired(this.now());
-    const existing = this.events.get(event.alertId);
-    if (existing) return sameEvent(existing, event) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
-    this.events.set(event.alertId, event);
+    const existing = this.events.get(captured.alertId);
+    if (existing) return sameEvent(existing, captured) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
+    this.events.set(captured.alertId, captured);
     return { outcome: 'RECORDED' };
   }
 
   async get(alertId: string): Promise<ProtectionAlertEvent | null> {
-    return this.events.get(alertId) ?? null;
+    const event = this.events.get(alertId);
+    return event ? snapshotEvent(event) : null;
   }
 
   async listForFamily(familyId: string, options: ProtectionAlertListOptions = {}): Promise<ProtectionAlertEvent[]> {
@@ -97,7 +102,7 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
     const ascending = [...this.events.values()]
       .filter((event) => event.familyId === familyId)
       .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
-    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit);
+    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(snapshotEvent);
   }
 
   async listForParentDevice(
@@ -108,7 +113,7 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
     const ascending = [...this.events.values()]
       .filter((event) => event.familyId === familyId && event.parentDeviceId === parentDeviceId)
       .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
-    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit);
+    return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(snapshotEvent);
   }
 
   async purgeExpired(now: Date): Promise<number> {
@@ -121,6 +126,10 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
     }
     return purged;
   }
+}
+
+function snapshotEvent(event: ProtectionAlertEvent): ProtectionAlertEvent {
+  return { ...event, generatedAtUtc: new Date(event.generatedAtUtc.getTime()) };
 }
 
 function sameEvent(a: ProtectionAlertEvent, b: ProtectionAlertEvent): boolean {

@@ -58,3 +58,55 @@ test('PCA-ADD-ENR-020 ledger is append-only and idempotent without a plaintext r
   );
   assert.deepEqual((await ledger.listForParentDevice('family-1', 'parent-1')).map((item) => item.alertId), ['alert-1']);
 });
+
+test('ledger snapshots event routing and opaque bytes before awaiting expiry cleanup', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const event = generateProtectionAlert({ ...BASE, generatedAtUtc: new Date(LEDGER_NOW.getTime()) });
+  const pendingRecord = ledger.record(event);
+
+  event.alertId = 'mutated-alert';
+  event.familyId = 'family-other';
+  event.deviceId = 'device-other';
+  event.parentDeviceId = 'parent-other';
+  event.generatedAtUtc.setTime(Date.parse('2026-08-20T12:00:00.000Z'));
+  event.encryptedPayloadB64 = 'mutated-ciphertext';
+  event.nonceB64 = 'mutated-nonce';
+
+  assert.deepEqual(await pendingRecord, { outcome: 'RECORDED' });
+  const retained = await ledger.get('alert-1');
+  assert.equal(retained.familyId, 'family-1');
+  assert.equal(retained.deviceId, 'device-1');
+  assert.equal(retained.parentDeviceId, 'parent-1');
+  assert.equal(retained.generatedAtUtc.toISOString(), LEDGER_NOW.toISOString());
+  assert.equal(retained.encryptedPayloadB64, 'AQID');
+  assert.equal(retained.nonceB64, 'BAUG');
+  assert.deepEqual(await ledger.listForParentDevice('family-1', 'parent-1').then((rows) => rows.map((row) => row.alertId)), ['alert-1']);
+  assert.deepEqual(await ledger.listForParentDevice('family-other', 'parent-other'), []);
+});
+
+test('get and both list methods return detached event and timestamp snapshots', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const original = generateProtectionAlert({ ...BASE, generatedAtUtc: new Date(LEDGER_NOW.getTime()) });
+  await ledger.record(original);
+
+  const fromGet = await ledger.get(original.alertId);
+  const fromFamilyList = (await ledger.listForFamily('family-1'))[0];
+  const fromDeviceList = (await ledger.listForParentDevice('family-1', 'parent-1'))[0];
+  fromGet.familyId = 'family-other';
+  fromGet.parentDeviceId = 'parent-other';
+  fromGet.generatedAtUtc.setTime(0);
+  fromGet.encryptedPayloadB64 = 'changed';
+  fromFamilyList.nonceB64 = 'changed';
+  fromFamilyList.generatedAtUtc.setTime(0);
+  fromDeviceList.deviceId = 'device-other';
+  fromDeviceList.generatedAtUtc.setTime(0);
+
+  const retained = await ledger.get(original.alertId);
+  assert.equal(retained.familyId, 'family-1');
+  assert.equal(retained.parentDeviceId, 'parent-1');
+  assert.equal(retained.deviceId, 'device-1');
+  assert.equal(retained.generatedAtUtc.toISOString(), LEDGER_NOW.toISOString());
+  assert.equal(retained.encryptedPayloadB64, 'AQID');
+  assert.equal(retained.nonceB64, 'BAUG');
+  assert.deepEqual(await ledger.record(original), { outcome: 'IDEMPOTENT_MATCH' });
+});
