@@ -62,6 +62,51 @@ test('MySQL: verifyChallenge with a valid signature succeeds and persists consum
   assert.ok(stored.consumedAt);
 });
 
+test('MySQL: exact DSK revocation immediately before challenge consumption rejects proof without consuming challenge', async () => {
+  const { device, dskPublicKey } = await registerDeviceWithDsk();
+  const [dsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  assert.equal(dsk.keyPurpose, 'DSK');
+  const issued = await buildAuthService().issueChallenge(device.deviceId);
+  const racingChallengeRepository = {
+    create: (...args) => challengeRepository.create(...args),
+    findById: (...args) => challengeRepository.findById(...args),
+    async consumeAtomically(challengeId, consumedAt, verifiedSigner) {
+      // Force the production key revocation to commit after signature
+      // verification/initial DSK lookup but before the repository's locked
+      // signer-key revalidation and challenge consume.
+      const revoked = await directoryService.revokeKey(device.familyId, device.deviceId, dsk.keyId);
+      assert.equal(revoked.status, 'REVOKED');
+      return challengeRepository.consumeAtomically(challengeId, consumedAt, verifiedSigner);
+    },
+  };
+  const verifier = { async verify(publicKey, message, signature) { return signature === sign(publicKey, message); } };
+  const authService = new DeviceAuthService(racingChallengeRepository, deviceRepository, verifier);
+
+  const error = await authService.verifyChallenge(issued.challengeId, sign(dskPublicKey, issued.nonce)).catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'INVALID_SIGNATURE');
+  const stored = await challengeRepository.findById(issued.challengeId);
+  assert.equal(stored.consumedAt, null, 'a stale signer must not consume the valid challenge');
+  const currentKeys = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  assert.equal(currentKeys.find((key) => key.keyId === dsk.keyId).status, 'REVOKED');
+});
+
+test('MySQL: challenge consume binds key id and public key exactly, not merely any active DSK on the device', async () => {
+  const { device } = await registerDeviceWithDsk();
+  const [dsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  const issued = await buildAuthService().issueChallenge(device.deviceId);
+
+  const result = await challengeRepository.consumeAtomically(issued.challengeId, new Date(), {
+    familyId: device.familyId,
+    deviceId: device.deviceId,
+    keyId: dsk.keyId,
+    publicKey: `${dsk.publicKey}-substituted`,
+  });
+  assert.equal(result.outcome, 'SIGNER_KEY_INACTIVE');
+  const stored = await challengeRepository.findById(issued.challengeId);
+  assert.equal(stored.consumedAt, null);
+});
+
 test('MySQL: second verification with the same replayed valid signature is ALREADY_CONSUMED after a real commit', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();

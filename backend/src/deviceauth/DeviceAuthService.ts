@@ -140,8 +140,14 @@ export class DeviceAuthService {
     const valid = await this.signatureVerifier.verify(dsk.publicKey, challenge.nonce, signature);
     if (!valid) throw new DeviceAuthError('INVALID_SIGNATURE');
 
-    const result: ConsumeChallengeResult = await this.challengeRepository.consumeAtomically(challengeId, this.now());
+    const result: ConsumeChallengeResult = await this.challengeRepository.consumeAtomically(challengeId, this.now(), {
+      familyId: device.familyId,
+      deviceId: device.deviceId,
+      keyId: dsk.keyId,
+      publicKey: dsk.publicKey,
+    });
     if (result.outcome !== 'CONSUMED') {
+      if (result.outcome === 'SIGNER_KEY_INACTIVE') throw new DeviceAuthError('INVALID_SIGNATURE');
       throw new DeviceAuthError(result.outcome === 'EXPIRED' ? 'EXPIRED' : 'ALREADY_CONSUMED');
     }
 

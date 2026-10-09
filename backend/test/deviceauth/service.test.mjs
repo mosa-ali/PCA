@@ -16,7 +16,13 @@ function key() {
 
 function buildHarness(overrides = {}) {
   const deviceRepository = overrides.deviceRepository ?? createInMemoryDeviceRepository();
-  const challengeRepository = overrides.challengeRepository ?? createInMemoryDeviceChallengeRepository();
+  const challengeRepository = overrides.challengeRepository ?? createInMemoryDeviceChallengeRepository({
+    async isSignerKeyActive({ familyId, deviceId, keyId, publicKey }) {
+      const keys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
+      return keys.some((candidate) => candidate.keyId === keyId && candidate.keyPurpose === 'DSK'
+        && candidate.publicKey === publicKey && candidate.status === 'ACTIVE');
+    },
+  });
   const signatureVerifier = overrides.signatureVerifier ?? createTestOnlyDeviceSignatureVerifier();
   let currentTime = overrides.startTime ?? BASE_TIME;
   const clock = {
@@ -70,6 +76,30 @@ test('verifyChallenge with a valid signature over the correct nonce succeeds and
   const identity = await authService.verifyChallenge(issued.challengeId, signature);
   assert.equal(identity.deviceId, device.deviceId);
   assert.equal(identity.familyId, device.familyId);
+});
+
+test('verifyChallenge does not consume or accept proof when the exact DSK is revoked after verification but before consume', async () => {
+  let revokeBeforeConsume = async () => {};
+  const signatureVerifier = {
+    async verify() {
+      await revokeBeforeConsume();
+      return true;
+    },
+  };
+  const { authService, directoryService, deviceRepository, challengeRepository } = buildHarness({ signatureVerifier });
+  const { device, dskPublicKey } = await registerDeviceWithDsk(directoryService);
+  const [dsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  assert.equal(dsk.keyPurpose, 'DSK');
+  const issued = await authService.issueChallenge(device.deviceId);
+  revokeBeforeConsume = () => directoryService.revokeKey(device.familyId, device.deviceId, dsk.keyId);
+
+  const error = await authService.verifyChallenge(issued.challengeId, signTestOnlyChallenge(dskPublicKey, issued.nonce)).catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'INVALID_SIGNATURE');
+  const currentKeys = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  assert.equal(currentKeys.find((key) => key.keyId === dsk.keyId).status, 'REVOKED');
+  const storedChallenge = await challengeRepository.findById(issued.challengeId);
+  assert.equal(storedChallenge.consumedAt, null, 'proof under a revoked key must leave the challenge unconsumed');
 });
 
 test('verifyChallenge rejects a persisted challenge whose family scope differs from the current device before verification or consumption', async () => {
