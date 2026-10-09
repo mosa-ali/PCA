@@ -28,6 +28,12 @@ const ledger = new MySqlProtectionAlertLedger(() => LEDGER_NOW);
 const attestationChainStore = new MySqlFamilyAuthorityAttestationChainStore();
 const resolver = new MySqlOwnerParentDeviceResolver(attestationChainStore);
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function engine() {
   return new FamilyOwnerAttestationChainEngine(
     new MySqlFamilyAuthorityGenesisStore(),
@@ -66,6 +72,49 @@ test('recording the identical event twice is IDEMPOTENT_MATCH, never a second ro
   assert.deepEqual(await ledger.record(event), { outcome: 'IDEMPOTENT_MATCH' });
   const [rows] = await getPool().query('SELECT COUNT(*) AS n FROM protection_alerts WHERE alert_id = ?', [event.alertId]);
   assert.equal(Number(rows[0].n), 1);
+});
+
+test('record snapshots the accepted event before asynchronous expiry cleanup', async () => {
+  const event = alertEvent();
+  const accepted = { ...event, generatedAtUtc: new Date(event.generatedAtUtc) };
+  const cleanupEntered = deferred();
+  const releaseCleanup = deferred();
+  const originalPurgeExpired = ledger.purgeExpired.bind(ledger);
+  ledger.purgeExpired = async (now) => {
+    cleanupEntered.resolve();
+    await releaseCleanup.promise;
+    return originalPurgeExpired(now);
+  };
+
+  try {
+    const pending = ledger.record(event);
+    await cleanupEntered.promise;
+
+    event.alertId = randomUUID();
+    event.familyId = `mutated-${randomUUID()}`;
+    event.deviceId = `mutated-${randomUUID()}`;
+    event.parentDeviceId = `mutated-${randomUUID()}`;
+    event.trigger = 'UNENROLLMENT';
+    event.keyEpoch = 7;
+    event.generatedAtUtc.setTime(event.generatedAtUtc.getTime() + 60_000);
+    event.encryptedPayloadB64 = 'CQkJ';
+    event.nonceB64 = 'CgoK';
+
+    releaseCleanup.resolve();
+    assert.deepEqual(await pending, { outcome: 'RECORDED' });
+
+    const fetched = await ledger.get(accepted.alertId);
+    assert.deepEqual(fetched, accepted, 'stored routing, metadata, date, and opaque bytes remain bound to accepted input');
+    assert.deepEqual(
+      await ledger.listForParentDevice(accepted.familyId, accepted.parentDeviceId),
+      [accepted],
+    );
+    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId), []);
+    assert.deepEqual(await ledger.record(accepted), { outcome: 'IDEMPOTENT_MATCH' });
+  } finally {
+    releaseCleanup.resolve();
+    ledger.purgeExpired = originalPurgeExpired;
+  }
 });
 
 test('recording a DIFFERENT event under an already-used alert_id is CONFLICT, never a silent overwrite', async () => {

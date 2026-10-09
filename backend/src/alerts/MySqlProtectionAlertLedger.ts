@@ -38,6 +38,10 @@ function toEvent(row: ProtectionAlertRow): ProtectionAlertEvent {
   };
 }
 
+function snapshotEvent(event: ProtectionAlertEvent): ProtectionAlertEvent {
+  return { ...event, generatedAtUtc: new Date(event.generatedAtUtc.getTime()) };
+}
+
 function sameEvent(a: ProtectionAlertEvent, b: ProtectionAlertEvent): boolean {
   return (
     a.familyId === b.familyId &&
@@ -69,7 +73,11 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
   }
 
   async record(event: ProtectionAlertEvent): Promise<RecordProtectionAlertResult> {
-    if (!isFamilyEpochNumber(event.keyEpoch)) {
+    // Snapshot before the first asynchronous boundary. A caller may reuse its
+    // event object while expiry housekeeping is in flight; the row and any
+    // duplicate comparison must stay bound to the event accepted here.
+    const captured = snapshotEvent(event);
+    if (!isFamilyEpochNumber(captured.keyEpoch)) {
       throw new Error('Protection alert key epoch is outside the supported family epoch range.');
     }
     // Best-effort housekeeping on the write path, exactly as RelayService
@@ -85,26 +93,26 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
              (alert_id, family_id, device_id, parent_device_id, trigger_type, key_epoch, generated_at_utc, encrypted_payload_b64, nonce_b64, expires_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            event.alertId,
-            event.familyId,
-            event.deviceId,
-            event.parentDeviceId,
-            event.trigger,
-            event.keyEpoch,
-            event.generatedAtUtc,
-            event.encryptedPayloadB64,
-            event.nonceB64,
+            captured.alertId,
+            captured.familyId,
+            captured.deviceId,
+            captured.parentDeviceId,
+            captured.trigger,
+            captured.keyEpoch,
+            captured.generatedAtUtc,
+            captured.encryptedPayloadB64,
+            captured.nonceB64,
             // Server policy, never a caller-supplied field: an alert is
             // retained only as long as it may still need collecting.
-            computeServerCiphertextExpiry(event.generatedAtUtc),
+            computeServerCiphertextExpiry(captured.generatedAtUtc),
           ],
         ),
       );
       return { outcome: 'RECORDED' };
     } catch (error) {
       if (!isDuplicateEntry(error)) throw error;
-      const existing = await this.get(event.alertId);
-      return existing !== null && sameEvent(existing, event) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
+      const existing = await this.get(captured.alertId);
+      return existing !== null && sameEvent(existing, captured) ? { outcome: 'IDEMPOTENT_MATCH' } : { outcome: 'CONFLICT' };
     }
   }
 
