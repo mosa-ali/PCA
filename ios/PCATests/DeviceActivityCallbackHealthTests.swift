@@ -297,6 +297,8 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             protectedApplicationTokenData: nil, now: installedAt.addingTimeInterval(60))) {
             XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .persistenceFailed)
         }
+        XCTAssertEqual(store.activeManifestVerificationFailureCount, 1,
+            "the injected failure must hit the replacement manifest readback")
 
         XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), priorData)
         XCTAssertEqual(store.read(forKey: "activeActivityId"), priorActive)
@@ -651,6 +653,8 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)) {
             XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .persistenceFailed)
         }
+        XCTAssertEqual(store.activeManifestVerificationFailureCount, 1,
+            "the injected failure must hit the first-install manifest readback")
         let manifest = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!))
         XCTAssertEqual(manifest.state, .invalidated)
         XCTAssertNil(store.read(forKey: "activeActivityId"),
@@ -686,7 +690,8 @@ private final class CallbackRuntimeBlobStore: OpaqueBlobStore {
     private var values: [String: Data] = [:]
     var ignoreRemovals = false
     var failNextActiveManifestVerification = false
-    private var activeManifestWritten = false
+    private var activeManifestVerificationFailurePending = false
+    private(set) var activeManifestVerificationFailureCount = 0
     var failActiveWrite = false
     var failNextActiveMirrorWrite = false
     var failKey: String?
@@ -702,13 +707,16 @@ private final class CallbackRuntimeBlobStore: OpaqueBlobStore {
         values[key] = data
         if key == deviceActivityMonitorInstallationStorageKey &&
             DeviceActivityMonitorInstallation.decodeValidated(data)?.state == .active {
-            activeManifestWritten = true
+            if failNextActiveManifestVerification {
+                failNextActiveManifestVerification = false
+                activeManifestVerificationFailurePending = true
+            }
         }
     }
     func read(forKey key: String) -> Data? {
-        if key == deviceActivityMonitorInstallationStorageKey && activeManifestWritten &&
-            failNextActiveManifestVerification {
-            failNextActiveManifestVerification = false
+        if key == deviceActivityMonitorInstallationStorageKey && activeManifestVerificationFailurePending {
+            activeManifestVerificationFailurePending = false
+            activeManifestVerificationFailureCount += 1
             return Data("verification mismatch".utf8)
         }
         return values[key]
