@@ -101,6 +101,44 @@ test('MySQL accepted membership controls head reads and revocation denies catch-
   assert.equal((await f.store.readLatestEpoch(f.familyId)).trustSetEpoch, 2);
 });
 
+test('MySQL indexed history denies a child revoked while its historical epoch read is in flight', async () => {
+  const f = await fixture();
+  const childScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId };
+  const readAcceptedEpoch = f.acceptance.readAcceptedEpoch.bind(f.acceptance);
+  let signalLookupStarted;
+  let releaseLookup;
+  const lookupStarted = new Promise(resolve => { signalLookupStarted = resolve; });
+  const lookupGate = new Promise(resolve => { releaseLookup = resolve; });
+  let held = false;
+  f.acceptance.readAcceptedEpoch = async (familyId, trustSetEpoch) => {
+    if (familyId === f.familyId && trustSetEpoch === 1 && !held) {
+      held = true;
+      signalLookupStarted();
+      await lookupGate;
+    }
+    return readAcceptedEpoch(familyId, trustSetEpoch);
+  };
+
+  const historicalRead = f.service.epoch(childScope, 1);
+  await lookupStarted;
+  try {
+    const revokedChildEpoch = f.request(2, {
+      entries: [f.owner.entry, { ...f.child.entry, status: 'REVOKED' }],
+    });
+    const accepted = await f.service.submit(f.scope, revokedChildEpoch);
+    assert.equal(accepted.acceptedHead.trustSetEpoch, 2);
+    assert.equal((await f.store.readEpoch(f.familyId, 2)).trustSetEpoch, 2);
+  } finally {
+    releaseLookup();
+  }
+
+  await assert.rejects(
+    historicalRead,
+    error => error.code === 'DEVICE_NOT_ACTIVE',
+    'the historical signed bytes must not be returned after the second membership check sees revocation',
+  );
+});
+
 test('MySQL competing same-number signed submissions have one winner, exact retry idempotency and immutable loser conflict', async () => {
   const f = await fixture(); const first = f.request(2);
   const second = f.request(2, { issuedAt: new Date('2026-10-09T00:00:01.000Z') });
