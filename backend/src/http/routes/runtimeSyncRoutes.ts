@@ -289,7 +289,13 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           new Date(),
           { sessionIncarnation: request.runtimeSyncSessionIncarnation as string, cursor: query.cursor as string | undefined },
         );
-        deps.statusTracker.markSyncSuccess(deviceId, new Date());
+        // A bounded page is not a completed sync while more queue work is
+        // pending, and rejected/unresolved records do not count as
+        // convergence. The client may continue with nextCursor; only its
+        // fully resolved final page can advance the successful-sync time.
+        if (!outcome.hasMore && !outcome.hasUnresolved) {
+          deps.statusTracker.markSyncSuccess(deviceId, new Date());
+        }
         return reply.send({
           scope: { familyId: request.runtimeSyncFamilyId, recipientDeviceId: deviceId },
           applied: outcome.applied.map(envelopeToRawFamilyEnvelope),

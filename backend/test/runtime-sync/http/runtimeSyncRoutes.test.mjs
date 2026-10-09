@@ -317,13 +317,97 @@ test('HTTP continuation crosses empty malformed pages and retains every queued r
     assert.equal(page.hasUnresolved, true);
     assert.match(page.sessionIncarnation, /^[0-9a-f]{64}$/);
     assert.notEqual(page.sessionIncarnation, token);
+    const statusAfterFirstPage = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers });
+    assert.equal(statusAfterFirstPage.json().connectionState, 'STALE');
     const tail = await app.inject({ method: 'GET', url: `/v1/runtime-sync/inbound?cursor=${page.nextCursor}`, headers });
     assert.equal(tail.statusCode, 200);
     assert.equal(tail.json().unparseableMessageIds.length, 5);
     assert.equal(tail.json().hasMore, false);
     assert.equal(tail.json().nextCursor, null);
     assert.equal(tail.json().hasUnresolved, true);
+    const statusAfterUnresolvedTail = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers });
+    assert.equal(statusAfterUnresolvedTail.json().connectionState, 'STALE');
     assert.equal((await relayService.listQueuedForRecipient(deviceId)).length, 105);
+  } finally { await app.close(); }
+});
+
+test('inbound marks sync successful only after a fully resolved final page', async () => {
+  const envelopePublicKey = 'wire-test-public-key';
+  const { app, deviceRepository, relayService } = buildApp({ envelopePublicKey });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: recipientDeviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: senderDeviceId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, recipientDeviceId, publicKey);
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + 60_000);
+
+    for (let i = 0; i < 101; i += 1) {
+      const unsigned = {
+        protocolMajor: 1, protocolMinor: 0, messageId: randomUUID(), familyId, senderDeviceId,
+        recipient: { kind: 'DEVICE', recipientDeviceId }, senderKeyId: 'wire-test-key',
+        messageType: 'STATUS_SNAPSHOT', trustSetEpoch: 1, keyEpoch: 1, sequenceOrNonce: randomUUID(),
+        issuedAt, expiresAt, semanticVersion: '1.0.0', correlationId: null, payload: Buffer.from('opaque-ciphertext'),
+      };
+      const envelope = { ...unsigned, signature: signTestOnlyEnvelope(envelopePublicKey, canonicalizeEnvelope(unsigned)) };
+      await relayService.queueEnvelope({
+        messageId: envelope.messageId, familyId, senderDeviceId, recipientDeviceId,
+        ciphertext: envelopeToRelayCiphertext(envelope),
+      });
+    }
+
+    const headers = { authorization: `Bearer ${token}` };
+    const first = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers });
+    assert.equal(first.statusCode, 200);
+    assert.equal(first.json().applied.length, 100);
+    assert.equal(first.json().hasMore, true);
+    assert.equal(first.json().hasUnresolved, false);
+    const statusAfterIncompletePage = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers });
+    assert.equal(statusAfterIncompletePage.json().connectionState, 'STALE');
+
+    const final = await app.inject({
+      method: 'GET', url: `/v1/runtime-sync/inbound?cursor=${first.json().nextCursor}`, headers,
+    });
+    assert.equal(final.statusCode, 200);
+    assert.equal(final.json().applied.length, 1);
+    assert.equal(final.json().hasMore, false);
+    assert.equal(final.json().hasUnresolved, false);
+    const statusAfterResolvedFinalPage = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers });
+    assert.equal(statusAfterResolvedFinalPage.json().connectionState, 'LIVE');
+  } finally { await app.close(); }
+});
+
+test('rejected inbound envelopes do not advance successful-sync status', async () => {
+  const envelopePublicKey = 'wire-test-public-key';
+  const { app, deviceRepository, relayService } = buildApp({ envelopePublicKey });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: recipientDeviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: senderDeviceId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, recipientDeviceId, publicKey);
+    const issuedAt = new Date();
+    const unsigned = {
+      protocolMajor: 1, protocolMinor: 0, messageId: randomUUID(), familyId, senderDeviceId,
+      recipient: { kind: 'DEVICE', recipientDeviceId }, senderKeyId: 'wire-test-key',
+      messageType: 'STATUS_SNAPSHOT', trustSetEpoch: 1, keyEpoch: 1, sequenceOrNonce: randomUUID(),
+      issuedAt, expiresAt: new Date(issuedAt.getTime() + 60_000),
+      semanticVersion: '1.0.0', correlationId: null, payload: Buffer.from('opaque-ciphertext'),
+    };
+    const envelope = { ...unsigned, signature: signTestOnlyEnvelope('different-public-key', canonicalizeEnvelope(unsigned)) };
+    await relayService.queueEnvelope({
+      messageId: envelope.messageId, familyId, senderDeviceId, recipientDeviceId,
+      ciphertext: envelopeToRelayCiphertext(envelope),
+    });
+
+    const headers = { authorization: `Bearer ${token}` };
+    const inbound = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers });
+    assert.equal(inbound.statusCode, 200);
+    assert.equal(inbound.json().hasUnresolved, true);
+    assert.equal(inbound.json().receipts.length, 1);
+    assert.equal(inbound.json().receipts[0].outcome, 'REJECTED');
+    assert.equal(inbound.json().receipts[0].reason, 'INVALID_SIGNATURE');
+    const status = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers });
+    assert.equal(status.json().connectionState, 'STALE');
   } finally { await app.close(); }
 });
 
