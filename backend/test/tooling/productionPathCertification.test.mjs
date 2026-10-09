@@ -88,13 +88,16 @@ const WORKFLOW_DIR = fileURLToPath(new URL('../../../.github/workflows', import.
  *
  * `status: 'GAP'` requires a `category` from the fixed set below and a `note`.
  * A gap is NOT a claim that the store is broken; it is a statement that it has
- * not been verified to this standard, with the reason. The four categories:
+ * not been verified to this standard, with the reason. The categories:
  *   NO_PRODUCTION_WRITER   -- nothing in src/ writes it (a feature that does
  *                             not work, not merely an untested one)
  *   SYNTHETIC_ONLY         -- the only tests construct the store directly
  *   NOT_EXECUTED_IN_CI     -- real-writer coverage exists but no workflow runs it
  *   CRYPTO_GATED           -- the writer is unreachable by design pending
  *                             PCA-DEC-020 (the composer/verifier rejects first)
+ *   VERIFIED_DEVICE_SESSION_GATED -- composition exists, but a verified
+ *                             active-device session has not reached the
+ *                             production route in evidence
  */
 const REGISTER = new Map([
   [
@@ -299,7 +302,10 @@ const REGISTER = new Map([
   ['MySqlFamilyAuthorityAttestationChainStore', { status: 'GAP', category: 'NO_PRODUCTION_WRITER', note: 'RE-CATEGORISED from CRYPTO_GATED under PCA-DEC-037. VERIFIED IN SOURCE: main.ts still constructs this store, but ONLY to hand it to MySqlOwnerParentDeviceResolver (protection-alert Owner-device lookup, a READER: findHead/findAttestationById). Its only writer, FamilyOwnerAttestationChainEngine.appendIfCurrentRevision, is no longer composed in main.ts (the Genesis ceremony and the device-signature commercial owner gate were removed; commercial mutations are gated by ADMINISTRATOR + fresh TOTP step-up instead). So nothing in production appends to the chain and the reader resolves zero recipients for every family. The DB suites that append through it use a TEST-ONLY verifier; do NOT certify it with one, and do NOT add a test-only bypass to move the number.' }],
   ['MySqlDeviceChallengeRepository', { status: 'GAP', category: 'CRYPTO_GATED', note: 'the production device-signature verifier rejects unconditionally pending PCA-DEC-020.' }],
   ['MySqlEnvelopeAcceptanceTransaction', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RejectingEnvelopeSignatureVerifier + rejecting context resolver make no production write reachable.' }],
-  ['MySqlTrustSetEpochStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'WAVE 5B: newly constructed in main.ts by the store-backed trust-set role resolver. Reads are production-reachable but always answer NO_TRUST_SET while the durable state is empty, and no write can occur: appendAcceptedEpoch is called only by TrustSetEpochAcceptanceService, which has no production caller, and the P-256 TrustSet verifier is deliberately not production-activated pending the PCA-DEC-020 human crypto review. The REAL writer/reader pair IS exercised end-to-end against real MySQL in CI (test/db/familyTrustSetEpochAcceptance.mysql.test.mjs, with the persistence + migration-safety siblings), and the activation atomic set is pinned by test/tooling/ftsProductionWiring.test.mjs. Promotion follows the owner-authorized ingestion-wiring wave.' }],
+  ['MySqlTrustSetEpochStore', { status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED', note: 'Current main.ts composes this shared store with StoreBackedTrustSetRoleResolver, the production P-256 verifier, TrustSetEpochAcceptanceService, OrdinaryTrustSetService, and the verified-session route. The production service writer is now present; however, no verified ACTIVE-device session has been demonstrated through that route. Real MySQL acceptance tests use controlled device/session fixtures, so composition and DB tests alone do not certify the end-to-end production gate.' }],
+  ['MySqlKeyEpochStore', { status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED', note: 'Current main.ts injects this read-only accepted-head projection into TrustSetEpochAcceptanceService and OrdinaryTrustSetService. MySQL service tests exercise it against committed epoch rows, but no verified ACTIVE-device session has been demonstrated through the production route; the end-to-end production gate remains unproven, so this is not certified from composition alone.' }],
+  ['MySqlEpochFloorStore', { status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED', note: 'Current main.ts injects this read-only monotonic-floor projection into TrustSetEpochAcceptanceService and OrdinaryTrustSetService. MySQL service tests exercise acceptance and rollback against the real store, but no verified ACTIVE-device session has been demonstrated through the production route; the end-to-end production gate remains unproven, so this is not certified from composition alone.' }],
+  ['MySqlFamilyAuthorityGenesisStore', { status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED', note: 'Current main.ts constructs this store through GenesisAnchorStoreSource for TrustSetEpochAcceptanceService. Production bootstrap writes the anchor through MySqlFirstDeviceBootstrapStore, not this store. MySQL tests exercise the anchor store through a separate service, but no verified ACTIVE-device session has been demonstrated through the production acceptance route; do not infer end-to-end certification from construction.' }],
   ['MySqlFirstDeviceBootstrapStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'WAVE 6B/6C: newly constructed in main.ts for the first-device trust-root bootstrap ceremony (owner rulings D4/F4). Production composition now terminates the ceremony at the real platform attestation router (Wave 6C): an Android submission can reach the commit ONLY when an operator has configured pinned attestation roots (PCA_ANDROID_ATTESTATION_ROOTS_PEM) AND genuine hardware-backed Android evidence verifies the exact ceremony DSK; with absent/malformed configuration -- and for every non-Android platform -- the lane answers UNAVAILABLE and no write is reachable. No real-device production attestation has been proven (REAL_DEVICE_ATTESTATION_GATE remains OPEN), so this store stays GAP/CRYPTO_GATED pending the owner-authorized real-device evidence wave. The REAL commit path IS exercised end-to-end against real MySQL in CI (test/db/firstDeviceBootstrapCeremony.mysql.test.mjs, with the migration-safety sibling), the real Android verifier is unit-certified (test/familytrustset/androidKeyAttestationVerifier.test.mjs + platformAttestationVerifier.test.mjs), and the fail-closed wiring pins live in test/tooling/ftsProductionWiring.test.mjs.' }],
   ['MySqlMessageIdempotencyLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through envelope acceptance, which the rejecting verifier blocks.' }],
   ['MySqlReplayLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'same: no production envelope is accepted, so nothing is recorded.' }],
@@ -376,22 +382,25 @@ const REGISTER = new Map([
 // the store, not certification of it; the stale-row gate above is what forced
 // the rows out, and this baseline simply tracks the register.
 // 20 -> 21 in Wave 5B: MySqlTrustSetEpochStore is a NEW production-constructed
-// store (store-backed role-resolver activation) whose write path is deliberately
-// unreachable -- the honest CRYPTO_GATED row above. This is a new tracked gated
-// surface, not a regression of an existing certification; recorded here so the
-// ratchet stays an exact record of the register.
+// store (store-backed role-resolver activation). The acceptance service is now
+// wired; the verified ACTIVE-device-session route remains unproven.
 // 21 -> 22 in Wave 6B: MySqlFirstDeviceBootstrapStore is a NEW
 // production-constructed store (first-device trust-root bootstrap ceremony)
 // whose write path is fail-closed at the attestation boundary -- the honest
 // CRYPTO_GATED row above, pinned by ftsProductionWiring.test.mjs. Same rule:
 // a new tracked gated surface, not a regression, recorded for the ratchet.
-const BASELINE_GAP_COUNT = 22;
+// 22 -> 25: main.ts now additionally constructs MySqlKeyEpochStore,
+// MySqlEpochFloorStore, and MySqlFamilyAuthorityGenesisStore for ordinary
+// Trust Set acceptance. Each remains GAP until the verified device-session
+// production route is demonstrated end-to-end.
+const BASELINE_GAP_COUNT = 25;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
   'SYNTHETIC_ONLY',
   'NOT_EXECUTED_IN_CI',
   'CRYPTO_GATED',
+  'VERIFIED_DEVICE_SESSION_GATED',
   // Added when the empirical gate first ran over an expanded certified scope.
   // The four original categories all describe MISSING COVERAGE (no writer, only
   // doubles, never executed, honestly crypto-gated). This one describes a
@@ -591,6 +600,10 @@ test('GATE SELF-TEST: every check in this file is demonstrated to FAIL on the de
 
   // Gates 8/11: a bad category, and a note that states nothing.
   assert.ok(gapRowProblems('MySqlSynthetic', { status: 'GAP', category: 'MADE_UP', note: 'a note long enough to pass the length floor' }, GAP_CATEGORIES).some((p) => p.includes('MADE_UP')), 'the category check must catch an unknown category');
+  assert.deepEqual(gapRowProblems('MySqlSessionGated', {
+    status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED',
+    note: 'no verified ACTIVE-device session was demonstrated through the production route',
+  }, GAP_CATEGORIES), [], 'the verified device-session gate must be available as an explicit gap category');
   assert.ok(gapRowProblems('MySqlSynthetic', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'too short' }, GAP_CATEGORIES).some((p) => p.includes('no real note')), 'the note check must catch an unexplained gap');
 
   // Gate 12: an unregistered store, a stale row, and the ratchet.

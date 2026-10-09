@@ -82,7 +82,8 @@ export function createInMemoryDeviceRepository() {
     async revokeDeviceAndKeysAtomically(familyId, deviceId, revokedAt) {
       const device = findOwnedDevice(familyId, deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
-      if (device.status !== 'REVOKED') {
+      const transitioned = device.status !== 'REVOKED';
+      if (transitioned) {
         device.status = 'REVOKED';
         device.revokedAt = revokedAt;
       }
@@ -100,6 +101,7 @@ export function createInMemoryDeviceRepository() {
         outcome: 'REVOKED',
         device: { ...device },
         keys: [...ids].map((id) => ({ ...keysById.get(id) })),
+        transitioned,
       };
     },
 

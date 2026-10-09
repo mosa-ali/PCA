@@ -117,16 +117,26 @@ test('pairing confirmation appends a DEVICE_LIFECYCLE_TRANSITION SUCCESS record'
   assert.equal(pairEvent.targetScope.id, device.deviceId);
 });
 
-test('device revocation appends a DEVICE_LIFECYCLE_TRANSITION SUCCESS record', async () => {
+test('device revocation appends a DEVICE_LIFECYCLE_TRANSITION SUCCESS record exactly once', async () => {
   const { repo, service } = freshAudit();
   const deviceRepository = createInMemoryDeviceRepository();
   const now = () => new Date('2026-01-01T00:00:00.000Z');
+  const transitionResults = [];
+  const revokeDeviceAndKeysAtomically = deviceRepository.revokeDeviceAndKeysAtomically.bind(deviceRepository);
+  deviceRepository.revokeDeviceAndKeysAtomically = async (...args) => {
+    const result = await revokeDeviceAndKeysAtomically(...args);
+    transitionResults.push(result.transitioned);
+    return result;
+  };
   const deviceService = new DeviceDirectoryService(deviceRepository, now, service);
   const { device } = await deviceService.registerDevice({ familyId: 'fam-audit-5', platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await deviceService.revokeDevice('fam-audit-5', device.deviceId);
+  await deviceService.revokeDevice('fam-audit-5', device.deviceId);
+  assert.deepEqual(transitionResults, [true, false]);
   const events = await repo.listForFamily('fam-audit-5');
-  const revokeEvent = events.find((e) => e.freeTextNote === 'DEVICE_REVOKED');
-  assert.ok(revokeEvent);
+  const revokeEvents = events.filter((e) => e.freeTextNote === 'DEVICE_REVOKED');
+  assert.equal(revokeEvents.length, 1);
+  const revokeEvent = revokeEvents[0];
   assert.equal(revokeEvent.actionType, 'DEVICE_LIFECYCLE_TRANSITION');
   assert.equal(revokeEvent.resultStatus, 'SUCCESS');
 });
