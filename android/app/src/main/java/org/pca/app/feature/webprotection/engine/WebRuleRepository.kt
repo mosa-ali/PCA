@@ -9,6 +9,8 @@ import org.pca.app.feature.webprotection.policy.WebRuleListType
 import org.pca.app.feature.webprotection.policy.WebRuleSource
 import org.pca.app.feature.webprotection.policy.canonicalizeDomain
 import org.pca.app.foundation.PersistentStateStore
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * On-device persistence port for parent-authored allow/deny entries and the
@@ -110,40 +112,63 @@ class PersistentWebRuleRepository(
     private val key: String = KEY,
 ) : WebRuleRepository {
     private val delegate = InMemoryWebRuleRepository()
+    private val coordinationLock = store.coordinationLock
+    private val pendingWriteKey = key + "_pending_write"
+    private var stateValue: WebRulePolicyState = WebRulePolicyState.NO_POLICY_YET
+    private var parentRulesRevisionValue: Long? = null
+    private var securityFeedVersionValue: String? = null
 
     /** doc 21's tri-state for the whole store (both scopes combined) -- [WebRulePolicyState.CORRUPT_USING_LKG] whenever EITHER scope's stored envelope could not be decoded, since the two scopes share one physical [store] entry. */
-    var state: WebRulePolicyState = WebRulePolicyState.NO_POLICY_YET
-        private set
+    val state: WebRulePolicyState
+        get() = synchronized(coordinationLock) {
+            load()
+            stateValue
+        }
 
     /** Null until at least one family-authored delivery has ever been accepted -- distinct from revision `0`, which would be a legitimate first accepted revision. */
-    var parentRulesRevision: Long? = null
-        private set
+    val parentRulesRevision: Long?
+        get() = synchronized(coordinationLock) { load(); parentRulesRevisionValue }
 
     /** Null until at least one signed security-feed package has ever been accepted. */
-    var securityFeedVersion: String? = null
-        private set
+    val securityFeedVersion: String?
+        get() = synchronized(coordinationLock) { load(); securityFeedVersionValue }
 
     init {
-        load()
+        synchronized(coordinationLock) { load() }
     }
 
     /** Ad-hoc single-rule write (used by direct callers/tests, e.g. an approved [org.pca.app.feature.webprotection.safebrowser.ParentUnblockRequestService] request writing back one allow rule) -- does not participate in the whole-scope revision/LKG gate below, and always marks the store [WebRulePolicyState.VALID] since it is, by construction, never a corrupt/unparsed payload. */
     override fun put(rule: WebRule) {
-        delegate.put(rule)
-        state = WebRulePolicyState.VALID
-        persist()
+        require(validStoredRule(rule)) { "Invalid web rule semantics" }
+        synchronized(coordinationLock) {
+            refreshBeforeMutation()
+            val rules = delegate.snapshot().filterNot {
+                it.familyId == rule.familyId && it.domain == rule.domain && it.listType == rule.listType
+            } + rule
+            commit(rules, parentRulesRevisionValue, securityFeedVersionValue)
+        }
     }
 
     override fun remove(familyId: OpaqueFamilyId?, domain: CanonicalDomain, listType: WebRuleListType) {
-        delegate.remove(familyId, domain, listType)
-        state = WebRulePolicyState.VALID
-        persist()
+        synchronized(coordinationLock) {
+            refreshBeforeMutation()
+            val rules = delegate.snapshot().filterNot {
+                it.familyId == familyId && it.domain == domain && it.listType == listType
+            }
+            commit(rules, parentRulesRevisionValue, securityFeedVersionValue)
+        }
     }
 
     override fun findMatching(familyId: OpaqueFamilyId, domain: CanonicalDomain): List<WebRule> =
-        delegate.findMatching(familyId, domain)
+        synchronized(coordinationLock) {
+            load()
+            delegate.findMatching(familyId, domain)
+        }
 
-    fun snapshot(): List<WebRule> = delegate.snapshot()
+    fun snapshot(): List<WebRule> = synchronized(coordinationLock) {
+        load()
+        delegate.snapshot()
+    }
 
     /**
      * doc 21/24: whole-scope replace of this device's own family-authored
@@ -157,7 +182,10 @@ class PersistentWebRuleRepository(
      * distinguished by the return type, never conflated.
      */
     fun replaceParentRules(familyId: OpaqueFamilyId, newRules: List<WebRule>, revision: Long): WebRuleReplaceResult {
-        for (rule in newRules) {
+        require(revision >= 0) { "Parent rule revision must be nonnegative" }
+        if (familyId.isBlank()) return WebRuleReplaceResult.RejectedSourceMismatch
+        val candidateRules = newRules.toList()
+        for (rule in candidateRules) {
             if (rule.familyId != familyId) return WebRuleReplaceResult.RejectedSourceMismatch
             if (rule.source != WebRuleSource.PARENT_ALLOWLIST && rule.source != WebRuleSource.PARENT_DENYLIST) {
                 return WebRuleReplaceResult.RejectedSourceMismatch
@@ -169,17 +197,17 @@ class PersistentWebRuleRepository(
             }
             if (canonicalizeDomain(rule.domain) != rule.domain) return WebRuleReplaceResult.RejectedInvalidDomain
         }
-        val currentRevision = parentRulesRevision
-        if (currentRevision != null && revision <= currentRevision) {
-            return WebRuleReplaceResult.RejectedStaleRevision(currentRevision.toString())
-        }
+        return synchronized(coordinationLock) {
+            refreshBeforeMutation()
+            val currentRevision = parentRulesRevisionValue
+            if (currentRevision != null && revision <= currentRevision) {
+                return@synchronized WebRuleReplaceResult.RejectedStaleRevision(currentRevision.toString())
+            }
 
-        val otherScopeRules = delegate.snapshot().filterNot { it.familyId == familyId }
-        delegate.replaceAll(otherScopeRules + newRules)
-        parentRulesRevision = revision
-        state = WebRulePolicyState.VALID
-        persist()
-        return WebRuleReplaceResult.Applied(newRules.size)
+            val otherScopeRules = delegate.snapshot().filterNot { it.familyId == familyId }
+            commit(otherScopeRules + candidateRules, revision, securityFeedVersionValue)
+            WebRuleReplaceResult.Applied(candidateRules.size)
+        }
     }
 
     /**
@@ -192,27 +220,99 @@ class PersistentWebRuleRepository(
      * the first-ever accepted package.
      */
     fun replaceSecurityFeedRules(newRules: List<WebRule>, packageVersion: String): WebRuleReplaceResult {
-        for (rule in newRules) {
+        require(packageVersion.isNotEmpty() && packageVersion.length <= 32) {
+            "Security feed version must be nonempty and at most 32 characters"
+        }
+        val candidateRules = newRules.toList()
+        for (rule in candidateRules) {
             if (rule.familyId != null) return WebRuleReplaceResult.RejectedSourceMismatch
-            if (rule.source != WebRuleSource.SECURITY_DENYLIST) return WebRuleReplaceResult.RejectedSourceMismatch
+            if (rule.source != WebRuleSource.SECURITY_DENYLIST || rule.listType != WebRuleListType.DENY) return WebRuleReplaceResult.RejectedSourceMismatch
             if (canonicalizeDomain(rule.domain) != rule.domain) return WebRuleReplaceResult.RejectedInvalidDomain
         }
-        val currentVersion = securityFeedVersion
-        if (currentVersion != null && comparePackageVersions(packageVersion, currentVersion) <= 0) {
-            return WebRuleReplaceResult.RejectedStaleRevision(currentVersion)
-        }
+        return synchronized(coordinationLock) {
+            refreshBeforeMutation()
+            val currentVersion = securityFeedVersionValue
+            if (currentVersion != null && comparePackageVersions(packageVersion, currentVersion) <= 0) {
+                return@synchronized WebRuleReplaceResult.RejectedStaleRevision(currentVersion)
+            }
 
-        val otherScopeRules = delegate.snapshot().filterNot { it.familyId == null }
-        delegate.replaceAll(otherScopeRules + newRules)
-        securityFeedVersion = packageVersion
-        state = WebRulePolicyState.VALID
-        persist()
-        return WebRuleReplaceResult.Applied(newRules.size)
+            val otherScopeRules = delegate.snapshot().filterNot { it.familyId == null }
+            commit(otherScopeRules + candidateRules, parentRulesRevisionValue, packageVersion)
+            WebRuleReplaceResult.Applied(candidateRules.size)
+        }
     }
 
-    private fun persist() {
+    /**
+     * Persist a complete candidate snapshot before exposing it to readers.
+     * [PersistentStateStore.putString] may be asynchronous, so flush and
+     * readback are part of the commit boundary. Candidate-write failure restores
+     * the prior bytes before marker removal. Once candidate durability is confirmed,
+     * marker-removal failure keeps those verified bytes and poisons this process;
+     * rollback is unsafe after the marker may already have been removed durably.
+     */
+    private fun commit(
+        rules: List<WebRule>,
+        parentRulesRevision: Long?,
+        securityFeedVersion: String?,
+    ) {
+        check(!isPersistenceUncertain()) { "Web rule storage durability is uncertain" }
+        val previous = store.getString(key)
+        val encoded = serialize(rules, parentRulesRevision, securityFeedVersion)
+        // The marker must be durable before candidate bytes can reach storage.
+        // Any process restart with the marker present refuses reads and writes.
+        try {
+            store.putString(pendingWriteKey, "pending")
+            store.flush()
+            check(store.getString(pendingWriteKey) == "pending") { "Web rule marker readback failed" }
+        } catch (failure: Exception) {
+            // No candidate write has occurred. A confirmed marker removal is safe.
+            try { clearPendingWriteMarker() } catch (cleanupFailure: Exception) {
+                markPersistenceUncertain()
+                stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+                failure.addSuppressed(cleanupFailure)
+            }
+            throw failure
+        }
+        try {
+            store.putString(key, encoded)
+            store.flush()
+            check(store.getString(key) == encoded) { "Web rule snapshot readback failed" }
+        } catch (failure: Exception) {
+            try {
+                restore(previous)
+                clearPendingWriteMarker()
+            } catch (rollbackFailure: Exception) {
+                // Never clear the marker after an unconfirmed rollback.
+                markPersistenceUncertain()
+                stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+                failure.addSuppressed(rollbackFailure)
+            }
+            throw failure
+        }
+        try {
+            clearPendingWriteMarker()
+        } catch (failure: Exception) {
+            // Candidate bytes are already durably verified. Do not roll them back
+            // after marker removal may have reached disk: that could create an
+            // unmarked uncertain snapshot. This process retains its prior LKG.
+            markPersistenceUncertain()
+            stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+            throw failure
+        }
+
+        delegate.replaceAll(rules)
+        parentRulesRevisionValue = parentRulesRevision
+        securityFeedVersionValue = securityFeedVersion
+        stateValue = WebRulePolicyState.VALID
+    }
+
+    private fun serialize(
+        rules: List<WebRule>,
+        parentRulesRevision: Long?,
+        securityFeedVersion: String?,
+    ): String {
         val array = JSONArray()
-        for (rule in delegate.snapshot()) {
+        for (rule in rules) {
             array.put(
                 JSONObject().apply {
                     put("domain", rule.domain)
@@ -228,7 +328,28 @@ class PersistentWebRuleRepository(
             put("parentRulesRevision", parentRulesRevision)
             put("securityFeedVersion", securityFeedVersion)
         }
-        store.putString(key, envelope.toString())
+        return envelope.toString()
+    }
+
+    private fun clearPendingWriteMarker() {
+        store.remove(pendingWriteKey)
+        store.flush()
+        check(store.getString(pendingWriteKey) == null) { "Web rule marker removal readback failed" }
+    }
+
+    private fun restore(raw: String?) {
+        if (raw == null) store.remove(key) else store.putString(key, raw)
+        store.flush()
+        check(store.getString(key) == raw) { "Web rule rollback readback failed" }
+    }
+
+    /** Refresh under the shared store lock so two repository wrappers cannot overwrite each other's stale snapshots. */
+    private fun refreshBeforeMutation() {
+        check(!isPersistenceUncertain()) { "Web rule storage durability is uncertain" }
+        load()
+        check(stateValue != WebRulePolicyState.CORRUPT_USING_LKG) {
+            "Web rule storage is corrupt; refusing mutation"
+        }
     }
 
     /**
@@ -241,9 +362,25 @@ class PersistentWebRuleRepository(
      * separate, unambiguous [WebRulePolicyState.NO_POLICY_YET] case.
      */
     private fun load() {
-        val raw = store.getString(key)
+        if (isPersistenceUncertain()) {
+            stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+            return
+        }
+        val raw = try {
+            if (store.getString(pendingWriteKey) != null) {
+                stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+                return
+            }
+            store.getString(key)
+        } catch (_: Exception) {
+            stateValue = WebRulePolicyState.CORRUPT_USING_LKG
+            return
+        }
         if (raw == null) {
-            state = WebRulePolicyState.NO_POLICY_YET
+            delegate.replaceAll(emptyList())
+            parentRulesRevisionValue = null
+            securityFeedVersionValue = null
+            stateValue = WebRulePolicyState.NO_POLICY_YET
             return
         }
         try {
@@ -251,29 +388,62 @@ class PersistentWebRuleRepository(
             val array = envelope.getJSONArray("rules")
             val loaded = (0 until array.length()).map { i ->
                 val obj = array.getJSONObject(i)
+                fun text(field: String): String = obj.get(field) as? String ?: error("Invalid rule field")
                 WebRule(
-                    domain = obj.getString("domain"),
-                    listType = WebRuleListType.valueOf(obj.getString("listType")),
-                    source = WebRuleSource.valueOf(obj.getString("source")),
-                    familyId = if (obj.isNull("familyId")) null else obj.getString("familyId"),
+                    domain = text("domain"),
+                    listType = WebRuleListType.valueOf(text("listType")),
+                    source = WebRuleSource.valueOf(text("source")),
+                    familyId = if (obj.isNull("familyId")) null else text("familyId"),
                     createdAtEpochMillis = obj.getLong("createdAtEpochMillis"),
                 )
             }
+            require(loaded.all(::validStoredRule))
+            val parentRulesRevision = when (val rawRevision = if (envelope.isNull("parentRulesRevision")) null else envelope.get("parentRulesRevision")) {
+                null, JSONObject.NULL -> null
+                is Number -> rawRevision.toLong().takeIf { rawRevision.toString() == it.toString() }
+                    ?: error("Invalid parent revision value")
+                else -> error("Invalid parent revision type")
+            }
+            require(parentRulesRevision == null || parentRulesRevision >= 0L)
+            val securityFeedVersion = when (val rawVersion = if (envelope.isNull("securityFeedVersion")) null else envelope.get("securityFeedVersion")) {
+                null, JSONObject.NULL -> null
+                is String -> rawVersion.takeIf { it.isNotEmpty() && it.length <= 32 }
+                    ?: error("Invalid security feed version")
+                else -> error("Invalid security feed version type")
+            }
             delegate.replaceAll(loaded)
-            parentRulesRevision = if (envelope.isNull("parentRulesRevision")) null else envelope.getLong("parentRulesRevision")
-            securityFeedVersion = if (envelope.isNull("securityFeedVersion")) null else envelope.getString("securityFeedVersion")
-            state = WebRulePolicyState.VALID
+            parentRulesRevisionValue = parentRulesRevision
+            securityFeedVersionValue = securityFeedVersion
+            stateValue = WebRulePolicyState.VALID
         } catch (_: Exception) {
-            // Deliberately does NOT call delegate.replaceAll(emptyList()) or touch parent/security
-            // revision fields -- there is nothing recoverable to fall back to in-process (this is
-            // load-at-startup), so the honest signal is CORRUPT_USING_LKG with whatever the
-            // delegate's default (empty) state already is, never a silent VALID/empty policy.
-            state = WebRulePolicyState.CORRUPT_USING_LKG
+            // Keep this repository's last-known-good memory and revision fields intact. On first
+            // load that memory is empty, which remains explicitly distinguishable from VALID.
+            // A later mutation refuses to replace a corrupt persisted envelope.
+            stateValue = WebRulePolicyState.CORRUPT_USING_LKG
         }
+    }
+
+    private fun validStoredRule(rule: WebRule): Boolean {
+        if (canonicalizeDomain(rule.domain) != rule.domain) return false
+        return when (rule.source) {
+            WebRuleSource.SECURITY_DENYLIST -> rule.familyId == null && rule.listType == WebRuleListType.DENY
+            WebRuleSource.PARENT_ALLOWLIST -> !rule.familyId.isNullOrBlank() && rule.listType == WebRuleListType.ALLOW
+            WebRuleSource.PARENT_DENYLIST -> !rule.familyId.isNullOrBlank() && rule.listType == WebRuleListType.DENY
+            else -> false
+        }
+    }
+
+    private fun isPersistenceUncertain(): Boolean = synchronized(uncertainStores) {
+        uncertainStores.contains(coordinationLock)
+    }
+
+    private fun markPersistenceUncertain() {
+        synchronized(uncertainStores) { uncertainStores.add(coordinationLock) }
     }
 
     private companion object {
         const val KEY = "webprotection_rules_v1"
+        val uncertainStores: MutableSet<Any> = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
     }
 }
 

@@ -36,6 +36,28 @@ export interface FamilyAuditRecord {
 
 export const MAX_AUDIT_NOTE_LENGTH = 280;
 
+function snapshotRecord(record: FamilyAuditRecord): FamilyAuditRecord {
+  return {
+    eventId: record.eventId,
+    familyId: record.familyId,
+    actionType: record.actionType,
+    actorDeviceId: record.actorDeviceId,
+    actorMemberId: record.actorMemberId,
+    targetScope: { kind: record.targetScope.kind, id: record.targetScope.id },
+    authorizationRole: record.authorizationRole,
+    trustSetEpoch: record.trustSetEpoch,
+    policyRevision: record.policyRevision,
+    occurredAtUtc: new Date(record.occurredAtUtc.getTime()),
+    clientMonotonicSequence: record.clientMonotonicSequence,
+    resultStatus: record.resultStatus,
+    targetAcknowledgementCount: record.targetAcknowledgementCount,
+    reasonCategory: record.reasonCategory,
+    correlationId: record.correlationId,
+    actionId: record.actionId,
+    freeTextNote: record.freeTextNote,
+  };
+}
+
 /** Append-only, family-local/E2EE store -- never a PCA server audit log, never activity plaintext (doc 18 Section 5/6). Only an in-memory reference implementation exists here; real persistence is family-device-local storage outside this module's scope. */
 export interface FamilyAuditRepository {
   append(record: FamilyAuditRecord): Promise<void>;
@@ -46,11 +68,11 @@ export class InMemoryFamilyAuditRepository implements FamilyAuditRepository {
   private readonly records: FamilyAuditRecord[] = [];
 
   async append(record: FamilyAuditRecord): Promise<void> {
-    this.records.push(record);
+    this.records.push(snapshotRecord(record));
   }
 
   async listForFamily(familyId: string): Promise<FamilyAuditRecord[]> {
-    return this.records.filter((r) => r.familyId === familyId);
+    return this.records.filter((r) => r.familyId === familyId).map(snapshotRecord);
   }
 }
 
@@ -100,23 +122,39 @@ export class FamilyAuditService {
         ? input.freeTextNote.slice(0, MAX_AUDIT_NOTE_LENGTH)
         : null;
     const record: FamilyAuditRecord = {
-      ...input,
+      familyId: input.familyId,
+      actionType: input.actionType,
+      actorDeviceId: input.actorDeviceId,
+      actorMemberId: input.actorMemberId,
+      targetScope: { kind: input.targetScope.kind, id: input.targetScope.id },
+      authorizationRole: input.authorizationRole,
+      trustSetEpoch: input.trustSetEpoch,
+      policyRevision: input.policyRevision,
+      clientMonotonicSequence: input.clientMonotonicSequence,
+      resultStatus: input.resultStatus,
+      targetAcknowledgementCount: input.targetAcknowledgementCount,
+      reasonCategory: input.reasonCategory,
+      correlationId: input.correlationId,
+      actionId: input.actionId,
       freeTextNote,
       eventId: randomUUID(),
-      occurredAtUtc: this.now(),
+      occurredAtUtc: new Date(this.now().getTime()),
     };
-    await this.repository.append(record);
+    // The repository is an async boundary. Give it a detached snapshot so a
+    // custom implementation cannot mutate the record used for delivery or
+    // returned to the caller while append is pending.
+    await this.repository.append(snapshotRecord(record));
     // Best-effort/non-blocking, matching runtimeSyncRoutes.ts's
     // emitProtectionDegradedAlert precedent exactly: a delivery failure
     // must never affect (or be affected by) the audit record itself, which
     // has already durably committed above.
     if (this.delivery) {
       try {
-        await this.delivery.deliver(record);
+        await this.delivery.deliver(snapshotRecord(record));
       } catch {
         // Delivery is deliberately non-blocking -- see this field's own doc comment.
       }
     }
-    return record;
+    return snapshotRecord(record);
   }
 }

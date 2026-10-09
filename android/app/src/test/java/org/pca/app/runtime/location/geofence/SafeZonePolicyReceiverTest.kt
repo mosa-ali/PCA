@@ -1,5 +1,10 @@
 package org.pca.app.runtime.location.geofence
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -8,6 +13,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.platform.LocationSample
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class SafeZonePolicyReceiverTest {
 
@@ -27,6 +35,159 @@ class SafeZonePolicyReceiverTest {
         enabled = true,
         transitionTypes = setOf(GeofenceTransitionType.ENTRY),
     )
+
+    @Test
+    fun `sender rotation and recipient revocation during decrypt never persist policy`() = runTest {
+        for (changeRecipient in listOf(true, false)) {
+            var recipientAllowed = true
+            var signingKey = "parent-public-key"
+            val mutableAuthority = object : SafeZoneFamilyAuthority {
+                override suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long, keyEpoch: Long) = recipientAllowed
+                override suspend fun resolveAuthorizedSender(familyId: String, senderDeviceId: String, senderKeyId: String, trustSetEpoch: Long, keyEpoch: Long) =
+                    SafeZoneAuthorizedSender(SafeZoneFamilyRole.OWNER, signingKey)
+            }
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val plaintext = SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone))
+            val receiver = SafeZonePolicyReceiver("family-a", "child-a", mutableAuthority, approvingVerifier,
+                object : SafeZonePayloadDecryptor {
+                    override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                        entered.complete(Unit); release.await(); return plaintext
+                    }
+                }, zoneStore, zoneStateStore)
+            val receiving = async { receiver.receive(envelope(), 2_000L) }
+            entered.await()
+            if (changeRecipient) recipientAllowed = false else signingKey = "rotated-key"
+            release.complete(Unit)
+            assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiving.await())
+            assertTrue(zoneStore.loadZones().isEmpty())
+            val reopened = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
+            assertTrue(reopened.loadZones().isEmpty())
+            assertTrue(plaintext.all { it == 0.toByte() })
+        }
+    }
+
+    @Test
+    fun `cancelled suspended verifier propagates cancellation without persisted effects`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val verifier = object : SafeZoneEnvelopeSignatureVerifier {
+            override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                entered.complete(Unit); CompletableDeferred<Unit>().await(); return true
+            }
+        }
+        val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), verifier,
+            RejectingSafeZonePayloadDecryptor(), zoneStore, zoneStateStore)
+        var propagated = false
+        val receiving = launch {
+            try { receiver.receive(envelope(), 2_000L) }
+            catch (cancelled: CancellationException) { propagated = true; throw cancelled }
+        }
+        entered.await(); receiving.cancel(); receiving.join()
+        assertTrue(propagated)
+        assertTrue(zoneStore.loadZones().isEmpty())
+    }
+
+    @Test
+    fun `caller mutation while verifier suspended cannot alter decrypted envelope`() = runTest {
+        val original = envelope()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val verifier = object : SafeZoneEnvelopeSignatureVerifier {
+            override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                entered.complete(Unit); release.await()
+                return envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)) && envelope.nonce.contentEquals(byteArrayOf(4, 5, 6))
+            }
+        }
+        val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), verifier,
+            object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                    assertTrue(envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)))
+                    return envelope.payloadForTest()
+                }
+            }, zoneStore, zoneStateStore)
+        val receiving = async { receiver.receive(original, 2_000L) }
+        entered.await(); original.ciphertext.fill(9); original.nonce.fill(9); release.complete(Unit)
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiving.await())
+        assertEquals(zone, GeofenceZoneStore(backing, scopeProvider = scopeProvider).loadZones().single())
+    }
+
+    @Test
+    fun `verifier mutation cannot alter bytes passed to decryptor`() = runTest {
+        val verifier = object : SafeZoneEnvelopeSignatureVerifier {
+            override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                envelope.ciphertext.fill(9)
+                envelope.nonce.fill(9)
+                return true
+            }
+        }
+        val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), verifier,
+            object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                    assertTrue(envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)))
+                    assertTrue(envelope.nonce.contentEquals(byteArrayOf(4, 5, 6)))
+                    return envelope.payloadForTest()
+                }
+            }, zoneStore, zoneStateStore)
+
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), 2_000L))
+        assertEquals(zone, GeofenceZoneStore(backing, scopeProvider = scopeProvider).loadZones().single())
+    }
+
+    @Test
+    fun `expiry crossed during suspended crypto rejects before persistence and wipes plaintext`() = runTest {
+        for (suspendVerification in listOf(true, false)) {
+            var clockNanos = 0L
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val plaintext = SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone))
+            val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(),
+                object : SafeZoneEnvelopeSignatureVerifier {
+                    override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                        if (suspendVerification) { entered.complete(Unit); release.await() }
+                        return true
+                    }
+                },
+                object : SafeZonePayloadDecryptor {
+                    override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                        if (!suspendVerification) { entered.complete(Unit); release.await() }
+                        return plaintext
+                    }
+                }, zoneStore, zoneStateStore, monotonicNanos = { clockNanos })
+            val receiving = async { receiver.receive(envelope(), 2_000L) }
+            entered.await(); clockNanos = 8_000_000_000L; release.complete(Unit)
+            assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiving.await())
+            assertTrue(plaintext.all { it == 0.toByte() })
+            assertTrue(GeofenceZoneStore(backing, scopeProvider = scopeProvider).loadZones().isEmpty())
+        }
+    }
+
+    @Test
+    fun `expiry crossed while waiting for monitor policy lock rejects before persistence`() {
+        val clockNanos = AtomicLong(0L)
+        val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), approvingVerifier,
+            object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray =
+                    envelope.payloadForTest()
+            }, zoneStore, zoneStateStore, monotonicNanos = clockNanos::get)
+        val outcome = AtomicReference<SafeZonePolicyReceiveResult>()
+        val failure = AtomicReference<Throwable>()
+        val worker = Thread {
+            try { outcome.set(runBlocking { receiver.receive(envelope(), 2_000L) }) }
+            catch (error: Throwable) { failure.set(error) }
+        }
+        synchronized(backing.coordinationLock) {
+            worker.start()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (worker.state != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.yield()
+            assertEquals(Thread.State.BLOCKED, worker.state)
+            clockNanos.set(8_000_000_000L)
+        }
+        worker.join(5_000)
+        assertTrue(!worker.isAlive)
+        assertNull(failure.get())
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, outcome.get())
+        assertTrue(zoneStore.loadZones().isEmpty())
+    }
 
     private fun envelope(
         familyId: String = "family-a",

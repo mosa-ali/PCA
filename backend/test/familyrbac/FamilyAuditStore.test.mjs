@@ -74,3 +74,121 @@ test('the audit record type carries no URL, location, or activity-detail field -
     assert.equal(keys.includes(forbidden), false);
   }
 });
+
+test('caller and async repository mutation cannot change the captured audit record or listed LKG', async () => {
+  const backing = new InMemoryFamilyAuditRepository();
+  let appendStarted;
+  const started = new Promise(resolve => { appendStarted = resolve; });
+  let releaseAppend;
+  const appendGate = new Promise(resolve => { releaseAppend = resolve; });
+  let repositoryRecord;
+  const repository = {
+    async append(record) {
+      repositoryRecord = record;
+      appendStarted();
+      await appendGate;
+      await backing.append(record);
+      // A repository that retains and mutates its argument must not mutate the
+      // service's canonical record or the independent copy stored by backing.
+      record.targetScope.id = 'repository-mutated-child';
+      record.occurredAtUtc.setTime(0);
+    },
+    listForFamily: familyId => backing.listForFamily(familyId),
+  };
+  const clockDate = new Date('2026-01-01T00:00:00Z');
+  const service = new FamilyAuditService(repository, () => clockDate);
+  const input = baseInput();
+  const recording = service.record(input);
+  await started;
+
+  input.targetScope.id = 'caller-mutated-child-before-append';
+  clockDate.setTime(0);
+  releaseAppend();
+  const returned = await recording;
+
+  assert.equal(repositoryRecord.targetScope.id, 'repository-mutated-child');
+  assert.equal(returned.targetScope.id, 'child-1');
+  assert.equal(returned.occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+  returned.targetScope.id = 'caller-mutated-return-value';
+  returned.occurredAtUtc.setTime(1);
+  input.targetScope.id = 'caller-mutated-child-after-append';
+
+  const listed = await repository.listForFamily('fam-1');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].targetScope.id, 'child-1');
+  assert.equal(listed[0].occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+  listed[0].targetScope.id = 'caller-mutated-list-result';
+  listed[0].occurredAtUtc.setTime(2);
+  const listedAgain = await repository.listForFamily('fam-1');
+  assert.equal(listedAgain[0].targetScope.id, 'child-1');
+  assert.equal(listedAgain[0].occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+});
+
+test('async delivery mutation cannot change stored audit scope, timestamp, or returned record', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo, () => new Date('2026-01-01T00:00:00Z'));
+  let deliveryStarted;
+  const started = new Promise(resolve => { deliveryStarted = resolve; });
+  let releaseDelivery;
+  const deliveryGate = new Promise(resolve => { releaseDelivery = resolve; });
+  let deliveryRecord;
+  service.configureDelivery({
+    async deliver(record) {
+      deliveryRecord = record;
+      deliveryStarted();
+      await deliveryGate;
+      record.targetScope.id = 'delivery-mutated-child';
+      record.occurredAtUtc.setTime(0);
+    },
+  });
+
+  const recording = service.record(baseInput());
+  await started;
+  releaseDelivery();
+  const returned = await recording;
+
+  assert.equal(deliveryRecord.targetScope.id, 'delivery-mutated-child');
+  assert.equal(returned.targetScope.id, 'child-1');
+  assert.equal(returned.occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+  const listed = await repo.listForFamily('fam-1');
+  assert.equal(listed[0].targetScope.id, 'child-1');
+  assert.equal(listed[0].occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+});
+
+test('audit projection excludes unapproved input and nested target-scope fields at every boundary', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo, () => new Date('2026-01-01T00:00:00Z'));
+  const delivered = [];
+  service.configureDelivery({ async deliver(record) { delivered.push(record); } });
+  const input = {
+    ...baseInput(),
+    url: 'https://private.example/path',
+    location: { latitude: 12.3, longitude: 45.6 },
+    secret: 'do-not-retain',
+    targetScope: {
+      kind: 'CHILD_PROFILE',
+      id: 'child-1',
+      url: 'https://child.example/',
+      location: 'private-location',
+      secret: 'nested-secret',
+      nested: { recoverySecret: 'nested-recovery-secret' },
+    },
+  };
+
+  const returned = await service.record(input);
+  const [stored] = await repo.listForFamily('fam-1');
+
+  for (const record of [returned, stored, delivered[0]]) {
+    assert.deepEqual(Object.keys(record.targetScope).sort(), ['id', 'kind']);
+    assert.deepEqual(Object.keys(record).sort(), [
+      'actionId', 'actionType', 'actorDeviceId', 'actorMemberId', 'authorizationRole',
+      'clientMonotonicSequence', 'correlationId', 'eventId', 'familyId', 'freeTextNote',
+      'occurredAtUtc', 'policyRevision', 'reasonCategory', 'resultStatus',
+      'targetAcknowledgementCount', 'targetScope', 'trustSetEpoch',
+    ].sort());
+    assert.equal(record.targetScope.id, 'child-1');
+    assert.equal('url' in record.targetScope, false);
+    assert.equal('location' in record.targetScope, false);
+    assert.equal('secret' in record.targetScope, false);
+  }
+});

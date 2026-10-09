@@ -40,7 +40,7 @@ function compose() {
 async function fixture() {
   const familyId = randomUUID();
   const owner = createDevice('OWNER'), child = createDevice('CHILD');
-  const scope = { familyId, deviceId: owner.entry.deviceId };
+  const scope = { familyId, deviceId: owner.entry.deviceId, dskKeyId: owner.entry.dskKeyId };
   const receivedAt = new Date('2026-10-09T00:00:00.000Z');
   const composed = compose();
   const request = (trustSetEpoch, overrides = {}) => {
@@ -116,7 +116,8 @@ test('MySQL facade conflicts, wrong scope and stale rotation preserve exact dura
 });
 
 test('MySQL accepted membership controls head reads and revocation denies catch-up without inventing ACTIVE', async () => {
-  const f = await fixture(), childScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId };
+  const f = await fixture(), childScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId,
+    dskKeyId: f.child.entry.dskKeyId };
   assert.equal((await f.service.head(childScope)).trustSetEpoch, 1);
   await assert.rejects(f.service.status(childScope, f.request(2)), error => error.code === 'OWNER_REQUIRED');
   await assert.rejects(f.service.submit(childScope, f.request(2)), error => error.code === 'OWNER_REQUIRED');
@@ -125,9 +126,34 @@ test('MySQL accepted membership controls head reads and revocation denies catch-
   assert.equal((await f.store.readLatestEpoch(f.familyId)).trustSetEpoch, 2);
 });
 
+test('MySQL facade binds an active device session to the exact DSK in the current accepted epoch', async () => {
+  const f = await fixture();
+  const oldChildScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId,
+    dskKeyId: f.child.entry.dskKeyId };
+  assert.equal((await f.service.head(oldChildScope)).trustSetEpoch, 1);
+
+  const keyPair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = keyPair.publicKey.export({ format: 'jwk' });
+  const rotatedKey = {
+    dskKeyId: randomUUID(),
+    dskPublicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+      Buffer.from(jwk.y, 'base64url')]).toString('base64url'),
+  };
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [f.child.entry.deviceId, rotatedKey.dskKeyId, rotatedKey.dskPublicKey, new Date()],
+  );
+  const rotatedChildEntry = { ...f.child.entry, ...rotatedKey };
+  await f.service.submit(f.scope, f.request(2, { entries: [f.owner.entry, rotatedChildEntry] }));
+
+  await assert.rejects(f.service.head(oldChildScope), error => error.code === 'DEVICE_NOT_ACTIVE');
+  assert.equal((await f.service.head({ ...oldChildScope, dskKeyId: rotatedKey.dskKeyId })).trustSetEpoch, 2);
+});
+
 test('MySQL indexed history denies a child revoked while its historical epoch read is in flight', async () => {
   const f = await fixture();
-  const childScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId };
+  const childScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId, dskKeyId: f.child.entry.dskKeyId };
   const readAcceptedEpoch = f.acceptance.readAcceptedEpoch.bind(f.acceptance);
   let signalLookupStarted;
   let releaseLookup;
@@ -228,7 +254,7 @@ test('MySQL read facade denies current owner/member when their independent DSK d
     [new Date(), f.child.entry.deviceId, f.child.entry.dskKeyId],
   );
   await assert.rejects(
-    f.service.head({ familyId: f.familyId, deviceId: f.child.entry.deviceId }),
+    f.service.head({ familyId: f.familyId, deviceId: f.child.entry.deviceId, dskKeyId: f.child.entry.dskKeyId }),
     error => error.code === 'DEVICE_NOT_ACTIVE',
   );
 });

@@ -12,6 +12,10 @@ export interface DeviceSessionRecord {
   tokenHash: string;
   deviceId: string;
   familyId: string;
+  /** Exact registered DSK whose proof established this process-local bearer session. */
+  dskKeyId: string;
+  /** Public key snapshot binds the bearer to immutable verified DSK material. */
+  dskPublicKey: string;
   /** Durable family lifecycle generation observed when this session was issued. */
   familySessionEpoch: number;
   issuedAt: Date;

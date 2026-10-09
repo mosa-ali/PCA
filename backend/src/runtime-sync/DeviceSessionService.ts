@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DeviceAuthError, DeviceAuthService, type IssuedChallenge } from '../deviceauth/DeviceAuthService.js';
+import { DeviceAuthError, DeviceAuthService, type IssuedChallenge, type VerifiedDeviceIdentity } from '../deviceauth/DeviceAuthService.js';
 import { generateChallengeNonce } from '../deviceauth/nonce.js';
 import { computeExpiryInstant as computeChallengeExpiry, DEVICE_CHALLENGE_TTL_MS } from '../deviceauth/policy.js';
 import { generateSessionToken, hashSessionToken, isPlausibleSessionToken } from '../auth/token.js';
@@ -28,6 +28,7 @@ const RUNTIME_SYNC_AUTH_ERROR_MESSAGES: Record<RuntimeSyncAuthErrorCode, string>
 export interface DeviceSessionIdentity {
   deviceId: string;
   familyId: string;
+  dskKeyId: string;
 }
 
 export interface IssuedDeviceSession {
@@ -83,9 +84,9 @@ export class DeviceSessionService {
     }
   }
 
-  /** Verifies proof of possession via DeviceAuthService, then mints a device session. Every failure mode collapses to one generic UNAUTHORIZED. */
+  /** Verifies proof of possession via DeviceAuthService, then mints a session pinned to that exact DSK. Failures collapse to UNAUTHORIZED. */
   async completeChallenge(challengeId: string, signature: string): Promise<IssuedDeviceSession> {
-    let identity: DeviceSessionIdentity;
+    let identity: VerifiedDeviceIdentity;
     try {
       identity = await this.deviceAuthService.verifyChallenge(challengeId, signature);
     } catch (error) {
@@ -104,6 +105,8 @@ export class DeviceSessionService {
       tokenHash,
       deviceId: identity.deviceId,
       familyId: identity.familyId,
+      dskKeyId: identity.dskKeyId,
+      dskPublicKey: identity.dskPublicKey,
       familySessionEpoch,
       issuedAt,
       expiresAt: new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS),
@@ -113,17 +116,22 @@ export class DeviceSessionService {
     return { rawToken, expiresAt: record.expiresAt };
   }
 
-  /** Returns the authenticated (deviceId, familyId), or throws a single generic RuntimeSyncAuthError('UNAUTHORIZED') for any failure whatsoever. */
+  /** Returns the authenticated device, family, and exact DSK key id; every failure remains generic UNAUTHORIZED. */
   async validateSession(rawToken: string): Promise<DeviceSessionIdentity> {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const result = await this.sessionRepository.validate(hashSessionToken(rawToken), this.now());
     if (result.outcome !== 'VALID') throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    const identity = { deviceId: result.session.deviceId, familyId: result.session.familyId };
-    const activeFamilySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(identity);
+    const verifiedKey = {
+      deviceId: result.session.deviceId,
+      familyId: result.session.familyId,
+      dskKeyId: result.session.dskKeyId,
+      dskPublicKey: result.session.dskPublicKey,
+    };
+    const activeFamilySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(verifiedKey);
     if (activeFamilySessionEpoch === null || activeFamilySessionEpoch !== result.session.familySessionEpoch) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
-    return identity;
+    return { deviceId: verifiedKey.deviceId, familyId: verifiedKey.familyId, dskKeyId: verifiedKey.dskKeyId };
   }
 
   /**

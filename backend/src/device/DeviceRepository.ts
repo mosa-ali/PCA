@@ -20,7 +20,7 @@ export type RevokeKeyResult =
   | { outcome: 'KEY_NOT_FOUND' };
 
 export type ConfirmPairingResult =
-  | { outcome: 'CONFIRMED'; device: DeviceRecord }
+  | { outcome: 'CONFIRMED'; device: DeviceRecord; transitioned: boolean }
   | { outcome: 'DEVICE_NOT_FOUND' }
   | { outcome: 'INVALID_STATE' }
   /** The confirming account is the SAME account that registered this device (devices.registered_by_account_id) -- see DeviceRecord's own doc comment. */
@@ -111,8 +111,10 @@ export interface DeviceRepository {
   /**
    * PAIRING_PENDING -> PAIRED only, per doc 08 Section 4 (parent
    * fingerprint confirmation, PCA-FR-141). Idempotent: confirming an
-   * already-PAIRED device returns success with the original pairedAt
-   * unchanged. Any other status (REVOKED, or already ACTIVE) is
+   * already-PAIRED device returns success with `transitioned: false` and
+   * the original pairedAt unchanged. The one atomic caller that changes
+   * PAIRING_PENDING -> PAIRED returns `transitioned: true`; concurrent and
+   * later retries return false. Any other status (REVOKED, or already ACTIVE) is
    * INVALID_STATE -- confirmation is not a general-purpose status setter.
    * SELF_APPROVAL_DENIED when confirmedByAccountId equals this device's
    * registeredByAccountId (see DeviceRecord's own doc comment) -- checked

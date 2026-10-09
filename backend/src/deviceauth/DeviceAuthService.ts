@@ -42,6 +42,10 @@ export interface IssuedChallenge {
 export interface VerifiedDeviceIdentity {
   deviceId: DeviceId;
   familyId: string;
+  /** Exact DSK that verified and atomically consumed this challenge. */
+  dskKeyId: string;
+  /** Public-key bytes are public, and pin this process-local session to the verified key material. */
+  dskPublicKey: string;
 }
 
 /**
@@ -75,9 +79,16 @@ export class DeviceAuthService {
     this.now = now;
   }
 
-  /** Reads the live lifecycle generation before issuing or accepting a device session. */
+  /** Reads the live lifecycle generation and confirms the exact proof key remains active. */
   async activeSessionFamilyEpoch(identity: VerifiedDeviceIdentity): Promise<number | null> {
-    return this.deviceRepository.getActiveDeviceSessionEpoch(identity.familyId, identity.deviceId);
+    const familySessionEpoch = await this.deviceRepository.getActiveDeviceSessionEpoch(identity.familyId, identity.deviceId);
+    if (familySessionEpoch === null) return null;
+
+    const matchingKeys = (await this.deviceRepository.findKeysByDeviceForFamily(identity.familyId, identity.deviceId))
+      .filter((key) => key.keyId === identity.dskKeyId && key.keyPurpose === 'DSK');
+    if (matchingKeys.length !== 1 || matchingKeys[0].status !== 'ACTIVE' ||
+        matchingKeys[0].publicKey !== identity.dskPublicKey) return null;
+    return familySessionEpoch;
   }
 
   /**
@@ -134,11 +145,24 @@ export class DeviceAuthService {
     if (device.status === 'REVOKED') throw new DeviceAuthError('DEVICE_REVOKED');
 
     const keys = await this.deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
-    const dsk = keys.find((key) => key.keyPurpose === 'DSK' && key.status === 'ACTIVE');
-    if (!dsk) throw new DeviceAuthError('DEVICE_NOT_FOUND');
+    const activeDsks = keys.filter((key) => key.keyPurpose === 'DSK' && key.status === 'ACTIVE');
+    if (activeDsks.length === 0) throw new DeviceAuthError('DEVICE_NOT_FOUND');
 
-    const valid = await this.signatureVerifier.verify(dsk.publicKey, challenge.nonce, signature);
-    if (!valid) throw new DeviceAuthError('INVALID_SIGNATURE');
+    // A device can temporarily have more than one ACTIVE DSK during an
+    // accepted key transition. The request carries a signature, not a
+    // caller-asserted key id, so identify the signer cryptographically and
+    // require exactly one matching directory entry. Choosing the first match
+    // would make authentication depend on unordered database row order when
+    // two key IDs share the same verifying key or a verifier accepts both.
+    const matchingDsks: (typeof activeDsks) = [];
+    for (const candidate of activeDsks) {
+      if (await this.signatureVerifier.verify(candidate.publicKey, challenge.nonce, signature)) {
+        matchingDsks.push(candidate);
+      }
+    }
+    if (matchingDsks.length !== 1) throw new DeviceAuthError('INVALID_SIGNATURE');
+    const [dsk] = matchingDsks;
+    if (!dsk) throw new DeviceAuthError('INVALID_SIGNATURE');
 
     const result: ConsumeChallengeResult = await this.challengeRepository.consumeAtomically(challengeId, this.now(), {
       familyId: device.familyId,
@@ -151,6 +175,6 @@ export class DeviceAuthService {
       throw new DeviceAuthError(result.outcome === 'EXPIRED' ? 'EXPIRED' : 'ALREADY_CONSUMED');
     }
 
-    return { deviceId: device.deviceId, familyId: device.familyId };
+    return { deviceId: device.deviceId, familyId: device.familyId, dskKeyId: dsk.keyId, dskPublicKey: dsk.publicKey };
   }
 }

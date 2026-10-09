@@ -5,6 +5,7 @@ import { DeviceDirectoryService } from '../../dist/device/DeviceDirectoryService
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { PairingService } from '../../dist/pairing/PairingService.js';
 import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { closePool } from '../../dist/db/pool.js';
 
@@ -83,13 +84,31 @@ test('MySQL CONCURRENCY: many genuinely simultaneous confirmation attempts conve
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   const confirmedBy = await realAccountId();
+  let currentTime = Date.now();
+  const now = () => new Date(currentTime++);
+  const auditRepository = new InMemoryFamilyAuditRepository();
+  const auditedPairingService = new PairingService(repository, now, new FamilyAuditService(auditRepository, now));
   const attempts = await Promise.allSettled(
-    Array.from({ length: 20 }, () => pairingService.confirmPairing(familyId, device.deviceId, confirmedBy)),
+    Array.from({ length: 20 }, () => auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy)),
   );
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true, 'confirmation is idempotent, never a hard error under a race');
   const timestamps = new Set(attempts.map((a) => a.value.status));
   assert.equal(timestamps.size, 1);
   assert.equal([...timestamps][0], 'PAIRED');
+
+  const persisted = await repository.findDeviceForFamily(familyId, device.deviceId);
+  assert.ok(persisted?.pairedAt);
+  const winningPairedAt = persisted.pairedAt.getTime();
+  const lifecycleAudits = () => auditRepository.listForFamily(familyId).then((events) => events.filter((event) =>
+    event.actionType === 'DEVICE_LIFECYCLE_TRANSITION' && event.targetScope.id === device.deviceId));
+  assert.equal((await lifecycleAudits()).length, 1, 'only the database transition winner emits the lifecycle audit');
+
+  currentTime += 60_000;
+  const replay = await auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy);
+  assert.equal(replay.status, 'PAIRED');
+  const afterReplay = await repository.findDeviceForFamily(familyId, device.deviceId);
+  assert.equal(afterReplay?.pairedAt?.getTime(), winningPairedAt, 'a later idempotent confirmation preserves the first pairedAt');
+  assert.equal((await lifecycleAudits()).length, 1, 'a later replay must not create another transition audit');
 });
 
 test.after(async () => {

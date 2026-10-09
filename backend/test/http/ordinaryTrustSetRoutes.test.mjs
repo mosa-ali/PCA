@@ -23,7 +23,7 @@ function fixture(t, options = {}) {
     validateSession: async (token) => {
       if (options.authFailure) throw options.authFailure;
       if (token !== 'verified-device-session') throw new RuntimeSyncAuthError('UNAUTHORIZED');
-      return { familyId: 'family-one', deviceId: 'device-one' };
+      return options.sessionIdentity ?? { familyId: 'family-one', deviceId: 'device-one', dskKeyId: 'dsk-one' };
     },
   };
   registerOrdinaryTrustSetRoutes(app, { deviceSessionService: sessions,
@@ -41,7 +41,15 @@ test('verified device session supplies immutable family/device scope for all fou
   assert.deepEqual((await request('GET', `${BASE}/head`)).json(), { acceptedHead: HEAD });
   assert.deepEqual((await request('GET', `${BASE}/records/2`)).json(), { acceptedEpoch: HEAD });
   assert.equal(calls.length, 4);
-  for (const call of calls) assert.deepEqual(call[1], { familyId: 'family-one', deviceId: 'device-one' });
+  for (const call of calls) assert.deepEqual(call[1], { familyId: 'family-one', deviceId: 'device-one', dskKeyId: 'dsk-one' });
+});
+
+test('route fails closed when validated session identity omits its DSK binding', async (t) => {
+  const { request, calls } = fixture(t, { sessionIdentity: { familyId: 'family-one', deviceId: 'device-one' } });
+  const result = await request('GET', `${BASE}/head`);
+  assert.equal(result.statusCode, 503);
+  assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+  assert.equal(calls.length, 0);
 });
 
 test('Parent cookies, csrf, forged body identities and unverified bearer cannot authorize', async (t) => {

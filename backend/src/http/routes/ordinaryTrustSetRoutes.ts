@@ -44,13 +44,14 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
       return null;
     }
     const { familyId } = request.params as { familyId?: unknown };
-    if (!identity || !isPlausibleOpaqueId(identity.familyId) || !isPlausibleOpaqueId(identity.deviceId)) {
+    if (!identity || !isPlausibleOpaqueId(identity.familyId) || !isPlausibleOpaqueId(identity.deviceId) ||
+        !isPlausibleOpaqueId(identity.dskKeyId)) {
       await reply.code(503).send({ error: 'trust_set_unavailable' }); return null;
     }
     if (!isPlausibleOpaqueId(familyId) || familyId !== identity.familyId) {
       await reply.code(403).send({ error: 'forbidden' }); return null;
     }
-    return { familyId: identity.familyId, deviceId: identity.deviceId };
+    return { familyId: identity.familyId, deviceId: identity.deviceId, dskKeyId: identity.dskKeyId };
   }
   function failed(error: unknown, reply: FastifyReply) {
     if (error instanceof OrdinaryTrustSetError) {

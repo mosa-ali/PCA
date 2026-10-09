@@ -24,6 +24,13 @@ class GeofenceMonitor(
     /** Returns every confirmed transition produced by this sample (usually empty). Safe to call
      * repeatedly and with stale/duplicate samples -- see [GeofenceEngine]'s own doc. */
     fun evaluateSample(sample: LocationSample, nowMonotonicNanos: Long): List<GeofenceEvent> {
+        // The zone file's shared lock covers zone snapshot, state load/save, and
+        // alert decision. A policy delivery takes the same lock while clearing
+        // old state before replacing geometry in its separate backing file.
+        return zoneStore.withPolicyLock { evaluateSampleUnderPolicyLock(sample, nowMonotonicNanos) }
+    }
+
+    private fun evaluateSampleUnderPolicyLock(sample: LocationSample, nowMonotonicNanos: Long): List<GeofenceEvent> {
         val snapshot = try {
             zoneStore.loadScopedZones()
         } catch (_: CorruptGeofenceZoneStoreException) {
@@ -42,7 +49,12 @@ class GeofenceMonitor(
         val events = mutableListOf<GeofenceEvent>()
         for (zone in zones) {
             if (!zoneStore.isCurrentScope(scope)) return events
-            val priorState = zoneStateStore.load(scope, zone.zoneId) ?: GeofenceZoneState(zoneId = zone.zoneId)
+            val storedState = zoneStateStore.load(scope, zone.zoneId)
+            // A completed streak is never persisted by the reducer; it would
+            // otherwise confirm a transition from one sample after corruption.
+            val priorState = storedState?.takeIf {
+                it.candidateStreak == 0 || it.candidateStreak < config.requiredConsecutiveSamplesToConfirm
+            } ?: GeofenceZoneState(zoneId = zone.zoneId)
             val evaluation = GeofenceEngine.evaluate(zone, priorState, sample, nowMonotonicNanos, config)
             zoneStateStore.save(scope, evaluation.newState)
 

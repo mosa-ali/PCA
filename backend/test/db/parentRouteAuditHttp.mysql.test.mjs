@@ -158,16 +158,19 @@ const actorDeviceSessionService = new DeviceSessionService(actorDeviceAuth, acto
 
 async function testActorIdentity(session) {
   const deviceId = await insertFamilyDevice(session.familyId);
+  const [dsk] = await actorDeviceRepository.findKeysByDeviceForFamily(session.familyId, deviceId);
+  assert.ok(dsk, 'the fixture requires an active DSK row bound to its synthetic session');
   const familySessionEpoch = await actorDeviceRepository.getActiveDeviceSessionEpoch(session.familyId, deviceId);
   assert.notEqual(familySessionEpoch, null, 'the fixture requires an active persisted device and family');
   const { rawToken, tokenHash } = generateSessionToken();
   await actorSessionRepository.create({
     sessionId: randomUUID(), tokenHash, deviceId, familyId: session.familyId,
+    dskKeyId: dsk.keyId, dskPublicKey: dsk.publicKey,
     familySessionEpoch, issuedAt: clock.now(),
     expiresAt: new Date(clock.ms() + 60_000), revokedAt: null,
   });
   assert.deepEqual(await actorDeviceSessionService.requireActorDeviceInFamily(rawToken, session.familyId),
-    { deviceId, familyId: session.familyId });
+    { deviceId, familyId: session.familyId, dskKeyId: dsk.keyId });
   return { authorization: `Bearer ${rawToken}`, deviceId };
 }
 
@@ -490,9 +493,16 @@ async function createFamilyMemberSession({ familyId, role }) {
 
 async function insertFamilyDevice(familyId) {
   const deviceId = randomUUID();
+  const keyId = randomUUID();
+  const publicKey = randomBytes(33).toString('base64url');
   await getPool().query(
     `INSERT INTO devices (device_id, family_id, platform, status, created_at) VALUES (?, ?, 'ANDROID', 'ACTIVE', NOW(3))`,
     [deviceId, familyId],
+  );
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', NOW(3), NULL)`,
+    [deviceId, keyId, publicKey],
   );
   return deviceId;
 }

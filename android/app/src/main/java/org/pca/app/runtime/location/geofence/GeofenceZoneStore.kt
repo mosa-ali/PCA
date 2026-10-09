@@ -24,6 +24,9 @@ class GeofenceZoneStore(
     private val scopeProvider: () -> GeofenceStorageScope?,
     private val keyPrefix: String = KEY_PREFIX,
 ) {
+    /** Coordinates one monitor tick with a policy replacement in this process. */
+    internal fun <T> withPolicyLock(action: () -> T): T = synchronized(store.coordinationLock) { action() }
+
     /** Reads one identity snapshot together with the zones stored under that exact family/device. */
     fun loadScopedZones(): ScopedGeofenceZones? {
         val scope = currentScope() ?: return null
@@ -32,9 +35,11 @@ class GeofenceZoneStore(
 
     fun loadZones(): List<GeofenceZone> = loadScopedZones()?.zones ?: emptyList()
 
-    internal fun loadZones(scope: GeofenceStorageScope): List<GeofenceZone> {
+    internal fun loadZones(scope: GeofenceStorageScope): List<GeofenceZone> = synchronized(store.coordinationLock) {
         if (!scope.isValid()) return emptyList()
-        val raw = store.getString(scope.zoneStoreKey(keyPrefix)) ?: return emptyList()
+        val raw = try { GeofenceDurableStorage.read(store, scope.zoneStoreKey(keyPrefix)) }
+            catch (_: GeofencePersistenceException) { throw CorruptGeofenceZoneStoreException() }
+            ?: return emptyList()
         if (raw.isEmpty()) return emptyList()
         val zones = raw.split(ZONE_SEP).map { encoded ->
             decodeZone(encoded) ?: throw CorruptGeofenceZoneStoreException()
@@ -50,18 +55,35 @@ class GeofenceZoneStore(
         addOrReplace(scope, zone)
     }
 
-    internal fun addOrReplace(scope: GeofenceStorageScope, zone: GeofenceZone) {
+    internal fun addOrReplace(scope: GeofenceStorageScope, zone: GeofenceZone) = synchronized(store.coordinationLock) {
         require(scope.isValid())
-        val updated = loadZones(scope).filterNot { it.zoneId == zone.zoneId } + zone
+        check(isCurrentScope(scope)) { "Safe Zone family authority changed" }
+        val current = loadZones(scope)
+        val previous = current.firstOrNull { it.zoneId == zone.zoneId }
+        check(previous == null || zone.revision >= previous.revision) { "Cannot roll back Safe Zone revision" }
+        val updated = current.filterNot { it.zoneId == zone.zoneId } + zone
         saveZones(scope, updated)
     }
+
+    /** Signed deliveries require a strictly newer revision at the write boundary. */
+    internal fun addOrReplaceIfNewer(scope: GeofenceStorageScope, zone: GeofenceZone): Boolean =
+        synchronized(store.coordinationLock) {
+            require(scope.isValid())
+            check(isCurrentScope(scope)) { "Safe Zone family authority changed" }
+            val current = loadZones(scope)
+            val previous = current.firstOrNull { it.zoneId == zone.zoneId }
+            if (previous != null && zone.revision <= previous.revision) return@synchronized false
+            saveZones(scope, current.filterNot { it.zoneId == zone.zoneId } + zone)
+            true
+        }
 
     fun remove(zoneId: String) {
         currentScope()?.let { remove(it, zoneId) }
     }
 
-    internal fun remove(scope: GeofenceStorageScope, zoneId: String) {
+    internal fun remove(scope: GeofenceStorageScope, zoneId: String) = synchronized(store.coordinationLock) {
         if (!scope.isValid()) return
+        check(isCurrentScope(scope)) { "Safe Zone family authority changed" }
         saveZones(scope, loadZones(scope).filterNot { it.zoneId == zoneId })
     }
 
@@ -70,7 +92,10 @@ class GeofenceZoneStore(
     }
 
     internal fun clear(scope: GeofenceStorageScope) {
-        if (scope.isValid()) store.remove(scope.zoneStoreKey(keyPrefix))
+        if (scope.isValid()) synchronized(store.coordinationLock) {
+            check(isCurrentScope(scope)) { "Safe Zone family authority changed" }
+            GeofenceDurableStorage.write(store, scope.zoneStoreKey(keyPrefix), null)
+        }
     }
 
     internal fun isCurrentScope(scope: GeofenceStorageScope): Boolean = currentScope() == scope
@@ -81,11 +106,8 @@ class GeofenceZoneStore(
 
     private fun saveZones(scope: GeofenceStorageScope, zones: List<GeofenceZone>) {
         val scopedKey = scope.zoneStoreKey(keyPrefix)
-        if (zones.isEmpty()) {
-            store.remove(scopedKey)
-            return
-        }
-        store.putString(scopedKey, zones.joinToString(ZONE_SEP) { encodeZone(it) })
+        GeofenceDurableStorage.write(store, scopedKey,
+            if (zones.isEmpty()) null else zones.joinToString(ZONE_SEP) { encodeZone(it) })
     }
 
     // zoneId/label may never legitimately contain FIELD_SEP or ZONE_SEP -- sanitized defensively

@@ -138,7 +138,7 @@ export function createInMemoryDeviceRepository() {
     async confirmPairing(familyId, deviceId, confirmedByAccountId, confirmedAt) {
       const device = findOwnedDevice(familyId, deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
-      if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device } }; // idempotent
+      if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device }, transitioned: false }; // idempotent
       if (device.status !== 'PAIRING_PENDING') return { outcome: 'INVALID_STATE' };
       if (device.registeredByAccountId && device.registeredByAccountId === confirmedByAccountId) {
         return { outcome: 'SELF_APPROVAL_DENIED' };
@@ -146,7 +146,7 @@ export function createInMemoryDeviceRepository() {
       device.status = 'PAIRED';
       device.pairedAt = confirmedAt;
       device.pairedByAccountId = confirmedByAccountId;
-      return { outcome: 'CONFIRMED', device: { ...device } };
+      return { outcome: 'CONFIRMED', device: { ...device }, transitioned: true };
     },
   };
 }

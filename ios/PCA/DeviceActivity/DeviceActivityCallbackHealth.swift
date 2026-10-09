@@ -1,5 +1,29 @@
 import Foundation
 
+/// A monitor callback can arrive after Family Controls authorization was
+/// revoked. The host clears its own shields when it observes that transition;
+/// this shared gate gives the out-of-process monitor the same fail-closed
+/// behavior before it evaluates or reapplies a stored policy.
+public enum DeviceActivityCallbackAuthorization: Equatable {
+    case approved
+    case denied
+    case notDetermined
+    case unavailable
+}
+
+public enum DeviceActivityCallbackAuthorizationAction: Equatable {
+    case applyCurrentPolicy
+    case clearShieldsPreservingPolicy
+}
+
+public enum DeviceActivityAuthorizationGate {
+    /// Only approved authorization may evaluate/apply policy. Every other
+    /// status clears the current shield but retains stored policy for recovery.
+    public static func action(for status: DeviceActivityCallbackAuthorization) -> DeviceActivityCallbackAuthorizationAction {
+        status == .approved ? .applyCurrentPolicy : .clearShieldsPreservingPolicy
+    }
+}
+
 /// Foundation-only callback delivery evidence. Apple delivers interval
 /// callbacks when the device is used, and does not supply a recurrence ID.
 /// Absence therefore cannot prove missed delivery. Only a receipt attributable

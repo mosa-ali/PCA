@@ -68,14 +68,57 @@ test('issueChallenge for a revoked device is DEVICE_REVOKED', async () => {
   assert.equal(error.code, 'DEVICE_REVOKED');
 });
 
-test('verifyChallenge with a valid signature over the correct nonce succeeds and returns the device/family identity', async () => {
-  const { authService, directoryService } = buildHarness();
+test('verifyChallenge with a valid signature over the correct nonce returns the exact verified DSK identity', async () => {
+  const { authService, directoryService, deviceRepository } = buildHarness();
   const { device, dskPublicKey } = await registerDeviceWithDsk(directoryService);
   const issued = await authService.issueChallenge(device.deviceId);
   const signature = signTestOnlyChallenge(dskPublicKey, issued.nonce);
   const identity = await authService.verifyChallenge(issued.challengeId, signature);
+  const [registeredDsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
   assert.equal(identity.deviceId, device.deviceId);
   assert.equal(identity.familyId, device.familyId);
+  assert.equal(identity.dskKeyId, registeredDsk.keyId);
+  assert.equal(identity.dskPublicKey, dskPublicKey);
+});
+
+test('verifyChallenge resolves the signature to its exact key when multiple DSK rows remain active', async () => {
+  const { authService, directoryService } = buildHarness();
+  const { device, dskPublicKey: firstPublicKey } = await registerDeviceWithDsk(directoryService);
+  const secondPublicKey = key();
+  const second = await directoryService.addDeviceKey(device.familyId, device.deviceId, secondPublicKey, 'DSK');
+
+  const issued = await authService.issueChallenge(device.deviceId);
+  const identity = await authService.verifyChallenge(issued.challengeId,
+    signTestOnlyChallenge(secondPublicKey, issued.nonce));
+  assert.notEqual(identity.dskPublicKey, firstPublicKey);
+  assert.equal(identity.dskKeyId, second.keyId);
+  assert.equal(identity.dskPublicKey, secondPublicKey);
+});
+
+test('verifyChallenge rejects a signature that matches multiple active DSK entries without consuming the challenge', async () => {
+  const persistedChallenges = createInMemoryDeviceChallengeRepository();
+  let consumeCalls = 0;
+  const challengeRepository = {
+    create: (record) => persistedChallenges.create(record),
+    findById: (challengeId) => persistedChallenges.findById(challengeId),
+    async consumeAtomically(...args) {
+      consumeCalls += 1;
+      return persistedChallenges.consumeAtomically(...args);
+    },
+  };
+  let verifierCalls = 0;
+  const signatureVerifier = { async verify() { verifierCalls += 1; return true; } };
+  const { authService, directoryService } = buildHarness({ challengeRepository, signatureVerifier });
+  const { device } = await registerDeviceWithDsk(directoryService);
+  await directoryService.addDeviceKey(device.familyId, device.deviceId, key(), 'DSK');
+  const issued = await authService.issueChallenge(device.deviceId);
+
+  const error = await authService.verifyChallenge(issued.challengeId, 'signature-valid-for-both-keys').catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'INVALID_SIGNATURE');
+  assert.equal(verifierCalls, 2, 'every active DSK must be evaluated before deciding signer identity');
+  assert.equal(consumeCalls, 0, 'an ambiguous signer set cannot consume the one-time challenge');
+  assert.equal((await persistedChallenges.findById(issued.challengeId)).consumedAt, null);
 });
 
 test('verifyChallenge does not consume or accept proof when the exact DSK is revoked after verification but before consume', async () => {

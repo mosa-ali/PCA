@@ -8,7 +8,7 @@ import type { FamilyTrustSetEpoch } from './types.js';
 import type { TrustSetRoleResolver } from '../familyrbac/TrustSetRoleResolver.js';
 
 /** Scope must come from verified device-session authentication, never request body or Parent credentials. */
-export interface OrdinaryTrustSetScope { familyId: string; deviceId: string }
+export interface OrdinaryTrustSetScope { familyId: string; deviceId: string; dskKeyId: string }
 export interface OrdinaryTrustSetRequest { canonicalEpochBase64: string; signatureBase64: string }
 export interface AcceptedTrustSetEpochDto {
   canonicalEpochBase64: string;
@@ -39,10 +39,11 @@ export class OrdinaryTrustSetError extends Error {
 
 const MAX_CANONICAL_BYTES = 262_144;
 function snapshotScope(scope: OrdinaryTrustSetScope): OrdinaryTrustSetScope {
-  if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId)) {
+  if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId) ||
+      !isPlausibleOpaqueId(scope.dskKeyId)) {
     throw new OrdinaryTrustSetError('INVALID_REQUEST');
   }
-  return { familyId: scope.familyId, deviceId: scope.deviceId };
+  return { familyId: scope.familyId, deviceId: scope.deviceId, dskKeyId: scope.dskKeyId };
 }
 function strictBase64(value: unknown, maxBytes: number): Buffer {
   if (typeof value !== 'string' || value.length === 0 || value.length > 4 * Math.ceil(maxBytes / 3) ||
@@ -95,7 +96,8 @@ export class OrdinaryTrustSetService {
   }
 
   private async authorizedHead(scope: OrdinaryTrustSetScope, ownerOnly: boolean): Promise<TrustSetEpochRecord> {
-    if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId)) {
+    if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId) ||
+        !isPlausibleOpaqueId(scope.dskKeyId)) {
       throw new OrdinaryTrustSetError('INVALID_REQUEST');
     }
     const head = await this.acceptanceService.readAcceptedHead(scope.familyId);
@@ -125,6 +127,11 @@ export class OrdinaryTrustSetService {
     if (resolved.deviceId !== scope.deviceId || resolved.role !== member.role) {
       throw new OrdinaryTrustSetError('NO_TRUST_SET');
     }
+    // Compare the session's proof key only after the resolver has validated
+    // the accepted head and its independent key-directory binding. This
+    // preserves corrupt-head failures as NO_TRUST_SET while still denying
+    // an active-but-rotated DSK session.
+    if (member.dskKeyId !== scope.dskKeyId) throw new OrdinaryTrustSetError('DEVICE_NOT_ACTIVE');
     if (ownerOnly && resolved.role !== 'OWNER') throw new OrdinaryTrustSetError('OWNER_REQUIRED');
     return head;
   }

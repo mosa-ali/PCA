@@ -141,7 +141,10 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
             // `supersedesEpoch` is lineage metadata and may be absent or point to an older
             // accepted epoch. The immutable epoch-1 owner DSK authenticates each fetched hop;
             // never require metadata to form an immediate predecessor edge to the local floor.
-            if (predecessor == null || predecessor <= anchor.trustSetEpoch) break
+            // Stop after the requested number of records: the earliest collected record is still
+            // verified directly from the trusted local floor, so older records are unnecessary
+            // and a distant server head remains adoptable through this bounded call.
+            if (predecessor == null || predecessor <= anchor.trustSetEpoch || chain.size >= maximumRecords) break
             cursor = try { api.getEpoch(anchor.familyId, predecessor) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { return@withLock 0 }

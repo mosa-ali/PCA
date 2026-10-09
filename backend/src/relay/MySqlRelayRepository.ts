@@ -91,6 +91,11 @@ export class MySqlRelayRepository implements RelayRepository {
       const row = existing.rows[0];
       if (!row) throw new Error('relay envelope insert conflicted but no existing row was found');
       const matches =
+        // utf8mb4_bin is PAD SPACE in the deployed schema, so the unique key
+        // can report a collision for two JS-distinct IDs that differ only by
+        // trailing spaces. Treat that collision as CONFLICT, never as an
+        // exact idempotent replay.
+        row.message_id === record.messageId &&
         row.family_id === record.familyId &&
         row.sender_device_id === record.senderDeviceId &&
         row.recipient_device_id === record.recipientDeviceId &&
@@ -101,7 +106,11 @@ export class MySqlRelayRepository implements RelayRepository {
 
   async findForRecipient(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord | null> {
     const { rows } = await runInTransaction((conn) =>
-      execute<RelayRow>(conn, `SELECT * FROM relay_envelopes WHERE message_id = ? AND recipient_device_id = ?`, [
+      execute<RelayRow>(conn, `SELECT * FROM relay_envelopes
+        WHERE message_id = ? AND recipient_device_id = ?
+          AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?`, [
+        messageId,
+        recipientDeviceId,
         messageId,
         recipientDeviceId,
       ]),
@@ -113,8 +122,10 @@ export class MySqlRelayRepository implements RelayRepository {
     const { rows } = await runInTransaction((conn) =>
       execute<RelayRow>(
         conn,
-        `SELECT * FROM relay_envelopes WHERE recipient_device_id = ? AND state = 'QUEUED' AND expires_at > ?`,
-        [recipientDeviceId, now],
+        `SELECT * FROM relay_envelopes
+          WHERE recipient_device_id = ? AND state = 'QUEUED' AND expires_at > ?
+            AND BINARY recipient_device_id = BINARY ?`,
+        [recipientDeviceId, now, recipientDeviceId],
       ),
     );
     return rows.map(mapRow);
@@ -130,16 +141,19 @@ export class MySqlRelayRepository implements RelayRepository {
         const highest = await execute<Pick<RelayRow, 'created_at' | 'message_id'>>(
           conn,
           `SELECT created_at, message_id FROM relay_envelopes
-           WHERE recipient_device_id = ? AND family_id = ? AND state = 'QUEUED' AND expires_at > ?
+           WHERE recipient_device_id = ? AND family_id = ?
+             AND BINARY recipient_device_id = BINARY ? AND BINARY family_id = BINARY ?
+             AND state = 'QUEUED' AND expires_at > ?
            ORDER BY created_at DESC, CAST(message_id AS BINARY) DESC LIMIT 1`,
-          [recipientDeviceId, familyId, now],
+          [recipientDeviceId, familyId, recipientDeviceId, familyId, now],
         );
         const row = highest.rows[0];
         if (!row) return { records: [], highWater: null, hasMore: false };
         highWater = { createdAtMs: row.created_at.getTime(), messageId: row.message_id };
       }
       const upperDate = new Date(highWater.createdAtMs);
-      const values: Array<string | number | Date> = [recipientDeviceId, familyId, now, upperDate, upperDate, highWater.messageId];
+      const values: Array<string | number | Date> = [recipientDeviceId, familyId, recipientDeviceId, familyId,
+        now, upperDate, upperDate, highWater.messageId];
       let lowerClause = '';
       if (input.after !== null) {
         lowerClause = `AND (created_at > ? OR (created_at = ? AND CAST(message_id AS BINARY) > CAST(? AS BINARY)))`;
@@ -151,7 +165,9 @@ export class MySqlRelayRepository implements RelayRepository {
       const result = await execute<QueuedRow>(
         conn,
         `SELECT ${QUEUED_COLUMNS} FROM relay_envelopes
-         WHERE recipient_device_id = ? AND family_id = ? AND state = 'QUEUED' AND expires_at > ?
+         WHERE recipient_device_id = ? AND family_id = ?
+           AND BINARY recipient_device_id = BINARY ? AND BINARY family_id = BINARY ?
+           AND state = 'QUEUED' AND expires_at > ?
            AND (created_at < ? OR (created_at = ? AND CAST(message_id AS BINARY) <= CAST(? AS BINARY)))
            ${lowerClause}
          ORDER BY created_at ASC, CAST(message_id AS BINARY) ASC LIMIT ${input.limit + 1}`,
@@ -169,10 +185,12 @@ export class MySqlRelayRepository implements RelayRepository {
     const { rows } = await runInTransaction((conn) => execute<QueuedRow>(
       conn,
       `SELECT ${QUEUED_COLUMNS} FROM relay_envelopes
-       WHERE recipient_device_id = ? AND family_id = ? AND state = 'QUEUED' AND expires_at > ?
+       WHERE recipient_device_id = ? AND family_id = ?
+         AND BINARY recipient_device_id = BINARY ? AND BINARY family_id = BINARY ?
+         AND state = 'QUEUED' AND expires_at > ?
          AND message_id IN (${messageIds.map(() => '?').join(',')})
        ORDER BY created_at ASC, CAST(message_id AS BINARY) ASC LIMIT ${MAX_RELAY_SUPPLEMENT_RECORDS}`,
-      [recipientDeviceId, familyId, now, ...messageIds],
+      [recipientDeviceId, familyId, recipientDeviceId, familyId, now, ...messageIds],
     ));
     // IN uses the table's PAD SPACE collation. Exact comparison prevents a
     // different trailing-space identifier from masquerading as a predecessor.
@@ -189,22 +207,28 @@ export class MySqlRelayRepository implements RelayRepository {
       const updated = await execute(
         conn,
         `UPDATE relay_envelopes SET state = 'ACKNOWLEDGED', acknowledged_at = ?
-         WHERE message_id = ? AND recipient_device_id = ? AND state = 'QUEUED' AND expires_at > ?`,
-        [acknowledgedAt, messageId, recipientDeviceId, acknowledgedAt],
+         WHERE message_id = ? AND recipient_device_id = ?
+           AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
+           AND state = 'QUEUED' AND expires_at > ?`,
+        [acknowledgedAt, messageId, recipientDeviceId, messageId, recipientDeviceId, acknowledgedAt],
       );
       if (updated.rowCount > 0) {
         const reread = await execute<RelayRow>(
           conn,
-          `SELECT * FROM relay_envelopes WHERE message_id = ? AND recipient_device_id = ?`,
-          [messageId, recipientDeviceId],
+          `SELECT * FROM relay_envelopes
+            WHERE message_id = ? AND recipient_device_id = ?
+              AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?`,
+          [messageId, recipientDeviceId, messageId, recipientDeviceId],
         );
         return { outcome: 'ACKNOWLEDGED', record: mapRow(reread.rows[0]!) };
       }
 
       const existing = await execute<RelayRow>(
         conn,
-        `SELECT * FROM relay_envelopes WHERE message_id = ? AND recipient_device_id = ?`,
-        [messageId, recipientDeviceId],
+        `SELECT * FROM relay_envelopes
+          WHERE message_id = ? AND recipient_device_id = ?
+            AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?`,
+        [messageId, recipientDeviceId, messageId, recipientDeviceId],
       );
       const row = existing.rows[0];
       if (!row) return { outcome: 'NOT_FOUND' };

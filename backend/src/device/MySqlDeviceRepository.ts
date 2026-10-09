@@ -313,7 +313,7 @@ export class MySqlDeviceRepository implements DeviceRepository {
             deviceId,
             familyId,
           ]);
-          return { outcome: 'CONFIRMED', device: mapDevice(reread.rows[0]!) } as const;
+          return { outcome: 'CONFIRMED', device: mapDevice(reread.rows[0]!), transitioned: true } as const;
         }
 
         const existing = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
@@ -323,7 +323,7 @@ export class MySqlDeviceRepository implements DeviceRepository {
         const row = existing.rows[0];
         if (!row) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
         // Already PAIRED -- idempotent success, original pairedAt untouched.
-        if (row.status === 'PAIRED') return { outcome: 'CONFIRMED', device: mapDevice(row) } as const;
+        if (row.status === 'PAIRED') return { outcome: 'CONFIRMED', device: mapDevice(row), transitioned: false } as const;
         // Checked before the generic INVALID_STATE fallback so a
         // self-approval attempt is never miscategorized as a plain state
         // conflict -- see DeviceRecord/confirmPairing's own doc comments.

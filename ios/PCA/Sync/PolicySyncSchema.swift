@@ -228,7 +228,8 @@ public enum PolicySyncDecoder {
               stored.bonusGrants.count <= 64,
               stored.bonusGrants.allSatisfy({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.extraMinutes) && $0.expiresAtUtc > $0.grantedAtUtc }),
               stored.dailyLimit.map({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.limitMinutes) &&
-                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.usedMinutesToday) }) ?? true else {
+                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.usedMinutesToday) &&
+                  isCanonicalGregorianLocalDate($0.anchorLocalDate) }) ?? true else {
             return .failure(.invalidUsageConfig)
         }
         guard let timeZone = TimeZone(identifier: stored.timeZoneIdentifier) else {
@@ -277,6 +278,34 @@ public enum PolicySyncDecoder {
         case .all: return .all
         case .apps(let set): return .apps(set)
         }
+    }
+
+    /// The schedule contract's local-date anchor is exactly `YYYY-MM-DD`.
+    /// Validate by constructing a UTC Gregorian date and round-tripping its
+    /// components; never allow Calendar normalization (for example February
+    /// 30) to turn malformed usage state into an implicit daily reset.
+    private static func isCanonicalGregorianLocalDate(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard bytes.count == 10, bytes[4] == 45, bytes[7] == 45 else { return false }
+
+        func number(_ range: Range<Int>) -> Int? {
+            let digits = bytes[range]
+            guard digits.allSatisfy({ (48...57).contains($0) }) else { return nil }
+            return digits.reduce(0) { $0 * 10 + Int($1 - 48) }
+        }
+
+        guard let year = number(0..<4), year > 0,
+              let month = number(5..<7), let day = number(8..<10) else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = 12
+        guard let date = calendar.date(from: components) else { return false }
+        let roundTrip = calendar.dateComponents([.year, .month, .day], from: date)
+        return roundTrip.year == year && roundTrip.month == month && roundTrip.day == day
     }
 
     private static func toDomainWindow(_ stored: StoredScheduleWindow, timeZone: TimeZone) -> ScheduleWindow {

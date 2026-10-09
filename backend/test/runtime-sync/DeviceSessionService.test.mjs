@@ -28,6 +28,7 @@ function buildHarness(now = () => new Date(), auditService = undefined) {
 async function registerDevice(deviceRepository, familyId = `family-${randomUUID()}`, status = 'ACTIVE') {
   const deviceId = `device-${randomUUID()}`;
   const publicKey = `pubkey-${randomUUID()}`;
+  const dskKeyId = `key-${randomUUID()}`;
   const result = await deviceRepository.createDeviceWithKey(
     {
       deviceId,
@@ -41,7 +42,7 @@ async function registerDevice(deviceRepository, familyId = `family-${randomUUID(
     },
     {
       deviceId,
-      keyId: `key-${randomUUID()}`,
+      keyId: dskKeyId,
       keyPurpose: 'DSK',
       publicKey,
       status: 'ACTIVE',
@@ -50,7 +51,7 @@ async function registerDevice(deviceRepository, familyId = `family-${randomUUID(
     },
   );
   assert.equal(result.outcome, 'CREATED');
-  return { deviceId, familyId, publicKey };
+  return { deviceId, familyId, publicKey, dskKeyId };
 }
 
 test('completeChallenge with a valid signature issues a working device session', async () => {
@@ -62,12 +63,12 @@ test('completeChallenge with a valid signature issues a working device session',
   const session = await sessionService.completeChallenge(challenge.challengeId, signature);
 
   const identity = await sessionService.validateSession(session.rawToken);
-  assert.deepEqual(identity, { deviceId, familyId });
+  assert.deepEqual(identity, { deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId });
 });
 
 test('a PAIRED device cannot receive or validate an ordinary device session, even with valid proof', async () => {
   const { deviceRepository, sessionRepository, sessionService } = buildHarness();
-  const { deviceId, familyId, publicKey } = await registerDevice(
+  const { deviceId, familyId, publicKey, dskKeyId } = await registerDevice(
     deviceRepository,
     `family-${randomUUID()}`,
     'PAIRED',
@@ -89,6 +90,8 @@ test('a PAIRED device cannot receive or validate an ordinary device session, eve
     tokenHash: hashSessionToken(rawToken),
     deviceId,
     familyId,
+    dskKeyId,
+    dskPublicKey: publicKey,
     familySessionEpoch: 1,
     issuedAt,
     expiresAt: new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS),
@@ -112,6 +115,41 @@ test('an issued device session is rejected immediately after device revocation',
     () => sessionService.validateSession(session.rawToken),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
+});
+
+test('a bearer remains bound to its verified DSK when a second active DSK exists', async () => {
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness();
+  const { deviceId, familyId, publicKey, dskKeyId } = await registerDevice(deviceRepository);
+  const firstChallenge = await sessionService.issueChallengeSafely(deviceId);
+  const oldSession = await sessionService.completeChallenge(firstChallenge.challengeId,
+    signTestOnlyChallenge(publicKey, firstChallenge.nonce));
+
+  const replacementKey = { deviceId, keyId: `key-${randomUUID()}`, keyPurpose: 'DSK',
+    publicKey: `pubkey-${randomUUID()}`, status: 'ACTIVE', createdAt: new Date(), revokedAt: null };
+  assert.equal((await deviceRepository.addKeyAtomically(familyId, replacementKey)).outcome, 'ADDED');
+  assert.equal((await deviceRepository.revokeKeyForFamily(familyId, deviceId, dskKeyId, new Date())).outcome, 'REVOKED');
+  const activeKeys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
+  assert.equal(activeKeys.filter(key => key.keyPurpose === 'DSK' && key.status === 'ACTIVE').length, 1);
+  assert.equal(activeKeys.find(key => key.keyId === replacementKey.keyId).status, 'ACTIVE');
+
+  await assert.rejects(() => sessionService.validateSession(oldSession.rawToken),
+    error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+
+  const replacementChallenge = await sessionService.issueChallengeSafely(deviceId);
+  const replacementSession = await sessionService.completeChallenge(replacementChallenge.challengeId,
+    signTestOnlyChallenge(replacementKey.publicKey, replacementChallenge.nonce));
+  assert.deepEqual(await sessionService.validateSession(replacementSession.rawToken),
+    { deviceId, familyId, dskKeyId: replacementKey.keyId });
+  // Validation of a token whose persisted DSK snapshot was corrupted also fails closed.
+  const validate = sessionRepository.validate.bind(sessionRepository);
+  sessionRepository.validate = async (tokenHash, now) => {
+    const result = await validate(tokenHash, now);
+    return result.outcome === 'VALID' && result.session.dskKeyId === replacementKey.keyId
+      ? { outcome: 'VALID', session: { ...result.session, dskPublicKey: `${replacementKey.publicKey}-tampered` } }
+      : result;
+  };
+  await assert.rejects(() => sessionService.validateSession(replacementSession.rawToken),
+    error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
 });
 
 test('an issued device session is rejected immediately after family suspension', async () => {
@@ -215,7 +253,9 @@ test('concurrent completeChallenge replay creates exactly one session', async ()
     assert.ok(attempt.reason instanceof RuntimeSyncAuthError);
     assert.equal(attempt.reason.code, 'UNAUTHORIZED');
   }
-  assert.deepEqual(await sessionService.validateSession(succeeded[0].value.rawToken), { deviceId, familyId });
+  assert.deepEqual(await sessionService.validateSession(succeeded[0].value.rawToken), {
+    deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+  });
 });
 
 test('a lost session response requires a fresh challenge and can recover without replaying the consumed challenge', async () => {
@@ -236,7 +276,9 @@ test('a lost session response requires a fresh challenge and can recover without
     retryChallenge.challengeId,
     signTestOnlyChallenge(publicKey, retryChallenge.nonce),
   );
-  assert.deepEqual(await sessionService.validateSession(recovered.rawToken), { deviceId, familyId });
+  assert.deepEqual(await sessionService.validateSession(recovered.rawToken), {
+    deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+  });
 });
 
 test('validateSession rejects an unknown token generically', async () => {
@@ -326,7 +368,9 @@ test('requireActorDeviceInFamily binds the caller to the verified device\'s OWN 
 
   // The device's own, correct family is satisfied and returns the verified identity.
   const identity = await sessionService.requireActorDeviceInFamily(session.rawToken, familyId);
-  assert.deepEqual(identity, { deviceId, familyId });
+  assert.deepEqual(identity, {
+    deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+  });
 
   // A valid device session from THIS family must never satisfy a binding for a DIFFERENT
   // family -- this is the cross-tenant check that stops a device session from one family

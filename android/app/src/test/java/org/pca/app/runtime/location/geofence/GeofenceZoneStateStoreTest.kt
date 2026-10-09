@@ -58,6 +58,16 @@ class GeofenceZoneStateStoreTest {
     }
 
     @Test
+    fun `malformed parseable debounce state is never trusted after restart`() {
+        val key = familyA.zoneStateStoreKey("geofence_zone_state_v2", "zone-1")
+        for (raw in listOf("INSIDE|OUTSIDE|-1|1|1", "INSIDE|OUTSIDE|1|-1|1",
+            "INSIDE|OUTSIDE|1|1|-1", "INSIDE|INSIDE|1|1|1", "INSIDE|UNKNOWN|1|1|1")) {
+            backing.putString(key, raw)
+            assertNull(store.load("zone-1"))
+        }
+    }
+
+    @Test
     fun `reads legacy four-field state rows without inventing a sample timestamp`() {
         backing.putString(
             familyA.zoneStateStoreKey("geofence_zone_state_v2", "zone-1"),

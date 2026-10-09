@@ -59,6 +59,34 @@ test('MySQL: recipient-scoped retrieval -- wrong recipient cannot read the envel
   await assert.rejects(() => service.fetchEnvelope('someone-else', input.messageId), { code: 'NOT_FOUND' });
 });
 
+test('MySQL: trailing-space aliases cannot fetch, acknowledge, list, or idempotently reuse an exact relay identity', async () => {
+  const now = new Date();
+  const service = buildService(() => now);
+  const input = envelope({ messageId: `message-${randomUUID()}`, recipientDeviceId: `recipient-${randomUUID()}` });
+  await service.queueEnvelope(input);
+  const aliasedMessageId = `${input.messageId} `;
+  const aliasedRecipient = `${input.recipientDeviceId} `;
+  const aliasedFamily = `${input.familyId} `;
+
+  // The deployed utf8mb4_bin collation is PAD SPACE. A primary-key collision
+  // on an alias is a conflict, never proof of an exact idempotent retry.
+  await assert.rejects(() => service.queueEnvelope({ ...input, messageId: aliasedMessageId }), { code: 'CONFLICT' });
+  await assert.rejects(() => service.fetchEnvelope(input.recipientDeviceId, aliasedMessageId), { code: 'NOT_FOUND' });
+  await assert.rejects(() => service.acknowledgeEnvelope(input.recipientDeviceId, aliasedMessageId), { code: 'NOT_FOUND' });
+
+  assert.deepEqual(await service.listQueuedForRecipient(aliasedRecipient), []);
+  assert.deepEqual(await repository.listQueuedPageForRecipient(aliasedRecipient, input.familyId, now,
+    { after: null, highWater: null, limit: 10 }), { records: [], highWater: null, hasMore: false });
+  assert.deepEqual(await repository.listQueuedPageForRecipient(input.recipientDeviceId, aliasedFamily, now,
+    { after: null, highWater: null, limit: 10 }), { records: [], highWater: null, hasMore: false });
+  assert.deepEqual(await repository.findQueuedForRecipient(input.recipientDeviceId, aliasedFamily,
+    [input.messageId], now), []);
+
+  const original = await service.fetchEnvelope(input.recipientDeviceId, input.messageId);
+  assert.equal(original.state, 'QUEUED', 'an alias ACK must leave the exact original message queued');
+  assert.equal(original.ciphertext.equals(input.ciphertext), true);
+});
+
 test('MySQL: TTL expiry makes an envelope unavailable', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const service = buildService(() => now);

@@ -34,6 +34,7 @@ export class PairingService {
   private readonly deviceRepository: DeviceRepository;
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
+  private auditAppendFailureCount = 0;
 
   constructor(
     deviceRepository: DeviceRepository,
@@ -71,23 +72,39 @@ export class PairingService {
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new PairingError('NOT_FOUND');
     if (result.outcome === 'SELF_APPROVAL_DENIED') throw new PairingError('SELF_APPROVAL_DENIED');
     if (result.outcome === 'INVALID_STATE') throw new PairingError('INVALID_STATE');
-    await this.auditService.record({
-      familyId: authorizedFamilyId,
-      actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-      actorDeviceId: confirmedByAccountId,
-      actorMemberId: null,
-      targetScope: { kind: 'DEVICE', id: deviceId },
-      authorizationRole: null,
-      trustSetEpoch: 0,
-      policyRevision: null,
-      clientMonotonicSequence: null,
-      resultStatus: 'SUCCESS',
-      targetAcknowledgementCount: 0,
-      reasonCategory: null,
-      correlationId: null,
-      actionId: null,
-      freeTextNote: 'PAIRING_PENDING -> PAIRED',
-    });
+    if (result.transitioned) {
+      try {
+        await this.auditService.record({
+          familyId: authorizedFamilyId,
+          actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+          // Browser account IDs are not device identities. This established
+          // sentinel records the server/session origin without inventing a DSK.
+          actorDeviceId: 'SERVICE_SESSION',
+          actorMemberId: null,
+          targetScope: { kind: 'DEVICE', id: deviceId },
+          authorizationRole: null,
+          trustSetEpoch: 0,
+          policyRevision: null,
+          clientMonotonicSequence: null,
+          resultStatus: 'SUCCESS',
+          targetAcknowledgementCount: 0,
+          reasonCategory: null,
+          correlationId: null,
+          actionId: null,
+          freeTextNote: 'PAIRING_PENDING -> PAIRED',
+        });
+        this.auditAppendFailureCount = 0;
+      } catch {
+        // Pairing already committed in the device repository. Reporting an
+        // operation failure would be false, and a retry cannot recreate the
+        // one-shot transition audit without a shared transactional outbox.
+        this.auditAppendFailureCount += 1;
+        if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
+          console.warn(JSON.stringify({ event: 'pairing_lifecycle_audit_append_failed',
+            occurrences: this.auditAppendFailureCount }));
+        }
+      }
+    }
     return this.getPairingRequest(authorizedFamilyId, deviceId);
   }
 }

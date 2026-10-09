@@ -31,18 +31,27 @@ class GeofenceZoneStateStore(
 
     internal fun load(scope: GeofenceStorageScope, zoneId: String): GeofenceZoneState? {
         if (!scope.isValid() || !ZONE_TOKEN.matches(zoneId)) return null
-        val raw = store.getString(scope.zoneStateStoreKey(KEY_PREFIX, zoneId)) ?: return null
+        val raw = try { GeofenceDurableStorage.read(store, scope.zoneStateStoreKey(KEY_PREFIX, zoneId)) }
+            catch (_: GeofencePersistenceException) { return null }
+            ?: return null
         return decode(zoneId, raw)
     }
 
     internal fun save(scope: GeofenceStorageScope, state: GeofenceZoneState) {
         require(scope.isValid() && ZONE_TOKEN.matches(state.zoneId))
-        store.putString(scope.zoneStateStoreKey(KEY_PREFIX, state.zoneId), encode(state))
+        require(isSane(state)) { "Invalid Safe Zone debounce state" }
+        synchronized(store.coordinationLock) {
+            check(currentScope() == scope) { "Safe Zone family authority changed" }
+            GeofenceDurableStorage.write(store, scope.zoneStateStoreKey(KEY_PREFIX, state.zoneId), encode(state))
+        }
     }
 
     internal fun clear(scope: GeofenceStorageScope, zoneId: String) {
         if (scope.isValid() && ZONE_TOKEN.matches(zoneId)) {
-            store.remove(scope.zoneStateStoreKey(KEY_PREFIX, zoneId))
+            synchronized(store.coordinationLock) {
+                check(currentScope() == scope) { "Safe Zone family authority changed" }
+                GeofenceDurableStorage.write(store, scope.zoneStateStoreKey(KEY_PREFIX, zoneId), null)
+            }
         }
     }
 
@@ -62,7 +71,7 @@ class GeofenceZoneStateStore(
         val parts = raw.split(SEP)
         if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
         return try {
-            GeofenceZoneState(
+            val state = GeofenceZoneState(
                 zoneId = zoneId,
                 confirmedMembership = GeofenceMembership.valueOf(parts[0]),
                 candidateMembership = GeofenceMembership.valueOf(parts[1]),
@@ -70,10 +79,18 @@ class GeofenceZoneStateStore(
                 lastEvaluatedMonotonicNanos = parts[3].toLong(),
                 lastAcceptedSampleElapsedRealtimeMillis = parts.getOrNull(4)?.takeUnless { it == "-" }?.toLong(),
             )
+            state.takeIf(::isSane)
         } catch (_: IllegalArgumentException) {
             null
         }
     }
+
+    private fun isSane(state: GeofenceZoneState): Boolean =
+        state.candidateStreak >= 0 && state.lastEvaluatedMonotonicNanos >= 0L &&
+            (state.lastAcceptedSampleElapsedRealtimeMillis == null || state.lastAcceptedSampleElapsedRealtimeMillis >= 0L) &&
+            (state.candidateStreak == 0 ||
+                (state.candidateMembership != GeofenceMembership.UNKNOWN &&
+                    state.candidateMembership != state.confirmedMembership))
 
     private companion object {
         const val KEY_PREFIX = "geofence_zone_state_v2"

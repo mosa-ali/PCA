@@ -125,6 +125,44 @@ final class PolicySyncDecoderTests: XCTestCase {
         XCTAssertEqual(PolicySyncDecoder.decode(data), .failure(.unrecognizedTimeZone("Not/A_Real_Zone")))
     }
 
+    func testDailyLimitAnchorMustBeAnExactValidGregorianDate() throws {
+        let original = wellFormedPolicy()
+        let originalDaily = try XCTUnwrap(original.dailyLimit)
+        let invalidAnchors = ["2026-2-03", "2026-13-01", "2026-02-30", "2025-02-29", "0000-01-01", "2026-01-07T00:00Z"]
+
+        for anchor in invalidAnchors {
+            let malformed = StoredDeviceActivityPolicy(
+                schemaVersion: original.schemaVersion, activityId: original.activityId, appToken: original.appToken,
+                timeZoneIdentifier: original.timeZoneIdentifier, windows: original.windows,
+                bonusGrants: original.bonusGrants, exceptions: original.exceptions,
+                dailyLimit: StoredDailyAppLimit(appScope: originalDaily.appScope,
+                    limitMinutes: originalDaily.limitMinutes, usedMinutesToday: originalDaily.usedMinutesToday,
+                    anchorLocalDate: anchor),
+                enforcementCapability: original.enforcementCapability
+            )
+            XCTAssertEqual(PolicySyncDecoder.decode(encode(malformed)), .failure(.invalidUsageConfig), anchor)
+        }
+    }
+
+    func testDailyLimitAnchorAcceptsGregorianLeapDay() throws {
+        let original = wellFormedPolicy()
+        let originalDaily = try XCTUnwrap(original.dailyLimit)
+        let policy = StoredDeviceActivityPolicy(
+            schemaVersion: original.schemaVersion, activityId: original.activityId, appToken: original.appToken,
+            timeZoneIdentifier: original.timeZoneIdentifier, windows: original.windows,
+            bonusGrants: original.bonusGrants, exceptions: original.exceptions,
+            dailyLimit: StoredDailyAppLimit(appScope: originalDaily.appScope,
+                limitMinutes: originalDaily.limitMinutes, usedMinutesToday: originalDaily.usedMinutesToday,
+                anchorLocalDate: "2024-02-29"),
+            enforcementCapability: original.enforcementCapability
+        )
+
+        guard case .success(let decoded) = PolicySyncDecoder.decode(encode(policy)) else {
+            return XCTFail("a valid leap-day usage anchor must remain accepted")
+        }
+        XCTAssertEqual(decoded.dailyLimit?.anchorLocalDate, "2024-02-29")
+    }
+
     func testInvalidWindowConfigIsRejectedWithSpecificErrors() {
         var policy = wellFormedPolicy()
         policy = StoredDeviceActivityPolicy(

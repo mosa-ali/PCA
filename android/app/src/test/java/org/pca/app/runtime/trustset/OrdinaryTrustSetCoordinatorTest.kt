@@ -68,6 +68,7 @@ class OrdinaryTrustSetCoordinatorTest {
         var response: OrdinaryEpochResponse? = null
         var head: AcceptedEpochRecord? = null
         var headReads = 0
+        var epochReads = 0
         val records = mutableMapOf<Int, AcceptedEpochRecord>()
         override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
             sent += request
@@ -75,7 +76,10 @@ class OrdinaryTrustSetCoordinatorTest {
             return response!!
         }
         override suspend fun status(familyId: String, request: OrdinaryEpochRequest) = submit(familyId, request)
-        override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = records[trustSetEpoch] ?: response!!.acceptedHead
+        override suspend fun getEpoch(familyId: String, trustSetEpoch: Int): AcceptedEpochRecord {
+            epochReads++
+            return records[trustSetEpoch] ?: response!!.acceptedHead
+        }
         override suspend fun getHead(familyId: String): AcceptedEpochRecord {
             headReads++
             return head ?: response!!.acceptedHead
@@ -426,6 +430,48 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(1, coordinator.catchUp(1))
         assertEquals(5, store.read()!!.accepted.trustSetEpoch)
     }
+    @Test fun `catch-up advances to a head beyond the bounded record window`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        seedStore(store)
+        val api = Api()
+        val accepted = (3..34).associateWith { record(epoch(it)) }
+        api.records.putAll(accepted)
+        api.head = accepted.getValue(34)
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("catch-up must not sign")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertEquals(32, coordinator.catchUp(maximumRecords = 32))
+        assertEquals(accepted.getValue(34), store.read()!!.accepted)
+        assertTrue("the walk must stop at the bounded proof chain", api.epochReads <= 31)
+    }
+
+    @Test fun `invalid hop inside the bounded proof chain cannot partially advance the floor`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        seedStore(store)
+        val initial = store.read()!!
+        val api = Api()
+        val accepted = (3..34).associateWith { record(epoch(it)) }
+        api.records.putAll(accepted)
+        api.head = accepted.getValue(34)
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("catch-up must not sign")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, bytes, _ ->
+                TrustSetEpochCodec.decodeCanonical(bytes).trustSetEpoch != 20
+            }, "owner", "dsk", "alias")
+
+        try {
+            coordinator.catchUp(maximumRecords = 32)
+            fail("an invalid later hop must be rejected")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals("the entire fetched proof chain is checked before any CAS", initial, store.read())
+    }
+
     @Test fun nullSupersedesIsAcceptedAndPersistedEqualHeadMustMatchExactly() = runBlocking {
         val backing = DiskBackedPersistentStateStore()
         val store = PersistentOrdinaryEpochStore(backing)

@@ -1,5 +1,8 @@
 package org.pca.app.runtime.location.geofence
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.runtime.EpochBounds
@@ -260,6 +263,7 @@ class SafeZonePolicyReceiver(
     private val decryptor: SafeZonePayloadDecryptor,
     private val zoneStore: GeofenceZoneStore,
     private val zoneStateStore: GeofenceZoneStateStore,
+    private val monotonicNanos: () -> Long = System::nanoTime,
 ) {
     private val receiverScope = GeofenceStorageScope(localFamilyId, localEndpointId)
 
@@ -267,11 +271,15 @@ class SafeZonePolicyReceiver(
         envelope: SafeZonePolicyEnvelope,
         nowEpochMillis: Long,
     ): SafeZonePolicyReceiveResult {
-        if (!isStructurallyValid(envelope)) return SafeZonePolicyReceiveResult.REJECTED
-        if (nowEpochMillis < envelope.issuedAtEpochMillis || nowEpochMillis >= envelope.expiresAtEpochMillis) {
+        currentCoroutineContext().ensureActive()
+        val receivedAtNanos = monotonicNanos()
+        // A caller may retain mutable arrays while a crypto boundary is suspended.
+        val candidate = envelope.copy(ciphertext = envelope.ciphertext.copyOf(), nonce = envelope.nonce.copyOf())
+        if (!isStructurallyValid(candidate)) return SafeZonePolicyReceiveResult.REJECTED
+        if (nowEpochMillis < candidate.issuedAtEpochMillis || nowEpochMillis >= candidate.expiresAtEpochMillis) {
             return SafeZonePolicyReceiveResult.REJECTED
         }
-        if (envelope.familyId != localFamilyId || envelope.recipientEndpointId != localEndpointId) {
+        if (candidate.familyId != localFamilyId || candidate.recipientEndpointId != localEndpointId) {
             return SafeZonePolicyReceiveResult.REJECTED
         }
         // A receiver is bound to the identity captured at its construction.
@@ -279,45 +287,75 @@ class SafeZonePolicyReceiver(
         // receiver instance to read or apply under the replacement family.
         if (!zoneStore.isCurrentScope(receiverScope)) return SafeZonePolicyReceiveResult.REJECTED
 
-        val recipientAuthorized = runCatching {
-            authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)
+        val recipientAuthorized = securityBoundary {
+            authority.isRecipientAuthorized(candidate.familyId, localEndpointId, candidate.trustSetEpoch, candidate.keyEpoch)
         }.getOrDefault(false)
         if (!recipientAuthorized) return SafeZonePolicyReceiveResult.REJECTED
 
-        val sender = runCatching {
+        val sender = securityBoundary {
             authority.resolveAuthorizedSender(
-                envelope.familyId,
-                envelope.senderDeviceId,
-                envelope.senderKeyId,
-                envelope.trustSetEpoch,
-                envelope.keyEpoch,
+                candidate.familyId,
+                candidate.senderDeviceId,
+                candidate.senderKeyId,
+                candidate.trustSetEpoch,
+                candidate.keyEpoch,
             )
         }.getOrNull() ?: return SafeZonePolicyReceiveResult.REJECTED
         if (sender.role != SafeZoneFamilyRole.OWNER && sender.role != SafeZoneFamilyRole.ADMINISTRATOR) {
             return SafeZonePolicyReceiveResult.REJECTED
         }
 
-        val verified = runCatching { signatureVerifier.verify(envelope, sender.publicSigningKey) }.getOrDefault(false)
+        // Crypto adapters receive detached arrays. A verifier must not be able to
+        // alter the bytes later handed to the decryptor or payload decoder.
+        val verified = securityBoundary { signatureVerifier.verify(candidate.cryptoCopy(), sender.publicSigningKey) }.getOrDefault(false)
         if (!verified) return SafeZonePolicyReceiveResult.REJECTED
 
-        val plaintext = runCatching { decryptor.decrypt(envelope, sender.publicSigningKey) }.getOrNull()
+        val plaintext = try { decryptor.decrypt(candidate.cryptoCopy(), sender.publicSigningKey) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
             ?: return SafeZonePolicyReceiveResult.BLOCKED_CRYPTO_REVIEW
         return try {
-            val payload = SafeZonePolicyPayloadCodec.decode(plaintext, envelope)
+            val receiverContext = currentCoroutineContext()
+            receiverContext.ensureActive()
+            val payload = SafeZonePolicyPayloadCodec.decode(plaintext, candidate)
                 ?: return SafeZonePolicyReceiveResult.REJECTED
             if (!zoneStore.isCurrentScope(receiverScope)) return SafeZonePolicyReceiveResult.REJECTED
-            val current = zoneStore.loadZones(receiverScope).firstOrNull { it.zoneId == payload.zoneId }
-            if (current != null && payload.revision <= current.revision) {
-                return SafeZonePolicyReceiveResult.REJECTED
+            // The verifier/decryptor may suspend while a locally accepted sender or
+            // recipient is revoked or rotated. Re-resolve both before persisted effects.
+            if (!securityBoundary {
+                    authority.isRecipientAuthorized(candidate.familyId, localEndpointId, candidate.trustSetEpoch, candidate.keyEpoch)
+                }.getOrDefault(false)) return SafeZonePolicyReceiveResult.REJECTED
+            val freshSender = securityBoundary {
+                authority.resolveAuthorizedSender(candidate.familyId, candidate.senderDeviceId,
+                    candidate.senderKeyId, candidate.trustSetEpoch, candidate.keyEpoch)
+            }.getOrNull()
+            currentCoroutineContext().ensureActive()
+            if (freshSender != sender || !zoneStore.isCurrentScope(receiverScope)) return SafeZonePolicyReceiveResult.REJECTED
+            zoneStore.withPolicyLock {
+                receiverContext.ensureActive()
+                val elapsedNanos = monotonicNanos() - receivedAtNanos
+                if (elapsedNanos < 0L) return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                val effectTimeMillis = try { Math.addExact(nowEpochMillis, elapsedNanos / 1_000_000L) }
+                    catch (_: ArithmeticException) { return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED }
+                if (effectTimeMillis >= candidate.expiresAtEpochMillis) {
+                    return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                }
+                if (!zoneStore.isCurrentScope(receiverScope)) return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                val current = zoneStore.loadZones(receiverScope).firstOrNull { it.zoneId == payload.zoneId }
+                if (current != null && payload.revision <= current.revision) {
+                    return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                }
+                // A revision changes the meaning of the zone id. Clear the old
+                // baseline durably before replacing geometry, while a monitor
+                // tick cannot save state derived from the prior zone snapshot.
+                zoneStateStore.clear(receiverScope, payload.zoneId)
+                if (!zoneStore.addOrReplaceIfNewer(receiverScope, payload.zone)) {
+                    return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                }
+                SafeZonePolicyReceiveResult.APPLIED
             }
-            // A policy revision changes the meaning of the zone id. Do not
-            // carry membership/debounce state across new geometry or a
-            // re-enable; clear it before replacing the zone so a state-store
-            // failure leaves the previously applied policy in place rather
-            // than pairing new geometry with an old baseline.
-            zoneStateStore.clear(receiverScope, payload.zoneId)
-            zoneStore.addOrReplace(receiverScope, payload.zone)
-            SafeZonePolicyReceiveResult.APPLIED
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             SafeZonePolicyReceiveResult.REJECTED
         } finally {
@@ -326,6 +364,19 @@ class SafeZonePolicyReceiver(
             plaintext.fill(0)
         }
     }
+
+    private suspend fun <T> securityBoundary(action: suspend () -> T): Result<T> = try {
+        val value = action()
+        currentCoroutineContext().ensureActive()
+        Result.success(value)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    }
+
+    private fun SafeZonePolicyEnvelope.cryptoCopy(): SafeZonePolicyEnvelope =
+        copy(ciphertext = ciphertext.copyOf(), nonce = nonce.copyOf())
 
     private fun isStructurallyValid(envelope: SafeZonePolicyEnvelope): Boolean {
         val token = Regex("^[A-Za-z0-9_-]{1,128}$")

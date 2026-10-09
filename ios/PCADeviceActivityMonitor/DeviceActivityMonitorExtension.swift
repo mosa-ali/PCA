@@ -76,8 +76,47 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     private func applyCurrentDecision(for activity: DeviceActivityName, usageEventId: String? = nil) {
         // The shared OS file lock spans load, evaluation and shield mutation;
         // an old callback cannot clear a replacement's restrictive decision.
-        guard let coordination = policyCoordination else { return }
-        try? coordination.withExclusiveAccess { applyCurrentDecisionUnderLock(for: activity, usageEventId: usageEventId) }
+        guard let coordination = policyCoordination else {
+            clearShieldsIfAuthorizationDoesNotPermitEnforcement()
+            return
+        }
+        do {
+            try coordination.withExclusiveAccess {
+                switch DeviceActivityAuthorizationGate.action(for: currentCallbackAuthorization()) {
+                case .applyCurrentPolicy:
+                    self.applyCurrentDecisionUnderLock(for: activity, usageEventId: usageEventId)
+                case .clearShieldsPreservingPolicy:
+                    self.clearManagedSettingsShield()
+                }
+            }
+        } catch {
+            clearShieldsIfAuthorizationDoesNotPermitEnforcement()
+        }
+    }
+
+    private func currentCallbackAuthorization() -> DeviceActivityCallbackAuthorization {
+        switch AuthorizationCenter.shared.authorizationStatus {
+        case .approved:
+            return .approved
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .unavailable
+        }
+    }
+
+    private func clearShieldsIfAuthorizationDoesNotPermitEnforcement() {
+        if case .clearShieldsPreservingPolicy = DeviceActivityAuthorizationGate.action(for: currentCallbackAuthorization()) {
+            clearManagedSettingsShield()
+        }
+    }
+
+    private func clearManagedSettingsShield() {
+        managedSettings.shield.applications = nil
+        managedSettings.shield.applicationCategories = nil
+        managedSettings.shield.webDomains = nil
     }
 
     private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName, usageEventId: String?) {

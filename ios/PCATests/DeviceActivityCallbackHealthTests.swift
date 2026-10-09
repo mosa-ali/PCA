@@ -21,6 +21,17 @@ final class DeviceActivityCallbackHealthTests: XCTestCase {
         DeviceActivityCallbackReconciler.reconcile(expected: expected ?? [firstStart()], observed: observations, activityId: monitor, installationGeneration: generation, nowUtc: now ?? base.addingTimeInterval(3600))
     }
 
+    func testDeniedNotDeterminedAndUnknownAuthorizationClearShieldsAndPreservePolicy() {
+        for status in [DeviceActivityCallbackAuthorization.denied, .notDetermined, .unavailable] {
+            XCTAssertEqual(DeviceActivityAuthorizationGate.action(for: status), .clearShieldsPreservingPolicy,
+                "\(status) must clear ManagedSettings without discarding stored policy")
+        }
+    }
+
+    func testApprovedAuthorizationRunsCurrentPolicyDecisionWithoutClearing() {
+        XCTAssertEqual(DeviceActivityAuthorizationGate.action(for: .approved), .applyCurrentPolicy)
+    }
+
     func testFirstInstallationReceiptCanCertifyDelivery() {
         XCTAssertEqual(health([receipt(base.addingTimeInterval(1))]), .healthy)
     }

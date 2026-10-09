@@ -10,7 +10,7 @@ import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/Store
 
 const FAMILY = 'ordinary-family';
 const OWNER = 'ordinary-owner';
-const scope = { familyId: FAMILY, deviceId: OWNER };
+const scope = { familyId: FAMILY, deviceId: OWNER, dskKeyId: 'owner-dsk' };
 function fixture() {
   const keys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwk = keys.publicKey.export({ format: 'jwk' });
@@ -43,6 +43,7 @@ function fixture() {
   };
   const deviceStatuses = new Map([[OWNER, 'ACTIVE'], [childEntry.deviceId, 'ACTIVE']]);
   const keyStatuses = new Map([[OWNER, 'ACTIVE'], [childEntry.deviceId, 'ACTIVE']]);
+  const additionalKeys = new Map();
   const deviceRepository = {
     isDeviceSessionActive: async (familyId, deviceId) => familyId === FAMILY && deviceStatuses.get(deviceId) === 'ACTIVE',
     findKeysByDeviceForFamily: async (familyId, deviceId) => {
@@ -50,7 +51,7 @@ function fixture() {
       const entry = [ownerEntry, childEntry].find((candidate) => candidate.deviceId === deviceId);
       if (!entry) return [];
       return [{ deviceId, keyId: entry.dskKeyId, keyPurpose: 'DSK', publicKey: entry.dskPublicKey,
-        status: keyStatuses.get(deviceId) }];
+        status: keyStatuses.get(deviceId) }, ...(additionalKeys.get(deviceId) ?? [])];
     },
   };
   const verifier = new P256TrustSetSignatureVerifier();
@@ -76,7 +77,7 @@ function fixture() {
       signature: Buffer.from(first.signatureBase64, 'base64').toString('base64url'), receivedAt: new Date() }), { outcome: 'ACCEPTED' });
     return first;
   }
-  return { service, acceptance, request, bootstrap, store, rows, ownerEntry, childEntry, deviceStatuses, keyStatuses,
+  return { service, acceptance, request, bootstrap, store, rows, ownerEntry, childEntry, deviceStatuses, keyStatuses, additionalKeys,
     createService: () => new OrdinaryTrustSetService(acceptance, roleResolver),
     get appends() { return appends; }, setFloor(value) { floor = value; } };
 }
@@ -126,7 +127,7 @@ test('ordinary endpoint cannot bootstrap epoch one or invent root for a virgin f
 test('indexed signed history is bounded, family scoped and requires current active membership', async () => {
   const f = fixture(); const first = await f.bootstrap();
   await f.service.submit(scope, f.request(2));
-  const child = { familyId: FAMILY, deviceId: 'child-device' };
+  const child = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
   const historical = await f.service.epoch(child, 1);
   assert.equal(historical.canonicalEpochBase64, first.canonicalEpochBase64);
   assert.equal(historical.signatureBase64, first.signatureBase64);
@@ -143,7 +144,7 @@ test('indexed signed history is bounded, family scoped and requires current acti
 test('indexed history does not expose a record when membership is revoked during lookup', async () => {
   const f = fixture(); const second = f.request(2);
   await f.bootstrap(); await f.service.submit(scope, second);
-  const child = { familyId: FAMILY, deviceId: 'child-device' };
+  const child = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
 
   const readAcceptedEpoch = f.acceptance.readAcceptedEpoch.bind(f.acceptance);
   let signalLookupStarted;
@@ -178,18 +179,37 @@ test('indexed history does not expose a record when membership is revoked during
 });
 
 test('head is available to active child but submit and exact status require current owner', async () => {
-  const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device' };
+  const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
   assert.equal((await f.service.head(child)).trustSetEpoch, 1);
   await assert.rejects(f.service.submit(child, f.request(2)), rejectsCode('OWNER_REQUIRED'));
   await assert.rejects(f.service.status(child, f.request(2)), rejectsCode('OWNER_REQUIRED'));
   await assert.rejects(f.service.head({ ...scope, deviceId: 'foreign-device' }), rejectsCode('DEVICE_NOT_ACTIVE'));
 });
 
+test('an active device session must use the DSK authorized by the current accepted epoch', async () => {
+  const f = fixture(); await f.bootstrap();
+  const oldChildScope = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
+  assert.equal((await f.service.head(oldChildScope)).trustSetEpoch, 1);
+
+  // The key directory may retain the prior DSK as ACTIVE during overlap,
+  // but the newly accepted epoch chooses the exact DSK allowed for this
+  // device's Trust Set session scope.
+  const previousDsk = { deviceId: f.childEntry.deviceId, keyId: f.childEntry.dskKeyId, keyPurpose: 'DSK',
+    publicKey: f.childEntry.dskPublicKey, status: 'ACTIVE' };
+  f.childEntry.dskKeyId = 'child-dsk-rotated';
+  f.childEntry.dskPublicKey = 'child-dsk-public-rotated';
+  f.additionalKeys.set('child-device', [previousDsk]);
+  await f.service.submit(scope, f.request(2));
+
+  await assert.rejects(f.service.head(oldChildScope), rejectsCode('DEVICE_NOT_ACTIVE'));
+  assert.equal((await f.service.head({ ...oldChildScope, dskKeyId: 'child-dsk-rotated' })).trustSetEpoch, 2);
+});
+
 test('revoked membership cannot fetch head, submit, or reconcile an old receipt', async () => {
   const f = fixture(); await f.bootstrap(); const second = f.request(2); await f.service.submit(scope, second);
   const entries = (await import('../../dist/familytrustset/decode.js')).decodeCanonicalTrustSetEpochBytes(Buffer.from(second.canonicalEpochBase64, 'base64')).entries;
   entries[1].status = 'REVOKED'; await f.service.submit(scope, f.request(3, { entries }));
-  await assert.rejects(f.service.head({ familyId: FAMILY, deviceId: 'child-device' }), rejectsCode('DEVICE_NOT_ACTIVE'));
+  await assert.rejects(f.service.head({ familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' }), rejectsCode('DEVICE_NOT_ACTIVE'));
 });
 
 test('family mismatch rejected without appending and no caller authority/timestamps allowed', async () => {
@@ -258,7 +278,7 @@ test('accepted-head role resolution rejects a revoked current DSK even when the 
 
   f.keyStatuses.set(OWNER, 'ACTIVE');
   f.keyStatuses.set('child-device', 'REVOKED');
-  await assert.rejects(f.service.head({ familyId: FAMILY, deviceId: 'child-device' }), rejectsCode('DEVICE_NOT_ACTIVE'));
+  await assert.rejects(f.service.head({ familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' }), rejectsCode('DEVICE_NOT_ACTIVE'));
   assert.equal(f.appends, 1);
 });
 
