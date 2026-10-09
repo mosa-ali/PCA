@@ -1,11 +1,17 @@
 package org.pca.app.runtime.child
 
 import kotlinx.coroutines.test.runTest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.FakeFamilySyncRuntimePort
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncConnectionState
@@ -76,5 +82,121 @@ class ChildRequestOfflineQueueTest {
         queue.flush(port)
 
         assertEquals(1, port.submitted.size)
+    }
+
+    @Test
+    fun `corrupt persisted row fails closed and is preserved by read and mutation attempts`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val key = "child-requests"
+        val raw = "req-1|SKIP_BREAK|ZGV0YWls|0|PENDING_SYNC_LOCAL\nnot-a-valid-record"
+        store.putString(key, raw)
+        val queue = ChildRequestOfflineQueue(store, key)
+
+        assertQueueUnavailable { queue.pending() }
+        assertQueueUnavailable { queue.enqueue(payload("req-2")) }
+        val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+        assertQueueUnavailableSuspend { queue.flush(port) }
+
+        assertEquals("corrupt bytes must remain available for recovery; no partial rewrite is allowed", raw, store.getString(key))
+        assertTrue("corrupt rows must never be submitted", port.submitted.isEmpty())
+    }
+
+    @Test
+    fun `duplicate persisted request identities fail closed without rewriting the queue`() {
+        val store = InMemoryPersistentStateStore()
+        val key = "child-requests"
+        val raw = "req-1|SKIP_BREAK|ZGV0YWls|0|PENDING_SYNC_LOCAL\nreq-1|SKIP_BREAK|ZGV0YWls|1|SUBMITTED"
+        store.putString(key, raw)
+        val queue = ChildRequestOfflineQueue(store, key)
+
+        assertQueueUnavailable { queue.pending() }
+
+        assertEquals(raw, store.getString(key))
+    }
+
+    @Test
+    fun `invalid request identity delimiters are rejected before durable queue mutation`() {
+        val store = InMemoryPersistentStateStore()
+        val key = "child-requests"
+        val queue = ChildRequestOfflineQueue(store, key)
+
+        val failure = runCatching { queue.enqueue(payload("bad|id")) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(null, store.getString(key))
+    }
+
+    @Test
+    fun `valid queue survives reload and resumes submission after process death`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        ChildRequestOfflineQueue(store).enqueue(payload("req-after-restart"))
+        val reloaded = ChildRequestOfflineQueue(store)
+        val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+
+        assertEquals(1, reloaded.flush(port))
+        assertEquals(1, port.submitted.size)
+        assertEquals(0, ChildRequestOfflineQueue(store).pending().size)
+    }
+
+    @Test
+    fun `separate queue wrappers serialize read modify write through shared store lock`() {
+        val store = BlockingFirstReadStore()
+        val first = ChildRequestOfflineQueue(store)
+        val second = ChildRequestOfflineQueue(store)
+        val failure = AtomicReference<Throwable?>(null)
+        val firstThread = Thread {
+            runCatching { first.enqueue(payload("req-first")) }.exceptionOrNull()?.let(failure::set)
+        }
+        firstThread.start()
+        assertTrue("first enqueue should enter the backing read", store.firstReadEntered.await(5, TimeUnit.SECONDS))
+
+        val secondThread = Thread {
+            runCatching { second.enqueue(payload("req-second")) }.exceptionOrNull()?.let(failure::set)
+        }
+        secondThread.start()
+        val secondEnteredWhileFirstHeld = store.secondReadEntered.await(200, TimeUnit.MILLISECONDS)
+        store.releaseFirstRead.countDown()
+        firstThread.join(5_000)
+        secondThread.join(5_000)
+
+        assertFalse("a second wrapper must wait for the shared state-store transaction lock", secondEnteredWhileFirstHeld)
+        assertFalse("both queue operations should finish", firstThread.isAlive || secondThread.isAlive)
+        failure.get()?.let { throw AssertionError("queue operation failed", it) }
+        assertEquals(setOf("req-first", "req-second"), first.pending().map { it.payload.requestId }.toSet())
+    }
+
+    private fun assertQueueUnavailable(block: () -> Unit) {
+        val failure = runCatching(block).exceptionOrNull()
+        assertTrue("corrupt persisted queue must fail closed with a typed error", failure is ChildRequestQueueUnavailable)
+    }
+
+    private suspend fun assertQueueUnavailableSuspend(block: suspend () -> Unit) {
+        val failure = runCatching { block() }.exceptionOrNull()
+        assertTrue("corrupt persisted queue must fail closed with a typed error", failure is ChildRequestQueueUnavailable)
+    }
+
+    private class BlockingFirstReadStore : PersistentStateStore {
+        private val backing = InMemoryPersistentStateStore()
+        override val coordinationLock: Any get() = backing.coordinationLock
+        private val readCount = AtomicInteger()
+        val firstReadEntered = CountDownLatch(1)
+        val releaseFirstRead = CountDownLatch(1)
+        val secondReadEntered = CountDownLatch(1)
+
+        override fun getString(key: String): String? {
+            if (readCount.incrementAndGet() == 1) {
+                firstReadEntered.countDown()
+                check(releaseFirstRead.await(5, TimeUnit.SECONDS)) { "test did not release first read" }
+            } else {
+                secondReadEntered.countDown()
+            }
+            return backing.getString(key)
+        }
+
+        override fun putString(key: String, value: String) = backing.putString(key, value)
+        override fun remove(key: String) = backing.remove(key)
+        override fun contains(key: String): Boolean = backing.contains(key)
+        override fun clear() = backing.clear()
+        override fun flush() = backing.flush()
     }
 }
