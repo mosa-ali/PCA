@@ -49,7 +49,7 @@ function shouldLogFailure(occurrences: number): boolean {
  * discards the returned array, so a compose/ledger failure for every device was
  * equally silent. Both now emit a bounded structured warning, following the
  * FABLE-A013 precedent in alerts/AlertComposeFailureLogger.ts (a bounded event
- * name plus structured identifiers and `error.message`, never a raw error object
+ * name plus structured identifiers and a bounded failure stage, never exception text
  * or any record content -- notably NOT the audit record itself, whose free text
  * doc 18 Section 5 requires to stay E2EE-only and out of infrastructure logs).
  *
@@ -83,7 +83,7 @@ export class FamilyAuditEventProducer {
     let parentDevices: Array<{ deviceId: string; keyEpoch: number }>;
     try {
       parentDevices = await this.resolveParentDevices(record.familyId);
-    } catch (error) {
+    } catch {
       this.recipientResolutionFailureCount += 1;
       if (shouldLogFailure(this.recipientResolutionFailureCount)) {
         console.warn(
@@ -91,7 +91,7 @@ export class FamilyAuditEventProducer {
             event: 'family_audit_event_recipient_resolution_failed',
             familyId: record.familyId,
             occurrences: this.recipientResolutionFailureCount,
-            message: error instanceof Error ? error.message : String(error),
+            failureStage: 'RECIPIENT_RESOLUTION',
             note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged on the first failure and every Nth thereafter.',
           }),
         );
@@ -104,15 +104,18 @@ export class FamilyAuditEventProducer {
 
     const outcomes: FamilyAuditEventDeliveryOutcome[] = [];
     for (const parentDevice of parentDevices) {
+      let failureStage: 'RECIPIENT_VALIDATION' | 'OPAQUE_COMPOSITION' | 'LEDGER_RECORD' = 'RECIPIENT_VALIDATION';
       try {
         if (!isFamilyEpochNumber(parentDevice.keyEpoch)) {
           throw new Error('resolved parent key epoch is outside the supported family epoch range');
         }
+        failureStage = 'OPAQUE_COMPOSITION';
         const opaquePayload = await this.composeOpaquePayload({
           record,
           parentDeviceId: parentDevice.deviceId,
           keyEpoch: parentDevice.keyEpoch,
         });
+        failureStage = 'LEDGER_RECORD';
         const recordResult = await this.ledger.record({
           envelopeId: this.nextEnvelopeId(),
           familyId: record.familyId,
@@ -128,7 +131,7 @@ export class FamilyAuditEventProducer {
           throw new Error('family audit ledger returned an unsupported record outcome');
         }
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'DELIVERED' });
-      } catch (error) {
+      } catch {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });
         // The returned array is discarded by FamilyAuditService.record, so
         // without this the failure existed only in a value nobody reads.
@@ -140,7 +143,7 @@ export class FamilyAuditEventProducer {
               familyId: record.familyId,
               parentDeviceId: parentDevice.deviceId,
               occurrences: this.deviceDeliveryFailureCount,
-              message: error instanceof Error ? error.message : String(error),
+              failureStage,
               note: 'this audit event did not reach this parent device. Logged on the first failure and every Nth thereafter.',
             }),
           );

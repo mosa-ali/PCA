@@ -82,7 +82,20 @@ export function resolveEffectiveSafeSearchMode(directive: SafeSearchDirective): 
 }
 
 export function isPlausiblePackageVersion(candidate: unknown): candidate is string {
-  return typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_PACKAGE_VERSION_LENGTH;
+  return typeof candidate === 'string' && candidate.length <= MAX_PACKAGE_VERSION_LENGTH &&
+    /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(candidate) &&
+    candidate.split('.').every((part) => Number.isSafeInteger(Number(part)));
+}
+
+/** Compare validated dotted triples without lossy numeric subtraction. */
+export function comparePackageVersions(a: string, b: string): number {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let index = 0; index < 3; index++) {
+    if (left[index] < right[index]) return -1;
+    if (left[index] > right[index]) return 1;
+  }
+  return 0;
 }
 
 export function isPlausibleSignature(candidate: unknown): candidate is string {

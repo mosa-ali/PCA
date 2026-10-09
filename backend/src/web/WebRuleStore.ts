@@ -1,4 +1,5 @@
 import { canonicalizeDomain } from './canonicalize.js';
+import { comparePackageVersions, isPlausiblePackageVersion } from './policy.js';
 import type { CanonicalDomain, OpaqueFamilyId, WebRule, WebRuleListType, WebRuleSource } from './types.js';
 
 /**
@@ -17,8 +18,19 @@ export interface WebRuleRepository {
   listByFamily(familyId: OpaqueFamilyId): Promise<WebRule[]>;
 }
 
-export class InMemoryWebRuleRepository implements WebRuleRepository {
-  private readonly rules = new Map<string, WebRule>();
+/** Replacement and rollback floor must commit together. An implementation
+ * must not expose a partial security feed or store a version without its rules.
+ * This port does not authorize readable Parent rules in production. */
+export interface SecurityRulePackageRepository {
+  replaceSecurityPackageIfNewer(
+    packageVersion: string,
+    rules: readonly WebRule[],
+  ): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }>;
+}
+
+export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRulePackageRepository {
+  private rules = new Map<string, WebRule>();
+  private securityPackageVersion: string | null = null;
 
   private key(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType, source: WebRuleSource): string {
     return JSON.stringify([familyId, domain, listType, source]);
@@ -47,6 +59,28 @@ export class InMemoryWebRuleRepository implements WebRuleRepository {
       if (rule.familyId === familyId) matched.push(rule);
     }
     return matched;
+  }
+
+  async replaceSecurityPackageIfNewer(packageVersion: string, rules: readonly WebRule[]): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }> {
+    if (!isPlausiblePackageVersion(packageVersion) || rules.some((rule) =>
+      rule.familyId !== null || rule.source !== 'SECURITY_DENYLIST' || rule.listType !== 'DENY')) {
+      throw new Error('Invalid security package snapshot');
+    }
+    if (this.securityPackageVersion !== null && comparePackageVersions(packageVersion, this.securityPackageVersion) <= 0) {
+      return { status: 'STALE', activeVersion: this.securityPackageVersion };
+    }
+    const replacement = new Map(this.rules);
+    for (const [key, rule] of replacement) {
+      if (rule.familyId === null && rule.source === 'SECURITY_DENYLIST') replacement.delete(key);
+    }
+    for (const rule of rules) {
+      replacement.set(this.key(null, rule.domain, rule.listType, rule.source), { ...rule, createdAt: new Date(rule.createdAt) });
+    }
+    // No suspension between the floor check and these assignments. Consumers
+    // sharing this fixture cannot race a lower version over a newer snapshot.
+    this.rules = replacement;
+    this.securityPackageVersion = packageVersion;
+    return { status: 'APPLIED' };
   }
 }
 

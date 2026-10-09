@@ -146,7 +146,7 @@ test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array
   assert.equal(warnings.length, 1, 'a device that did not receive the event must be observable');
   assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
   assert.match(warnings[0], /parent-device-fails/);
-  assert.match(warnings[0], /composition rejected/);
+  assert.match(warnings[0], /OPAQUE_COMPOSITION/);
 });
 
 test('a resolver failure resolves to zero deliveries rather than propagating, AND is distinguishable from an empty recipient list', async () => {
@@ -167,7 +167,7 @@ test('a resolver failure resolves to zero deliveries rather than propagating, AN
   assert.deepEqual(outcomes, [[], []]);
   assert.equal(warnings.length, 1, 'the warning must be rate-limited, not emitted per event');
   assert.match(warnings[0], /family_audit_event_recipient_resolution_failed/);
-  assert.match(warnings[0], /resolver unavailable/);
+  assert.match(warnings[0], /RECIPIENT_RESOLUTION/);
   // The property the whole change exists for: the same `[]` now means two
   // different things depending on whether this line was emitted.
   assert.match(warnings[0], /NOT reaching this family/);
@@ -283,10 +283,33 @@ test('ledger conflicts fail only the affected device while RECORDED and IDEMPOTE
   ]);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
-  assert.match(warnings[0], /family audit envelope id conflicts with existing content/);
+  assert.match(warnings[0], /LEDGER_RECORD/);
 
   const envelopes = await ledger.listForFamily('fam-1');
   assert.equal(envelopes.length, 2);
   assert.equal(envelopes.find((entry) => entry.parentDeviceId === 'parent-device-a').encryptedPayloadB64, 'cipher-a-1');
   assert.equal(envelopes.find((entry) => entry.parentDeviceId === 'parent-device-b').encryptedPayloadB64, 'cipher-b');
+});
+
+
+test('audit delivery warnings never expose dependency exception text or stringify thrown values', async () => {
+  const privateText = 'PRIVATE AUDIT NOTE / SECRET CIPHERTEXT / RAW SQL PARAMETERS';
+  const recipients = async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }];
+  const composer = async () => ({ encryptedPayloadB64: 'opaque', nonceB64: 'nonce' });
+  let stringified = false;
+  const hostile = { toString() { stringified = true; throw new Error(privateText); } };
+  const cases = [
+    new FamilyAuditEventProducer(new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW), composer, async () => { throw new Error(privateText); }),
+    new FamilyAuditEventProducer(new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW), async () => { throw hostile; }, recipients),
+    new FamilyAuditEventProducer({ record: async () => { throw new Error(privateText); } }, composer, recipients),
+  ];
+  for (const producer of cases) {
+    const { warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord({ freeTextNote: privateText })));
+    assert.equal(warnings.length, 1);
+    assert.doesNotMatch(warnings[0], /PRIVATE|SECRET|RAW SQL|freeTextNote|encryptedPayloadB64/);
+    const warning = JSON.parse(warnings[0]);
+    assert.ok(['RECIPIENT_RESOLUTION', 'OPAQUE_COMPOSITION', 'LEDGER_RECORD'].includes(warning.failureStage));
+    assert.equal(Object.hasOwn(warning, 'message'), false);
+  }
+  assert.equal(stringified, false);
 });
