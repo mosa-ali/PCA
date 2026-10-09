@@ -126,6 +126,11 @@ export class DeviceAuthService {
 
     const device = await this.deviceRepository.findDeviceUnscoped(challenge.deviceId);
     if (!device) throw new DeviceAuthError('DEVICE_NOT_FOUND');
+    // The challenge carries the family scope captured at issuance. Re-check
+    // it against the current durable device row before accepting its proof:
+    // a stale or corrupted challenge must not authenticate a device under a
+    // different family than the one for which this nonce was issued.
+    if (device.familyId !== challenge.familyId) throw new DeviceAuthError('DEVICE_NOT_FOUND');
     if (device.status === 'REVOKED') throw new DeviceAuthError('DEVICE_REVOKED');
 
     const keys = await this.deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);

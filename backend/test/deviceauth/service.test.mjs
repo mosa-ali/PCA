@@ -72,6 +72,36 @@ test('verifyChallenge with a valid signature over the correct nonce succeeds and
   assert.equal(identity.familyId, device.familyId);
 });
 
+test('verifyChallenge rejects a persisted challenge whose family scope differs from the current device before verification or consumption', async () => {
+  const persistedChallenges = createInMemoryDeviceChallengeRepository();
+  let consumeCalls = 0;
+  const challengeRepository = {
+    create: (record) => persistedChallenges.create(record),
+    async findById(challengeId) {
+      const record = await persistedChallenges.findById(challengeId);
+      return record ? { ...record, familyId: 'different-family' } : null;
+    },
+    async consumeAtomically(...args) {
+      consumeCalls += 1;
+      return persistedChallenges.consumeAtomically(...args);
+    },
+  };
+  let verifierCalls = 0;
+  const signatureVerifier = { async verify() { verifierCalls += 1; return true; } };
+  const { authService, directoryService } = buildHarness({ challengeRepository, signatureVerifier });
+  const { device } = await registerDeviceWithDsk(directoryService, { familyId: 'family-opaque-1' });
+  const issued = await authService.issueChallenge(device.deviceId);
+
+  const error = await authService.verifyChallenge(issued.challengeId, 'otherwise-valid-signature').catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'DEVICE_NOT_FOUND', 'scope mismatch is indistinguishable from an unavailable challenge identity');
+  assert.equal(verifierCalls, 0, 'a scope-mismatched challenge never reaches signature verification');
+  assert.equal(consumeCalls, 0, 'a scope-mismatched challenge remains unconsumed');
+  const stored = await persistedChallenges.findById(issued.challengeId);
+  assert.equal(stored.familyId, device.familyId);
+  assert.equal(stored.consumedAt, null);
+});
+
 test('verifyChallenge with an invalid signature is INVALID_SIGNATURE, and the challenge remains unconsumed', async () => {
   const { authService, directoryService, challengeRepository } = buildHarness();
   const { device } = await registerDeviceWithDsk(directoryService);
