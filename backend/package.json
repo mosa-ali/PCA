@@ -18,6 +18,8 @@
     "test:db:enrollment-binding": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs enrollment-binding",
     "test:db:ordinary-trust-set": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs ordinary-trust-set",
     "test:db:ordinary-trust-set:inner": "node scripts/require-owned-disposable-db.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/ordinaryTrustSetService.mysql.test.mjs",
+    "test:db:database-tls": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs database-tls",
+    "test:db:database-tls:inner": "node scripts/require-owned-disposable-db.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/databaseTlsConfiguration.test.mjs",
     "test:db:parent-auth": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs parent-auth",
     "test:db:family-identity": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/with-disposable-db.mjs family-identity",
     "test:db:family-identity:inner": "node scripts/require-owned-disposable-db.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/parentIdentityProfile.mysql.test.mjs test/db/parentEmailFamilyLookup.mysql.test.mjs",

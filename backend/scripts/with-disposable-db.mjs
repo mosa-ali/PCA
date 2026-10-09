@@ -41,6 +41,8 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:enrollment-binding:inner'
     : requestedTarget === 'ordinary-trust-set'
       ? 'test:db:ordinary-trust-set:inner'
+    : requestedTarget === 'database-tls'
+      ? 'test:db:database-tls:inner'
     : requestedTarget === 'parent-auth'
       ? 'test:db:parent-auth:inner'
     : isFamilyIdentityTarget
@@ -60,7 +62,7 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'family-identity', 'parent-auth', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, family-identity, parent-auth, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'database-tls', 'family-identity', 'parent-auth', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, database-tls, family-identity, parent-auth, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
 if (requestedTarget === 'parent-route-audit' && !process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) {
   throw new Error('parent-route-audit requires PCA_PARENT_ROUTE_SCENARIO_OUT so the campaign always produces its evidence report.');
 }
