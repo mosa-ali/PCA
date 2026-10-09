@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.platform.LocationSample
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -164,10 +165,13 @@ class SafeZonePolicyReceiverTest {
     @Test
     fun `expiry crossed while waiting for monitor policy lock rejects before persistence`() {
         val clockNanos = AtomicLong(0L)
+        val decrypted = CountDownLatch(1)
         val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), approvingVerifier,
             object : SafeZonePayloadDecryptor {
-                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray =
-                    envelope.payloadForTest()
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                    decrypted.countDown()
+                    return envelope.payloadForTest()
+                }
             }, zoneStore, zoneStateStore, monotonicNanos = clockNanos::get)
         val outcome = AtomicReference<SafeZonePolicyReceiveResult>()
         val failure = AtomicReference<Throwable>()
@@ -177,6 +181,7 @@ class SafeZonePolicyReceiverTest {
         }
         synchronized(backing.coordinationLock) {
             worker.start()
+            assertTrue(decrypted.await(5, TimeUnit.SECONDS))
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (worker.state != Thread.State.BLOCKED && System.nanoTime() < deadline) Thread.yield()
             assertEquals(Thread.State.BLOCKED, worker.state)

@@ -164,14 +164,14 @@ test('audit projection excludes unapproved input and nested target-scope fields 
     ...baseInput(),
     url: 'https://private.example/path',
     location: { latitude: 12.3, longitude: 45.6 },
-    secret: 'do-not-retain',
+    secret: 'marker',
     targetScope: {
       kind: 'CHILD_PROFILE',
       id: 'child-1',
       url: 'https://child.example/',
       location: 'private-location',
-      secret: 'nested-secret',
-      nested: { recoverySecret: 'nested-recovery-secret' },
+      secret: 'marker',
+      nested: { recoverySecret: 'marker' },
     },
   };
 
