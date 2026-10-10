@@ -75,7 +75,7 @@ final class SafeZoneDeliveryTests: XCTestCase {
     private let otherScope = PCADeviceSafeZoneDeliveryScope(familyId: "family-b", deviceId: "device-a")
     private lazy var session = PCADeviceSession(deviceId: "device-a", sessionToken: "device-bearer", expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
 
-    private func inbox(_ keychain: InMemoryKeychainStore, scope: PCADeviceSafeZoneDeliveryScope? = nil) -> PCAKeychainSafeZoneDeliveryInbox {
+    private func inbox(_ keychain: KeychainStoreProtocol, scope: PCADeviceSafeZoneDeliveryScope? = nil) -> PCAKeychainSafeZoneDeliveryInbox {
         PCAKeychainSafeZoneDeliveryInbox(keychain: keychain, serviceNamespace: "test.pca") { scope ?? self.scope }
     }
 

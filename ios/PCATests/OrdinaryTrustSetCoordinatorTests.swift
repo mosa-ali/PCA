@@ -117,7 +117,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             _ = try await firstCoordinator.submitPending()
             XCTFail("the first delivery should simulate a lost response")
         } catch {}
-        XCTAssertEqual(firstStore.load().pending, prepared,
+        XCTAssertEqual(try firstStore.load().pending, prepared,
             "a transport failure retains the signed request in Keychain")
 
         // Re-open the durable store and create a fresh coordinator/signer as a

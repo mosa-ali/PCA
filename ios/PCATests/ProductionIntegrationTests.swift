@@ -16,7 +16,7 @@ final class ProductionIntegrationTests: XCTestCase {
             let elapsed = ProcessInfo.processInfo.systemUptime - started
             let after = keychain.operationSnapshot(servicePrefix: "reclaimer-inbox-only.")
             let delta = CountingKeychainStore.describeDelta(from: before, to: after)
-            XCTContext.runActivity(named: "Replay reclaim \(phase) diagnostics") { activity in
+            await XCTContext.runActivity(named: "Replay reclaim \(phase) diagnostics") { activity in
                 activity.add(XCTAttachment(string: "elapsed_seconds=\(elapsed); result=\(String(describing: result)); authority_checks=\(authorityChecks() - beforeAuthorityChecks); keychain_operations={\(delta)}"))
             }
             return result
