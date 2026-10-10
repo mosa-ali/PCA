@@ -60,6 +60,15 @@ test('sendEnvelope forwards a single item and returns its outcome', async () => 
   assert.equal(outcome.outcome, 'QUEUED');
 });
 
+test('sendEnvelope preserves the server EXPIRED outcome for an envelope rejected before queue acceptance', async () => {
+  const client = new RuntimeSyncClient(fakeTransport({
+    async submitOutbound() { return { results: [{ messageId: 'm1', outcome: 'EXPIRED' }], droppedForBatchBound: [] }; },
+  }), () => new Date('2026-01-01T00:00:00.000Z'));
+  await client.authenticate('device-1', async () => 'sig-1');
+  const outcome = await client.sendEnvelope({ messageId: 'm1', recipientDeviceId: 'r1', ciphertext: new Uint8Array(), messageType: 'STATUS_SNAPSHOT', enqueuedAtEpochMillis: 1 });
+  assert.deepEqual(outcome, { messageId: 'm1', outcome: 'EXPIRED' });
+});
+
 test('fetchRemoteStatus delegates to the transport using the current session token', async () => {
   let capturedToken = null;
   const client = new RuntimeSyncClient(

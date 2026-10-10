@@ -40,10 +40,15 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         let coordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
         self.policyCoordination = coordination
         if let coordination {
-            let baseCallbackLog = (try? AppGroupCallbackObservationLog(
+            let baseCallbackLog: CallbackObservationLog
+            if let appGroupLog = try? AppGroupCallbackObservationLog(
                 appGroupIdentifier: AppGroup.identifier,
                 installationReader: { callbackState?.read(forKey: deviceActivityMonitorInstallationStorageKey) }
-            )) ?? InMemoryCallbackObservationLog()
+            ) {
+                baseCallbackLog = appGroupLog
+            } else {
+                baseCallbackLog = InMemoryCallbackObservationLog()
+            }
             self.callbackLog = CoordinatedCallbackObservationLog(log: baseCallbackLog, coordination: coordination)
         } else {
             // Without the cross-process lock this log cannot be safely shared.
