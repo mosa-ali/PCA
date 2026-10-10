@@ -488,13 +488,14 @@ public final class PCADeviceSafeZoneDeliveryClient {
               let rows = object["safeZones"] as? [[String: Any]],
               rows.count <= PCAKeychainSafeZoneDeliveryInbox.pageSize,
               rows.allSatisfy({ Set($0.keys) == Set(["zoneId", "ciphertextB64", "nonceB64", "keyEpoch", "revision", "deliveryState", "updatedAtUtc"]) }),
-              let page = try? JSONDecoder().decode(WirePage.self, from: response.data) else {
+              let wirePage = try? JSONDecoder().decode(WirePage.self, from: response.data) else {
             throw PCAAPIError.malformedResponse
         }
+        let page = PCAOpaqueSafeZoneDeliveryPage(safeZones: wirePage.safeZones, nextCursor: wirePage.nextCursor)
         for row in page.safeZones { try row.validate() }
         do { try PCAKeychainSafeZoneDeliveryInbox.validatePage(page, requestedCursor: cursor) }
         catch { throw PCAAPIError.malformedResponse }
-        return PCAOpaqueSafeZoneDeliveryPage(safeZones: page.safeZones, nextCursor: page.nextCursor)
+        return page
     }
 
     private func assertSessionCurrent(_ expected: PCADeviceSession, scope: PCADeviceSafeZoneDeliveryScope) throws {
