@@ -220,9 +220,7 @@ class PersistentWebRuleRepository(
      * the first-ever accepted package.
      */
     fun replaceSecurityFeedRules(newRules: List<WebRule>, packageVersion: String): WebRuleReplaceResult {
-        require(packageVersion.isNotEmpty() && packageVersion.length <= 32) {
-            "Security feed version must be nonempty and at most 32 characters"
-        }
+        require(isPlausiblePackageVersion(packageVersion)) { "Security feed version must be a canonical numeric triple" }
         val candidateRules = newRules.toList()
         for (rule in candidateRules) {
             if (rule.familyId != null) return WebRuleReplaceResult.RejectedSourceMismatch
@@ -407,7 +405,7 @@ class PersistentWebRuleRepository(
             require(parentRulesRevision == null || parentRulesRevision >= 0L)
             val securityFeedVersion = when (val rawVersion = if (envelope.isNull("securityFeedVersion")) null else envelope.get("securityFeedVersion")) {
                 null, JSONObject.NULL -> null
-                is String -> rawVersion.takeIf { it.isNotEmpty() && it.length <= 32 }
+                is String -> rawVersion.takeIf(::isPlausiblePackageVersion)
                     ?: error("Invalid security feed version")
                 else -> error("Invalid security feed version type")
             }
@@ -447,7 +445,17 @@ class PersistentWebRuleRepository(
     }
 }
 
-/** Numeric dotted-triple comparison, mirroring `SignedRulePackageConsumer.ts`'s `comparePackageVersions` exactly so Android and backend never disagree about which of two package versions is newer. Falls back to lexicographic only for non-dotted-triple version strings. */
+/** Match backend `isPlausiblePackageVersion`: canonical dotted triple with JS-safe numeric components. */
+fun isPlausiblePackageVersion(candidate: String): Boolean {
+    if (candidate.length !in 1..32 || !candidate.matches(Regex("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))) {
+        return false
+    }
+    return candidate.split('.').all { part ->
+        part.toLongOrNull()?.let { it <= MAX_SAFE_PACKAGE_VERSION_COMPONENT } == true
+    }
+}
+
+/** Numeric dotted-triple comparison, mirroring backend `comparePackageVersions`. */
 fun comparePackageVersions(a: String, b: String): Int {
     // Backend versions accept JavaScript safe integers (up to 2^53 - 1),
     // which fit in Long but not Int. Keep Android's numeric ordering aligned.
@@ -464,3 +472,5 @@ fun comparePackageVersions(a: String, b: String): Int {
     }
     return a.compareTo(b)
 }
+
+private const val MAX_SAFE_PACKAGE_VERSION_COMPONENT = 9_007_199_254_740_991L

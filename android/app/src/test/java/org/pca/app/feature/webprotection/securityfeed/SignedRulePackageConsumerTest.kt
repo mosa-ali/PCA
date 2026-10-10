@@ -72,13 +72,14 @@ class SignedRulePackageConsumerTest {
     }
 
     @Test
-    fun `a malformed package (empty version) is rejected without mutating anything`() {
+    fun `a malformed package version is rejected without mutating anything`() {
         val repository = repo()
         val consumer = SignedRulePackageConsumer(repository, AlwaysApproveVerifier())
 
-        val outcome = consumer.apply(pkg(""))
-
-        assertTrue(outcome is ApplyRulePackageOutcome.RejectedMalformed)
+        for (version in listOf("", "1.0", "01.0.0", "9007199254740992.0.0", "x".repeat(33))) {
+            val outcome = consumer.apply(pkg(version))
+            assertTrue("$version must be rejected", outcome is ApplyRulePackageOutcome.RejectedMalformed)
+        }
         assertEquals(null, repository.securityFeedVersion)
     }
 

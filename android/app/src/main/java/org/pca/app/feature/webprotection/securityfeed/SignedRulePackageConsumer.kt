@@ -2,18 +2,15 @@ package org.pca.app.feature.webprotection.securityfeed
 
 import org.pca.app.feature.webprotection.engine.PersistentWebRuleRepository
 import org.pca.app.feature.webprotection.engine.WebRuleReplaceResult
+import org.pca.app.feature.webprotection.engine.isPlausiblePackageVersion
 import org.pca.app.feature.webprotection.policy.CanonicalDomain
 import org.pca.app.feature.webprotection.policy.WebRule
 import org.pca.app.feature.webprotection.policy.WebRuleListType
 import org.pca.app.feature.webprotection.policy.WebRuleSource
 import org.pca.app.feature.webprotection.policy.canonicalizeDomain
 
-private const val MAX_PACKAGE_VERSION_LENGTH = 32
 private const val MAX_SIGNATURE_LENGTH = 512
 private const val MAX_RULES_PER_PACKAGE = 100_000
-
-private fun isPlausiblePackageVersion(candidate: String): Boolean =
-    candidate.isNotEmpty() && candidate.length <= MAX_PACKAGE_VERSION_LENGTH
 
 private fun isPlausibleSignature(candidate: String): Boolean =
     candidate.isNotEmpty() && candidate.length <= MAX_SIGNATURE_LENGTH

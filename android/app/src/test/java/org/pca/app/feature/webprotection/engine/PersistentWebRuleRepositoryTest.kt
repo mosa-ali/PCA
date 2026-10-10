@@ -548,7 +548,8 @@ class PersistentWebRuleRepositoryTest {
 
     @Test
     fun `malformed persisted security version cannot change rollback floor`() {
-        for (invalidVersion in listOf<Any>(1, org.json.JSONObject().put("version", "2"), "", "x".repeat(33))) {
+        for (invalidVersion in listOf<Any>(1, org.json.JSONObject().put("version", "2"), "", "x".repeat(33),
+            "01.0.0", "9007199254740992.0.0")) {
             val backing = InMemoryPersistentStateStore()
             val repo = PersistentWebRuleRepository(backing)
             val accepted = parentRule().copy(source = WebRuleSource.SECURITY_DENYLIST, familyId = null)
@@ -570,7 +571,7 @@ class PersistentWebRuleRepositoryTest {
     fun `direct security replacement rejects invalid version before writes`() {
         val backing = InMemoryPersistentStateStore()
         val repo = PersistentWebRuleRepository(backing)
-        for (version in listOf("", "x".repeat(33))) {
+        for (version in listOf("", "x".repeat(33), "01.0.0", "9007199254740992.0.0", "1.0")) {
             try {
                 repo.replaceSecurityFeedRules(emptyList(), version)
                 fail("invalid version must fail")
