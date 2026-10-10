@@ -449,13 +449,16 @@ class PersistentWebRuleRepository(
 
 /** Numeric dotted-triple comparison, mirroring `SignedRulePackageConsumer.ts`'s `comparePackageVersions` exactly so Android and backend never disagree about which of two package versions is newer. Falls back to lexicographic only for non-dotted-triple version strings. */
 fun comparePackageVersions(a: String, b: String): Int {
-    val aParts = a.split(".").mapNotNull { it.toIntOrNull() }
-    val bParts = b.split(".").mapNotNull { it.toIntOrNull() }
+    // Backend versions accept JavaScript safe integers (up to 2^53 - 1),
+    // which fit in Long but not Int. Keep Android's numeric ordering aligned.
+    val aParts = a.split(".").mapNotNull { it.toLongOrNull() }
+    val bParts = b.split(".").mapNotNull { it.toLongOrNull() }
     val aNumeric = aParts.size == 3 && a.split(".").size == 3
     val bNumeric = bParts.size == 3 && b.split(".").size == 3
     if (aNumeric && bNumeric) {
         for (i in 0 until 3) {
-            if (aParts[i] != bParts[i]) return aParts[i] - bParts[i]
+            val componentComparison = aParts[i].compareTo(bParts[i])
+            if (componentComparison != 0) return componentComparison
         }
         return 0
     }

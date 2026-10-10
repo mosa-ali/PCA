@@ -581,6 +581,23 @@ class PersistentWebRuleRepositoryTest {
     }
 
     @Test
+    fun `large dotted version components compare without overflow and preserve rollback floor`() {
+        assertTrue(comparePackageVersions("2147483647.0.0", "0.0.0") > 0)
+        assertTrue(comparePackageVersions("0.0.0", "2147483647.0.0") < 0)
+        assertTrue(comparePackageVersions("9007199254740991.0.0", "9007199254740990.0.0") > 0)
+
+        val backing = InMemoryPersistentStateStore()
+        val repo = PersistentWebRuleRepository(backing)
+        val accepted = parentRule().copy(source = WebRuleSource.SECURITY_DENYLIST, familyId = null)
+        assertEquals(WebRuleReplaceResult.Applied(1),
+            repo.replaceSecurityFeedRules(listOf(accepted), "9007199254740991.0.0"))
+        assertEquals(WebRuleReplaceResult.RejectedStaleRevision("9007199254740991.0.0"),
+            repo.replaceSecurityFeedRules(emptyList(), "2147483647.0.0"))
+        assertEquals("9007199254740991.0.0", repo.securityFeedVersion)
+        assertEquals(listOf(accepted), repo.snapshot())
+    }
+
+    @Test
     fun `replacement freezes caller list before waiting for shared persistence lock`() {
         for (securityFeed in listOf(false, true)) {
             val backing = InMemoryPersistentStateStore()
