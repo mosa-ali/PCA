@@ -85,4 +85,32 @@ final class EnrollmentProfileTests: XCTestCase {
             XCTFail("an unapproved Family Controls state must not reach runtime-ready")
         }
     }
+
+    func testEnrollmentProfileStoreRejectsInvalidPersistedIdentityAndReadBacksWrites() throws {
+        let suite = "org.pca.tests.enrollment.profile.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsPCAEnrollmentProfileStore(defaults: defaults, namespace: "test.profile")
+        let valid = PCAEnrollmentProfile(childProfileId: "opaque-child", ageUxTier: .teen, initialPolicyProfile: .balanced)
+
+        try store.save(valid, forDeviceId: "device-a")
+        XCTAssertEqual(try store.load(forDeviceId: "device-a"), valid)
+
+        let invalid = PCAEnrollmentProfile(childProfileId: String(repeating: "x", count: 129),
+            ageUxTier: .teen, initialPolicyProfile: .balanced)
+        XCTAssertThrowsError(try store.save(invalid, forDeviceId: "device-a")) {
+            XCTAssertEqual($0 as? PCAEnrollmentProfileStoreError, .invalidStoredProfile)
+        }
+        XCTAssertEqual(try store.load(forDeviceId: "device-a"), valid,
+            "rejecting malformed replacement must preserve the confirmed profile")
+
+        defaults.set(try JSONEncoder().encode(invalid), forKey: "test.profile.device-b")
+        XCTAssertThrowsError(try store.load(forDeviceId: "device-b")) {
+            XCTAssertEqual($0 as? PCAEnrollmentProfileStoreError, .invalidStoredProfile)
+        }
+        defaults.set(Data(repeating: 0x41, count: 2_049), forKey: "test.profile.device-c")
+        XCTAssertThrowsError(try store.load(forDeviceId: "device-c")) {
+            XCTAssertEqual($0 as? PCAEnrollmentProfileStoreError, .invalidStoredProfile)
+        }
+    }
 }

@@ -68,7 +68,22 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             return value
         }
     }
-    private struct Result: Decodable { let outcome: String; let acceptedEpoch: Record?; let acceptedHead: Record }
+    private struct Result: Decodable {
+        let outcome: String
+        let acceptedEpoch: Record?
+        let acceptedEpochPresent: Bool
+        let acceptedHead: Record
+
+        private enum CodingKeys: String, CodingKey { case outcome, acceptedEpoch, acceptedHead }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            outcome = try values.decode(String.self, forKey: .outcome)
+            acceptedEpochPresent = values.contains(.acceptedEpoch)
+            acceptedEpoch = try values.decodeIfPresent(Record.self, forKey: .acceptedEpoch)
+            acceptedHead = try values.decode(Record.self, forKey: .acceptedHead)
+        }
+    }
     private struct HeadResult: Decodable { let acceptedHead: Record }
     private struct RecordResult: Decodable { let acceptedEpoch: Record }
     private func call(suffix: String, pending: OrdinaryTrustSetPending?) async throws -> PCAHTTPResponse {
@@ -102,14 +117,24 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             throw PCAAPIError.unavailable
         }
         let result = try JSONDecoder().decode(Result.self, from: response.data)
+        // Optional decoding alone cannot distinguish an explicit null receipt from
+        // an omitted field. The v1 status contract requires the field on every
+        // outcome, and NOT_ACCEPTED/CONFLICT require its value to be null.
+        guard result.acceptedEpochPresent else { throw PCAAPIError.malformedResponse }
         let head = try result.acceptedHead.head(familyId: familyId)
         if result.outcome == "ACCEPTED" || (!status && result.outcome == "IDEMPOTENT_MATCH") {
             guard let record = result.acceptedEpoch,
                   Data(record.signerDeviceId.utf8) == Data(request.signerDeviceId.utf8),
                   Data(record.signerKeyId.utf8) == Data(request.signerKeyId.utf8) else { throw PCAAPIError.malformedResponse }
             let accepted = try record.head(familyId: familyId)
+            let acceptedMetadata = try accepted.epoch()
+            let headMetadata = try head.epoch()
             guard accepted == request.candidate,
-                  (try head.epoch()).trustSetEpoch >= (try accepted.epoch()).trustSetEpoch else { throw PCAAPIError.malformedResponse }
+                  headMetadata.trustSetEpoch >= acceptedMetadata.trustSetEpoch,
+                  headMetadata.keyEpoch >= acceptedMetadata.keyEpoch,
+                  headMetadata.trustSetEpoch != acceptedMetadata.trustSetEpoch || head == accepted else {
+                throw PCAAPIError.malformedResponse
+            }
             return .accepted(accepted)
         }
         guard status, result.acceptedEpoch == nil else { throw PCAAPIError.malformedResponse }

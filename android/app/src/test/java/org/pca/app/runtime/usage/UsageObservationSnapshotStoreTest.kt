@@ -9,20 +9,70 @@ import org.pca.app.platform.UsageClockSample
 class UsageObservationSnapshotStoreTest {
     private val key = "usage_observation_snapshot_v1"
     private fun snapshot() = UsageObservationSnapshot(
-        UsageSessionEngineState(OpenUsageSession("app|NULL|ع", 100L, 9_100L), 100L),
-        "boot-1", 2, UsageClockSample(1_000L, 10_000L), "device-1", UsageObservationCoverage.OBSERVED, "generation-1",
+        UsageSessionEngineState(OpenUsageSession(UsageAppToken.forPackageName("com.example.app"), 100L, 9_100L), 100L),
+        "boot-1", 2, UsageClockSample(1_000L, 10_000L), "device|NULL|ع", UsageObservationCoverage.OBSERVED, "generation|NULL|ع",
         UsageClockSample(0L, 9_000L))
 
-    @Test fun `v2 roundtrip preserves exact identities delimiters and bridge provenance`() {
+    @Test fun `v2 roundtrip preserves opaque token identities delimiters and bridge provenance`() {
         val backing = InMemoryPersistentStateStore()
         val store = PersistentUsageObservationSnapshotStore(backing)
         val value = snapshot()
         store.save(value)
         assertTrue(backing.getString(key)!!.startsWith("v2:"))
         assertEquals(value, store.load())
+        assertEquals("generation|NULL|ع", store.load()!!.observationGeneration)
         assertEquals(value.engineState, UsageObservationRestorer.restore(store.load(), "boot-1"))
         assertEquals(UsageSessionEngineState.INITIAL, UsageObservationRestorer.restore(store.load(), "different-boot"))
         assertEquals(UsageSessionEngineState.INITIAL, UsageObservationRestorer.restore(store.load(), null))
+    }
+
+    @Test fun `v2 snapshot never persists package name as provenance`() {
+        val packageName = "com.example.privateapp"
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentUsageObservationSnapshotStore(backing)
+        val value = snapshot().let { current ->
+            current.copy(engineState = current.engineState.copy(
+                openSession = current.engineState.openSession!!.copy(
+                    appToken = UsageAppToken.forPackageName(packageName),
+                ),
+            ))
+        }
+
+        store.save(value)
+        val persisted = requireNotNull(backing.getString(key))
+        assertFalse(persisted.contains(packageName))
+        assertFalse(String(java.util.Base64.getDecoder().decode(persisted.removePrefix("v2:")), Charsets.UTF_8)
+            .contains(packageName))
+        assertEquals(value, store.load())
+    }
+
+    @Test fun `v2 snapshots reject a plaintext package name as an open app token`() {
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentUsageObservationSnapshotStore(backing)
+        val valid = snapshot()
+        val open = requireNotNull(valid.engineState.openSession)
+        val plaintextToken = "com.example.chat"
+        assertEquals(16, plaintextToken.length)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            store.save(valid.copy(engineState = valid.engineState.copy(
+                openSession = open.copy(appToken = plaintextToken),
+            )))
+        }
+
+        val bytes = java.util.Base64.getDecoder().decode(store.encode(valid).removePrefix("v2:"))
+        val encodedToken = open.appToken.toByteArray(Charsets.UTF_8)
+        val tokenOffset = bytes.indices.firstOrNull { index ->
+            index + encodedToken.size <= bytes.size &&
+                bytes.copyOfRange(index, index + encodedToken.size).contentEquals(encodedToken)
+        }
+        assertNotNull(tokenOffset)
+        System.arraycopy(plaintextToken.toByteArray(Charsets.UTF_8), 0, bytes, tokenOffset!!, plaintextToken.length)
+        val corruptRaw = "v2:" + java.util.Base64.getEncoder().encodeToString(bytes)
+
+        assertNull(store.decode(corruptRaw))
+        backing.putString(key, corruptRaw)
+        assertThrows(UsageObservationSnapshotUnavailable::class.java) { store.load() }
     }
 
     @Test fun `legacy snapshot is recognized but does not restore unverified open credit`() {

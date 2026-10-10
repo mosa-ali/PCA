@@ -74,6 +74,9 @@ data class GeofenceZoneState(
     /** Elapsed-realtime timestamp of the newest accepted sample, used to reject duplicate or
      * out-of-order fixes after process restart. Null preserves compatibility with old state rows. */
     val lastAcceptedSampleElapsedRealtimeMillis: Long? = null,
+    /** Android boot counter for the monotonic fields above. Null denotes a legacy row with
+     * unverified clock continuity; production monitoring must reanchor it before evaluation. */
+    val bootInstanceId: String? = null,
 )
 
 /** Result of one [GeofenceEngine.evaluate] call. [transition] is non-null only on the exact call

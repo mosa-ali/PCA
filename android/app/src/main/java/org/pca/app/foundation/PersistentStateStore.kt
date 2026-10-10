@@ -34,6 +34,9 @@ interface PersistentStateStore {
     fun flush()
 }
 
+/** A durable commit explicitly reported failure instead of silently advancing local state. */
+class PersistentStateStoreDurabilityFailure : IllegalStateException("persistent_state_store_commit_failed")
+
 /**
  * In-memory reference PersistentStateStore. Like the backend's in-memory
  * ledger reference implementations, this is ordinary bookkeeping with no

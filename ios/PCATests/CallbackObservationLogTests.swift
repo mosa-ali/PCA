@@ -138,6 +138,42 @@ final class CallbackObservationLogTests: XCTestCase {
         XCTAssertEqual(decoded.activityId, "legacy")
         XCTAssertNil(decoded.installationGeneration)
     }
+
+    func testCorruptMaximumSequenceIsDiscardedBeforeRecordingNextCallback() throws {
+        let suite = "org.pca.tests.callback.corrupt-sequence.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let corrupt = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-corrupt",
+            observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max)
+        defaults.set(try JSONEncoder().encode([corrupt]), forKey: "com.pca.app.deviceactivity.callbacklog")
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+
+        XCTAssertTrue(log.readAll().isEmpty, "overflowing persisted sequence is not trusted as callback evidence")
+        log.record(kind: .intervalDidEnd, activityId: "pca-monitor-fresh", at: Date(timeIntervalSince1970: 1_700_000_060))
+
+        let recovered = log.readAll()
+        XCTAssertEqual(recovered.count, 1)
+        XCTAssertEqual(recovered.first?.sequence, 1)
+        XCTAssertEqual(recovered.first?.activityId, "pca-monitor-fresh")
+        XCTAssertEqual(recovered.first?.kind, .intervalDidEnd)
+    }
+
+    func testSequenceAtOverflowBoundaryRotatesBeforeAppending() throws {
+        let suite = "org.pca.tests.callback.sequence-boundary.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let boundary = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-old",
+            observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max - 1)
+        defaults.set(try JSONEncoder().encode([boundary]), forKey: "com.pca.app.deviceactivity.callbacklog")
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+
+        XCTAssertEqual(log.readAll().map(\.sequence), [Int.max - 1])
+        log.record(kind: .intervalDidEnd, activityId: "pca-monitor-fresh", at: Date(timeIntervalSince1970: 1_700_000_060))
+
+        let recovered = log.readAll()
+        XCTAssertEqual(recovered.map(\.sequence), [1])
+        XCTAssertEqual(recovered.map(\.activityId), ["pca-monitor-fresh"])
+    }
 }
 
 final class BoundaryCallbackIsolationTests: XCTestCase {
@@ -259,6 +295,43 @@ final class DeviceActivityFileStorageTests: XCTestCase {
         wait(for: [callbackDone, replacementDone], timeout: 5)
         // Separate handles exercise OS advisory locking, not physical App Group
         // entitlement, extension lifecycle or DeviceActivity delivery evidence.
+    }
+
+    func testSeparateCallbackWritersPreserveEveryObservationAndUniqueSequence() throws {
+        let suite = "org.pca.tests.callback.concurrent.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let monitor = "pca-monitor-\(UUID().uuidString.lowercased())"
+        let generation = UUID().uuidString.lowercased()
+        let now = Date(timeIntervalSince1970: 1_748_908_800)
+        let installation = DeviceActivityMonitorInstallation(
+            policyActivityId: "policy", monitorActivityId: monitor, generation: generation,
+            installedAtUtc: now, timeZoneIdentifier: "UTC", state: .active)
+        defaults.set(try JSONEncoder().encode(installation), forKey: deviceActivityMonitorInstallationStorageKey)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pca-callback-log-lock-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let lockFile = directory.appendingPathComponent("policy.lock")
+        let firstWriter = CoordinatedCallbackObservationLog(
+            log: log, coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let secondWriter = CoordinatedCallbackObservationLog(
+            log: log, coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+
+        let expectedCount = 96
+        DispatchQueue.concurrentPerform(iterations: expectedCount) { index in
+            let writer = index.isMultiple(of: 2) ? firstWriter : secondWriter
+            writer.record(kind: .intervalDidStart, activityId: monitor,
+                at: now.addingTimeInterval(Double(index)))
+        }
+
+        let records = log.readAll()
+        XCTAssertEqual(records.count, expectedCount, "the read-modify-write must not lose concurrent callback receipts")
+        XCTAssertEqual(records.map(\.sequence), Array(1...expectedCount), "sequence values remain unique and strictly increasing")
+        XCTAssertTrue(records.allSatisfy { $0.installationGeneration == generation })
     }
 }
 #endif

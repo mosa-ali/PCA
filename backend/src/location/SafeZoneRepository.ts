@@ -29,6 +29,11 @@ export interface SafeZonePatch {
   keyEpoch?: number;
 }
 
+export interface SafeZoneRecipientPage {
+  safeZones: SafeZone[];
+  nextCursor: string | null;
+}
+
 export class SafeZoneError extends Error {
   constructor(readonly code: 'NOT_FOUND' | 'INVALID_INPUT') {
     super(code);
@@ -92,6 +97,8 @@ export function validateSafeZonePatch(patch: SafeZonePatch): void {
 
 export interface SafeZoneRepository {
   list(familyId: string): Promise<SafeZone[]>;
+  /** Encrypted envelopes addressed to one authenticated device. The caller must derive both identifiers from a verified device session. */
+  listForRecipient(familyId: string, recipientEndpointId: string, afterZoneId?: string): Promise<SafeZoneRecipientPage>;
   create(input: NewSafeZone): Promise<SafeZone>;
   update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone>;
   remove(familyId: string, zoneId: string): Promise<boolean>;

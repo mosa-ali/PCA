@@ -7,6 +7,7 @@ import org.pca.app.feature.youtube.policy.UsageCapabilityStatus
 import org.pca.app.feature.youtube.policy.UsageSource
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.platform.UsageAccessState
+import org.pca.app.runtime.usage.UsageAppToken
 
 /** The platform token PCA's existing usage-observation pipeline reports for the standard YouTube app. */
 const val YOUTUBE_APP_PACKAGE_NAME = "com.google.android.youtube"
@@ -43,7 +44,7 @@ class ModeAAndroidUsageAdapter(
 
         val durationMs: Long? = if (capabilityStatus == UsageCapabilityStatus.GRANTED) {
             usageSessions.getForDevice(deviceId)
-                .filter { it.appOrCategoryToken == packageName }
+                .filter { it.appOrCategoryToken == UsageAppToken.forPackageName(packageName) }
                 .sumOf { it.durationMillis }
         } else {
             null // doc 5: missing evidence must never be displayed as zero use -- not even 0L when the capability isn't GRANTED

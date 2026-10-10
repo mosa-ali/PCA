@@ -34,6 +34,8 @@ export interface QueueEnvelopeInput {
   ciphertext: Buffer;
   /** Optional; omit to use the server default. Server rejects anything above the policy maximum -- see policy.ts. */
   ttlMs?: number;
+  /** Optional absolute upper bound supplied by the signed envelope. Relay retention can never extend past it. */
+  validUntil?: Date;
 }
 
 export class RelayService {
@@ -74,29 +76,57 @@ export class RelayService {
    * stored and returned intact, never parsed, decrypted, or logged.
    */
   async queueEnvelope(input: QueueEnvelopeInput): Promise<RelayEnvelopeRecord> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RelayError('INVALID_INPUT');
+    // Capture validated values before the first await. A caller may reuse and
+    // mutate its request object or Buffer while cleanup/storage is pending;
+    // the persisted idempotency tuple must remain the exact request we checked.
+    const messageId = input.messageId;
+    const familyId = input.familyId;
+    const senderDeviceId = input.senderDeviceId;
+    const recipientDeviceId = input.recipientDeviceId;
+    const sourceCiphertext = input.ciphertext;
+    const requestedTtlMs = input.ttlMs;
+    const requestedValidUntil = input.validUntil;
     if (
-      !isPlausibleOpaqueId(input.messageId) ||
-      !isPlausibleOpaqueId(input.familyId) ||
-      !isPlausibleOpaqueId(input.senderDeviceId) ||
-      !isPlausibleOpaqueId(input.recipientDeviceId)
+      !isPlausibleOpaqueId(messageId) ||
+      !isPlausibleOpaqueId(familyId) ||
+      !isPlausibleOpaqueId(senderDeviceId) ||
+      !isPlausibleOpaqueId(recipientDeviceId)
     ) {
       throw new RelayError('INVALID_INPUT');
     }
-    if (!isPlausibleCiphertext(input.ciphertext)) throw new RelayError('INVALID_INPUT');
+    if (!isPlausibleCiphertext(sourceCiphertext)) throw new RelayError('INVALID_INPUT');
+    if (requestedValidUntil !== undefined &&
+        (!(requestedValidUntil instanceof Date) || !Number.isSafeInteger(requestedValidUntil.getTime()))) {
+      throw new RelayError('INVALID_INPUT');
+    }
 
-    const now = this.now();
-    await this.purgeExpired(now);
-    const ttlMs = resolveRelayTtlMs(input.ttlMs);
-    const createdAt = now;
+    const ciphertext = Buffer.from(sourceCiphertext);
+    const ttlMs = resolveRelayTtlMs(requestedTtlMs);
+    const createdAt = new Date(this.now().getTime());
+    const ttlExpiresAt = computeExpiryInstant(createdAt, ttlMs);
+    // Snapshot the absolute bound before cleanup can yield. A signed expiry
+    // is immutable for this queue attempt; it must never become a fresh TTL.
+    const validUntilMs = requestedValidUntil?.getTime();
+    if (validUntilMs !== undefined && validUntilMs <= createdAt.getTime()) {
+      throw new RelayError('EXPIRED');
+    }
+    const expiresAt = validUntilMs === undefined || validUntilMs >= ttlExpiresAt.getTime()
+      ? ttlExpiresAt
+      : new Date(validUntilMs);
+    await this.purgeExpired(createdAt);
+    // The expiry can pass while best-effort cleanup is awaiting storage.
+    // Do not create a row that is already unusable when insertion begins.
+    if (expiresAt.getTime() <= this.now().getTime()) throw new RelayError('EXPIRED');
     const record: RelayEnvelopeRecord = {
-      messageId: input.messageId,
-      familyId: input.familyId,
-      senderDeviceId: input.senderDeviceId,
-      recipientDeviceId: input.recipientDeviceId,
-      ciphertext: input.ciphertext,
+      messageId,
+      familyId,
+      senderDeviceId,
+      recipientDeviceId,
+      ciphertext,
       state: 'QUEUED',
       createdAt,
-      expiresAt: computeExpiryInstant(createdAt, ttlMs),
+      expiresAt,
       acknowledgedAt: null,
     };
 

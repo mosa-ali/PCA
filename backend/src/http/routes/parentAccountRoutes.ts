@@ -70,6 +70,12 @@ import {
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
 import type { DeviceRepository } from '../../device/DeviceRepository.js';
 import type { TargetScope } from '../../familyrbac/types.js';
+import {
+  isActorResolutionFailure,
+  type ActorResolutionFailure,
+  type ResolvedActor,
+  type TrustSetRoleResolver,
+} from '../../familyrbac/TrustSetRoleResolver.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentMfaSummary, ParentSignupProfile } from '../../parentaccount/types.js';
 import type { EnrollmentCredential } from '../../parentaccount/ParentAccountService.js';
@@ -115,6 +121,8 @@ export interface ParentAccountRoutesDeps {
    * header.
    */
   deviceSessionService?: DeviceSessionService;
+  /** Current accepted Trust Set membership binds Safe Zone writes to the session's exact DSK. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   /**
    * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): backs the new
    * GET /api/parent/free-access-status route below. A distinct,
@@ -831,7 +839,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     request: FastifyRequest,
     reply: FastifyReply,
     session: { accountId: string; familyId: string },
-  ): Promise<string | null> {
+  ): Promise<{ deviceId: string; dskKeyId: string; keyEpoch: number } | null> {
     const authorizationHeader = request.headers.authorization;
     if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
       await reply.code(401).send({ error: 'actor_device_session_required' });
@@ -842,12 +850,18 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return null;
     }
     let actorDeviceId: string;
+    let actorDskKeyId: string;
     try {
       const identity = await deps.deviceSessionService.requireActorDeviceInFamily(
         authorizationHeader.slice('Bearer '.length),
         session.familyId,
       );
       actorDeviceId = identity.deviceId;
+      if (typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return null;
+      }
+      actorDskKeyId = identity.dskKeyId;
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) {
         await reply.code(401).send({ error: 'actor_device_session_invalid' });
@@ -855,13 +869,36 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       }
       throw error;
     }
+    if (!deps.trustSetRoleResolver) {
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return null;
+    }
+    let acceptedActor: ResolvedActor | ActorResolutionFailure;
+    try {
+      acceptedActor = await deps.trustSetRoleResolver.resolveActor(session.familyId, actorDeviceId, actorDskKeyId);
+    } catch {
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return null;
+    }
+    if (isActorResolutionFailure(acceptedActor)) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return null;
+    }
+    if (!acceptedActor || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
+        acceptedActor.deviceId !== actorDeviceId ||
+        !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
+        !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
+        !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1) {
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return null;
+    }
     const assertedActorDeviceId = request.headers[ACTOR_DEVICE_HEADER];
     if (assertedActorDeviceId !== undefined &&
         (typeof assertedActorDeviceId !== 'string' || assertedActorDeviceId !== actorDeviceId)) {
       await reply.code(401).send({ error: 'actor_device_session_invalid' });
       return null;
     }
-    return actorDeviceId;
+    return { deviceId: actorDeviceId, dskKeyId: actorDskKeyId, keyEpoch: acceptedActor.keyEpoch };
   }
 
   async function authorizeSafeZoneRequest(
@@ -870,15 +907,18 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     session: { accountId: string; familyId: string },
     operation: 'VIEW_DASHBOARD' | 'EDIT_CHILD_POLICY',
     targetScope: TargetScope = { kind: 'FAMILY', id: session.familyId },
+    ciphertextKeyEpoch?: number,
   ): Promise<boolean> {
     if (!(await authorizeSafeZoneRole(reply, session, operation))) return false;
+    let authorizedActor: { deviceId: string; dskKeyId: string } | undefined;
     if (operation === 'EDIT_CHILD_POLICY') {
       if (targetScope.kind !== 'DEVICE') {
         await reply.code(503).send({ error: 'family_authority_unavailable' });
         return false;
       }
-      const actorDeviceId = await requireSafeZoneActorDevice(request, reply, session);
-      if (!actorDeviceId) return false;
+      const actor = await requireSafeZoneActorDevice(request, reply, session);
+      if (!actor) return false;
+      authorizedActor = { deviceId: actor.deviceId, dskKeyId: actor.dskKeyId };
       if (!deps.safeZonePolicyAuthorizer) {
         await reply.code(503).send({ error: 'family_authority_unavailable' });
         return false;
@@ -889,7 +929,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       try {
         decision = await deps.safeZonePolicyAuthorizer.authorize({
           familyId: session.familyId,
-          actorDeviceId,
+          actorDeviceId: actor.deviceId,
+          actorDskKeyId: actor.dskKeyId,
           operation,
           targetScope,
           issuedAt,
@@ -914,6 +955,25 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       }
       if (!(await deps.deviceRepository.findDeviceForFamily(session.familyId, targetScope.id))) {
         await reply.code(404).send({ error: 'not_found' });
+        return false;
+      }
+    }
+    if (ciphertextKeyEpoch !== undefined) {
+      if (!Number.isSafeInteger(ciphertextKeyEpoch) || ciphertextKeyEpoch < 1) {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return false;
+      }
+      // Re-resolve after the policy-authority and recipient lookups, so a
+      // Trust Set key-epoch rotation during those awaits cannot validate an
+      // envelope against the earlier accepted projection.
+      const currentActor = await requireSafeZoneActorDevice(request, reply, session);
+      if (!currentActor) return false;
+      if (!authorizedActor || currentActor.deviceId !== authorizedActor.deviceId || currentActor.dskKeyId !== authorizedActor.dskKeyId) {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return false;
+      }
+      if (ciphertextKeyEpoch !== currentActor.keyEpoch) {
+        await reply.code(409).send({ error: 'key_epoch_mismatch' });
         return false;
       }
     }
@@ -956,7 +1016,14 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!validSafeZoneBody(request.body, session.familyId)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body;
-    if (!(await authorizeSafeZoneRequest(request, reply, session, 'EDIT_CHILD_POLICY', { kind: 'DEVICE', id: body.recipientEndpointId }))) return;
+    if (!(await authorizeSafeZoneRequest(
+      request,
+      reply,
+      session,
+      'EDIT_CHILD_POLICY',
+      { kind: 'DEVICE', id: body.recipientEndpointId },
+      body.keyEpoch,
+    ))) return;
     try {
       const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId });
       return reply.code(201).send({ safeZone: zone });
@@ -988,7 +1055,14 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       if (!(await authorizeSafeZoneRole(reply, session, 'EDIT_CHILD_POLICY'))) return;
       return reply.code(404).send({ error: 'not_found' });
     }
-    if (!(await authorizeSafeZoneRequest(request, reply, session, 'EDIT_CHILD_POLICY', { kind: 'DEVICE', id: existing.recipientEndpointId }))) return;
+    if (!(await authorizeSafeZoneRequest(
+      request,
+      reply,
+      session,
+      'EDIT_CHILD_POLICY',
+      { kind: 'DEVICE', id: existing.recipientEndpointId },
+      value.keyEpoch ?? existing.keyEpoch ?? Number.NaN,
+    ))) return;
     try {
       const zone = await deps.safeZoneRepository.update(session.familyId, zoneId, value as SafeZonePatch);
       return reply.code(200).send({ safeZone: zone });

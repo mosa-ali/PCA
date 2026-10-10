@@ -38,15 +38,18 @@ class OrdinaryTrustSetRuntimeTest {
     private class Api : OrdinaryTrustSetApi {
         var submitFailure = false
         var statusResponse: OrdinaryEpochResponse? = null
+        var submitResponse: OrdinaryEpochResponse? = null
         var head: AcceptedEpochRecord? = null
         val records = mutableMapOf<Int, AcceptedEpochRecord>()
+        val submittedRequests = mutableListOf<OrdinaryEpochRequest>()
         var submitCalls = 0
         var statusCalls = 0
         var headCalls = 0
         override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
             submitCalls++
+            submittedRequests += request
             if (submitFailure) throw IOException("response lost")
-            return error("unexpected submit response")
+            return submitResponse ?: error("unexpected submit response")
         }
         override suspend fun status(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
             statusCalls++
@@ -96,6 +99,41 @@ class OrdinaryTrustSetRuntimeTest {
         assertEquals(newerHead, store.read()!!.accepted)
         assertNull(store.read()!!.pending)
         assertEquals(FirstDeviceRootState.ROOT_COMMITTED, roots.current()!!.state)
+    }
+
+    @Test fun `runtime status miss replays the exact durable request after restart without signing again`() = runBlocking {
+        val roots = committedRootStore()
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val acceptedRoot = accepted(epoch(1))
+        val api = Api().apply { submitFailure = true; head = acceptedRoot }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { signs.toByte() }
+            }
+        }
+        fun runtime() = OrdinaryTrustSetRuntime.create(roots, store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true })
+
+        assertFalse(runtime().prepareAndSubmit(epoch(2)))
+        val persistedRequest = requireNotNull(store.read()!!.pending)
+        assertEquals(1, signs)
+        assertEquals(listOf(persistedRequest), api.submittedRequests)
+
+        val acceptedRequest = accepted(epoch(2)).copy(request = persistedRequest)
+        api.submitFailure = false
+        api.statusResponse = OrdinaryEpochResponse(OrdinaryEpochOutcome.NOT_ACCEPTED, null, acceptedRoot)
+        api.submitResponse = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, acceptedRequest, acceptedRequest)
+        api.head = acceptedRequest
+
+        assertTrue(runtime().reconcile())
+
+        assertEquals(1, api.statusCalls)
+        assertEquals(listOf(persistedRequest, persistedRequest), api.submittedRequests)
+        assertEquals(1, signs)
+        assertEquals(acceptedRequest, store.read()!!.accepted)
+        assertNull(store.read()!!.pending)
     }
 
     @Test fun `runtime refuses missing committed root before transport`() = runBlocking {

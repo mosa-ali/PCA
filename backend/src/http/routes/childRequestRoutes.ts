@@ -23,7 +23,8 @@ import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } fro
 import { ChildRequestError, type ChildRequestService } from '../../childrequests/ChildRequestService.js';
 import type { ChildRequest, ChildRequestType, ParentDecisionOutcome } from '../../childrequests/types.js';
 import type { BonusGrantLedger } from '../../childrequests/BonusGrantLedger.js';
-import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import { RuntimeSyncAuthError, type DeviceSessionIdentity, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import type { ActorResolutionFailure, ResolvedActor, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { AppScope } from '../../schedule/types.js';
 import {
   UnavailableChildProfileMembershipResolver,
@@ -39,6 +40,8 @@ export interface ChildRequestRoutesDeps {
   childRequestService: ChildRequestService;
   bonusGrantLedger: BonusGrantLedger;
   deviceSessionService: DeviceSessionService;
+  /** Binds device-session proof to the exact currently accepted Trust Set DSK. Omission fails closed. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   /**
    * PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: the `bonus-time/active-grants` (read) and
    * `bonus-time/grants/:grantId/revoke` (write) routes below read/mutate `bonusGrantLedger` directly
@@ -136,6 +139,40 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   const childProfileMembership = deps.childProfileMembership ?? new UnavailableChildProfileMembershipResolver();
   const now = deps.now ?? (() => new Date());
 
+  /** A bearer session is not sufficient after its DSK is rotated or revoked. */
+  async function requireAcceptedDeviceKey(identity: DeviceSessionIdentity, reply: FastifyReply): Promise<boolean> {
+    if (!identity.dskKeyId || !deps.trustSetRoleResolver) {
+      await reply.code(503).send({ error: 'authority_unavailable' });
+      return false;
+    }
+    let acceptedActor: ResolvedActor | ActorResolutionFailure;
+    try {
+      acceptedActor = await deps.trustSetRoleResolver.resolveActor(identity.familyId, identity.deviceId, identity.dskKeyId);
+    } catch {
+      await reply.code(503).send({ error: 'authority_unavailable' });
+      return false;
+    }
+    if (typeof acceptedActor === 'string') {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
+    }
+    if (
+      acceptedActor === null || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
+      acceptedActor.deviceId !== identity.deviceId ||
+      !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
+      !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
+      !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1
+    ) {
+      await reply.code(503).send({ error: 'authority_unavailable' });
+      return false;
+    }
+    if (acceptedActor.role !== 'CHILD') {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
+    }
+    return true;
+  }
+
   /** Every non-member/not-found/unavailable outcome maps to the same public denial. */
   async function childProfileInFamily(familyId: string, childProfileId: string): Promise<boolean> {
     try {
@@ -199,13 +236,14 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
         return reply.code(401).send({ error: 'unauthorized' });
       }
-      let childIdentity: { deviceId: string; familyId: string };
+      let childIdentity: DeviceSessionIdentity;
       try {
         childIdentity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
       } catch (error) {
         if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
         throw error;
       }
+      if (!(await requireAcceptedDeviceKey(childIdentity, reply))) return;
 
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
@@ -276,13 +314,14 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
         return reply.code(401).send({ error: 'unauthorized' });
       }
-      let childIdentity: { deviceId: string; familyId: string };
+      let childIdentity: DeviceSessionIdentity;
       try {
         childIdentity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
       } catch (error) {
         if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
         throw error;
       }
+      if (!(await requireAcceptedDeviceKey(childIdentity, reply))) return;
 
       const body = request.body;
       const capabilityOutcome = isPlainObject(body) ? body.capabilityOutcome : undefined;

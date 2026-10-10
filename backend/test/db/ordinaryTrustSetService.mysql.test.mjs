@@ -205,6 +205,28 @@ test('MySQL competing same-number signed submissions have one winner, exact retr
     minimumAcceptedTrustSetEpoch: 2, minimumAcceptedKeyEpoch: 1 });
 });
 
+test('MySQL simultaneous exact first submissions linearize as accepted plus idempotent without duplicate rows or floor movement', async () => {
+  const f = await fixture();
+  const exact = f.request(2, { keyEpoch: 2 });
+  const before = await snapshot(f.familyId);
+  const results = await Promise.all([
+    compose().service.submit(f.scope, exact),
+    compose().service.submit(f.scope, exact),
+  ]);
+
+  assert.deepEqual(results.map(result => result.outcome).sort(), ['ACCEPTED', 'IDEMPOTENT_MATCH']);
+  for (const result of results) {
+    assert.equal(result.acceptedEpoch.canonicalEpochBase64, exact.canonicalEpochBase64);
+    assert.equal(result.acceptedEpoch.signatureBase64, exact.signatureBase64);
+    assert.equal(result.acceptedHead.trustSetEpoch, 2);
+    assert.equal(result.acceptedHead.keyEpoch, 2);
+  }
+  const after = await snapshot(f.familyId);
+  assert.equal(after.epochs.length, before.epochs.length + 1);
+  assert.deepEqual(after.floors, { minimumAcceptedTrustSetEpoch: 2, minimumAcceptedKeyEpoch: 2 });
+  assert.equal(after.epochs[1].bytes, Buffer.from(exact.canonicalEpochBase64, 'base64').toString('hex'));
+});
+
 test('MySQL read/status/replay facade rejects a structurally valid head signed by a key outside the active DSK directory', async () => {
   const f = await fixture();
   const head = await f.store.readLatestEpoch(f.familyId);

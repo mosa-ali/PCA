@@ -167,6 +167,7 @@ class PersistentUsageObservationSnapshotStore(
         }
         snapshot.engineState.openSession?.let {
             require(snapshot.coverage == UsageObservationCoverage.OBSERVED && sample != null && snapshot.bootId != null && snapshot.deviceId != null)
+            require(OPAQUE_APP_TOKEN.matches(it.appToken))
             require(it.startedAtElapsedMillis >= 0L && it.startedAtElapsedMillis <= cursor && it.startedAtEpochMillis >= 0L)
             val anchor = requireNotNull(snapshot.generationAnchor)
             // A persisted original-wall start must belong to this generation's sampled
@@ -211,6 +212,7 @@ class PersistentUsageObservationSnapshotStore(
         const val FIELD_SEPARATOR = "|"
         const val FIELD_COUNT = 5
         const val NULL_SENTINEL = "NULL"
+        val OPAQUE_APP_TOKEN = Regex("^[0-9a-f]{16}$")
     }
 }
 

@@ -31,8 +31,9 @@ import { randomUUID } from 'node:crypto';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
-import type { OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
+import type { AuthorizationDecision, ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
+import type { ActorResolutionFailure, ResolvedActor, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
+import type { OutboundBatchResult, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
 import { parseFamilyEnvelope } from '../../familyenvelope/parse.js';
 import { envelopeToRelayCiphertext } from '../../runtime-sync/envelopeWireCodec.js';
 
@@ -44,6 +45,8 @@ export interface ChildPolicyRoutesDeps {
   deviceSessionService: DeviceSessionService;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- omitting it fails the route closed with 503 (matching parentAccountRoutes.ts's Safe Zone `not_configured` convention), never a silent allow. */
   parentActionAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
+  /** Binds policy writes to the exact DSK held by the current accepted Trust Set member entry. Omission fails closed. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   outboundRelayService: Pick<OutboundRelayService, 'submitBatch'>;
   now?: () => Date;
 }
@@ -120,7 +123,7 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
   }
 
   /** Same actor-identity-binding rationale as childRequestRoutes.ts's requireActorDevice -- see this file's own header comment. */
-  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<string | null> {
+  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<{ deviceId: string; dskKeyId: string } | null> {
     const authorizationHeader = request.headers.authorization;
     if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
       await reply.code(401).send({ error: 'actor_device_session_required' });
@@ -128,13 +131,21 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
     }
     try {
       const identity = await deps.deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      return identity.deviceId;
+      if (!identity.dskKeyId) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return null;
+      }
+      return { deviceId: identity.deviceId, dskKeyId: identity.dskKeyId };
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) {
         await reply.code(401).send({ error: 'actor_device_session_invalid' });
         return null;
       }
-      throw error;
+      // A storage/authentication dependency outage is not an invalid bearer
+      // token. Keep it distinct so callers can retry instead of reporting a
+      // misleading authentication failure or generic 500.
+      await reply.code(503).send({ error: 'actor_device_session_unavailable' });
+      return null;
     }
   }
 
@@ -167,8 +178,34 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       }
       const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
       if (!actorDeviceId) return;
-      if (envelope.senderDeviceId !== actorDeviceId) {
+      if (envelope.senderDeviceId !== actorDeviceId.deviceId || envelope.senderKeyId !== actorDeviceId.dskKeyId) {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+
+      // Device sessions are pinned to the DSK that proved possession at
+      // issuance, but an old key can remain ACTIVE during an accepted-key
+      // overlap. Bind that exact session key to the current accepted member
+      // entry before authorizing or queuing a policy update.
+      if (!deps.trustSetRoleResolver) return reply.code(503).send({ error: 'authority_unavailable' });
+      let acceptedActor: ResolvedActor | ActorResolutionFailure;
+      try {
+        acceptedActor = await deps.trustSetRoleResolver.resolveActor(
+          session.familyId,
+          actorDeviceId.deviceId,
+          actorDeviceId.dskKeyId,
+        );
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (typeof acceptedActor === 'string') {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      if (acceptedActor === null || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
+          acceptedActor.deviceId !== actorDeviceId.deviceId ||
+          !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
+          !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
+          !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1) {
+        return reply.code(503).send({ error: 'authority_unavailable' });
       }
 
       // TRUE authority is the receiving device's own signed-envelope
@@ -178,30 +215,54 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       // exists and also fails closed on read/decode errors; a server ACL
       // never stands in for family cryptographic authority.
       const issuedAt = now();
-      const decision = await deps.parentActionAuthorization.authorize({
-        familyId: session.familyId,
-        actorDeviceId,
-        operation: 'EDIT_CHILD_POLICY',
-        targetScope: { kind: 'CHILD_PROFILE', id: childProfileId },
-        issuedAt,
-        expiresAt: new Date(issuedAt.getTime() + 60_000),
-        stepUp: null,
-        idempotencyKey: randomUUID(),
-        actionId: randomUUID(),
-      });
+      let decision: AuthorizationDecision;
+      try {
+        decision = await deps.parentActionAuthorization.authorize({
+          familyId: session.familyId,
+          actorDeviceId: actorDeviceId.deviceId,
+          actorDskKeyId: actorDeviceId.dskKeyId,
+          operation: 'EDIT_CHILD_POLICY',
+          targetScope: { kind: 'CHILD_PROFILE', id: childProfileId },
+          issuedAt,
+          expiresAt: new Date(issuedAt.getTime() + 60_000),
+          stepUp: null,
+          idempotencyKey: randomUUID(),
+          actionId: randomUUID(),
+        });
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
       if (decision.verdict !== 'ALLOW') {
         return reply.code(403).send({ error: 'forbidden' });
       }
 
-      const result = await deps.outboundRelayService.submitBatch(actorDeviceId, session.familyId, [
-        {
-          messageId: envelope.messageId,
-          recipientDeviceId: envelope.recipient.recipientDeviceId,
-          ciphertext: envelopeToRelayCiphertext(envelope),
-          messageType: 'POLICY_UPDATE',
-          enqueuedAtEpochMillis: envelope.issuedAt.getTime(),
-        },
-      ]);
+      // Do not turn an already-expired signed envelope into a successful
+      // PENDING receipt. Recheck before recipient resolution for a truthful
+      // route response, then pass the signed absolute expiry so the relay can
+      // enforce it again after that asynchronous lookup and storage cleanup.
+      const enqueueAt = now();
+      const enqueueAtMs = enqueueAt instanceof Date ? enqueueAt.getTime() : Number.NaN;
+      const remainingEnvelopeLifetimeMs = envelope.expiresAt.getTime() - enqueueAtMs;
+      if (!Number.isFinite(enqueueAtMs)) return reply.code(503).send({ error: 'relay_unavailable' });
+      if (remainingEnvelopeLifetimeMs <= 0) return reply.code(400).send({ error: 'expired' });
+
+      let result: OutboundBatchResult;
+      try {
+        result = await deps.outboundRelayService.submitBatch(actorDeviceId.deviceId, session.familyId, [
+          {
+            messageId: envelope.messageId,
+            recipientDeviceId: envelope.recipient.recipientDeviceId,
+            ciphertext: envelopeToRelayCiphertext(envelope),
+            messageType: 'POLICY_UPDATE',
+            enqueuedAtEpochMillis: envelope.issuedAt.getTime(),
+            validUntil: envelope.expiresAt,
+          },
+        ]);
+      } catch {
+        // A thrown persistence/relay error has no accepted queue receipt. The
+        // caller may retry the exact same signed envelope and message ID.
+        return reply.code(503).send({ error: 'relay_unavailable' });
+      }
       const outcome = result.results.find((item) => item.messageId === envelope.messageId)?.outcome;
       if (outcome === 'CROSS_FAMILY_RECIPIENT' || outcome === 'INVALID') {
         return reply.code(400).send({ error: 'invalid_recipient' });
@@ -209,6 +270,7 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       if (outcome === 'CONFLICT') {
         return reply.code(409).send({ error: 'conflict' });
       }
+      if (outcome === 'EXPIRED') return reply.code(400).send({ error: 'expired' });
       // A pending receipt is truthful only when the exact signed messageId
       // was accepted by the relay. Missing outcomes and batch-bound drops
       // leave the caller free to retry the same envelope without claiming

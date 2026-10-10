@@ -421,6 +421,7 @@ class SafeZonePolicyReceiverTest {
             zoneStateStore = stateStore,
             alertPort = alerts,
             config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+            currentBootInstanceId = { "boot-test" },
         )
 
         val events = monitor.evaluateSample(
@@ -499,6 +500,7 @@ class SafeZonePolicyReceiverTest {
             zoneStateStore = zoneStateStore,
             alertPort = alerts,
             config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+            currentBootInstanceId = { "boot-test" },
         )
         val events = monitor.evaluateSample(
             LocationSample(zone.centerLatitude, zone.centerLongitude, 5f, 0L),
@@ -530,7 +532,7 @@ class SafeZonePolicyReceiverTest {
         assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
         stateStore.save(GeofenceZoneState(zoneId = "zone-home", confirmedMembership = GeofenceMembership.INSIDE))
         val alerts = RecordingGeofenceAlertPort()
-        val monitor = GeofenceMonitor(zoneStore, stateStore, alerts, GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1))
+        val monitor = GeofenceMonitor(zoneStore, stateStore, alerts, GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1)) { "boot-test" }
         monitor.evaluateSample(
             LocationSample(zone.centerLatitude + Math.toDegrees(500.0 / 6_371_000.0), zone.centerLongitude, 5f, 0L),
             1L,

@@ -59,6 +59,7 @@ export class DeviceDirectoryService {
   private readonly repository: DeviceRepository;
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
+  private auditAppendFailureCount = 0;
 
   constructor(
     repository: DeviceRepository,
@@ -150,23 +151,39 @@ export class DeviceDirectoryService {
     const result = await this.repository.revokeDeviceAndKeysAtomically(authorizedFamilyId, deviceId, this.now());
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
     if (result.transitioned) {
-      await this.auditService.record({
-        familyId: authorizedFamilyId,
-        actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-        actorDeviceId: deviceId,
-        actorMemberId: null,
-        targetScope: { kind: 'DEVICE', id: deviceId },
-        authorizationRole: null,
-        trustSetEpoch: 0,
-        policyRevision: null,
-        clientMonotonicSequence: null,
-        resultStatus: 'SUCCESS',
-        targetAcknowledgementCount: 0,
-        reasonCategory: null,
-        correlationId: null,
-        actionId: null,
-        freeTextNote: 'DEVICE_REVOKED',
-      });
+      try {
+        await this.auditService.record({
+          familyId: authorizedFamilyId,
+          actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+          actorDeviceId: deviceId,
+          actorMemberId: null,
+          targetScope: { kind: 'DEVICE', id: deviceId },
+          authorizationRole: null,
+          trustSetEpoch: 0,
+          policyRevision: null,
+          clientMonotonicSequence: null,
+          resultStatus: 'SUCCESS',
+          targetAcknowledgementCount: 0,
+          reasonCategory: null,
+          correlationId: null,
+          actionId: null,
+          freeTextNote: 'DEVICE_REVOKED',
+        });
+        this.auditAppendFailureCount = 0;
+      } catch {
+        // The repository has already atomically revoked the device and all
+        // keys. Returning a failure would misstate committed state, while an
+        // idempotent retry cannot recreate this one-shot transition audit.
+        // Keep the failure visible through a bounded, payload-free counter.
+        this.auditAppendFailureCount += 1;
+        if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
+          // eslint-disable-next-line no-console -- structured operational warning contains no family/device identifiers or key material.
+          console.warn(JSON.stringify({
+            event: 'device_lifecycle_audit_append_failed',
+            occurrences: this.auditAppendFailureCount,
+          }));
+        }
+      }
     }
     return result.device;
   }

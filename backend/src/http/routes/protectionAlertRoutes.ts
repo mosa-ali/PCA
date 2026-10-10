@@ -20,12 +20,16 @@ import { ParentAccountError, type ParentAccountService } from '../../parentaccou
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import type { ProtectionAlertLedger } from '../../alerts/ProtectionAlertLedger.js';
 import type { ProtectionAlertEvent } from '../../alerts/types.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 
 export interface ProtectionAlertRoutesDeps {
   parentAccountService: ParentAccountService;
   /** Optional for older non-production composition sites; when absent, the registered route fails closed with 503. */
   deviceSessionService?: DeviceSessionService;
+  /** Binds the exact browser-session DSK to current accepted family membership before returning recipient ciphertext. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- when omitted, this file registers nothing (mirrors registerFamilyAuditEventRoutes' own optional-feature convention). */
   protectionAlertLedger?: ProtectionAlertLedger;
 }
@@ -48,7 +52,7 @@ function toAlertDto(event: ProtectionAlertEvent): Record<string, unknown> {
 
 export function registerProtectionAlertRoutes(app: FastifyInstance, deps: ProtectionAlertRoutesDeps): void {
   if (!deps.protectionAlertLedger) return;
-  const { parentAccountService, deviceSessionService, protectionAlertLedger } = deps;
+  const { parentAccountService, deviceSessionService, trustSetRoleResolver, protectionAlertLedger } = deps;
 
   app.get('/api/parent/families/:familyId/protection-alerts', async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
@@ -81,18 +85,40 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
       return reply.code(401).send({ error: 'actor_device_session_required' });
     }
     let actorDeviceId: string;
+    let actorDskKeyId: string;
     try {
       const identity = await deviceSessionService.requireActorDeviceInFamily(
         authorizationHeader.slice('Bearer '.length),
         familyId,
       );
-      if (!identity.deviceId || identity.familyId !== familyId) {
+      if (!identity.deviceId || identity.familyId !== familyId ||
+          typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
         return reply.code(401).send({ error: 'actor_device_session_invalid' });
       }
       actorDeviceId = identity.deviceId;
+      actorDskKeyId = identity.dskKeyId;
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'actor_device_session_invalid' });
       throw error;
+    }
+
+    // A still-valid device session only proves its DSK remains active in the
+    // device directory. Bind that exact DSK to the current accepted family
+    // Trust Set before reading the device-addressed ciphertext queue, so a
+    // removed or superseded member cannot continue draining old alerts.
+    if (!trustSetRoleResolver) return reply.code(503).send({ error: 'authority_unavailable' });
+    let actor;
+    try {
+      actor = await trustSetRoleResolver.resolveActor(familyId, actorDeviceId, actorDskKeyId);
+    } catch {
+      return reply.code(503).send({ error: 'authority_unavailable' });
+    }
+    if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' || Array.isArray(actor) ||
+        actor.deviceId !== actorDeviceId ||
+        !['OWNER', 'ADMINISTRATOR', 'VIEWER'].includes(actor.role) ||
+        !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
+        !isFamilyEpochNumber(actor.keyEpoch, 1)) {
+      return reply.code(403).send({ error: 'forbidden' });
     }
 
     const alerts = await protectionAlertLedger.listForParentDevice(familyId, actorDeviceId);

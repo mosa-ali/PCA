@@ -58,9 +58,9 @@ class GeofenceDurabilityTest {
         repo.save(baseline); backing.reset()
         backing.throwAfterFlushAt = setOf(2); backing.failFlushAt = setOf(3)
         assertThrows(GeofencePersistenceException::class.java) { repo.clear("home") }
-        assertNull(repo.load("home"))
+        assertThrows(GeofencePersistenceException::class.java) { repo.load("home") }
         val restarted = states(DiskStore(backing.disk))
-        assertNull(restarted.load("home"))
+        assertThrows(GeofencePersistenceException::class.java) { restarted.load("home") }
         assertThrows(GeofencePersistenceException::class.java) { restarted.save(baseline) }
         assertThrows(GeofencePersistenceException::class.java) { restarted.clear("home") }
     }
@@ -139,7 +139,7 @@ class GeofenceDurabilityTest {
         assertNull(restartedStates.load("home"))
         val alerts = RecordingGeofenceAlertPort()
         val monitor = GeofenceMonitor(restartedZones, restartedStates, alerts,
-            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1))
+            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1), { "boot-test" })
         assertTrue(monitor.evaluateSample(org.pca.app.platform.LocationSample(25.0, 55.0, 5f, 0L), 1L).isEmpty())
         assertTrue(alerts.delivered.isEmpty())
     }
@@ -166,7 +166,7 @@ class GeofenceDurabilityTest {
             }
         }
         val monitor = GeofenceMonitor(zoneStore, stateStore, RecordingGeofenceAlertPort(),
-            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1))
+            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1), { "boot-test" })
         monitor.evaluateSample(org.pca.app.platform.LocationSample(25.0, 55.0, 5f, 0L), 1L)
         replacement?.join(5_000)
         assertTrue(replacement?.isAlive == false)
@@ -182,7 +182,7 @@ class GeofenceDurabilityTest {
             GeofenceMembership.OUTSIDE, candidateStreak = 2))
         val alerts = RecordingGeofenceAlertPort()
         val monitor = GeofenceMonitor(zoneStore, stateStore, alerts,
-            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 2))
+            GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 2), { "boot-test" })
         val outside = org.pca.app.platform.LocationSample(26.0, 55.0, 5f, 0L)
         assertTrue(monitor.evaluateSample(outside, 1L).isEmpty())
         assertTrue(alerts.delivered.isEmpty())

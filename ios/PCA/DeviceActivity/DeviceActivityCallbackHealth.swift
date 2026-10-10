@@ -76,12 +76,27 @@ public enum DeviceActivityCallbackHealth: Equatable {
     /// A separately proven delivery failure. Absence alone cannot establish
     /// this because Apple's callbacks depend on qualifying device use.
     case degraded(missed: [ExpectedCallback])
+    /// The accepted active policy could not be restored to ManagedSettings.
+    /// This is distinct from callback delivery evidence and must not be
+    /// cleared until the exact active generation is successfully reconciled.
+    case enforcementUnavailable
     /// No due expectation, missing receipt or ambiguous recurrence provenance.
     case unknown
+
+    public var indicatesProtectionDegraded: Bool {
+        switch self {
+        case .degraded, .enforcementUnavailable: return true
+        case .healthy, .unknown: return false
+        }
+    }
 }
 
 private func isValidCallbackTolerance(_ seconds: TimeInterval) -> Bool {
     seconds.isFinite && seconds >= 0
+}
+
+private func isValidCallbackDate(_ date: Date) -> Bool {
+    date.timeIntervalSince1970.isFinite
 }
 
 public enum DeviceActivityCallbackReconciler {
@@ -97,7 +112,10 @@ public enum DeviceActivityCallbackReconciler {
         nowUtc: Date,
         toleranceSeconds: TimeInterval = 120
     ) -> DeviceActivityCallbackHealth {
-        guard isValidCallbackTolerance(toleranceSeconds) else { return .unknown }
+        guard isValidCallbackTolerance(toleranceSeconds), isValidCallbackDate(nowUtc),
+              expected.allSatisfy({ isValidCallbackDate($0.occurrenceAt) &&
+                  ($0.observationWindowEndsAt.map(isValidCallbackDate) ?? true) }),
+              observed.allSatisfy({ isValidCallbackDate($0.observedAt) }) else { return .unknown }
         let dueExpectations = expected.filter { nowUtc.timeIntervalSince($0.occurrenceAt) > toleranceSeconds }
         if dueExpectations.isEmpty {
             // Not just "no expectations at all" -- also "expectations exist but
@@ -133,7 +151,8 @@ public enum DeviceActivityCallbackPlanner {
         calendar: Calendar,
         toleranceSeconds: TimeInterval = 120
     ) -> [ExpectedCallback] {
-        guard isValidCallbackTolerance(toleranceSeconds) else { return [] }
+        guard isValidCallbackTolerance(toleranceSeconds), isValidCallbackDate(installedAt),
+              isValidCallbackDate(now) else { return [] }
         let todayStart = calendar.startOfDay(for: now)
         guard let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart),
               let todayEnd = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: todayStart),

@@ -1011,6 +1011,7 @@ async function start(): Promise<void> {
     parentPreferenceRepository,
     safeZoneRepository,
     safeZonePolicyAuthorizer,
+    trustSetRoleResolver,
     // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
     platformAdminComplimentaryGrantService,
     // Same single ComplimentaryEntitlementService instance the Platform

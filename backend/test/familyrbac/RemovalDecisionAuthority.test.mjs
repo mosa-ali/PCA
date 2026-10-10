@@ -19,6 +19,8 @@ import {
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
+import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { StoreBackedRemovalDecisionSigningKeyResolver } from '../../dist/familytrustset/StoreBackedRemovalDecisionSigningKeyResolver.js';
 
 // Server-ciphertext TTL (migration 0034): the alert ledger now expires rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so fixtures dated in the past
@@ -35,6 +37,19 @@ const ADMIN = 'admin-84';
 const VIEWER = 'viewer-84';
 const OTHER_FAMILY_OWNER = 'other-family-owner-84';
 const PUBLIC_KEY = 'public-key-84';
+
+function decisionSigningHead({ familyId = FAMILY, ownerDeviceId = OWNER, actorDeviceId = ADMIN, actorRole = 'ADMINISTRATOR' } = {}) {
+  const owner = { deviceId: ownerDeviceId, role: 'OWNER', dskKeyId: 'owner-dsk-84', dskPublicKey: 'owner-public-84',
+    dekKeyId: 'owner-dek-84', dekPublicKey: 'owner-dek-public-84', status: 'ACTIVE' };
+  const actor = { deviceId: actorDeviceId, role: actorRole, dskKeyId: 'actor-dsk-84', dskPublicKey: 'actor-public-84',
+    dekKeyId: 'actor-dek-84', dekPublicKey: 'actor-dek-public-84', status: 'ACTIVE' };
+  const epoch = { familyId, trustSetEpoch: 7, keyEpoch: 3, entries: [owner, actor],
+    issuedAt: new Date('2026-08-20T11:00:00.000Z'), supersedesEpoch: 6, signature: 'accepted-head-signature' };
+  return { record: { familyId, trustSetEpoch: epoch.trustSetEpoch, keyEpoch: epoch.keyEpoch,
+    supersedesEpoch: epoch.supersedesEpoch, signedEpochBytes: Buffer.from(canonicalizeTrustSetEpoch(epoch)),
+    signature: epoch.signature, signerKeyId: owner.dskKeyId, signerDeviceId: owner.deviceId,
+    issuedAt: epoch.issuedAt, receivedAt: new Date('2026-08-20T11:00:01.000Z') }, owner, actor };
+}
 
 function actorResolver(entries = {}) {
   return {
@@ -579,4 +594,92 @@ test('an alert composer failure never blocks or reverses a decision', async () =
   const created = await createPending(authority, { requestId: 'request-alert-failure' });
   const decided = await authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'ALLOW_REMOVAL', temporaryDisableUntil: null, pin: '123456' });
   assert.equal(decided.state, 'ALLOW_REMOVAL');
+});
+
+function buildDecisionSigningKeyResolver({
+  record = decisionSigningHead().record,
+  active = true,
+  keys,
+  resolveActor,
+  secondHead,
+} = {}) {
+  const { actor } = decisionSigningHead();
+  const resolvedCalls = [];
+  let headReads = 0;
+  const resolver = new StoreBackedRemovalDecisionSigningKeyResolver({
+    epochStore: { async readLatestEpoch() { headReads += 1; return headReads === 1 ? record : (secondHead ?? record); } },
+    trustSetRoleResolver: { async resolveActor(familyId, deviceId, dskKeyId) {
+      resolvedCalls.push([familyId, deviceId, dskKeyId]);
+      if (resolveActor) return resolveActor(familyId, deviceId, dskKeyId);
+      if (familyId !== FAMILY || deviceId !== ADMIN || dskKeyId !== actor.dskKeyId) return 'DEVICE_NOT_ACTIVE';
+      return { deviceId, role: actor.role, trustSetEpoch: 7, keyEpoch: 3 };
+    } },
+    deviceRepository: {
+      async isDeviceSessionActive() { return active; },
+      async findKeysByDeviceForFamily() { return keys ?? [{ keyId: actor.dskKeyId, keyPurpose: 'DSK', status: 'ACTIVE', publicKey: actor.dskPublicKey }]; },
+    },
+  });
+  return { resolver, resolvedCalls };
+}
+
+test('store-backed decision signing-key resolver returns only the active Parent DSK from the accepted Trust Set', async () => {
+  const { resolver, resolvedCalls } = buildDecisionSigningKeyResolver();
+  assert.deepEqual(await resolver.resolve(FAMILY, ADMIN), {
+    familyId: FAMILY, deviceId: ADMIN, publicKey: 'actor-public-84',
+  });
+  assert.deepEqual(resolvedCalls, [[FAMILY, ADMIN, 'actor-dsk-84']]);
+});
+
+test('store-backed decision signing-key resolver rejects non-parent, absent, and wrong-family members', async (t) => {
+  const child = decisionSigningHead({ actorRole: 'CHILD' });
+  const childResolver = buildDecisionSigningKeyResolver({
+    record: child.record,
+    resolveActor: async (_family, device, dskKeyId) => ({ deviceId: device, role: 'CHILD', trustSetEpoch: 7, keyEpoch: 3 }),
+    keys: [{ keyId: child.actor.dskKeyId, keyPurpose: 'DSK', status: 'ACTIVE', publicKey: child.actor.dskPublicKey }],
+  });
+  await t.test('child role is not a Parent decision signer', async () => {
+    assert.equal(await childResolver.resolver.resolve(FAMILY, ADMIN), null);
+  });
+
+  const { resolver } = buildDecisionSigningKeyResolver({
+    resolveActor: async () => 'DEVICE_NOT_IN_TRUST_SET',
+  });
+  await t.test('absent accepted membership', async () => {
+    assert.equal(await resolver.resolve(FAMILY, ADMIN), null);
+  });
+  await t.test('foreign family', async () => {
+    assert.equal(await resolver.resolve('family-other', ADMIN), null);
+  });
+});
+
+test('store-backed decision signing-key resolver denies revoked, rotated, duplicate, or inactive DSK state', async (t) => {
+  for (const scenario of [
+    { id: 'inactive device', active: false },
+    { id: 'revoked key', keys: [{ keyId: 'actor-dsk-84', keyPurpose: 'DSK', status: 'REVOKED', publicKey: 'actor-public-84' }] },
+    { id: 'rotated key material', keys: [{ keyId: 'actor-dsk-84', keyPurpose: 'DSK', status: 'ACTIVE', publicKey: 'different-public-key' }] },
+    { id: 'ambiguous duplicate DSK rows', keys: [
+      { keyId: 'actor-dsk-84', keyPurpose: 'DSK', status: 'ACTIVE', publicKey: 'actor-public-84' },
+      { keyId: 'actor-dsk-84', keyPurpose: 'DSK', status: 'ACTIVE', publicKey: 'actor-public-84' },
+    ] },
+  ]) {
+    await t.test(scenario.id, async () => {
+      const { resolver } = buildDecisionSigningKeyResolver(scenario);
+      assert.equal(await resolver.resolve(FAMILY, ADMIN), null);
+    });
+  }
+});
+
+test('store-backed decision signing-key resolver fails closed on corrupt or concurrently changed accepted heads', async (t) => {
+  const base = decisionSigningHead().record;
+  const corrupt = { ...base, keyEpoch: base.keyEpoch + 1 };
+  const changed = { ...base, trustSetEpoch: base.trustSetEpoch + 1 };
+  for (const scenario of [
+    { id: 'row metadata disagrees with canonical bytes', record: corrupt },
+    { id: 'accepted head changes during resolution', record: base, secondHead: changed },
+  ]) {
+    await t.test(scenario.id, async () => {
+      const { resolver } = buildDecisionSigningKeyResolver(scenario);
+      assert.equal(await resolver.resolve(FAMILY, ADMIN), null);
+    });
+  }
 });

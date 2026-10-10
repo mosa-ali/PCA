@@ -99,6 +99,8 @@ import type { ComplimentaryEntitlementService } from '../entitlements/compliment
 // for why its session token is compatible with, not a replacement for,
 // the existing Bearer-header requireServiceSession (fastifyAuthPlugin.ts).
 import { registerParentAccountRoutes } from './routes/parentAccountRoutes.js';
+import { registerSafeZoneDeliveryRoutes } from './routes/safeZoneDeliveryRoutes.js';
+import type { TrustSetRoleResolver } from '../familyrbac/TrustSetRoleResolver.js';
 import type { ParentAccountService } from '../parentaccount/ParentAccountService.js';
 import { ParentIdentityReadModel } from '../parentaccount/ParentIdentityProjection.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
@@ -196,6 +198,8 @@ export interface ServerDependencies {
   deviceSessionService: DeviceSessionService;
   /** Ordinary mobile authority composition remains unavailable until the reviewed service is supplied. */
   ordinaryTrustSetService?: OrdinaryTrustSetRouteService;
+  /** Current accepted Trust Set membership for device-delivery authorization; omitted compositions fail closed. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   outboundRelayService: OutboundRelayService;
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
@@ -547,6 +551,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
     protectionStatusAlerting: deps.protectionStatusAlerting,
     alertComposeFailureLogger: deps.alertComposeFailureLogger,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
+  });
+  registerSafeZoneDeliveryRoutes(app, {
+    deviceSessionService: deps.deviceSessionService,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
+    safeZoneRepository: deps.safeZoneRepository,
+    rateLimiter,
   });
   registerParentRuntimeSyncRoutes(app, {
     authService: deps.authService,
@@ -632,6 +643,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
     deviceRepository: deps.deviceRepository,
     // PCA-234C026: without this, Safe Zone routes' actor-identity binding
     // (authorizeSafeZoneRequest) fails closed with 503
@@ -675,11 +687,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     bonusGrantLedger: deps.bonusGrantLedger,
     deviceSessionService: deps.deviceSessionService,
     childProfileMembership: deps.childProfileMembership,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
   });
   registerChildPolicyRoutes(app, {
     parentAccountService: deps.parentAccountService,
     deviceSessionService: deps.deviceSessionService,
     parentActionAuthorization: deps.childPolicyAuthorization,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
     outboundRelayService: deps.outboundRelayService,
   });
   registerEyeProtectionRoutes(app, {
@@ -691,6 +705,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     deviceSessionService: deps.deviceSessionService,
     parentActionAuthorization: deps.webRuleAuthorization,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
     webRuleService: deps.webRuleService,
   });
   registerFamilyMemberRoutes(app, {
@@ -701,11 +716,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     familyAuditEventLedger: deps.familyAuditEventLedger,
     deviceSessionService: deps.deviceSessionService,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
   });
   registerProtectionAlertRoutes(app, {
     parentAccountService: deps.parentAccountService,
     protectionAlertLedger: deps.protectionAlertLedger,
     deviceSessionService: deps.deviceSessionService,
+    trustSetRoleResolver: deps.trustSetRoleResolver,
   });
   registerDashboardRoutes(app, {
     parentAccountService: deps.parentAccountService,

@@ -33,12 +33,40 @@ async function registerDevice(deviceRepository, familyId, platform = 'ANDROID') 
   return deviceId;
 }
 
-function buildHarness() {
+function buildHarness(now = () => new Date()) {
   const deviceRepository = createInMemoryDeviceRepository();
-  const relayService = new RelayService(createInMemoryRelayRepository());
+  const relayService = new RelayService(createInMemoryRelayRepository(), now);
   const outboundService = new OutboundRelayService(relayService, deviceRepository);
   return { deviceRepository, relayService, outboundService };
 }
+
+test('a slow recipient lookup cannot queue ciphertext past the signed validUntil', async () => {
+  let currentTime = Date.UTC(2026, 0, 1);
+  const { deviceRepository, relayService } = buildHarness(() => new Date(currentTime));
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const originalLookup = deviceRepository.findDeviceForFamily.bind(deviceRepository);
+  let enteredLookup;
+  const lookupEntered = new Promise((resolve) => { enteredLookup = resolve; });
+  let releaseLookup;
+  const lookupGate = new Promise((resolve) => { releaseLookup = resolve; });
+  deviceRepository.findDeviceForFamily = async (...args) => {
+    enteredLookup();
+    await lookupGate;
+    return originalLookup(...args);
+  };
+  const outboundService = new OutboundRelayService(relayService, deviceRepository);
+  const validUntil = new Date(currentTime + 5_000);
+  const submission = outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, validUntil })]);
+  await lookupEntered;
+  currentTime = validUntil.getTime();
+  releaseLookup();
+
+  const result = await submission;
+  assert.equal(result.results[0].outcome, 'EXPIRED');
+  assert.deepEqual(await relayService.listQueuedForRecipient(recipientDeviceId), []);
+});
 
 function item(overrides = {}) {
   return {

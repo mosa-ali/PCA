@@ -19,10 +19,92 @@ public protocol AuthorizationStatusSource {
     func requestChildAuthorization() async throws
 }
 
-public enum RawAuthorizationStatus: Equatable, Sendable {
-    case notDetermined
-    case denied
-    case approved
+public enum RawAuthorizationStatus: String, Equatable, Sendable, Codable {
+    case notDetermined = "NOT_DETERMINED"
+    case denied = "DENIED"
+    case approved = "APPROVED"
+}
+
+/// Stores only the last observed public authorization status so an app
+/// restart does not erase evidence of a revocation that happened while the
+/// process was stopped. This value is informational: every refresh still
+/// reads the live FamilyControls status before deciding whether enforcement
+/// is permitted.
+public protocol ChildAuthorizationObservationStore {
+    func loadLastObservedStatus() -> RawAuthorizationStatus?
+    func saveLastObservedStatus(_ status: RawAuthorizationStatus)
+    /// Atomically returns the previous status and records the current one.
+    func recordObservedStatus(_ status: RawAuthorizationStatus) -> RawAuthorizationStatus?
+}
+
+public final class UserDefaultsChildAuthorizationObservationStore: ChildAuthorizationObservationStore {
+    private static let observationLock = NSLock()
+    private let defaults: UserDefaults
+    private let key: String
+
+    public init(defaults: UserDefaults = .standard,
+                key: String = "org.pca.child-authorization.last-observed-status") {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    public func loadLastObservedStatus() -> RawAuthorizationStatus? {
+        Self.observationLock.lock()
+        defer { Self.observationLock.unlock() }
+        return loadUnlocked()
+    }
+
+    public func saveLastObservedStatus(_ status: RawAuthorizationStatus) {
+        Self.observationLock.lock()
+        defer { Self.observationLock.unlock() }
+        defaults.set(status.rawValue, forKey: key)
+    }
+
+    public func recordObservedStatus(_ status: RawAuthorizationStatus) -> RawAuthorizationStatus? {
+        Self.observationLock.lock()
+        defer { Self.observationLock.unlock() }
+        let previous = loadUnlocked()
+        defaults.set(status.rawValue, forKey: key)
+        return previous
+    }
+
+    private func loadUnlocked() -> RawAuthorizationStatus? {
+        guard defaults.object(forKey: key) != nil else { return nil }
+        guard let rawValue = defaults.string(forKey: key) else {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+        guard let status = RawAuthorizationStatus(rawValue: rawValue) else {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+        return status
+    }
+}
+
+/// In-memory observation storage for tests and previews.
+public final class InMemoryChildAuthorizationObservationStore: ChildAuthorizationObservationStore {
+    private let lock = NSLock()
+    private var status: RawAuthorizationStatus?
+
+    public init(status: RawAuthorizationStatus? = nil) {
+        self.status = status
+    }
+
+    public func loadLastObservedStatus() -> RawAuthorizationStatus? {
+        lock.lock(); defer { lock.unlock() }
+        return status
+    }
+    public func saveLastObservedStatus(_ status: RawAuthorizationStatus) {
+        lock.lock(); defer { lock.unlock() }
+        self.status = status
+    }
+    public func recordObservedStatus(_ status: RawAuthorizationStatus) -> RawAuthorizationStatus? {
+        lock.lock(); defer { lock.unlock() }
+        let previous = self.status
+        self.status = status
+        return previous
+    }
 }
 
 /// Tracks `ChildAuthorizationState` across repeated checks, purely from
@@ -38,10 +120,12 @@ public enum RawAuthorizationStatus: Equatable, Sendable {
 /// forgot to compare against the previous observation.
 public final class ChildAuthorizationCenter {
     private let source: AuthorizationStatusSource
-    private var lastObserved: RawAuthorizationStatus?
+    private let observationStore: ChildAuthorizationObservationStore
 
-    public init(source: AuthorizationStatusSource) {
+    public init(source: AuthorizationStatusSource,
+                observationStore: ChildAuthorizationObservationStore = UserDefaultsChildAuthorizationObservationStore()) {
         self.source = source
+        self.observationStore = observationStore
     }
 
     /// Re-reads the raw status and returns the doc-07 state, including a
@@ -50,9 +134,9 @@ public final class ChildAuthorizationCenter {
     @discardableResult
     public func refresh() -> ChildAuthorizationState {
         let raw = source.currentRawStatus()
-        defer { lastObserved = raw }
+        let previous = observationStore.recordObservedStatus(raw)
 
-        if lastObserved == .approved, raw != .approved {
+        if previous == .approved, raw != .approved {
             let target: ChildAuthorizationState.RevocationTarget = (raw == .denied) ? .denied : .notDetermined
             return .revoked(to: target)
         }

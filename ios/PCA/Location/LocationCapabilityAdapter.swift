@@ -51,7 +51,8 @@ public enum LocationCapabilityAdapter {
         case .denied:
             return .permissionDenied
         case .authorizedWhenInUse:
-            return backgroundGranted ? .active : .backgroundNotGranted
+            guard backgroundGranted else { return .backgroundNotGranted }
+            return accuracyAuthorization == .reducedAccuracy ? .approximate : .active
         case .authorizedAlways:
             return accuracyAuthorization == .reducedAccuracy ? .approximate : .active
         }

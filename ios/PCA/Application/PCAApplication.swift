@@ -6,6 +6,28 @@ import CryptoKit
 #endif
 
 public enum PCARuntimeCustodyOutcome: Equatable { case complete, morePending, retryableFailure, blocked, ineligible }
+
+private func isRetryableOptionalSafeZoneDeliveryFailure(_ error: Error) -> Bool {
+    if let apiError = error as? PCAAPIError {
+        switch apiError {
+        case .invalidConfiguration, .invalidRequest, .unavailable, .rejected, .malformedResponse,
+             .transport(.network), .transport(.timeout), .transport(.responseTooLarge), .transport(.invalidResponse):
+            return true
+        case .unauthorized, .forbidden, .transport(.insecureURL), .attemptAbandoned, .preparationRejected,
+             .enrollmentOutcomeUnknown:
+            return false
+        }
+    }
+    if let deliveryError = error as? PCADeviceSafeZoneDeliveryError {
+        switch deliveryError {
+        case .malformedResponse, .staleCursor, .persistenceUnavailable:
+            return true
+        case .invalidScope, .staleRevision, .conflictingRevision, .scopeChanged, .corruptInbox:
+            return false
+        }
+    }
+    return false
+}
 #if canImport(ManagedSettings) && canImport(FamilyControls)
 import ManagedSettings
 import FamilyControls
@@ -120,6 +142,8 @@ public struct PCAProductionDependencies {
     public let runtimeSyncClient: PCADeviceRuntimeSyncClient?
     public let inboundInbox: PCAInboundInboxStoring?
     public let inboundConsumer: PCAInboundCommandConsumer?
+    public let safeZoneDeliveryClient: PCADeviceSafeZoneDeliveryClient?
+    public let safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox?
     public let assertRuntimeKeyCustody: (String) throws -> Void
     public let sessionStore: PCADeviceSessionStore
     public let attemptStore: PCAEnrollmentAttemptStore
@@ -153,6 +177,8 @@ public struct PCAProductionDependencies {
         runtimeSyncClient: PCADeviceRuntimeSyncClient? = nil,
         inboundInbox: PCAInboundInboxStoring? = nil,
         inboundConsumer: PCAInboundCommandConsumer? = nil,
+        safeZoneDeliveryClient: PCADeviceSafeZoneDeliveryClient? = nil,
+        safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in throw PCADeviceProofError.secureKeyUnavailable },
         sessionStore: PCADeviceSessionStore,
         attemptStore: PCAEnrollmentAttemptStore,
@@ -175,6 +201,8 @@ public struct PCAProductionDependencies {
         self.runtimeSyncClient = runtimeSyncClient
         self.inboundInbox = inboundInbox
         self.inboundConsumer = inboundConsumer
+        self.safeZoneDeliveryClient = safeZoneDeliveryClient
+        self.safeZoneDeliveryInbox = safeZoneDeliveryInbox
         self.assertRuntimeKeyCustody = assertRuntimeKeyCustody
         self.sessionStore = sessionStore
         self.attemptStore = attemptStore
@@ -547,7 +575,7 @@ enum PCAFirstDeviceTrustRootComposition {
             }
         case .unavailable, .planned: break
         }
-        if case .degraded = dependencies.policyRuntime.callbackHealth(now: now()) {
+        if dependencies.policyRuntime.callbackHealth(now: now()).indicatesProtectionDegraded {
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = stateForCurrentData()
         }
@@ -1176,6 +1204,7 @@ enum PCAFirstDeviceTrustRootComposition {
         #endif
         let started = ProcessInfo.processInfo.systemUptime
         var ackCount = 0
+        var safeZoneDeliveryPending = false
         func assertContinuity() throws {
             try Task.checkCancellation()
             guard try dependencies.sessionStore.loadSession() == session, session.expiresAt > now() else { throw PCAAPIError.unauthorized }
@@ -1225,6 +1254,25 @@ enum PCAFirstDeviceTrustRootComposition {
                 guard try await trustSet.catchUp(maximumRecords: 32) else { throw PCAInboundInboxError.unavailable }
                 try assertContinuity()
             }
+            if let safeZoneClient = dependencies.safeZoneDeliveryClient,
+               let safeZoneInbox = dependencies.safeZoneDeliveryInbox {
+                let scope = PCADeviceSafeZoneDeliveryScope(familyId: expectedFamilyId, deviceId: session.deviceId)
+                do {
+                    safeZoneDeliveryPending = !(try await safeZoneClient.synchronize(
+                        scope: scope,
+                        inbox: safeZoneInbox,
+                        absoluteMonotonicDeadline: started + 30
+                    ))
+                } catch {
+                    guard isRetryableOptionalSafeZoneDeliveryFailure(error) else { throw error }
+                    safeZoneDeliveryPending = true
+                }
+                try assertContinuity()
+            } else if dependencies.safeZoneDeliveryClient != nil || dependencies.safeZoneDeliveryInbox != nil {
+                // A partially wired optional subsystem cannot complete delivery.
+                // Keep overall runtime sync pending while unrelated work proceeds.
+                safeZoneDeliveryPending = true
+            }
             var cursor = try inbox.navigation(sessionIncarnation: incarnation)?.nextCursor
             var resetRejectedCursor = false
             if let scope = try inbox.retainedScope() { try await consumeStored(scope) }
@@ -1267,7 +1315,7 @@ enum PCAFirstDeviceTrustRootComposition {
                 syncConnectionState = SyncConnectionStateComputer.compute(SyncConnectionStateInput(
                     isTransportConnected: true,
                     isSyncing: false,
-                    hasPendingLocalWork: !pendingCrypto.isEmpty || response.hasMore || unresolved ||
+                    hasPendingLocalWork: !pendingCrypto.isEmpty || response.hasMore || unresolved || safeZoneDeliveryPending ||
                         !response.unparseableMessageIds.isEmpty || !response.droppedForListBound.isEmpty,
                     lastSuccessfulSyncAtUtc: now(),
                     nowUtc: now(),
@@ -1284,6 +1332,10 @@ enum PCAFirstDeviceTrustRootComposition {
                     if let statusError, statusError == .unauthorized || statusError == .forbidden {
                         throw statusError
                     }
+                }
+                if safeZoneDeliveryPending {
+                    syncConnectionState = .syncPending
+                    return .morePending
                 }
                 return .complete
             }
@@ -1461,6 +1513,25 @@ public enum PCAProductionCompositionRoot {
         #endif
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
+        #if canImport(Security) && canImport(CryptoKit)
+        let safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox? = PCAKeychainSafeZoneDeliveryInbox(
+            keychain: keychain,
+            serviceNamespace: "org.pca.app",
+            scopeProvider: {
+                guard let root = firstDeviceRootStore.current(), root.state == .rootCommitted,
+                      let familyId = root.familyId else { return nil }
+                return PCADeviceSafeZoneDeliveryScope(familyId: familyId, deviceId: root.seed.deviceId)
+            }
+        )
+        let safeZoneDeliveryClient: PCADeviceSafeZoneDeliveryClient? = try? PCADeviceSafeZoneDeliveryClient(
+            baseURL: productionAPIBaseURL,
+            currentSession: { try stateStore.loadSession() },
+            now: Date.init
+        )
+        #else
+        let safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox? = nil
+        let safeZoneDeliveryClient: PCADeviceSafeZoneDeliveryClient? = nil
+        #endif
         let profileStore = UserDefaultsPCAEnrollmentProfileStore()
         #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
         let policyRuntime: PCAProtectionPolicyRuntime = (try? PCAProductionProtectionPolicyRuntime.production(
@@ -1477,6 +1548,8 @@ public enum PCAProductionCompositionRoot {
             sessionClient: sessionClient,
             runtimeSyncClient: runtimeSyncClient,
             inboundInbox: inboundInbox,
+            safeZoneDeliveryClient: safeZoneDeliveryClient,
+            safeZoneDeliveryInbox: safeZoneDeliveryInbox,
             assertRuntimeKeyCustody: { deviceId in
                 guard let root = firstDeviceRootStore.current(), root.state == .rootCommitted,
                       pcaOpaqueEqual(root.seed.deviceId, deviceId), deviceProofProvider.signingPublicKey == root.seed.dskPublicKeyBase64 else {

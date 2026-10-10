@@ -139,6 +139,44 @@ test('revokeDevice emits one lifecycle audit only for the winning transition', a
   assert.equal(deviceRevocations[0].freeTextNote, 'DEVICE_REVOKED');
 });
 
+test('revokeDevice returns committed state when the one-shot audit append fails; retry stays idempotent', async () => {
+  const repository = createInMemoryDeviceRepository();
+  let auditAttempts = 0;
+  const auditService = {
+    async record() {
+      auditAttempts += 1;
+      throw new Error('synthetic audit storage failure');
+    },
+  };
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    const service = new DeviceDirectoryService(
+      repository,
+      () => new Date('2026-01-01T00:00:00.000Z'),
+      auditService,
+    );
+    const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+
+    const first = await service.revokeDevice(FAMILY_A, device.deviceId);
+    assert.equal(first.status, 'REVOKED');
+    const keysAfterCommit = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+    assert.ok(keysAfterCommit.every((registeredKey) => registeredKey.status === 'REVOKED'));
+
+    const retry = await service.revokeDevice(FAMILY_A, device.deviceId);
+    assert.equal(retry.status, 'REVOKED');
+    assert.equal(auditAttempts, 1, 'the already-committed transition must not be re-audited by an idempotent retry');
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(JSON.parse(warnings[0]), {
+      event: 'device_lifecycle_audit_append_failed',
+      occurrences: 1,
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('revoked key material is permanently tombstoned: it can never be re-registered on the same device after full device revocation', async () => {
   const { service } = buildService();
   const revokedKey = key();

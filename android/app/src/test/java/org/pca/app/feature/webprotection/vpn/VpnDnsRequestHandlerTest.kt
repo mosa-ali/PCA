@@ -156,8 +156,14 @@ class VpnDnsRequestHandlerTest {
 
     @Test
     fun `upstream resolution failure on the ordinary path returns null -- never a fabricated answer`() {
-        val h = handler(decider = { VpnDnsDomainDecision.ALLOW }, resolveUpstream = { _, _ -> null })
+        val channel = VpnDnsDecisionChannel()
+        val h = handler(
+            decider = { VpnDnsDomainDecision.ALLOW },
+            channel = channel,
+            resolveUpstream = { _, _ -> null },
+        )
         val response = h.handle(query("offline-upstream.example"))
         assertNull(response)
+        assertNull("failed lookup is not an applied ALLOWED network verdict", channel.decisionFor("offline-upstream.example"))
     }
 }

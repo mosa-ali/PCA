@@ -106,6 +106,7 @@ public struct StoredScheduleWindow: Codable, Equatable {
     public let timezone: String?
     public let id: String
     public let kind: ScheduleWindowKind
+    /// Shared schedule-contract numbering: 0 = Sunday through 6 = Saturday.
     public let daysOfWeek: Set<Int>
     public let start: StoredTimeOfDay
     public let end: StoredTimeOfDay
@@ -238,12 +239,18 @@ public enum PolicySyncDecoder {
 
         var windows: [ScheduleWindow] = []
         for window in stored.windows {
+            guard window.daysOfWeek.allSatisfy({ (0...6).contains($0) }) else {
+                return .failure(.invalidWindowConfig(["window \(window.id): daysOfWeek must use contract indices 0...6"]))
+            }
             let windowZone: TimeZone
             if let identifier = window.timezone {
                 guard let explicitZone = TimeZone(identifier: identifier) else { return .failure(.unrecognizedTimeZone(identifier)) }
                 windowZone = explicitZone
             } else { windowZone = timeZone } // Deliberate legacy snapshot compatibility.
-            windows.append(toDomainWindow(window, timeZone: windowZone))
+            // Foundation Calendar numbers weekdays 1...7 (Sunday...Saturday),
+            // while the shared/backend and Android schedule contract is 0...6.
+            windows.append(toDomainWindow(window, timeZone: windowZone,
+                calendarWeekdays: Set(window.daysOfWeek.map { $0 + 1 })))
         }
         let configErrors = windows.flatMap(ScheduleEngine.validate)
         guard configErrors.isEmpty else {
@@ -308,9 +315,13 @@ public enum PolicySyncDecoder {
         return roundTrip.year == year && roundTrip.month == month && roundTrip.day == day
     }
 
-    private static func toDomainWindow(_ stored: StoredScheduleWindow, timeZone: TimeZone) -> ScheduleWindow {
+    private static func toDomainWindow(
+        _ stored: StoredScheduleWindow,
+        timeZone: TimeZone,
+        calendarWeekdays: Set<Int>
+    ) -> ScheduleWindow {
         ScheduleWindow(
-            id: stored.id, kind: stored.kind, daysOfWeek: stored.daysOfWeek,
+            id: stored.id, kind: stored.kind, daysOfWeek: calendarWeekdays,
             start: TimeOfDay(hour: stored.start.hour, minute: stored.start.minute),
             end: TimeOfDay(hour: stored.end.hour, minute: stored.end.minute),
             appScope: toDomainScope(stored.appScope), timeZone: timeZone

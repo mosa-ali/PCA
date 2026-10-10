@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { acceptRecoveryEpoch } from '../familytrustset/FamilyTrustSetRecoveryEngine.js';
+import { canonicalizeTrustSetEpoch } from '../familytrustset/canonicalize.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import type { RecoveryFtsRejectionReason } from '../familytrustset/FamilyTrustSetRecoveryEngine.js';
 import type { FamilyTrustSetStore } from '../familytrustset/FamilyTrustSetStore.js';
@@ -8,10 +10,11 @@ import type { FamilyTrustSetEpoch } from '../familytrustset/types.js';
 import type { OpenedRecoveryEnvelope } from '../recovery/RecoveryEnvelopeCipher.js';
 import type { RecoveryTransactionStore } from './RecoveryTransactionStore.js';
 import type { RecoveryTransactionRecord } from './types.js';
+import { isPlausibleOpaqueId } from '../familytrustset/policy.js';
 
 export type FinalizeRecoveryOutcome =
   | { outcome: 'COMPLETE'; record: RecoveryTransactionRecord }
-  | { outcome: 'REJECTED'; reason: RecoveryFtsRejectionReason; record: RecoveryTransactionRecord };
+  | { outcome: 'REJECTED'; reason: RecoveryFtsRejectionReason | 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH'; record: RecoveryTransactionRecord };
 
 const finalizeQueues = new WeakMap<RecoveryTransactionStore, Map<string, Promise<void>>>();
 
@@ -51,10 +54,26 @@ async function withFinalizeQueue<T>(
   }
 }
 
-function assertCandidateEpoch(candidateEpoch: Pick<FamilyTrustSetEpoch, 'trustSetEpoch' | 'keyEpoch'>): void {
+function assertCandidateEpoch(candidateEpoch: Pick<FamilyTrustSetEpoch, 'familyId' | 'trustSetEpoch' | 'keyEpoch'>): void {
   if (!isFamilyEpochNumber(candidateEpoch.trustSetEpoch, 1) || !isFamilyEpochNumber(candidateEpoch.keyEpoch, 1)) {
     throw new Error('Recovery candidate epochs must be exact integers within the supported family epoch range.');
   }
+  if (!isPlausibleOpaqueId(candidateEpoch.familyId)) {
+    throw new Error('Recovery candidate family ID must be a valid opaque identifier.');
+  }
+}
+
+function assertRecoveryTransactionId(recoveryTransactionId: string): void {
+  if (!isPlausibleOpaqueId(recoveryTransactionId)) {
+    throw new Error('Recovery transaction ID must be a valid opaque identifier.');
+  }
+}
+
+function snapshotValidNow(now: Date): Date {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    throw new Error('Recovery transaction time must be a valid Date.');
+  }
+  return new Date(now.getTime());
 }
 
 function snapshotCandidateEpoch(candidateEpoch: FamilyTrustSetEpoch): FamilyTrustSetEpoch {
@@ -69,12 +88,38 @@ function snapshotCandidateEpoch(candidateEpoch: FamilyTrustSetEpoch): FamilyTrus
   };
 }
 
+/** Bind both the complete canonical Trust Set payload and its signature. */
+function candidateDigestSha256(candidateEpoch: FamilyTrustSetEpoch): string | null {
+  try {
+    if (typeof candidateEpoch.signature !== 'string') return null;
+    const canonicalBytes = Buffer.from(canonicalizeTrustSetEpoch(candidateEpoch), 'utf8');
+    const signatureBytes = Buffer.from(candidateEpoch.signature, 'utf8');
+    const hash = createHash('sha256').update('PCA-RECOVERY-CANDIDATE-V1\0', 'utf8');
+    for (const value of [canonicalBytes, signatureBytes]) {
+      const length = Buffer.alloc(8);
+      length.writeBigUInt64BE(BigInt(value.byteLength));
+      hash.update(length);
+      hash.update(value);
+    }
+    return hash.digest('hex');
+  } catch {
+    // Invalid candidates still flow through acceptRecoveryEpoch so its
+    // established rejection reason and terminal bookkeeping remain intact.
+    return null;
+  }
+}
+
 function isBoundOpenedEnvelope(
   recoveryTransactionId: string,
   familyId: string,
   opened: OpenedRecoveryEnvelope,
 ): boolean {
   return (
+    isPlausibleOpaqueId(recoveryTransactionId) &&
+    isPlausibleOpaqueId(familyId) &&
+    isPlausibleOpaqueId(opened.familyId) &&
+    isPlausibleOpaqueId(opened.recoveryEnvelopeId) &&
+    isPlausibleOpaqueId(opened.recoveryTransactionId) &&
     opened.recoveryTransactionId === recoveryTransactionId &&
     opened.familyId === familyId &&
     isFamilyEpochNumber(opened.boundTrustSetEpoch, 1) &&
@@ -133,13 +178,15 @@ export class RecoveryTransactionCoordinator {
     candidateEpoch: Pick<FamilyTrustSetEpoch, 'familyId' | 'trustSetEpoch' | 'keyEpoch'>,
     now: Date,
   ): Promise<RecoveryTransactionRecord> {
+    assertRecoveryTransactionId(recoveryTransactionId);
     assertCandidateEpoch(candidateEpoch);
+    const nowSnapshot = snapshotValidNow(now);
     return this.transactions.beginOrGetExisting({
       recoveryTransactionId,
       familyId: candidateEpoch.familyId,
       proposedTrustSetEpoch: candidateEpoch.trustSetEpoch,
       proposedKeyEpoch: candidateEpoch.keyEpoch,
-      now,
+      now: nowSnapshot,
     });
   }
 
@@ -152,9 +199,10 @@ export class RecoveryTransactionCoordinator {
     ledger: RecoveryTransactionLedger,
     now: Date,
   ): Promise<FinalizeRecoveryOutcome> {
+    assertRecoveryTransactionId(recoveryTransactionId);
+    const nowSnapshot = snapshotValidNow(now);
     const candidateSnapshot = snapshotCandidateEpoch(candidateEpoch);
     const openedSnapshot = { ...opened };
-    const nowSnapshot = new Date(now.getTime());
     assertCandidateEpoch(candidateSnapshot);
     // The opened value is the recovery authority. Check its immutable
     // transaction/family binding before creating or retrieving lifecycle
@@ -164,7 +212,7 @@ export class RecoveryTransactionCoordinator {
     }
 
     return withFinalizeQueue(this.transactions, recoveryTransactionId, async () => {
-      const existing = await this.transactions.beginOrGetExisting({
+      let existing = await this.transactions.beginOrGetExisting({
         recoveryTransactionId,
         familyId: candidateSnapshot.familyId,
         proposedTrustSetEpoch: candidateSnapshot.trustSetEpoch,
@@ -174,6 +222,24 @@ export class RecoveryTransactionCoordinator {
 
       if (!transactionMatchesCandidate(existing, recoveryTransactionId, candidateSnapshot)) {
         return { outcome: 'REJECTED', reason: 'ENVELOPE_EPOCH_MISMATCH', record: existing };
+      }
+
+      const digest = candidateDigestSha256(candidateSnapshot);
+      if (existing.candidateDigestSha256 !== null) {
+        if (digest === null || existing.candidateDigestSha256 !== digest) {
+          return { outcome: 'REJECTED', reason: 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH', record: existing };
+        }
+      } else if (existing.status === 'COMPLETE') {
+        // A completed record without a proposal digest cannot safely prove
+        // that this request is the exact replay that was accepted.
+        return { outcome: 'REJECTED', reason: 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH', record: existing };
+      } else if (existing.status === 'INITIATED' && digest !== null) {
+        const bound = await this.transactions.bindCandidateDigest(recoveryTransactionId, digest);
+        if (!bound) throw new Error('Recovery transaction disappeared while binding its candidate.');
+        existing = bound;
+        if (existing.candidateDigestSha256 !== digest) {
+          return { outcome: 'REJECTED', reason: 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH', record: existing };
+        }
       }
 
       if (existing.status === 'COMPLETE') {

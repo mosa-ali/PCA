@@ -294,14 +294,15 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                     throw OrdinaryTrustSetError.staleCandidate
                 }
                 chain.append(current)
-                // The server permits absent lineage metadata on non-genesis epochs. Since the
-                // backend preserves the epoch-1 owner DSK for every ordinary append, a directly
-                // verified signature from that immutable key is a safe bounded anchor.
-                guard let predecessor = currentEpoch.supersedesEpoch else { anchored = true; break }
+                // A root-owner signature authenticates the record, not its descent from our
+                // trusted floor. Catch-up must prove the exact predecessor chain to that floor.
+                guard let predecessor = currentEpoch.supersedesEpoch else { return false }
                 guard predecessor < currentEpoch.trustSetEpoch else {
                     throw OrdinaryTrustSetError.staleCandidate
                 }
-                if predecessor <= localEpoch.trustSetEpoch { anchored = true; break }
+                if predecessor == localEpoch.trustSetEpoch { anchored = true; break }
+                // An older pointer describes a branch that does not descend from our local head.
+                guard predecessor > localEpoch.trustSetEpoch else { return false }
                 current = try await self.transport.acceptedRecord(familyId: self.familyId, epoch: predecessor)
                 guard try current.epoch().trustSetEpoch == predecessor else { throw OrdinaryTrustSetError.responseMismatch }
             }
@@ -312,9 +313,8 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                 guard Data(next.familyId.utf8) == Data(self.familyId.utf8),
                       nextEpoch.trustSetEpoch > before.trustSetEpoch,
                       nextEpoch.keyEpoch >= before.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
-                if let predecessor = nextEpoch.supersedesEpoch {
-                    guard predecessor < nextEpoch.trustSetEpoch,
-                          predecessor <= before.trustSetEpoch else { throw OrdinaryTrustSetError.responseMismatch }
+                guard nextEpoch.supersedesEpoch == before.trustSetEpoch else {
+                    throw OrdinaryTrustSetError.responseMismatch
                 }
                 let expected = record
                 record.head = next

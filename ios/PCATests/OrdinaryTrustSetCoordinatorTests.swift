@@ -68,6 +68,16 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         return (store, signer, transport, OrdinaryTrustSetCoordinator(store: store, signer: signer, verifier: verifier,
             transport: transport, trustedRootAnchor: head, familyId: "family-test", deviceId: "owner-device", dskKeyId: "owner-dsk", dskAlias: "pca.dsk.attempt"))
     }
+    private func apiRecord(_ head: OrdinaryTrustSetHead) throws -> [String: Any] {
+        let urlSignature = head.signature.replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let paddedSignature = urlSignature + String(repeating: "=", count: (4 - urlSignature.count % 4) % 4)
+        let signature = try XCTUnwrap(Data(base64Encoded: paddedSignature)).base64EncodedString()
+        let epoch = try head.epoch()
+        return ["canonicalEpochBase64": head.canonicalBytes.base64EncodedString(),
+            "signatureBase64": signature, "signerDeviceId": "owner-device", "signerKeyId": "owner-dsk",
+            "trustSetEpoch": epoch.trustSetEpoch, "keyEpoch": epoch.keyEpoch]
+    }
     func testPersistBeforeSendAndRestartRetryNeverResigns() async throws {
         let (store, signer, transport, coordinator) = try fixture()
         try await coordinator.prepare(epoch(2))
@@ -86,6 +96,58 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertNil(store.value.pending)
         XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 2)
     }
+
+    func testKeychainRestartRetriesIdenticalCanonicalBytesAndSignatureAfterStatusMiss() async throws {
+        let root = try rootHead()
+        let keychain = InMemoryKeychainStore()
+        let firstStore = KeychainOrdinaryTrustSetStore(keychain: keychain, account: "owner-device")
+        XCTAssertTrue(try firstStore.compareAndSetDurably(expected: nil,
+            next: OrdinaryTrustSetRecord(head: root, rootAnchor: root)))
+        let firstSigner = Signer()
+        let transport = Transport()
+        transport.failure = true
+        let firstCoordinator = OrdinaryTrustSetCoordinator(store: firstStore, signer: firstSigner,
+            verifier: Verifier(), transport: transport, trustedRootAnchor: root,
+            familyId: "family-test", deviceId: "owner-device", dskKeyId: "owner-dsk",
+            dskAlias: "pca.dsk.attempt")
+
+        try await firstCoordinator.prepare(epoch(2))
+        let prepared = try XCTUnwrap(firstStore.load().pending)
+        do {
+            _ = try await firstCoordinator.submitPending()
+            XCTFail("the first delivery should simulate a lost response")
+        } catch {}
+        XCTAssertEqual(firstStore.load().pending, prepared,
+            "a transport failure retains the signed request in Keychain")
+
+        // Re-open the durable store and create a fresh coordinator/signer as a
+        // process-restart proxy. Recovery must use only the persisted request.
+        let reopenedStore = KeychainOrdinaryTrustSetStore(keychain: keychain, account: "owner-device")
+        let persisted = try XCTUnwrap(reopenedStore.load().pending)
+        XCTAssertEqual(persisted, prepared)
+        XCTAssertEqual(persisted.candidate.canonicalBytes, prepared.candidate.canonicalBytes)
+        XCTAssertEqual(persisted.candidate.signature, prepared.candidate.signature)
+        let restartedSigner = Signer()
+        let restartedCoordinator = OrdinaryTrustSetCoordinator(store: reopenedStore, signer: restartedSigner,
+            verifier: Verifier(), transport: transport, trustedRootAnchor: root,
+            familyId: "family-test", deviceId: "owner-device", dskKeyId: "owner-dsk",
+            dskAlias: "pca.dsk.attempt")
+        transport.failure = false
+
+        let resumed = try await restartedCoordinator.resumePending()
+        guard case let .accepted(accepted)? = resumed else { return XCTFail("persisted request was not accepted") }
+        XCTAssertEqual(accepted, persisted.candidate)
+        XCTAssertEqual(transport.statusCalls, 1, "restart queries authoritative status before retry")
+        XCTAssertEqual(transport.sent, [persisted, persisted],
+            "the post-restart retry must send byte-identical candidate and signature")
+        XCTAssertEqual(transport.sent[0].candidate.canonicalBytes, transport.sent[1].candidate.canonicalBytes)
+        XCTAssertEqual(transport.sent[0].candidate.signature, transport.sent[1].candidate.signature)
+        XCTAssertEqual(firstSigner.calls, 1)
+        XCTAssertEqual(restartedSigner.calls, 0, "restart recovery never signs again")
+        XCTAssertNil(try reopenedStore.load().pending)
+        XCTAssertEqual(try reopenedStore.load().head, persisted.candidate)
+    }
+
     func testRuntimeResumeUsesAuthoritativeStatusBeforeExactRetry() async throws {
         let (store, signer, transport, coordinator) = try fixture()
         try await coordinator.prepare(epoch(2))
@@ -124,6 +186,68 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(signer.calls, 1, "restart recovery must never sign again")
         XCTAssertNil(store.value.pending)
     }
+
+    func testAcceptedStatusThenSignedHeadCatchUpReconcilesSkippedEpochsWithoutResigning() async throws {
+        let (store, signer, _, _) = try fixture()
+        let candidateEpoch = epoch(2)
+        let intermediateEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 3, keyEpoch: 1,
+            entries: epoch(1).entries, issuedAt: "2026-10-09T00:00:03.000Z", supersedesEpoch: 2)
+        let projectedEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 8, keyEpoch: 2,
+            entries: epoch(1).entries, issuedAt: "2026-10-09T00:00:08.000Z", supersedesEpoch: 3)
+        func signedHead(_ value: UntrustedTrustSetEpoch, byte: UInt8) throws -> OrdinaryTrustSetHead {
+            let signature = Data(repeating: byte, count: 64).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            return OrdinaryTrustSetHead(familyId: value.familyId,
+                canonicalBytes: try FamilyTrustSetCodec.canonicalize(value), signature: signature)
+        }
+        let intermediate = try signedHead(intermediateEpoch, byte: 3)
+        let projectedHead = try signedHead(projectedEpoch, byte: 8)
+        let root = try XCTUnwrap(store.value.rootAnchor)
+        let http = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { request in
+            guard let path = request.url?.path else { throw PCAHTTPTransportError.network }
+            let body: [String: Any]
+            switch path {
+            case "/api/device/families/family-test/trust-set/epochs/status":
+                let pending = try XCTUnwrap(store.value.pending)
+                body = ["outcome": "ACCEPTED", "acceptedEpoch": try self.apiRecord(pending.candidate),
+                    "acceptedHead": try self.apiRecord(projectedHead)]
+            case "/api/device/families/family-test/trust-set/epochs/head":
+                body = ["acceptedHead": try self.apiRecord(projectedHead)]
+            case "/api/device/families/family-test/trust-set/epochs/records/3":
+                body = ["acceptedEpoch": try self.apiRecord(intermediate)]
+            default:
+                throw PCAHTTPTransportError.network
+            }
+            return PCAHTTPResponse(statusCode: 200, data: try JSONSerialization.data(withJSONObject: body))
+        }
+        let client = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+            familyId: "family-test", sessionToken: { "device-session" }, http: http)
+        let coordinator = OrdinaryTrustSetCoordinator(store: store, signer: signer, verifier: Verifier(),
+            transport: client, trustedRootAnchor: root, familyId: "family-test", deviceId: "owner-device",
+            dskKeyId: "owner-dsk", dskAlias: "pca.dsk.attempt")
+
+        try await coordinator.prepare(candidateEpoch)
+        let pending = try XCTUnwrap(store.value.pending)
+        let resumed = try await coordinator.resumePending()
+        guard case let .accepted(receipt)? = resumed else { return XCTFail("exact status receipt was not accepted") }
+        XCTAssertEqual(receipt, pending.candidate)
+        XCTAssertNil(store.value.pending)
+        XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 2,
+            "status acknowledgement advances only to its exact accepted record")
+
+        let caughtUp = try await coordinator.catchUp(maximumRecords: 4)
+        XCTAssertTrue(caughtUp)
+        XCTAssertEqual(store.value.head, projectedHead)
+        XCTAssertNil(store.value.pending)
+        XCTAssertEqual(signer.calls, 1)
+        XCTAssertEqual(http.requests.compactMap { $0.url?.path }, [
+            "/api/device/families/family-test/trust-set/epochs/status",
+            "/api/device/families/family-test/trust-set/epochs/head",
+            "/api/device/families/family-test/trust-set/epochs/records/3"
+        ])
+    }
+
     func testPrepareAndSubmitKeepsCandidatePreparationAndSubmissionInOneCoordinatorGate() async throws {
         let (store, signer, transport, coordinator) = try fixture()
         let result = try await coordinator.prepareAndSubmit(epoch(2))
@@ -208,6 +332,153 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         let corrupt = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!, familyId: "family-test",
             sessionToken: { "device-session" }, http: corruptHTTP)
         do { _ = try await corrupt.submit(pending); XCTFail("corrupt projection accepted") } catch {}
+    }
+
+    func testAPIRejectsAcceptedHeadWithOlderKeyEpochDuringStatus() async throws {
+        let (store, _, _, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2, key: 2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let headEpoch = epoch(3, key: 1)
+        let projectedHead = OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(headEpoch), signature: pending.candidate.signature)
+        let body = try JSONSerialization.data(withJSONObject: ["outcome": "ACCEPTED",
+            "acceptedEpoch": try apiRecord(pending.candidate), "acceptedHead": try apiRecord(projectedHead)])
+        let http = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 200, data: body)
+        }
+        let client = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+            familyId: "family-test", sessionToken: { "device-session" }, http: http)
+
+        do {
+            _ = try await client.status(pending)
+            XCTFail("a newer trust-set epoch cannot project a lower key epoch")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
+    func testAPIRejectsAcceptedHeadWithOlderTrustSetEpochDuringStatus() async throws {
+        let (store, _, _, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let staleHead = OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(1)), signature: pending.candidate.signature)
+        let body = try JSONSerialization.data(withJSONObject: ["outcome": "ACCEPTED",
+            "acceptedEpoch": try apiRecord(pending.candidate), "acceptedHead": try apiRecord(staleHead)])
+        let http = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 200, data: body)
+        }
+        let client = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+            familyId: "family-test", sessionToken: { "device-session" }, http: http)
+
+        do {
+            _ = try await client.status(pending)
+            XCTFail("accepted-head trust-set epoch cannot precede its accepted record")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
+    func testAPIRequiresAcceptedRecordToMatchExactSubmittedRequest() async throws {
+        let (store, _, _, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let alternateSignature = Data(repeating: 8, count: 64).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let conflictingAcceptedRecord = OrdinaryTrustSetHead(familyId: pending.candidate.familyId,
+            canonicalBytes: pending.candidate.canonicalBytes, signature: alternateSignature)
+        let body = try JSONSerialization.data(withJSONObject: ["outcome": "ACCEPTED",
+            "acceptedEpoch": try apiRecord(conflictingAcceptedRecord),
+            "acceptedHead": try apiRecord(conflictingAcceptedRecord)])
+        let http = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 200, data: body)
+        }
+        let client = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+            familyId: "family-test", sessionToken: { "device-session" }, http: http)
+
+        do {
+            _ = try await client.status(pending)
+            XCTFail("an accepted record with a different signature is not the exact persisted request")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
+    func testAPIStatusRequiresNoAcceptedRecordForNotAcceptedOrConflict() async throws {
+        let (store, _, _, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let acceptedHead = try apiRecord(OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(1)), signature: pending.candidate.signature))
+
+        for outcome in ["NOT_ACCEPTED", "CONFLICT"] {
+            let validBody = try JSONSerialization.data(withJSONObject: ["outcome": outcome,
+                "acceptedEpoch": NSNull(), "acceptedHead": acceptedHead])
+            let validHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+                PCAHTTPResponse(statusCode: 200, data: validBody)
+            }
+            let validClient = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+                familyId: "family-test", sessionToken: { "device-session" }, http: validHTTP)
+            let result = try await validClient.status(pending)
+            if outcome == "NOT_ACCEPTED" {
+                guard case .unknown = result else { return XCTFail("NOT_ACCEPTED must map to unknown") }
+            } else {
+                guard case .rejected = result else { return XCTFail("CONFLICT must map to rejected") }
+            }
+
+            let missingReceiptBody = try JSONSerialization.data(withJSONObject: ["outcome": outcome,
+                "acceptedHead": acceptedHead])
+            let missingReceiptHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+                PCAHTTPResponse(statusCode: 200, data: missingReceiptBody)
+            }
+            let missingReceiptClient = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+                familyId: "family-test", sessionToken: { "device-session" }, http: missingReceiptHTTP)
+            do {
+                _ = try await missingReceiptClient.status(pending)
+                XCTFail("\(outcome) requires acceptedEpoch to be explicitly null")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .malformedResponse)
+            }
+
+            let contradictoryBody = try JSONSerialization.data(withJSONObject: ["outcome": outcome,
+                "acceptedEpoch": try apiRecord(pending.candidate), "acceptedHead": acceptedHead])
+            let contradictoryHTTP = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+                PCAHTTPResponse(statusCode: 200, data: contradictoryBody)
+            }
+            let contradictoryClient = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+                familyId: "family-test", sessionToken: { "device-session" }, http: contradictoryHTTP)
+            do {
+                _ = try await contradictoryClient.status(pending)
+                XCTFail("\(outcome) cannot include an accepted record")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .malformedResponse)
+            }
+        }
+    }
+
+    func testAPIRejectsDifferentAcceptedHeadRecordAtSameEpochDuringStatus() async throws {
+        let (store, _, _, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2, key: 2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let conflictingEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 2, keyEpoch: 2,
+            entries: epoch(1).entries, issuedAt: "2026-10-09T00:01:00.000Z", supersedesEpoch: 1)
+        let projectedHead = OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(conflictingEpoch), signature: pending.candidate.signature)
+        let body = try JSONSerialization.data(withJSONObject: ["outcome": "ACCEPTED",
+            "acceptedEpoch": try apiRecord(pending.candidate), "acceptedHead": try apiRecord(projectedHead)])
+        let http = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 200, data: body)
+        }
+        let client = try OrdinaryTrustSetAPIClient(baseURL: URL(string: "https://api.example.test")!,
+            familyId: "family-test", sessionToken: { "device-session" }, http: http)
+
+        do {
+            _ = try await client.status(pending)
+            XCTFail("an equal-epoch accepted-head projection must equal the accepted record")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
     }
 
     func testDeviceAuthorizationDenialIsNotReportedAsExpiredSession() async throws {
@@ -303,7 +574,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertTrue(complete)
         XCTAssertEqual(try store.value.head.epoch().trustSetEpoch, 8)
     }
-    func testCatchUpAcceptsLineagePointerOlderThanVerifiedLocalFloor() async throws {
+    func testCatchUpRejectsTargetLineagePointerOlderThanVerifiedLocalFloor() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(expectedPublicKey: "public-dsk"))
         let root = try XCTUnwrap(store.value.rootAnchor)
         let localEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 5, keyEpoch: 2,
@@ -314,13 +585,14 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             entries: epoch(1).entries, issuedAt: epoch(1).issuedAt, supersedesEpoch: 2)
         let target = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(targetEpoch), signature: "root-signed-eight")
         transport.head = target
+        let original = store.value
 
         let caughtUp = try await coordinator.catchUp()
-        XCTAssertTrue(caughtUp)
-        XCTAssertEqual(store.value.head, target)
-        XCTAssertTrue(transport.records.isEmpty, "a verified root-signed head with an older lineage pointer needs no below-floor fetch")
+        XCTAssertFalse(caughtUp, "a valid signature cannot bridge a lineage pointer below the trusted floor")
+        XCTAssertEqual(store.value, original)
+        XCTAssertTrue(transport.records.isEmpty)
     }
-    func testCatchUpFetchesAboveFloorButAcceptsOlderLineageOnAnIntermediateRecord() async throws {
+    func testCatchUpDoesNotAdoptChainWhoseIntermediateLineageSkipsTrustedFloor() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(expectedPublicKey: "public-dsk"))
         let root = try XCTUnwrap(store.value.rootAnchor)
         let localEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 2, keyEpoch: 1,
@@ -337,11 +609,11 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         transport.records[6] = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(middle), signature: "root-signed-six")
         let target = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(targetEpoch), signature: "root-signed-eight")
         transport.head = target
+        let original = store.value
 
         let caughtUp = try await coordinator.catchUp()
-        XCTAssertTrue(caughtUp)
-        XCTAssertEqual(store.value.head, target)
-        XCTAssertEqual(try store.value.head.epoch().keyEpoch, 3)
+        XCTAssertFalse(caughtUp, "every linked record must ultimately point to the exact local head")
+        XCTAssertEqual(store.value, original, "an unanchored fetched chain must not advance local custody")
     }
     func testEqualCatchUpAuthenticatesPersistedHeadAgainstImmutableRootKey() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(rejectedSignatures: ["forged-equal-head"]))
@@ -353,17 +625,17 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         do { _ = try await coordinator.catchUp(); XCTFail("equal but unauthenticated local/server head was trusted") } catch {}
         XCTAssertEqual(store.value, original, "failed local-head authentication must preserve the durable floor")
     }
-    func testCatchUpAcceptsNullLineageOnlyWithRootOwnerSignatureAndMonotonicFloors() async throws {
+    func testCatchUpRejectsUnlinkedNonGenesisHeadEvenWithRootOwnerSignature() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(expectedPublicKey: "public-dsk"))
         let unlinkedEpoch = UntrustedTrustSetEpoch(familyId: "family-test", trustSetEpoch: 3, keyEpoch: 2,
             entries: epoch(1).entries, issuedAt: epoch(1).issuedAt, supersedesEpoch: nil)
         let target = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(unlinkedEpoch), signature: "root-signed-current")
         transport.head = target
+        let original = store.value
 
         let caughtUp = try await coordinator.catchUp()
-        XCTAssertTrue(caughtUp)
-        XCTAssertEqual(store.value.head, target)
-        XCTAssertEqual(try store.value.head.epoch().keyEpoch, 2)
+        XCTAssertFalse(caughtUp, "an owner signature alone does not prove descent from the local trusted head")
+        XCTAssertEqual(store.value, original)
     }
     func testCatchUpRejectsNullLineageKeyEpochRollback() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(expectedPublicKey: "public-dsk"))

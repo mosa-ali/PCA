@@ -6,7 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.platform.LocationSample
+import java.io.IOException
 
 class GeofenceMonitorTest {
 
@@ -24,16 +26,16 @@ class GeofenceMonitorTest {
 
     @Before
     fun setUp() {
-        monitor = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config)
+        monitor = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config) { "boot-test" }
     }
 
-    private fun sampleAtDistance(zone: GeofenceZone, meters: Double): LocationSample {
+    private fun sampleAtDistance(zone: GeofenceZone, meters: Double, elapsedRealtimeMillis: Long = 0L): LocationSample {
         val deltaLatDegrees = Math.toDegrees(meters / 6_371_000.0)
         return LocationSample(
             latitude = zone.centerLatitude + deltaLatDegrees,
             longitude = zone.centerLongitude,
             accuracyMeters = 5f,
-            elapsedRealtimeMillis = 0L,
+            elapsedRealtimeMillis = elapsedRealtimeMillis,
         )
     }
 
@@ -69,10 +71,48 @@ class GeofenceMonitorTest {
         zoneStore.addOrReplace(homeZone)
         monitor.evaluateSample(sampleAtDistance(homeZone, 10.0), 1L) // baseline: INSIDE
 
-        val secondMonitor = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config)
+        val secondMonitor = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config) { "boot-test" }
         val events = secondMonitor.evaluateSample(sampleAtDistance(homeZone, 500.0), 2L)
         assertEquals(1, events.size)
         assertEquals(GeofenceTransitionType.EXIT, events.first().transitionType)
+    }
+
+    @Test
+    fun `device reboot reanchors monotonic state while preserving confirmed membership`() {
+        zoneStore.addOrReplace(homeZone)
+        val firstBoot = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config) { "boot-10" }
+        firstBoot.evaluateSample(sampleAtDistance(homeZone, 10.0, elapsedRealtimeMillis = 10_000L), 10_000_000_000L)
+        assertEquals("boot-10", zoneStateStore.load("home")?.bootInstanceId)
+        assertEquals(GeofenceMembership.INSIDE, zoneStateStore.load("home")?.confirmedMembership)
+
+        val afterReboot = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config) { "boot-11" }
+        val events = afterReboot.evaluateSample(
+            sampleAtDistance(homeZone, 500.0, elapsedRealtimeMillis = 2_000L),
+            2_000_000_000L,
+        )
+
+        assertEquals(1, events.size)
+        assertEquals(GeofenceTransitionType.EXIT, events.single().transitionType)
+        assertEquals("boot-11", zoneStateStore.load("home")?.bootInstanceId)
+        assertEquals(GeofenceMembership.OUTSIDE, zoneStateStore.load("home")?.confirmedMembership)
+    }
+
+    @Test
+    fun `unknown boot identity skips geofence evaluation without rewriting persisted state`() {
+        zoneStore.addOrReplace(homeZone)
+        val persisted = GeofenceZoneState(
+            zoneId = "home", confirmedMembership = GeofenceMembership.INSIDE,
+            candidateMembership = GeofenceMembership.OUTSIDE, candidateStreak = 1,
+            lastEvaluatedMonotonicNanos = 90_000_000_000L,
+            lastAcceptedSampleElapsedRealtimeMillis = 90_000L,
+            bootInstanceId = "boot-10",
+        )
+        zoneStateStore.save(persisted)
+        val unknownBoot = GeofenceMonitor(zoneStore, zoneStateStore, alertPort, config)
+
+        assertTrue(unknownBoot.evaluateSample(sampleAtDistance(homeZone, 500.0, 2_000L), 2_000_000_000L).isEmpty())
+        assertEquals(persisted, zoneStateStore.load("home"))
+        assertTrue(alertPort.delivered.isEmpty())
     }
 
     @Test
@@ -104,7 +144,7 @@ class GeofenceMonitorTest {
         }
         val switchingStore = GeofenceZoneStore(storage, scopeProvider = switchingProvider)
         val switchingStateStore = GeofenceZoneStateStore(storage, scopeProvider = switchingProvider)
-        val switchingMonitor = GeofenceMonitor(switchingStore, switchingStateStore, alertPort, config)
+        val switchingMonitor = GeofenceMonitor(switchingStore, switchingStateStore, alertPort, config) { "boot-test" }
 
         val events = switchingMonitor.evaluateSample(sampleAtDistance(homeZone, 10.0), 9L)
 
@@ -125,6 +165,51 @@ class GeofenceMonitorTest {
         zoneStateStore.save(prior)
 
         val events = monitor.evaluateSample(sampleAtDistance(homeZone, 10.0), nowMonotonicNanos = 0L)
+
+        assertTrue(events.isEmpty())
+        assertTrue(alertPort.delivered.isEmpty())
+        assertEquals(prior, zoneStateStore.load("home"))
+    }
+
+    @Test
+    fun `corrupt state for any zone prevents partial sample enforcement`() {
+        val schoolZone = GeofenceZone("school", "School", 25.01, 55.0, 50.0)
+        zoneStore.addOrReplace(homeZone)
+        zoneStore.addOrReplace(schoolZone)
+        val homePrior = GeofenceZoneState(zoneId = "home", confirmedMembership = GeofenceMembership.OUTSIDE)
+        zoneStateStore.save(homePrior)
+        val corruptKey = familyA.zoneStateStoreKey("geofence_zone_state_v2", "school")
+        storage.putString(corruptKey, "malformed")
+
+        val events = monitor.evaluateSample(sampleAtDistance(homeZone, 10.0), nowMonotonicNanos = 0L)
+
+        assertTrue(events.isEmpty())
+        assertTrue(alertPort.delivered.isEmpty())
+        assertEquals(homePrior, zoneStateStore.load("home"))
+        assertEquals("malformed", storage.getString(corruptKey))
+    }
+
+    @Test
+    fun `uncertain persistence read prevents sample enforcement without rewriting state`() {
+        zoneStore.addOrReplace(homeZone)
+        val prior = GeofenceZoneState(zoneId = "home", confirmedMembership = GeofenceMembership.OUTSIDE)
+        zoneStateStore.save(prior)
+        val stateKey = familyA.zoneStateStoreKey("geofence_zone_state_v2", "home")
+        val failingRead = object : PersistentStateStore by storage {
+            override val coordinationLock: Any get() = storage.coordinationLock
+            override fun getString(key: String): String? {
+                if (key == stateKey) throw IOException("simulated unavailable read")
+                return storage.getString(key)
+            }
+        }
+        val monitorWithUnavailableState = GeofenceMonitor(
+            GeofenceZoneStore(failingRead, scopeProvider = scopeProvider),
+            GeofenceZoneStateStore(failingRead, scopeProvider = scopeProvider),
+            alertPort,
+            config,
+        ) { "boot-test" }
+
+        val events = monitorWithUnavailableState.evaluateSample(sampleAtDistance(homeZone, 10.0), nowMonotonicNanos = 0L)
 
         assertTrue(events.isEmpty())
         assertTrue(alertPort.delivered.isEmpty())

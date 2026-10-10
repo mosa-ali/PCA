@@ -224,14 +224,19 @@ public struct PCAEnrollmentLinkParser {
     public init() {}
 
     public func parse(_ url: URL) -> PCAEnrollmentLink? {
-        guard url.fragment == nil else { return nil }
-        let scheme = (url.scheme ?? "").lowercased()
-        let host = (url.host ?? "").lowercased()
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.percentEncodedFragment == nil,
+              components.user == nil, components.password == nil,
+              components.port == nil else { return nil }
+        let scheme = (components.scheme ?? "").lowercased()
+        let host = (components.host ?? "").lowercased()
 
         if scheme == Self.customScheme && host == Self.customHost {
-            guard url.path.isEmpty,
-                  let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-                  let token = queryItems.first(where: { $0.name == "token" })?.value,
+            guard components.percentEncodedPath.isEmpty,
+                  let queryItems = components.queryItems,
+                  queryItems.count == 1, queryItems[0].name == "token",
+                  let token = queryItems[0].value,
+                  components.percentEncodedQuery == "token=\(token)",
                   Self.isCanonicalToken(token) else {
                 return nil
             }
@@ -243,9 +248,9 @@ public struct PCAEnrollmentLinkParser {
 
         guard scheme == Self.universalLinkScheme,
               host == Self.universalLinkHost,
-              url.query == nil,
-              url.path.split(separator: "/").count == 1,
-              let token = url.path.split(separator: "/").first.map(String.init),
+              components.percentEncodedQuery == nil,
+              components.percentEncodedPath.hasPrefix("/"),
+              let token = Self.canonicalUniversalPathToken(components.percentEncodedPath),
               Self.isCanonicalToken(token) else {
             return nil
         }
@@ -255,8 +260,14 @@ public struct PCAEnrollmentLinkParser {
         )
     }
 
+    private static func canonicalUniversalPathToken(_ path: String) -> String? {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.count == 2, components[0].isEmpty else { return nil }
+        return String(components[1])
+    }
+
     private static func isCanonicalToken(_ token: String) -> Bool {
-        token.count == tokenLength && token.unicodeScalars.allSatisfy {
+        token.utf8.count == tokenLength && token.unicodeScalars.allSatisfy {
             ($0.value >= 48 && $0.value <= 57) ||
             ($0.value >= 65 && $0.value <= 90) ||
             ($0.value >= 97 && $0.value <= 122) ||
@@ -339,8 +350,18 @@ public final class UserDefaultsPCAEnrollmentProfileStore: PCAEnrollmentProfileSt
 
     public func save(_ profile: PCAEnrollmentProfile, forDeviceId deviceId: String) throws {
         guard !deviceId.isEmpty else { throw PCAEnrollmentProfileStoreError.invalidDeviceId }
+        guard Self.isValid(profile) else { throw PCAEnrollmentProfileStoreError.invalidStoredProfile }
         do {
-            defaults.set(try JSONEncoder().encode(profile), forKey: key(for: deviceId))
+            let data = try JSONEncoder().encode(profile)
+            guard data.count <= Self.maximumEncodedBytes else {
+                throw PCAEnrollmentProfileStoreError.invalidStoredProfile
+            }
+            defaults.set(data, forKey: key(for: deviceId))
+            guard defaults.data(forKey: key(for: deviceId)) == data else {
+                throw PCAEnrollmentProfileStoreError.invalidStoredProfile
+            }
+        } catch let error as PCAEnrollmentProfileStoreError {
+            throw error
         } catch {
             throw PCAEnrollmentProfileStoreError.invalidStoredProfile
         }
@@ -350,7 +371,14 @@ public final class UserDefaultsPCAEnrollmentProfileStore: PCAEnrollmentProfileSt
         guard !deviceId.isEmpty else { throw PCAEnrollmentProfileStoreError.invalidDeviceId }
         guard let data = defaults.data(forKey: key(for: deviceId)) else { return nil }
         do {
-            return try JSONDecoder().decode(PCAEnrollmentProfile.self, from: data)
+            guard data.count <= Self.maximumEncodedBytes else {
+                throw PCAEnrollmentProfileStoreError.invalidStoredProfile
+            }
+            let profile = try JSONDecoder().decode(PCAEnrollmentProfile.self, from: data)
+            guard Self.isValid(profile) else { throw PCAEnrollmentProfileStoreError.invalidStoredProfile }
+            return profile
+        } catch let error as PCAEnrollmentProfileStoreError {
+            throw error
         } catch {
             throw PCAEnrollmentProfileStoreError.invalidStoredProfile
         }
@@ -364,6 +392,14 @@ public final class UserDefaultsPCAEnrollmentProfileStore: PCAEnrollmentProfileSt
     private func key(for deviceId: String) -> String {
         "\(namespace).\(deviceId)"
     }
+
+    private static func isValid(_ profile: PCAEnrollmentProfile) -> Bool {
+        guard let childProfileId = profile.childProfileId else { return true }
+        return childProfileId.utf16.count <= 128 &&
+            !childProfileId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static let maximumEncodedBytes = 2_048
 }
 
 public final class InMemoryPCAEnrollmentProfileStore: PCAEnrollmentProfileStore {
@@ -629,6 +665,11 @@ public enum ChildEnrollmentStepResult: Equatable {
 }
 
 public struct ChildEnrollmentCoordinator {
+    /// DSK/DEK are a logical pair but Keychain writes are per item. Serialize
+    /// this coordinator's preflight and repair sequence so duplicate calls in
+    /// the process cannot interleave two different pairs for one device.
+    private static let keyMaterialWriteLock = NSRecursiveLock()
+
     private let keyMaterialStore: FamilyKeyMaterialStore
     private let authorizationCenter: ChildAuthorizationCenter
     private let defaultsConfiguration: PCAEnrollmentDefaultsConfiguration
@@ -659,12 +700,60 @@ public struct ChildEnrollmentCoordinator {
     /// callers building an enrollment progress UI can render a specific
     /// step's failure without a try/catch at the call site.
     public func persistKeyMaterial(dsk: Data, dek: Data, deviceId: String) -> ChildEnrollmentStepResult {
+        // An empty Keychain account would collapse distinct missing-device
+        // cases onto the same identity, and empty bytes are not usable key
+        // material. Reject the complete pair before either item is written.
+        guard !deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !dsk.isEmpty, !dek.isEmpty else {
+            return .keyMaterialFailed("invalid_key_material_input")
+        }
+
+        Self.keyMaterialWriteLock.lock()
+        defer { Self.keyMaterialWriteLock.unlock() }
+
+        // A process may have stopped after storing DSK but before storing
+        // DEK. Read both roles before mutation: exact matching material is
+        // idempotent, and a matching partial pair may safely write only its
+        // missing role. Never silently replace a key from another attempt.
+        let existingDsk: Data?
+        let existingDek: Data?
         do {
-            try keyMaterialStore.store(dsk, kind: .deviceSigningKey, deviceId: deviceId)
-            try keyMaterialStore.store(dek, kind: .deviceEncryptionKey, deviceId: deviceId)
-            return .keyMaterialReady
+            existingDsk = try existingKey(kind: .deviceSigningKey, deviceId: deviceId)
+            existingDek = try existingKey(kind: .deviceEncryptionKey, deviceId: deviceId)
         } catch {
             return .keyMaterialFailed(String(describing: error))
+        }
+
+        guard (existingDsk == nil || existingDsk == dsk),
+              (existingDek == nil || existingDek == dek) else {
+            return .keyMaterialFailed("key_material_conflict")
+        }
+
+        do {
+            if existingDsk == nil {
+                try keyMaterialStore.store(dsk, kind: .deviceSigningKey, deviceId: deviceId)
+            }
+            if existingDek == nil {
+                try keyMaterialStore.store(dek, kind: .deviceEncryptionKey, deviceId: deviceId)
+            }
+            guard try keyMaterialStore.retrieve(kind: .deviceSigningKey, deviceId: deviceId) == dsk,
+                  try keyMaterialStore.retrieve(kind: .deviceEncryptionKey, deviceId: deviceId) == dek else {
+                return .keyMaterialFailed("key_material_verification_failed")
+            }
+            return .keyMaterialReady
+        } catch {
+            // If the second Keychain item fails, retain the first item. A
+            // restart/retry with this same pair can complete it; a different
+            // pair will hit the conflict guard above and cannot overwrite it.
+            return .keyMaterialFailed(String(describing: error))
+        }
+    }
+
+    private func existingKey(kind: FamilyKeyMaterialKind, deviceId: String) throws -> Data? {
+        do {
+            return try keyMaterialStore.retrieve(kind: kind, deviceId: deviceId)
+        } catch let error as KeychainStoreError where error == .itemNotFound {
+            return nil
         }
     }
 

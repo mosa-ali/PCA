@@ -547,17 +547,34 @@ test('VALID_NEXT_EPOCH: the next epoch signed by the previous epoch\'s ACTIVE OW
   assert.deepEqual(harness.state.appendCalls[0].signedEpochBytes, Buffer.from(candidate.bytes, 'utf8'));
 });
 
+test('VALID_SKIPPED_EPOCH_NUMBER: a new epoch may skip numbers when it names the exact accepted head', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  const candidate = signedCandidate(
+    epochFields({ trustSetEpoch: 3, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  const result = await harness.service.acceptCandidate(inputFor(candidate));
+
+  assert.deepEqual(result, { outcome: 'ACCEPTED' });
+  assert.equal(harness.state.appendCalls.length, 1);
+  assert.equal(harness.state.appendCalls[0].trustSetEpoch, 3);
+  assert.equal(harness.state.appendCalls[0].supersedesEpoch, 1);
+});
+
 test('CONCURRENT_VALIDATIONS: candidates validated against the same accepted head cannot both append after that head moves', async () => {
   const owner = makeDevice('owner');
   const harness = createHarness();
   seedAcceptedEpoch(harness.state, epochFields({ trustSetEpoch: 1, keyEpoch: 1, entries: [entryFor(owner)] }), owner);
 
   const epoch2 = signedCandidate(
-    epochFields({ trustSetEpoch: 2, keyEpoch: 1, entries: [entryFor(owner)] }),
+    epochFields({ trustSetEpoch: 2, keyEpoch: 1, supersedesEpoch: 1, entries: [entryFor(owner)] }),
     owner.dskPrivateKey,
   );
   const epoch3 = signedCandidate(
-    epochFields({ trustSetEpoch: 3, keyEpoch: 1, entries: [entryFor(owner)] }),
+    epochFields({ trustSetEpoch: 3, keyEpoch: 1, supersedesEpoch: 1, entries: [entryFor(owner)] }),
     owner.dskPrivateKey,
   );
 
@@ -769,6 +786,27 @@ test('WRONG_PREDECESSOR_REJECTED: a supersedesEpoch referencing a never-accepted
     owner.dskPrivateKey,
   );
   assertRejectedClean(await harness.service.acceptCandidate(inputFor(ahead)), 'UNKNOWN_PREDECESSOR', harness.state);
+});
+
+test('STALE_ACCEPTED_PREDECESSOR_REJECTED: a new epoch cannot branch from an older accepted record', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  seedAcceptedEpoch(
+    harness.state,
+    epochFields({ trustSetEpoch: 3, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner,
+  );
+
+  // Epoch 1 exists, but epoch 3 is the accepted head. Accepting epoch 4
+  // from epoch 1 would create a validly signed branch mobile devices cannot
+  // reconcile from their trusted epoch-3 floor.
+  const branch = signedCandidate(
+    epochFields({ trustSetEpoch: 4, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  assertRejectedClean(await harness.service.acceptCandidate(inputFor(branch)), 'UNKNOWN_PREDECESSOR', harness.state);
 });
 
 test('CANONICAL_PAYLOAD_MUTATION_REJECTED: non-canonical bytes are rejected by the byte-identity gate or the strict decoder, never persisted', async () => {
@@ -1081,6 +1119,13 @@ test('RESOLVER_ACCEPTED_EPOCH: the latest accepted epoch maps entries exactly li
     trustSetEpoch: 2,
     keyEpoch: 1,
   });
+  assert.deepEqual(await resolver.resolveActor(FAMILY_ID, owner.deviceId, owner.dskKeyId), {
+    deviceId: owner.deviceId,
+    role: 'OWNER',
+    trustSetEpoch: 2,
+    keyEpoch: 1,
+  });
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId, 'stale-session-dsk'), 'DEVICE_NOT_ACTIVE');
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, admin.deviceId), {
     deviceId: admin.deviceId,
     role: 'ADMINISTRATOR',

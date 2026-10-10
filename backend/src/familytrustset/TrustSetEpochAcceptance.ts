@@ -69,10 +69,10 @@ import type { FamilyTrustSetEntry, FamilyTrustSetEpoch, OpaqueFamilyId } from '.
  *      silent genesis fallback) plus the monotonic floors: below the key
  *      floor -> STALE_KEY_EPOCH; below the trust-set floor ->
  *      STALE_TRUST_SET_EPOCH.
- *   9. `supersedesEpoch` is lineage metadata only -- null is allowed on
- *      non-genesis (types.ts: no exact N -> N+1 requirement), but a
- *      non-null value must name a durably ACCEPTED epoch of this family,
- *      otherwise UNKNOWN_PREDECESSOR.
+ *   9. Every strictly newer ordinary epoch must link exactly to the latest
+ *      accepted head through `supersedesEpoch`; numeric gaps are allowed,
+ *      but branches, omitted links, and stale predecessor links are rejected
+ *      as UNKNOWN_PREDECESSOR.
  *  10. Claimed side metadata (Section 12) must EQUAL the values derived
  *      from the verified payload and the resolved signer, otherwise
  *      SIDE_METADATA_CONFLICT.
@@ -404,9 +404,17 @@ export class TrustSetEpochAcceptanceService {
       if (epoch.trustSetEpoch < floors.minimumAcceptedTrustSetEpoch) return rejected('STALE_TRUST_SET_EPOCH');
     }
 
-    // ---- 9. Lineage metadata (supersedes) ----
-    // Null is legitimate on non-genesis epochs -- types.ts: lineage/audit
-    // metadata only, never an exact N -> N+1 requirement.
+    // ---- 9. Signed predecessor linkage ----
+    // Epoch numbers may skip, but every new append must extend the exact
+    // currently accepted head. Otherwise a valid current-owner signature
+    // could resurrect membership from an older accepted branch and mobile
+    // clients would be unable to prove descent from their trusted floor.
+    // Equality replays are handled separately by the epoch store and retain
+    // their original signed predecessor metadata.
+    if (latest !== null && epoch.trustSetEpoch > latest.trustSetEpoch &&
+        epoch.supersedesEpoch !== latest.trustSetEpoch) {
+      return rejected('UNKNOWN_PREDECESSOR');
+    }
     if (epoch.supersedesEpoch !== null) {
       if (epoch.supersedesEpoch < MIN_TRUST_SET_EPOCH || epoch.supersedesEpoch >= epoch.trustSetEpoch) {
         return rejected('UNKNOWN_PREDECESSOR');

@@ -17,6 +17,8 @@ export interface RecoveryTransactionRecord {
   status: RecoveryTransactionStatus;
   proposedTrustSetEpoch: number;
   proposedKeyEpoch: number;
+  /** SHA-256 of the canonical candidate bytes plus its signature, bound on first finalize; raw candidate material is never persisted here. */
+  candidateDigestSha256: string | null;
   initiatedAtUtc: Date;
   completedAtUtc: Date | null;
   /** Set only when status is FAILED -- the FamilyTrustSetRecoveryEngine rejection reason, so a resumed/repeated finalize call can report the same outcome without re-running acceptance. */

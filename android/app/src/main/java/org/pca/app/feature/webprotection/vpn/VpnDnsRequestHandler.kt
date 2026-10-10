@@ -50,13 +50,19 @@ class VpnDnsRequestHandler(
             decisionChannel.recordDecision(domain, VpnDecisionOutcome.BLOCKED)
             return DnsMessageCodec.buildNxDomainResponse(query)
         }
-        decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED)
 
         val safeSearchHost = safeSearchDnsHostFor(domain, safeSearchModeProvider())
         if (safeSearchHost != null) {
             val safeSearchUpstream = resolveUpstream(safeSearchHost, question.qtype)
             if (safeSearchUpstream != null) {
-                return DnsMessageCodec.buildSafeSearchResponse(query.id, question, safeSearchHost, safeSearchUpstream.message.answers)
+                val response = DnsMessageCodec.buildSafeSearchResponse(
+                    query.id,
+                    question,
+                    safeSearchHost,
+                    safeSearchUpstream.message.answers,
+                )
+                decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED)
+                return response
             }
             // Upstream resolution of the SafeSearch-enforcing host itself failed -- fall through to
             // an ordinary resolution of the original domain below, rather than returning nothing:
@@ -65,6 +71,8 @@ class VpnDnsRequestHandler(
         }
 
         val upstream = resolveUpstream(question.name, question.qtype) ?: return null
-        return DnsMessageCodec.rewriteResponseId(upstream.rawBytes, query.id)
+        val response = DnsMessageCodec.rewriteResponseId(upstream.rawBytes, query.id)
+        decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED)
+        return response
     }
 }

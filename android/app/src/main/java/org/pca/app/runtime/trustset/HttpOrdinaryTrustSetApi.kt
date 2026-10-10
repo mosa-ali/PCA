@@ -3,6 +3,7 @@ package org.pca.app.runtime.trustset
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -59,6 +60,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
         return result
     }
     private suspend fun contact(familyId: String, request: OrdinaryEpochRequest, status: Boolean): OrdinaryEpochResponse {
+        val body = encodeRequestBody(request)
         val token = sessions.requireSessionToken()
         require(token.length in 1..4096 && token.none { it.isWhitespace() || it.code < 32 || it.code == 127 })
         val result = withContext(Dispatchers.IO) {
@@ -73,9 +75,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.doOutput = true
-                val body = JSONObject().put("canonicalEpochBase64", request.canonicalEpochBase64)
-                    .put("signatureBase64", request.signatureBase64).toString().toByteArray(Charsets.UTF_8)
-                require(body.size <= 2097152)
+                connection.setFixedLengthStreamingMode(body.size)
                 connection.outputStream.use { it.write(body) }
                 val code = connection.responseCode
                 if (code == 401) sessions.invalidateRejectedSession(token)
@@ -96,17 +96,58 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                 val outcome = OrdinaryEpochOutcome.valueOf(json.getString("outcome"))
                 require(if (status) outcome != OrdinaryEpochOutcome.IDEMPOTENT_MATCH else
                     outcome == OrdinaryEpochOutcome.ACCEPTED || outcome == OrdinaryEpochOutcome.IDEMPOTENT_MATCH)
-                OrdinaryEpochResponse(outcome, if (json.isNull("acceptedEpoch")) null else record(json.getJSONObject("acceptedEpoch")),
-                    record(json.getJSONObject("acceptedHead")))
+                val acceptedEpoch = if (json.isNull("acceptedEpoch")) null else record(json.getJSONObject("acceptedEpoch"))
+                val acceptedHead = record(json.getJSONObject("acceptedHead"))
+                if (status) {
+                    when (outcome) {
+                        OrdinaryEpochOutcome.ACCEPTED -> require(acceptedEpoch?.request == request)
+                        OrdinaryEpochOutcome.NOT_ACCEPTED,
+                        OrdinaryEpochOutcome.CONFLICT -> require(acceptedEpoch == null)
+                        OrdinaryEpochOutcome.IDEMPOTENT_MATCH -> error("invalid_status_outcome")
+                    }
+                } else {
+                    // Both successful submission outcomes describe this exact immutable request.
+                    require(acceptedEpoch?.request == request)
+                }
+                acceptedEpoch?.let {
+                    require(acceptedHead.trustSetEpoch >= it.trustSetEpoch && acceptedHead.keyEpoch >= it.keyEpoch)
+                    if (acceptedHead.trustSetEpoch == it.trustSetEpoch) require(acceptedHead == it)
+                }
+                OrdinaryEpochResponse(outcome, acceptedEpoch, acceptedHead)
             } finally { connection.disconnect() }
         }
         sessions.assertCurrentSession(token)
         return result
     }
+
+    /** Keep the device client inside the ordinary transport's canonical-byte and HTTP body caps. */
+    private fun encodeRequestBody(request: OrdinaryEpochRequest): ByteArray {
+        require(request.canonicalEpochBase64.length in 4..MAX_CANONICAL_BASE64_CHARS &&
+            request.canonicalEpochBase64.length % 4 == 0)
+        val canonicalBytes = Base64.getDecoder().decode(request.canonicalEpochBase64)
+        require(canonicalBytes.isNotEmpty() && canonicalBytes.size <= MAX_CANONICAL_BYTES &&
+            Base64.getEncoder().encodeToString(canonicalBytes) == request.canonicalEpochBase64)
+        val decodedEpoch = TrustSetEpochCodec.decodeCanonical(canonicalBytes)
+        require(TrustSetEpochCodec.canonicalize(decodedEpoch).toByteArray(Charsets.UTF_8).contentEquals(canonicalBytes))
+        require(request.signatureBase64.length == 88)
+        val signatureBytes = Base64.getDecoder().decode(request.signatureBase64)
+        require(signatureBytes.size == 64 && Base64.getEncoder().encodeToString(signatureBytes) == request.signatureBase64)
+
+        return JSONObject().put("canonicalEpochBase64", request.canonicalEpochBase64)
+            .put("signatureBase64", request.signatureBase64).toString().toByteArray(Charsets.UTF_8)
+            .also { require(it.size <= MAX_REQUEST_BODY_BYTES) }
+    }
+
     private fun record(json: JSONObject): AcceptedEpochRecord {
         require(json.keys().asSequence().toSet() == setOf("canonicalEpochBase64", "signatureBase64", "signerDeviceId",
             "signerKeyId", "trustSetEpoch", "keyEpoch"))
         return AcceptedEpochRecord(OrdinaryEpochRequest(json.getString("canonicalEpochBase64"), json.getString("signatureBase64")),
             json.getString("signerDeviceId"), json.getString("signerKeyId"), EpochBounds.decodeJson(json, "trustSetEpoch"), EpochBounds.decodeJson(json, "keyEpoch"))
+    }
+
+    private companion object {
+        const val MAX_CANONICAL_BYTES = 256 * 1024
+        const val MAX_CANONICAL_BASE64_CHARS = 4 * ((MAX_CANONICAL_BYTES + 2) / 3)
+        const val MAX_REQUEST_BODY_BYTES = 352 * 1024
     }
 }

@@ -30,6 +30,15 @@ export interface RecoveryTransactionStore {
    * the FIRST attempt's proposal is authoritative).
    */
   beginOrGetExisting(input: BeginRecoveryTransactionInput): Promise<RecoveryTransactionRecord>;
+  /**
+   * Bind the first finalized candidate to the immutable transaction ID.
+   * Implementations must atomically set this only while it is NULL and
+   * otherwise return the existing record unchanged, including on conflict.
+   */
+  bindCandidateDigest(
+    recoveryTransactionId: string,
+    candidateDigestSha256: string,
+  ): Promise<RecoveryTransactionRecord | null>;
   get(recoveryTransactionId: string): Promise<RecoveryTransactionRecord | null>;
   /** The first terminal transition wins; durable implementations must enforce this atomically. */
   markComplete(recoveryTransactionId: string, now: Date): Promise<RecoveryTransactionRecord | null>;
@@ -58,12 +67,32 @@ export class InMemoryRecoveryTransactionStore implements RecoveryTransactionStor
       status: 'INITIATED',
       proposedTrustSetEpoch: input.proposedTrustSetEpoch,
       proposedKeyEpoch: input.proposedKeyEpoch,
+      candidateDigestSha256: null,
       initiatedAtUtc: new Date(input.now.getTime()),
       completedAtUtc: null,
       failureReason: null,
     };
     this.records.set(input.recoveryTransactionId, record);
     return cloneRecord(record);
+  }
+
+  async bindCandidateDigest(
+    recoveryTransactionId: string,
+    candidateDigestSha256: string,
+  ): Promise<RecoveryTransactionRecord | null> {
+    if (!/^[a-f0-9]{64}$/.test(candidateDigestSha256)) {
+      throw new Error('Recovery transaction candidate digest must be a SHA-256 hex digest.');
+    }
+    const existing = this.records.get(recoveryTransactionId);
+    if (!existing) return null;
+    if (existing.candidateDigestSha256 !== null) return cloneRecord(existing);
+
+    const updated: RecoveryTransactionRecord = {
+      ...existing,
+      candidateDigestSha256,
+    };
+    this.records.set(recoveryTransactionId, updated);
+    return cloneRecord(updated);
   }
 
   async get(recoveryTransactionId: string): Promise<RecoveryTransactionRecord | null> {

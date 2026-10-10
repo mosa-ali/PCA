@@ -87,6 +87,7 @@ class SafeZoneRuntimeTest {
                 stateStore,
                 alerts,
                 GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+                currentBootInstanceId = { "boot-test" },
             ),
         )
 
@@ -127,6 +128,7 @@ class SafeZoneRuntimeTest {
                 zoneStore,
                 stateStore,
                 alerts,
+                currentBootInstanceId = { "boot-test" },
             ),
         )
 

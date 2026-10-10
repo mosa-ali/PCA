@@ -69,7 +69,7 @@ class EncryptedSharedPreferencesStateStore(
      * before-submit barrier; ordinary snapshot writes stay asynchronous.
      */
     override fun flush() {
-        check(prefs.edit().commit()) { "EncryptedSharedPreferences durable commit failed" }
+        if (!prefs.edit().commit()) throw PersistentStateStoreDurabilityFailure()
     }
 
     private data class StorageIdentity(val packageName: String, val fileName: String)

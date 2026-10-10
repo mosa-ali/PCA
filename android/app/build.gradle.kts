@@ -85,10 +85,22 @@ android {
     val releaseKeystorePassword: String? = System.getenv("PCA_RELEASE_KEYSTORE_PASSWORD")
     val releaseKeyAlias: String? = System.getenv("PCA_RELEASE_KEY_ALIAS")
     val releaseKeyPassword: String? = System.getenv("PCA_RELEASE_KEY_PASSWORD")
-    val hasReleaseSigning = !releaseKeystorePath.isNullOrBlank() &&
-        !releaseKeystorePassword.isNullOrBlank() &&
-        !releaseKeyAlias.isNullOrBlank() &&
-        !releaseKeyPassword.isNullOrBlank()
+    val releaseSigningValues = listOf(
+        releaseKeystorePath,
+        releaseKeystorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    )
+    val hasAnyReleaseSigningValue = releaseSigningValues.any { !it.isNullOrBlank() }
+    val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
+    require(!hasAnyReleaseSigningValue || hasReleaseSigning) {
+        "PCA release signing is partially configured; set all four PCA_RELEASE_* values or leave all four unset."
+    }
+    if (hasReleaseSigning) {
+        require(file(releaseKeystorePath!!).isFile) {
+            "PCA_RELEASE_KEYSTORE_PATH must point to an existing keystore file."
+        }
+    }
     if (hasReleaseSigning) {
         signingConfigs {
             create("release") {

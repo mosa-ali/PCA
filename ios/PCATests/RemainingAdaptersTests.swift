@@ -1,5 +1,8 @@
 import XCTest
 @testable import PCA
+#if canImport(DeviceActivity)
+import DeviceActivity
+#endif
 
 final class PrayerNotificationSchedulingTests: XCTestCase {
     func testFutureFireDateIsScheduled() {
@@ -179,7 +182,8 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
         let keychain = InMemoryKeychainStore()
         let keyMaterialStore = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
         let authSource = FakeAuthorizationStatusSource()
-        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterialStore, authorizationCenter: ChildAuthorizationCenter(source: authSource))
+        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterialStore, authorizationCenter: ChildAuthorizationCenter(
+            source: authSource, observationStore: InMemoryChildAuthorizationObservationStore()))
 
         let result = coordinator.persistKeyMaterial(dsk: Data("dsk".utf8), dek: Data("dek".utf8), deviceId: "device-1")
         XCTAssertEqual(result, .keyMaterialReady)
@@ -187,11 +191,97 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
         XCTAssertEqual(try? keyMaterialStore.retrieve(kind: .deviceEncryptionKey, deviceId: "device-1"), Data("dek".utf8))
     }
 
+    func testKeyMaterialRejectsEmptyDeviceAndKeyInputsBeforeWritingEitherKey() {
+        func makeCoordinator(_ keychain: InMemoryKeychainStore) -> (ChildEnrollmentCoordinator, FamilyKeyMaterialStore) {
+            let store = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
+            let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: store,
+                authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource(),
+                    observationStore: InMemoryChildAuthorizationObservationStore()))
+            return (coordinator, store)
+        }
+
+        let emptyDeviceKeychain = InMemoryKeychainStore()
+        let (emptyDeviceCoordinator, emptyDeviceStore) = makeCoordinator(emptyDeviceKeychain)
+        guard case .keyMaterialFailed = emptyDeviceCoordinator.persistKeyMaterial(
+            dsk: Data("dsk".utf8), dek: Data("dek".utf8), deviceId: " \n") else {
+            return XCTFail("a blank device identifier must not be reported as enrolled key custody")
+        }
+        XCTAssertThrowsError(try emptyDeviceStore.retrieve(kind: .deviceSigningKey, deviceId: " \n"))
+        XCTAssertThrowsError(try emptyDeviceStore.retrieve(kind: .deviceEncryptionKey, deviceId: " \n"))
+
+        for (dsk, dek) in [(Data(), Data("dek".utf8)), (Data("dsk".utf8), Data())] {
+            let keychain = InMemoryKeychainStore()
+            let (coordinator, store) = makeCoordinator(keychain)
+            guard case .keyMaterialFailed = coordinator.persistKeyMaterial(dsk: dsk, dek: dek, deviceId: "device-a") else {
+                XCTFail("empty signing or encryption key bytes must fail before either Keychain item is written")
+                continue
+            }
+            XCTAssertThrowsError(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-a"))
+            XCTAssertThrowsError(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-a"))
+        }
+    }
+
+    func testKeyMaterialRetryCompletesOnlyMatchingPartialPairAndRejectsReplacement() throws {
+        let keychain = FailingEncryptionKeyWriteKeychain()
+        let store = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
+        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: store,
+            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource(),
+                observationStore: InMemoryChildAuthorizationObservationStore()))
+        let dsk = Data("attempt-dsk".utf8)
+        let dek = Data("attempt-dek".utf8)
+
+        guard case .keyMaterialFailed = coordinator.persistKeyMaterial(dsk: dsk, dek: dek, deviceId: "device-retry") else {
+            return XCTFail("a failed DEK write must not report a complete pair")
+        }
+        XCTAssertEqual(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-retry"), dsk,
+            "the durable first role is retained for same-attempt recovery")
+        XCTAssertThrowsError(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-retry"))
+
+        XCTAssertEqual(coordinator.persistKeyMaterial(dsk: dsk, dek: dek, deviceId: "device-retry"), .keyMaterialReady,
+            "a retry with the exact pair must write only the missing role")
+        XCTAssertEqual(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-retry"), dsk)
+        XCTAssertEqual(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-retry"), dek)
+        XCTAssertEqual(keychain.successfulWrites, 2,
+            "the retry must not replace the already persisted DSK")
+
+        XCTAssertEqual(coordinator.persistKeyMaterial(dsk: dsk, dek: dek, deviceId: "device-retry"), .keyMaterialReady,
+            "duplicate submission of the same pair is idempotent")
+        guard case .keyMaterialFailed = coordinator.persistKeyMaterial(
+            dsk: Data("replacement-dsk".utf8), dek: Data("replacement-dek".utf8), deviceId: "device-retry") else {
+            return XCTFail("a different attempt must not silently replace existing device key custody")
+        }
+        XCTAssertEqual(keychain.successfulWrites, 2,
+            "matching retries and conflicting submissions must not rewrite existing roles")
+        XCTAssertEqual(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-retry"), dsk)
+        XCTAssertEqual(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-retry"), dek)
+    }
+
+    func testKeyMaterialRequiresReadBackBeforeReportingReady() throws {
+        let keychain = FailingEncryptionKeyWriteKeychain(failEncryptionWriteOnce: false, dropEncryptionWrite: true)
+        let store = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
+        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: store,
+            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource(),
+                observationStore: InMemoryChildAuthorizationObservationStore()))
+
+        guard case .keyMaterialFailed = coordinator.persistKeyMaterial(
+            dsk: Data("dsk".utf8), dek: Data("dek".utf8), deviceId: "device-readback") else {
+            return XCTFail("a successful Keychain API return without a readable DEK must not report complete custody")
+        }
+        XCTAssertEqual(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-readback"), Data("dsk".utf8))
+        XCTAssertThrowsError(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-readback"))
+
+        XCTAssertEqual(coordinator.persistKeyMaterial(
+            dsk: Data("dsk".utf8), dek: Data("dek".utf8), deviceId: "device-readback"), .keyMaterialReady,
+            "a retry may finish the matching partial pair after the storage failure clears")
+        XCTAssertEqual(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-readback"), Data("dek".utf8))
+    }
+
     func testAuthorizationRequestFlowsThroughToTheEnrollmentResult() async {
         let keychain = InMemoryKeychainStore()
         let keyMaterialStore = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
         let authSource = FakeAuthorizationStatusSource()
-        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterialStore, authorizationCenter: ChildAuthorizationCenter(source: authSource))
+        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: keyMaterialStore, authorizationCenter: ChildAuthorizationCenter(
+            source: authSource, observationStore: InMemoryChildAuthorizationObservationStore()))
 
         let result = await coordinator.requestChildAuthorization()
         XCTAssertEqual(result, .authorizationState(.approved))
@@ -203,8 +293,46 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
                 keychain: InMemoryKeychainStore(),
                 serviceNamespace: "com.pca.app"
             ),
-            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource())
+            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource(),
+                observationStore: InMemoryChildAuthorizationObservationStore())
         )
+    }
+}
+
+private final class FailingEncryptionKeyWriteKeychain: KeychainStoreProtocol {
+    private let backing = InMemoryKeychainStore()
+    private var shouldFailEncryptionWrite = true
+    private var shouldDropEncryptionWrite: Bool
+    private(set) var successfulWrites = 0
+
+    init(failEncryptionWriteOnce: Bool = true, dropEncryptionWrite: Bool = false) {
+        shouldFailEncryptionWrite = failEncryptionWriteOnce
+        shouldDropEncryptionWrite = dropEncryptionWrite
+    }
+
+    func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        if shouldFailEncryptionWrite && service.hasSuffix(".dek") {
+            shouldFailEncryptionWrite = false
+            throw KeychainStoreError.unexpectedStatus(-25300)
+        }
+        if shouldDropEncryptionWrite && service.hasSuffix(".dek") {
+            shouldDropEncryptionWrite = false
+            return
+        }
+        try backing.store(data, forAccount: account, service: service, accessibility: accessibility)
+        successfulWrites += 1
+    }
+
+    func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+        try store(data, forAccount: account, service: service, accessibility: accessibility)
+    }
+
+    func retrieve(forAccount account: String, service: String) throws -> Data {
+        try backing.retrieve(forAccount: account, service: service)
+    }
+
+    func delete(forAccount account: String, service: String) throws {
+        try backing.delete(forAccount: account, service: service)
     }
 }
 
@@ -224,6 +352,18 @@ final class PCAEnrollmentProfileRuntimeTests: XCTestCase {
         XCTAssertNil(parser.parse(URL(string: "https://evil.example/\(token)")!))
         XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(token)&other=child")!))
         XCTAssertNil(parser.parse(URL(string: "pca://enroll?token=short")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(token)/")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app:8443/\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "https://user@enroll.pca.app/\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(token)?")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(token.replacingOccurrences(of: "A", with: "%41"))")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://enroll:8443?token=\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://user@enroll?token=\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://enroll?token=\(token)&token=\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://enroll?other=x&token=\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://enroll?token=%41\(token.dropFirst())")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app.evil.example/\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(String(repeating: "A", count: 44))")!))
 
         let router = PCAEnrollmentLinkRouter()
         let first = URL(string: "https://enroll.pca.app/\(token)")!
@@ -413,4 +553,21 @@ final class DeviceActivityBoundaryPlannerTests: XCTestCase {
         // This proves representation only. Apple's gap/fold delivery is not
         // simulated here and remains a real-OS validation requirement.
     }
+#if canImport(DeviceActivity)
+    func testWindowScheduleComponentsUseTheAuthoredCalendarAndTimezone() {
+        let zone = TimeZone(identifier: "America/New_York")!
+        let schedule = DeviceActivityScheduleMapper.schedule(for: window("authored-zone",
+            .init(hour: 22, minute: 15), .init(hour: 6, minute: 45), zone: zone.identifier))
+
+        XCTAssertEqual(schedule.intervalStart.calendar?.identifier, .gregorian)
+        XCTAssertEqual(schedule.intervalEnd.calendar?.identifier, .gregorian)
+        XCTAssertEqual(schedule.intervalStart.timeZone?.identifier, zone.identifier)
+        XCTAssertEqual(schedule.intervalEnd.timeZone?.identifier, zone.identifier)
+        XCTAssertEqual(schedule.intervalStart.hour, 22)
+        XCTAssertEqual(schedule.intervalStart.minute, 15)
+        XCTAssertEqual(schedule.intervalEnd.hour, 6)
+        XCTAssertEqual(schedule.intervalEnd.minute, 45)
+        XCTAssertTrue(schedule.repeats)
+    }
+#endif
 }

@@ -1,6 +1,5 @@
 package org.pca.app.runtime.usage
 
-import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -144,7 +143,7 @@ class UsageSessionRecorder(
             }
         if (!validBatch) return establishBaseline(after, deviceIdProvider(), usageObservationSource.accessState())
         val timestamped = batch.events.map { observed ->
-            TimestampedUsageEvent(opaqueToken(observed.event.packageName), observed.event.eventType,
+            TimestampedUsageEvent(UsageAppToken.forPackageName(observed.event.packageName), observed.event.eventType,
                 observed.event.elapsedRealtimeMillis, observed.epochMillis)
         }
         val result = UsageSessionEngine.apply(state, timestamped)
@@ -204,12 +203,4 @@ class UsageSessionRecorder(
         return UUID.nameUUIDFromBytes(bytes.toByteArray()).toString()
     }
 
-    private fun opaqueToken(packageName: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(packageName.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { "%02x".format(it) }.take(TOKEN_LENGTH)
-    }
-
-    private companion object {
-        const val TOKEN_LENGTH = 16
-    }
 }

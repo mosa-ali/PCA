@@ -55,7 +55,7 @@ function trustedRoleResolver() {
   return new FamilyTrustSetRoleResolver(store);
 }
 
-function buildApp({ webRuleService, authorization, configured = true, sideEffectCalls = [], logs = [], parentRole = 'ADMINISTRATOR' } = {}) {
+function buildApp({ webRuleService, authorization, configured = true, sideEffectCalls = [], logs = [], parentRole = 'ADMINISTRATOR', trustSetRoleResolver = trustedRoleResolver() } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
   const parentAccountService = {
     async readSession(token) {
@@ -67,8 +67,8 @@ function buildApp({ webRuleService, authorization, configured = true, sideEffect
     async activeFamilyRole() { return parentRole; },
   };
   const deviceTokens = new Map([
-    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
-    ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY }],
+    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY, dskKeyId: 'k1' }],
+    ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY, dskKeyId: 'k5' }],
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
@@ -89,12 +89,99 @@ function buildApp({ webRuleService, authorization, configured = true, sideEffect
     deviceSessionService,
     webRuleService: configured ? webRuleService : undefined,
     parentActionAuthorization: authorization,
+    trustSetRoleResolver,
     now: () => T0,
   });
   return { app };
 }
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
+
+test('Web Rules binds exact session DSK to accepted Trust Set membership before authorization or service access', async () => {
+  const resolverCalls = [];
+  let serviceCalls = 0;
+  let authorizationCalls = 0;
+  const trustSetRoleResolver = {
+    async resolveActor(...args) {
+      resolverCalls.push(args);
+      return { deviceId: args[1], role: 'OWNER', trustSetEpoch: 5, keyEpoch: 1 };
+    },
+  };
+  const webRuleService = {
+    async listParentRules() { serviceCalls += 1; return []; },
+    async setParentRule() { serviceCalls += 1; return []; },
+    async removeParentRule() { serviceCalls += 1; return []; },
+  };
+  const authorizationRequests = [];
+  const authorization = { async authorize(request) { authorizationCalls += 1; authorizationRequests.push(request); return { verdict: 'ALLOW' }; } };
+  const { app } = buildApp({ webRuleService, authorization, trustSetRoleResolver });
+  try {
+    const endpoints = [
+      { method: 'GET', suffix: '', payload: undefined },
+      { method: 'POST', suffix: '', payload: { domain: 'example.com', listType: 'DENY' } },
+      { method: 'POST', suffix: '/remove', payload: { domain: 'example.com', listType: 'DENY' } },
+    ];
+    for (const endpoint of endpoints) {
+      const response = await app.inject({
+        method: endpoint.method,
+        url: `/api/parent/families/${FAMILY}/children/child-1/web-rules${endpoint.suffix}`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: endpoint.payload,
+      });
+      assert.equal(response.statusCode, 200);
+    }
+    assert.deepEqual(resolverCalls, Array(3).fill([FAMILY, 'dev-owner', 'k1']));
+    assert.equal(serviceCalls, 5);
+    assert.equal(authorizationCalls, 3);
+    assert.deepEqual(authorizationRequests.map((request) => request.actorDskKeyId), ['k1', 'k1', 'k1']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Web Rules fails closed on unavailable, stale, mismatched, or malformed DSK authority before authorization/service calls', async () => {
+  const invalidResolvers = [
+    null,
+    { async resolveActor() { throw new Error('membership store unavailable'); } },
+    { async resolveActor() { return 'DEVICE_NOT_ACTIVE'; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId: `${deviceId}-other`, role: 'OWNER', trustSetEpoch: 5, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'NOT_A_ROLE', trustSetEpoch: 5, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 0, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 5, keyEpoch: -1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 5, keyEpoch: 0 }; } },
+  ];
+  for (const trustSetRoleResolver of invalidResolvers) {
+    let serviceCalls = 0;
+    let authorizationCalls = 0;
+    const webRuleService = {
+      async listParentRules() { serviceCalls += 1; return []; },
+      async setParentRule() { serviceCalls += 1; return []; },
+      async removeParentRule() { serviceCalls += 1; return []; },
+    };
+    const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+    const { app } = buildApp({ webRuleService, authorization, trustSetRoleResolver });
+    try {
+      for (const endpoint of [
+        { method: 'GET', suffix: '', payload: undefined },
+        { method: 'POST', suffix: '', payload: { domain: 'example.com', listType: 'DENY' } },
+        { method: 'POST', suffix: '/remove', payload: { domain: 'example.com', listType: 'DENY' } },
+      ]) {
+        const response = await app.inject({
+          method: endpoint.method,
+          url: `/api/parent/families/${FAMILY}/children/child-1/web-rules${endpoint.suffix}`,
+          headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+          payload: endpoint.payload,
+        });
+        assert.ok([403, 503].includes(response.statusCode));
+        assert.deepEqual(response.json(), { error: response.statusCode === 403 ? 'forbidden' : 'authority_unavailable' });
+      }
+      assert.equal(serviceCalls, 0);
+      assert.equal(authorizationCalls, 0);
+    } finally {
+      await app.close();
+    }
+  }
+});
 
 test('GET returns an empty rule list for a family with no rules yet', async () => {
   const repo = new InMemoryWebRuleRepository();

@@ -29,6 +29,8 @@ export interface TrustSetRoleResolver {
   resolveActor(
     familyId: OpaqueFamilyId,
     deviceId: OpaqueDeviceId,
+    /** Optional proof-of-possession key id to bind a live session to the current accepted member entry. */
+    dskKeyId?: string,
   ): ResolvedActor | ActorResolutionFailure | Promise<ResolvedActor | ActorResolutionFailure>;
 }
 
@@ -51,7 +53,7 @@ export class FamilyTrustSetRoleResolver implements TrustSetRoleResolver {
     this.store = store;
   }
 
-  resolveActor(familyId: OpaqueFamilyId, deviceId: OpaqueDeviceId): ResolvedActor | ActorResolutionFailure {
+  resolveActor(familyId: OpaqueFamilyId, deviceId: OpaqueDeviceId, dskKeyId?: string): ResolvedActor | ActorResolutionFailure {
     const epoch = this.store.getCurrentEpoch();
     if (epoch === null) return 'NO_TRUST_SET';
     if (epoch.familyId !== familyId) return 'FAMILY_MISMATCH';
@@ -59,6 +61,7 @@ export class FamilyTrustSetRoleResolver implements TrustSetRoleResolver {
     const entry = epoch.entries.find((e) => e.deviceId === deviceId);
     if (entry === undefined) return 'DEVICE_NOT_IN_TRUST_SET';
     if (entry.status !== 'ACTIVE') return 'DEVICE_NOT_ACTIVE';
+    if (dskKeyId !== undefined && entry.dskKeyId !== dskKeyId) return 'DEVICE_NOT_ACTIVE';
 
     return { deviceId, role: entry.role, trustSetEpoch: epoch.trustSetEpoch, keyEpoch: epoch.keyEpoch };
   }

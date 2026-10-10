@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -193,6 +194,44 @@ import java.util.UUID
  * here would only wrap an always-failing pipeline -- wiring it is deferred, not silently glued
  * over, until that gate clears.
  */
+internal suspend fun synchronizeWithSafeZoneDelivery(
+    fetchAndStage: suspend () -> Unit,
+    custodySync: suspend () -> org.pca.app.runtime.sync.RuntimeCustodyOutcome,
+): org.pca.app.runtime.sync.RuntimeCustodyOutcome {
+    var safeZoneOutcome = org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
+    try {
+        fetchAndStage()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        safeZoneOutcome = when (failure) {
+            is org.pca.app.runtime.location.geofence.SafeZoneDeliveryHttpFailure ->
+                if (failure.statusCode == 408 || failure.statusCode == 429 || failure.statusCode in 500..599)
+                    org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+                else org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+            is IOException,
+            is org.pca.app.runtime.location.geofence.SafeZoneDeliveryIncompleteException,
+            is org.pca.app.runtime.location.geofence.SafeZoneDeliveryMalformedResponseException,
+            is org.pca.app.runtime.location.geofence.SafeZoneDeliveryPersistenceIoException,
+            is org.pca.app.foundation.PersistentStateStoreDurabilityFailure ->
+                org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+            else -> org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+        }
+    }
+
+    val custodyOutcome = custodySync()
+    return when {
+        custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED ||
+            custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE -> custodyOutcome
+        safeZoneOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED -> safeZoneOutcome
+        custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ||
+            safeZoneOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ->
+            org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+        custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.MORE_PENDING -> custodyOutcome
+        else -> org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
+    }
+}
+
 class PcaAppGraph private constructor(
     val context: Context,
     scheduleRuntimePortOverride: ScheduleRuntimePort?,
@@ -436,6 +475,7 @@ class PcaAppGraph private constructor(
     private var custodyOrchestrator: ReconnectSyncOrchestrator? = null
     private var custodySessionManager: DeviceSessionManager? = null
     private var ordinaryTrustSetRuntime: OrdinaryTrustSetRuntime? = null
+    private var safeZoneDeliveryClient: org.pca.app.runtime.location.geofence.HttpSafeZoneDeliveryClient? = null
     private var custodyJob: Job? = null
     private val custodyMutex = Mutex()
 
@@ -469,6 +509,10 @@ class PcaAppGraph private constructor(
                 androidKeystoreDskProvider.assertSigningKeyCustody(current.seed.dskAlias, current.seed.dskPublicKeyBase64)
             })
             custodySessionManager = session
+            safeZoneDeliveryClient = org.pca.app.runtime.location.geofence.HttpSafeZoneDeliveryClient(
+                baseUrl = "https://api.pcasafe.com",
+                sessions = session,
+            )
             custodyOrchestrator = ReconnectSyncOrchestrator(
                 AndroidConnectivityMonitor(context), session, relay,
                 SyncOutboxRepositoryAdapter(persistence.syncOutboxRepository),
@@ -510,7 +554,18 @@ class PcaAppGraph private constructor(
                 return org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
             }
         }
-        return custodyOrchestrator?.syncNow() ?: org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+        // Stage the server's opaque, recipient-addressed rows in encrypted local storage. This is
+        // deliberately separate from policy application: the current delivery DTO has no signed
+        // sender/trust-set/expiry metadata, and production policy crypto remains fail-closed.
+        return synchronizeWithSafeZoneDelivery(
+            fetchAndStage = {
+                val deliveryClient = safeZoneDeliveryClient
+                if (deliveryClient != null) deliveryClient.synchronize(safeZoneDeliveryInbox)
+            },
+            custodySync = {
+                custodyOrchestrator?.syncNow() ?: org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+            },
+        )
     }
 
     /** Actual product call point for owner-approved Trust Set changes; it never activates a device. */
@@ -579,6 +634,10 @@ class PcaAppGraph private constructor(
         EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zones"),
         scopeProvider = geofenceStorageScopeProvider,
     )
+    val safeZoneDeliveryInbox = org.pca.app.runtime.location.geofence.PersistentSafeZoneDeliveryInbox(
+        EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_safe_zone_delivery_inbox"),
+        scopeProvider = geofenceStorageScopeProvider,
+    )
     val geofenceZoneStateStore = org.pca.app.runtime.location.geofence.GeofenceZoneStateStore(
         EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zone_state"),
         scopeProvider = geofenceStorageScopeProvider,
@@ -588,6 +647,7 @@ class PcaAppGraph private constructor(
         zoneStore = geofenceZoneStore,
         zoneStateStore = geofenceZoneStateStore,
         alertPort = geofenceAlertDelivery,
+        currentBootInstanceId = { bootInstanceSource.currentBootInstance().asNullableId() },
     )
 
     /** PCA-ANDROID-WEB-YOUTUBE-1 (Agent 19) + PCA-WEB-RUNTIME-1 (Agent 27) real production

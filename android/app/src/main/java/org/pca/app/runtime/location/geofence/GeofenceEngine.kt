@@ -33,16 +33,33 @@ object GeofenceEngine {
         sample: LocationSample,
         nowMonotonicNanos: Long,
         config: GeofenceConfig = GeofenceConfig(),
+        bootInstanceId: String? = null,
     ): GeofenceEvaluation {
         require(zone.zoneId == state.zoneId) {
             "zone/state id mismatch: zone=${zone.zoneId} state=${state.zoneId}"
         }
         require(nowMonotonicNanos >= 0L) { "nowMonotonicNanos must not be negative" }
 
+        // A direct reducer caller that cannot supply boot identity may still evaluate legacy
+        // rows, but it cannot invalidate a persisted boot-bound monotonic fence by guessing.
+        if (state.bootInstanceId != null && bootInstanceId == null) {
+            return GeofenceEvaluation(state, transition = null, distanceMeters = Double.NaN)
+        }
+
+        // elapsedRealtime resets after reboot. Retain only the last confirmed membership, and
+        // discard any debounce/ordering state whose monotonic origin belonged to another boot.
+        val currentState = if (state.bootInstanceId == bootInstanceId) state else state.copy(
+            candidateMembership = state.confirmedMembership,
+            candidateStreak = 0,
+            lastEvaluatedMonotonicNanos = 0L,
+            lastAcceptedSampleElapsedRealtimeMillis = null,
+            bootInstanceId = bootInstanceId,
+        )
+
         // A malformed platform fix must never become an OUTSIDE result just
         // because NaN compares false. Preserve the last trusted membership.
         if (!isValidSample(sample)) {
-            return GeofenceEvaluation(state, transition = null, distanceMeters = Double.NaN)
+            return GeofenceEvaluation(currentState, transition = null, distanceMeters = Double.NaN)
         }
 
         val distanceMeters = GeofenceMath.haversineMeters(
@@ -55,7 +72,7 @@ object GeofenceEngine {
             // starts conservatively from UNKNOWN and cannot alert on stale
             // state that was captured before the policy was disabled.
             return GeofenceEvaluation(
-                newState = state.copy(
+                newState = currentState.copy(
                     confirmedMembership = GeofenceMembership.UNKNOWN,
                     candidateMembership = GeofenceMembership.UNKNOWN,
                     candidateStreak = 0,
@@ -76,34 +93,34 @@ object GeofenceEngine {
             val nowElapsedMillis = nowMonotonicNanos / NANOS_PER_MILLISECOND
             val sampleAgeMillis = nowElapsedMillis - sampleElapsedMillis
             if (sampleAgeMillis < 0L || sampleAgeMillis > config.maxSampleAgeMillis) {
-                return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+                return GeofenceEvaluation(currentState, transition = null, distanceMeters = distanceMeters)
             }
-            val previousAccepted = state.lastAcceptedSampleElapsedRealtimeMillis
+            val previousAccepted = currentState.lastAcceptedSampleElapsedRealtimeMillis
             if (previousAccepted != null && sampleElapsedMillis <= previousAccepted) {
-                return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+                return GeofenceEvaluation(currentState, transition = null, distanceMeters = distanceMeters)
             }
-        } else if (state.lastAcceptedSampleElapsedRealtimeMillis != null && state.lastAcceptedSampleElapsedRealtimeMillis > 0L) {
+        } else if (currentState.lastAcceptedSampleElapsedRealtimeMillis != null && currentState.lastAcceptedSampleElapsedRealtimeMillis > 0L) {
             // A legacy/boot-zero sample cannot establish ordering after a positive sample has
             // already been accepted; fail closed instead of allowing it to reverse membership.
-            return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+            return GeofenceEvaluation(currentState, transition = null, distanceMeters = distanceMeters)
         }
-        if (state.lastEvaluatedMonotonicNanos > 0L && nowMonotonicNanos < state.lastEvaluatedMonotonicNanos) {
-            return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+        if (currentState.lastEvaluatedMonotonicNanos > 0L && nowMonotonicNanos < currentState.lastEvaluatedMonotonicNanos) {
+            return GeofenceEvaluation(currentState, transition = null, distanceMeters = distanceMeters)
         }
 
         val acceptedSampleElapsedMillis = if (sampleElapsedMillis == 0L) {
-            state.lastAcceptedSampleElapsedRealtimeMillis ?: 0L
+            currentState.lastAcceptedSampleElapsedRealtimeMillis ?: 0L
         } else {
             sampleElapsedMillis
         }
 
-        val rawMembership = rawMembershipFor(zone, state.confirmedMembership, distanceMeters, config)
+        val rawMembership = rawMembershipFor(zone, currentState.confirmedMembership, distanceMeters, config)
 
-        if (rawMembership == state.confirmedMembership) {
+        if (rawMembership == currentState.confirmedMembership) {
             // Agrees with the already-confirmed state: nothing pending, reset any stale candidate.
             return GeofenceEvaluation(
-                newState = state.copy(
-                    candidateMembership = state.confirmedMembership,
+                newState = currentState.copy(
+                    candidateMembership = currentState.confirmedMembership,
                     candidateStreak = 0,
                     lastEvaluatedMonotonicNanos = nowMonotonicNanos,
                     lastAcceptedSampleElapsedRealtimeMillis = acceptedSampleElapsedMillis,
@@ -114,11 +131,11 @@ object GeofenceEngine {
         }
 
         // Disagrees with the confirmed state -- accumulate (or restart) the debounce streak.
-        val streak = if (state.candidateMembership == rawMembership) state.candidateStreak + 1 else 1
+        val streak = if (currentState.candidateMembership == rawMembership) currentState.candidateStreak + 1 else 1
 
         if (streak < config.requiredConsecutiveSamplesToConfirm) {
             return GeofenceEvaluation(
-                newState = state.copy(
+                newState = currentState.copy(
                     candidateMembership = rawMembership,
                     candidateStreak = streak,
                     lastEvaluatedMonotonicNanos = nowMonotonicNanos,
@@ -131,7 +148,7 @@ object GeofenceEngine {
 
         // Debounce satisfied: confirm the new membership. Only emit a transition when the PREVIOUS
         // confirmed state was itself known -- see class doc on cold start.
-        val wasKnown = state.confirmedMembership != GeofenceMembership.UNKNOWN
+        val wasKnown = currentState.confirmedMembership != GeofenceMembership.UNKNOWN
         val transition = if (wasKnown) {
             if (rawMembership == GeofenceMembership.INSIDE) {
                 GeofenceTransitionType.ENTRY.takeIf { it in zone.transitionTypes }
@@ -149,6 +166,7 @@ object GeofenceEngine {
                 candidateStreak = 0,
                 lastEvaluatedMonotonicNanos = nowMonotonicNanos,
                 lastAcceptedSampleElapsedRealtimeMillis = acceptedSampleElapsedMillis,
+                bootInstanceId = bootInstanceId,
             ),
             transition = transition,
             distanceMeters = distanceMeters,

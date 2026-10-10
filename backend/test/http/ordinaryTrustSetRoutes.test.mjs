@@ -44,6 +44,102 @@ test('verified device session supplies immutable family/device scope for all fou
   for (const call of calls) assert.deepEqual(call[1], { familyId: 'family-one', deviceId: 'device-one', dskKeyId: 'dsk-one' });
 });
 
+test('success responses explicitly project accepted epoch DTOs and omit service metadata', async (t) => {
+  const internalHead = { ...HEAD, storageVersion: 42, internalSecret: 'must-not-leak' };
+  const { request } = fixture(t, { service: {
+    submit: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: internalHead, acceptedHead: internalHead, transactionId: 'private' }),
+    status: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: internalHead, acceptedHead: internalHead, diagnostic: 'private' }),
+    head: async () => internalHead,
+    epoch: async () => internalHead,
+  } });
+  const expectedDto = { ...HEAD };
+  for (const [method, url, payload, expected] of [
+    ['POST', BASE, BODY, { outcome: 'ACCEPTED', acceptedEpoch: expectedDto, acceptedHead: expectedDto }],
+    ['POST', `${BASE}/status`, BODY, { outcome: 'ACCEPTED', acceptedEpoch: expectedDto, acceptedHead: expectedDto }],
+    ['GET', `${BASE}/head`, undefined, { acceptedHead: expectedDto }],
+    ['GET', `${BASE}/records/2`, undefined, { acceptedEpoch: expectedDto }],
+  ]) {
+    const result = await request(method, url, payload);
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(result.json(), expected);
+    assert.ok(!result.body.includes('internalSecret') && !result.body.includes('must-not-leak'));
+  }
+});
+
+test('malformed nominal service success fails closed instead of claiming acceptance or returning another epoch', async (t) => {
+  const { request } = fixture(t, { service: {
+    submit: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: null, acceptedHead: HEAD }),
+    status: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: null, acceptedHead: HEAD }),
+    head: async () => ({ ...HEAD, signatureBase64: 'broken' }),
+    epoch: async () => ({ ...HEAD, trustSetEpoch: 3 }),
+  } });
+  for (const [method, url, payload] of [
+    ['POST', BASE, BODY],
+    ['POST', `${BASE}/status`, BODY],
+    ['GET', `${BASE}/head`, undefined],
+    ['GET', `${BASE}/records/2`, undefined],
+  ]) {
+    const result = await request(method, url, payload);
+    assert.equal(result.statusCode, 503);
+    assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+  }
+});
+
+test('non-accepted status requires acceptedEpoch to be explicitly null', async (t) => {
+  for (const outcome of ['NOT_ACCEPTED', 'CONFLICT']) {
+    for (const acceptedEpoch of [undefined, { ...HEAD, signatureBase64: 'broken' }]) {
+      await t.test(`${outcome} rejects ${acceptedEpoch === undefined ? 'missing' : 'malformed'} acceptedEpoch`, async (subtest) => {
+        const serviceResult = { outcome, acceptedHead: HEAD };
+        if (acceptedEpoch !== undefined) serviceResult.acceptedEpoch = acceptedEpoch;
+        const { request } = fixture(subtest, { service: { status: async () => serviceResult } });
+        const result = await request('POST', `${BASE}/status`, BODY);
+        assert.equal(result.statusCode, 503);
+        assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+      });
+    }
+  }
+});
+
+test('status rejects a non-string outcome even when it coerces to NOT_ACCEPTED', async (t) => {
+  const coercibleOutcome = { toString: () => 'NOT_ACCEPTED' };
+  const { request } = fixture(t, {
+    service: {
+      status: async () => ({ outcome: coercibleOutcome, acceptedEpoch: null, acceptedHead: HEAD }),
+    },
+  });
+  const result = await request('POST', `${BASE}/status`, BODY);
+  assert.equal(result.statusCode, 503);
+  assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+});
+
+test('accepted submit and status receipts must exactly match the submitted canonical bytes and signature', async (t) => {
+  const laterHead = { ...HEAD, canonicalEpochBase64: 'aGVhZC0z', signatureBase64: Buffer.alloc(64, 3).toString('base64'),
+    trustSetEpoch: 3, keyEpoch: 2 };
+  for (const [operation, acceptedEpoch] of [
+    ['submit', { ...HEAD, canonicalEpochBase64: 'ZGlmZmVyZW50' }],
+    ['status', { ...HEAD, signatureBase64: Buffer.alloc(64, 2).toString('base64') }],
+  ]) {
+    const { request } = fixture(t, { service: {
+      [operation]: async () => ({ outcome: 'ACCEPTED', acceptedEpoch, acceptedHead: laterHead }),
+    } });
+    const result = await request('POST', operation === 'submit' ? BASE : `${BASE}/status`, BODY);
+    assert.equal(result.statusCode, 503);
+    assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+  }
+});
+
+test('accepted epoch and head at the same trust-set epoch must identify the exact same record', async (t) => {
+  const contradictoryHead = { ...HEAD, signatureBase64: Buffer.alloc(64, 2).toString('base64') };
+  for (const operation of ['submit', 'status']) {
+    const { request } = fixture(t, { service: {
+      [operation]: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: HEAD, acceptedHead: contradictoryHead }),
+    } });
+    const result = await request('POST', operation === 'submit' ? BASE : `${BASE}/status`, BODY);
+    assert.equal(result.statusCode, 503);
+    assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+  }
+});
+
 test('route fails closed when validated session identity omits its DSK binding', async (t) => {
   const { request, calls } = fixture(t, { sessionIdentity: { familyId: 'family-one', deviceId: 'device-one' } });
   const result = await request('GET', `${BASE}/head`);
@@ -142,13 +238,19 @@ test('body limit prevents oversized canonical payload reaching service', async (
 });
 
 test('route override accepts maximum-sized canonical epoch transport under the ordinary global body limit', async (t) => {
-  const { request, calls } = fixture(t);
+  let receivedBody;
+  const { request } = fixture(t, { service: {
+    submit: async (_scope, body) => {
+      receivedBody = body;
+      const acceptedEpoch = { ...HEAD, canonicalEpochBase64: body.canonicalEpochBase64 };
+      return { outcome: 'ACCEPTED', acceptedEpoch, acceptedHead: acceptedEpoch };
+    },
+  } });
   const canonicalEpochBase64 = Buffer.alloc(256 * 1024, 7).toString('base64');
   assert.equal(canonicalEpochBase64.length, 349_528);
   const result = await request('POST', BASE, { ...BODY, canonicalEpochBase64 });
   assert.equal(result.statusCode, 200);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][2].canonicalEpochBase64.length, 349_528);
+  assert.equal(receivedBody.canonicalEpochBase64.length, 349_528);
 });
 
 test('independent route buckets throttle submission without exhausting read/status budgets', async (t) => {

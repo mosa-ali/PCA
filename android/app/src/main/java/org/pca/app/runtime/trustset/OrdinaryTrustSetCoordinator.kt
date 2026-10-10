@@ -117,6 +117,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         }
         val anchor = decode(initial.accepted)
         val chain = mutableListOf<AcceptedEpochRecord>()
+        val visitedEpochs = mutableSetOf(anchor.trustSetEpoch)
         var cursor = try { api.getHead(anchor.familyId) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return@withLock 0 }
@@ -134,17 +135,33 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
                 }
                 break
             }
-            require(candidate.trustSetEpoch > anchor.trustSetEpoch && chain.size < maximumRecords)
+            require(candidate.trustSetEpoch > anchor.trustSetEpoch)
+            // A bounded walk may report no progress, but it cannot adopt the earliest fetched
+            // record as a new anchor unless that record links exactly to the trusted floor.
+            if (chain.size >= maximumRecords) return@withLock 0
+            require(visitedEpochs.add(candidate.trustSetEpoch)) { "ordinary_trust_set_lineage_cycle" }
             chain.add(cursor)
             val predecessor = candidate.supersedesEpoch
-            require(predecessor == null || predecessor < candidate.trustSetEpoch)
-            // `supersedesEpoch` is lineage metadata and may be absent or point to an older
-            // accepted epoch. The immutable epoch-1 owner DSK authenticates each fetched hop;
-            // never require metadata to form an immediate predecessor edge to the local floor.
-            // Stop after the requested number of records: the earliest collected record is still
-            // verified directly from the trusted local floor, so older records are unnecessary
-            // and a distant server head remains adoptable through this bounded call.
-            if (predecessor == null || predecessor <= anchor.trustSetEpoch || chain.size >= maximumRecords) break
+            // Signatures authenticate individual records, not their relationship to this floor.
+            // Ordinary non-genesis records must link to an exact accepted predecessor; null or
+            // older pointers cannot bridge an unverified branch to the local trusted head.
+            require(predecessor != null && predecessor < candidate.trustSetEpoch) {
+                "ordinary_trust_set_lineage_missing_or_non_decreasing"
+            }
+            if (predecessor < anchor.trustSetEpoch) return@withLock 0
+            if (predecessor == anchor.trustSetEpoch) {
+                // The signed lineage field names only an epoch number. Prove that the server's
+                // indexed record at that number is the exact durable local anchor; a different
+                // same-epoch signed candidate cannot be substituted as this chain's predecessor.
+                val indexedAnchor = try { api.getEpoch(anchor.familyId, anchor.trustSetEpoch) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { return@withLock 0 }
+                require(indexedAnchor == initial.accepted) { "ordinary_trust_set_anchor_mismatch" }
+                break
+            }
+            // The next record would exceed this call's proof budget. Leave both accepted and
+            // pending custody untouched rather than adopting a partially verified suffix.
+            if (chain.size >= maximumRecords) return@withLock 0
             cursor = try { api.getEpoch(anchor.familyId, predecessor) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { return@withLock 0 }
@@ -212,10 +229,32 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         // advanced that floor. Catch-up alone decides when the signed candidate is stale.
         if (current.pendingBase != null && current.pendingBase != current.accepted) return false
         val prior = decode(current.accepted)
-        val response = try {
+        var response = try {
             if (status) api.status(prior.familyId, pending) else api.submit(prior.familyId, pending)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return false }
+        if (status) {
+            // Do not let a contradictory status DTO authorize a retry or floor update. The HTTP
+            // adapter enforces the same shape, but the coordinator also owns this decision
+            // boundary because other OrdinaryTrustSetApi implementations may be injected.
+            val validStatus = when (response.outcome) {
+                OrdinaryEpochOutcome.ACCEPTED -> response.acceptedEpoch?.request == pending
+                OrdinaryEpochOutcome.NOT_ACCEPTED -> response.acceptedEpoch == null
+                OrdinaryEpochOutcome.CONFLICT -> response.acceptedEpoch == null
+                OrdinaryEpochOutcome.IDEMPOTENT_MATCH -> false
+            }
+            if (!validStatus) return false
+        }
+        if (status && response.outcome == OrdinaryEpochOutcome.NOT_ACCEPTED) {
+            // A read-only miss is not permission to discard or re-sign. If the server still
+            // projects our exact durable floor, replay the exact immutable request once. If its
+            // head moved, leave pending custody intact; the runtime's following catch-up must
+            // verify that newer chain before any stale candidate can be submitted.
+            if (response.acceptedHead != current.accepted) return false
+            response = try { api.submit(prior.familyId, pending) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { return false }
+        }
         if (response.outcome == OrdinaryEpochOutcome.NOT_ACCEPTED || response.outcome == OrdinaryEpochOutcome.CONFLICT) return false
         val accepted = response.acceptedEpoch ?: return false
         // The exact accepted record is sufficient proof for this persisted request even when the
@@ -358,7 +397,7 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
     private fun validateTransition(prior: UntrustedTrustSetEpoch, next: UntrustedTrustSetEpoch) {
         require(next.familyId == prior.familyId && next.trustSetEpoch > prior.trustSetEpoch)
         require(prior.keyEpoch >= 1 && next.keyEpoch >= prior.keyEpoch &&
-            (next.supersedesEpoch == null || next.supersedesEpoch < next.trustSetEpoch))
+            next.supersedesEpoch == prior.trustSetEpoch)
         val beforeOwner = owner(prior)
         val afterOwner = owner(next)
         require(afterOwner.deviceId == beforeOwner.deviceId && afterOwner.dskKeyId == beforeOwner.dskKeyId &&

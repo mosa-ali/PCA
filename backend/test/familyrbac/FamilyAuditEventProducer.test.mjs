@@ -85,6 +85,54 @@ test('queues one opaque envelope per resolved parent device without claiming dev
   assert.equal(forA[0].encryptedPayloadB64, 'ZW5jcnlwdGVk');
 });
 
+test('in-memory FamilyAudit bounded feeds use the MySQL binary envelope-id tie-breaker for equal timestamps', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  for (const envelopeId of ['env-c', 'env-a', 'env-b']) {
+    await ledger.record({
+      envelopeId,
+      familyId: 'fam-ties',
+      parentDeviceId: 'parent-device-ties',
+      keyEpoch: 1,
+      generatedAtUtc: new Date(LEDGER_NOW),
+      encryptedPayloadB64: `cipher-${envelopeId}`,
+      nonceB64: 'nonce',
+    });
+  }
+
+  assert.deepEqual(
+    (await ledger.listForFamily('fam-ties', { limit: 2 })).map((envelope) => envelope.envelopeId),
+    ['env-b', 'env-c'],
+    'the SQL feed selects the greatest envelope IDs at a tied timestamp, then returns them ascending',
+  );
+  assert.deepEqual(
+    (await ledger.listForParentDevice('fam-ties', 'parent-device-ties', { limit: 2 })).map((envelope) => envelope.envelopeId),
+    ['env-b', 'env-c'],
+  );
+});
+
+test('FamilyAudit in-memory tie ordering matches utf8mb4_bin for supplementary Unicode envelope IDs', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  const supplementary = '\u{10000}';
+  const bmpPrivateUse = '\uE000';
+  for (const envelopeId of [supplementary, bmpPrivateUse]) {
+    await ledger.record({
+      envelopeId,
+      familyId: 'fam-unicode-ties',
+      parentDeviceId: 'parent-device-unicode-ties',
+      keyEpoch: 1,
+      generatedAtUtc: new Date(LEDGER_NOW),
+      encryptedPayloadB64: 'cipher',
+      nonceB64: 'nonce',
+    });
+  }
+
+  assert.deepEqual(
+    (await ledger.listForFamily('fam-unicode-ties', { limit: 2 })).map((envelope) => envelope.envelopeId),
+    [bmpPrivateUse, supplementary],
+    'UTF-8 binary order puts U+E000 before U+10000 even though UTF-16 code-unit order differs',
+  );
+});
+
 test('a family with zero resolved parent devices queues to no device, never throws, and does NOT log a failure', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(ledger, async () => {

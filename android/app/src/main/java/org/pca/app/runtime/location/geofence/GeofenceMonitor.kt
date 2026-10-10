@@ -20,6 +20,7 @@ class GeofenceMonitor(
     private val zoneStateStore: GeofenceZoneStateStore,
     private val alertPort: GeofenceAlertPort,
     private val config: GeofenceConfig = GeofenceConfig(),
+    private val currentBootInstanceId: () -> String? = { null },
 ) {
     /** Returns every confirmed transition produced by this sample (usually empty). Safe to call
      * repeatedly and with stale/duplicate samples -- see [GeofenceEngine]'s own doc. */
@@ -31,6 +32,10 @@ class GeofenceMonitor(
     }
 
     private fun evaluateSampleUnderPolicyLock(sample: LocationSample, nowMonotonicNanos: Long): List<GeofenceEvent> {
+        // Monotonic timestamps are only comparable within a proven boot. Unknown continuity must
+        // not trust a prior persisted elapsedRealtime fence or fabricate a transition.
+        val bootInstanceId = currentBootInstanceId() ?: return emptyList()
+        if (!BOOT_TOKEN.matches(bootInstanceId)) return emptyList()
         val snapshot = try {
             zoneStore.loadScopedZones()
         } catch (_: CorruptGeofenceZoneStoreException) {
@@ -46,16 +51,27 @@ class GeofenceMonitor(
         // snapshot must not be evaluated as the new family's policy.
         if (!zoneStore.isCurrentScope(scope)) return emptyList()
 
+        // Validate every persisted debounce row before advancing any zone. One unreadable local
+        // record makes the sample unsuitable for policy enforcement as a whole; it must not let
+        // an earlier zone emit an alert before a later zone reveals corrupt state.
+        val priorStates = try {
+            zones.associate { zone -> zone.zoneId to zoneStateStore.load(scope, zone.zoneId) }
+        } catch (_: CorruptGeofenceZoneStateException) {
+            return emptyList()
+        } catch (_: GeofencePersistenceException) {
+            return emptyList()
+        }
+
         val events = mutableListOf<GeofenceEvent>()
         for (zone in zones) {
             if (!zoneStore.isCurrentScope(scope)) return events
-            val storedState = zoneStateStore.load(scope, zone.zoneId)
+            val storedState = priorStates[zone.zoneId]
             // A completed streak is never persisted by the reducer; it would
             // otherwise confirm a transition from one sample after corruption.
             val priorState = storedState?.takeIf {
                 it.candidateStreak == 0 || it.candidateStreak < config.requiredConsecutiveSamplesToConfirm
             } ?: GeofenceZoneState(zoneId = zone.zoneId)
-            val evaluation = GeofenceEngine.evaluate(zone, priorState, sample, nowMonotonicNanos, config)
+            val evaluation = GeofenceEngine.evaluate(zone, priorState, sample, nowMonotonicNanos, config, bootInstanceId)
             zoneStateStore.save(scope, evaluation.newState)
 
             val transition = evaluation.transition ?: continue
@@ -71,5 +87,9 @@ class GeofenceMonitor(
             alertPort.deliver(event)
         }
         return events
+    }
+
+    private companion object {
+        val BOOT_TOKEN = Regex("^[A-Za-z0-9_-]{1,128}$")
     }
 }

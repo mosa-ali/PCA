@@ -65,6 +65,37 @@ test('Owner allowed: an ordinary Owner action authorizes', async () => {
   assert.deepEqual(decision, { verdict: 'ALLOW' });
 });
 
+test('authenticated DSK is part of authorization resolution and idempotency identity', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch(epoch());
+  const baseResolver = new FamilyTrustSetRoleResolver(store);
+  const resolutions = [];
+  const resolver = {
+    resolveActor(familyId, deviceId, dskKeyId) {
+      resolutions.push([familyId, deviceId, dskKeyId]);
+      return baseResolver.resolveActor(familyId, deviceId, dskKeyId);
+    },
+  };
+  const ledger = new InMemoryActionIdempotencyLedger();
+  const service = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, () => T0);
+  const request = baseRequest({
+    operation: 'EDIT_CHILD_POLICY',
+    actorDskKeyId: 'k1',
+    idempotencyKey: 'idem-dsk-binding',
+    actionId: 'act-dsk-binding',
+  });
+
+  assert.deepEqual(await service.authorize(request), { verdict: 'ALLOW' });
+  assert.deepEqual(await service.authorize({ ...request, actorDskKeyId: 'stale-key' }), {
+    verdict: 'DENY',
+    reason: 'ACTOR_NOT_RESOLVABLE',
+  });
+  assert.deepEqual(resolutions, [
+    ['fam-1', 'dev-owner', 'k1'],
+    ['fam-1', 'dev-owner', 'stale-key'],
+  ]);
+});
+
 test('Administrator may manage normal family members with fresh step-up', async () => {
   const { service } = makeService();
   const decision = await service.authorize(
@@ -146,6 +177,12 @@ test('stale trustSet epoch fails: a device absent from the CURRENT epoch (rotate
 test('expired action fails', async () => {
   const { service } = makeService(() => new Date('2026-01-01T01:00:00Z'));
   const decision = await service.authorize(baseRequest({ operation: 'EDIT_CHILD_POLICY', idempotencyKey: 'idem-11', actionId: 'act-11' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTION_EXPIRED' });
+});
+
+test('invalid authorization clock fails closed before expiry or step-up comparisons', async () => {
+  const { service } = makeService(() => new Date(Number.NaN));
+  const decision = await service.authorize(baseRequest({ operation: 'EDIT_CHILD_POLICY', idempotencyKey: 'idem-invalid-clock', actionId: 'act-invalid-clock' }));
   assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTION_EXPIRED' });
 });
 
@@ -280,6 +317,36 @@ test('a fresh, unexpired step-up assertion allows a sensitive Owner action', asy
       actionId: 'act-21',
     }),
   );
+  assert.deepEqual(decision, { verdict: 'ALLOW' });
+});
+
+test('future-dated or overlong FRESH step-up assertions are rejected', async () => {
+  const now = new Date('2026-01-01T00:02:00Z');
+  const { service } = makeService(() => now);
+  for (const [id, stepUp] of [
+    ['future', { state: 'FRESH', assertedAt: new Date(now.getTime() + 1), freshUntil: new Date(now.getTime() + 60_000) }],
+    ['overlong', { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 5 * 60_000 + 1) }],
+    ['before-assertion', { state: 'FRESH', assertedAt: now, freshUntil: new Date(now.getTime() - 1) }],
+  ]) {
+    const decision = await service.authorize(baseRequest({
+      operation: 'EXPORT_FAMILY_DATA',
+      stepUp,
+      idempotencyKey: `idem-step-up-${id}`,
+      actionId: `act-step-up-${id}`,
+    }));
+    assert.deepEqual(decision, { verdict: 'DENY', reason: 'STEP_UP_NOT_FRESH' }, id);
+  }
+});
+
+test('an omitted freshUntil uses the documented maximum freshness window', async () => {
+  const now = new Date('2026-01-01T00:04:00Z');
+  const { service } = makeService(() => now);
+  const decision = await service.authorize(baseRequest({
+    operation: 'EXPORT_FAMILY_DATA',
+    stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: null },
+    idempotencyKey: 'idem-step-up-default-window',
+    actionId: 'act-step-up-default-window',
+  }));
   assert.deepEqual(decision, { verdict: 'ALLOW' });
 });
 

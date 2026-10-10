@@ -159,8 +159,10 @@ test('concurrent finalize calls through separate coordinators sharing a store re
 test('a thrown acceptance attempt leaves INITIATED resumable and releases the per-transaction queue', async () => {
   const { store, ledger, transactions } = await harness();
   let failOnce = true;
+  let verifyCalls = 0;
   const verifier = {
     async verify(publicKey, canonicalBytes, signature) {
+      verifyCalls += 1;
       if (failOnce) {
         failOnce = false;
         throw new Error('temporary verifier failure');
@@ -176,10 +178,33 @@ test('a thrown acceptance attempt leaves INITIATED resumable and releases the pe
     () => coordinator.finalize('txn-1', candidate, proof, store, verifier, ledger, NOW),
     /temporary verifier failure/,
   );
-  assert.equal((await transactions.get('txn-1')).status, 'INITIATED');
+  const afterTransientFailure = await transactions.get('txn-1');
+  assert.equal(afterTransientFailure.status, 'INITIATED');
+  assert.match(afterTransientFailure.candidateDigestSha256, /^[a-f0-9]{64}$/);
+
+  const conflictingCandidate = buildRecoveryEpoch({
+    entries: [
+      entry({ status: 'REVOKED' }),
+      entry({
+        deviceId: 'replacement-parent-device',
+        dskKeyId: 'new-owner-dsk-key',
+        dskPublicKey: 'new-owner-dsk-pub',
+        dekKeyId: 'new-owner-dek-key',
+        dekPublicKey: 'new-owner-dek-pub',
+        status: 'DEVICE_OFFLINE',
+      }),
+    ],
+  });
+  const mismatch = await coordinator.finalize('txn-1', conflictingCandidate, proof, store, verifier, ledger, NOW);
+  assert.equal(mismatch.outcome, 'REJECTED');
+  assert.equal(mismatch.reason, 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH');
+  assert.deepEqual(await transactions.get('txn-1'), afterTransientFailure, 'a conflicting proposal cannot mutate the initiated transaction');
+  assert.equal(verifyCalls, 1, 'the conflicting proposal is rejected before another signature verification');
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 1, 'a conflicting proposal cannot mutate the accepted Trust Set');
 
   const resumed = await coordinator.finalize('txn-1', candidate, proof, store, verifier, ledger, NOW);
   assert.equal(resumed.outcome, 'COMPLETE');
+  assert.equal(verifyCalls, 2, 'only the original exact proposal reaches verification again');
   assert.equal((await transactions.get('txn-1')).status, 'COMPLETE');
 });
 
@@ -212,19 +237,98 @@ test('opened recovery envelope must match transaction id and family before a lif
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
 });
 
-test('a resumed transaction cannot finalize a different family or epoch proposal', async () => {
+test('malformed transaction, family, and envelope IDs are rejected before lifecycle state, verification, or ledger access', async () => {
   const { store, verifier, ledger, coordinator, transactions } = await harness();
-  const firstProposal = buildRecoveryEpoch();
-  await coordinator.beginOrResume('txn-1', firstProposal, NOW);
-  const changedProposal = buildRecoveryEpoch({ trustSetEpoch: 3, keyEpoch: 3 });
+  let beginCalls = 0;
+  let verifyCalls = 0;
+  let claimCalls = 0;
+  const beginOrGetExisting = transactions.beginOrGetExisting.bind(transactions);
+  transactions.beginOrGetExisting = async (input) => { beginCalls += 1; return beginOrGetExisting(input); };
+  const countingVerifier = { async verify(...args) { verifyCalls += 1; return verifier.verify(...args); } };
+  const countingLedger = { async claimTransaction(...args) { claimCalls += 1; return ledger.claimTransaction(...args); } };
 
-  const outcome = await coordinator.finalize('txn-1', changedProposal, opened(), store, verifier, ledger, NOW);
+  await assert.rejects(() => coordinator.beginOrResume('', buildRecoveryEpoch(), NOW), /transaction ID/);
+  await assert.rejects(() => coordinator.beginOrResume('txn-1', buildRecoveryEpoch({ familyId: '' }), NOW), /family ID/);
 
-  assert.equal(outcome.outcome, 'REJECTED');
-  assert.equal(outcome.reason, 'ENVELOPE_EPOCH_MISMATCH');
-  assert.equal(outcome.record.status, 'INITIATED', 'mismatched attempts do not consume or alter the valid transaction');
-  assert.equal((await transactions.get('txn-1')).proposedTrustSetEpoch, 2);
+  const malformedAttempts = [
+    { transactionId: '', proof: opened({ recoveryTransactionId: '' }), candidate: buildRecoveryEpoch() },
+    { transactionId: 'txn-1', proof: opened({ recoveryEnvelopeId: '' }), candidate: buildRecoveryEpoch() },
+    { transactionId: 'txn-1', proof: opened({ recoveryEnvelopeId: 'x'.repeat(129) }), candidate: buildRecoveryEpoch() },
+    { transactionId: 'txn-1', proof: opened({ recoveryTransactionId: '\uD800' }), candidate: buildRecoveryEpoch() },
+    { transactionId: 'txn-1', proof: opened({ familyId: '' }), candidate: buildRecoveryEpoch({ familyId: '' }) },
+  ];
+  for (const attempt of malformedAttempts) {
+    await assert.rejects(
+      () => coordinator.finalize(attempt.transactionId, attempt.candidate, attempt.proof, store, countingVerifier, countingLedger, NOW),
+      /transaction ID|family ID|does not match the requested transaction/,
+    );
+  }
+
+  assert.equal(beginCalls, 0, 'malformed identifiers cannot create lifecycle records');
+  assert.equal(verifyCalls, 0, 'malformed identifiers must be rejected before signature verification');
+  assert.equal(claimCalls, 0, 'malformed identifiers must not consume one-time recovery claims');
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
+});
+
+test('opened recovery envelope epoch bounds are validated before creating lifecycle state or checking a signature', async () => {
+  const { store, coordinator, transactions } = await harness();
+  let verifyCalls = 0;
+  const verifier = { async verify() { verifyCalls += 1; return true; } };
+  let claimCalls = 0;
+  const countingLedger = { async claimTransaction() { claimCalls += 1; return true; } };
+  const epoch = buildRecoveryEpoch();
+  const malformedProofs = [
+    opened({ boundTrustSetEpoch: 0 }),
+    opened({ boundTrustSetEpoch: 1.5 }),
+    opened({ boundTrustSetEpoch: Number.NaN }),
+    opened({ boundKeyEpoch: -1 }),
+    opened({ boundKeyEpoch: 0.5 }),
+    opened({ boundKeyEpoch: Number.NaN }),
+  ];
+
+  for (const proof of malformedProofs) {
+    await assert.rejects(
+      () => coordinator.finalize('txn-1', epoch, proof, store, verifier, countingLedger, NOW),
+      /does not match the requested transaction/,
+    );
+    assert.equal(await transactions.get('txn-1'), null, 'invalid binding cannot create a resumable transaction');
+    assert.equal(store.getCurrentEpoch().trustSetEpoch, 1, 'invalid binding cannot mutate the accepted epoch');
+  }
+
+  assert.equal(verifyCalls, 0, 'proof range checks precede candidate signature verification');
+  assert.equal(claimCalls, 0, 'proof range checks precede consuming the one-time transaction id');
+});
+
+test('a resumed transaction cannot finalize a different family or epoch proposal', async (t) => {
+  const attempts = [
+    {
+      name: 'different epoch numbers',
+      candidate: buildRecoveryEpoch({ trustSetEpoch: 3, keyEpoch: 3 }),
+      proof: opened(),
+    },
+    {
+      name: 'different family',
+      candidate: buildRecoveryEpoch({ familyId: 'family-2' }),
+      proof: opened({ familyId: 'family-2' }),
+    },
+  ];
+
+  for (const attempt of attempts) {
+    await t.test(attempt.name, async () => {
+      const { store, verifier, ledger, coordinator, transactions } = await harness();
+      const firstProposal = buildRecoveryEpoch();
+      await coordinator.beginOrResume('txn-1', firstProposal, NOW);
+
+      const outcome = await coordinator.finalize('txn-1', attempt.candidate, attempt.proof, store, verifier, ledger, NOW);
+
+      assert.equal(outcome.outcome, 'REJECTED');
+      assert.equal(outcome.reason, 'ENVELOPE_EPOCH_MISMATCH');
+      assert.equal(outcome.record.status, 'INITIATED', 'mismatched attempts do not consume or alter the valid transaction');
+      assert.equal((await transactions.get('txn-1')).proposedTrustSetEpoch, 2);
+      assert.equal((await transactions.get('txn-1')).candidateDigestSha256, null);
+      assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
+    });
+  }
 });
 
 test('finalize on an invalid recovery marks the transaction FAILED with the rejection reason', async () => {
@@ -251,6 +355,48 @@ test('calling finalize again after COMPLETE returns the cached outcome without r
 
   assert.equal(second.outcome, 'COMPLETE');
   assert.deepEqual(store.getCurrentEpoch(), storeStateAfterFirst); // no further mutation
+});
+
+test('a completed transaction rejects same-epoch retries whose canonical candidate or signature differs', async (t) => {
+  const { store, verifier, ledger, coordinator, transactions } = await harness();
+  const accepted = buildRecoveryEpoch();
+  const first = await coordinator.finalize('txn-1', accepted, opened(), store, verifier, ledger, NOW);
+  assert.equal(first.outcome, 'COMPLETE');
+  const acceptedState = store.getCurrentEpoch();
+  const completedRecord = await transactions.get('txn-1');
+  assert.match(completedRecord.candidateDigestSha256, /^[a-f0-9]{64}$/);
+
+  const conflictingCandidates = [
+    {
+      name: 'changed entries',
+      candidate: buildRecoveryEpoch({
+        entries: [
+          entry({ status: 'REVOKED', dekKeyId: 'owner-dek-key-updated', dekPublicKey: 'owner-dek-pub-updated' }),
+          entry({
+            deviceId: 'replacement-parent-device',
+            dskKeyId: 'new-owner-dsk-key',
+            dskPublicKey: 'new-owner-dsk-pub',
+            dekKeyId: 'new-owner-dek-key',
+            dekPublicKey: 'new-owner-dek-pub',
+          }),
+        ],
+      }),
+    },
+    { name: 'changed issuedAt', candidate: buildRecoveryEpoch({ issuedAt: new Date('2026-02-02T00:00:00.000Z') }) },
+    { name: 'changed supersedesEpoch', candidate: buildRecoveryEpoch({ supersedesEpoch: 0 }) },
+    { name: 'changed signature', candidate: { ...accepted, signature: `${accepted.signature}x` } },
+  ];
+
+  for (const attempt of conflictingCandidates) {
+    await t.test(attempt.name, async () => {
+      const outcome = await coordinator.finalize('txn-1', attempt.candidate, opened(), store, verifier, ledger, NOW);
+      assert.equal(outcome.outcome, 'REJECTED');
+      assert.equal(outcome.reason, 'RECOVERY_TRANSACTION_CANDIDATE_MISMATCH');
+      assert.equal(outcome.record.status, 'COMPLETE');
+      assert.deepEqual(store.getCurrentEpoch(), acceptedState, 'conflicting replay cannot mutate the accepted Trust Set');
+      assert.equal((await transactions.get('txn-1')).candidateDigestSha256, completedRecord.candidateDigestSha256);
+    });
+  }
 });
 
 test('calling finalize again after FAILED returns the cached failure without re-running acceptance', async () => {

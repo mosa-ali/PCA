@@ -89,6 +89,7 @@ class PersistentScreenTimeSnapshotStore(
                 preCommunicationBreakElapsedNanos = if (mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) breakElapsed else 0L,
                 preCommunicationPauseElapsedNanos = if (mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) pauseElapsed else 0L,
             )
+            requireValidPersistedState(state)
             ScreenTimeSnapshot(
                 state = state,
                 snapshotWallClockMillis = parts[12].toLong(),
@@ -124,6 +125,7 @@ class PersistentScreenTimeSnapshotStore(
                 preCommunicationBreakElapsedNanos = parts[15].toLong(),
                 preCommunicationPauseElapsedNanos = parts[16].toLong(),
             )
+            requireValidPersistedState(state)
             ScreenTimeSnapshot(
                 state = state,
                 snapshotWallClockMillis = parts[17].toLong(),
@@ -132,6 +134,33 @@ class PersistentScreenTimeSnapshotStore(
         } catch (_: IllegalArgumentException) {
             null
         }
+    }
+
+    /**
+     * Persisted elapsed time and counters are monotonic quantities. A negative corrupt value
+     * can extend a screen-time allowance (for example, by making active time appear to be
+     * further from its threshold), so reject the whole snapshot and let restoration fail safe.
+     * Wall-clock milliseconds are intentionally excluded: they are advisory and may be before
+     * the Unix epoch on a valid device configuration.
+     */
+    private fun requireValidPersistedState(state: ScreenTimeState) {
+        require(
+            listOf(
+                state.activeElapsedNanos,
+                state.breakElapsedNanos,
+                state.pauseElapsedNanos,
+                state.dhikrInteractionCount.toLong(),
+                state.completedBreakCount.toLong(),
+                state.overriddenBreakCount.toLong(),
+                state.lastTickMonotonicNanos,
+                state.preEmergencyActiveElapsedNanos,
+                state.preEmergencyBreakElapsedNanos,
+                state.preEmergencyPauseElapsedNanos,
+                state.preCommunicationActiveElapsedNanos,
+                state.preCommunicationBreakElapsedNanos,
+                state.preCommunicationPauseElapsedNanos,
+            ).all { it >= 0L },
+        ) { "persisted Screen Time state contains a negative monotonic value" }
     }
 
     private fun legacyCommunicationMode(

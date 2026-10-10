@@ -105,6 +105,18 @@ function buildApp() {
       familyId,
       now: nowUtc,
     }),
+    // The logging regression exercises valid runtime-sync success/error
+    // paths. Model accepted membership with the exact active DSK already
+    // registered under that session's verified family/device scope.
+    trustSetRoleResolver: {
+      async resolveActor(familyId, deviceId, dskKeyId) {
+        const keys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
+        if (!keys.some((key) => key.keyPurpose === 'DSK' && key.keyId === dskKeyId && key.status === 'ACTIVE')) {
+          return 'DEVICE_NOT_ACTIVE';
+        }
+        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    },
   });
   return { app, deviceRepository };
 }

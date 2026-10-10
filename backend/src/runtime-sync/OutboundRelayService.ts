@@ -11,12 +11,15 @@ export interface OutboundEnvelopeItem {
   messageType: string;
   enqueuedAtEpochMillis: number;
   ttlMs?: number;
+  /** Optional absolute expiry inherited from the signed envelope. */
+  validUntil?: Date;
 }
 
 export type OutboundItemOutcome =
   | { messageId: string; outcome: 'QUEUED' }
   | { messageId: string; outcome: 'CROSS_FAMILY_RECIPIENT' }
   | { messageId: string; outcome: 'CONFLICT' }
+  | { messageId: string; outcome: 'EXPIRED' }
   | { messageId: string; outcome: 'INVALID' };
 
 export interface OutboundBatchResult {
@@ -61,7 +64,13 @@ export class OutboundRelayService {
     familyId: string,
     items: readonly OutboundEnvelopeItem[],
   ): Promise<OutboundBatchResult> {
-    const prioritized = sortByPriority(items);
+    // Copy absolute expiry dates before the first async recipient lookup, so
+    // mutation of an input Date cannot lengthen retention during a slow read.
+    const capturedItems = items.map((item) => ({
+      ...item,
+      validUntil: item.validUntil instanceof Date ? new Date(item.validUntil.getTime()) : item.validUntil,
+    }));
+    const prioritized = sortByPriority(capturedItems);
     const attempted = prioritized.slice(0, MAX_OUTBOUND_BATCH_SIZE);
     const droppedForBatchBound = prioritized.slice(MAX_OUTBOUND_BATCH_SIZE).map((item) => item.messageId);
 
@@ -102,11 +111,14 @@ export class OutboundRelayService {
         recipientDeviceId: item.recipientDeviceId,
         ciphertext: item.ciphertext,
         ttlMs: item.ttlMs,
+        validUntil: item.validUntil,
       });
       return { messageId: item.messageId, outcome: 'QUEUED' };
     } catch (error) {
       if (error instanceof RelayError) {
-        return { messageId: item.messageId, outcome: error.code === 'CONFLICT' ? 'CONFLICT' : 'INVALID' };
+        if (error.code === 'CONFLICT') return { messageId: item.messageId, outcome: 'CONFLICT' };
+        if (error.code === 'EXPIRED') return { messageId: item.messageId, outcome: 'EXPIRED' };
+        return { messageId: item.messageId, outcome: 'INVALID' };
       }
       throw error;
     }

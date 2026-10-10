@@ -1,8 +1,12 @@
 package org.pca.app.runtime.child
 
 import android.util.Base64
+import java.security.MessageDigest
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.CharacterCodingException
+import java.util.WeakHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncConnectionState
@@ -22,6 +26,31 @@ enum class ChildRequestLocalStatus { PENDING_SYNC_LOCAL, SUBMITTED }
 /** The durable child-request queue is corrupt or unavailable; callers must not rewrite its bytes. */
 class ChildRequestQueueUnavailable : IllegalStateException("Child request queue unavailable")
 
+/** A request id already binds a different immutable child-request payload. */
+class ChildRequestIdentityConflict : IllegalStateException("Child request identity conflict")
+
+/** Process-local flush serialization shared by wrappers over the same persistent store. */
+private object ChildRequestFlushLocks {
+    private val locks = WeakHashMap<Any, Mutex>()
+
+    fun forStore(coordinationLock: Any): Mutex = synchronized(locks) {
+        locks.getOrPut(coordinationLock) { Mutex() }
+    }
+}
+
+/** A failed rollback makes the queue unreadable for this process, even through a new wrapper. */
+private object ChildRequestQueueHealth {
+    private val poisonedKeys = WeakHashMap<Any, MutableSet<String>>()
+
+    fun isPoisoned(coordinationLock: Any, key: String): Boolean = synchronized(poisonedKeys) {
+        key in poisonedKeys[coordinationLock].orEmpty()
+    }
+
+    fun poison(coordinationLock: Any, key: String) = synchronized(poisonedKeys) {
+        poisonedKeys.getOrPut(coordinationLock) { mutableSetOf() }.add(key)
+    }
+}
+
 data class ChildRequestQueueEntry(
     val payload: ChildRequestPayload,
     val status: ChildRequestLocalStatus,
@@ -35,14 +64,20 @@ class ChildRequestOfflineQueue(
     // independently composed UI/runtime components). Serialize each read-modify-write against
     // the backing store's shared lock so concurrent enqueue/submit transitions cannot lose rows.
     private val lock = store.coordinationLock
+    // Hold across the suspending transport call so another wrapper cannot submit the same pending
+    // identity while the first result is still unknown.
+    private val flushMutex = ChildRequestFlushLocks.forStore(lock)
 
-    /** Enqueues a new child request locally. Idempotent by [ChildRequestPayload.requestId] -- a
-     * duplicate create attempt (e.g. a retried UI tap) never produces a second queued entry. */
+    /** Enqueues a new child request locally. An exact replay by [ChildRequestPayload.requestId] is
+     * idempotent; reuse of that identity for different immutable content is rejected. */
     fun enqueue(payload: ChildRequestPayload): ChildRequestQueueEntry = synchronized(lock) {
         requireValidPayload(payload)
         val existing = readAll().toMutableList()
         val already = existing.firstOrNull { it.payload.requestId == payload.requestId }
-        if (already != null) return already
+        if (already != null) {
+            if (already.payload != payload) throw ChildRequestIdentityConflict()
+            return already
+        }
 
         val entry = ChildRequestQueueEntry(payload, ChildRequestLocalStatus.PENDING_SYNC_LOCAL)
         existing += entry
@@ -72,19 +107,33 @@ class ChildRequestOfflineQueue(
      * [ChildRequestLocalStatus.SUBMITTED] are never resubmitted.
      */
     suspend fun flush(port: FamilySyncRuntimePort): Int {
-        if (port.currentConnectionState() != FamilySyncConnectionState.LIVE) return 0
-        var submittedCount = 0
-        for (entry in pending()) {
-            if (port.submitChildRequest(entry.payload)) {
-                markSubmitted(entry.payload.requestId)
-                submittedCount++
+        return flushMutex.withLock {
+            if (port.currentConnectionState() != FamilySyncConnectionState.LIVE) return@withLock 0
+            var submittedCount = 0
+            for (entry in pending()) {
+                // submitChildRequest is suspending: the family channel may become stale or
+                // disconnect while a prior request is in flight. The port contract requires
+                // LIVE at each invocation, so the initial check alone is not sufficient.
+                if (port.currentConnectionState() != FamilySyncConnectionState.LIVE) break
+                if (port.submitChildRequest(entry.payload)) {
+                    markSubmitted(entry.payload.requestId)
+                    submittedCount++
+                }
             }
+            submittedCount
         }
-        return submittedCount
     }
 
     private fun readAll(): List<ChildRequestQueueEntry> {
-        val raw = store.getString(key) ?: return emptyList()
+        if (ChildRequestQueueHealth.isPoisoned(lock, key)) unavailable()
+        val raw = try {
+            recoverPendingWrite()
+            store.getString(key)
+        } catch (_: ChildRequestQueueUnavailable) {
+            throw ChildRequestQueueUnavailable()
+        } catch (_: Exception) {
+            unavailable()
+        } ?: return emptyList()
         if (raw.isEmpty()) return emptyList()
         val entries = raw.split(RECORD_SEPARATOR).map(::decode)
         val requestIds = HashSet<String>(entries.size)
@@ -93,8 +142,109 @@ class ChildRequestOfflineQueue(
     }
 
     private fun writeAll(entries: List<ChildRequestQueueEntry>) {
-        store.putString(key, entries.joinToString(RECORD_SEPARATOR, transform = ::encode))
+        if (ChildRequestQueueHealth.isPoisoned(lock, key)) unavailable()
+        val pendingKey = pendingWriteKey
+        val previous = try {
+            if (store.getString(pendingKey) != null) unavailable()
+            store.getString(key)
+        } catch (_: Exception) {
+            unavailable()
+        }
+        val candidate = entries.joinToString(RECORD_SEPARATOR, transform = ::encode)
+        val persistedCandidate = candidate.ifEmpty { null }
+        val writeMarker = encodePendingWrite(previous, persistedCandidate)
+        var candidateMayHaveChanged = false
+        try {
+            // SharedPreferences.apply() is asynchronous. Persist a descriptor of the exact prior
+            // and candidate snapshots first. After process death, only one of those two exact
+            // byte snapshots is eligible for recovery; unknown states remain fail-closed.
+            store.putString(pendingKey, writeMarker)
+            store.flush()
+            check(store.getString(pendingKey) == writeMarker)
+
+            candidateMayHaveChanged = true
+            if (persistedCandidate == null) store.remove(key) else store.putString(key, persistedCandidate)
+            store.flush()
+            check(store.getString(key) == persistedCandidate)
+
+            store.remove(pendingKey)
+            store.flush()
+            check(store.getString(pendingKey) == null)
+        } catch (_: Exception) {
+            val restored = runCatching {
+                if (candidateMayHaveChanged) {
+                    if (previous == null) store.remove(key) else store.putString(key, previous)
+                    store.flush()
+                    check(store.getString(key) == previous)
+                }
+                store.remove(pendingKey)
+                store.flush()
+                check(store.getString(pendingKey) == null)
+            }.isSuccess
+            if (!restored) ChildRequestQueueHealth.poison(lock, key)
+            throw ChildRequestQueueUnavailable()
+        }
     }
+
+    /** Clears a write marker only when storage is byte-for-byte one of the recorded transaction
+     * endpoints. Legacy markers and any unknown/malformed state are preserved and fail closed. */
+    private fun recoverPendingWrite() {
+        val marker = store.getString(pendingWriteKey) ?: return
+        val descriptor = decodePendingWrite(marker) ?: unavailable()
+        val snapshot = store.getString(key)
+        val fingerprint = snapshotFingerprint(snapshot)
+        if (fingerprint != descriptor.previousFingerprint && fingerprint != descriptor.candidateFingerprint) {
+            unavailable()
+        }
+        try {
+            check(store.getString(pendingWriteKey) == marker)
+            store.remove(pendingWriteKey)
+            store.flush()
+            check(store.getString(pendingWriteKey) == null)
+        } catch (_: Exception) {
+            unavailable()
+        }
+    }
+
+    private data class PendingWriteDescriptor(
+        val previousFingerprint: String,
+        val candidateFingerprint: String,
+    )
+
+    private fun encodePendingWrite(previous: String?, candidate: String?): String = listOf(
+        PENDING_WRITE_V2,
+        snapshotFingerprint(previous),
+        snapshotFingerprint(candidate),
+    ).joinToString(MARKER_SEPARATOR)
+
+    private fun decodePendingWrite(marker: String): PendingWriteDescriptor? {
+        val parts = marker.split(MARKER_SEPARATOR)
+        if (parts.size != 3 || parts[0] != PENDING_WRITE_V2) return null
+        if (!isSnapshotFingerprint(parts[1]) || !isSnapshotFingerprint(parts[2])) return null
+        return PendingWriteDescriptor(parts[1], parts[2])
+    }
+
+    /** `absent` is distinct from the SHA-256 fingerprint of a present empty snapshot. */
+    private fun snapshotFingerprint(snapshot: String?): String {
+        if (snapshot == null) return ABSENT_SNAPSHOT
+        val digest = MessageDigest.getInstance("SHA-256").digest(snapshot.toByteArray(Charsets.UTF_8))
+        val hex = buildString(digest.size * 2) {
+            for (byte in digest) {
+                val value = byte.toInt() and 0xff
+                append(HEX_DIGITS[value ushr 4])
+                append(HEX_DIGITS[value and 0x0f])
+            }
+        }
+        return "$PRESENT_SNAPSHOT_PREFIX$hex"
+    }
+
+    private fun isSnapshotFingerprint(value: String): Boolean =
+        value == ABSENT_SNAPSHOT || (value.length == PRESENT_SNAPSHOT_PREFIX.length + SHA256_HEX_LENGTH &&
+            value.startsWith(PRESENT_SNAPSHOT_PREFIX) && value.substring(PRESENT_SNAPSHOT_PREFIX.length).all {
+                it in '0'..'9' || it in 'a'..'f'
+            })
+
+    private val pendingWriteKey: String get() = "$key.pending_write"
 
     private fun encode(entry: ChildRequestQueueEntry): String {
         val p = entry.payload
@@ -154,5 +304,11 @@ class ChildRequestOfflineQueue(
         const val FIELD_SEPARATOR = "|"
         const val RECORD_SEPARATOR = "\n"
         const val FIELD_COUNT = 5
+        const val MARKER_SEPARATOR = "|"
+        const val PENDING_WRITE_V2 = "child-request-queue-write-v2"
+        const val ABSENT_SNAPSHOT = "absent"
+        const val PRESENT_SNAPSHOT_PREFIX = "sha256:"
+        const val SHA256_HEX_LENGTH = 64
+        const val HEX_DIGITS = "0123456789abcdef"
     }
 }

@@ -53,7 +53,14 @@ object ScreenTimeRestorer {
         config: ScreenTimeConfig = ScreenTimeConfig(),
     ): ScreenTimeState {
         val sameBootConfirmed = snapshot.bootId != null && currentBootId != null && snapshot.bootId == currentBootId
-        return if (sameBootConfirmed) {
+        return if (sameBootConfirmed && nowNanos < snapshot.state.lastTickMonotonicNanos) {
+            // A confirmed same-boot monotonic clock cannot move backwards. Treat a persisted
+            // future reference as corrupt and use the conservative reboot recovery semantics:
+            // preserve mode/progress/counters and re-anchor only the clock. Feeding this state
+            // through Tick would clamp elapsed time to zero while retaining the future reference,
+            // potentially freezing enforcement until the clock reached that corrupt value.
+            restoreAfterReboot(snapshot, nowNanos)
+        } else if (sameBootConfirmed) {
             restoreAfterProcessRestart(snapshot, nowNanos, config)
         } else {
             restoreAfterReboot(snapshot, nowNanos)

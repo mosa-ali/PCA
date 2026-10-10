@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
-import { SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRepository } from './SafeZoneRepository.js';
+import { SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRecipientPage, type SafeZoneRepository } from './SafeZoneRepository.js';
+
+const SAFE_ZONE_DELIVERY_PAGE_SIZE = 16;
 
 interface SafeZoneRow {
   zone_id: string;
@@ -46,18 +48,49 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     return rows.map(toSafeZone);
   }
 
+  async listForRecipient(familyId: string, recipientEndpointId: string, afterZoneId?: string): Promise<SafeZoneRecipientPage> {
+    const { rows } = await runInTransaction((conn) => afterZoneId === undefined
+      ? execute<SafeZoneRow>(
+        conn,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? ORDER BY zone_id LIMIT ?`,
+        [familyId, recipientEndpointId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
+      )
+      : execute<SafeZoneRow>(
+        conn,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND zone_id > ? ORDER BY zone_id LIMIT ?`,
+        [familyId, recipientEndpointId, afterZoneId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
+      ));
+    const pageRows = rows.slice(0, SAFE_ZONE_DELIVERY_PAGE_SIZE);
+    const hasMore = rows.length > SAFE_ZONE_DELIVERY_PAGE_SIZE;
+    return {
+      safeZones: pageRows.map(toSafeZone),
+      nextCursor: hasMore ? pageRows[pageRows.length - 1]!.zone_id : null,
+    };
+  }
+
   async create(input: NewSafeZone): Promise<SafeZone> {
-    validateNewSafeZone(input);
+    // Snapshot first: validation and every SQL write must use exactly the
+    // same tuple even if a caller reuses/mutates its request object while the
+    // asynchronous connection/transaction setup is pending.
+    const safeInput: NewSafeZone = {
+      familyId: input.familyId,
+      recipientEndpointId: input.recipientEndpointId,
+      ciphertextB64: input.ciphertextB64,
+      nonceB64: input.nonceB64,
+      keyEpoch: input.keyEpoch,
+    };
+    validateNewSafeZone(safeInput);
     const zoneId = randomUUID();
     const now = new Date();
-    await runInTransaction((conn) => execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, input.familyId, input.recipientEndpointId, Buffer.from(input.ciphertextB64, 'base64url'), Buffer.from(input.nonceB64, 'base64url'), input.keyEpoch, now, now]));
-    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, input.familyId]));
+    await runInTransaction((conn) => execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, safeInput.familyId, safeInput.recipientEndpointId, Buffer.from(safeInput.ciphertextB64, 'base64url'), Buffer.from(safeInput.nonceB64, 'base64url'), safeInput.keyEpoch, now, now]));
+    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, safeInput.familyId]));
     if (!rows[0]) throw new SafeZoneError('NOT_FOUND');
     return toSafeZone(rows[0]);
   }
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
-    validateSafeZonePatch(patch);
+    const safePatch: SafeZonePatch = { ...patch };
+    validateSafeZonePatch(safePatch);
     const now = new Date();
     const row = await runInTransaction(async (conn) => {
       // Serialize concurrent edits for the same family-owned row so keyEpoch
@@ -76,11 +109,11 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
         throw new SafeZoneError('INVALID_INPUT');
       }
       if (!isFamilyEpochNumber(currentKeyEpoch, 1)) throw new SafeZoneError('INVALID_INPUT');
-      if (patch.keyEpoch !== undefined && patch.keyEpoch < currentKeyEpoch) {
+      if (safePatch.keyEpoch !== undefined && safePatch.keyEpoch < currentKeyEpoch) {
         throw new SafeZoneError('INVALID_INPUT');
       }
 
-      const nextKeyEpoch = patch.keyEpoch ?? currentKeyEpoch;
+      const nextKeyEpoch = safePatch.keyEpoch ?? currentKeyEpoch;
       const updated = await execute(
         conn,
         `UPDATE safe_zones
@@ -88,8 +121,8 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
                 delivery_state = 'PENDING_OFFLINE', updated_at = ?
           WHERE zone_id = ? AND family_id = ? AND key_epoch = ?`,
         [
-          Buffer.from(patch.ciphertextB64!, 'base64url'),
-          Buffer.from(patch.nonceB64!, 'base64url'),
+          Buffer.from(safePatch.ciphertextB64!, 'base64url'),
+          Buffer.from(safePatch.nonceB64!, 'base64url'),
           nextKeyEpoch,
           now,
           zoneId,

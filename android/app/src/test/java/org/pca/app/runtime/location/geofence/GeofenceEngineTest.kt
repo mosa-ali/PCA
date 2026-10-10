@@ -168,6 +168,51 @@ class GeofenceEngineTest {
     }
 
     @Test
+    fun `omitted boot identity cannot clear a persisted boot fence`() {
+        val state = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+            candidateMembership = GeofenceMembership.OUTSIDE,
+            candidateStreak = 1,
+            lastEvaluatedMonotonicNanos = 10_000_000_000L,
+            lastAcceptedSampleElapsedRealtimeMillis = 10_000L,
+            bootInstanceId = "77",
+        )
+
+        val evaluation = GeofenceEngine.evaluate(
+            zone, state, sampleAtDistance(500.0).copy(elapsedRealtimeMillis = 2_000L),
+            nowMonotonicNanos = 2_000_000_000L,
+            config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+        )
+
+        assertEquals(state, evaluation.newState)
+        assertNull(evaluation.transition)
+    }
+
+    @Test
+    fun `confirmed boot change reanchors prior monotonic fences`() {
+        val state = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+            candidateMembership = GeofenceMembership.OUTSIDE,
+            candidateStreak = 1,
+            lastEvaluatedMonotonicNanos = 10_000_000_000L,
+            lastAcceptedSampleElapsedRealtimeMillis = 10_000L,
+            bootInstanceId = "77",
+        )
+        val evaluation = GeofenceEngine.evaluate(
+            zone, state, sampleAtDistance(500.0).copy(elapsedRealtimeMillis = 2_000L),
+            nowMonotonicNanos = 2_000_000_000L,
+            config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+            bootInstanceId = "78",
+        )
+
+        assertEquals(GeofenceTransitionType.EXIT, evaluation.transition)
+        assertEquals("78", evaluation.newState.bootInstanceId)
+        assertEquals(2_000L, evaluation.newState.lastAcceptedSampleElapsedRealtimeMillis)
+    }
+
+    @Test
     fun `out-of-order positive sample cannot reverse a confirmed transition`() {
         val config = GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1)
         val inside = GeofenceZoneState(

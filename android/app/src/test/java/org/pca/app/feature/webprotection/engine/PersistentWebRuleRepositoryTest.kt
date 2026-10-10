@@ -422,7 +422,7 @@ class PersistentWebRuleRepositoryTest {
     }
 
     @Test
-    fun `failed rollback survives process restart as read only even with valid candidate bytes`() {
+    fun `restart accepts exact candidate after interrupted rollback and clears marker`() {
         val backing = RestartableStore()
         val repo = PersistentWebRuleRepository(backing)
         repo.replaceParentRules("family-1", listOf(parentRule()), 1L)
@@ -430,13 +430,12 @@ class PersistentWebRuleRepositoryTest {
         backing.throwAfterFlushAt = setOf(2)
         backing.failFlushAt = setOf(3)
         assertMutationFailure { repo.replaceParentRules("family-1", emptyList(), 2L) }
-        // Fresh lock identity models process death, removing in-process poison.
-        val restarted = PersistentWebRuleRepository(RestartableStore(backing.disk))
-        assertEquals(WebRulePolicyState.CORRUPT_USING_LKG, restarted.state)
+        val recoveredBacking = RestartableStore(backing.disk)
+        val restarted = PersistentWebRuleRepository(recoveredBacking)
+        assertEquals(WebRulePolicyState.VALID, restarted.state)
         assertTrue(restarted.snapshot().isEmpty())
-        assertMutationFailure { restarted.put(parentRule()) }
-        assertMutationFailure { restarted.replaceSecurityFeedRules(emptyList(), "1.0.0") }
-        assertEquals(listOf(parentRule()), repo.snapshot())
+        assertEquals(2L, restarted.parentRulesRevision)
+        assertEquals(null, recoveredBacking.disk[MARKER_KEY])
     }
 
     @Test
@@ -453,14 +452,119 @@ class PersistentWebRuleRepositoryTest {
             assertEquals(listOf(parentRule()), repo.snapshot())
             assertEquals(1, backing.candidateWrites)
             val restarted = PersistentWebRuleRepository(RestartableStore(backing.disk))
-            if (removedDurably) {
-                assertEquals(WebRulePolicyState.VALID, restarted.state)
-                assertEquals(2L, restarted.parentRulesRevision)
-                assertTrue(restarted.snapshot().isEmpty())
-            } else {
-                assertEquals(WebRulePolicyState.CORRUPT_USING_LKG, restarted.state)
-                assertMutationFailure { restarted.put(parentRule()) }
+            assertEquals(WebRulePolicyState.VALID, restarted.state)
+            assertEquals(2L, restarted.parentRulesRevision)
+            assertTrue(restarted.snapshot().isEmpty())
+        }
+    }
+
+    @Test
+    fun `restart recovers exact pre-write snapshot after process death before candidate write`() {
+        val backing = RestartableStore()
+        val repo = PersistentWebRuleRepository(backing)
+        repo.replaceParentRules("family-1", listOf(parentRule()), 1L)
+        val priorBytes = backing.disk[RULE_KEY]
+        backing.resetFaultCounter()
+        backing.crashBeforeCandidateWrite = true
+
+        try {
+            repo.replaceParentRules("family-1", emptyList(), 2L)
+            fail("candidate write should simulate process death")
+        } catch (_: SimulatedProcessDeath) { }
+
+        assertEquals(priorBytes, backing.disk[RULE_KEY])
+        assertTrue(backing.disk[MARKER_KEY] != null)
+        val recoveredBacking = RestartableStore(backing.disk)
+        val restarted = PersistentWebRuleRepository(recoveredBacking)
+        assertEquals(WebRulePolicyState.VALID, restarted.state)
+        assertEquals(listOf(parentRule()), restarted.snapshot())
+        assertEquals(1L, restarted.parentRulesRevision)
+        assertEquals(null, recoveredBacking.disk[MARKER_KEY])
+    }
+
+    @Test
+    fun `restart recovers exact absent pre-write state without manufacturing a policy`() {
+        val backing = RestartableStore()
+        val repo = PersistentWebRuleRepository(backing)
+        backing.crashBeforeCandidateWrite = true
+
+        try {
+            repo.replaceParentRules("family-1", listOf(parentRule()), 1L)
+            fail("candidate write should simulate process death")
+        } catch (_: SimulatedProcessDeath) { }
+
+        assertEquals(null, backing.disk[RULE_KEY])
+        val recoveredBacking = RestartableStore(backing.disk)
+        val restarted = PersistentWebRuleRepository(recoveredBacking)
+        assertEquals(WebRulePolicyState.NO_POLICY_YET, restarted.state)
+        assertEquals(null, restarted.parentRulesRevision)
+        assertEquals(null, recoveredBacking.disk[MARKER_KEY])
+    }
+
+    @Test
+    fun `restart recovers exact candidate snapshot after process death before marker clear`() {
+        val backing = RestartableStore()
+        val repo = PersistentWebRuleRepository(backing)
+        repo.replaceParentRules("family-1", listOf(parentRule()), 1L)
+        backing.resetFaultCounter()
+        backing.crashAfterFlushAt = setOf(2)
+
+        try {
+            repo.replaceParentRules("family-1", emptyList(), 2L)
+            fail("candidate flush should simulate process death")
+        } catch (_: SimulatedProcessDeath) { }
+
+        assertTrue(backing.disk[MARKER_KEY] != null)
+        val recoveredBacking = RestartableStore(backing.disk)
+        val restarted = PersistentWebRuleRepository(recoveredBacking)
+        assertEquals(WebRulePolicyState.VALID, restarted.state)
+        assertTrue(restarted.snapshot().isEmpty())
+        assertEquals(2L, restarted.parentRulesRevision)
+        assertEquals(null, recoveredBacking.disk[MARKER_KEY])
+    }
+
+    @Test
+    fun `restart preserves legacy malformed and unknown markers with unmatched state`() {
+        val initial = RestartableStore().also {
+            PersistentWebRuleRepository(it).replaceParentRules("family-1", listOf(parentRule()), 1L)
+        }.disk
+        val markers = listOf(
+            "pending", // legacy v1 markers remain fail-closed
+            "{not json",
+            org.json.JSONObject()
+                .put("version", "web-rules-write-v9")
+                .put("previousPresent", true)
+                .put("previousSha256", "0".repeat(64))
+                .put("candidateSha256", "f".repeat(64))
+                .toString(),
+            org.json.JSONObject()
+                .put("version", "web-rules-write-v2")
+                .put("previousPresent", true)
+                .put("previousSha256", "0".repeat(64))
+                .put("candidateSha256", "f".repeat(64))
+                .put("unexpected", true)
+                .toString(),
+            org.json.JSONObject()
+                .put("version", "web-rules-write-v2")
+                .put("previousPresent", true)
+                .put("previousSha256", "0".repeat(64))
+                .put("candidateSha256", "f".repeat(64))
+                .toString(),
+        )
+        for (marker in markers) {
+            val damaged = RestartableStore(initial).apply {
+                putString(MARKER_KEY, marker)
+                flush()
             }
+            val rawSnapshot = damaged.disk[RULE_KEY]
+            val recoveredBacking = RestartableStore(damaged.disk)
+            val restarted = PersistentWebRuleRepository(recoveredBacking)
+            assertEquals(WebRulePolicyState.CORRUPT_USING_LKG, restarted.state)
+            assertEquals(marker, recoveredBacking.disk[MARKER_KEY])
+            assertEquals(rawSnapshot, recoveredBacking.disk[RULE_KEY])
+            assertMutationFailure { restarted.put(parentRule()) }
+            assertEquals(marker, recoveredBacking.disk[MARKER_KEY])
+            assertEquals(rawSnapshot, recoveredBacking.disk[RULE_KEY])
         }
     }
 
@@ -474,6 +578,8 @@ class PersistentWebRuleRepositoryTest {
         var candidateWritesAllMarked = true
         var failMarkerPut = false
         var failMarkerRemove = false
+        var crashBeforeCandidateWrite = false
+        var crashAfterFlushAt = emptySet<Int>()
         var mismatchAtFlush = -1
         var failFlushAt = emptySet<Int>()
         var throwAfterFlushAt = emptySet<Int>()
@@ -483,7 +589,12 @@ class PersistentWebRuleRepositoryTest {
             if (key == MARKER_KEY && failMarkerPut) error("marker write failed")
             if (key == RULE_KEY) {
                 candidateWrites++
-                candidateWritesAllMarked = candidateWritesAllMarked && disk[MARKER_KEY] == "pending"
+                candidateWritesAllMarked = candidateWritesAllMarked &&
+                    disk[MARKER_KEY] != null && disk[MARKER_KEY] != "pending"
+                if (crashBeforeCandidateWrite) {
+                    crashBeforeCandidateWrite = false
+                    throw SimulatedProcessDeath()
+                }
             }
             memory[key] = value
         }
@@ -497,6 +608,7 @@ class PersistentWebRuleRepositoryTest {
             flushCount++
             if (flushCount in failFlushAt) error("disk write failed")
             disk = memory.toMap()
+            if (flushCount in crashAfterFlushAt) throw SimulatedProcessDeath()
             if (flushCount in throwAfterFlushAt) error("disk confirmation failed")
         }
         fun resetFaultCounter() { flushCount = 0; candidateWrites = 0 }
@@ -506,6 +618,8 @@ class PersistentWebRuleRepositoryTest {
         const val RULE_KEY = "webprotection_rules_v1"
         const val MARKER_KEY = RULE_KEY + "_pending_write"
     }
+
+    private class SimulatedProcessDeath : Error("simulated process death")
 
     @Test
     fun `parent replacements reject blank scope and negative revision without writes`() {

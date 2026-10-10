@@ -20,14 +20,17 @@ const OWNER_DEVICE_TOKEN = 'device-session-owner';
 const OTHER_FAMILY_DEVICE_TOKEN = 'device-session-other-family';
 
 const deviceIdentities = new Map([
-  [OWNER_DEVICE_TOKEN, { familyId: FAMILY, deviceId: OWNER_DEVICE }],
-  [OTHER_FAMILY_DEVICE_TOKEN, { familyId: OTHER_FAMILY, deviceId: 'dev-other-family' }],
+  [OWNER_DEVICE_TOKEN, { familyId: FAMILY, deviceId: OWNER_DEVICE, dskKeyId: 'dsk-owner-1' }],
+  [OTHER_FAMILY_DEVICE_TOKEN, { familyId: OTHER_FAMILY, deviceId: 'dev-other-family', dskKeyId: 'dsk-other-family-1' }],
 ]);
 
 function buildApp({
   ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW),
   role = 'ADMINISTRATOR',
   withDeviceSessionService = true,
+  withTrustSetRoleResolver = true,
+  trustSetRoleResolver,
+  deviceIdentityOverrides = new Map(),
 } = {}) {
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
@@ -44,9 +47,15 @@ function buildApp({
   };
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, familyId) {
-      const identity = deviceIdentities.get(token);
+      const identity = deviceIdentityOverrides.get(token) ?? deviceIdentities.get(token);
       if (!identity || identity.familyId !== familyId) throw new RuntimeSyncAuthError('UNAUTHORIZED');
       return identity;
+    },
+  };
+  const acceptedTrustSetRoleResolver = trustSetRoleResolver ?? {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      if (familyId !== FAMILY || deviceId !== OWNER_DEVICE || dskKeyId !== 'dsk-owner-1') return 'DEVICE_NOT_ACTIVE';
+      return { deviceId, role: 'OWNER', trustSetEpoch: 7, keyEpoch: 4 };
     },
   };
 
@@ -55,6 +64,7 @@ function buildApp({
     parentAccountService,
     familyAuditEventLedger: ledger,
     ...(withDeviceSessionService ? { deviceSessionService } : {}),
+    ...(withTrustSetRoleResolver ? { trustSetRoleResolver: acceptedTrustSetRoleResolver } : {}),
   });
   return { app, ledger };
 }
@@ -173,6 +183,70 @@ test('route composition without a device-session authority fails closed', async 
     assert.equal(response.json().error, 'device_session_unavailable');
   } finally {
     await app.close();
+  }
+});
+
+test('accepted Trust Set membership is bound to the live session DSK before recipient lookup', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let resolverArgs;
+  let listCalls = 0;
+  const list = ledger.listForParentDevice.bind(ledger);
+  ledger.listForParentDevice = async (...args) => { listCalls += 1; return list(...args); };
+  const { app } = buildApp({ ledger, trustSetRoleResolver: {
+    async resolveActor(...args) {
+      resolverArgs = args;
+      return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: 7, keyEpoch: 4 };
+    },
+  } });
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events`,
+      headers: ownerDeviceHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(resolverArgs, [FAMILY, OWNER_DEVICE, 'dsk-owner-1']);
+    assert.equal(listCalls, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('missing or unavailable accepted Trust Set authority fails closed before recipient lookup', async (t) => {
+  for (const scenario of [
+    { id: 'missing', withTrustSetRoleResolver: false, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
+    { id: 'unavailable', trustSetRoleResolver: { async resolveActor() { throw new Error('store unavailable'); } }, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
+    { id: 'revoked', trustSetRoleResolver: { async resolveActor() { return 'DEVICE_NOT_ACTIVE'; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    { id: 'unknown-role', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'SERVICE', trustSetEpoch: 7, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    { id: 'missing-role', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, trustSetEpoch: 7, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    { id: 'invalid-trust-set-epoch', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: Number.NaN, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    { id: 'invalid-key-epoch', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: 7, keyEpoch: 0 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    {
+      id: 'dsk-mismatch',
+      deviceIdentityOverrides: new Map([[OWNER_DEVICE_TOKEN, { familyId: FAMILY, deviceId: OWNER_DEVICE, dskKeyId: 'dsk-owner-rotated' }]]),
+      expectedStatus: 403,
+      expectedError: 'forbidden',
+    },
+  ]) {
+    await t.test(scenario.id, async () => {
+      const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+      let listCalls = 0;
+      const list = ledger.listForParentDevice.bind(ledger);
+      ledger.listForParentDevice = async (...args) => { listCalls += 1; return list(...args); };
+      const { app } = buildApp({ ledger, ...scenario });
+      try {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/api/parent/families/${FAMILY}/audit-events`,
+          headers: ownerDeviceHeaders,
+        });
+        assert.equal(response.statusCode, scenario.expectedStatus);
+        assert.equal(response.json().error, scenario.expectedError);
+        assert.equal(listCalls, 0, 'recipient ciphertext must not be queried for missing, stale, or unavailable membership');
+      } finally {
+        await app.close();
+      }
+    });
   }
 });
 

@@ -97,6 +97,26 @@ class ScreenTimeRestorerTest {
     }
 
     @Test
+    fun `same boot future monotonic reference preserves state and reanchors to now`() {
+        val futureTick = ScreenTimeState.initial(Long.MAX_VALUE).copy(
+            mode = ScreenTimeMode.BREAK_SHIELD,
+            activeElapsedNanos = 60.minutes.inWholeNanoseconds,
+            breakElapsedNanos = 7.minutes.inWholeNanoseconds,
+            dhikrInteractionCount = 3,
+            completedBreakCount = 2,
+            overriddenBreakCount = 1,
+        )
+        val snapshot = ScreenTimeSnapshot(state = futureTick, snapshotWallClockMillis = 1_000L, bootId = "boot-1")
+        val now = 5.minutes.inWholeNanoseconds
+
+        val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = now, currentBootId = "boot-1", config = config)
+
+        assertEquals(futureTick.copy(lastTickMonotonicNanos = now), restored)
+        val nextTick = ScreenTimeEngine.reduce(restored, ScreenTimeEvent.Tick(now + 1.minutes.inWholeNanoseconds), config)
+        assertEquals(8.minutes.inWholeNanoseconds, nextTick.breakElapsedNanos)
+    }
+
+    @Test
     fun `restore without a bootId on either side fails safe to the reboot-conservative path, never process-restart`() {
         // PCA-RUNTIME-2R1: same-boot continuity must be POSITIVELY confirmed. An unavailable
         // bootId on either side is NOT evidence of a same-boot restart -- it must take the same

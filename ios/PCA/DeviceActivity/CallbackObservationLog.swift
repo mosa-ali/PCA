@@ -174,6 +174,31 @@ public protocol CallbackObservationLog {
     func readAll() -> [PersistedCallbackObservation]
 }
 
+/// Serializes the App Group log's read-modify-write against other extension
+/// callback processes using the same policy lock. Readers that reconcile
+/// health must hold that same coordination lock while calling `readAll()`.
+/// A lock failure drops diagnostic evidence rather than publishing a racy
+/// snapshot with duplicate sequences or lost callback receipts.
+public final class CoordinatedCallbackObservationLog: CallbackObservationLog {
+    private let log: CallbackObservationLog
+    private let coordination: DeviceActivityPolicyCoordination
+
+    public init(log: CallbackObservationLog, coordination: DeviceActivityPolicyCoordination) {
+        self.log = log
+        self.coordination = coordination
+    }
+
+    public func record(kind: DeviceActivityCallbackKind, activityId: String, at: Date) {
+        try? coordination.withExclusiveAccess {
+            log.record(kind: kind, activityId: activityId, at: at)
+        }
+    }
+
+    public func readAll() -> [PersistedCallbackObservation] {
+        log.readAll()
+    }
+}
+
 /// doc 07 Section 14's reconciliation needs bounded history, not
 /// unbounded growth -- same resource-abuse-ceiling rationale as the
 /// backend's replay/idempotency ledgers (backend/src/familyenvelope/policy.ts).
@@ -232,7 +257,17 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
             ? storageKey
             : storageKey + ".boundaries"
         var all = readRecords(forKey: targetKey)
-        let nextSequence = (all.last?.sequence ?? 0) + 1
+        // Keep the persisted sequence strictly below the reserved overflow
+        // range. Rotate diagnostic history before incrementing Int.max - 1;
+        // retaining the old record is not worth risking a trap or an unreadable
+        // log on the next callback.
+        let nextSequence: Int
+        if let last = all.last?.sequence, last >= Int.max - 1 {
+            all.removeAll(keepingCapacity: true)
+            nextSequence = 1
+        } else {
+            nextSequence = (all.last?.sequence ?? 0) + 1
+        }
         let installationGeneration = installation.flatMap {
             installationCanOwnCallbacks && $0.containsMonitor(activityId) ? $0.generation : nil
         }
@@ -257,8 +292,33 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
 
     private func readRecords(forKey key: String) -> [PersistedCallbackObservation] {
         guard let data = defaults.data(forKey: key) else { return [] }
-        return (try? decoder.decode([PersistedCallbackObservation].self, from: data)) ?? []
+        // The log is diagnostic recovery state. Reject malformed or oversized
+        // persisted bytes before decoding so corrupt App Group state cannot
+        // consume unbounded memory in a DeviceActivity callback. Invalid
+        // history is not evidence; a later real callback may start a fresh log.
+        guard data.count <= Self.maximumEncodedBytes,
+              let records = try? decoder.decode([PersistedCallbackObservation].self, from: data),
+              records.count <= capacity,
+              records.allSatisfy(Self.isValidPersistedObservation),
+              zip(records, records.dropFirst()).allSatisfy({ pair in pair.0.sequence < pair.1.sequence }) else {
+            return []
+        }
+        return records
     }
+
+    private static func isValidPersistedObservation(_ observation: PersistedCallbackObservation) -> Bool {
+        guard !observation.activityId.isEmpty, observation.activityId.utf8.count <= 128,
+              observation.observedAtUtc.timeIntervalSince1970.isFinite,
+              observation.sequence > 0, observation.sequence < Int.max else { return false }
+        if let generation = observation.installationGeneration,
+           UUID(uuidString: generation) == nil { return false }
+        if case .eventDidReachThreshold(let eventId) = observation.kind {
+            guard !eventId.isEmpty, eventId.utf8.count <= 128 else { return false }
+        }
+        return true
+    }
+
+    private static let maximumEncodedBytes = 512 * 1024
 }
 
 /// In-memory conformance for tests/previews -- never used by a shipping

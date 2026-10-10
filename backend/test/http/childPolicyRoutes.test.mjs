@@ -64,7 +64,7 @@ function trustedRoleResolver() {
     trustSetEpoch: 5,
     keyEpoch: 3,
     entries: [
-      { deviceId: 'dev-owner', role: 'OWNER', dskKeyId: 'k1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' },
+      { deviceId: 'dev-owner', role: 'OWNER', dskKeyId: 'owner-key-1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' },
       { deviceId: 'dev-viewer', role: 'VIEWER', dskKeyId: 'k5', dskPublicKey: 'pk5', dekKeyId: 'k6', dekPublicKey: 'pk6', status: 'ACTIVE' },
     ],
     issuedAt: T0,
@@ -74,7 +74,7 @@ function trustedRoleResolver() {
   return new FamilyTrustSetRoleResolver(store);
 }
 
-function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR' } = {}) {
+function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR', trustSetRoleResolver = trustedRoleResolver(), deviceSessionFailure = false, nowFn = () => T0 } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
   const callCounts = { activeFamilyRole: 0, actorDevice: 0 };
   const parentAccountService = {
@@ -89,12 +89,13 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     },
   };
   const deviceTokens = new Map([
-    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
-    ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY }],
+    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY, dskKeyId: 'owner-key-1' }],
+    ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY, dskKeyId: 'k5' }],
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
       callCounts.actorDevice += 1;
+      if (deviceSessionFailure) throw new Error('synthetic device-session store failure');
       const identity = deviceTokens.get(token);
       if (!identity || identity.familyId !== expectedFamilyId) {
         const err = new Error('unauthorized');
@@ -118,11 +119,192 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     parentAccountService,
     deviceSessionService,
     parentActionAuthorization: configured ? authorization : undefined,
+    trustSetRoleResolver,
     outboundRelayService,
-    now: () => T0,
+    now: nowFn,
   });
   return { app, submittedBatches, callCounts };
 }
+
+test('stale device-session DSK is rejected before authorization or relay submission', async () => {
+  const resolverCalls = [];
+  const trustSetRoleResolver = {
+    async resolveActor(...args) {
+      resolverCalls.push(args);
+      return 'DEVICE_NOT_ACTIVE';
+    },
+  };
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({ authorization, trustSetRoleResolver });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(resolverCalls, [[FAMILY, 'dev-owner', 'owner-key-1']]);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('current accepted DSK is resolved with the exact authenticated family/device/key tuple', async () => {
+  const resolverCalls = [];
+  const accepted = trustedRoleResolver();
+  const trustSetRoleResolver = {
+    resolveActor(...args) {
+      resolverCalls.push(args);
+      return accepted.resolveActor(...args);
+    },
+  };
+  const authorization = buildAuthorization({ roleResolver: trustSetRoleResolver });
+  const { app } = buildApp({ authorization, trustSetRoleResolver });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 202);
+    assert.deepEqual(resolverCalls, [
+      [FAMILY, 'dev-owner', 'owner-key-1'],
+      [FAMILY, 'dev-owner', 'owner-key-1'],
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('missing accepted Trust Set resolver fails closed before authorization or relay submission', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({ authorization, trustSetRoleResolver: null });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('malformed accepted Trust Set projection fails closed before authorization or relay submission', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const trustSetRoleResolver = {
+    async resolveActor() {
+      return { deviceId: 'dev-owner', role: 'OWNER', trustSetEpoch: 0, keyEpoch: 1 };
+    },
+  };
+  const { app, submittedBatches } = buildApp({ authorization, trustSetRoleResolver });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('policy envelope sender key must match the authenticated device-session DSK', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({ authorization });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, senderKeyId: 'old-owner-key' },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('device-session storage failure returns retryable 503 and does not authorize or relay', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({ authorization, deviceSessionFailure: true });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'actor_device_session_unavailable' });
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Parent authorization dependency failure returns 503 without queueing or exposing exception text', async () => {
+  const privateError = 'synthetic action-ledger database outage';
+  const authorization = { async authorize() { throw new Error(privateError); } };
+  const { app, submittedBatches } = buildApp({ authorization });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+    assert.equal(response.body.includes(privateError), false);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('relay storage failure returns 503 rather than claiming PENDING', async () => {
+  const privateError = 'synthetic relay database outage';
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app, submittedBatches } = buildApp({
+    authorization,
+    submitBatchImpl: async () => { throw new Error(privateError); },
+  });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'relay_unavailable' });
+    assert.equal(response.body.includes(privateError), false);
+    assert.equal(submittedBatches.length, 1);
+  } finally {
+    await app.close();
+  }
+});
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
 
@@ -151,6 +333,8 @@ test('an Owner can submit a canonical POLICY_UPDATE envelope: authorized, serial
     assert.equal(submittedBatches[0].items[0].messageId, VALID_ENVELOPE.messageId);
     assert.equal(submittedBatches[0].items[0].messageType, 'POLICY_UPDATE');
     assert.equal(submittedBatches[0].items[0].enqueuedAtEpochMillis, Date.parse(VALID_ENVELOPE.issuedAt));
+    assert.equal(submittedBatches[0].items[0].validUntil.getTime(), Date.parse(VALID_ENVELOPE.expiresAt));
+    assert.equal(submittedBatches[0].items[0].ttlMs, undefined);
     const relayed = envelopeFromRelayCiphertext(submittedBatches[0].items[0].ciphertext);
     assert.ok(relayed);
     assert.equal(relayed.messageId, VALID_ENVELOPE.messageId);
@@ -160,6 +344,51 @@ test('an Owner can submit a canonical POLICY_UPDATE envelope: authorized, serial
     assert.equal(relayed.recipient.kind, 'DEVICE');
     assert.equal(relayed.recipient.recipientDeviceId, 'dev-child');
     assert.deepEqual(submittedBatches[0].items[0].ciphertext, envelopeToRelayCiphertext(parseFamilyEnvelope(VALID_ENVELOPE)));
+  } finally {
+    await app.close();
+  }
+});
+
+test('expired policy envelope is rejected after authorization and never queued', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({
+    authorization,
+    nowFn: () => new Date(T0.getTime() + 6 * 60_000),
+  });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'expired' });
+    assert.equal(authorizationCalls, 1);
+    assert.equal(submittedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('relay reports envelope expiry during async recipient resolution as a truthful 400 without a PENDING receipt', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app, submittedBatches } = buildApp({
+    authorization,
+    submitBatchImpl: async () => ({ results: [{ messageId: VALID_ENVELOPE.messageId, outcome: 'EXPIRED' }], droppedForBatchBound: [] }),
+  });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'expired' });
+    assert.equal(response.json().status, undefined);
+    assert.equal(submittedBatches.length, 1);
   } finally {
     await app.close();
   }
@@ -192,7 +421,7 @@ test('a VIEWER cannot edit child policy: DENY from the real OPERATION_MATRIX, no
       method: 'POST',
       url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
       headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
-      payload: { ...VALID_ENVELOPE, senderDeviceId: 'dev-viewer' },
+      payload: { ...VALID_ENVELOPE, senderDeviceId: 'dev-viewer', senderKeyId: 'k5' },
     });
     assert.equal(response.statusCode, 403);
     recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_viewer_device_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response });

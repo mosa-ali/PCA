@@ -13,6 +13,7 @@ import { MAX_RELAY_TTL_MS } from '../../relay/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
 import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
+import type { TrustSetRoleResolver, ResolvedActor, ActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
 import {
   alertComposeFailureMessage,
   CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
@@ -60,23 +61,18 @@ export interface RuntimeSyncRoutesDeps {
   resolveEnvelopeContext: ResolveEnvelopeContext;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
-  /**
-   * PCA-ADD-ENR-016/PCA-FR-145: optional so every existing composition
-   * that doesn't yet care about protective-authority status keeps working
-   * unchanged. When supplied, POST /v1/runtime-sync/protection-status is
-   * registered -- the one real, device-session-authenticated way a
-   * device's self-reported protection level ever reaches the durable
-   * store RealProtectiveAuthorityResolver reads (see that class's own
-   * doc comment for the full chain).
-   */
+  /** PCA-ADD-ENR-016/PCA-FR-145: optional. When supplied, POST /v1/runtime-sync/protection-status is registered. */
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: optional. When supplied alongside deviceProtectionStatusRepository, a report that transitions a device INTO DEGRADED emits a PROTECTION_DEGRADED alert. */
   protectionStatusAlerting?: ProtectionStatusAlerting;
   /** FABLE-A013: bounded, best-effort observability for a swallowed compose/produce failure below. Defaults to a console-backed logger; never required, never changes the non-blocking outcome. */
   alertComposeFailureLogger?: AlertComposeFailureLogger;
+  /** Current accepted Trust Set membership check for authenticated runtime-sync routes. Missing authority fails closed. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
 }
 
 const PROTECTION_LEVELS: ReadonlySet<string> = new Set(['STANDARD', 'PROTECTED', 'DEGRADED', 'AUTHORIZATION_REQUIRED', 'NOT_SUPPORTED']);
+const FAMILY_ROLES: ReadonlySet<string> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD']);
 
 const MAX_CIPHERTEXT_BASE64_LENGTH = 90_000; // headroom over relay's 64 KiB ciphertext cap once base64-inflated
 
@@ -175,12 +171,14 @@ function parseOutboundItem(raw: unknown): OutboundEnvelopeItem | null {
 
 /**
  * Every device session preHandler below binds `request.runtimeSyncDeviceId`/
- * `runtimeSyncFamilyId` from a VERIFIED session token -- route handlers
- * never read a device or family id from the request body or params for
- * authorization purposes (see OutboundRelayService's cross-family IDOR
- * closure doc comment).
+ * `runtimeSyncFamilyId` from a VERIFIED session token, then binds its exact
+ * session DSK to the current accepted Trust Set -- route handlers never read
+ * identity or authorization scope from the request body or params.
  */
-function createRequireDeviceSession(deviceSessionService: DeviceSessionService) {
+function createRequireDeviceSession(
+  deviceSessionService: DeviceSessionService,
+  trustSetRoleResolver: RuntimeSyncRoutesDeps['trustSetRoleResolver'],
+) {
   return async function requireDeviceSession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = request.headers.authorization;
     if (typeof header !== 'string' || !header.startsWith('Bearer ') || header.length > 4096) {
@@ -189,6 +187,34 @@ function createRequireDeviceSession(deviceSessionService: DeviceSessionService) 
     }
     try {
       const identity = await deviceSessionService.validateSession(header.slice('Bearer '.length));
+      if (!identity || typeof identity.familyId !== 'string' || identity.familyId.length === 0 ||
+          typeof identity.deviceId !== 'string' || identity.deviceId.length === 0 ||
+          typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return;
+      }
+      if (!trustSetRoleResolver) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return;
+      }
+      let actor: ResolvedActor | ActorResolutionFailure;
+      try {
+        actor = await trustSetRoleResolver.resolveActor(identity.familyId, identity.deviceId, identity.dskKeyId);
+      } catch {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return;
+      }
+      if (typeof actor === 'string') {
+        await reply.code(403).send({ error: 'device_not_authorized' });
+        return;
+      }
+      if (typeof actor !== 'object' || actor === null || Array.isArray(actor) ||
+          actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role) ||
+          !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
+          !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return;
+      }
       request.runtimeSyncDeviceId = identity.deviceId;
       request.runtimeSyncFamilyId = identity.familyId;
       request.runtimeSyncSessionIncarnation = hashSessionToken(header.slice('Bearer '.length));
@@ -203,7 +229,7 @@ function createRequireDeviceSession(deviceSessionService: DeviceSessionService) 
 }
 
 export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyncRoutesDeps): void {
-  const requireDeviceSession = createRequireDeviceSession(deps.deviceSessionService);
+  const requireDeviceSession = createRequireDeviceSession(deps.deviceSessionService, deps.trustSetRoleResolver);
   const challengeLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'runtime-sync-challenge' });
   const sessionLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'runtime-sync-session' });
   const outboundLimiter = deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'runtime-sync-outbound' });
@@ -375,6 +401,9 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         }
         const deviceId = request.runtimeSyncDeviceId as string;
         const familyId = request.runtimeSyncFamilyId as string;
+        // requireDeviceSession has already bound this exact session DSK to a
+        // validated actor from the current accepted Trust Set before any
+        // runtime-sync route handler runs.
         const nextLevel = body.protectionLevel as ProtectionLevel;
         // Capture the server receipt clock before any repository awaits. In
         // particular, alert-transition lookup latency must not change the

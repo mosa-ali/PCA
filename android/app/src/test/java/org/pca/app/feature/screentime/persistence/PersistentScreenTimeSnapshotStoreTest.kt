@@ -124,6 +124,39 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
+    fun `negative elapsed time in legacy v1 snapshot fails safe to null`() {
+        val underlying = InMemoryPersistentStateStore()
+        val valid = ScreenTimeSnapshot(
+            state = ScreenTimeState.initial(nowNanos = 42L),
+            snapshotWallClockMillis = 1_700_000_000_000L,
+            bootId = "boot-v1",
+        )
+        underlying.putString(
+            "screen_time_snapshot_v1",
+            encodeV1(valid.copy(state = valid.state.copy(activeElapsedNanos = -1L))),
+        )
+
+        assertNull(PersistentScreenTimeSnapshotStore(underlying).load())
+    }
+
+    @Test
+    fun `negative counters in v2 snapshot fail safe to null`() {
+        val underlying = InMemoryPersistentStateStore()
+        val store = PersistentScreenTimeSnapshotStore(underlying)
+        val valid = ScreenTimeSnapshot(
+            state = ScreenTimeState.initial(nowNanos = 42L),
+            snapshotWallClockMillis = 1_700_000_000_000L,
+            bootId = "boot-v2",
+        )
+        underlying.putString(
+            "screen_time_snapshot_v1",
+            store.encode(valid.copy(state = valid.state.copy(completedBreakCount = -1))),
+        )
+
+        assertNull(store.load())
+    }
+
+    @Test
     fun `legacy v1 communication exception reconstructs prior mode without dropping counters`() {
         val underlying = InMemoryPersistentStateStore()
         val priorStates = listOf(

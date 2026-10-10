@@ -37,9 +37,21 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         self.policyStore = AppGroupDeviceActivityPolicySource(appGroupIdentifier: AppGroup.identifier)
         let callbackState = try? AppGroupDeviceActivityFileStore(appGroupIdentifier: AppGroup.identifier)
         self.usageState = callbackState
-        self.callbackLog = (try? AppGroupCallbackObservationLog(appGroupIdentifier: AppGroup.identifier, installationReader: { callbackState?.read(forKey: deviceActivityMonitorInstallationStorageKey) })) ?? InMemoryCallbackObservationLog()
+        let coordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
+        self.policyCoordination = coordination
+        if let coordination {
+            let baseCallbackLog = (try? AppGroupCallbackObservationLog(
+                appGroupIdentifier: AppGroup.identifier,
+                installationReader: { callbackState?.read(forKey: deviceActivityMonitorInstallationStorageKey) }
+            )) ?? InMemoryCallbackObservationLog()
+            self.callbackLog = CoordinatedCallbackObservationLog(log: baseCallbackLog, coordination: coordination)
+        } else {
+            // Without the cross-process lock this log cannot be safely shared.
+            // Callback enforcement also fails closed below when coordination
+            // is unavailable, so retain no misleading shared health evidence.
+            self.callbackLog = InMemoryCallbackObservationLog()
+        }
         self.managedSettings = ManagedSettingsStore()
-        self.policyCoordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
         super.init()
     }
 

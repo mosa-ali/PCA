@@ -21,6 +21,10 @@ import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js'
 import type { FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
 import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
+import type { FamilyRole } from '../../familyrbac/types.js';
+
+const FAMILY_ROLES: ReadonlySet<FamilyRole> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD']);
 
 export interface FamilyAuditEventRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -28,6 +32,8 @@ export interface FamilyAuditEventRoutesDeps {
   familyAuditEventLedger?: FamilyAuditEventLedger;
   /** Optional for buildServer compatibility; the route fails closed with 503 until the shared service is injected. */
   deviceSessionService?: Pick<DeviceSessionService, 'requireActorDeviceInFamily'>;
+  /** Required for delivery: binds the live session's exact DSK to accepted active Trust Set membership. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
@@ -58,7 +64,7 @@ function toEnvelopeDto(envelope: { envelopeId: string; keyEpoch: number; generat
 
 export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: FamilyAuditEventRoutesDeps): void {
   if (!deps.familyAuditEventLedger) return;
-  const { parentAccountService, familyAuditEventLedger, deviceSessionService } = deps;
+  const { parentAccountService, familyAuditEventLedger, deviceSessionService, trustSetRoleResolver } = deps;
 
   app.get('/api/parent/families/:familyId/audit-events', async (request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Cache-Control', 'private, no-store');
@@ -88,13 +94,32 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     if (actorToken === null) return reply.code(401).send({ error: 'unauthorized' });
 
     let actorDeviceId: string;
+    let actorDskKeyId: string;
     try {
       const identity = await deviceSessionService.requireActorDeviceInFamily(actorToken, familyId);
-      if (!identity.deviceId || identity.familyId !== familyId) return reply.code(401).send({ error: 'unauthorized' });
+      if (!identity.deviceId || !identity.dskKeyId || identity.familyId !== familyId) return reply.code(401).send({ error: 'unauthorized' });
       actorDeviceId = identity.deviceId;
+      actorDskKeyId = identity.dskKeyId;
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
       return reply.code(503).send({ error: 'device_session_unavailable' });
+    }
+
+    // A still-live device session is not proof that the device remains an
+    // active member of the accepted Trust Set. Bind the session's exact DSK
+    // before querying recipient ciphertext so a removed/rekeyed device cannot
+    // continue draining its old queue.
+    if (!trustSetRoleResolver) return reply.code(503).send({ error: 'family_authority_unavailable' });
+    let actor;
+    try {
+      actor = await trustSetRoleResolver.resolveActor(familyId, actorDeviceId, actorDskKeyId);
+    } catch {
+      return reply.code(503).send({ error: 'family_authority_unavailable' });
+    }
+    if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' || Array.isArray(actor) ||
+      actor.deviceId !== actorDeviceId || !FAMILY_ROLES.has(actor.role) ||
+      !isFamilyEpochNumber(actor.trustSetEpoch, 1) || !isFamilyEpochNumber(actor.keyEpoch, 1)) {
+      return reply.code(403).send({ error: 'forbidden' });
     }
 
     // Each encrypted envelope is recipient-keyed. A family role grants the

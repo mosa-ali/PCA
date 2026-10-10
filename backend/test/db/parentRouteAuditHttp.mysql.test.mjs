@@ -155,11 +155,23 @@ const actorDeviceAuth = new DeviceAuthService(
   clock.now,
 );
 const actorDeviceSessionService = new DeviceSessionService(actorDeviceAuth, actorSessionRepository, clock.now);
+// Test-only projection used to exercise route behavior after the accepted-Trust-Set
+// dependency. It binds the exact persisted DSK issued to each fixture actor, but
+// deliberately does not claim to verify a signed Trust Set epoch.
+const testAcceptedActorKeys = new Map();
+const testAcceptedTrustSetRoleResolver = {
+  async resolveActor(familyId, deviceId, dskKeyId) {
+    const key = `${familyId}\u0000${deviceId}\u0000${dskKeyId}`;
+    if (!testAcceptedActorKeys.has(key)) return 'DEVICE_NOT_IN_TRUST_SET';
+    return { deviceId, role: 'ADMINISTRATOR', trustSetEpoch: 1, keyEpoch: 1 };
+  },
+};
 
 async function testActorIdentity(session) {
   const deviceId = await insertFamilyDevice(session.familyId);
   const [dsk] = await actorDeviceRepository.findKeysByDeviceForFamily(session.familyId, deviceId);
   assert.ok(dsk, 'the fixture requires an active DSK row bound to its synthetic session');
+  testAcceptedActorKeys.set(`${session.familyId}\u0000${deviceId}\u0000${dsk.keyId}`, true);
   const familySessionEpoch = await actorDeviceRepository.getActiveDeviceSessionEpoch(session.familyId, deviceId);
   assert.notEqual(familySessionEpoch, null, 'the fixture requires an active persisted device and family');
   const { rawToken, tokenHash } = generateSessionToken();
@@ -203,17 +215,25 @@ function buildApp({ schedulePolicyHarness } = {}) {
     freeAccessAccountRepository: new MySqlFreeAccessAccountRepository(),
   });
   registerDashboardRoutes(app, { parentAccountService, dashboardAggregatorService });
-  registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger, deviceSessionService: actorDeviceSessionService });
-  registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger, deviceSessionService: actorDeviceSessionService });
+  registerFamilyAuditEventRoutes(app, { parentAccountService, familyAuditEventLedger,
+    deviceSessionService: actorDeviceSessionService, trustSetRoleResolver: testAcceptedTrustSetRoleResolver });
+  registerProtectionAlertRoutes(app, { parentAccountService, protectionAlertLedger,
+    deviceSessionService: actorDeviceSessionService, trustSetRoleResolver: testAcceptedTrustSetRoleResolver });
   registerWebRuleRoutes(app, {
     parentAccountService,
     deviceSessionService: actorDeviceSessionService,
+    trustSetRoleResolver: testAcceptedTrustSetRoleResolver,
     // Intentionally omit webRuleService, matching production composition.
   });
   if (schedulePolicyHarness) {
     const { epochStore, actorSessions } = schedulePolicyHarness;
+    const trustSetRoleResolver = new StoreBackedTrustSetRoleResolver({
+      epochStore,
+      deviceRepository: actorDeviceRepository,
+      verifier: { async verify() { return false; } },
+    });
     const parentActionAuthorization = new ParentActionAuthorizationService(
-      new StoreBackedTrustSetRoleResolver({ epochStore }),
+      trustSetRoleResolver,
       defaultFamilyRbacPolicyConfig,
       new MySqlActionIdempotencyLedger(),
     );
@@ -231,6 +251,7 @@ function buildApp({ schedulePolicyHarness } = {}) {
         },
       },
       parentActionAuthorization,
+      trustSetRoleResolver,
       outboundRelayService: {
         async submitBatch() {
           schedulePolicyHarness.relayCalls += 1;
@@ -285,7 +306,9 @@ test('schedule-policy route denies a real Parent session until a signed Trust Se
   try {
     const session = await registerVerifyLogin(app, `route-audit-schedule-policy-${randomUUID()}@example.test`);
     const { epochStore, actorSessions } = schedulePolicyHarness;
-    actorSessions.set('test-only-actor-session', { deviceId: 'test-parent-actor', familyId: session.familyId });
+    actorSessions.set('test-only-actor-session', {
+      deviceId: 'test-parent-actor', dskKeyId: 'test-parent-key', familyId: session.familyId,
+    });
     assert.equal(await epochStore.readLatestEpoch(session.familyId), null, 'the disposable family has no accepted signed epoch');
     const issuedAt = new Date(Date.now() - 1_000);
 

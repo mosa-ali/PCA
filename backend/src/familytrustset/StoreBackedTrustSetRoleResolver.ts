@@ -60,6 +60,7 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
   async resolveActor(
     familyId: OpaqueFamilyId,
     deviceId: OpaqueDeviceId,
+    dskKeyId?: string,
   ): Promise<ResolvedActor | ActorResolutionFailure> {
     try {
       const latest = await this.deps.epochStore.readLatestEpoch(familyId);
@@ -117,6 +118,7 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
       const member = epoch.entries.find((entry) => entry.deviceId === deviceId);
       if (
         member === undefined ||
+        (dskKeyId !== undefined && member.dskKeyId !== dskKeyId) ||
         await this.readActiveDsk(familyId, member.deviceId, member.dskKeyId, member.dskPublicKey) === null
       ) {
         return 'DEVICE_NOT_ACTIVE';

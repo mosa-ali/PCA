@@ -42,6 +42,24 @@ final class LocationCapabilityAdapterTests: XCTestCase {
         XCTAssertEqual(state, .active)
     }
 
+    func testWhenInUseReducedAccuracyWithBackgroundGrantRemainsApproximate() {
+        let state = LocationCapabilityAdapter.state(
+            authorizationStatus: .authorizedWhenInUse, accuracyAuthorization: .reducedAccuracy,
+            servicesEnabled: true, backgroundGranted: true
+        )
+        XCTAssertEqual(state, .approximate)
+    }
+
+    func testMissingBackgroundGrantRemainsPrimaryWhenAccuracyIsReduced() {
+        // Match the cross-platform capability precedence: a background
+        // limitation is surfaced before approximate precision when both apply.
+        let state = LocationCapabilityAdapter.state(
+            authorizationStatus: .authorizedWhenInUse, accuracyAuthorization: .reducedAccuracy,
+            servicesEnabled: true, backgroundGranted: false
+        )
+        XCTAssertEqual(state, .backgroundNotGranted)
+    }
+
     func testAuthorizedAlwaysWithReducedAccuracyIsApproximate() {
         let state = LocationCapabilityAdapter.state(
             authorizationStatus: .authorizedAlways, accuracyAuthorization: .reducedAccuracy,

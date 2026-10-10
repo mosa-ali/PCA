@@ -22,10 +22,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<!-- doc 07 Section 3/4: NSExtensionPointIdentifier confirmed against an
 	     Apple Frameworks Engineer's forum answer (thread 683110), not merely
-	     assumed -- re-verify at first real build per
+	     assumed; re-verify at first real build per
 	     docs/MAC_XCODE_VALIDATION_CHECKLIST.md Section 0. Note this identifier
 	     uses the "ManagedSettingsUI" prefix, distinct from ShieldAction's
-	     "ManagedSettings" (no UI) prefix below -- confirmed asymmetric, not a
+	     "ManagedSettings" (no UI) prefix below; confirmed asymmetric, not a
 	     copy-paste error. -->
 	<key>NSExtension</key>
 	<dict>

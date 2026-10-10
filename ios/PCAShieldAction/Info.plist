@@ -25,7 +25,7 @@
 	     rejection-and-correction thread (developer forum 814945): a
 	     developer's submission using "com.apple.ManagedSettingsUI.shield-
 	     action-service" was REJECTED, and Apple DTS gave
-	     "com.apple.ManagedSettings.shield-action-service" as correct --
+	     "com.apple.ManagedSettings.shield-action-service" as correct;
 	     deliberately NOT symmetric with ShieldConfiguration's identifier
 	     above. Re-verify at first real build per
 	     docs/MAC_XCODE_VALIDATION_CHECKLIST.md Section 0. -->

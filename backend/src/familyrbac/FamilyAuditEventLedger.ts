@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import {
   applyServerCiphertextFeedWindow,
   isServerCiphertextExpired,
@@ -87,7 +88,7 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
   async listForFamily(familyId: string, options: FamilyAuditEventListOptions = {}): Promise<FamilyAuditEventEnvelope[]> {
     const ascending = [...this.envelopes.values()]
       .filter((envelope) => envelope.familyId === familyId)
-      .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
+      .sort(compareEnvelopeFeedOrder);
     return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(cloneEnvelope);
   }
 
@@ -98,7 +99,7 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
   ): Promise<FamilyAuditEventEnvelope[]> {
     const ascending = [...this.envelopes.values()]
       .filter((envelope) => envelope.familyId === familyId && envelope.parentDeviceId === parentDeviceId)
-      .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
+      .sort(compareEnvelopeFeedOrder);
     return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(cloneEnvelope);
   }
 
@@ -130,4 +131,11 @@ function sameEnvelope(a: FamilyAuditEventEnvelope, b: FamilyAuditEventEnvelope):
     a.encryptedPayloadB64 === b.encryptedPayloadB64 &&
     a.nonceB64 === b.nonceB64
   );
+}
+
+/** Mirrors MySqlFamilyAuditEventLedger's generated_at_utc, envelope_id ordering (binary ID collation). */
+function compareEnvelopeFeedOrder(a: FamilyAuditEventEnvelope, b: FamilyAuditEventEnvelope): number {
+  const byGeneratedAt = a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime();
+  if (byGeneratedAt !== 0) return byGeneratedAt;
+  return Buffer.compare(Buffer.from(a.envelopeId, 'utf8'), Buffer.from(b.envelopeId, 'utf8'));
 }

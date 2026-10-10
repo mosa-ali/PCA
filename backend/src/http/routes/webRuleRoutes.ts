@@ -32,18 +32,23 @@ import { ParentAccountError, type ParentAccountService } from '../../parentaccou
 import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
+import type { TrustSetRoleResolver, ResolvedActor, ActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
+import type { FamilyRole } from '../../familyrbac/types.js';
 import { WebRuleError, type WebRuleService } from '../../web/WebRuleStore.js';
 import type { WebRule, WebRuleListType } from '../../web/types.js';
 
 const MAX_BODY_BYTES = 2048;
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_DOMAIN_INPUT_LENGTH = 2048; // generous raw-input ceiling; WebRuleService.canonicalizeDomain enforces the real RFC 1035 shape/length
+const FAMILY_ROLES: ReadonlySet<string> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD']);
 
 export interface WebRuleRoutesDeps {
   parentAccountService: ParentAccountService;
   deviceSessionService: DeviceSessionService;
   /** Optional purely so existing buildServer() test callers that don't exercise this route need no change -- omitting it fails the route closed with 503 (matching childPolicyRoutes.ts's own `not_configured` convention), never a silent allow. */
   parentActionAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
+  /** Binds a browser's device-session DSK to current accepted membership before Web Rules reads or mutations. */
+  trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   webRuleService?: Pick<WebRuleService, 'setParentRule' | 'removeParentRule' | 'listParentRules'>;
   now?: () => Date;
 }
@@ -102,7 +107,11 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
   }
 
   /** Same actor-identity-binding rationale as childPolicyRoutes.ts's requireActorDevice -- see this file's own header comment. */
-  async function requireActorDevice(request: FastifyRequest, reply: FastifyReply, familyId: string): Promise<string | null> {
+  async function requireActorDevice(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    familyId: string,
+  ): Promise<{ deviceId: string; dskKeyId: string } | null> {
     const authorizationHeader = request.headers.authorization;
     if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
       await reply.code(401).send({ error: 'actor_device_session_required' });
@@ -110,7 +119,35 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
     }
     try {
       const identity = await deps.deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
-      return identity.deviceId;
+      if (!identity.deviceId || identity.familyId !== familyId || typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
+        await reply.code(401).send({ error: 'actor_device_session_invalid' });
+        return null;
+      }
+      if (!deps.trustSetRoleResolver) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return null;
+      }
+      let actor: ResolvedActor | ActorResolutionFailure;
+      try {
+        actor = await deps.trustSetRoleResolver.resolveActor(familyId, identity.deviceId, identity.dskKeyId);
+      } catch {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return null;
+      }
+      if (typeof actor === 'string') {
+        await reply.code(403).send({ error: 'forbidden' });
+        return null;
+      }
+      if (
+        typeof actor !== 'object' || actor === null || Array.isArray(actor) ||
+        actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role as FamilyRole) ||
+        !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
+        !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1
+      ) {
+        await reply.code(503).send({ error: 'authority_unavailable' });
+        return null;
+      }
+      return { deviceId: identity.deviceId, dskKeyId: identity.dskKeyId };
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) {
         await reply.code(401).send({ error: 'actor_device_session_invalid' });
@@ -129,7 +166,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
   async function authorizeEditChildPolicy(
     reply: FastifyReply,
     familyId: string,
-    actorDeviceId: string,
+    actor: { deviceId: string; dskKeyId: string },
     childProfileId: string,
   ): Promise<boolean> {
     if (!deps.parentActionAuthorization) {
@@ -140,7 +177,8 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
     const issuedAt = now();
     const decision = await deps.parentActionAuthorization.authorize({
       familyId,
-      actorDeviceId,
+      actorDeviceId: actor.deviceId,
+      actorDskKeyId: actor.dskKeyId,
       operation: 'EDIT_CHILD_POLICY',
       targetScope: { kind: 'CHILD_PROFILE', id: childProfileId },
       issuedAt,
@@ -169,10 +207,10 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
         return reply.code(400).send({ error: 'invalid_request' });
       }
 
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
+      const actor = await requireActorDevice(request, reply, session.familyId);
+      if (!actor) return;
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
-      if (!(await authorizeEditChildPolicy(reply, session.familyId, actorDeviceId, childProfileId))) return;
+      if (!(await authorizeEditChildPolicy(reply, session.familyId, actor, childProfileId))) return;
 
       const rules = await deps.webRuleService.listParentRules(session.familyId);
       return reply.code(200).send({ rules: rules.map(toRuleDto) });
@@ -188,8 +226,8 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!session) return;
       if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
+      const actor = await requireActorDevice(request, reply, session.familyId);
+      if (!actor) return;
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
@@ -207,7 +245,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
         return reply.code(400).send({ error: 'invalid_request' });
       }
 
-      if (!(await authorizeEditChildPolicy(reply, session.familyId, actorDeviceId, childProfileId))) return;
+      if (!(await authorizeEditChildPolicy(reply, session.familyId, actor, childProfileId))) return;
 
       try {
         const source = body.listType === 'ALLOW' ? 'PARENT_ALLOWLIST' : 'PARENT_DENYLIST';
@@ -232,8 +270,8 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!session) return;
       if (!(await requireAdministrator(session.accountId, session.familyId, reply))) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
-      if (!actorDeviceId) return;
+      const actor = await requireActorDevice(request, reply, session.familyId);
+      if (!actor) return;
       if (!deps.webRuleService) return reply.code(503).send({ error: 'not_configured' });
 
       const { childProfileId } = request.params as { childProfileId?: string };
@@ -251,7 +289,7 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
         return reply.code(400).send({ error: 'invalid_request' });
       }
 
-      if (!(await authorizeEditChildPolicy(reply, session.familyId, actorDeviceId, childProfileId))) return;
+      if (!(await authorizeEditChildPolicy(reply, session.familyId, actor, childProfileId))) return;
 
       try {
         await deps.webRuleService.removeParentRule(session.familyId, body.domain, body.listType);

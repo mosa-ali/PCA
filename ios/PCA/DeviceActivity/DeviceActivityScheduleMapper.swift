@@ -125,8 +125,18 @@ public enum DeviceActivityScheduleMapper {
     /// of calendar day, exactly like `ScheduleEngine.isWindowActive`'s own
     /// cross-midnight handling.
     public static func schedule(for window: ScheduleWindow) -> DeviceActivitySchedule {
-        let startComponents = DateComponents(hour: window.start.hour, minute: window.start.minute)
-        let endComponents = DateComponents(hour: window.end.hour, minute: window.end.minute)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = window.timeZone
+        var startComponents = DateComponents()
+        startComponents.calendar = calendar
+        startComponents.timeZone = window.timeZone
+        startComponents.hour = window.start.hour
+        startComponents.minute = window.start.minute
+        var endComponents = DateComponents()
+        endComponents.calendar = calendar
+        endComponents.timeZone = window.timeZone
+        endComponents.hour = window.end.hour
+        endComponents.minute = window.end.minute
         // `repeats: true` -- Device Activity re-triggers this schedule every
         // matching day without the host app needing to reschedule daily;
         // day-of-week filtering itself is not a DeviceActivitySchedule

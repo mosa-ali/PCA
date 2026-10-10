@@ -14,6 +14,19 @@ import org.pca.app.persistence.PersistenceTestSupport
 import org.pca.app.persistence.entity.SourceConfidence
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.platform.UsageAccessState
+import org.pca.app.platform.UsageClockBridge
+import org.pca.app.platform.UsageClockSample
+import org.pca.app.platform.UsageEvent
+import org.pca.app.platform.UsageEventType
+import org.pca.app.platform.UsageObservationBatch
+import org.pca.app.platform.UsageObservationSource
+import org.pca.app.platform.UsageObservedEvent
+import org.pca.app.platform.UsageQueryStatus
+import org.pca.app.runtime.FakeMonotonicTimeSource
+import org.pca.app.runtime.FakeWallClockTimeSource
+import org.pca.app.runtime.usage.UsageAppToken
+import org.pca.app.runtime.usage.InMemoryUsageObservationSnapshotStore
+import org.pca.app.runtime.usage.UsageSessionRecorder
 import org.robolectric.RobolectricTestRunner
 
 private const val FAMILY = "family-1"
@@ -38,9 +51,12 @@ class ModeAAndroidUsageAdapterTest {
 
     @Test
     fun `sums only YouTube-package usage sessions into an aggregate duration, labeled app usage only`() = runTest {
-        usageSessions.record("s1", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
-        usageSessions.record("s2", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 600_000L, 900_000L, 300_000L, SourceConfidence.PLATFORM_API)
+        usageSessions.record("s1", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
+        usageSessions.record("s2", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 600_000L, 900_000L, 300_000L, SourceConfidence.PLATFORM_API)
         usageSessions.record("s3", DEVICE, "com.other.app", 0L, 5_000_000L, 5_000_000L, SourceConfidence.PLATFORM_API)
+        // A raw package string is outside the recorder contract and must never alias the
+        // opaque package token used by production capture.
+        usageSessions.record("s4", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 5_000_000L, 5_000_000L, SourceConfidence.PLATFORM_API)
 
         val adapter = ModeAAndroidUsageAdapter(usageSessions, accessState = { UsageAccessState.GRANTED })
         val evidence = adapter.buildEvidence(FAMILY, PROFILE, DEVICE)
@@ -52,8 +68,64 @@ class ModeAAndroidUsageAdapterTest {
     }
 
     @Test
+    fun `recorder-produced opaque YouTube token contributes and raw package-name decoy is ignored`() = runTest {
+        var elapsedNow = 0L
+        var wallNow = 1_000_000L
+        var events = listOf(
+            UsageEvent(YOUTUBE_APP_PACKAGE_NAME, UsageEventType.FOREGROUND, 100L),
+            UsageEvent(YOUTUBE_APP_PACKAGE_NAME, UsageEventType.BACKGROUND, 1_000L),
+        )
+        val source = object : UsageObservationSource {
+            override fun accessState() = UsageAccessState.GRANTED
+            override fun queryEventsSince(elapsedRealtimeMillis: Long) = events
+            override fun queryObservationBatchSince(elapsedRealtimeMillis: Long): UsageObservationBatch {
+                val sample = UsageClockSample(elapsedNow, wallNow)
+                return UsageObservationBatch(
+                    events.filter { it.elapsedRealtimeMillis >= elapsedRealtimeMillis }
+                        .map { UsageObservedEvent(it, 1_000_000L + it.elapsedRealtimeMillis) },
+                    sample,
+                    sample,
+                    UsageClockBridge.wallAtElapsed(elapsedRealtimeMillis, sample),
+                    UsageAccessState.GRANTED,
+                    UsageQueryStatus.OBSERVED,
+                )
+            }
+        }
+        val monotonic = FakeMonotonicTimeSource(0L)
+        val wallClock = FakeWallClockTimeSource(1_000_000L)
+        val recorder = UsageSessionRecorder(
+            source,
+            usageSessions,
+            monotonic,
+            wallClock,
+            InMemoryUsageObservationSnapshotStore(),
+            { DEVICE },
+            "boot-1",
+        )
+
+        // First poll establishes coverage; the second captures and persists the complete session.
+        recorder.poll()
+        elapsedNow = 1_001L
+        wallNow = 1_001_001L
+        monotonic.nowNanos = elapsedNow * 1_000_000L
+        wallClock.nowMillis = wallNow
+        val recorded = recorder.poll()
+        assertEquals(1, recorded.recordedSessionCount)
+
+        // This plaintext decoy must not match the canonical persisted token.
+        usageSessions.record("raw-decoy", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 5_000_000L, 5_000_000L, SourceConfidence.PLATFORM_API)
+
+        val evidence = ModeAAndroidUsageAdapter(usageSessions, accessState = { UsageAccessState.GRANTED })
+            .buildEvidence(FAMILY, PROFILE, DEVICE)
+
+        assertEquals(900L, evidence.durationMs)
+        assertEquals(UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), usageSessions.getForDevice(DEVICE)
+            .single { it.durationMillis == 900L }.appOrCategoryToken)
+    }
+
+    @Test
     fun `revoked usage access reports a coverage gap, never a fabricated zero duration`() = runTest {
-        usageSessions.record("s1", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
+        usageSessions.record("s1", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
 
         val adapter = ModeAAndroidUsageAdapter(usageSessions, accessState = { UsageAccessState.DENIED })
         val evidence = adapter.buildEvidence(FAMILY, PROFILE, DEVICE)
@@ -75,7 +147,7 @@ class ModeAAndroidUsageAdapterTest {
 
     @Test
     fun `no video-level history is fabricated or reported -- adapter output carries only aggregate fields`() = runTest {
-        usageSessions.record("s1", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
+        usageSessions.record("s1", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
 
         val adapter = ModeAAndroidUsageAdapter(usageSessions, accessState = { UsageAccessState.GRANTED })
         val evidence = adapter.buildEvidence(FAMILY, PROFILE, DEVICE)

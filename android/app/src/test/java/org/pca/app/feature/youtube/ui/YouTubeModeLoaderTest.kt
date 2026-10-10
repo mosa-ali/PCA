@@ -18,6 +18,7 @@ import org.pca.app.persistence.PersistenceTestSupport
 import org.pca.app.persistence.entity.SourceConfidence
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.platform.UsageAccessState
+import org.pca.app.runtime.usage.UsageAppToken
 import org.robolectric.RobolectricTestRunner
 
 private const val FAMILY = "family-1"
@@ -54,7 +55,7 @@ class YouTubeModeLoaderTest {
 
     @Test
     fun `SUCCESS -- a trusted identity with granted usage access resolves to a Success state carrying real measured evidence`() = runTest {
-        usageSessions.record("s1", DEVICE, YOUTUBE_APP_PACKAGE_NAME, 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
+        usageSessions.record("s1", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
         val loader = YouTubeModeLoader(
             identityProvider = FakeIdentityProvider(WebProtectionIdentity.Trusted(FAMILY, PROFILE, DEVICE)),
             usageAdapter = ModeAAndroidUsageAdapter(usageSessions, accessState = { UsageAccessState.GRANTED }),

@@ -47,7 +47,7 @@ final class PolicySyncDecoderTests: XCTestCase {
             timeZoneIdentifier: timeZoneIdentifier,
             windows: [
                 StoredScheduleWindow(
-                    id: "bedtime", kind: .bedtime, daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+                    id: "bedtime", kind: .bedtime, daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
                     start: StoredTimeOfDay(hour: 22, minute: 0), end: StoredTimeOfDay(hour: 6, minute: 0),
                     appScope: .all
                 ),
@@ -62,13 +62,17 @@ final class PolicySyncDecoderTests: XCTestCase {
     func testSerializedWindowTimezonesSurviveDecodingAndLegacyFallbackIsExplicit() throws {
         let original = wellFormedPolicy()
         let windows = [
-            StoredScheduleWindow(id: "utc", kind: .bedtime, daysOfWeek: [1,2,3,4,5,6,7], start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0), appScope: .all, timezone: "UTC"),
-            StoredScheduleWindow(id: "ny", kind: .schoolMode, daysOfWeek: [1,2,3,4,5,6,7], start: .init(hour: 9, minute: 0), end: .init(hour: 15, minute: 0), appScope: .all, timezone: "America/New_York"),
+            StoredScheduleWindow(id: "utc", kind: .bedtime, daysOfWeek: [0,1,2,3,4,5,6], start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0), appScope: .all, timezone: "UTC"),
+            StoredScheduleWindow(id: "ny", kind: .schoolMode, daysOfWeek: [0,1,2,3,4,5,6], start: .init(hour: 9, minute: 0), end: .init(hour: 15, minute: 0), appScope: .all, timezone: "America/New_York"),
             StoredScheduleWindow(id: "legacy", kind: .blockPeriod, daysOfWeek: [2], start: .init(hour: 10, minute: 0), end: .init(hour: 11, minute: 0), appScope: .all)
         ]
         let stored = StoredDeviceActivityPolicy(schemaVersion: 1, activityId: original.activityId, appToken: original.appToken, timeZoneIdentifier: "Asia/Riyadh", windows: windows, bonusGrants: [], exceptions: [], dailyLimit: nil, enforcementCapability: .enforced)
         guard case .success(let decoded) = PolicySyncDecoder.decode(encode(stored)) else { return XCTFail("decode failed") }
         XCTAssertEqual(decoded.windows.map { $0.timeZone.identifier }, [TimeZone(identifier: "UTC")!.identifier, "America/New_York", "Asia/Riyadh"])
+        XCTAssertEqual(decoded.windows[0].daysOfWeek, Set(1...7),
+            "contract weekday indices must translate to Calendar's Sunday=1 numbering")
+        XCTAssertEqual(decoded.windows[1].daysOfWeek, Set(1...7))
+        XCTAssertEqual(decoded.windows[2].daysOfWeek, Set([3]), "contract Tuesday index 2 maps to Calendar Tuesday index 3")
         let triggers = try DeviceActivityScheduleMapper.boundaryTriggers(for: decoded, now: Date())
         XCTAssertTrue(triggers.contains(.recurring(timeZoneIdentifier: decoded.windows[1].timeZone.identifier, hour: 9, minute: 0)))
         let at = ISO8601DateFormatter().date(from: "2025-06-03T01:00:00Z")!
@@ -76,6 +80,37 @@ final class PolicySyncDecoderTests: XCTestCase {
         XCTAssertFalse(ScheduleEngine.isWindowActive(decoded.windows[1], now: at))
         let schoolTime = ISO8601DateFormatter().date(from: "2025-06-03T13:00:00Z")!
         XCTAssertTrue(ScheduleEngine.isWindowActive(decoded.windows[1], now: schoolTime), "09:00 New York must not be evaluated as 16:00 policy-local Riyadh")
+    }
+
+    func testContractWeekdaysMapSundayAndEveryOtherDayBeforeEvaluation() throws {
+        let allDays = wellFormedPolicy()
+        guard case .success(let decodedAllDays) = PolicySyncDecoder.decode(encode(allDays)) else {
+            return XCTFail("all seven shared-contract weekdays should decode")
+        }
+        XCTAssertEqual(decodedAllDays.windows[0].daysOfWeek, Set(1...7))
+
+        let sundayWindow = StoredScheduleWindow(id: "sunday", kind: .bedtime, daysOfWeek: [0],
+            start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0), appScope: .all, timezone: "UTC")
+        let source = wellFormedPolicy()
+        let sundayPolicy = StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion,
+            activityId: source.activityId, appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier,
+            windows: [sundayWindow], bonusGrants: [], exceptions: [], dailyLimit: nil,
+            enforcementCapability: .enforced)
+        guard case .success(let decodedSunday) = PolicySyncDecoder.decode(encode(sundayPolicy)) else {
+            return XCTFail("the contract's Sunday index 0 must decode")
+        }
+        XCTAssertEqual(decodedSunday.windows[0].daysOfWeek, [1])
+
+        func decision(_ instant: String) -> ScheduleDecisionKind {
+            ScheduleEngine.evaluate(ScheduleEvaluationInput(
+                nowUtc: ISO8601DateFormatter().date(from: instant)!, timeZone: decodedSunday.timeZone,
+                appToken: decodedSunday.appToken, windows: decodedSunday.windows,
+                bonusGrants: decodedSunday.bonusGrants, exceptions: decodedSunday.exceptions,
+                dailyLimit: decodedSunday.dailyLimit, enforcementCapability: decodedSunday.enforcementCapability
+            )).kind
+        }
+        XCTAssertEqual(decision("2026-01-04T22:30:00Z"), .blockedBedtime, "2026-01-04 is Sunday")
+        XCTAssertEqual(decision("2026-01-10T22:30:00Z"), .allowed, "2026-01-10 is Saturday, not Sunday")
     }
 
     // MARK: 1. Populated storage decodes a real policy.
@@ -177,6 +212,24 @@ final class PolicySyncDecoderTests: XCTestCase {
             return XCTFail("expected invalidWindowConfig failure")
         }
         XCTAssertFalse(errors.isEmpty)
+    }
+
+    func testOutOfContractWeekdayIndicesAreRejectedBeforeCalendarConversion() {
+        let source = wellFormedPolicy()
+        for invalidDays in [Set([-1]), Set([7]), Set([Int.max])] {
+            let invalidWindow = StoredScheduleWindow(id: "bad-day", kind: .bedtime,
+                daysOfWeek: invalidDays, start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0),
+                appScope: .all, timezone: "UTC")
+            let malformed = StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion,
+                activityId: source.activityId, appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier,
+                windows: [invalidWindow], bonusGrants: [], exceptions: [], dailyLimit: nil,
+                enforcementCapability: .enforced)
+            guard case .failure(.invalidWindowConfig(let errors)) = PolicySyncDecoder.decode(encode(malformed)) else {
+                XCTFail("weekday values outside the shared 0...6 contract must be rejected: \(invalidDays)")
+                continue
+            }
+            XCTAssertTrue(errors.contains { $0.contains("daysOfWeek") }, "\(invalidDays)")
+        }
     }
 
     func testEmptyActivityIdIsRejected() {

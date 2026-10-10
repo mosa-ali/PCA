@@ -38,13 +38,13 @@ export interface FamilyTrustSetEntry {
  * state (PCA-SEC-017: "every device MUST independently verify... against
  * its own locally-held copy of the family trust set").
  *
- * `supersedesEpoch` is lineage/audit metadata only -- acceptance does NOT
- * require exact N -> N+1 chaining (see FamilyTrustSetEngine), since a
- * device that was offline through several rotations must be able to adopt
- * the latest epoch directly on reconnect (doc 09 Section 3.5/PCA-SEC-020).
- * Genesis MUST use `null`. Ordinary non-genesis epochs may also use `null`
- * when lineage metadata is omitted; acceptance is governed by the monotonic
- * epoch/key floors and active-owner signature, not an exact predecessor link.
+ * `supersedesEpoch` records signed lineage. Receiving-device acceptance in
+ * FamilyTrustSetEngine does not require N -> N+1 numbering, so a device can
+ * adopt a later epoch directly when the stored active owner also signed it.
+ * Server-side ordinary acceptance is stricter: each newer candidate must
+ * name the latest accepted server head as its predecessor, while its numeric
+ * epoch may still skip. Genesis MUST use `null`; the server requires that
+ * predecessor on every accepted non-genesis epoch.
  *
  * Doc 09 Section 3.2 also lists an "authorization rule" field and permits
  * "signature(s)" (plural, for the Section 10 recovery-transaction path).

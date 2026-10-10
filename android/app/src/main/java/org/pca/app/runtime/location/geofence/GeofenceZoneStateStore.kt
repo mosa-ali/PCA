@@ -2,6 +2,9 @@ package org.pca.app.runtime.location.geofence
 
 import org.pca.app.foundation.PersistentStateStore
 
+/** Persisted debounce state was present but unreadable, so it cannot safely be treated as absent. */
+class CorruptGeofenceZoneStateException : IllegalStateException("Safe Zone debounce state is unreadable")
+
 /**
  * Durable local storage for each zone's [GeofenceZoneState] (confirmed membership + in-progress
  * debounce candidate), keyed by family, device, and zone so another identity cannot inherit this
@@ -31,10 +34,8 @@ class GeofenceZoneStateStore(
 
     internal fun load(scope: GeofenceStorageScope, zoneId: String): GeofenceZoneState? {
         if (!scope.isValid() || !ZONE_TOKEN.matches(zoneId)) return null
-        val raw = try { GeofenceDurableStorage.read(store, scope.zoneStateStoreKey(KEY_PREFIX, zoneId)) }
-            catch (_: GeofencePersistenceException) { return null }
-            ?: return null
-        return decode(zoneId, raw)
+        val raw = GeofenceDurableStorage.read(store, scope.zoneStateStoreKey(KEY_PREFIX, zoneId)) ?: return null
+        return decode(zoneId, raw) ?: throw CorruptGeofenceZoneStateException()
     }
 
     internal fun save(scope: GeofenceStorageScope, state: GeofenceZoneState) {
@@ -42,7 +43,12 @@ class GeofenceZoneStateStore(
         require(isSane(state)) { "Invalid Safe Zone debounce state" }
         synchronized(store.coordinationLock) {
             check(currentScope() == scope) { "Safe Zone family authority changed" }
-            GeofenceDurableStorage.write(store, scope.zoneStateStoreKey(KEY_PREFIX, state.zoneId), encode(state))
+            val key = scope.zoneStateStoreKey(KEY_PREFIX, state.zoneId)
+            val existing = GeofenceDurableStorage.read(store, key)
+            if (existing != null && decode(state.zoneId, existing) == null) {
+                throw CorruptGeofenceZoneStateException()
+            }
+            GeofenceDurableStorage.write(store, key, encode(state))
         }
     }
 
@@ -65,11 +71,12 @@ class GeofenceZoneStateStore(
         state.candidateStreak.toString(),
         state.lastEvaluatedMonotonicNanos.toString(),
         state.lastAcceptedSampleElapsedRealtimeMillis?.toString() ?: "-",
+        state.bootInstanceId ?: "-",
     ).joinToString(SEP)
 
     private fun decode(zoneId: String, raw: String): GeofenceZoneState? {
         val parts = raw.split(SEP)
-        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT && parts.size != BOOT_FIELD_COUNT) return null
         return try {
             val state = GeofenceZoneState(
                 zoneId = zoneId,
@@ -78,6 +85,7 @@ class GeofenceZoneStateStore(
                 candidateStreak = parts[2].toInt(),
                 lastEvaluatedMonotonicNanos = parts[3].toLong(),
                 lastAcceptedSampleElapsedRealtimeMillis = parts.getOrNull(4)?.takeUnless { it == "-" }?.toLong(),
+                bootInstanceId = parts.getOrNull(5)?.takeUnless { it == "-" },
             )
             state.takeIf(::isSane)
         } catch (_: IllegalArgumentException) {
@@ -88,6 +96,7 @@ class GeofenceZoneStateStore(
     private fun isSane(state: GeofenceZoneState): Boolean =
         state.candidateStreak >= 0 && state.lastEvaluatedMonotonicNanos >= 0L &&
             (state.lastAcceptedSampleElapsedRealtimeMillis == null || state.lastAcceptedSampleElapsedRealtimeMillis >= 0L) &&
+            (state.bootInstanceId == null || BOOT_TOKEN.matches(state.bootInstanceId)) &&
             (state.candidateStreak == 0 ||
                 (state.candidateMembership != GeofenceMembership.UNKNOWN &&
                     state.candidateMembership != state.confirmedMembership))
@@ -98,5 +107,7 @@ class GeofenceZoneStateStore(
         const val SEP = "|"
         const val LEGACY_FIELD_COUNT = 4
         const val FIELD_COUNT = 5
+        const val BOOT_FIELD_COUNT = 6
+        val BOOT_TOKEN = Regex("^[A-Za-z0-9_-]{1,128}$")
     }
 }

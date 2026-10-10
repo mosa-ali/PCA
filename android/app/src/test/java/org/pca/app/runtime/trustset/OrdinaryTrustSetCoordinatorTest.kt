@@ -194,6 +194,102 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(2, store.read()!!.accepted.trustSetEpoch)
         assertEquals(bootstrapAnchor, store.read()!!.rootAnchor)
     }
+
+    @Test fun `restart status miss replays exact durable request without signing again`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pendingAccepted = record(epoch(2))
+        installPending(store, pendingAccepted.request)
+        val root = store.read()!!.accepted
+        val submitRequests = mutableListOf<OrdinaryEpochRequest>()
+        var failFirstSubmit = true
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest) =
+                OrdinaryEpochResponse(OrdinaryEpochOutcome.NOT_ACCEPTED, null, root)
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                submitRequests += request
+                if (failFirstSubmit) {
+                    failFirstSubmit = false
+                    throw java.io.IOException("submission outcome unknown")
+                }
+                val accepted = pendingAccepted.copy(request = request)
+                return OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, accepted, accepted)
+            }
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = error("no catch-up expected")
+            override suspend fun getHead(familyId: String) = error("no prepare expected")
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("pending request must not be re-signed")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertFalse(coordinator.reconcile())
+        assertEquals(pendingAccepted.request, store.read()!!.pending)
+        assertTrue(coordinator.reconcile())
+
+        assertEquals(listOf(pendingAccepted.request, pendingAccepted.request), submitRequests)
+        assertEquals(pendingAccepted.request, store.read()!!.accepted.request)
+        assertNull(store.read()!!.pending)
+    }
+
+    @Test fun `contradictory not accepted status cannot authorize a submit retry`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pendingAccepted = record(epoch(2))
+        installPending(store, pendingAccepted.request)
+        val initial = store.read()!!
+        val root = initial.accepted
+        var submitCalls = 0
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest) =
+                OrdinaryEpochResponse(OrdinaryEpochOutcome.NOT_ACCEPTED, pendingAccepted, root)
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                submitCalls++
+                error("contradictory status must not trigger a submit")
+            }
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = error("no catch-up expected")
+            override suspend fun getHead(familyId: String) = error("no catch-up expected")
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) = error("pending request must not be re-signed")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertFalse(coordinator.reconcile())
+
+        assertEquals(0, submitCalls)
+        assertEquals(initial, store.read())
+    }
+
+    @Test fun `restart status miss with advanced head waits for verified catch up before replay`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pending = record(epoch(2))
+        installPending(store, pending.request)
+        val root = store.read()!!.accepted
+        val advancedHead = record(epoch(3))
+        var submitCalls = 0
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest) =
+                OrdinaryEpochResponse(OrdinaryEpochOutcome.NOT_ACCEPTED, null, advancedHead)
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                submitCalls++
+                error("stale request must not submit before catch-up")
+            }
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = error("no catch-up expected")
+            override suspend fun getHead(familyId: String) = error("no prepare expected")
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("pending request must not be re-signed")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertFalse(coordinator.reconcile())
+
+        assertEquals(0, submitCalls)
+        assertEquals(pending.request, store.read()!!.pending)
+        assertEquals(root, store.read()!!.accepted)
+    }
     @Test fun exactStatusProofAdvancesPendingBeforeNewerHeadCatchUp() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         val acceptedPending = record(epoch(2))
@@ -219,6 +315,7 @@ class OrdinaryTrustSetCoordinatorTest {
 
         // The next reconciliation verifies the newer head from the now-durable epoch-2 floor.
         api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, advancedHead, advancedHead)
+        api.records[2] = acceptedPending
         assertEquals(1, coordinator.catchUp(1))
         assertEquals(advancedHead, store.read()!!.accepted)
         assertNull(store.read()!!.pending)
@@ -250,7 +347,10 @@ class OrdinaryTrustSetCoordinatorTest {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         val accepted = record(epoch(2))
         installPending(store, accepted.request)
-        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, accepted, accepted) }
+        val api = Api().apply {
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, accepted, accepted)
+            records[1] = store.read()!!.accepted
+        }
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("no resign") }
         val root = store.read()!!.accepted
         val rootBytes = Base64.getDecoder().decode(root.request.canonicalEpochBase64)
@@ -276,7 +376,10 @@ class OrdinaryTrustSetCoordinatorTest {
         val accepted = record(epoch(2))
         installPending(store, accepted.request)
         val bootstrapAnchor = store.read()!!.rootAnchor
-        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, accepted, accepted) }
+        val api = Api().apply {
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, accepted, accepted)
+            records[1] = store.read()!!.accepted
+        }
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("no resign") }
         val coordinator = OrdinaryTrustSetCoordinator(store, api, signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
         assertEquals(1, coordinator.catchUp(1))
@@ -292,7 +395,7 @@ class OrdinaryTrustSetCoordinatorTest {
         val root = durable.read()!!.accepted
         val first = record(epoch(2))
         val head = record(epoch(3))
-        val api = Api().apply { this.head = head; records[2] = first }
+        val api = Api().apply { this.head = head; records[1] = root; records[2] = first }
         var writes = 0
         val simulatedDeath = object : OrdinaryEpochStore {
             override fun read() = durable.read()
@@ -389,7 +492,10 @@ class OrdinaryTrustSetCoordinatorTest {
         installPending(store, localPending.request)
         val competing = record(epoch(2).copy(issuedAt = "2026-10-09T00:01:00.000Z"))
         assertNotEquals(localPending.request, competing.request)
-        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, competing, competing) }
+        val api = Api().apply {
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, competing, competing)
+            records[1] = store.read()!!.accepted
+        }
         val signer = object : DskSignatureEngine {
             override fun signCanonicalDer(alias: String, message: ByteArray) = ByteArray(64) { 2 }
         }
@@ -424,17 +530,70 @@ class OrdinaryTrustSetCoordinatorTest {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         seedStore(store)
         val skipped = record(epoch(5).copy(supersedesEpoch = 1))
-        val api = Api().apply { response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, skipped, skipped) }
+        val api = Api().apply {
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, skipped, skipped)
+            records[1] = store.read()!!.accepted
+        }
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("no resign") }
         val coordinator = OrdinaryTrustSetCoordinator(store, api, signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
         assertEquals(1, coordinator.catchUp(1))
         assertEquals(5, store.read()!!.accepted.trustSetEpoch)
     }
-    @Test fun `catch-up advances to a head beyond the bounded record window`() = runBlocking {
+    @Test fun `catch-up proves skipped epoch links back to the exact local floor`() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         seedStore(store)
+        val third = record(epoch(3).copy(supersedesEpoch = 1))
+        val eighth = record(epoch(8).copy(supersedesEpoch = 3))
+        val api = Api().apply {
+            records[3] = third
+            records[1] = store.read()!!.accepted
+            head = eighth
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("catch-up must not sign")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        assertEquals(2, coordinator.catchUp(maximumRecords = 2))
+
+        assertEquals(eighth, store.read()!!.accepted)
+        assertEquals(2, api.epochReads)
+    }
+
+    @Test fun `catch-up rejects a same-epoch server anchor that differs from local accepted state`() = runBlocking {
+        val root = record(epoch(1))
+        val localAnchor = record(epoch(2).copy(issuedAt = "2026-10-09T00:01:00.000Z"))
+        val indexedServerAnchor = record(epoch(2))
+        val serverHead = record(epoch(3).copy(supersedesEpoch = 2))
+        val store = MemoryStore(OrdinaryEpochState(localAnchor, rootAnchor = root))
+        val initial = store.read()
+        val api = Api().apply {
+            head = serverHead
+            records[2] = indexedServerAnchor
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) = error("catch-up must not sign")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+
+        try {
+            coordinator.catchUp()
+            fail("a different signed record at the local anchor epoch must not anchor catch-up")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals(1, api.epochReads)
+        assertEquals(initial, store.read())
+    }
+
+    @Test fun `catch-up beyond the bounded proof chain leaves accepted and pending custody unchanged`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pending = record(epoch(2))
+        installPending(store, pending.request)
+        val original = store.read()!!
         val api = Api()
-        val accepted = (3..34).associateWith { record(epoch(it)) }
+        val accepted = (2..34).associateWith { record(epoch(it)) }
         api.records.putAll(accepted)
         api.head = accepted.getValue(34)
         val noResign = object : DskSignatureEngine {
@@ -443,9 +602,10 @@ class OrdinaryTrustSetCoordinatorTest {
         val coordinator = OrdinaryTrustSetCoordinator(store, api, noResign,
             OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
 
-        assertEquals(32, coordinator.catchUp(maximumRecords = 32))
-        assertEquals(accepted.getValue(34), store.read()!!.accepted)
-        assertTrue("the walk must stop at the bounded proof chain", api.epochReads <= 31)
+        assertEquals(0, coordinator.catchUp(maximumRecords = 32))
+        assertEquals("an over-budget chain must not persist a partial suffix or clear pending", original, store.read())
+        assertEquals(pending.request, store.read()!!.pending)
+        assertTrue("the walk stops before fetching an over-budget proof hop", api.epochReads <= 31)
     }
 
     @Test fun `invalid hop inside the bounded proof chain cannot partially advance the floor`() = runBlocking {
@@ -453,9 +613,10 @@ class OrdinaryTrustSetCoordinatorTest {
         seedStore(store)
         val initial = store.read()!!
         val api = Api()
-        val accepted = (3..34).associateWith { record(epoch(it)) }
+        val accepted = (2..33).associateWith { record(epoch(it)) }
         api.records.putAll(accepted)
-        api.head = accepted.getValue(34)
+        api.records[1] = initial.accepted
+        api.head = accepted.getValue(33)
         val noResign = object : DskSignatureEngine {
             override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("catch-up must not sign")
         }
@@ -472,19 +633,41 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals("the entire fetched proof chain is checked before any CAS", initial, store.read())
     }
 
-    @Test fun nullSupersedesIsAcceptedAndPersistedEqualHeadMustMatchExactly() = runBlocking {
+    @Test fun nullLineageHeadCannotAdvanceFloorOrClearPendingCustody() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pending = record(epoch(2))
+        installPending(store, pending.request)
+        val initial = store.read()!!
+        val head = record(epoch(5).copy(supersedesEpoch = null))
+        val api = Api().apply { this.head = head }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) = error("catch-up must not sign")
+        }
+
+        try {
+            OrdinaryTrustSetCoordinator(store, api, noResign,
+                OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias").catchUp(1)
+            fail("an ordinary head without a predecessor link must be rejected")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals(initial, store.read())
+        assertEquals(pending.request, store.read()!!.pending)
+        assertEquals(0, api.epochReads)
+    }
+
+    @Test fun linkedHeadIsPersistedAndEqualHeadMustMatchExactly() = runBlocking {
         val backing = DiskBackedPersistentStateStore()
         val store = PersistentOrdinaryEpochStore(backing)
         seedStore(store)
         val root = store.read()!!.rootAnchor!!
-        val head = record(epoch(5).copy(supersedesEpoch = null))
+        val head = record(epoch(5).copy(supersedesEpoch = 1))
         val rootBytes = Base64.getDecoder().decode(root.request.canonicalEpochBase64)
         val headBytes = Base64.getDecoder().decode(head.request.canonicalEpochBase64)
         val verifier = OrdinaryEpochSignatureVerifier { _, bytes, signature ->
             (bytes.contentEquals(rootBytes) && signature == root.request.signatureBase64) ||
                 (bytes.contentEquals(headBytes) && signature == head.request.signatureBase64)
         }
-        val api = Api().apply { this.head = head }
+        val api = Api().apply { this.head = head; records[1] = root }
         val noResign = object : DskSignatureEngine {
             override fun signCanonicalDer(alias: String, message: ByteArray) = error("catch-up must not sign")
         }
@@ -509,21 +692,53 @@ class OrdinaryTrustSetCoordinatorTest {
         } catch (_: IllegalArgumentException) { }
         assertEquals(durableAfterCatchUp, restarted.read())
     }
-    @Test fun olderSupersedesBelowCurrentFloorDoesNotRequireInventedIntermediateRecords() = runBlocking {
+    @Test fun olderLineagePointerBelowCurrentFloorCannotAdvanceOrClearPendingCustody() = runBlocking {
         val root = record(epoch(1))
         val acceptedFloor = record(epoch(3).copy(supersedesEpoch = 1))
         val serverHead = record(epoch(8).copy(supersedesEpoch = 2))
-        val store = MemoryStore(OrdinaryEpochState(acceptedFloor, rootAnchor = root))
+        val pending = record(epoch(4).copy(supersedesEpoch = 3))
+        val initial = OrdinaryEpochState(acceptedFloor, pending.request, rootAnchor = root,
+            pendingBase = acceptedFloor)
+        val store = MemoryStore(initial)
         val api = Api().apply { head = serverHead }
         val noResign = object : DskSignatureEngine {
             override fun signCanonicalDer(alias: String, message: ByteArray) = error("catch-up must not sign")
         }
 
-        assertEquals(1, OrdinaryTrustSetCoordinator(store, api, noResign,
+        assertEquals(0, OrdinaryTrustSetCoordinator(store, api, noResign,
             OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias").catchUp(1))
-        assertEquals(serverHead, store.read()!!.accepted)
+        assertEquals(initial, store.read())
+        assertEquals(pending.request, store.read()!!.pending)
         assertEquals(0, api.records.size)
     }
+
+    @Test fun missingReferencedPredecessorCannotPartiallyAdoptFetchedSuffix() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        val pending = record(epoch(2))
+        installPending(store, pending.request)
+        val initial = store.read()!!
+        val third = record(epoch(3).copy(supersedesEpoch = 2))
+        val head = record(epoch(8).copy(supersedesEpoch = 3))
+        val api = Api().apply {
+            records[3] = third
+            this.head = head
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, head, head)
+        }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) = error("catch-up must not sign")
+        }
+
+        try {
+            OrdinaryTrustSetCoordinator(store, api, noResign,
+                OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias").catchUp(4)
+            fail("a missing epoch-2 predecessor must reject the whole chain")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals(initial, store.read())
+        assertEquals(pending.request, store.read()!!.pending)
+        assertEquals(2, api.epochReads)
+    }
+
     @Test fun legacyNullLineagePendingCustodyStaysUnknownAcrossCatchUpAndRestart() = runBlocking {
         val root = record(epoch(1))
         val pending = record(epoch(5).copy(supersedesEpoch = null)).request
@@ -536,9 +751,13 @@ class OrdinaryTrustSetCoordinatorTest {
         }
         fun coordinator(port: OrdinaryEpochStore) = OrdinaryTrustSetCoordinator(port, api, noResign,
             OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+        val initial = store.read()!!
 
-        assertEquals(1, coordinator(store).catchUp(1))
-        assertEquals(serverHead, store.read()!!.accepted)
+        try {
+            coordinator(store).catchUp(1)
+            fail("a null-lineage ordinary head must not be adopted")
+        } catch (_: IllegalArgumentException) { }
+        assertEquals(initial, store.read())
         assertEquals(pending, store.read()!!.pending)
         assertNull(store.read()!!.pendingBase)
         assertFalse(coordinator(store).submitExact())
@@ -598,7 +817,11 @@ class OrdinaryTrustSetCoordinatorTest {
         val nextOwner = epoch(3).entries.single().copy(deviceId = "second", dskKeyId = "second-dsk", dskPublicKey = "second-public",
             dekKeyId = "second-dek", dekPublicKey = "second-dek-public")
         val later = record(epoch(3).copy(entries = listOf(nextOwner))).copy(signerDeviceId = "second", signerKeyId = "second-dsk")
-        val api = Api().apply { records[2] = validFirst; response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, later, later) }
+        val api = Api().apply {
+            records[1] = store.read()!!.accepted
+            records[2] = validFirst
+            response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, later, later)
+        }
         val keys = mutableListOf<String>()
         val signer = object : DskSignatureEngine { override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("no resign") }
         val coordinator = OrdinaryTrustSetCoordinator(store, api, signer, OrdinaryEpochSignatureVerifier { key, _, _ -> keys.add(key); true }, "owner", "dsk", "alias")

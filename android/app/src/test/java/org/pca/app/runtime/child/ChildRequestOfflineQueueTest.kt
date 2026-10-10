@@ -1,12 +1,17 @@
 package org.pca.app.runtime.child
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +20,7 @@ import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.FakeFamilySyncRuntimePort
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncConnectionState
+import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.robolectric.RobolectricTestRunner
 
 /** Robolectric is required because [ChildRequestOfflineQueue] encodes through `android.util.Base64`,
@@ -35,6 +41,23 @@ class ChildRequestOfflineQueueTest {
     }
 
     @Test
+    fun `reusing a request id for different content fails without replacing the original`() {
+        val store = InMemoryPersistentStateStore()
+        val queue = ChildRequestOfflineQueue(store)
+        val original = payload("req-1")
+        queue.enqueue(original)
+        val before = store.getString("child_request_offline_queue_v1")
+
+        val failure = runCatching {
+            queue.enqueue(original.copy(kind = "INSTALL_APPROVAL", detail = "different request"))
+        }.exceptionOrNull()
+
+        assertTrue(failure is ChildRequestIdentityConflict)
+        assertEquals(before, store.getString("child_request_offline_queue_v1"))
+        assertEquals(original, queue.pending().single().payload)
+    }
+
+    @Test
     fun `a queued request survives a fresh queue instance over the same store -- durable across process death`() {
         val store = InMemoryPersistentStateStore()
         ChildRequestOfflineQueue(store).enqueue(payload("req-1"))
@@ -43,6 +66,155 @@ class ChildRequestOfflineQueueTest {
 
         assertEquals(1, reloaded.pending().size)
         assertEquals(ChildRequestLocalStatus.PENDING_SYNC_LOCAL, reloaded.pending().first().status)
+    }
+
+    @Test
+    fun `enqueue confirms the durable snapshot before returning and a failed commit rolls back before send`() = runTest {
+        val store = FlushFaultStore()
+        val queue = ChildRequestOfflineQueue(store)
+        store.failOnFlushNumber = 2 // marker commit succeeds; candidate snapshot commit fails after apply
+
+        val failure = runCatching { queue.enqueue(payload("req-not-durable")) }.exceptionOrNull()
+
+        assertTrue(failure is ChildRequestQueueUnavailable)
+        assertNull(store.getString("child_request_offline_queue_v1"))
+        assertNull(store.getString("child_request_offline_queue_v1.pending_write"))
+        val reloaded = ChildRequestOfflineQueue(store)
+        assertTrue(reloaded.pending().isEmpty())
+        val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+        assertEquals(0, reloaded.flush(port))
+        assertTrue("a request whose durable enqueue failed must not reach the transport", port.submitted.isEmpty())
+    }
+
+    @Test
+    fun `legacy and malformed write markers are preserved and fail closed`() {
+        val store = InMemoryPersistentStateStore()
+        val raw = "req-1|SKIP_BREAK|ZGV0YWls|0|PENDING_SYNC_LOCAL"
+        store.putString("child_request_offline_queue_v1", raw)
+        val pendingKey = "child_request_offline_queue_v1.pending_write"
+        for (marker in listOf(
+            "child-request-queue-write-v1",
+            "child-request-queue-write-v2|sha256:invalid|absent",
+            "malformed-marker",
+        )) {
+            store.putString(pendingKey, marker)
+            val queue = ChildRequestOfflineQueue(store)
+
+            assertQueueUnavailable { queue.pending() }
+            assertEquals(raw, store.getString("child_request_offline_queue_v1"))
+            assertEquals(marker, store.getString(pendingKey))
+        }
+    }
+
+    @Test
+    fun `process death with the exact prior snapshot recovers and clears the marker`() {
+        val durableState = InMemoryPersistentStateStore()
+        val crashingStore = CrashAtFlushStore(durableState)
+        val queue = ChildRequestOfflineQueue(crashingStore)
+        val original = payload("req-before-crash")
+        queue.enqueue(original)
+        crashingStore.crashAfterFlushNumber = crashingStore.flushCount + 1
+
+        val death = runCatching { queue.enqueue(payload("req-interrupted")) }.exceptionOrNull()
+
+        assertTrue(death is SimulatedProcessDeath)
+        val pendingKey = "child_request_offline_queue_v1.pending_write"
+        val marker = durableState.getString(pendingKey)
+        assertTrue(marker?.startsWith("child-request-queue-write-v2|") == true)
+        assertFalse(marker.orEmpty().contains("req-interrupted"))
+
+        // A fresh queue over the durable backing store models a new process after the crash.
+        val restartedQueue = ChildRequestOfflineQueue(durableState)
+        assertEquals(listOf(original), restartedQueue.pending().map { it.payload })
+        assertNull(durableState.getString(pendingKey))
+    }
+
+    @Test
+    fun `process death with the exact candidate snapshot recovers and clears the marker`() {
+        val durableState = InMemoryPersistentStateStore()
+        val crashingStore = CrashAtFlushStore(durableState)
+        val queue = ChildRequestOfflineQueue(crashingStore)
+        val original = payload("req-before-crash")
+        val candidate = payload("req-candidate")
+        queue.enqueue(original)
+        crashingStore.crashAfterFlushNumber = crashingStore.flushCount + 2
+
+        val death = runCatching { queue.enqueue(candidate) }.exceptionOrNull()
+
+        assertTrue(death is SimulatedProcessDeath)
+        val pendingKey = "child_request_offline_queue_v1.pending_write"
+        val marker = durableState.getString(pendingKey)
+        assertTrue(marker?.startsWith("child-request-queue-write-v2|") == true)
+        assertFalse(marker.orEmpty().contains("req-candidate"))
+
+        val restartedQueue = ChildRequestOfflineQueue(durableState)
+        assertEquals(listOf(original, candidate), restartedQueue.pending().map { it.payload })
+        assertNull(durableState.getString(pendingKey))
+    }
+
+    @Test
+    fun `present empty prior snapshot is distinguished from an absent snapshot`() {
+        val durableState = InMemoryPersistentStateStore()
+        durableState.putString("child_request_offline_queue_v1", "")
+        durableState.flush()
+        val crashingStore = CrashAtFlushStore(durableState)
+        val queue = ChildRequestOfflineQueue(crashingStore)
+        crashingStore.crashAfterFlushNumber = crashingStore.flushCount + 1
+
+        val death = runCatching { queue.enqueue(payload("req-after-empty")) }.exceptionOrNull()
+
+        assertTrue(death is SimulatedProcessDeath)
+        val marker = requireNotNull(durableState.getString("child_request_offline_queue_v1.pending_write"))
+        val priorFingerprint = marker.split('|').getOrNull(1)
+        assertTrue(priorFingerprint?.startsWith("sha256:") == true)
+        assertFalse(priorFingerprint == "absent")
+
+        val restartedQueue = ChildRequestOfflineQueue(durableState)
+        assertTrue(restartedQueue.pending().isEmpty())
+        assertEquals("", durableState.getString("child_request_offline_queue_v1"))
+        assertNull(durableState.getString("child_request_offline_queue_v1.pending_write"))
+    }
+
+    @Test
+    fun `unknown queue snapshot preserves descriptor and fails closed after process death`() {
+        val durableState = InMemoryPersistentStateStore()
+        val crashingStore = CrashAtFlushStore(durableState)
+        val queue = ChildRequestOfflineQueue(crashingStore)
+        queue.enqueue(payload("req-before-crash"))
+        crashingStore.crashAfterFlushNumber = crashingStore.flushCount + 1
+
+        val death = runCatching { queue.enqueue(payload("req-interrupted")) }.exceptionOrNull()
+
+        assertTrue(death is SimulatedProcessDeath)
+        val pendingKey = "child_request_offline_queue_v1.pending_write"
+        val marker = requireNotNull(durableState.getString(pendingKey))
+        val unknownSnapshot = "not-a-recorded-snapshot"
+        durableState.putString("child_request_offline_queue_v1", unknownSnapshot)
+        durableState.flush()
+
+        assertQueueUnavailable { ChildRequestOfflineQueue(durableState).pending() }
+        assertEquals(unknownSnapshot, durableState.getString("child_request_offline_queue_v1"))
+        assertEquals(marker, durableState.getString(pendingKey))
+    }
+
+    @Test
+    fun `transport observes the request only after durable snapshot and marker clear`() = runTest {
+        val store = FlushFaultStore()
+        val queue = ChildRequestOfflineQueue(store)
+        queue.enqueue(payload("req-durable"))
+        val persisted = store.getString("child_request_offline_queue_v1")
+        val port = object : FamilySyncRuntimePort {
+            override fun currentConnectionState() = FamilySyncConnectionState.LIVE
+            override fun lastSuccessfulSyncEpochMillis(): Long? = null
+            override suspend fun submitChildRequest(request: ChildRequestPayload): Boolean {
+                assertEquals("request snapshot must have crossed a synchronous flush before send", persisted,
+                    store.getString("child_request_offline_queue_v1"))
+                assertNull(store.getString("child_request_offline_queue_v1.pending_write"))
+                return true
+            }
+        }
+
+        assertEquals(1, queue.flush(port))
     }
 
     @Test
@@ -70,6 +242,77 @@ class ChildRequestOfflineQueueTest {
         assertEquals(2, submitted)
         assertEquals(0, queue.pending().size)
         assertEquals(2, port.submitted.size)
+    }
+
+    @Test
+    fun `flush stops submitting when the family channel becomes stale during a prior send`() = runTest {
+        val queue = ChildRequestOfflineQueue(InMemoryPersistentStateStore())
+        queue.enqueue(payload("req-1"))
+        queue.enqueue(payload("req-2"))
+        val sent = mutableListOf<String>()
+        var state = FamilySyncConnectionState.LIVE
+        val port = object : FamilySyncRuntimePort {
+            override fun currentConnectionState() = state
+            override fun lastSuccessfulSyncEpochMillis(): Long? = null
+            override suspend fun submitChildRequest(request: ChildRequestPayload): Boolean {
+                sent += request.requestId
+                state = FamilySyncConnectionState.STALE
+                return true
+            }
+        }
+
+        val submitted = queue.flush(port)
+
+        assertEquals(1, submitted)
+        assertEquals(listOf("req-1"), sent)
+        assertEquals(listOf("req-2"), queue.pending().map { it.payload.requestId })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `separate queue wrappers serialize overlapping flush and retry after a false result`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val firstQueue = ChildRequestOfflineQueue(store)
+        val secondQueue = ChildRequestOfflineQueue(store)
+        firstQueue.enqueue(payload("req-race"))
+        val firstSubmitEntered = CompletableDeferred<Unit>()
+        val releaseFirstSubmit = CompletableDeferred<Unit>()
+        val submitCalls = AtomicInteger()
+        val port = object : FamilySyncRuntimePort {
+            override fun currentConnectionState() = FamilySyncConnectionState.LIVE
+            override fun lastSuccessfulSyncEpochMillis(): Long? = null
+            override suspend fun submitChildRequest(request: ChildRequestPayload): Boolean =
+                when (submitCalls.incrementAndGet()) {
+                    1 -> {
+                        firstSubmitEntered.complete(Unit)
+                        releaseFirstSubmit.await()
+                        false
+                    }
+                    else -> true
+                }
+        }
+
+        val firstFlush = async { firstQueue.flush(port) }
+        firstSubmitEntered.await()
+        val secondStarted = CompletableDeferred<Unit>()
+        val secondFlush = async {
+            secondStarted.complete(Unit)
+            secondQueue.flush(port)
+        }
+        secondStarted.await()
+        runCurrent()
+
+        // The second wrapper waits while the first request has an unknown outcome.
+        assertEquals(1, submitCalls.get())
+        assertFalse(secondFlush.isCompleted)
+
+        // False leaves the entry pending. Once the first flush releases the shared mutex, the
+        // queued second flush retries it and can persist SUBMITTED.
+        releaseFirstSubmit.complete(Unit)
+        assertEquals(0, firstFlush.await())
+        assertEquals(1, secondFlush.await())
+        assertEquals(2, submitCalls.get())
+        assertTrue(firstQueue.pending().isEmpty())
     }
 
     @Test
@@ -174,6 +417,42 @@ class ChildRequestOfflineQueueTest {
         val failure = runCatching { block() }.exceptionOrNull()
         assertTrue("corrupt persisted queue must fail closed with a typed error", failure is ChildRequestQueueUnavailable)
     }
+
+    private class FlushFaultStore(
+        private val backing: InMemoryPersistentStateStore = InMemoryPersistentStateStore(),
+    ) : PersistentStateStore {
+        override val coordinationLock: Any get() = backing.coordinationLock
+        var flushCount: Int = 0
+            private set
+        var failOnFlushNumber: Int? = null
+
+        override fun getString(key: String): String? = backing.getString(key)
+        override fun putString(key: String, value: String) = backing.putString(key, value)
+        override fun remove(key: String) = backing.remove(key)
+        override fun contains(key: String): Boolean = backing.contains(key)
+        override fun clear() = backing.clear()
+        override fun flush() {
+            flushCount++
+            if (flushCount == failOnFlushNumber) throw IllegalStateException("simulated commit failure")
+            backing.flush()
+        }
+    }
+
+    private class CrashAtFlushStore(
+        private val backing: InMemoryPersistentStateStore,
+    ) : PersistentStateStore by backing {
+        var flushCount = 0
+            private set
+        var crashAfterFlushNumber: Int? = null
+
+        override fun flush() {
+            flushCount++
+            backing.flush()
+            if (flushCount == crashAfterFlushNumber) throw SimulatedProcessDeath()
+        }
+    }
+
+    private class SimulatedProcessDeath : Error("simulated process death after durable flush")
 
     private class BlockingFirstReadStore : PersistentStateStore {
         private val backing = InMemoryPersistentStateStore()

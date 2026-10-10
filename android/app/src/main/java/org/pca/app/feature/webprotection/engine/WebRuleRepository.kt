@@ -9,6 +9,7 @@ import org.pca.app.feature.webprotection.policy.WebRuleListType
 import org.pca.app.feature.webprotection.policy.WebRuleSource
 import org.pca.app.feature.webprotection.policy.canonicalizeDomain
 import org.pca.app.foundation.PersistentStateStore
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.IdentityHashMap
 
@@ -245,8 +246,8 @@ class PersistentWebRuleRepository(
      * [PersistentStateStore.putString] may be asynchronous, so flush and
      * readback are part of the commit boundary. Candidate-write failure restores
      * the prior bytes before marker removal. Once candidate durability is confirmed,
-     * marker-removal failure keeps those verified bytes and poisons this process;
-     * rollback is unsafe after the marker may already have been removed durably.
+     * marker-removal failure keeps those verified bytes and poisons this process. After process
+     * death, the versioned digest descriptor can recover only an exact old or candidate snapshot.
      */
     private fun commit(
         rules: List<WebRule>,
@@ -256,12 +257,13 @@ class PersistentWebRuleRepository(
         check(!isPersistenceUncertain()) { "Web rule storage durability is uncertain" }
         val previous = store.getString(key)
         val encoded = serialize(rules, parentRulesRevision, securityFeedVersion)
+        val marker = encodePendingWriteMarker(previous, encoded)
         // The marker must be durable before candidate bytes can reach storage.
-        // Any process restart with the marker present refuses reads and writes.
+        // It contains only presence-aware digests, never a duplicate of policy data.
         try {
-            store.putString(pendingWriteKey, "pending")
+            store.putString(pendingWriteKey, marker)
             store.flush()
-            check(store.getString(pendingWriteKey) == "pending") { "Web rule marker readback failed" }
+            check(store.getString(pendingWriteKey) == marker) { "Web rule marker readback failed" }
         } catch (failure: Exception) {
             // No candidate write has occurred. A confirmed marker removal is safe.
             try { clearPendingWriteMarker() } catch (cleanupFailure: Exception) {
@@ -365,7 +367,8 @@ class PersistentWebRuleRepository(
             return
         }
         val raw = try {
-            if (store.getString(pendingWriteKey) != null) {
+            val marker = store.getString(pendingWriteKey)
+            if (marker != null && !recoverInterruptedWrite(marker)) {
                 stateValue = WebRulePolicyState.CORRUPT_USING_LKG
                 return
             }
@@ -421,6 +424,65 @@ class PersistentWebRuleRepository(
         }
     }
 
+    /**
+     * Recover only when persisted snapshot bytes are an exact pre-write or candidate match for
+     * the durable descriptor. The normal strict snapshot decoder still decides whether matched
+     * bytes are usable. Unknown/legacy markers and snapshots matching neither digest stay
+     * untouched and fail closed.
+     */
+    private fun recoverInterruptedWrite(rawMarker: String): Boolean {
+        val descriptor = parsePendingWriteMarker(rawMarker) ?: return false
+        val current = store.getString(key)
+        val previousMatches = if (descriptor.previousPresent) {
+            current != null && sha256(current) == descriptor.previousSha256
+        } else {
+            current == null
+        }
+        val candidateMatches = current != null && sha256(current) == descriptor.candidateSha256
+        if (!previousMatches && !candidateMatches) return false
+
+        clearPendingWriteMarker()
+        return true
+    }
+
+    private fun encodePendingWriteMarker(previous: String?, candidate: String): String = JSONObject().apply {
+        put("version", WRITE_MARKER_VERSION)
+        put("previousPresent", previous != null)
+        put("previousSha256", previous?.let(::sha256) ?: JSONObject.NULL)
+        put("candidateSha256", sha256(candidate))
+    }.toString()
+
+    private fun parsePendingWriteMarker(raw: String): PendingWriteDescriptor? {
+        return try {
+            val json = JSONObject(raw)
+            val fields = json.keys().asSequence().toSet()
+            if (fields != WRITE_MARKER_FIELDS || json.get("version") != WRITE_MARKER_VERSION) return null
+            val previousPresent = json.get("previousPresent") as? Boolean ?: return null
+            val previousSha256 = when (val value = json.get("previousSha256")) {
+                JSONObject.NULL -> null
+                is String -> value.takeIf(::isSha256) ?: return null
+                else -> return null
+            }
+            val candidateSha256 = (json.get("candidateSha256") as? String)?.takeIf(::isSha256) ?: return null
+            if (previousPresent != (previousSha256 != null)) return null
+            PendingWriteDescriptor(previousPresent, previousSha256, candidateSha256)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> HEX[(byte.toInt() ushr 4) and 0x0f].toString() + HEX[byte.toInt() and 0x0f] }
+
+    private fun isSha256(value: String): Boolean = value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
+
+    private data class PendingWriteDescriptor(
+        val previousPresent: Boolean,
+        val previousSha256: String?,
+        val candidateSha256: String,
+    )
+
     private fun validStoredRule(rule: WebRule): Boolean {
         if (canonicalizeDomain(rule.domain) != rule.domain) return false
         return when (rule.source) {
@@ -441,6 +503,9 @@ class PersistentWebRuleRepository(
 
     private companion object {
         const val KEY = "webprotection_rules_v1"
+        const val WRITE_MARKER_VERSION = "web-rules-write-v2"
+        val WRITE_MARKER_FIELDS = setOf("version", "previousPresent", "previousSha256", "candidateSha256")
+        const val HEX = "0123456789abcdef"
         val uncertainStores: MutableSet<Any> = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
     }
 }

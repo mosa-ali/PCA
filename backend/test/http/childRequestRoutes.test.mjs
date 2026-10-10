@@ -22,7 +22,7 @@ const CHILD_PROFILE_FAMILY_MAP = new Map([
 ]);
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 
-function buildApp({ nowFn = () => T0 } = {}) {
+function buildApp({ nowFn = () => T0, trustSetRoleResolverOverride = 'DEFAULT' } = {}) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch({
     familyId: FAMILY,
@@ -79,8 +79,8 @@ function buildApp({ nowFn = () => T0 } = {}) {
     async activeFamilyRole(accountId, familyId) { return parentRoles.get(`${accountId}\u0000${familyId}`) ?? null; },
   };
   const deviceTokens = new Map([
-    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
-    ['dev-token-child', { deviceId: 'dev-child', familyId: FAMILY }],
+    ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY, dskKeyId: 'k1' }],
+    ['dev-token-child', { deviceId: 'dev-child', familyId: FAMILY, dskKeyId: 'k3' }],
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
@@ -98,12 +98,13 @@ function buildApp({ nowFn = () => T0 } = {}) {
     childRequestService,
     bonusGrantLedger,
     deviceSessionService,
+    trustSetRoleResolver: trustSetRoleResolverOverride === 'DEFAULT' ? roleResolver : trustSetRoleResolverOverride,
     // SAME childProfileResolver instance the authorization service above uses -- see
     // childRequestRoutes.ts's own doc comment on why active-grants/revoke need this independently.
     childProfileMembership: childProfileResolver,
     now: nowFn,
   });
-  return { app, childRequestService, bonusGrantLedger };
+  return { app, childRequestService, bonusGrantLedger, deviceTokens, roleResolver };
 }
 
 const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
@@ -132,6 +133,101 @@ test('child request submission still requires a same-family device-session beare
     assert.equal((await childRequestService.listForFamily(FAMILY_B)).length, 0);
   } finally {
     await app.close();
+  }
+});
+
+test('child request submission fails closed for stale/mismatched DSK authority and an unavailable resolver', async () => {
+  const payload = { requestType: 'UNBLOCK', childProfileId: 'child-1' };
+  const stale = buildApp();
+  try {
+    stale.deviceTokens.set('dev-token-child', { deviceId: 'dev-child', familyId: FAMILY, dskKeyId: 'old-k3' });
+    const response = await stale.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' }, payload,
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal((await stale.childRequestService.listForFamily(FAMILY)).length, 0);
+  } finally {
+    await stale.app.close();
+  }
+
+  const mismatch = buildApp({ trustSetRoleResolverOverride: {
+    resolveActor: async () => ({ deviceId: 'another-device', role: 'CHILD', trustSetEpoch: 5, keyEpoch: 3 }),
+  } });
+  try {
+    const response = await mismatch.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' }, payload,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal((await mismatch.childRequestService.listForFamily(FAMILY)).length, 0);
+  } finally {
+    await mismatch.app.close();
+  }
+
+  const unavailable = buildApp({ trustSetRoleResolverOverride: null });
+  try {
+    const response = await unavailable.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' }, payload,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal((await unavailable.childRequestService.listForFamily(FAMILY)).length, 0);
+  } finally {
+    await unavailable.app.close();
+  }
+});
+
+test('child request submit and applied receipt require accepted CHILD role, not just active DSK membership', async () => {
+  const submitDenied = buildApp({ trustSetRoleResolverOverride: {
+    resolveActor: async (_familyId, deviceId) => ({ deviceId, role: 'VIEWER', trustSetEpoch: 5, keyEpoch: 3 }),
+  } });
+  try {
+    const response = await submitDenied.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { requestType: 'UNBLOCK', childProfileId: 'child-1' },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal((await submitDenied.childRequestService.listForFamily(FAMILY)).length, 0);
+  } finally {
+    await submitDenied.app.close();
+  }
+
+  let acceptedRole = 'CHILD';
+  const roleResolver = {
+    resolveActor: async (_familyId, deviceId) => ({ deviceId, role: acceptedRole, trustSetEpoch: 5, keyEpoch: 3 }),
+  };
+  const appliedDenied = buildApp({ trustSetRoleResolverOverride: roleResolver });
+  try {
+    const submit = await appliedDenied.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: {
+        requestType: 'INSTALL_APPROVAL', childProfileId: 'child-1',
+        installTargetPackageName: 'com.example.role-bound', installCapabilityState: 'ENFORCED',
+      },
+    });
+    assert.equal(submit.statusCode, 201);
+    const requestId = submit.json().request.requestId;
+    const decision = await appliedDenied.app.inject({
+      method: 'POST', url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
+      headers: parentAuthHeaders, payload: { decision: 'APPROVED' },
+    });
+    assert.equal(decision.statusCode, 200);
+
+    acceptedRole = 'OWNER';
+    const receipt = await appliedDenied.app.inject({
+      method: 'POST', url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(receipt.statusCode, 403);
+    const persisted = (await appliedDenied.childRequestService.listForFamily(FAMILY)).find((item) => item.requestId === requestId);
+    assert.equal(persisted.state, 'APPROVED');
+    assert.equal(persisted.installEnforcementOutcome, null, 'non-CHILD role denial must happen before receipt mutation');
+  } finally {
+    await appliedDenied.app.close();
   }
 });
 
@@ -535,7 +631,7 @@ test('submitting an INSTALL_APPROVAL request with a missing package name, or an 
 });
 
 test('the /applied route only accepts the report from the SAME child device that submitted the request, and honest capability-unavailable outcomes are recorded verbatim, not upgraded', async () => {
-  const { app } = buildApp();
+  const { app, childRequestService, deviceTokens } = buildApp();
   try {
     const submit = await app.inject({
       method: 'POST',
@@ -556,6 +652,19 @@ test('the /applied route only accepts the report from the SAME child device that
       payload: { decision: 'APPROVED' },
     });
 
+    deviceTokens.set('dev-token-child', { deviceId: 'dev-child', familyId: FAMILY, dskKeyId: 'old-k3' });
+    const staleKeyAck = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(staleKeyAck.statusCode, 403);
+    const afterDeniedAck = (await childRequestService.listForFamily(FAMILY)).find((item) => item.requestId === requestId);
+    assert.equal(afterDeniedAck.state, 'APPROVED', 'stale DSK denial must happen before receipt mutation');
+    assert.equal(afterDeniedAck.installEnforcementOutcome, null);
+    deviceTokens.set('dev-token-child', { deviceId: 'dev-child', familyId: FAMILY, dskKeyId: 'k3' });
+
     // The OWNER device (not the requesting child device) cannot acknowledge it.
     const wrongDevice = await app.inject({
       method: 'POST',
@@ -563,9 +672,9 @@ test('the /applied route only accepts the report from the SAME child device that
       headers: { authorization: 'Bearer dev-token-owner' },
       payload: { capabilityOutcome: 'ENFORCED' },
     });
-    // Device-level existence oracle closed (2026-09-08): a foreign device must see
-    // EXACTLY what an unknown requestId produces -- same status, same body.
-    assert.equal(wrongDevice.statusCode, 404);
+    // Non-CHILD accepted roles are rejected before request lookup, so a foreign
+    // device sees the same denial for a real and unknown requestId.
+    assert.equal(wrongDevice.statusCode, 403);
     const noBearer = await app.inject({
       method: 'POST',
       url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
@@ -578,7 +687,7 @@ test('the /applied route only accepts the report from the SAME child device that
       headers: { authorization: 'Bearer dev-token-owner' },
       payload: { capabilityOutcome: 'ENFORCED' },
     });
-    assert.equal(unknownRequest.statusCode, 404);
+    assert.equal(unknownRequest.statusCode, 403);
     assert.deepEqual(wrongDevice.json(), unknownRequest.json());
 
     const applied = await app.inject({

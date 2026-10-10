@@ -19,6 +19,71 @@ export interface OrdinaryTrustSetRoutesDeps {
 }
 const BASE = '/api/device/families/:familyId/trust-set/epochs';
 const MAX_BODY_BYTES = 352 * 1024;
+const MAX_CANONICAL_BYTES = 256 * 1024;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCanonicalBase64(value: unknown, maxBytes: number): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 4 * Math.ceil(maxBytes / 3) ||
+      value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    return false;
+  }
+  const bytes = Buffer.from(value, 'base64');
+  return bytes.length > 0 && bytes.length <= maxBytes && bytes.toString('base64') === value;
+}
+
+/** Explicit projection prevents internal acceptance/store metadata leaking through a future service DTO extension. */
+function projectAcceptedEpoch(value: unknown): AcceptedTrustSetEpochDto | null {
+  if (!isPlainObject(value)) return null;
+  const { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch } = value;
+  if (!isCanonicalBase64(canonicalEpochBase64, MAX_CANONICAL_BYTES) ||
+      !isCanonicalBase64(signatureBase64, 64) || Buffer.from(signatureBase64, 'base64').length !== 64 ||
+      !isPlausibleOpaqueId(signerDeviceId) || !isPlausibleOpaqueId(signerKeyId) ||
+      !isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
+    return null;
+  }
+  return { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch };
+}
+
+function sameAcceptedEpoch(left: AcceptedTrustSetEpochDto, right: AcceptedTrustSetEpochDto): boolean {
+  return left.canonicalEpochBase64 === right.canonicalEpochBase64 &&
+    left.signatureBase64 === right.signatureBase64 && left.signerDeviceId === right.signerDeviceId &&
+    left.signerKeyId === right.signerKeyId && left.trustSetEpoch === right.trustSetEpoch &&
+    left.keyEpoch === right.keyEpoch;
+}
+
+function acceptedRequestMatches(epoch: AcceptedTrustSetEpochDto, body: unknown): boolean {
+  return isPlainObject(body) && epoch.canonicalEpochBase64 === body.canonicalEpochBase64 &&
+    epoch.signatureBase64 === body.signatureBase64;
+}
+
+function doesNotExceedHead(epoch: AcceptedTrustSetEpochDto, head: AcceptedTrustSetEpochDto): boolean {
+  return epoch.trustSetEpoch <= head.trustSetEpoch && epoch.keyEpoch <= head.keyEpoch &&
+    (epoch.trustSetEpoch !== head.trustSetEpoch || sameAcceptedEpoch(epoch, head));
+}
+
+function projectSubmitResult(value: unknown, requestBody: unknown): OrdinaryTrustSetSubmitResult | null {
+  if (!isPlainObject(value) || (value.outcome !== 'ACCEPTED' && value.outcome !== 'IDEMPOTENT_MATCH')) return null;
+  const acceptedEpoch = projectAcceptedEpoch(value.acceptedEpoch);
+  const acceptedHead = projectAcceptedEpoch(value.acceptedHead);
+  if (acceptedEpoch === null || acceptedHead === null || !acceptedRequestMatches(acceptedEpoch, requestBody) ||
+      !doesNotExceedHead(acceptedEpoch, acceptedHead)) return null;
+  return { outcome: value.outcome, acceptedEpoch, acceptedHead };
+}
+
+function projectStatusResult(value: unknown, requestBody: unknown): OrdinaryTrustSetStatusResult | null {
+  if (!isPlainObject(value) || typeof value.outcome !== 'string' ||
+      !['ACCEPTED', 'NOT_ACCEPTED', 'CONFLICT'].includes(value.outcome)) return null;
+  const acceptedHead = projectAcceptedEpoch(value.acceptedHead);
+  const acceptedEpoch = value.acceptedEpoch === null ? null : projectAcceptedEpoch(value.acceptedEpoch);
+  if (acceptedHead === null || (value.outcome === 'ACCEPTED') !== (acceptedEpoch !== null) ||
+      (value.outcome !== 'ACCEPTED' && value.acceptedEpoch !== null) ||
+      (acceptedEpoch !== null && (!acceptedRequestMatches(acceptedEpoch, requestBody) ||
+        !doesNotExceedHead(acceptedEpoch, acceptedHead)))) return null;
+  return { outcome: value.outcome as OrdinaryTrustSetStatusResult['outcome'], acceptedEpoch, acceptedHead };
+}
 
 function validBody(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
@@ -72,7 +137,13 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
       const scope = await authorize(request, reply); if (!scope) return;
       if (!validBody(request.body)) return reply.code(400).send({ error: 'invalid_request' });
       if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
-      try { return reply.code(200).send(await deps.ordinaryTrustSetService[operation](scope, request.body)); }
+      try {
+        const result = await deps.ordinaryTrustSetService[operation](scope, request.body);
+        const projected = operation === 'submit' ? projectSubmitResult(result, request.body) :
+          projectStatusResult(result, request.body);
+        return projected === null ? reply.code(503).send({ error: 'trust_set_unavailable' }) :
+          reply.code(200).send(projected);
+      }
       catch (error) { return failed(error, reply); }
     });
   }
@@ -81,7 +152,11 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
   }, async (request, reply) => {
     const scope = await authorize(request, reply); if (!scope) return;
     if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
-    try { return reply.code(200).send({ acceptedHead: await deps.ordinaryTrustSetService.head(scope) }); }
+    try {
+      const acceptedHead = projectAcceptedEpoch(await deps.ordinaryTrustSetService.head(scope));
+      return acceptedHead === null ? reply.code(503).send({ error: 'trust_set_unavailable' }) :
+        reply.code(200).send({ acceptedHead });
+    }
     catch (error) { return failed(error, reply); }
   });
   app.get(`${BASE}/records/:trustSetEpoch`, {
@@ -96,8 +171,12 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
     if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
     try {
       const acceptedEpoch = await deps.ordinaryTrustSetService.epoch(scope, epoch);
-      return acceptedEpoch === null ? reply.code(404).send({ error: 'trust_set_record_unavailable' }) :
-        reply.code(200).send({ acceptedEpoch });
+      if (acceptedEpoch === null) return reply.code(404).send({ error: 'trust_set_record_unavailable' });
+      const projected = projectAcceptedEpoch(acceptedEpoch);
+      if (projected === null || projected.trustSetEpoch !== epoch) {
+        return reply.code(503).send({ error: 'trust_set_unavailable' });
+      }
+      return reply.code(200).send({ acceptedEpoch: projected });
     } catch (error) { return failed(error, reply); }
   });
 }

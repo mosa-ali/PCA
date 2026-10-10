@@ -94,6 +94,113 @@ test('duplicate submission of the same messageId + identical content is idempote
   assert.equal(first.ciphertext.equals(second.ciphertext), true);
 });
 
+test('absolute validUntil clamps relay expiry and an exact replay preserves the original expiry', async () => {
+  const { service, clock } = buildService();
+  const input = envelope({ validUntil: new Date(BASE_TIME + 5_000) });
+  const first = await service.queueEnvelope(input);
+  assert.equal(first.expiresAt.getTime(), BASE_TIME + 5_000);
+
+  clock.advance(1_000);
+  const retry = await service.queueEnvelope({ ...input, validUntil: new Date(BASE_TIME + 5_000) });
+  assert.equal(retry.messageId, first.messageId);
+  assert.equal(retry.createdAt.getTime(), first.createdAt.getTime());
+  assert.equal(retry.expiresAt.getTime(), first.expiresAt.getTime());
+});
+
+test('absolute validUntil rejects already expired input before storage', async () => {
+  const { service, repository } = buildService();
+  let createCalls = 0;
+  const create = repository.createOrMatchEnvelope;
+  repository.createOrMatchEnvelope = async (...args) => { createCalls += 1; return create(...args); };
+  await assert.rejects(
+    () => service.queueEnvelope(envelope({ validUntil: new Date(BASE_TIME) })),
+    { code: 'EXPIRED' },
+  );
+  assert.equal(createCalls, 0);
+});
+
+test('absolute expiry that passes during cleanup is rechecked before storage', async () => {
+  const repository = createInMemoryRelayRepository();
+  let currentTime = BASE_TIME;
+  let enteredCleanup;
+  const cleanupEntered = new Promise((resolve) => { enteredCleanup = resolve; });
+  let releaseCleanup;
+  const cleanupGate = new Promise((resolve) => { releaseCleanup = resolve; });
+  let createCalls = 0;
+  const create = repository.createOrMatchEnvelope;
+  repository.createOrMatchEnvelope = async (...args) => { createCalls += 1; return create(...args); };
+  repository.purgeExpired = async () => { enteredCleanup(); await cleanupGate; return 0; };
+  const service = new RelayService(repository, () => new Date(currentTime));
+  const validUntil = new Date(BASE_TIME + 1_000);
+  const pending = service.queueEnvelope(envelope({ validUntil }));
+  await cleanupEntered;
+  currentTime = validUntil.getTime();
+  releaseCleanup();
+  await assert.rejects(pending, { code: 'EXPIRED' });
+  assert.equal(createCalls, 0);
+});
+
+test('identical message ID with changed family, sender, or recipient is a conflict', async () => {
+  for (const [field, changedValue] of [
+    ['familyId', 'family-opaque-other'],
+    ['senderDeviceId', 'device-sender-other'],
+    ['recipientDeviceId', 'device-recipient-other'],
+  ]) {
+    const { service } = buildService();
+    const input = envelope();
+    await service.queueEnvelope(input);
+    await assert.rejects(
+      () => service.queueEnvelope({ ...input, [field]: changedValue }),
+      { code: 'CONFLICT' },
+      `${field} changes must not be treated as an exact retry`,
+    );
+    const original = await service.fetchEnvelope(input.recipientDeviceId, input.messageId);
+    assert.equal(original.familyId, input.familyId);
+    assert.equal(original.senderDeviceId, input.senderDeviceId);
+    assert.equal(original.recipientDeviceId, input.recipientDeviceId);
+    assert.equal(original.ciphertext.equals(input.ciphertext), true);
+  }
+});
+
+test('queue snapshots request scope, TTL, and ciphertext before asynchronous cleanup', async () => {
+  const { service, repository } = buildService();
+  let enteredCleanup;
+  const cleanupEntered = new Promise((resolve) => { enteredCleanup = resolve; });
+  let releaseCleanup;
+  const cleanupGate = new Promise((resolve) => { releaseCleanup = resolve; });
+  repository.purgeExpired = async () => {
+    enteredCleanup();
+    await cleanupGate;
+    return 0;
+  };
+
+  const input = envelope({ ttlMs: 5_000 });
+  const expected = { ...input, ciphertext: Buffer.from(input.ciphertext) };
+  const inFlight = service.queueEnvelope(input);
+  await cleanupEntered;
+  input.messageId = 'mutated-message';
+  input.familyId = 'mutated-family';
+  input.senderDeviceId = 'mutated-sender';
+  input.recipientDeviceId = 'mutated-recipient';
+  input.ciphertext.fill(0);
+  input.ttlMs = MAX_RELAY_TTL_MS + 1;
+  releaseCleanup();
+
+  const committed = await inFlight;
+  assert.equal(committed.messageId, expected.messageId);
+  assert.equal(committed.familyId, expected.familyId);
+  assert.equal(committed.senderDeviceId, expected.senderDeviceId);
+  assert.equal(committed.recipientDeviceId, expected.recipientDeviceId);
+  assert.equal(committed.ciphertext.equals(expected.ciphertext), true);
+  assert.equal(committed.expiresAt.getTime() - committed.createdAt.getTime(), 5_000);
+
+  // Simulate retry after the first caller lost its response: the original tuple is still idempotent.
+  const retry = await service.queueEnvelope(expected);
+  assert.equal(retry.messageId, expected.messageId);
+  assert.equal(retry.ciphertext.equals(expected.ciphertext), true);
+  assert.equal((await repository.findForRecipient(expected.recipientDeviceId, expected.messageId)).familyId, expected.familyId);
+});
+
 test('same messageId reused with different ciphertext is rejected as a conflict, not silently replaced', async () => {
   const { service } = buildService();
   const input = envelope();

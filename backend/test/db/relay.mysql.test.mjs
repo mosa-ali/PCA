@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { RelayService } from '../../dist/relay/RelayService.js';
 import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
-import { closePool } from '../../dist/db/pool.js';
+import { closePool, getPool } from '../../dist/db/pool.js';
 import { relayQueuePosition, compareRelayQueuePositions } from '../../dist/relay/queuePage.js';
 import { encodeRelayContinuation, decodeRelayContinuation } from '../../dist/runtime-sync/relayContinuation.js';
 
@@ -50,6 +50,28 @@ test('MySQL: conflicting reuse of messageId with different ciphertext is rejecte
     () => service.queueEnvelope({ ...input, ciphertext: Buffer.from('different') }),
     { code: 'CONFLICT' },
   );
+});
+
+test('MySQL: identical messageId with changed family, sender, or recipient is a conflict', async () => {
+  const service = buildService();
+  for (const [field, changedValue] of [
+    ['familyId', `other-family-${randomUUID()}`],
+    ['senderDeviceId', `other-sender-${randomUUID()}`],
+    ['recipientDeviceId', `other-recipient-${randomUUID()}`],
+  ]) {
+    const input = envelope();
+    await service.queueEnvelope(input);
+    await assert.rejects(
+      () => service.queueEnvelope({ ...input, [field]: changedValue }),
+      { code: 'CONFLICT' },
+      `${field} changes must not be treated as an exact retry`,
+    );
+    const fetched = await service.fetchEnvelope(input.recipientDeviceId, input.messageId);
+    assert.equal(fetched.familyId, input.familyId);
+    assert.equal(fetched.senderDeviceId, input.senderDeviceId);
+    assert.equal(fetched.recipientDeviceId, input.recipientDeviceId);
+    assert.equal(fetched.ciphertext.equals(input.ciphertext), true);
+  }
 });
 
 test('MySQL: recipient-scoped retrieval -- wrong recipient cannot read the envelope', async () => {
@@ -113,6 +135,40 @@ test('MySQL CONCURRENCY: duplicate submission race -- many concurrent identical 
   );
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true, 'identical resubmissions must never fail');
   for (const outcome of attempts) assert.equal(outcome.value.ciphertext.equals(input.ciphertext), true);
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS n FROM relay_envelopes WHERE message_id = ? AND BINARY message_id = BINARY ?`,
+    [input.messageId, input.messageId],
+  );
+  assert.equal(Number(rows[0].n), 1, 'concurrent exact retries must leave one durable row');
+});
+
+test('MySQL CONCURRENCY: changed ciphertext racing under one messageId has one winner and one durable row', async () => {
+  const service = buildService();
+  const input = envelope();
+  const conflicting = { ...input, ciphertext: Buffer.from('different-ciphertext-racing-under-same-id') };
+
+  const attempts = await Promise.allSettled([
+    service.queueEnvelope(input),
+    service.queueEnvelope(conflicting),
+  ]);
+  const accepted = attempts.filter((attempt) => attempt.status === 'fulfilled');
+  const rejected = attempts.filter((attempt) => attempt.status === 'rejected');
+  assert.equal(accepted.length, 1, 'exactly one ciphertext may win the messageId uniqueness race');
+  assert.equal(rejected.length, 1, 'the changed-bytes loser must be rejected');
+  assert.equal(rejected[0].reason?.code, 'CONFLICT', 'conflicting replay must never be reported as success');
+
+  const winner = accepted[0].value;
+  const durable = await service.fetchEnvelope(input.recipientDeviceId, input.messageId);
+  assert.equal(durable.familyId, input.familyId);
+  assert.equal(durable.senderDeviceId, input.senderDeviceId);
+  assert.equal(durable.recipientDeviceId, input.recipientDeviceId);
+  assert.equal(durable.ciphertext.equals(winner.ciphertext), true, 'the persisted bytes must belong to the one accepted response');
+
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS n FROM relay_envelopes WHERE message_id = ? AND BINARY message_id = BINARY ?`,
+    [input.messageId, input.messageId],
+  );
+  assert.equal(Number(rows[0].n), 1, 'a conflicting concurrent retry cannot create a second durable row');
 });
 
 test('MySQL CONCURRENCY: ack race -- many concurrent acks on one envelope all resolve to the same acknowledgedAt', async () => {

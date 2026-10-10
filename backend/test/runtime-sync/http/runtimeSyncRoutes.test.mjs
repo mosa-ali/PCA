@@ -46,8 +46,19 @@ import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAl
 // ledger's clock to the same instant these fixtures use.
 const LEDGER_NOW = new Date('2026-08-21T00:00:00.000Z');
 
-function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, alertComposeFailureLogger, envelopePublicKey = '' } = {}) {
+function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, alertComposeFailureLogger, envelopePublicKey = '', trustSetRoleResolver } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
+  const effectiveTrustSetRoleResolver = trustSetRoleResolver === undefined
+    ? {
+      async resolveActor(familyId, deviceId, dskKeyId) {
+        const keys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
+        if (!keys.some((key) => key.keyPurpose === 'DSK' && key.keyId === dskKeyId && key.status === 'ACTIVE')) {
+          return 'DEVICE_NOT_ACTIVE';
+        }
+        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    }
+    : trustSetRoleResolver;
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
     createInMemoryDeviceChallengeRepository(),
@@ -88,6 +99,7 @@ function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, 
     deviceProtectionStatusRepository,
     protectionStatusAlerting,
     alertComposeFailureLogger,
+    trustSetRoleResolver: effectiveTrustSetRoleResolver,
   });
   return { app, deviceRepository, relayService };
 }
@@ -167,6 +179,104 @@ test('full device auth flow: challenge -> session -> authenticated outbound subm
     });
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().results[0].outcome, 'QUEUED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('runtime-sync transport binds the exact session DSK to current accepted membership before send, drain, acknowledgement, or status', async () => {
+  const acceptedDskByDevice = new Map();
+  const revokedDevices = new Set();
+  const resolverCalls = [];
+  const trustSetRoleResolver = {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      resolverCalls.push([familyId, deviceId, dskKeyId]);
+      if (revokedDevices.has(deviceId) || acceptedDskByDevice.get(deviceId) !== dskKeyId) return 'DEVICE_NOT_ACTIVE';
+      return { deviceId, role: 'CHILD', trustSetEpoch: 3, keyEpoch: 2 };
+    },
+  };
+  const { app, deviceRepository, relayService } = buildApp({ trustSetRoleResolver });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: senderId, publicKey: senderPublicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: recipientId, publicKey: recipientPublicKey } = await registerDevice(deviceRepository, familyId);
+    const [{ keyId: senderDskKeyId }] = await deviceRepository.findKeysByDeviceForFamily(familyId, senderId);
+    const [{ keyId: recipientDskKeyId }] = await deviceRepository.findKeysByDeviceForFamily(familyId, recipientId);
+    acceptedDskByDevice.set(senderId, senderDskKeyId);
+    acceptedDskByDevice.set(recipientId, recipientDskKeyId);
+    const senderToken = await authenticateDevice(app, senderId, senderPublicKey);
+    const recipientToken = await authenticateDevice(app, recipientId, recipientPublicKey);
+
+    const outbound = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/outbound',
+      headers: { authorization: `Bearer ${senderToken}` },
+      payload: { items: [{
+        messageId: 'accepted-runtime-sync-message', recipientDeviceId: recipientId,
+        ciphertext: Buffer.from('opaque').toString('base64'), messageType: 'STATUS_SNAPSHOT',
+      }] },
+    });
+    assert.equal(outbound.statusCode, 200);
+    assert.equal(outbound.json().results[0].outcome, 'QUEUED');
+    assert.ok(resolverCalls.some(([family, device, key]) => family === familyId && device === senderId && key === senderDskKeyId));
+
+    acceptedDskByDevice.set(recipientId, 'rotated-recipient-dsk');
+    const staleRecipientDrain = await app.inject({
+      method: 'GET', url: '/v1/runtime-sync/inbound',
+      headers: { authorization: `Bearer ${recipientToken}` },
+    });
+    assert.equal(staleRecipientDrain.statusCode, 403);
+    assert.deepEqual(staleRecipientDrain.json(), { error: 'device_not_authorized' });
+    assert.ok(resolverCalls.some(([family, device, key]) => family === familyId && device === recipientId && key === recipientDskKeyId),
+      'membership resolution must receive the old key bound to the still-live session');
+    assert.equal((await relayService.listQueuedForRecipient(recipientId)).length, 1,
+      'a still-live directory session cannot drain ciphertext after accepted membership is revoked');
+
+    const staleRecipientAck = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/inbound/accepted-runtime-sync-message/ack',
+      headers: { authorization: `Bearer ${recipientToken}` },
+    });
+    assert.equal(staleRecipientAck.statusCode, 403);
+    assert.deepEqual(staleRecipientAck.json(), { error: 'device_not_authorized' });
+    assert.equal((await relayService.listQueuedForRecipient(recipientId)).length, 1,
+      'a revoked recipient cannot acknowledge and discard a queued envelope');
+
+    const staleRecipientStatus = await app.inject({
+      method: 'GET', url: '/v1/runtime-sync/status',
+      headers: { authorization: `Bearer ${recipientToken}` },
+    });
+    assert.equal(staleRecipientStatus.statusCode, 403);
+    assert.deepEqual(staleRecipientStatus.json(), { error: 'device_not_authorized' });
+
+    revokedDevices.add(senderId);
+    const staleSenderSubmit = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/outbound',
+      headers: { authorization: `Bearer ${senderToken}` },
+      payload: { items: [{
+        messageId: 'revoked-runtime-sync-message', recipientDeviceId: recipientId,
+        ciphertext: Buffer.from('opaque').toString('base64'), messageType: 'STATUS_SNAPSHOT',
+      }] },
+    });
+    assert.equal(staleSenderSubmit.statusCode, 403);
+    assert.deepEqual(staleSenderSubmit.json(), { error: 'device_not_authorized' });
+    assert.equal((await relayService.listQueuedForRecipient(recipientId)).length, 1,
+      'a revoked sender cannot enqueue another relay row');
+  } finally {
+    await app.close();
+  }
+});
+
+test('runtime-sync transport fails closed with 503 when accepted Trust Set authority is not configured', async () => {
+  const { app, deviceRepository } = buildApp({ trustSetRoleResolver: null });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+    const response = await app.inject({
+      method: 'GET', url: '/v1/runtime-sync/inbound',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'authority_unavailable' });
   } finally {
     await app.close();
   }
@@ -529,6 +639,19 @@ test('POST /v1/runtime-sync/inbound/:messageId/ack surfaces a genuine (non-Relay
       familyId,
       now: nowUtc,
     }),
+    // This test isolates the relay's infrastructure-error response after a
+    // valid authenticated sender has passed the current-membership preHandler.
+    // The production authority is replaced with a test resolver that accepts
+    // only the exact active DSK registered for this device and family.
+    trustSetRoleResolver: {
+      async resolveActor(acceptedFamilyId, acceptedDeviceId, dskKeyId) {
+        const keys = await deviceRepository.findKeysByDeviceForFamily(acceptedFamilyId, acceptedDeviceId);
+        if (!keys.some((key) => key.keyPurpose === 'DSK' && key.keyId === dskKeyId && key.status === 'ACTIVE')) {
+          return 'DEVICE_NOT_ACTIVE';
+        }
+        return { deviceId: acceptedDeviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    },
   });
 
   try {
@@ -587,6 +710,75 @@ test('reporting protection status without a session token is rejected with 401, 
   } finally {
     await app.close();
   }
+});
+
+test('protection-status binds the live session DSK to the exact accepted Trust Set actor before writing', async () => {
+  const calls = [];
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const trustSetRoleResolver = {
+    async resolveActor(...args) {
+      calls.push(args);
+      return { deviceId: args[1], role: 'OWNER', trustSetEpoch: 4, keyEpoch: 1 };
+    },
+  };
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, trustSetRoleResolver });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const [{ keyId: dskKeyId }] = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'PROTECTED' },
+    });
+    assert.equal(response.statusCode, 204);
+    assert.deepEqual(calls, [[familyId, deviceId, dskKeyId]]);
+    assert.equal((await deviceProtectionStatusRepository.findForDevice(familyId, deviceId))?.protectionLevel, 'PROTECTED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('protection-status fails closed when accepted Trust Set authority is unavailable, stale, mismatched, or malformed', async () => {
+  const deviceProtectionStatusRepository = {
+    findCalls: 0,
+    writeCalls: 0,
+    async findForDevice() { this.findCalls += 1; return null; },
+    async upsert() { this.writeCalls += 1; },
+  };
+  const alerting = {
+    producer: { async produce() { throw new Error('must not alert'); } },
+    alertsEnabled: true,
+    async resolveParentDevices() { throw new Error('must not resolve recipients'); },
+  };
+  const failureResolvers = [
+    null,
+    { async resolveActor() { throw new Error('resolver unavailable'); } },
+    { async resolveActor() { return 'DEVICE_NOT_ACTIVE'; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId: `${deviceId}-other`, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'CHILD', trustSetEpoch: 0, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 0 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: -1 }; } },
+  ];
+  for (const trustSetRoleResolver of failureResolvers) {
+    const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting, trustSetRoleResolver });
+    try {
+      const familyId = `family-${randomUUID()}`;
+      const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+      const token = await authenticateDevice(app, deviceId, publicKey);
+      const response = await app.inject({
+        method: 'POST', url: '/v1/runtime-sync/protection-status',
+        headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'DEGRADED' },
+      });
+      assert.ok([403, 503].includes(response.statusCode), `unexpected status ${response.statusCode}`);
+      assert.deepEqual(response.json(), { error: response.statusCode === 403 ? 'device_not_authorized' : 'authority_unavailable' });
+    } finally {
+      await app.close();
+    }
+  }
+  assert.equal(deviceProtectionStatusRepository.findCalls, 0);
+  assert.equal(deviceProtectionStatusRepository.writeCalls, 0);
 });
 
 test('an invalid protectionLevel value is rejected with 400', async () => {

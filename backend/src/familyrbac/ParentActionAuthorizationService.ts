@@ -42,6 +42,8 @@ export type AuthorizationDecision =
 export interface AuthorizeRequest {
   familyId: string;
   actorDeviceId: string;
+  /** Session-bound DSK key id when the action is initiated by an authenticated device. */
+  actorDskKeyId?: string;
   operation: ParentOperation;
   targetScope: TargetScope;
   issuedAt: Date;
@@ -130,7 +132,11 @@ export class ParentActionAuthorizationService {
     // time inside recordAudit() would run after that await, so a trust-set
     // rotation in the window would let the audit attribute the decision to a
     // role and epoch the decision was never actually made with.
-    const resolvedActor = await this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
+    const resolvedActor = await this.roleResolver.resolveActor(
+      request.familyId,
+      request.actorDeviceId,
+      request.actorDskKeyId,
+    );
     // WAVE 5B: DEVICE/MEMBER target resolution is awaited HERE, before
     // evaluate(), so evaluate() stays I/O-free (see its doc note). The
     // target is resolved from the SAME durable trust-set authority as the
@@ -276,6 +282,13 @@ export class ParentActionAuthorizationService {
     resolvedMembership: ChildProfileMembershipResult | null,
   ): AuthorizationDecision {
     const now = this.now();
+    // An invalid clock value makes expiry and step-up freshness comparisons
+    // return false (because NaN is unordered), which could otherwise allow an
+    // expired action or stale assertion. Treat an unavailable clock as a
+    // closed authorization check.
+    if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+      return { verdict: 'DENY', reason: 'ACTION_EXPIRED' };
+    }
 
     if (now.getTime() > request.expiresAt.getTime()) {
       return { verdict: 'DENY', reason: 'ACTION_EXPIRED' };
@@ -340,9 +353,20 @@ export class ParentActionAuthorizationService {
       case 'EXPIRED':
         return 'STEP_UP_NOT_FRESH';
       case 'FRESH': {
-        if (stepUp.assertedAt === null) return 'STEP_UP_NOT_FRESH';
-        const freshUntil = stepUp.freshUntil ?? new Date(stepUp.assertedAt.getTime() + STEP_UP_MAX_FRESHNESS_MS);
-        if (now.getTime() > freshUntil.getTime()) return 'STEP_UP_NOT_FRESH';
+        if (
+          !(stepUp.assertedAt instanceof Date) ||
+          !Number.isFinite(stepUp.assertedAt.getTime()) ||
+          now.getTime() < stepUp.assertedAt.getTime()
+        ) return 'STEP_UP_NOT_FRESH';
+        const maximumFreshUntil = stepUp.assertedAt.getTime() + STEP_UP_MAX_FRESHNESS_MS;
+        const freshUntil = stepUp.freshUntil ?? new Date(maximumFreshUntil);
+        if (
+          !(freshUntil instanceof Date) ||
+          !Number.isFinite(freshUntil.getTime()) ||
+          freshUntil.getTime() < stepUp.assertedAt.getTime() ||
+          freshUntil.getTime() > maximumFreshUntil ||
+          now.getTime() > freshUntil.getTime()
+        ) return 'STEP_UP_NOT_FRESH';
         return null;
       }
     }
@@ -380,6 +404,13 @@ export class ParentActionAuthorizationService {
  * SHA-256 itself.
  */
 function fingerprintRequest(request: AuthorizeRequest): string {
-  const shape = JSON.stringify([request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id]);
+  const shape = JSON.stringify([
+    request.familyId,
+    request.actorDeviceId,
+    request.actorDskKeyId ?? null,
+    request.operation,
+    request.targetScope.kind,
+    request.targetScope.id,
+  ]);
   return createHash('sha256').update(shape, 'utf8').digest('hex');
 }
