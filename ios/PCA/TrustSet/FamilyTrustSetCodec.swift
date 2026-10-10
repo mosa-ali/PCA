@@ -48,6 +48,7 @@ public enum TrustSetCodecError: Error { case malformedUntrustedTrustSet }
 /// Backend familytrustset structural grammar only. Decoding never verifies or applies anything.
 public enum FamilyTrustSetCodec {
     public static let maximumCanonicalUTF16Units = 262144
+    public static let maximumCanonicalUTF8Bytes = 262144
     private static let maximumWireUTF16Units = 1048576
     private static let maximumEpoch = Int(Int32.max)
 
@@ -80,13 +81,15 @@ public enum FamilyTrustSetCodec {
             // Explicit field list deliberately excludes the signature.
             let text = fields.map { "\($0.utf8.count):\($0)" }.joined()
             guard text.utf16.count <= maximumCanonicalUTF16Units else { throw malformed }
-            return Data(text.utf8)
+            let bytes = Data(text.utf8)
+            guard bytes.count <= maximumCanonicalUTF8Bytes else { throw malformed }
+            return bytes
         }
     }
 
     public static func decodeCanonical(_ data: Data) throws -> UntrustedTrustSetEpoch {
         try checked {
-            guard data.count <= maximumCanonicalUTF16Units * 3 else { throw malformed }
+            guard data.count <= maximumCanonicalUTF8Bytes else { throw malformed }
             let bytes = Array(data)
             let text = try strictUTF8(bytes)
             guard text.utf16.count <= maximumCanonicalUTF16Units else { throw malformed }

@@ -121,7 +121,7 @@ final class FamilyTrustSetCodecTests: XCTestCase {
         reject { _ = try FamilyTrustSetCodec.decodeCanonical(Data([0xEF, 0xBB, 0xBF]) + canonical) }
         reject { _ = try FamilyTrustSetCodec.decodeCanonical(canonical + Data("0:".utf8)) }
         reject { _ = try FamilyTrustSetCodec.decodeCanonical(Data("99999999999999999999:".utf8)) }
-        reject { _ = try FamilyTrustSetCodec.decodeCanonical(Data(repeating: 120, count: FamilyTrustSetCodec.maximumCanonicalUTF16Units * 3 + 1)) }
+        reject { _ = try FamilyTrustSetCodec.decodeCanonical(Data(repeating: 120, count: FamilyTrustSetCodec.maximumCanonicalUTF8Bytes + 1)) }
         reject { _ = try FamilyTrustSetCodec.canonicalize(copy(value, trust: 0)) }
         reject { _ = try FamilyTrustSetCodec.canonicalize(copy(value, trust: Int(Int32.max) + 1)) }
         reject { _ = try FamilyTrustSetCodec.canonicalize(copy(value, key: -1)) }
