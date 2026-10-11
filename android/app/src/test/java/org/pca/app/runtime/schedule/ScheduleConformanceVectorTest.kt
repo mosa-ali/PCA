@@ -49,7 +49,7 @@ class ScheduleConformanceVectorTest {
                 assertEquals("intendedDecision mismatch for $id", expectedIntended, result.intendedDecision?.name)
             }
             if (expected.has("remainingMinutesToday")) {
-                val expectedRemaining = if (expected.isNull("remainingMinutesToday")) null else expected.getInt("remainingMinutesToday")
+                val expectedRemaining = if (expected.isNull("remainingMinutesToday")) null else expected.getLong("remainingMinutesToday")
                 assertEquals("remainingMinutesToday mismatch for $id", expectedRemaining, result.remainingMinutesToday)
             }
             if (expected.optBoolean("hasConfigErrors", false)) {

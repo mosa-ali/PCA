@@ -43,6 +43,31 @@ public struct PCADeviceSafeZoneDeliveryScope: Codable, Equatable {
     }
 }
 
+/// Paging cursors are opaque to the mobile inbox. Legacy zone-ID cursors remain
+/// accepted so a durable cursor from an older app can be resumed; current server
+/// cursors bind the position to the key epoch that produced the page.
+private enum PCADeviceSafeZoneDeliveryCursor {
+    case legacy(zoneId: String)
+    case epochBound(keyEpoch: Int, zoneId: String)
+
+    static let maximumBytes = 160
+
+    static func parse(_ value: String) -> Self? {
+        guard value.utf8.count <= maximumBytes else { return nil }
+        guard value.contains("~") else {
+            guard PCADeviceSafeZoneDeliveryScope.token(value) else { return nil }
+            return .legacy(zoneId: value)
+        }
+
+        let components = value.split(separator: "~", omittingEmptySubsequences: false)
+        guard components.count == 3, components[0] == "v1",
+              let keyEpoch = Int(components[1]), (1...Int(Int32.max)).contains(keyEpoch),
+              String(keyEpoch) == String(components[1]),
+              PCADeviceSafeZoneDeliveryScope.token(String(components[2])) else { return nil }
+        return .epochBound(keyEpoch: keyEpoch, zoneId: String(components[2]))
+    }
+}
+
 /// Opaque transport material only. This value has not been decrypted, authenticated,
 /// accepted as policy, or applied to any iOS protection surface.
 public struct PCAOpaqueSafeZoneDelivery: Codable, Equatable {
@@ -180,6 +205,16 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
                 newlyAddedZoneIds.insert(incoming.zoneId)
                 continue
             }
+            // The server's epoch-bound paging cursor may restart at a higher
+            // key epoch, but that does not make an older revision safe to
+            // ignore. If the same row appears under a newer epoch without a
+            // globally newer revision, retaining the old envelope would make
+            // the new durable cursor point at a row from the prior epoch.
+            // Reject the whole page before any Keychain write instead of
+            // committing a manifest that becomes corrupt on the next read.
+            if incoming.keyEpoch > existing.keyEpoch, incoming.revision <= existing.revision {
+                throw PCADeviceSafeZoneDeliveryError.staleRevision
+            }
             if incoming.revision < existing.revision { continue }
             if incoming.revision == existing.revision {
                 guard incoming == existing else { throw PCADeviceSafeZoneDeliveryError.conflictingRevision }
@@ -240,6 +275,7 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
         do {
             let bytes = try keychain.retrieve(forAccount: Self.manifestAccount(scope), service: service)
             guard bytes.count <= Self.maximumManifestBytes,
+                  (try? StrictJSONDocument.validateNoDuplicateMembers(bytes, maximumBytes: Self.maximumManifestBytes)) != nil,
                   let decoded = try? JSONDecoder().decode(Manifest.self, from: bytes), decoded.version == 1,
                   decoded.zoneIds == decoded.zoneIds.sorted(), Set(decoded.zoneIds).count == decoded.zoneIds.count,
                   decoded.zoneIds.allSatisfy(PCADeviceSafeZoneDeliveryScope.token),
@@ -248,7 +284,7 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
                   Set(decoded.stagedNewZoneIds ?? []).count == (decoded.stagedNewZoneIds ?? []).count,
                   (decoded.stagedNewZoneIds ?? []).allSatisfy(PCADeviceSafeZoneDeliveryScope.token),
                   Set(decoded.zoneIds).isDisjoint(with: Set(decoded.stagedNewZoneIds ?? [])),
-                  decoded.nextCursor.map(PCADeviceSafeZoneDeliveryScope.token) ?? true else {
+                  decoded.nextCursor.map({ PCADeviceSafeZoneDeliveryCursor.parse($0) != nil }) ?? true else {
                 throw PCADeviceSafeZoneDeliveryError.corruptInbox
             }
             manifest = decoded
@@ -290,6 +326,7 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             do {
                 let bytes = try keychain.retrieve(forAccount: Self.zoneAccount(scope, zoneId), service: service)
                 guard bytes.count <= Self.maximumRecordBytes,
+                      (try? StrictJSONDocument.validateNoDuplicateMembers(bytes, maximumBytes: Self.maximumRecordBytes)) != nil,
                       let value = try? JSONDecoder().decode(PCAOpaqueSafeZoneDelivery.self, from: bytes) else {
                     throw PCADeviceSafeZoneDeliveryError.corruptInbox
                 }
@@ -304,6 +341,21 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
                 throw PCADeviceSafeZoneDeliveryError.persistenceUnavailable
             } catch let error as PCADeviceSafeZoneDeliveryError { throw error }
             catch { throw PCADeviceSafeZoneDeliveryError.corruptInbox }
+        }
+        if let cursor = manifest.nextCursor {
+            guard let parsedCursor = PCADeviceSafeZoneDeliveryCursor.parse(cursor) else {
+                throw PCADeviceSafeZoneDeliveryError.corruptInbox
+            }
+            switch parsedCursor {
+            case .legacy(let zoneId):
+                guard records.contains(where: { $0.zoneId == zoneId }) else {
+                    throw PCADeviceSafeZoneDeliveryError.corruptInbox
+                }
+            case .epochBound(let keyEpoch, let zoneId):
+                guard records.contains(where: { $0.zoneId == zoneId && $0.keyEpoch == keyEpoch }) else {
+                    throw PCADeviceSafeZoneDeliveryError.corruptInbox
+                }
+            }
         }
         return (manifest, records)
     }
@@ -333,19 +385,53 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
 
     fileprivate static func validatePage(_ page: PCAOpaqueSafeZoneDeliveryPage, requestedCursor: String?) throws {
         guard page.safeZones.count <= pageSize,
-              requestedCursor.map(PCADeviceSafeZoneDeliveryScope.token) ?? true,
-              page.nextCursor.map(PCADeviceSafeZoneDeliveryScope.token) ?? true else {
+              requestedCursor.map({ PCADeviceSafeZoneDeliveryCursor.parse($0) != nil }) ?? true,
+              page.nextCursor.map({ PCADeviceSafeZoneDeliveryCursor.parse($0) != nil }) ?? true else {
             throw PCADeviceSafeZoneDeliveryError.malformedResponse
         }
         let ids = page.safeZones.map(\.zoneId)
         guard Set(ids).count == ids.count,
-              zip(ids, ids.dropFirst()).allSatisfy({ pair in pair.0.utf8.lexicographicallyPrecedes(pair.1.utf8) }),
-              requestedCursor.map({ cursor in ids.allSatisfy { cursor.utf8.lexicographicallyPrecedes($0.utf8) } }) ?? true else {
+              zip(ids, ids.dropFirst()).allSatisfy({ pair in pair.0.utf8.lexicographicallyPrecedes(pair.1.utf8) }) else {
             throw PCADeviceSafeZoneDeliveryError.malformedResponse
         }
+        let pageEpochs = Set(page.safeZones.map(\.keyEpoch))
+        guard pageEpochs.count <= 1 else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
+        if let requestedCursor {
+            switch PCADeviceSafeZoneDeliveryCursor.parse(requestedCursor) {
+            case .epochBound(let requestedEpoch, let requestedZoneId):
+                if let responseEpoch = page.safeZones.first?.keyEpoch {
+                    // The server restarts a cursor when the accepted key epoch advanced.
+                    // Within the same epoch it must continue strictly after the cursor;
+                    // a lower epoch or a backward same-epoch page is stale and must not
+                    // be allowed to rewind the durable inbox cursor.
+                    guard responseEpoch >= requestedEpoch else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
+                    if responseEpoch == requestedEpoch {
+                        guard ids.allSatisfy({ requestedZoneId.utf8.lexicographicallyPrecedes($0.utf8) }) else {
+                            throw PCADeviceSafeZoneDeliveryError.staleCursor
+                        }
+                    }
+                }
+            case .legacy, nil:
+                // Legacy cursors are intentionally restarted from page one because
+                // they do not carry the key epoch needed for safe continuation.
+                break
+            }
+        }
         if let next = page.nextCursor {
-            guard page.safeZones.count == pageSize, ids.last == next, next != requestedCursor else {
+            guard page.safeZones.count == pageSize, next != requestedCursor else {
                 throw PCADeviceSafeZoneDeliveryError.staleCursor
+            }
+            guard let parsedNext = PCADeviceSafeZoneDeliveryCursor.parse(next) else {
+                throw PCADeviceSafeZoneDeliveryError.malformedResponse
+            }
+            switch parsedNext {
+            case .legacy(let zoneId):
+                guard ids.last == zoneId else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
+            case .epochBound(let keyEpoch, let zoneId):
+                guard ids.last == zoneId,
+                      page.safeZones.allSatisfy({ $0.keyEpoch == keyEpoch }) else {
+                    throw PCADeviceSafeZoneDeliveryError.staleCursor
+                }
             }
         }
     }
@@ -378,6 +464,7 @@ private final class PCADeviceSafeZoneNoRedirectDelegate: NSObject, URLSessionTas
 public final class PCADeviceSafeZoneDeliveryClient {
     private struct WirePage: Decodable { let safeZones: [PCAOpaqueSafeZoneDelivery]; let nextCursor: String? }
     static let maximumSynchronizationDuration: TimeInterval = 30
+    private static let maximumPageResponseBytes = 2 * 1024 * 1024
 
     private let baseURL: URL
     private let currentSession: () throws -> PCADeviceSession?
@@ -394,7 +481,7 @@ public final class PCADeviceSafeZoneDeliveryClient {
         self.baseURL = baseURL
         self.currentSession = currentSession
         self.transport = transport ?? PCAURLSessionTransport(session: URLSession(configuration: .ephemeral,
-            delegate: PCADeviceSafeZoneNoRedirectDelegate(), delegateQueue: nil), maxResponseBytes: 2 * 1024 * 1024)
+            delegate: PCADeviceSafeZoneNoRedirectDelegate(), delegateQueue: nil), maxResponseBytes: Self.maximumPageResponseBytes)
         self.now = now
         self.monotonicNow = monotonicNow
     }
@@ -431,6 +518,13 @@ public final class PCADeviceSafeZoneDeliveryClient {
             }
             return remaining
         }
+        func assertResponseIsBeforeDeadline() throws {
+            let currentUptime = monotonicNow()
+            guard currentUptime.isFinite, currentUptime >= startedAt,
+                  currentUptime < effectiveDeadline else {
+                throw PCAAPIError.transport(.timeout)
+            }
+        }
         var cursor = try inbox.nextCursor(scope: scope)
         for _ in 0..<maximumPages {
             try Task.checkCancellation()
@@ -440,11 +534,11 @@ public final class PCADeviceSafeZoneDeliveryClient {
                 timeoutInterval: timeoutRemaining)
             try Task.checkCancellation()
             try assertSessionCurrent(session, scope: scope)
+            try Task.checkCancellation()
             // A transport implementation may return after its requested
             // timeout, or session validation may consume the remaining time.
             // Never make a late response durable or advance its cursor.
-            _ = try requestTimeoutRemaining()
-            try Task.checkCancellation()
+            try assertResponseIsBeforeDeadline()
             try inbox.stage(page, for: scope, requestedCursor: cursor)
             cursor = page.nextCursor
             if cursor == nil { return true }
@@ -457,7 +551,7 @@ public final class PCADeviceSafeZoneDeliveryClient {
         var components = URLComponents(url: baseURL.appendingPathComponent("v1/runtime-sync/safe-zones"),
                                        resolvingAgainstBaseURL: false)
         if let cursor {
-            guard PCADeviceSafeZoneDeliveryScope.token(cursor) else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
+            guard PCADeviceSafeZoneDeliveryCursor.parse(cursor) != nil else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
             components?.queryItems = [URLQueryItem(name: "cursor", value: cursor)]
         }
         guard let url = components?.url else { throw PCAAPIError.invalidRequest }
@@ -481,7 +575,9 @@ public final class PCADeviceSafeZoneDeliveryClient {
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
         }
-        guard response.data.count <= 2 * 1024 * 1024,
+        guard response.data.count <= Self.maximumPageResponseBytes,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(response.data,
+                  maximumBytes: Self.maximumPageResponseBytes)) != nil,
               let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
               Set(object.keys) == Set(["safeZones", "nextCursor"]),
               object["nextCursor"] is NSNull || object["nextCursor"] is String,

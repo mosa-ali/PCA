@@ -13,7 +13,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.feature.breakshield.ui.BreakShieldActivity
@@ -36,7 +35,6 @@ import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
-import java.security.KeyStore
 
 /**
  * Section 21 "graph creation" requirement. Exercises the real production composition root under
@@ -122,32 +120,18 @@ class PcaAppGraphTest {
         assertNotSame(first.runtime, second.runtime)
     }
 
-    /**
-     * The real production singleton discipline (Section 13/14: process restart or repeated
-     * initialization must never double-compose the graph). This exercises the actual
-     * [PcaAppGraph.getInstance] path with its real, Keystore-backed stores -- skipped rather than
-     * failed when this JVM has no `AndroidKeyStore` provider registered, since that is a property
-     * of the test environment, not of this lane's singleton logic (which is unconditionally
-     * exercised by the two tests above via [PcaAppGraph.createForTest]).
-     */
+    /** The production and test entry points share the same singleton holder; the test entry point
+     * injects an in-memory store so this identity assertion does not depend on AndroidKeyStore. */
     @Test
-    fun `getInstance is a true singleton -- no duplicate composition on repeated calls`() {
-        assumeTrue(androidKeyStoreProviderAvailable())
+    fun `singleton reuses one graph across repeated calls without AndroidKeyStore`() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
-        val first = PcaAppGraph.getInstance(context)
-        val second = PcaAppGraph.getInstance(context)
+        val first = PcaAppGraph.getInstanceForTest(context, InMemoryPersistentStateStore())
+        val second = PcaAppGraph.getInstanceForTest(context, InMemoryPersistentStateStore())
 
         assertNotNull(first)
         assert(first === second)
         assert(first.runtime === second.runtime)
-    }
-
-    private fun androidKeyStoreProviderAvailable(): Boolean = try {
-        KeyStore.getInstance("AndroidKeyStore").load(null)
-        true
-    } catch (_: Exception) {
-        false
     }
 
     // --- PCA-FR-021 closure: EyeRestShieldActivity launch wiring -----------------------------

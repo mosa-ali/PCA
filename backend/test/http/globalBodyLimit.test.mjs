@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GLOBAL_BODY_LIMIT_BYTES } from '../../dist/http/buildServer.js';
 import { MAX_OUTBOUND_BODY_BYTES } from '../../dist/http/routes/runtimeSyncRoutes.js';
-import { MAX_CANONICAL_TRUST_SET_LENGTH } from '../../dist/familytrustset/decode.js';
+import { MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
 
 const HTTP_DIR = fileURLToPath(new URL('../../src/http/', import.meta.url));
 const BUILD_SERVER_PATH = fileURLToPath(new URL('../../src/http/buildServer.ts', import.meta.url));
@@ -93,8 +93,6 @@ const DELIBERATE_CEILING_OVERRIDES = new Map([
     'The outbound contract allows bounded batches of encrypted envelopes whose combined Base64 payload exceeds 256 KiB; keep the exception local to that route.'],
   ['routes/firstDeviceBootstrapRoutes.ts:MAX_SUBMIT_BODY_BYTES',
     'A maximum 256 KiB canonical epoch-1 must travel with its domain-separated bootstrap proof and both signatures, so the legal JSON request exceeds 256 KiB.'],
-  ['routes/ordinaryTrustSetRoutes.ts:MAX_BODY_BYTES',
-    'A 256 KiB canonical epoch expands to 349,528 padded Base64 bytes; the 88-byte Base64 signature and JSON framing require a bounded 352 KiB device-only transport body.'],
 ]);
 
 test('PCA-P2-13: every route either sits under the ceiling or deliberately overrides it', () => {
@@ -127,7 +125,7 @@ test('PCA-P2-13: every route either sits under the ceiling or deliberately overr
 
   const ordinaryTrustSetLimit = limits.get('routes/ordinaryTrustSetRoutes.ts:MAX_BODY_BYTES');
   const maximumOrdinaryRequestBytes = Buffer.byteLength(JSON.stringify({
-    canonicalEpochBase64: Buffer.alloc(MAX_CANONICAL_TRUST_SET_LENGTH).toString('base64'),
+    canonicalEpochBase64: Buffer.alloc(MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES).toString('base64'),
     signatureBase64: 'A'.repeat(88),
   }));
   assert.ok(
@@ -135,8 +133,12 @@ test('PCA-P2-13: every route either sits under the ceiling or deliberately overr
     `ordinary Trust Set body limit (${ordinaryTrustSetLimit}) must fit the contract maximum request (${maximumOrdinaryRequestBytes})`,
   );
   assert.ok(
-    ordinaryTrustSetLimit <= 352 * 1024,
-    `ordinary Trust Set body limit (${ordinaryTrustSetLimit}) must remain tightly bounded at or below 352 KiB`,
+    ordinaryTrustSetLimit <= GLOBAL_BODY_LIMIT_BYTES,
+    `ordinary Trust Set body limit (${ordinaryTrustSetLimit}) must not exceed the global ceiling (${GLOBAL_BODY_LIMIT_BYTES})`,
+  );
+  assert.ok(
+    maximumOrdinaryRequestBytes <= GLOBAL_BODY_LIMIT_BYTES,
+    `maximum ordinary Trust Set request (${maximumOrdinaryRequestBytes}) must fit the global ceiling (${GLOBAL_BODY_LIMIT_BYTES})`,
   );
 
   const bounded = limits.size - overrides.length;

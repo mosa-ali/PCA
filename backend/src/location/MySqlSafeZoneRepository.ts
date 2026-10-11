@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
-import { SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRecipientPage, type SafeZoneRepository } from './SafeZoneRepository.js';
+import { createSafeZoneDeliveryCursor, safeZoneCursorAfterZoneId, SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRecipientPage, type SafeZoneRepository } from './SafeZoneRepository.js';
 
 const SAFE_ZONE_DELIVERY_PAGE_SIZE = 16;
 
@@ -48,23 +48,25 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     return rows.map(toSafeZone);
   }
 
-  async listForRecipient(familyId: string, recipientEndpointId: string, afterZoneId?: string): Promise<SafeZoneRecipientPage> {
+  async listForRecipient(familyId: string, recipientEndpointId: string, keyEpoch: number, cursor?: string): Promise<SafeZoneRecipientPage> {
+    if (!isFamilyEpochNumber(keyEpoch, 1)) throw new SafeZoneError('INVALID_INPUT');
+    const afterZoneId = safeZoneCursorAfterZoneId(cursor, keyEpoch);
     const { rows } = await runInTransaction((conn) => afterZoneId === undefined
       ? execute<SafeZoneRow>(
         conn,
-        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? ORDER BY zone_id LIMIT ?`,
-        [familyId, recipientEndpointId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND key_epoch = ? ORDER BY zone_id LIMIT ?`,
+        [familyId, recipientEndpointId, keyEpoch, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
       )
       : execute<SafeZoneRow>(
         conn,
-        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND zone_id > ? ORDER BY zone_id LIMIT ?`,
-        [familyId, recipientEndpointId, afterZoneId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND key_epoch = ? AND zone_id > ? ORDER BY zone_id LIMIT ?`,
+        [familyId, recipientEndpointId, keyEpoch, afterZoneId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
       ));
     const pageRows = rows.slice(0, SAFE_ZONE_DELIVERY_PAGE_SIZE);
     const hasMore = rows.length > SAFE_ZONE_DELIVERY_PAGE_SIZE;
     return {
       safeZones: pageRows.map(toSafeZone),
-      nextCursor: hasMore ? pageRows[pageRows.length - 1]!.zone_id : null,
+      nextCursor: hasMore ? createSafeZoneDeliveryCursor(keyEpoch, pageRows[pageRows.length - 1]!.zone_id) : null,
     };
   }
 

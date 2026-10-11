@@ -85,7 +85,7 @@ test('MySQL: an expired alert is invisible to both feeds, and purgeExpired delet
 
   now = plus(SERVER_CIPHERTEXT_TTL_MS);
   assert.deepEqual((await ledger.listForFamily(familyId)).map((e) => e.alertId), [fresh.alertId]);
-  assert.deepEqual((await ledger.listForParentDevice(familyId, parentDeviceId)).map((e) => e.alertId), [fresh.alertId]);
+  assert.deepEqual((await ledger.listForParentDevice(familyId, parentDeviceId, fresh.keyEpoch)).map((e) => e.alertId), [fresh.alertId]);
 
   assert.ok((await ledger.purgeExpired(now)) >= 1);
   assert.equal(await ledger.get(stale.alertId), null, 'expired ciphertext must actually leave the database');
@@ -105,13 +105,31 @@ test('MySQL: the protection-alert feed is bounded and returns the NEWEST rows, o
     await ledger.record(event);
   }
 
-  const page = await ledger.listForParentDevice(familyId, parentDeviceId, { limit: 5 });
+  const page = await ledger.listForParentDevice(familyId, parentDeviceId, created[0].keyEpoch, { limit: 5 });
   assert.deepEqual(
     page.map((e) => e.alertId),
     created.slice(total - 5).map((e) => e.alertId),
   );
   // A caller cannot raise the server's own bound.
   assert.equal((await ledger.listForFamily(familyId, { limit: MAX_SERVER_CIPHERTEXT_FEED_ROWS + 1000 })).length, total);
+});
+
+test('MySQL: the ProtectionAlert recipient feed filters to the exact accepted key epoch', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const parentDeviceId = `parent-${randomUUID()}`;
+  const ledger = new MySqlProtectionAlertLedger(() => T0);
+  const current = alert(familyId, parentDeviceId, { keyEpoch: 7 });
+  const stale = alert(familyId, parentDeviceId, { keyEpoch: 6 });
+  const future = alert(familyId, parentDeviceId, { keyEpoch: 8 });
+  await ledger.record(current);
+  await ledger.record(stale);
+  await ledger.record(future);
+
+  assert.deepEqual(await ledger.listForParentDevice(familyId, parentDeviceId, 7), [current]);
+  await assert.rejects(
+    () => ledger.listForParentDevice(familyId, parentDeviceId, 0),
+    /key epoch is outside the supported family epoch range/,
+  );
 });
 
 test('MySQL: family_audit_events gets the same expiry, feed filtering, and purge', async () => {
@@ -132,13 +150,31 @@ test('MySQL: family_audit_events gets the same expiry, feed filtering, and purge
   now = plus(SERVER_CIPHERTEXT_TTL_MS);
   assert.deepEqual((await ledger.listForFamily(familyId)).map((e) => e.envelopeId), [fresh.envelopeId]);
   assert.deepEqual(
-    (await ledger.listForParentDevice(familyId, parentDeviceId)).map((e) => e.envelopeId),
+    (await ledger.listForParentDevice(familyId, parentDeviceId, 1)).map((e) => e.envelopeId),
     [fresh.envelopeId],
   );
 
   assert.ok((await ledger.purgeExpired(now)) >= 1);
   assert.equal(await ledger.get(stale.envelopeId), null);
   assert.equal(await countRows('family_audit_events', familyId), 1);
+});
+
+test('MySQL: FamilyAudit recipient feed returns only the exact accepted key epoch and rejects invalid epochs', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const parentDeviceId = `parent-${randomUUID()}`;
+  const ledger = new MySqlFamilyAuditEventLedger(() => T0);
+  const current = envelope(familyId, parentDeviceId, { keyEpoch: 7 });
+  const stale = envelope(familyId, parentDeviceId, { keyEpoch: 6 });
+  const future = envelope(familyId, parentDeviceId, { keyEpoch: 8 });
+  await ledger.record(current);
+  await ledger.record(stale);
+  await ledger.record(future);
+
+  assert.deepEqual(await ledger.listForParentDevice(familyId, parentDeviceId, 7), [current]);
+  await assert.rejects(
+    () => ledger.listForParentDevice(familyId, parentDeviceId, 0),
+    /key epoch is outside the supported family epoch range/,
+  );
 });
 
 test('MySQL: FamilyAudit record snapshots routing and opaque payload before expiry cleanup', async () => {
@@ -173,8 +209,8 @@ test('MySQL: FamilyAudit record snapshots routing and opaque payload before expi
 
     const fetched = await ledger.get(accepted.envelopeId);
     assert.deepEqual(fetched, accepted, 'the stored envelope stays bound to its accepted routing, date, and ciphertext');
-    assert.deepEqual(await ledger.listForParentDevice(familyId, parentDeviceId), [accepted]);
-    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId), []);
+    assert.deepEqual(await ledger.listForParentDevice(familyId, parentDeviceId, 1), [accepted]);
+    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId, 1), []);
     assert.deepEqual(await ledger.record(accepted), { outcome: 'IDEMPOTENT_MATCH' });
     assert.deepEqual(await ledger.record({ ...accepted, encryptedPayloadB64: 'EEEE' }), { outcome: 'CONFLICT' });
   } finally {
@@ -201,8 +237,8 @@ test('MySQL NEGATIVE: one parent device never sees another device\'s queued ciph
   const theirAlert = alert(familyId, theirs);
   await ledger.record(theirAlert);
 
-  assert.deepEqual(await ledger.listForParentDevice(familyId, mine), []);
-  assert.deepEqual((await ledger.listForParentDevice(familyId, theirs)).map((e) => e.alertId), [theirAlert.alertId]);
+  assert.deepEqual(await ledger.listForParentDevice(familyId, mine, theirAlert.keyEpoch), []);
+  assert.deepEqual((await ledger.listForParentDevice(familyId, theirs, theirAlert.keyEpoch)).map((e) => e.alertId), [theirAlert.alertId]);
 });
 
 test.after(async () => {

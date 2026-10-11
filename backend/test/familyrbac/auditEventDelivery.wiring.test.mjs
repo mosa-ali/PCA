@@ -59,7 +59,7 @@ test('creating a family-member invitation through the real service delivers a de
   assert.equal(plaintextRecords[0].actionType, 'ROLE_INVITATION');
 
   // A real opaque envelope was delivered to the family's resolved parent device.
-  const delivered = await eventLedger.listForParentDevice('fam-delivery-1', 'owner-device-of-fam-delivery-1');
+  const delivered = await eventLedger.listForParentDevice('fam-delivery-1', 'owner-device-of-fam-delivery-1', 7);
   assert.equal(delivered.length, 1);
   assert.equal(delivered[0].encryptedPayloadB64, 'b3BhcXVl');
   assert.equal(delivered[0].keyEpoch, 7);

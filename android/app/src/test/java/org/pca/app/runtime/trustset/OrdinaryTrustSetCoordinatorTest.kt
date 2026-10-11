@@ -16,12 +16,39 @@ import org.pca.app.security.DskSignatureEngine
 import org.pca.app.runtime.schedule.DiskBackedPersistentStateStore
 
 class OrdinaryTrustSetCoordinatorTest {
+    private data class OwnerFixture(val deviceId: String, val keyId: String, val publicKey: String)
+
     private fun epoch(number: Int) = UntrustedTrustSetEpoch("family", number, 1, listOf(UntrustedTrustSetEntry(
         "owner", TrustSetRole.OWNER, "dsk", "public-dsk", "dek", "public-dek", TrustSetMembershipStatus.ACTIVE)),
         "2026-10-09T00:00:00.000Z", if(number == 1) null else number - 1)
+    private fun epochWithOwner(
+        number: Int,
+        owner: OwnerFixture,
+        priorOwner: OwnerFixture? = null,
+        supersedesEpoch: Int? = if (number == 1) null else number - 1,
+    ) =
+        UntrustedTrustSetEpoch(
+            familyId = "family",
+            trustSetEpoch = number,
+            keyEpoch = 1,
+            entries = buildList {
+                priorOwner?.let { previous -> add(UntrustedTrustSetEntry(
+                    previous.deviceId, TrustSetRole.ADMINISTRATOR, previous.keyId, previous.publicKey,
+                    "dek-${previous.deviceId}", "public-dek-${previous.deviceId}", TrustSetMembershipStatus.ACTIVE,
+                )) }
+                add(UntrustedTrustSetEntry(
+                    owner.deviceId, TrustSetRole.OWNER, owner.keyId, owner.publicKey,
+                    "dek-${owner.deviceId}", "public-dek-${owner.deviceId}", TrustSetMembershipStatus.ACTIVE,
+                ))
+            },
+            issuedAt = "2026-10-09T00:00:00.000Z",
+            supersedesEpoch = supersedesEpoch,
+        )
     private fun record(epoch: UntrustedTrustSetEpoch) = AcceptedEpochRecord(OrdinaryEpochRequest(
         Base64.getEncoder().encodeToString(TrustSetEpochCodec.canonicalize(epoch).toByteArray()),
         Base64.getEncoder().encodeToString(ByteArray(64) { 1 })), "owner", "dsk", epoch.trustSetEpoch, epoch.keyEpoch)
+    private fun record(epoch: UntrustedTrustSetEpoch, signer: OwnerFixture, request: OrdinaryEpochRequest) =
+        record(epoch).copy(request = request, signerDeviceId = signer.deviceId, signerKeyId = signer.keyId)
     private val rootSeed = FirstDeviceCeremonySeed("a".repeat(32), "", "https://example.test", "owner", "dsk", "dek",
         "public-dsk", "public-dek", "pca.dsk." + "a".repeat(32), "pca.dek." + "a".repeat(32))
     private fun seedStore(store: PersistentOrdinaryEpochStore) {
@@ -59,6 +86,29 @@ class OrdinaryTrustSetCoordinatorTest {
             .put("accepted", acceptedJson(accepted))
             .put("rootAnchor", acceptedJson(root))
             .put("pending", requestJson(pending))
+            .toString())
+        return PersistentOrdinaryEpochStore(backing)
+    }
+    private fun legacyV3Store(
+        backing: PersistentStateStore,
+        accepted: AcceptedEpochRecord,
+        root: AcceptedEpochRecord,
+        pending: OrdinaryEpochRequest,
+    ): PersistentOrdinaryEpochStore {
+        fun requestJson(value: OrdinaryEpochRequest) = JSONObject()
+            .put("canonicalEpochBase64", value.canonicalEpochBase64)
+            .put("signatureBase64", value.signatureBase64)
+        fun acceptedJson(value: AcceptedEpochRecord) = requestJson(value.request)
+            .put("signerDeviceId", value.signerDeviceId)
+            .put("signerKeyId", value.signerKeyId)
+            .put("trustSetEpoch", value.trustSetEpoch)
+            .put("keyEpoch", value.keyEpoch)
+        backing.putString("ordinary_trust_set_v1", JSONObject()
+            .put("version", 3)
+            .put("accepted", acceptedJson(accepted))
+            .put("rootAnchor", acceptedJson(root))
+            .put("pending", requestJson(pending))
+            .put("pendingBase", JSONObject.NULL)
             .toString())
         return PersistentOrdinaryEpochStore(backing)
     }
@@ -195,6 +245,208 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(bootstrapAnchor, store.read()!!.rootAnchor)
     }
 
+    @Test fun `accepted owner transfers survive restart and verify each immediate predecessor`() = runBlocking {
+        val ownerA = OwnerFixture("owner", "dsk", "public-dsk")
+        val ownerB = OwnerFixture("device-b", "dsk-b", "public-dsk-b")
+        val transferToB = epochWithOwner(2, ownerB, ownerA)
+        val transferBackToA = epochWithOwner(3, ownerA, ownerB)
+        val nextAsA = epochWithOwner(4, ownerA)
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val root = requireNotNull(store.read()).accepted
+        val api = Api().apply { head = root; loseResponse = true }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { signs.toByte() }
+            }
+        }
+        val verifiedKeys = mutableListOf<String>()
+        val verifier = OrdinaryEpochSignatureVerifier { publicKey, _, _ ->
+            verifiedKeys += publicKey
+            true
+        }
+        fun coordinator(owner: OwnerFixture) = OrdinaryTrustSetCoordinator(
+            PersistentOrdinaryEpochStore(backing), api, signer, verifier,
+            owner.deviceId, owner.keyId, "alias-${owner.deviceId}",
+        )
+
+        val firstOwner = coordinator(ownerA)
+        assertTrue(firstOwner.prepare(transferToB))
+        val pendingB = requireNotNull(store.read()).pending
+        assertNotNull(pendingB)
+        assertFalse(firstOwner.submitExact()) // response lost after durable signature
+
+        val acceptedB = record(transferToB, ownerA, requireNotNull(pendingB))
+        api.loseResponse = false
+        api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, acceptedB, acceptedB)
+        assertTrue(coordinator(ownerA).reconcile()) // new coordinator simulates process restart
+        assertEquals(listOf(pendingB, pendingB), api.sent)
+        assertEquals(root, requireNotNull(PersistentOrdinaryEpochStore(backing).read()).acceptedBase)
+
+        api.head = acceptedB
+        val secondOwner = coordinator(ownerB)
+        assertTrue(secondOwner.prepare(transferBackToA))
+        val pendingA = requireNotNull(PersistentOrdinaryEpochStore(backing).read()).pending
+        val acceptedA = record(transferBackToA, ownerB, requireNotNull(pendingA))
+        api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, acceptedA, acceptedA)
+        assertTrue(coordinator(ownerB).reconcile())
+        val afterReturn = requireNotNull(PersistentOrdinaryEpochStore(backing).read())
+        assertEquals(acceptedA, afterReturn.accepted)
+        assertEquals(acceptedB, afterReturn.acceptedBase)
+        val staleSnapshot = requireNotNull(backing.getString("ordinary_trust_set_v1"))
+
+        api.head = acceptedA
+        assertTrue(coordinator(ownerA).prepare(nextAsA))
+        val pendingNext = requireNotNull(PersistentOrdinaryEpochStore(backing).read()).pending
+        val acceptedNext = record(nextAsA, ownerA, requireNotNull(pendingNext))
+        api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, acceptedNext, acceptedNext)
+        assertTrue(coordinator(ownerA).reconcile())
+        val finalState = requireNotNull(PersistentOrdinaryEpochStore(backing).read())
+
+        assertEquals(acceptedNext, finalState.accepted)
+        assertEquals(acceptedA, finalState.acceptedBase)
+        assertEquals(root, finalState.rootAnchor)
+        assertEquals(3, signs)
+        assertTrue("each accepted hop is checked under its immediate predecessor Owner", verifiedKeys.contains(ownerB.publicKey))
+        assertTrue(verifiedKeys.contains(ownerA.publicKey))
+
+        // Restoring the older authenticated pair cannot authorize a signature once the remote
+        // accepted head has moved. The preflight detects the rollback before DSK use.
+        backing.putString("ordinary_trust_set_v1", staleSnapshot)
+        backing.flush()
+        api.head = acceptedNext
+        assertFalse(coordinator(ownerA).prepare(nextAsA))
+        assertEquals(3, signs)
+        assertEquals(4, api.headReads)
+        assertEquals(acceptedA, requireNotNull(PersistentOrdinaryEpochStore(backing).read()).accepted)
+    }
+
+    @Test fun `verified owner transfer retires an old owners pending request even when its candidate epoch is higher`() = runBlocking {
+        val ownerA = OwnerFixture("owner", "dsk", "public-dsk")
+        val ownerB = OwnerFixture("device-b", "dsk-b", "public-dsk-b")
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val root = requireNotNull(store.read()).accepted
+        val api = Api().apply { head = root; records[1] = root }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 7 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(
+            store, api, signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+            ownerA.deviceId, ownerA.keyId, "alias-owner-a",
+        )
+        val oldOwnerPending = epochWithOwner(number = 5, owner = ownerA, supersedesEpoch = 1)
+        assertTrue(coordinator.prepare(oldOwnerPending))
+        val persistedPending = requireNotNull(store.read()).pending
+        assertNotNull(persistedPending)
+        assertEquals(root, store.read()!!.pendingBase)
+
+        // The current server head has transferred OWNER to B. Although the old A request's
+        // numeric epoch is higher, it is signed from the now-stale root and cannot be replayed.
+        val transferToB = epochWithOwner(2, ownerB, ownerA)
+        val acceptedTransfer = record(transferToB, ownerA, record(transferToB).request)
+        api.head = acceptedTransfer
+        api.records[2] = acceptedTransfer
+
+        assertEquals(1, coordinator.catchUp())
+
+        val caughtUp = requireNotNull(PersistentOrdinaryEpochStore(backing).read())
+        assertEquals(acceptedTransfer, caughtUp.accepted)
+        assertEquals(root, caughtUp.acceptedBase)
+        assertNull(caughtUp.pending)
+        assertNull(caughtUp.pendingBase)
+        assertTrue("stale pending custody is retired locally, never replayed", api.sent.isEmpty())
+        assertEquals(1, signs) // only the original pending signature was made
+    }
+
+    @Test fun `already accepted owner transfer retires pending custody whose base is no longer the head`() = runBlocking {
+        val ownerA = OwnerFixture("owner", "dsk", "public-dsk")
+        val ownerB = OwnerFixture("device-b", "dsk-b", "public-dsk-b")
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val root = requireNotNull(store.read()).accepted
+        val pendingEpoch = epochWithOwner(number = 5, owner = ownerA, supersedesEpoch = 1)
+        val original = requireNotNull(store.read())
+        assertTrue(store.compareAndSetDurably(
+            original,
+            original.copy(pending = record(pendingEpoch).request, pendingBase = root),
+        ))
+
+        val transfer = epochWithOwner(2, ownerB, ownerA)
+        val acceptedTransfer = record(transfer, ownerA, record(transfer).request)
+        val withAcceptedTransfer = requireNotNull(store.read())
+        assertTrue(store.compareAndSetDurably(
+            withAcceptedTransfer,
+            OrdinaryEpochState(
+                accepted = acceptedTransfer,
+                pending = withAcceptedTransfer.pending,
+                rootAnchor = root,
+                pendingBase = root,
+                acceptedBase = root,
+            ),
+        )) // represents a prior process version that wrote the accepted hop but kept stale pending
+        val api = Api().apply { head = acceptedTransfer }
+        val noResign = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray = error("must not re-sign")
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(
+            PersistentOrdinaryEpochStore(backing), api, noResign,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, ownerA.deviceId, ownerA.keyId, "alias-owner-a",
+        )
+
+        assertEquals(0, coordinator.catchUp())
+
+        val reconciled = requireNotNull(PersistentOrdinaryEpochStore(backing).read())
+        assertEquals(acceptedTransfer, reconciled.accepted)
+        assertNull(reconciled.pending)
+        assertNull(reconciled.pendingBase)
+        assertTrue("the already-current server head must not receive the stale request", api.sent.isEmpty())
+    }
+
+    @Test fun `new owner cannot self-sign its ownership transfer`() = runBlocking {
+        val ownerA = OwnerFixture("owner", "dsk", "public-dsk")
+        val ownerB = OwnerFixture("device-b", "dsk-b", "public-dsk-b")
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val root = requireNotNull(store.read()).accepted
+        val api = Api().apply { head = root }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 6 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(
+            store, api, signer, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+            ownerA.deviceId, ownerA.keyId, "alias-owner-a",
+        )
+        val transfer = epochWithOwner(2, ownerB, ownerA)
+        assertTrue(coordinator.prepare(transfer))
+        val pending = requireNotNull(store.read()).pending
+        val selfSigned = record(transfer, ownerB, requireNotNull(pending))
+        api.response = OrdinaryEpochResponse(OrdinaryEpochOutcome.ACCEPTED, selfSigned, selfSigned)
+
+        try {
+            coordinator.reconcile()
+            fail("an ownership claim signed by the candidate new owner must be rejected")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals(root, store.read()!!.accepted)
+        assertEquals(pending, store.read()!!.pending)
+        assertEquals(1, signs)
+    }
+
     @Test fun `restart status miss replays exact durable request without signing again`() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         val pendingAccepted = record(epoch(2))
@@ -324,6 +576,27 @@ class OrdinaryTrustSetCoordinatorTest {
         val backing = InMemoryPersistentStateStore().apply { putString("ordinary_trust_set_v1", "bad") }
         try { PersistentOrdinaryEpochStore(backing).read(); fail() } catch (_: IllegalStateException) { }
     }
+    @Test fun persistedEpochStateRejectsDuplicateAndEscapeAliasedMembers() {
+        val backing = DiskBackedPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val trusted = store.read()!!
+        assertEquals(trusted, PersistentOrdinaryEpochStore(backing.afterProcessDeath()).read())
+
+        val raw = requireNotNull(backing.getString("ordinary_trust_set_v1"))
+        backing.putString("ordinary_trust_set_v1", raw.replace(
+            "\"keyEpoch\":1",
+            "\"keyEpoch\":1,\"key\\u0045poch\":1",
+        ))
+        backing.flush()
+
+        try {
+            PersistentOrdinaryEpochStore(backing.afterProcessDeath()).read()
+            fail("duplicate persisted fields must not choose an accepted floor")
+        } catch (failure: IllegalStateException) {
+            assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+        }
+    }
     @Test fun compareAndSetCannotOverwriteAnotherWriter() {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         seedStore(store)
@@ -371,6 +644,33 @@ class OrdinaryTrustSetCoordinatorTest {
         }
         assertNull(store.read()!!.pending)
     }
+    @Test fun oversizedOrdinaryCandidateBytesAreRejectedBeforeSigningOrPersistence() {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        seedStore(store)
+        val initial = store.read()!!
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 1 }
+            }
+        }
+
+        // The server boundary is inclusive; this gate runs immediately before the signer in
+        // prepare(), and failure leaves pending custody unchanged.
+        assertEquals(64, signOrdinaryEpochRequestBytes(signer, "alias",
+            ByteArray(OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BYTES)).size)
+        assertEquals(1, signs)
+        try {
+            signOrdinaryEpochRequestBytes(signer, "alias",
+                ByteArray(OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BYTES + 1))
+            fail("oversized ordinary candidate must be rejected")
+        } catch (_: IllegalArgumentException) { }
+
+        assertEquals(1, signs)
+        assertEquals(initial, store.read())
+        assertNull(store.read()!!.pending)
+    }
     @Test fun verifiedCatchUpPersistsFloorAndClearsOnlyExactPending() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         val accepted = record(epoch(2))
@@ -387,7 +687,7 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(bootstrapAnchor, store.read()!!.rootAnchor)
         assertNull(store.read()!!.pending)
     }
-    @Test fun pendingPredecessorSurvivesRestartBetweenVerifiedCatchUpHops() = runBlocking {
+    @Test fun stalePendingIsRetiredBeforeRestartBetweenVerifiedCatchUpHops() = runBlocking {
         val backing = InMemoryPersistentStateStore()
         val durable = PersistentOrdinaryEpochStore(backing)
         val pending = record(epoch(3).copy(supersedesEpoch = 1))
@@ -414,8 +714,9 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(1, OrdinaryTrustSetCoordinator(simulatedDeath, api, noResign, verifier,
             "owner", "dsk", "alias").catchUp(2))
         assertEquals(first, durable.read()!!.accepted)
-        assertEquals(pending.request, durable.read()!!.pending)
-        assertEquals(root, durable.read()!!.pendingBase)
+        assertNull(durable.read()!!.pending)
+        assertNull(durable.read()!!.pendingBase)
+        assertEquals(root, durable.read()!!.acceptedBase)
 
         val restarted = PersistentOrdinaryEpochStore(backing)
         assertFalse(OrdinaryTrustSetCoordinator(restarted, api, noResign, verifier,
@@ -449,7 +750,7 @@ class OrdinaryTrustSetCoordinatorTest {
         assertNull("the v2 pending attempt is retired only after epoch 1 is resolved and verified", store.read()!!.pending)
         assertNull(store.read()!!.pendingBase)
     }
-    @Test fun legacyPendingWithUnprovablePredecessorIsPreservedWhileServerCatchUpProgresses() = runBlocking {
+    @Test fun legacyPendingWithUnprovablePredecessorIsRetiredAfterCatchUpProgresses() = runBlocking {
         val root = record(epoch(1))
         val acceptedFloor = record(epoch(3).copy(supersedesEpoch = 1))
         val unprovablePending = record(epoch(4).copy(supersedesEpoch = 2)).request
@@ -467,8 +768,8 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(1, OrdinaryTrustSetCoordinator(store, api, noResign,
             OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias").catchUp())
         assertEquals(serverHead, store.read()!!.accepted)
-        assertEquals("unproven legacy custody remains byte-for-byte intact", unprovablePending, store.read()!!.pending)
-        assertNull("the current floor is not invented as the request's signing predecessor", store.read()!!.pendingBase)
+        assertNull("unproven legacy custody is retired after verified accepted progress", store.read()!!.pending)
+        assertNull(store.read()!!.pendingBase)
     }
     @Test fun malformedPendingIsRejectedBeforeCatchUpNetworkOrFloorMutation() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
@@ -769,6 +1070,45 @@ class OrdinaryTrustSetCoordinatorTest {
         assertFalse(coordinator(restarted).submitExact())
         assertTrue("unknown legacy custody is never submitted after restart", api.sent.isEmpty())
     }
+
+    @Test fun legacyV3UnprovablePendingIsRetiredAfterVerifiedProgressAndCurrentOwnerCanPrepare() = runBlocking {
+        val root = record(epoch(1))
+        val unprovablePending = record(epoch(5).copy(supersedesEpoch = null)).request
+        val acceptedHop = record(epoch(2))
+        val backing = DiskBackedPersistentStateStore()
+        val store = legacyV3Store(backing, root, root, unprovablePending)
+        val api = Api().apply {
+            head = acceptedHop
+            records[1] = root
+        }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 2 }
+            }
+        }
+        val verifier = OrdinaryEpochSignatureVerifier { _, _, _ -> true }
+
+        assertEquals(1, OrdinaryTrustSetCoordinator(store, api, signer, verifier,
+            "owner", "dsk", "alias").catchUp())
+        val afterCatchUp = store.read()!!
+        assertEquals(acceptedHop, afterCatchUp.accepted)
+        assertNull("unprovable legacy custody is retired only after accepted progress", afterCatchUp.pending)
+        assertNull(afterCatchUp.pendingBase)
+        assertTrue("retired legacy bytes are never sent", api.sent.isEmpty())
+
+        val restarted = PersistentOrdinaryEpochStore(backing.afterProcessDeath())
+        assertNull(restarted.read()!!.pending)
+        assertTrue(OrdinaryTrustSetCoordinator(restarted, api, signer, verifier,
+            "owner", "dsk", "alias").prepare(epoch(3)))
+        val prepared = restarted.read()!!
+        assertEquals(acceptedHop, prepared.pendingBase)
+        assertEquals(1, signs)
+        assertTrue("only the new request from the current accepted floor is held", prepared.pending != null)
+        assertTrue("prepare does not submit the request", api.sent.isEmpty())
+    }
+
     @Test fun persistedPendingBaseCannotBeReboundByOlderSignedLineageMetadata() = runBlocking {
         val root = record(epoch(1))
         val accepted = record(epoch(3).copy(supersedesEpoch = 1))
@@ -810,7 +1150,7 @@ class OrdinaryTrustSetCoordinatorTest {
         assertFalse(coordinator(PersistentOrdinaryEpochStore(failedBacking)).submitExact())
         assertEquals(1, api.sent.size)
     }
-    @Test fun currentAcceptanceBoundaryRejectsOwnerTransfer() = runBlocking {
+    @Test fun currentAcceptanceBoundaryRejectsNewOwnersSelfSignedTransfer() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         seedStore(store)
         val validFirst = record(epoch(2))

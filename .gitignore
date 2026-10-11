@@ -17,6 +17,8 @@ Thumbs.db
 **/DerivedData/
 **/xcuserdata/
 **/*.xcuserstate
+# Local Gradle user home used by the Android test runner; never repository content.
+android/.gradle-user-home/
 
 # SBOM output (PCA-NFR-006) -- generated fresh by CI/local script, never committed
 sbom.cdx.json

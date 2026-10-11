@@ -37,7 +37,10 @@ export class OrdinaryTrustSetError extends Error {
   }
 }
 
-const MAX_CANONICAL_BYTES = 262_144;
+/** Largest ordinary epoch request that fits base64 + signature + JSON framing under the 256 KiB HTTP body ceiling. */
+export const MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES = 196_506;
+/** General signed-record ceiling also used by first-device bootstrap and accepted-head projections. */
+export const MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES = 262_144;
 function snapshotScope(scope: OrdinaryTrustSetScope): OrdinaryTrustSetScope {
   if (!scope || !isPlausibleOpaqueId(scope.familyId) || !isPlausibleOpaqueId(scope.deviceId) ||
       !isPlausibleOpaqueId(scope.dskKeyId)) {
@@ -63,7 +66,7 @@ function parseRequest(input: unknown): { bytes: Buffer; signature: string; epoch
     throw new OrdinaryTrustSetError('INVALID_REQUEST');
   }
   const request = input as OrdinaryTrustSetRequest;
-  const bytes = strictBase64(request.canonicalEpochBase64, MAX_CANONICAL_BYTES);
+  const bytes = strictBase64(request.canonicalEpochBase64, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES);
   const signatureBytes = strictBase64(request.signatureBase64, 64);
   const signature = signatureBytes.toString('base64url');
   if (!isCanonicalP256Signature(signature)) throw new OrdinaryTrustSetError('INVALID_REQUEST');

@@ -2,7 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { EnvelopeAcceptanceContext } from '../../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { InboundReconnectService } from '../../runtime-sync/InboundReconnectService.js';
 import { envelopeToRawFamilyEnvelope } from '../../runtime-sync/envelopeWireCodec.js';
-import type { OutboundEnvelopeItem, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
+import {
+  RecipientAuthorizationUnavailableError,
+  type OutboundBatchResult,
+  type OutboundEnvelopeItem,
+  type OutboundRelayService,
+} from '../../runtime-sync/OutboundRelayService.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { RelayError } from '../../relay/RelayService.js';
 import { hashSessionToken } from '../../auth/token.js';
@@ -11,7 +16,12 @@ import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.j
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { MAX_RELAY_TTL_MS } from '../../relay/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
-import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
+import {
+  ProtectionStatusDeviceUnavailableError,
+  type DeviceProtectionStatusRecord,
+  type DeviceProtectionStatusRepository,
+  type ProtectionLevel,
+} from '../../device/DeviceProtectionStatusRepository.js';
 import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
 import type { TrustSetRoleResolver, ResolvedActor, ActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
 import {
@@ -285,11 +295,52 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       const items = body.items.map(parseOutboundItem);
       if (items.some((item) => item === null)) return reply.code(400).send({ error: 'invalid_request' });
 
-      const result = await deps.outboundRelayService.submitBatch(
-        request.runtimeSyncDeviceId as string,
-        request.runtimeSyncFamilyId as string,
-        items as OutboundEnvelopeItem[],
-      );
+      // Authorize recipients lazily inside OutboundRelayService, after its
+      // same-family/revoked/browser checks and only for items in the bounded
+      // priority slice. That preserves CROSS_FAMILY_RECIPIENT semantics and
+      // avoids unbounded Trust Set reads for items this batch will not send.
+      const recipientAuthorization = new Map<string, boolean>();
+      const authorizeRecipient = async (recipientDeviceId: string): Promise<boolean> => {
+        const cached = recipientAuthorization.get(recipientDeviceId);
+        if (cached !== undefined) return cached;
+        if (!deps.trustSetRoleResolver) throw new RecipientAuthorizationUnavailableError();
+        let recipientActor: ResolvedActor | ActorResolutionFailure;
+        try {
+          recipientActor = await deps.trustSetRoleResolver.resolveActor(
+            request.runtimeSyncFamilyId as string,
+            recipientDeviceId,
+          );
+        } catch {
+          throw new RecipientAuthorizationUnavailableError();
+        }
+        if (typeof recipientActor === 'string') {
+          recipientAuthorization.set(recipientDeviceId, false);
+          return false;
+        }
+        if (recipientActor === null || typeof recipientActor !== 'object' || Array.isArray(recipientActor) ||
+            recipientActor.deviceId !== recipientDeviceId || !FAMILY_ROLES.has(recipientActor.role) ||
+            !Number.isSafeInteger(recipientActor.trustSetEpoch) || recipientActor.trustSetEpoch < 1 ||
+            !Number.isSafeInteger(recipientActor.keyEpoch) || recipientActor.keyEpoch < 1) {
+          throw new RecipientAuthorizationUnavailableError();
+        }
+        recipientAuthorization.set(recipientDeviceId, true);
+        return true;
+      };
+
+      let result: OutboundBatchResult;
+      try {
+        result = await deps.outboundRelayService.submitBatch(
+          request.runtimeSyncDeviceId as string,
+          request.runtimeSyncFamilyId as string,
+          items as OutboundEnvelopeItem[],
+          authorizeRecipient,
+        );
+      } catch (error) {
+        if (error instanceof RecipientAuthorizationUnavailableError) {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
+        throw error;
+      }
       return reply.send({
         results: result.results,
         droppedForBatchBound: result.droppedForBatchBound,
@@ -409,13 +460,22 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         // particular, alert-transition lookup latency must not change the
         // timestamp assigned to this report, and the client never supplies it.
         const receivedAt = new Date();
-        // Read before write: a transition INTO DEGRADED is only detectable
-        // by diffing against the prior single-row-per-device value (the
-        // table is an upsert, never a history log -- see this repository's
-        // own doc comment) -- so the previous level must be captured before
-        // it's overwritten below, not after.
-        const previous = deps.protectionStatusAlerting ? await protectionStatusRepository.findForDevice(familyId, deviceId) : null;
-        await protectionStatusRepository.upsert({ deviceId, familyId, protectionLevel: nextLevel, updatedAt: receivedAt });
+        const record = { deviceId, familyId, protectionLevel: nextLevel, updatedAt: receivedAt };
+        // When transition alerts are enabled, read the prior single-row value
+        // and persist this report atomically. Otherwise a concurrent pair of
+        // DEGRADED reports could both observe the same non-DEGRADED status
+        // and produce duplicate transition alerts.
+        let previous: DeviceProtectionStatusRecord | null = null;
+        try {
+          previous = deps.protectionStatusAlerting
+            ? await protectionStatusRepository.recordAndReadPrevious(record)
+            : (await protectionStatusRepository.upsert(record), null);
+        } catch (error) {
+          if (error instanceof ProtectionStatusDeviceUnavailableError) {
+            return reply.code(403).send({ error: 'device_not_authorized' });
+          }
+          throw error;
+        }
         if (nextLevel === 'DEGRADED' && previous?.protectionLevel !== 'DEGRADED') {
           await emitProtectionDegradedAlert(deps.protectionStatusAlerting, familyId, deviceId, deps.alertComposeFailureLogger);
         }

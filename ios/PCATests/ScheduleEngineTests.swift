@@ -77,6 +77,30 @@ final class ScheduleEngineTests: XCTestCase {
         XCTAssertEqual(result.kind, .allowedException)
     }
 
+    func testMalformedParentExceptionIntervalsFailClosedBeforeAllowPrecedence() {
+        let now = date("2026-01-07T12:00:00Z")
+        let bedtime = window(id: "bedtime", kind: .bedtime)
+        let validStart = date("2026-01-07T11:00:00Z")
+        let validEnd = date("2026-01-07T13:00:00Z")
+        let malformed = [
+            ParentException(id: "equal", appScope: .all, startAt: validStart, endAt: validStart),
+            ParentException(id: "reversed", appScope: .all, startAt: validEnd, endAt: validStart),
+            ParentException(id: "non-finite-start", appScope: .all,
+                startAt: Date(timeIntervalSince1970: .infinity), endAt: validEnd),
+            ParentException(id: "non-finite-end", appScope: .all,
+                startAt: validStart, endAt: Date(timeIntervalSince1970: -.infinity)),
+            ParentException(id: "out-of-range", appScope: .all,
+                startAt: Date(timeIntervalSince1970: 8_640_000_000_001), endAt: validEnd),
+        ]
+
+        for exception in malformed {
+            let result = ScheduleEngine.evaluate(input(now: now, windows: [bedtime], exceptions: [exception]))
+            XCTAssertEqual(result.kind, .invalidConfig, "malformed exception \(exception.id) must not reach allow precedence")
+            XCTAssertFalse(result.configErrors.isEmpty)
+            XCTAssertFalse(result.kind == .allowedException)
+        }
+    }
+
     func testSchoolModeIntersectionAcrossTwoOverlappingWindowsWithDifferentAllowScopes() {
         let windowA = window(id: "school-a", kind: .schoolMode, appScope: .apps(["homework-app"]))
         let windowB = window(id: "school-b", kind: .schoolMode, appScope: .all)
@@ -104,6 +128,34 @@ final class ScheduleEngineTests: XCTestCase {
 
         let after = ScheduleEngine.evaluate(input(now: date("2026-01-07T09:20:00Z"), bonusGrants: [grant], dailyLimit: dailyLimit))
         XCTAssertEqual(after.kind, .blockedLimitReached)
+    }
+
+    func testRemainingMinutesUsesFullWidthArithmeticForMaximumInt32PolicyValues() {
+        let now = date("2026-01-07T09:05:00Z")
+        let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: Int(Int32.max),
+            usedMinutesToday: Int(Int32.max), anchorLocalDate: "2026-01-07")
+        let grants = (0..<3).map { index in
+            BonusGrant(id: "bonus-\(index)", appScope: .all, extraMinutes: Int(Int32.max),
+                grantedAt: date("2026-01-07T09:00:00Z"), expiresAt: date("2026-01-07T10:00:00Z"))
+        }
+
+        let result = ScheduleEngine.evaluate(input(now: now, bonusGrants: grants, dailyLimit: dailyLimit))
+
+        XCTAssertEqual(result.kind, .allowedBonus)
+        XCTAssertEqual(result.remainingMinutesToday, Int64(Int32.max) * 3)
+    }
+
+    func testExtremeIntPolicyTotalsSaturateWithoutOverflowingIntoAFalseBlock() {
+        let now = date("2026-01-07T09:05:00Z")
+        let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: Int.max,
+            usedMinutesToday: Int.max, anchorLocalDate: "2026-01-07")
+        let grant = BonusGrant(id: "bonus-max", appScope: .all, extraMinutes: Int.max,
+            grantedAt: date("2026-01-07T09:00:00Z"), expiresAt: date("2026-01-07T10:00:00Z"))
+
+        let result = ScheduleEngine.evaluate(input(now: now, bonusGrants: [grant], dailyLimit: dailyLimit))
+
+        XCTAssertEqual(result.kind, .allowedBonus)
+        XCTAssertEqual(result.remainingMinutesToday, Int64.max)
     }
 
     func testEnforcementUnavailableReportsIntendedDecisionInsteadOfBareBlock() {

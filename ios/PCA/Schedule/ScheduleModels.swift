@@ -125,7 +125,8 @@ public struct ScheduleDecision: Equatable {
     public let reason: String
     public let matchedWindowIds: [String]
     public let intendedKind: ScheduleDecisionKind?
-    public let remainingMinutesToday: Int?
+    /// Full-width remaining time shared with backend Number / Android Long semantics.
+    public let remainingMinutesToday: Int64?
     public let configErrors: [String]
 
     public init(
@@ -133,7 +134,7 @@ public struct ScheduleDecision: Equatable {
         reason: String,
         matchedWindowIds: [String] = [],
         intendedKind: ScheduleDecisionKind? = nil,
-        remainingMinutesToday: Int? = nil,
+        remainingMinutesToday: Int64? = nil,
         configErrors: [String] = []
     ) {
         self.kind = kind

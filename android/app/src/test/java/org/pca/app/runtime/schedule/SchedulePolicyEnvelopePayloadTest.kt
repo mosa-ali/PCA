@@ -59,6 +59,38 @@ class SchedulePolicyEnvelopePayloadTest {
     }
 
     @Test
+    fun `authenticated envelope epochs bind exactly to decoded schedule policy`() {
+        val policy = samplePolicy()
+        val plaintext = SchedulePolicyEnvelopePayload.encode(policy)
+
+        assertEquals(policy, SchedulePolicyEnvelopePayload.decodeForEnvelope(
+            plaintext,
+            envelopeTrustSetEpoch = policy.trustSetEpoch.toLong(),
+            envelopeKeyEpoch = policy.keyEpoch.toLong(),
+        ))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, policy.trustSetEpoch + 1L, policy.keyEpoch.toLong())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, policy.trustSetEpoch.toLong(), policy.keyEpoch + 1L)
+        }
+    }
+
+    @Test
+    fun `out of range envelope epoch metadata is rejected before payload binding`() {
+        val plaintext = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+        val aboveInt32 = Int.MAX_VALUE.toLong() + 1L
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, aboveInt32, 1L)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, 1L, -1L)
+        }
+    }
+
+    @Test
     fun `round-trips a policy with no expiresAt`() {
         val original = samplePolicy().copy(expiresAt = null)
         val decoded = SchedulePolicyEnvelopePayload.decode(SchedulePolicyEnvelopePayload.encode(original))
@@ -111,6 +143,49 @@ class SchedulePolicyEnvelopePayloadTest {
     @Test
     fun `malformed json is rejected without crashing the caller into an unhandled state`() {
         assertThrows(org.json.JSONException::class.java) { SchedulePolicyEnvelopePayload.decode("not json") }
+    }
+
+    @Test
+    fun `strict JSON rejects duplicate decoded names and permissive JSONObject syntax`() {
+        val encoded = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+        val duplicate = encoded.replace("\"trustSetEpoch\":2", "\"trustSetEpoch\":2,\"trustSetEpoch\":2")
+        val escapedDuplicate = encoded.replace(
+            "\"trustSetEpoch\":2",
+            "\"trustSetEpoch\":2,\"trustSet\\u0045poch\":2",
+        )
+        val singleQuoted = encoded.replace("\"kind\"", "'kind'")
+        val nonJsonNumber = encoded.replace("\"keyEpoch\":1", "\"keyEpoch\":NaN")
+
+        for (ambiguous in listOf(duplicate, escapedDuplicate, singleQuoted, nonJsonNumber)) {
+            assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(ambiguous) }
+        }
+    }
+
+    @Test
+    fun `schedule plaintext rejects fields outside each closed DTO`() {
+        val encoded = SchedulePolicyEnvelopePayload.encode(samplePolicy())
+        fun altered(change: (JSONObject) -> Unit): String = JSONObject(encoded).also(change).toString()
+
+        val candidates = listOf(
+            altered { it.put("future", true) },
+            altered { it.getJSONObject("policy").put("future", true) },
+            altered { it.getJSONObject("policy").getJSONArray("windows").getJSONObject(0).put("future", true) },
+            altered {
+                it.getJSONObject("policy").getJSONArray("windows").getJSONObject(0)
+                    .getJSONObject("start").put("future", true)
+            },
+            altered {
+                it.getJSONObject("policy").getJSONArray("windows").getJSONObject(1)
+                    .getJSONObject("appScope").put("future", true)
+            },
+            altered { it.getJSONObject("policy").getJSONArray("bonusGrants").getJSONObject(0).put("future", true) },
+            altered { it.getJSONObject("policy").getJSONArray("parentExceptions").getJSONObject(0).put("future", true) },
+            altered { it.getJSONObject("policy").getJSONArray("dailyLimits").getJSONObject(0).put("future", true) },
+        )
+
+        for (candidate in candidates) {
+            assertThrows(IllegalArgumentException::class.java) { SchedulePolicyEnvelopePayload.decode(candidate) }
+        }
     }
 
     @Test

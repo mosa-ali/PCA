@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import { OrdinaryTrustSetError, type OrdinaryTrustSetScope, type AcceptedTrustSetEpochDto,
+import { MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES,
+  OrdinaryTrustSetError, type OrdinaryTrustSetScope, type AcceptedTrustSetEpochDto,
   type OrdinaryTrustSetSubmitResult, type OrdinaryTrustSetStatusResult } from '../../familytrustset/OrdinaryTrustSetService.js';
 import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
@@ -18,8 +19,7 @@ export interface OrdinaryTrustSetRoutesDeps {
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 const BASE = '/api/device/families/:familyId/trust-set/epochs';
-const MAX_BODY_BYTES = 352 * 1024;
-const MAX_CANONICAL_BYTES = 256 * 1024;
+const MAX_BODY_BYTES = 256 * 1024;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -38,7 +38,7 @@ function isCanonicalBase64(value: unknown, maxBytes: number): value is string {
 function projectAcceptedEpoch(value: unknown): AcceptedTrustSetEpochDto | null {
   if (!isPlainObject(value)) return null;
   const { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch } = value;
-  if (!isCanonicalBase64(canonicalEpochBase64, MAX_CANONICAL_BYTES) ||
+  if (!isCanonicalBase64(canonicalEpochBase64, MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES) ||
       !isCanonicalBase64(signatureBase64, 64) || Buffer.from(signatureBase64, 'base64').length !== 64 ||
       !isPlausibleOpaqueId(signerDeviceId) || !isPlausibleOpaqueId(signerKeyId) ||
       !isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
@@ -89,8 +89,8 @@ function validBody(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).sort().join(',') !== 'canonicalEpochBase64,signatureBase64') return false;
   const { canonicalEpochBase64, signatureBase64 } = body as Record<string, unknown>;
-  return typeof canonicalEpochBase64 === 'string' && canonicalEpochBase64.length >= 4 && canonicalEpochBase64.length <= 349_528 &&
-    typeof signatureBase64 === 'string' && signatureBase64.length === 88;
+  return isCanonicalBase64(canonicalEpochBase64, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES) &&
+    isCanonicalBase64(signatureBase64, 64) && Buffer.from(signatureBase64, 'base64').length === 64;
 }
 
 /** Device-session-only transport. Registration does not activate a verifier or confer Parent authority. */

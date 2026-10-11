@@ -145,7 +145,7 @@ object ScheduleEvaluator {
         }
 
         val zoned = toZonedWallClock(nowUtc, input.timezone)
-        val usedMinutesToday = if (dailyLimit.anchorLocalDate == zoned.localDate) dailyLimit.usedMinutesToday else 0
+        val usedMinutesToday = if (dailyLimit.anchorLocalDate == zoned.localDate) dailyLimit.usedMinutesToday.toLong() else 0L
 
         val activeBonusMinutes = bonusGrants
             .filter { grant ->
@@ -153,9 +153,12 @@ object ScheduleEvaluator {
                     !nowUtc.isBefore(grant.grantedAtUtc) &&
                     nowUtc.isBefore(grant.expiresAtUtc)
             }
-            .sumOf { it.extraMinutes }
+            .sumOf { it.extraMinutes.toLong() }
 
-        val effectiveLimit = dailyLimit.limitMinutes + activeBonusMinutes
+        // The policy fields are Ints, but adding several valid grants to the base limit can exceed
+        // Int.MAX_VALUE. Keep evaluation in Long so overflow cannot turn valid remaining time into
+        // a false block (or a negative effective limit in the explanation).
+        val effectiveLimit = dailyLimit.limitMinutes.toLong() + activeBonusMinutes
         val remainingMinutesToday = effectiveLimit - usedMinutesToday
 
         if (remainingMinutesToday <= 0) {
@@ -169,6 +172,8 @@ object ScheduleEvaluator {
         return ScheduleDecision(
             decision = if (activeBonusMinutes > 0) ScheduleDecisionKind.ALLOWED_BONUS else ScheduleDecisionKind.ALLOWED,
             reason = if (activeBonusMinutes > 0) "Allowed with $activeBonusMinutes active bonus minutes." else "Within daily limit.",
+            // Keep the full-width value: iOS exposes Int64 and the backend returns the exact
+            // JavaScript Number result for policy totals within the bounded request payload.
             remainingMinutesToday = remainingMinutesToday,
         )
     }

@@ -51,6 +51,7 @@ export interface FamilyAuditEventLedger {
   listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options?: FamilyAuditEventListOptions,
   ): Promise<FamilyAuditEventEnvelope[]>;
   /** Best-effort cleanup; optional exactly like RelayRepository.purgeExpired. */
@@ -95,10 +96,14 @@ export class InMemoryFamilyAuditEventLedger implements FamilyAuditEventLedger {
   async listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options: FamilyAuditEventListOptions = {},
   ): Promise<FamilyAuditEventEnvelope[]> {
+    if (!isFamilyEpochNumber(keyEpoch, 1)) {
+      throw new Error('Family audit key epoch is outside the supported family epoch range.');
+    }
     const ascending = [...this.envelopes.values()]
-      .filter((envelope) => envelope.familyId === familyId && envelope.parentDeviceId === parentDeviceId)
+      .filter((envelope) => envelope.familyId === familyId && envelope.parentDeviceId === parentDeviceId && envelope.keyEpoch === keyEpoch)
       .sort(compareEnvelopeFeedOrder);
     return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(cloneEnvelope);
   }

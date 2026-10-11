@@ -925,6 +925,55 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
         }
     }
+    func testEscapedDuplicateMinutesInPersistedUsageRecordFailsClosed() throws {
+        let store = Store()
+        let bonus = BonusGrant(id: "bonus", appScope: .all, extraMinutes: 15,
+            grantedAt: now.addingTimeInterval(-60), expiresAt: now.addingTimeInterval(60))
+        let value = try plan(policy(bonuses: [bonus]))
+        let usage = DeviceActivityUsageLowerBoundStore<Token>(store: store)
+        let event = try XCTUnwrap(value.thresholds.first(where: { $0.minutes == 75 }))
+        try install(value, store: store, active: true)
+        XCTAssertEqual(try usage.record(plan: value, activityId: value.monitorActivityId,
+            eventId: event.eventId, at: now, deviceTimeZone: TimeZone(identifier: "UTC")!), 75)
+
+        let key = "com.pca.app.deviceactivity.usage-lower-bound.v1"
+        let persisted = try XCTUnwrap(store.read(forKey: key))
+        let json = try XCTUnwrap(String(data: persisted, encoding: .utf8))
+        let duplicateMinutes = json.replacingOccurrences(of: "\"minutes\":75",
+            with: "\"minutes\":75,\"minu\\u0074es\":60")
+        XCTAssertNotEqual(duplicateMinutes, json)
+        try store.write(Data(duplicateMinutes.utf8), forKey: key)
+
+        XCTAssertThrowsError(try usage.lowerBound(for: value)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
+    }
+    func testEscapedDuplicateMinutesInPendingUsageFailsBeforeActivation() throws {
+        let store = Store()
+        let bonus = BonusGrant(id: "bonus", appScope: .all, extraMinutes: 15,
+            grantedAt: now.addingTimeInterval(-60), expiresAt: now.addingTimeInterval(60))
+        let value = try plan(policy(bonuses: [bonus]))
+        let usage = DeviceActivityUsageLowerBoundStore<Token>(store: store)
+        let event = try XCTUnwrap(value.thresholds.first(where: { $0.minutes == 75 }))
+        try install(value, store: store, active: false)
+        try usage.stage(plan: value, activityId: value.monitorActivityId, eventId: event.eventId,
+            at: now, deviceTimeZone: TimeZone(identifier: "UTC")!)
+
+        let key = "usage.pending." + value.generation
+        let pending = try XCTUnwrap(store.read(forKey: key))
+        let json = try XCTUnwrap(String(data: pending, encoding: .utf8))
+        XCTAssertTrue(json.hasSuffix("}"))
+        let duplicateMinutes = String(json.dropLast()) + ",\"minu\\u0074es\":60}"
+        try store.write(Data(duplicateMinutes.utf8), forKey: key)
+        try install(value, store: store, active: true)
+
+        XCTAssertThrowsError(try usage.activate(plan: value)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
+        XCTAssertNil(try usage.lowerBound(for: value), "ambiguous pending usage must not be committed")
+        XCTAssertEqual(store.read(forKey: key), Data(duplicateMinutes.utf8),
+            "failed validation must preserve the pending bytes for investigation")
+    }
     func testEquivalentDecodedTokenEncodingRetainsSameDayMaximumAcrossGeneration() throws {
         let store = Store(), first = try plan(policy())
         let usage = DeviceActivityUsageLowerBoundStore<Token>(store: store)

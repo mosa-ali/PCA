@@ -39,6 +39,14 @@ final class PolicySyncDecoderTests: XCTestCase {
         return try! encoder.encode(stored)
     }
 
+    private func policyObject(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private func encodedPolicyObject(_ object: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
     private func wellFormedPolicy(schemaVersion: Int = policySyncSchemaVersion, timeZoneIdentifier: String = "UTC") -> StoredDeviceActivityPolicy {
         StoredDeviceActivityPolicy(
             schemaVersion: schemaVersion,
@@ -128,6 +136,164 @@ final class PolicySyncDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.enforcementCapability, .enforced)
     }
 
+    func testMalformedParentExceptionIntervalsAreRejectedBeforePolicyCanLoad() throws {
+        let source = wellFormedPolicy()
+        let validStart = Date(timeIntervalSince1970: 1_760_000_000)
+        let invalidIntervals: [(String, Date, Date)] = [
+            ("equal", validStart, validStart),
+            ("reversed", validStart.addingTimeInterval(60), validStart),
+            ("non-finite start", Date(timeIntervalSince1970: .nan), validStart),
+            ("non-finite end", validStart, Date(timeIntervalSince1970: .infinity)),
+            ("out-of-range start", Date(timeIntervalSince1970: -8_640_000_000_001), validStart),
+            ("out-of-range end", validStart, Date(timeIntervalSince1970: 8_640_000_000_001)),
+        ]
+
+        for (label, start, end) in invalidIntervals {
+            let malformed = StoredDeviceActivityPolicy(
+                schemaVersion: source.schemaVersion, activityId: source.activityId, appToken: source.appToken,
+                timeZoneIdentifier: source.timeZoneIdentifier, windows: source.windows, bonusGrants: source.bonusGrants,
+                exceptions: [StoredParentException(id: "bad-\(label)", appScope: .all, startAtUtc: start, endAtUtc: end)],
+                dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability
+            )
+            guard case .failure(.invalidExceptionConfig(let errors)) = PolicySyncDecoder.validate(malformed) else {
+                XCTFail("\(label) ParentException interval must be rejected distinctly before enforcement")
+                continue
+            }
+            XCTAssertEqual(errors.count, 1, label)
+            XCTAssertTrue(errors[0].contains("finite in-range instants"), label)
+        }
+
+        let exactRange = StoredDeviceActivityPolicy(
+            schemaVersion: source.schemaVersion, activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier, windows: source.windows, bonusGrants: source.bonusGrants,
+            exceptions: [StoredParentException(id: "exact-range", appScope: .all,
+                startAtUtc: Date(timeIntervalSince1970: -8_640_000_000_000),
+                endAtUtc: Date(timeIntervalSince1970: 8_640_000_000_000))],
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability
+        )
+        guard case .success = PolicySyncDecoder.validate(exactRange) else {
+            return XCTFail("finite exception instants at the inclusive supported date limits must validate")
+        }
+
+        // A malformed persisted finite interval cannot be restored by the
+        // host/extension loader, so it cannot reach ScheduleEngine's path
+        // that may alter shields.
+        let malformedStored = StoredDeviceActivityPolicy(
+            schemaVersion: source.schemaVersion, activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier, windows: source.windows, bonusGrants: source.bonusGrants,
+            exceptions: [StoredParentException(id: "equal", appScope: .all, startAtUtc: validStart, endAtUtc: validStart)],
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability
+        )
+        let store = InMemoryBlobStore()
+        try store.write(encode(malformedStored), forKey: "schedule.activity-1")
+        try store.write(PropertyListEncoder().encode(Set(["app-a"])), forKey: "applicationTokens.activity-1")
+        XCTAssertNil(StoredDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store).load(activityId: "activity-1"))
+    }
+
+    func testClosedPolicyShapeRejectsUnexpectedMembersAtEveryDTOLevel() throws {
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        let source = wellFormedPolicy()
+        let complete = StoredDeviceActivityPolicy(
+            schemaVersion: source.schemaVersion, activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier, windows: source.windows,
+            bonusGrants: [StoredBonusGrant(id: "bonus-1", appScope: .all, extraMinutes: 15,
+                grantedAtUtc: now, expiresAtUtc: now.addingTimeInterval(3_600))],
+            exceptions: [StoredParentException(id: "exception-1", appScope: .all,
+                startAtUtc: now, endAtUtc: now.addingTimeInterval(600))],
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability
+        )
+        let base = try policyObject(encode(complete))
+        guard case .success = PolicySyncDecoder.decode(encode(complete)) else {
+            return XCTFail("the synthesized Codable encoder output must remain accepted")
+        }
+
+        func reject(_ label: String, from source: [String: Any],
+                    mutate: (inout [String: Any]) -> Void) throws {
+            var candidate = source
+            mutate(&candidate)
+            XCTAssertEqual(PolicySyncDecoder.decode(try encodedPolicyObject(candidate)), .failure(.malformedData),
+                "unexpected member was accepted at \(label)")
+        }
+
+        try reject("policy root", from: base) { $0["futurePolicyField"] = true }
+        try reject("schedule window", from: base) { root in
+            var windows = root["windows"] as! [[String: Any]]
+            windows[0]["futureWindowField"] = true
+            root["windows"] = windows
+        }
+        try reject("time of day", from: base) { root in
+            var windows = root["windows"] as! [[String: Any]]
+            var start = windows[0]["start"] as! [String: Any]
+            start["seconds"] = 0
+            windows[0]["start"] = start
+            root["windows"] = windows
+        }
+        try reject("StoredAppScope.all payload", from: base) { root in
+            var windows = root["windows"] as! [[String: Any]]
+            var appScope = windows[0]["appScope"] as! [String: Any]
+            var allPayload = appScope["all"] as! [String: Any]
+            allPayload["futureScopeField"] = "ignored by Codable without a closed-shape check"
+            appScope["all"] = allPayload
+            windows[0]["appScope"] = appScope
+            root["windows"] = windows
+        }
+        try reject("bonus grant", from: base) { root in
+            var grants = root["bonusGrants"] as! [[String: Any]]
+            grants[0]["futureGrantField"] = true
+            root["bonusGrants"] = grants
+        }
+        try reject("parent exception", from: base) { root in
+            var exceptions = root["exceptions"] as! [[String: Any]]
+            exceptions[0]["futureExceptionField"] = true
+            root["exceptions"] = exceptions
+        }
+        try reject("daily app limit", from: base) { root in
+            var dailyLimit = root["dailyLimit"] as! [String: Any]
+            dailyLimit["futureLimitField"] = true
+            root["dailyLimit"] = dailyLimit
+        }
+
+        let appsScopeData = try JSONEncoder().encode(StoredAppScope.apps(["app-a"]))
+        var appsScope = try XCTUnwrap(JSONSerialization.jsonObject(with: appsScopeData) as? [String: Any])
+        XCTAssertEqual(Set(appsScope.keys), ["apps"], "use the enum's synthesized Codable representation")
+        var appsPayload = appsScope["apps"] as! [String: Any]
+        XCTAssertEqual(Set(appsPayload.keys), ["_0"])
+        appsPayload["futureScopeField"] = "not part of StoredAppScope.apps"
+        appsScope["apps"] = appsPayload
+        var appsRoot = base
+        var windows = appsRoot["windows"] as! [[String: Any]]
+        windows[0]["appScope"] = appsScope
+        appsRoot["windows"] = windows
+        XCTAssertEqual(PolicySyncDecoder.decode(try encodedPolicyObject(appsRoot)), .failure(.malformedData),
+            "unknown members in the synthesized associated-value payload must be rejected")
+    }
+
+    func testClosedShapePreservesLegacyOptionalFieldsAndSynthesizedAppsScope() throws {
+        let source = wellFormedPolicy()
+        let legacy = StoredDeviceActivityPolicy(
+            schemaVersion: source.schemaVersion, activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier,
+            windows: [StoredScheduleWindow(id: "legacy", kind: .bedtime, daysOfWeek: [0],
+                start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0),
+                appScope: .apps(["app-a"]))],
+            bonusGrants: [], exceptions: [], dailyLimit: nil,
+            enforcementCapability: source.enforcementCapability
+        )
+        let output = try policyObject(encode(legacy))
+        guard case .success = PolicySyncDecoder.decode(encode(legacy)) else {
+            return XCTFail("encoder output with absent legacy optionals must decode")
+        }
+
+        var explicitNulls = output
+        explicitNulls["dailyLimit"] = NSNull()
+        var windows = explicitNulls["windows"] as! [[String: Any]]
+        windows[0]["timezone"] = NSNull()
+        explicitNulls["windows"] = windows
+        guard case .success = PolicySyncDecoder.decode(try encodedPolicyObject(explicitNulls)) else {
+            return XCTFail("legacy optional dailyLimit/timezone must accept explicit null too")
+        }
+    }
+
     func testDecodedPolicyIsUsableDirectlyByScheduleEngine() {
         let data = encode(wellFormedPolicy())
         guard case .success(let decoded) = PolicySyncDecoder.decode(data) else {
@@ -148,6 +314,67 @@ final class PolicySyncDecoderTests: XCTestCase {
     func testGarbageBytesFailSafelyAsMalformedData() {
         let result = PolicySyncDecoder.decode(Data("not json at all {{{".utf8))
         XCTAssertEqual(result, .failure(.malformedData))
+    }
+
+    func testEscapedDuplicatePolicyMemberFailsClosedBeforeCodableDecode() {
+        let valid = String(decoding: encode(wellFormedPolicy()), as: UTF8.self)
+        let field = "\"activityId\":\"activity-1\""
+        XCTAssertTrue(valid.contains(field))
+        let ambiguous = valid.replacingOccurrences(
+            of: field,
+            with: "\"activityId\":\"activity-1\",\"activit\\u0079Id\":\"other-activity\""
+        )
+        XCTAssertNotEqual(ambiguous, valid)
+
+        XCTAssertEqual(PolicySyncDecoder.decode(Data(ambiguous.utf8)), .failure(.malformedData))
+    }
+
+    func testPolicyDecoderRejectsMalformedUnicodeEscapesAndLoneSurrogates() {
+        let valid = String(decoding: encode(wellFormedPolicy()), as: UTF8.self)
+        let field = "\"appToken\":\"app-a\""
+        XCTAssertTrue(valid.contains(field))
+
+        let malformedEscapes = [
+            "\\u12G4",          // non-hex digit
+            "\\u123",           // truncated four-digit escape
+            "\\uD800",          // unpaired high surrogate
+            "\\uDC00",          // unpaired low surrogate
+            "\\uD800\\u0041",  // high surrogate followed by a non-low surrogate
+        ]
+
+        for escape in malformedEscapes {
+            let malformed = valid.replacingOccurrences(of: field, with: "\"appToken\":\"\(escape)\"")
+            XCTAssertNotEqual(malformed, valid, "fixture must replace the policy token")
+            XCTAssertEqual(PolicySyncDecoder.decode(Data(malformed.utf8)), .failure(.malformedData), "accepted malformed JSON string escape: \(escape)")
+        }
+    }
+
+    func testPolicyDecoderRejectsMalformedJSONGrammarAndNumbers() {
+        let valid = String(decoding: encode(wellFormedPolicy()), as: UTF8.self)
+        let field = "\"schemaVersion\":1"
+        XCTAssertTrue(valid.contains(field))
+
+        let malformedNumbers = ["01", "-01", "1.", "1e", "+1", "--1", "NaN", "Infinity"]
+        for number in malformedNumbers {
+            let malformed = valid.replacingOccurrences(of: field, with: "\"schemaVersion\":\(number)")
+            XCTAssertNotEqual(malformed, valid, "fixture must replace the schema version")
+            XCTAssertEqual(PolicySyncDecoder.decode(Data(malformed.utf8)), .failure(.malformedData), "accepted malformed JSON number: \(number)")
+        }
+
+        let trailingComma = String(valid.dropLast()) + ",}"
+        XCTAssertEqual(PolicySyncDecoder.decode(Data(trailingComma.utf8)), .failure(.malformedData))
+    }
+
+    func testPolicyDecoderRejectsEscapedDuplicateMemberInNestedWindow() {
+        let valid = String(decoding: encode(wellFormedPolicy()), as: UTF8.self)
+        let nestedId = "\"id\":\"bedtime\""
+        XCTAssertTrue(valid.contains(nestedId))
+        let duplicate = valid.replacingOccurrences(
+            of: nestedId,
+            with: "\"id\":\"bedtime\",\"i\\u0064\":\"other-window\""
+        )
+        XCTAssertNotEqual(duplicate, valid)
+        XCTAssertEqual(PolicySyncDecoder.decode(Data(duplicate.utf8)), .failure(.malformedData))
     }
 
     func testWrongSchemaVersionIsRejectedNotSilentlyCoerced() {

@@ -85,9 +85,14 @@ final class SafeZoneDeliveryTests: XCTestCase {
             transport: http, monotonicNow: monotonicNow)
     }
 
-    private func row(_ id: String = "zone-001", ciphertext: String = "AQID", revision: UInt32 = 1) -> PCAOpaqueSafeZoneDelivery {
+    private func row(_ id: String = "zone-001", ciphertext: String = "AQID", revision: UInt32 = 1,
+                     keyEpoch: Int = 2) -> PCAOpaqueSafeZoneDelivery {
         PCAOpaqueSafeZoneDelivery(zoneId: id, ciphertextB64: ciphertext, nonceB64: "AAECAwQFBgcICQoL",
-            keyEpoch: 2, revision: revision, deliveryState: "PENDING_OFFLINE", updatedAtUtc: "2026-10-10T10:20:30.000Z")
+            keyEpoch: keyEpoch, revision: revision, deliveryState: "PENDING_OFFLINE", updatedAtUtc: "2026-10-10T10:20:30.000Z")
+    }
+
+    private func epochCursor(_ keyEpoch: Int, _ zoneId: String) -> String {
+        "v1~\(keyEpoch)~\(zoneId)"
     }
 
     private func json(_ rows: [[String: Any]], nextCursor: Any = NSNull()) throws -> Data {
@@ -150,6 +155,211 @@ final class SafeZoneDeliveryTests: XCTestCase {
         XCTAssertTrue((requests[1] as! String).contains("cursor=zone-016"))
         XCTAssertEqual(try relaunchedStore.read(scope: scope).count, 17)
         XCTAssertNil(try relaunchedStore.nextCursor(scope: scope))
+    }
+
+    func testEpochBoundCursorAcceptsLongZoneIdAndIsResumedVerbatim() async throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        let longZoneId = String(repeating: "z", count: 128)
+        let rows = (1..<PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index))
+        } + [row(longZoneId)]
+        let next = epochCursor(2, longZoneId)
+        XCTAssertGreaterThan(next.utf8.count, longZoneId.utf8.count)
+        XCTAssertLessThanOrEqual(next.utf8.count, 160)
+        let firstBody = try json(rows.map(wire), nextCursor: next)
+        let secondBody = try json([])
+        var requestURLs: [URL] = []
+        let http = InMemoryPCAHTTPTransport { request in
+            if let url = request.url { requestURLs.append(url) }
+            return requestURLs.count == 1
+                ? PCAHTTPResponse(statusCode: 200, data: firstBody)
+                : PCAHTTPResponse(statusCode: 200, data: secondBody)
+        }
+
+        let firstCompleted = try await client(http).synchronize(scope: scope, inbox: store, maximumPages: 1)
+        XCTAssertFalse(firstCompleted)
+        XCTAssertEqual(try store.nextCursor(scope: scope), next)
+        let secondCompleted = try await client(http).synchronize(scope: scope, inbox: store, maximumPages: 1)
+        XCTAssertTrue(secondCompleted)
+        XCTAssertEqual(requestURLs.count, 2)
+        XCTAssertEqual(URLComponents(url: requestURLs[1], resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "cursor" })?.value, next)
+        XCTAssertEqual(try store.read(scope: scope).count, PCAKeychainSafeZoneDeliveryInbox.pageSize)
+    }
+
+    func testStaleEpochCursorCanRestartAtEarlierZoneIds() async throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        let epochTwoRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let epochThreeRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 2, keyEpoch: 3)
+        }
+        let oldCursor = epochCursor(2, epochTwoRows.last!.zoneId)
+        let newCursor = epochCursor(3, epochThreeRows.last!.zoneId)
+        let firstBody = try json(epochTwoRows.map(wire), nextCursor: oldCursor)
+        let restartBody = try json(epochThreeRows.map(wire), nextCursor: newCursor)
+        var requestURLs: [URL] = []
+        let http = InMemoryPCAHTTPTransport { request in
+            if let url = request.url { requestURLs.append(url) }
+            return requestURLs.count == 1
+                ? PCAHTTPResponse(statusCode: 200, data: firstBody)
+                : PCAHTTPResponse(statusCode: 200, data: restartBody)
+        }
+
+        let firstCompleted = try await client(http).synchronize(scope: scope, inbox: store, maximumPages: 1)
+        XCTAssertFalse(firstCompleted)
+        XCTAssertEqual(try store.nextCursor(scope: scope), oldCursor)
+        let restartedPageCompleted = try await client(http).synchronize(scope: scope, inbox: store, maximumPages: 1)
+        XCTAssertFalse(restartedPageCompleted)
+        XCTAssertEqual(URLComponents(url: requestURLs[1], resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "cursor" })?.value, oldCursor)
+        XCTAssertEqual(try store.read(scope: scope), epochThreeRows,
+            "the new epoch page may restart before the prior cursor's zone ID and replace older envelopes")
+        XCTAssertEqual(try store.nextCursor(scope: scope), newCursor)
+    }
+
+    func testHigherEpochPageWithNonAdvancingRevisionIsRejectedBeforeCursorCommit() throws {
+        let store = inbox(InMemoryKeychainStore())
+        let currentRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 4, keyEpoch: 2)
+        }
+        let oldCursor = epochCursor(2, currentRows.last!.zoneId)
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: currentRows, nextCursor: oldCursor),
+            for: scope, requestedCursor: nil)
+
+        // A key-epoch restart may begin at an earlier zone ID, but the
+        // repository's per-row revision is monotonic across epoch changes.
+        // If that invariant is broken, staging must reject before changing
+        // rows or committing a cursor that cannot be anchored on restart.
+        let staleRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 3, keyEpoch: 3)
+        }
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: staleRows, nextCursor: epochCursor(3, staleRows.last!.zoneId)),
+            for: scope, requestedCursor: oldCursor)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleRevision)
+        }
+        XCTAssertEqual(try store.nextCursor(scope: scope), oldCursor)
+        XCTAssertEqual(try store.read(scope: scope), currentRows)
+    }
+
+    func testSameEpochPageCannotMoveRequestedCursorBackward() throws {
+        let store = inbox(InMemoryKeychainStore())
+        let initialRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let requestedCursor = epochCursor(2, initialRows.last!.zoneId)
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: initialRows, nextCursor: requestedCursor),
+            for: scope, requestedCursor: nil)
+
+        // The response is internally sorted and self-consistent, but in the
+        // current epoch it replays rows before the requested cursor and moves
+        // the server cursor backward. It must not become durable.
+        let backwardRows = (0..<PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let backwardCursor = epochCursor(2, backwardRows.last!.zoneId)
+        XCTAssertThrowsError(try store.stage(
+            PCAOpaqueSafeZoneDeliveryPage(safeZones: backwardRows, nextCursor: backwardCursor),
+            for: scope, requestedCursor: requestedCursor
+        )) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor)
+        }
+
+        let rollbackRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 1)
+        }
+        XCTAssertThrowsError(try store.stage(
+            PCAOpaqueSafeZoneDeliveryPage(safeZones: rollbackRows,
+                nextCursor: epochCursor(1, rollbackRows.last!.zoneId)),
+            for: scope, requestedCursor: requestedCursor
+        )) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor)
+        }
+
+        var mixedEpochRows = initialRows
+        mixedEpochRows[0] = row(mixedEpochRows[0].zoneId, keyEpoch: 3)
+        XCTAssertThrowsError(try store.stage(
+            PCAOpaqueSafeZoneDeliveryPage(safeZones: mixedEpochRows,
+                nextCursor: epochCursor(2, mixedEpochRows.last!.zoneId)),
+            for: scope, requestedCursor: requestedCursor
+        )) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor)
+        }
+
+        XCTAssertEqual(try store.nextCursor(scope: scope), requestedCursor)
+        XCTAssertEqual(try store.read(scope: scope), initialRows)
+    }
+
+    func testEpochBoundCursorMustMatchPageAndAdvanceManifestCursorExactly() throws {
+        let store = inbox(InMemoryKeychainStore())
+        let rows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let validCursor = epochCursor(2, rows.last!.zoneId)
+
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: rows, nextCursor: epochCursor(3, rows.last!.zoneId)),
+            for: scope, requestedCursor: nil)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor)
+        }
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: rows, nextCursor: epochCursor(2, rows[rows.count - 2].zoneId)),
+            for: scope, requestedCursor: nil)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor)
+        }
+        XCTAssertTrue(try store.read(scope: scope).isEmpty)
+        XCTAssertNil(try store.nextCursor(scope: scope))
+
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: rows, nextCursor: validCursor),
+            for: scope, requestedCursor: nil)
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: rows, nextCursor: validCursor),
+            for: scope, requestedCursor: validCursor)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor,
+                "a server response cannot repeat the requested cursor")
+        }
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: rows, nextCursor: epochCursor(2, rows.last!.zoneId)),
+            for: scope, requestedCursor: nil)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleCursor,
+                "page staging requires exact requested-cursor continuity with the manifest")
+        }
+        XCTAssertEqual(try store.nextCursor(scope: scope), validCursor)
+    }
+
+    func testPersistedCursorMustReferToStoredZoneAndEpoch() throws {
+        let rows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let validCursor = epochCursor(2, rows.last!.zoneId)
+        let invalidCursors = [
+            epochCursor(3, rows.last!.zoneId),
+            epochCursor(2, rows[rows.count - 2].zoneId),
+            "zone-999",
+            "v1~02~\(rows.last!.zoneId)",
+        ]
+
+        for invalidCursor in invalidCursors {
+            let keychain = InMemoryKeychainStore()
+            let store = inbox(keychain)
+            try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: rows, nextCursor: validCursor),
+                for: scope, requestedCursor: nil)
+            let account = "safe-zone-delivery.v1.\(scope.storageKey).manifest"
+            let original = try keychain.retrieve(forAccount: account, service: "test.pca.safe-zone-delivery.v1")
+            var manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+            manifest["nextCursor"] = invalidCursor
+            let corrupted = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+            try keychain.storeReplacingAtomically(corrupted, forAccount: account,
+                service: "test.pca.safe-zone-delivery.v1", accessibility: .whenUnlockedThisDeviceOnly)
+
+            XCTAssertThrowsError(try store.nextCursor(scope: scope), "cursor \(invalidCursor) is not anchored to a stored row") {
+                XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .corruptInbox)
+            }
+        }
     }
 
     func testSynchronizationDeadlineShrinksRequestTimeoutAndDoesNotStageLatePage() async throws {
@@ -215,6 +425,26 @@ final class SafeZoneDeliveryTests: XCTestCase {
 
         XCTAssertEqual(requestCount, 1)
         XCTAssertTrue(try store.read(scope: scope).isEmpty)
+        XCTAssertNil(try store.nextCursor(scope: scope))
+    }
+
+    func testResponseInsideCallerDeadlineStagesWithLessThanOneSecondRemaining() async throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        var uptime = 100.0
+        let body = try json([wire(row())])
+        let http = InMemoryPCAHTTPTransport { request in
+            XCTAssertEqual(request.timeoutInterval, 7, accuracy: 0.001)
+            uptime = 106.5
+            return PCAHTTPResponse(statusCode: 200, data: body)
+        }
+
+        let completed = try await client(http, monotonicNow: { uptime })
+            .synchronize(scope: scope, inbox: store, absoluteMonotonicDeadline: 107)
+
+        XCTAssertTrue(completed,
+            "request admission needs a one-second timeout floor, but a response already received before the deadline remains usable")
+        XCTAssertEqual(try store.read(scope: scope), [row()])
         XCTAssertNil(try store.nextCursor(scope: scope))
     }
 
@@ -326,6 +556,70 @@ final class SafeZoneDeliveryTests: XCTestCase {
             }
             XCTAssertTrue(try store.read(scope: scope).isEmpty)
             XCTAssertNil(try store.nextCursor(scope: scope))
+        }
+    }
+
+    func testPageRejectsEscapedDuplicateDecodedMemberBeforeStaging() async throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        let valid = String(decoding: try json([wire(row())]), as: UTF8.self)
+        let field = "\"zoneId\":\"zone-001\""
+        XCTAssertTrue(valid.contains(field))
+        let duplicate = valid.replacingOccurrences(
+            of: field,
+            with: "\"zoneId\":\"zone-001\",\"zone\\u0049d\":\"attacker-zone\""
+        )
+        XCTAssertNotEqual(duplicate, valid)
+        let http = InMemoryPCAHTTPTransport { _ in PCAHTTPResponse(statusCode: 200, data: Data(duplicate.utf8)) }
+
+        do {
+            _ = try await client(http).synchronize(scope: scope, inbox: store)
+            XCTFail("escaped duplicate member in a server page must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+        XCTAssertTrue(try store.read(scope: scope).isEmpty)
+        XCTAssertNil(try store.nextCursor(scope: scope))
+    }
+
+    func testPersistedRowsAndManifestRejectEscapedDuplicateDecodedMembers() throws {
+        let rowKeychain = InMemoryKeychainStore()
+        let rowStore = inbox(rowKeychain)
+        try rowStore.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: [row()], nextCursor: nil),
+            for: scope, requestedCursor: nil)
+        let rowAccount = "safe-zone-delivery.v1.\(scope.storageKey).zone.zone-001"
+        let validRow = String(decoding: try rowKeychain.retrieve(forAccount: rowAccount,
+            service: "test.pca.safe-zone-delivery.v1"), as: UTF8.self)
+        let rowField = "\"zoneId\":\"zone-001\""
+        XCTAssertTrue(validRow.contains(rowField))
+        let duplicateRow = validRow.replacingOccurrences(
+            of: rowField,
+            with: "\"zoneId\":\"zone-001\",\"zone\\u0049d\":\"attacker-zone\""
+        )
+        try rowKeychain.storeReplacingAtomically(Data(duplicateRow.utf8), forAccount: rowAccount,
+            service: "test.pca.safe-zone-delivery.v1", accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try rowStore.read(scope: scope)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .corruptInbox)
+        }
+
+        let manifestKeychain = InMemoryKeychainStore()
+        let manifestStore = inbox(manifestKeychain)
+        try manifestStore.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: [row()], nextCursor: nil),
+            for: scope, requestedCursor: nil)
+        let manifestAccount = "safe-zone-delivery.v1.\(scope.storageKey).manifest"
+        let validManifest = String(decoding: try manifestKeychain.retrieve(forAccount: manifestAccount,
+            service: "test.pca.safe-zone-delivery.v1"), as: UTF8.self)
+        let versionField = "\"version\":1"
+        XCTAssertTrue(validManifest.contains(versionField))
+        let duplicateManifest = validManifest.replacingOccurrences(
+            of: versionField,
+            with: "\"version\":1,\"vers\\u0069on\":1"
+        )
+        try manifestKeychain.storeReplacingAtomically(Data(duplicateManifest.utf8),
+            forAccount: manifestAccount, service: "test.pca.safe-zone-delivery.v1",
+            accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try manifestStore.nextCursor(scope: scope)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .corruptInbox)
         }
     }
 

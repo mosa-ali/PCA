@@ -141,8 +141,12 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
   async listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options: FamilyAuditEventListOptions = {},
   ): Promise<FamilyAuditEventEnvelope[]> {
+    if (!isFamilyEpochNumber(keyEpoch, 1)) {
+      throw new Error('Family audit key epoch is outside the supported family epoch range.');
+    }
     const now = options.now ?? this.now();
     const limit = resolveServerCiphertextFeedLimit(options.limit);
     const { rows } = await runInTransaction((conn) =>
@@ -150,12 +154,12 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
         conn,
         `SELECT * FROM (
            SELECT * FROM family_audit_events
-            WHERE family_id = ? AND parent_device_id = ? AND expires_at > ?
+            WHERE family_id = ? AND parent_device_id = ? AND key_epoch = ? AND expires_at > ?
             ORDER BY generated_at_utc DESC, envelope_id DESC
             LIMIT ?
          ) AS recent
          ORDER BY generated_at_utc ASC, envelope_id ASC`,
-        [familyId, parentDeviceId, now, limit],
+        [familyId, parentDeviceId, keyEpoch, now, limit],
       ),
     );
     return rows.map(toEnvelope);

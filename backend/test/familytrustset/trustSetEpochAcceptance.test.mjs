@@ -1171,13 +1171,54 @@ test('RESOLVER_UNDECODABLE_BYTES: stored bytes that fail strict decode resolve f
   assert.equal(await resolver.resolveActor(FAMILY_ID, 'device-1'), 'NO_TRUST_SET');
 });
 
-test('RESOLVER_OVERSIZED_BYTES: an accepted-row payload beyond the durable append ceiling is denied before authority resolution', async () => {
+test('RESOLVER_OVERSIZED_BYTES: byte ceiling rejects an otherwise valid accepted row before decoding or directory authority checks', async () => {
   const owner = makeDevice('owner');
   const harness = createHarness({});
   const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
-  stored.signedEpochBytes = Buffer.alloc(262_145, 0x41);
-  const resolver = createStoreBackedResolver(harness, [owner]);
-  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+  // Preserve a valid canonical epoch prefix and valid row metadata/signature,
+  // but exceed the accepted-record size ceiling with trailing bytes.
+  stored.signedEpochBytes = Buffer.concat([
+    stored.signedEpochBytes,
+    Buffer.alloc(262_145 - stored.signedEpochBytes.length, 0x41),
+  ]);
+
+  let decoderCalls = 0;
+  let sessionChecks = 0;
+  let keyDirectoryReads = 0;
+  let signatureChecks = 0;
+  const OriginalTextDecoder = globalThis.TextDecoder;
+  globalThis.TextDecoder = class extends OriginalTextDecoder {
+    decode(input, options) {
+      decoderCalls += 1;
+      return super.decode(input, options);
+    }
+  };
+  let result;
+  try {
+    const resolver = new StoreBackedTrustSetRoleResolver({
+      epochStore: harness.deps.epochStore,
+      deviceRepository: {
+        async isDeviceSessionActive() { sessionChecks += 1; return true; },
+        async findKeysByDeviceForFamily() {
+          keyDirectoryReads += 1;
+          return [{ deviceId: owner.deviceId, keyId: owner.dskKeyId, keyPurpose: 'DSK',
+            publicKey: owner.dskPublicKey, status: 'ACTIVE' }];
+        },
+      },
+      verifier: { async verify() { signatureChecks += 1; return true; } },
+    });
+    result = await resolver.resolveActor(FAMILY_ID, owner.deviceId);
+  } finally {
+    globalThis.TextDecoder = OriginalTextDecoder;
+  }
+
+  assert.equal(result, 'NO_TRUST_SET');
+  assert.deepEqual({ decoderCalls, sessionChecks, keyDirectoryReads, signatureChecks }, {
+    decoderCalls: 0,
+    sessionChecks: 0,
+    keyDirectoryReads: 0,
+    signatureChecks: 0,
+  }, 'oversized persisted bytes must be denied before decode, directory reads, or signature verification');
 });
 
 test('RESOLVER_FOREIGN_PAYLOAD: stored bytes declaring a different family fail closed', async () => {

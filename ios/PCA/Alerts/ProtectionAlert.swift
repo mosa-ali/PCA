@@ -31,6 +31,7 @@ public struct E2EEProtectionAlert: Equatable, Codable, Identifiable {
 public enum ProtectionAlertGenerationError: Error, Equatable {
     case invalidOpaqueIdentifier
     case invalidKeyEpoch
+    case invalidGeneratedAtUtc
     case invalidEncryptedPayload
     case deviceRequired
 }
@@ -39,6 +40,11 @@ public struct ProtectionAlertGenerator {
     public static let maxEncryptedPayloadBytes = 16 * 1024
     public static let maxNonceBytes = 64
     public static let maxSupportedKeyEpoch = Int(Int32.max)
+    private static let maximumDateSeconds = 8_640_000_000_000.0
+
+    private static func isValidOpaqueIdentifier(_ value: String) -> Bool {
+        (1...128).contains(value.utf16.count)
+    }
 
     public init() {}
 
@@ -58,11 +64,16 @@ public struct ProtectionAlertGenerator {
         alertsEnabled: Bool
     ) throws -> E2EEProtectionAlert? {
         guard alertsEnabled else { return nil }
-        guard !alertId.isEmpty, !familyId.isEmpty, !parentDeviceId.isEmpty else {
+        guard isValidOpaqueIdentifier(alertId), isValidOpaqueIdentifier(familyId),
+              isValidOpaqueIdentifier(parentDeviceId), deviceId.map(isValidOpaqueIdentifier) ?? true else {
             throw ProtectionAlertGenerationError.invalidOpaqueIdentifier
         }
         guard (0...Self.maxSupportedKeyEpoch).contains(keyEpoch) else {
             throw ProtectionAlertGenerationError.invalidKeyEpoch
+        }
+        let timestamp = generatedAtUtc.timeIntervalSince1970
+        guard timestamp.isFinite, abs(timestamp) <= Self.maximumDateSeconds else {
+            throw ProtectionAlertGenerationError.invalidGeneratedAtUtc
         }
         guard !encryptedPayload.isEmpty, encryptedPayload.count <= Self.maxEncryptedPayloadBytes,
               !nonce.isEmpty, nonce.count <= Self.maxNonceBytes else {

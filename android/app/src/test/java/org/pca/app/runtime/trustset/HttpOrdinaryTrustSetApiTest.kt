@@ -248,9 +248,21 @@ class HttpOrdinaryTrustSetApiTest {
         }
     }
 
-    @Test fun `submit rejects canonical bytes above backend limit before sending`() = runBlocking {
+    @Test fun ordinaryHttpRequestLimitsAcceptExactInclusiveBoundaries() {
+        assertEquals(196_506, OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BYTES)
+        assertEquals(262_008, OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BASE64_CHARS)
+        assertEquals(262_144, OrdinaryEpochHttpRequestBounds.MAX_JSON_BODY_BYTES)
+
+        OrdinaryEpochHttpRequestBounds.requireCanonicalByteCount(196_506)
+        OrdinaryEpochHttpRequestBounds.requireJsonBodyByteCount(262_144)
+
+        assertTrue(runCatching { OrdinaryEpochHttpRequestBounds.requireCanonicalByteCount(196_507) }.isFailure)
+        assertTrue(runCatching { OrdinaryEpochHttpRequestBounds.requireJsonBodyByteCount(262_145) }.isFailure)
+    }
+
+    @Test fun `submit rejects canonical bytes above ordinary backend limit before sending`() = runBlocking {
         val request = OrdinaryEpochRequest(
-            Base64.getEncoder().encodeToString(ByteArray(256 * 1024 + 1)),
+            Base64.getEncoder().encodeToString(ByteArray(OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BYTES + 1)),
             Base64.getEncoder().encodeToString(ByteArray(64)),
         )
         val acceptedEcho = AcceptedEpochRecord(request, "owner", "dsk", 2, 1)

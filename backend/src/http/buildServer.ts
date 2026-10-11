@@ -30,6 +30,7 @@ import type { AlertComposeFailureLogger } from '../alerts/AlertComposeFailureLog
 // here exactly like every other domain's registerXRoutes call.
 import { registerParentRuntimeSyncRoutes } from './routes/parentRuntimeSyncRoutes.js';
 import type { DeviceRepository } from '../device/DeviceRepository.js';
+import type { DeviceChildBindingRepository } from '../device/DeviceChildBindingRepository.js';
 import type { RelayService } from '../relay/RelayService.js';
 import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
@@ -298,6 +299,8 @@ export interface ServerDependencies {
    * this is omitted, never a silent allow.
    */
   childPolicyAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
+  /** Durable device-to-child binding used to scope schedule-policy delivery. */
+  deviceChildBindingRepository?: Pick<DeviceChildBindingRepository, 'resolveBinding'>;
   /**
    * PCA eye-protection reminders: see registerEyeProtectionRoutes' own doc
    * comment. Optional purely so existing buildServer() test callers that
@@ -556,6 +559,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerSafeZoneDeliveryRoutes(app, {
     deviceSessionService: deps.deviceSessionService,
     trustSetRoleResolver: deps.trustSetRoleResolver,
+    deviceChildBindingRepository: deps.deviceChildBindingRepository,
+    childProfileRegistryRepository: deps.childProfileRegistryRepository,
     safeZoneRepository: deps.safeZoneRepository,
     rateLimiter,
   });
@@ -644,6 +649,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
     trustSetRoleResolver: deps.trustSetRoleResolver,
+    deviceChildBindingRepository: deps.deviceChildBindingRepository,
+    childProfileRegistryRepository: deps.childProfileRegistryRepository,
     deviceRepository: deps.deviceRepository,
     // PCA-234C026: without this, Safe Zone routes' actor-identity binding
     // (authorizeSafeZoneRequest) fails closed with 503
@@ -694,6 +701,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     deviceSessionService: deps.deviceSessionService,
     parentActionAuthorization: deps.childPolicyAuthorization,
     trustSetRoleResolver: deps.trustSetRoleResolver,
+    deviceChildBindingRepository: deps.deviceChildBindingRepository,
     outboundRelayService: deps.outboundRelayService,
   });
   registerEyeProtectionRoutes(app, {

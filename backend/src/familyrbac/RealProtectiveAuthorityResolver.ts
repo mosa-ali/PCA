@@ -52,6 +52,9 @@ export class RealProtectiveAuthorityResolver {
     // factory-reset without a clean removal, compromised) is not trusted
     // to still be under management authority indefinitely.
     this.maxStalenessMs = options.maxStalenessMs ?? 24 * 60 * 60 * 1000;
+    if (!Number.isFinite(this.maxStalenessMs) || this.maxStalenessMs < 0) {
+      throw new RangeError('maxStalenessMs must be a finite non-negative duration.');
+    }
     this.now = options.now ?? (() => new Date());
   }
 
@@ -59,7 +62,14 @@ export class RealProtectiveAuthorityResolver {
     const record = await this.repository.findForDevice(familyId, deviceId);
     if (record === null) return false;
     if (record.familyId !== familyId || record.deviceId !== deviceId) return false;
-    if (this.now().getTime() - record.updatedAt.getTime() > this.maxStalenessMs) return false;
+    const nowMs = this.now().getTime();
+    const updatedAtMs = record.updatedAt.getTime();
+    const ageMs = nowMs - updatedAtMs;
+    // This timestamp is assigned by the server receipt path. A future or
+    // invalid stored timestamp indicates corrupt/untrusted state and must
+    // never extend protective authority.
+    if (!Number.isFinite(nowMs) || !Number.isFinite(updatedAtMs) ||
+        ageMs < 0 || ageMs > this.maxStalenessMs) return false;
     return record.protectionLevel === 'PROTECTED' || record.protectionLevel === 'DEGRADED';
   }
 }

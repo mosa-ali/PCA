@@ -90,6 +90,7 @@ class UsageSessionRecorder(
     private var snapshot: UsageObservationSnapshot? = try { snapshotStore.load() }
         catch (_: UsageObservationSnapshotUnavailable) { null }
         catch (_: IllegalStateException) { null }
+        catch (_: Exception) { null }
     @Volatile
     private var state: UsageSessionEngineState = UsageObservationRestorer.restore(snapshot, currentBootId)
     private val bootId: String? = currentBootId

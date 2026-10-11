@@ -43,6 +43,59 @@ export class SafeZoneError extends Error {
 
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 const OPAQUE_BASE64URL = /^[A-Za-z0-9_-]+$/;
+const SAFE_ZONE_CURSOR_VERSION = 'v1';
+export const MAX_SAFE_ZONE_CURSOR_BYTES = 160;
+
+/**
+ * Validate the opaque Safe Zone delivery cursor accepted by the HTTP route.
+ * Raw opaque IDs are retained as a legacy format; repositories restart those
+ * requests from page one because their epoch cannot be established.
+ */
+export function validateSafeZoneDeliveryCursor(cursor: unknown): asserts cursor is string | undefined {
+  if (cursor === undefined) return;
+  if (typeof cursor !== 'string' || cursor.length === 0 ||
+    Buffer.byteLength(cursor, 'utf8') > MAX_SAFE_ZONE_CURSOR_BYTES ||
+    !/^[A-Za-z0-9_~-]+$/.test(cursor)) {
+    throw new SafeZoneError('INVALID_INPUT');
+  }
+
+  if (!cursor.includes('~')) {
+    if (!OPAQUE_TOKEN.test(cursor)) throw new SafeZoneError('INVALID_INPUT');
+    return;
+  }
+
+  const parts = cursor.split('~');
+  if (parts.length !== 3 || parts[0] !== SAFE_ZONE_CURSOR_VERSION ||
+    !/^[1-9][0-9]*$/.test(parts[1]!) || !OPAQUE_TOKEN.test(parts[2]!)) {
+    throw new SafeZoneError('INVALID_INPUT');
+  }
+  const cursorEpoch = Number(parts[1]);
+  if (!isFamilyEpochNumber(cursorEpoch, 1)) throw new SafeZoneError('INVALID_INPUT');
+}
+
+/**
+ * Resolve an input cursor against the current accepted family-key epoch.
+ * Legacy IDs and valid cursors for an older epoch restart at page one; only a
+ * cursor bound to the exact current epoch advances after its zone ID.
+ */
+export function safeZoneCursorAfterZoneId(cursor: string | undefined, currentKeyEpoch: number): string | undefined {
+  validateSafeZoneDeliveryCursor(cursor);
+  if (!isFamilyEpochNumber(currentKeyEpoch, 1)) throw new SafeZoneError('INVALID_INPUT');
+  if (cursor === undefined || !cursor.includes('~')) return undefined;
+
+  const [, cursorEpochText, lastZoneId] = cursor.split('~');
+  return Number(cursorEpochText) === currentKeyEpoch ? lastZoneId : undefined;
+}
+
+/** Encode the last row as a cursor that is safe to continue only in this epoch. */
+export function createSafeZoneDeliveryCursor(keyEpoch: number, lastZoneId: string): string {
+  if (!isFamilyEpochNumber(keyEpoch, 1) || !OPAQUE_TOKEN.test(lastZoneId)) {
+    throw new SafeZoneError('INVALID_INPUT');
+  }
+  const cursor = `${SAFE_ZONE_CURSOR_VERSION}~${keyEpoch}~${lastZoneId}`;
+  if (Buffer.byteLength(cursor, 'utf8') > MAX_SAFE_ZONE_CURSOR_BYTES) throw new SafeZoneError('INVALID_INPUT');
+  return cursor;
+}
 
 function assertOpaqueToken(value: string): void {
   if (!OPAQUE_TOKEN.test(value)) throw new SafeZoneError('INVALID_INPUT');
@@ -97,8 +150,8 @@ export function validateSafeZonePatch(patch: SafeZonePatch): void {
 
 export interface SafeZoneRepository {
   list(familyId: string): Promise<SafeZone[]>;
-  /** Encrypted envelopes addressed to one authenticated device. The caller must derive both identifiers from a verified device session. */
-  listForRecipient(familyId: string, recipientEndpointId: string, afterZoneId?: string): Promise<SafeZoneRecipientPage>;
+  /** Encrypted envelopes addressed to one authenticated device and its current accepted family-key epoch. The caller must derive all three values from a verified device session and accepted Trust Set projection. */
+  listForRecipient(familyId: string, recipientEndpointId: string, keyEpoch: number, cursor?: string): Promise<SafeZoneRecipientPage>;
   create(input: NewSafeZone): Promise<SafeZone>;
   update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone>;
   remove(familyId: string, zoneId: string): Promise<boolean>;

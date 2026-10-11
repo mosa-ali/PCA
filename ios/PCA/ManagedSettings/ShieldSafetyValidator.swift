@@ -32,6 +32,7 @@ public struct ShieldSafetyValidator<Token: Hashable> {
     public enum ValidationResult: Equatable {
         case safe
         case rejected(overlappingCount: Int)
+        case protectedFloorUnavailable
     }
 
     /// Checked independently for each of applications/categories/domains
@@ -40,6 +41,7 @@ public struct ShieldSafetyValidator<Token: Hashable> {
     /// one dimension.
     public func validate<S: Sequence>(candidateTokens: S) -> ValidationResult where S.Element == Token {
         let candidateSet = Set(candidateTokens)
+        guard candidateSet.isEmpty || !protectedTokens.isEmpty else { return .protectedFloorUnavailable }
         let overlap = protectedTokens.intersection(candidateSet)
         return overlap.isEmpty ? .safe : .rejected(overlappingCount: overlap.count)
     }
@@ -68,14 +70,26 @@ public struct ShieldPolicyValidator<Token: Hashable> {
 
     public func validate(applications: Set<Token>, categories: Set<Token>, domains: Set<Token>) -> ShieldPolicyValidationOutcome {
         var reasons: [String] = []
-        if case .rejected = applicationValidator.validate(candidateTokens: applications) {
+        switch applicationValidator.validate(candidateTokens: applications) {
+        case .safe: break
+        case .rejected:
             reasons.append("shield application set includes a protected emergency-adjacent application token")
+        case .protectedFloorUnavailable:
+            reasons.append("protected emergency-adjacent application token floor is unavailable")
         }
-        if case .rejected = categoryValidator.validate(candidateTokens: categories) {
+        switch categoryValidator.validate(candidateTokens: categories) {
+        case .safe: break
+        case .rejected:
             reasons.append("shield category set includes a protected emergency-adjacent category token")
+        case .protectedFloorUnavailable:
+            reasons.append("protected emergency-adjacent category token floor is unavailable")
         }
-        if case .rejected = domainValidator.validate(candidateTokens: domains) {
+        switch domainValidator.validate(candidateTokens: domains) {
+        case .safe: break
+        case .rejected:
             reasons.append("shield domain set includes a protected domain token")
+        case .protectedFloorUnavailable:
+            reasons.append("protected domain token floor is unavailable")
         }
         return reasons.isEmpty ? .accepted : .rejected(reasons: reasons)
     }

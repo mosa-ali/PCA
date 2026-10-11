@@ -19,9 +19,10 @@ final class ShieldSafetyValidatorTests: XCTestCase {
         XCTAssertEqual(result, .rejected(overlappingCount: 2))
     }
 
-    func testEmptyProtectedSetNeverRejects() {
+    func testEmptyCandidateIsSafeWithoutProtectedFloorButNonEmptyCandidateFailsClosed() {
         let validator = ShieldSafetyValidator<String>(protectedTokens: [])
-        XCTAssertEqual(validator.validate(candidateTokens: ["anything"]), .safe)
+        XCTAssertEqual(validator.validate(candidateTokens: []), .safe)
+        XCTAssertEqual(validator.validate(candidateTokens: ["anything"]), .protectedFloorUnavailable)
     }
 
     // MARK: - Token opacity: equality only, never any string/identity extraction.
@@ -48,10 +49,42 @@ final class ShieldSafetyValidatorTests: XCTestCase {
         let validator = ShieldPolicyValidator<String>(
             protectedApplicationTokens: ["phone"],
             protectedCategoryTokens: ["emergency-category"],
-            protectedDomainTokens: []
+            protectedDomainTokens: ["emergency.example"]
         )
         let outcome = validator.validate(applications: ["youtube"], categories: ["games"], domains: ["example.com"])
         XCTAssertEqual(outcome, .accepted)
+    }
+
+    func testAggregateRejectsEachNonEmptyDimensionWithoutItsProtectedFloor() {
+        let missingApplicationFloor = ShieldPolicyValidator<String>(protectedApplicationTokens: [],
+            protectedCategoryTokens: ["emergency-category"], protectedDomainTokens: ["emergency.example"])
+        guard case .rejected(let applicationReasons) = missingApplicationFloor.validate(
+            applications: ["youtube"], categories: [], domains: []) else {
+            return XCTFail("non-empty application shields require a captured protected-token floor")
+        }
+        XCTAssertEqual(applicationReasons, ["protected emergency-adjacent application token floor is unavailable"])
+
+        let missingCategoryFloor = ShieldPolicyValidator<String>(protectedApplicationTokens: ["phone"],
+            protectedCategoryTokens: [], protectedDomainTokens: ["emergency.example"])
+        guard case .rejected(let categoryReasons) = missingCategoryFloor.validate(
+            applications: [], categories: ["games"], domains: []) else {
+            return XCTFail("non-empty category shields require a captured protected-token floor")
+        }
+        XCTAssertEqual(categoryReasons, ["protected emergency-adjacent category token floor is unavailable"])
+
+        let missingDomainFloor = ShieldPolicyValidator<String>(protectedApplicationTokens: ["phone"],
+            protectedCategoryTokens: ["emergency-category"], protectedDomainTokens: [])
+        guard case .rejected(let domainReasons) = missingDomainFloor.validate(
+            applications: [], categories: [], domains: ["example.com"]) else {
+            return XCTFail("non-empty domain shields require a captured protected-token floor")
+        }
+        XCTAssertEqual(domainReasons, ["protected domain token floor is unavailable"])
+    }
+
+    func testEmptyShieldDimensionsRemainSafeWithoutUnusedProtectedFloors() {
+        let validator = ShieldPolicyValidator<String>(protectedApplicationTokens: [],
+            protectedCategoryTokens: [], protectedDomainTokens: [])
+        XCTAssertEqual(validator.validate(applications: [], categories: [], domains: []), .accepted)
     }
 
     func testShieldPolicyValidatorRejectsWhenApplicationsDimensionUnsafe() {

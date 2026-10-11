@@ -87,6 +87,17 @@ test('active Parent and proof-of-possession device sessions receive only that de
     encryptedPayloadB64: 'b3BhcXVl',
     nonceB64: 'bm9uY2U',
   });
+  for (const [envelopeId, keyEpoch] of [['env-owner-stale', 3], ['env-owner-future', 5]]) {
+    await ledger.record({
+      envelopeId,
+      familyId: FAMILY,
+      parentDeviceId: OWNER_DEVICE,
+      keyEpoch,
+      generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
+      encryptedPayloadB64: 'c3RhbGUtb3ItZnV0dXJl',
+      nonceB64: 'bm9uY2U',
+    });
+  }
   await ledger.record({
     envelopeId: 'env-someone-else-1',
     familyId: FAMILY,
@@ -189,9 +200,9 @@ test('route composition without a device-session authority fails closed', async 
 test('accepted Trust Set membership is bound to the live session DSK before recipient lookup', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   let resolverArgs;
-  let listCalls = 0;
+  const listCalls = [];
   const list = ledger.listForParentDevice.bind(ledger);
-  ledger.listForParentDevice = async (...args) => { listCalls += 1; return list(...args); };
+  ledger.listForParentDevice = async (...args) => { listCalls.push(args); return list(...args); };
   const { app } = buildApp({ ledger, trustSetRoleResolver: {
     async resolveActor(...args) {
       resolverArgs = args;
@@ -206,7 +217,7 @@ test('accepted Trust Set membership is bound to the live session DSK before reci
     });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(resolverArgs, [FAMILY, OWNER_DEVICE, 'dsk-owner-1']);
-    assert.equal(listCalls, 1);
+    assert.deepEqual(listCalls, [[FAMILY, OWNER_DEVICE, 4]]);
   } finally {
     await app.close();
   }
@@ -218,6 +229,7 @@ test('missing or unavailable accepted Trust Set authority fails closed before re
     { id: 'unavailable', trustSetRoleResolver: { async resolveActor() { throw new Error('store unavailable'); } }, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
     { id: 'revoked', trustSetRoleResolver: { async resolveActor() { return 'DEVICE_NOT_ACTIVE'; } }, expectedStatus: 403, expectedError: 'forbidden' },
     { id: 'unknown-role', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'SERVICE', trustSetEpoch: 7, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
+    { id: 'child-device-role', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'CHILD', trustSetEpoch: 7, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
     { id: 'missing-role', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, trustSetEpoch: 7, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
     { id: 'invalid-trust-set-epoch', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: Number.NaN, keyEpoch: 4 }; } }, expectedStatus: 403, expectedError: 'forbidden' },
     { id: 'invalid-key-epoch', trustSetRoleResolver: { async resolveActor() { return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: 7, keyEpoch: 0 }; } }, expectedStatus: 403, expectedError: 'forbidden' },

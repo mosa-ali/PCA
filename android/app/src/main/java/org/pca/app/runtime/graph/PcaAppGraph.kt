@@ -62,6 +62,7 @@ import org.pca.app.feature.wellbeing.ui.WellbeingCardActivity
 import org.pca.app.enrollment.BootstrapEndpointConfig
 import org.pca.app.enrollment.DeviceBootstrapApiClient
 import org.pca.app.enrollment.EnrollmentCoordinator
+import org.pca.app.enrollment.PairingState
 import org.pca.app.enrollment.screenTimeConfigForEnrollmentProfile
 import org.pca.app.enrollment.EnrollmentDeepLinkConfig
 import org.pca.app.enrollment.EnrollmentLinkParser
@@ -153,6 +154,7 @@ import org.pca.app.runtime.prayer.PrayerLocationStalenessNotificationDelivery
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
+import org.pca.app.runtime.schedule.SchedulePolicyRuntimeScope
 import org.pca.app.runtime.schedule.AndroidCommunicationSurfaceResolver
 import org.pca.app.runtime.schedule.AndroidDevicePolicyPackageSuspensionExecutor
 import org.pca.app.runtime.schedule.DevicePolicyScheduleEnforcementConsumer
@@ -284,7 +286,15 @@ class PcaAppGraph private constructor(
     val schedulePolicyStore = PersistentSchedulePolicyStore(runtimeStateStore)
     private val communicationSurfaceResolver = AndroidCommunicationSurfaceResolver(context)
     private val communicationCallStateObserver = AndroidTelephonyCallStateObserver(context)
-    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore) {
+    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore, currentPolicyScopeProvider = {
+        val local = try { familyStateStore.currentState() } catch (_: CorruptLocalFamilyStateException) { null }
+        val profileId = local?.childProfileId?.takeIf { it.isNotBlank() }
+        if (local == null || local.pairingState != PairingState.ACTIVE || local.familyId.isBlank() || profileId == null) {
+            null
+        } else {
+            SchedulePolicyRuntimeScope(local.familyId, profileId, local.trustSetEpoch, local.keyEpoch)
+        }
+    }) {
         communicationSurfaceResolver.resolveCommunicationSurfaces()
     }
 
@@ -1260,20 +1270,43 @@ class PcaAppGraph private constructor(
 
         @Volatile private var instance: PcaAppGraph? = null
 
+        /** Shared lazy singleton discipline. Keeping graph creation inside the factory means the
+         * second check under the lock prevents duplicate composition as well as duplicate
+         * publication. */
+        private fun getOrCreateInstance(create: () -> PcaAppGraph): PcaAppGraph =
+            instance ?: synchronized(this) {
+                instance ?: create().also { instance = it }
+            }
+
         /** Process-wide singleton, identical double-checked-lock discipline to
          * [PcaLocalPersistence.getInstance] -- exactly one graph per process. */
         fun getInstance(
             context: Context,
             scheduleRuntimePort: ScheduleRuntimePort? = null,
             familySyncRuntimePort: FamilySyncRuntimePort = OfflineFamilySyncRuntimePort(),
-        ): PcaAppGraph = instance ?: synchronized(this) {
-            instance ?: PcaAppGraph(
+        ): PcaAppGraph = getOrCreateInstance {
+            PcaAppGraph(
                 context = context.applicationContext,
                 scheduleRuntimePortOverride = scheduleRuntimePort,
                 familySyncRuntimePort = familySyncRuntimePort,
                 runtimeStateStore = EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_runtime_state"),
                 childRequestStateStore = EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_child_request_queue"),
-            ).also { instance = it }
+            )
+        }
+
+        /** Same singleton holder as production, with only the keystore-backed stores replaced
+         * for Robolectric tests that cannot initialize AndroidKeyStore. */
+        internal fun getInstanceForTest(
+            context: Context,
+            stateStore: PersistentStateStore,
+        ): PcaAppGraph = getOrCreateInstance {
+            PcaAppGraph(
+                context = context.applicationContext,
+                scheduleRuntimePortOverride = NotReadyScheduleRuntimePort(),
+                familySyncRuntimePort = OfflineFamilySyncRuntimePort(),
+                runtimeStateStore = stateStore,
+                childRequestStateStore = stateStore,
+            )
         }
 
         /**

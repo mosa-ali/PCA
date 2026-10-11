@@ -1,6 +1,7 @@
 package org.pca.app.runtime.identity
 
 import org.pca.app.storage.CorruptLocalFamilyStateException
+import org.pca.app.storage.EnrollmentPersistenceException
 import org.pca.app.storage.FamilyStateStore
 
 /**
@@ -51,6 +52,8 @@ class PersistentDeviceIdentityProvider(private val familyStateStore: FamilyState
         val state = try {
             familyStateStore.currentState()
         } catch (_: CorruptLocalFamilyStateException) {
+            return DeviceIdentityState.Unavailable
+        } catch (_: EnrollmentPersistenceException) {
             return DeviceIdentityState.Unavailable
         }
         val deviceId = state?.deviceId

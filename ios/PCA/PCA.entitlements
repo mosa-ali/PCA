@@ -22,7 +22,7 @@
 	     by this source entry. -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:enroll.pca.app</string>
+		<string>applinks:www.pcasafe.com</string>
 	</array>
 </dict>
 </plist>

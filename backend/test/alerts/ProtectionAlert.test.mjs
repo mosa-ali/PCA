@@ -56,7 +56,23 @@ test('PCA-ADD-ENR-020 ledger is append-only and idempotent without a plaintext r
     await ledger.record({ ...event, encryptedPayloadB64: 'CQkJ' }),
     { outcome: 'CONFLICT' },
   );
-  assert.deepEqual((await ledger.listForParentDevice('family-1', 'parent-1')).map((item) => item.alertId), ['alert-1']);
+  assert.deepEqual((await ledger.listForParentDevice('family-1', 'parent-1', 3)).map((item) => item.alertId), ['alert-1']);
+});
+
+test('parent-device feed returns only ciphertext at the authenticated current key epoch', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const current = generateProtectionAlert({ ...BASE, alertId: 'alert-current-epoch', keyEpoch: 3 });
+  const stale = generateProtectionAlert({ ...BASE, alertId: 'alert-stale-epoch', keyEpoch: 2 });
+  const future = generateProtectionAlert({ ...BASE, alertId: 'alert-future-epoch', keyEpoch: 4 });
+  await ledger.record(current);
+  await ledger.record(stale);
+  await ledger.record(future);
+
+  assert.deepEqual(await ledger.listForParentDevice('family-1', 'parent-1', 3), [current]);
+  await assert.rejects(
+    () => ledger.listForParentDevice('family-1', 'parent-1', 0),
+    /key epoch is outside the supported family epoch range/,
+  );
 });
 
 test('ledger snapshots event routing and opaque bytes before awaiting expiry cleanup', async () => {
@@ -80,8 +96,8 @@ test('ledger snapshots event routing and opaque bytes before awaiting expiry cle
   assert.equal(retained.generatedAtUtc.toISOString(), LEDGER_NOW.toISOString());
   assert.equal(retained.encryptedPayloadB64, 'AQID');
   assert.equal(retained.nonceB64, 'BAUG');
-  assert.deepEqual(await ledger.listForParentDevice('family-1', 'parent-1').then((rows) => rows.map((row) => row.alertId)), ['alert-1']);
-  assert.deepEqual(await ledger.listForParentDevice('family-other', 'parent-other'), []);
+  assert.deepEqual(await ledger.listForParentDevice('family-1', 'parent-1', 3).then((rows) => rows.map((row) => row.alertId)), ['alert-1']);
+  assert.deepEqual(await ledger.listForParentDevice('family-other', 'parent-other', 3), []);
 });
 
 test('get and both list methods return detached event and timestamp snapshots', async () => {
@@ -91,7 +107,7 @@ test('get and both list methods return detached event and timestamp snapshots', 
 
   const fromGet = await ledger.get(original.alertId);
   const fromFamilyList = (await ledger.listForFamily('family-1'))[0];
-  const fromDeviceList = (await ledger.listForParentDevice('family-1', 'parent-1'))[0];
+  const fromDeviceList = (await ledger.listForParentDevice('family-1', 'parent-1', original.keyEpoch))[0];
   fromGet.familyId = 'family-other';
   fromGet.parentDeviceId = 'parent-other';
   fromGet.generatedAtUtc.setTime(0);

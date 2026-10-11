@@ -33,6 +33,14 @@ export interface OutboundBatchResult {
   droppedForBatchBound: string[];
 }
 
+/** A trust-set recipient lookup failed, so its delivery authorization is unknown. */
+export class RecipientAuthorizationUnavailableError extends Error {
+  constructor() {
+    super('Recipient authorization is unavailable.');
+    this.name = 'RecipientAuthorizationUnavailableError';
+  }
+}
+
 /**
  * Bounded batch wrapper around RelayService.queueEnvelope. Adds exactly
  * two things RelayService itself deliberately does not do (see its own
@@ -46,7 +54,12 @@ export interface OutboundBatchResult {
  *    to a different family is rejected exactly like a nonexistent one
  *    (CROSS_FAMILY_RECIPIENT), never distinguished from INVALID -- same
  *    non-enumeration posture as every other lookup in this codebase.
- * 2. A bounded batch: never more than MAX_OUTBOUND_BATCH_SIZE items
+ * 2. Optional accepted-Trust-Set recipient eligibility, evaluated only
+ *    after directory scope/revocation/browser checks and only for items in
+ *    the attempted priority slice. This is enqueue eligibility, not final
+ *    delivery authority: the recipient session and envelope cryptography
+ *    must be revalidated when the queued item is drained/applied.
+ * 3. A bounded batch: never more than MAX_OUTBOUND_BATCH_SIZE items
  *    attempted per call, highest-priority tier first (priority.ts).
  *
  * `senderDeviceId`/`familyId` must always come from the caller's verified
@@ -63,6 +76,7 @@ export class OutboundRelayService {
     senderDeviceId: string,
     familyId: string,
     items: readonly OutboundEnvelopeItem[],
+    authorizeRecipient?: (recipientDeviceId: string) => Promise<boolean>,
   ): Promise<OutboundBatchResult> {
     // Copy absolute expiry dates before the first async recipient lookup, so
     // mutation of an input Date cannot lengthen retention during a slow read.
@@ -76,7 +90,7 @@ export class OutboundRelayService {
 
     const results: OutboundItemOutcome[] = [];
     for (const item of attempted) {
-      results.push(await this.submitOne(senderDeviceId, familyId, item));
+      results.push(await this.submitOne(senderDeviceId, familyId, item, authorizeRecipient));
     }
     return { results, droppedForBatchBound };
   }
@@ -86,7 +100,12 @@ export class OutboundRelayService {
     await this.relayService.acknowledgeEnvelope(recipientDeviceId, messageId);
   }
 
-  private async submitOne(senderDeviceId: string, familyId: string, item: OutboundEnvelopeItem): Promise<OutboundItemOutcome> {
+  private async submitOne(
+    senderDeviceId: string,
+    familyId: string,
+    item: OutboundEnvelopeItem,
+    authorizeRecipient?: (recipientDeviceId: string) => Promise<boolean>,
+  ): Promise<OutboundItemOutcome> {
     const recipient = await this.deviceRepository.findDeviceForFamily(familyId, item.recipientDeviceId);
     if (!recipient) {
       return { messageId: item.messageId, outcome: 'CROSS_FAMILY_RECIPIENT' };
@@ -100,6 +119,12 @@ export class OutboundRelayService {
     // BROWSER endpoints have no DEK and are never family E2EE recipients;
     // reject before the ciphertext reaches the opaque relay store.
     if (recipient.platform === 'BROWSER') {
+      return { messageId: item.messageId, outcome: 'INVALID' };
+    }
+    // Directory family scope is checked first to preserve the existing
+    // non-enumerating CROSS_FAMILY_RECIPIENT result. A live same-family row
+    // still needs accepted Trust Set membership before ciphertext is queued.
+    if (authorizeRecipient && !(await authorizeRecipient(item.recipientDeviceId))) {
       return { messageId: item.messageId, outcome: 'INVALID' };
     }
 

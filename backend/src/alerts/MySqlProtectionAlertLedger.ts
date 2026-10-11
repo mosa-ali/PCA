@@ -149,8 +149,12 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
   async listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options: ProtectionAlertListOptions = {},
   ): Promise<ProtectionAlertEvent[]> {
+    if (!isFamilyEpochNumber(keyEpoch, 1)) {
+      throw new Error('Protection alert key epoch is outside the supported family epoch range.');
+    }
     const now = options.now ?? this.now();
     const limit = resolveServerCiphertextFeedLimit(options.limit);
     const { rows } = await runInTransaction((conn) =>
@@ -159,11 +163,12 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
         `SELECT * FROM (
            SELECT * FROM protection_alerts
             WHERE family_id = ? AND parent_device_id = ? AND expires_at > ?
+              AND key_epoch = ?
             ORDER BY generated_at_utc DESC, alert_id DESC
             LIMIT ?
          ) AS recent
          ORDER BY generated_at_utc ASC, alert_id ASC`,
-        [familyId, parentDeviceId, now, limit],
+        [familyId, parentDeviceId, now, keyEpoch, limit],
       ),
     );
     return rows.map(toEvent);

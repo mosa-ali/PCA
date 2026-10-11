@@ -21,7 +21,7 @@ const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
 const FAMILY = 'family-protection-alerts-http-1';
 const OTHER_FAMILY = 'family-protection-alerts-http-other';
 
-function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW), role = 'ADMINISTRATOR', trustSetRoleResolver, useTrustSetRoleResolver = true } = {}) {
+function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW), role = 'ADMINISTRATOR', keyEpoch = 1, trustSetRoleResolver, useTrustSetRoleResolver = true } = {}) {
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
     ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
@@ -57,7 +57,7 @@ function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW)
     async resolveActor(familyId, deviceId, dskKeyId) {
       const identity = [...deviceSessions.values()].find((candidate) => candidate.deviceId === deviceId);
       if (!identity || identity.familyId !== familyId || identity.dskKeyId !== dskKeyId) return 'DEVICE_NOT_ACTIVE';
-      return { deviceId, role: resolvedRoles.get(deviceId), trustSetEpoch: 2, keyEpoch: 1 };
+      return { deviceId, role: resolvedRoles.get(deviceId), trustSetEpoch: 2, keyEpoch };
     },
   };
 
@@ -87,6 +87,17 @@ test('an active Parent browser receives only its own device-scoped opaque protec
     nonceB64: 'bm9uY2U',
   });
   await ledger.record({
+    alertId: 'alert-owner-stale-epoch',
+    familyId: FAMILY,
+    deviceId: 'child-device-1',
+    parentDeviceId: 'dev-owner',
+    trigger: 'PROTECTION_DEGRADED',
+    keyEpoch: 3,
+    generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
+    encryptedPayloadB64: 'c3RhbGUtZXBvY2g',
+    nonceB64: 'bm9uY2U',
+  });
+  await ledger.record({
     alertId: 'alert-someone-else-1',
     familyId: FAMILY,
     deviceId: 'child-device-2',
@@ -108,7 +119,7 @@ test('an active Parent browser receives only its own device-scoped opaque protec
     encryptedPayloadB64: 'b3RoZXItZmFtaWx5',
     nonceB64: 'bm9uY2U',
   });
-  const { app } = buildApp({ ledger });
+  const { app } = buildApp({ ledger, keyEpoch: 4 });
   try {
     const response = await app.inject({
       method: 'GET',
@@ -121,6 +132,7 @@ test('an active Parent browser receives only its own device-scoped opaque protec
     const body = response.json();
     assert.equal(body.alerts.length, 1);
     assert.deepEqual(body.alerts.map((alert) => alert.alertId), ['alert-owner-1']);
+    assert.equal(body.alerts.some((alert) => alert.alertId === 'alert-owner-stale-epoch'), false);
     assert.equal(body.alerts.some((alert) => alert.alertId === 'alert-other-family-1'), false);
     assert.equal(body.alerts.some((alert) => alert.alertId === 'alert-someone-else-1'), false);
     assert.equal(body.alerts[0].trigger, 'PROTECTION_DEGRADED');
@@ -354,7 +366,7 @@ test('an active Viewer Parent session can read only its own device queue', async
     trigger: 'PROTECTION_DEGRADED', keyEpoch: 2, generatedAtUtc: new Date('2026-01-01T00:00:00.000Z'),
     encryptedPayloadB64: 'eA', nonceB64: 'eQ',
   });
-  const { app } = buildApp({ ledger, role: 'VIEWER' });
+  const { app } = buildApp({ ledger, role: 'VIEWER', keyEpoch: 2 });
   try {
     const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
     assert.equal(response.statusCode, 200);

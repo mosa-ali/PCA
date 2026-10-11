@@ -2,6 +2,27 @@ import XCTest
 @testable import PCA
 
 final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
+    @MainActor func testPullRejectsEscapedDuplicateEnvelopeEpochBeforeInboxCapture() async throws {
+        let body = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[{"protocolMajor":1,"protocolMinor":0,"messageId":"message-1","familyId":"family-1","senderDeviceId":"sender-1","recipientDeviceId":"device-1","senderKeyId":"key-1","messageType":"POLICY_UPDATE","trustSetEpoch":1,"trustSet\u0045poch":2,"keyEpoch":1,"sequenceOrNonce":"1","issuedAt":"2026-10-01T00:00:00.000Z","expiresAt":"2026-10-01T00:01:00.000Z","semanticVersion":"1.0.0","payload":"AQID","signature":"signature-1"}],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
+        let transport = InMemoryPCAHTTPTransport { _ in PCAHTTPResponse(statusCode: 200, data: body) }
+        let client = try PCADeviceRuntimeSyncClient(
+            baseURL: URL(string: "https://api.example.test")!, transport: transport)
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "session-token",
+            expiresAt: Date().addingTimeInterval(3_600))
+        let scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
+        let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+            serviceNamespace: "runtime-sync-duplicate-epoch")
+
+        do {
+            let response = try await client.pull(session: session)
+            try inbox.capture(response, sessionDeviceId: session.deviceId)
+            XCTFail("an inbound envelope with duplicate decoded epoch names must not reach inbox capture")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+    }
+
     @MainActor func testBoundedReclaimUsesBatchKeychainWritesAndPreservesUnacknowledgedTerminal() async throws {
         let keychain = CountingKeychainStore()
         let scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")

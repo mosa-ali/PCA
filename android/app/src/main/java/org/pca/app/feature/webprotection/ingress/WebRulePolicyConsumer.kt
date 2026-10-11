@@ -31,6 +31,8 @@ data class FamilyWebRulePayload(
 sealed class WebRuleIngressOutcome {
     data class Applied(val revision: Long, val ruleCount: Int) : WebRuleIngressOutcome()
     data class RejectedStaleRevision(val activeRevision: String) : WebRuleIngressOutcome()
+    /** A negative revision is malformed input and must not escape as an exception from the storage layer. */
+    object RejectedInvalidRevision : WebRuleIngressOutcome()
     object RejectedInvalidDomain : WebRuleIngressOutcome()
     object RejectedForbiddenSource : WebRuleIngressOutcome()
     /** The payload's own `familyId` does not match [expectedFamilyId] -- never applied, regardless of how trusted the transport claimed to be, since a wrong-family payload must never overwrite this device's own family's rules (doc 45 "wrong family -> rejected"). */
@@ -54,6 +56,7 @@ class WebRulePolicyConsumer(private val repository: PersistentWebRuleRepository)
     fun apply(expectedFamilyId: OpaqueFamilyId, payload: FamilyWebRulePayload): WebRuleIngressOutcome {
         if (expectedFamilyId.isBlank()) return WebRuleIngressOutcome.RejectedNoTrustedFamilyAuthority
         if (payload.familyId != expectedFamilyId) return WebRuleIngressOutcome.RejectedWrongFamily
+        if (payload.revision < 0L) return WebRuleIngressOutcome.RejectedInvalidRevision
         for (rule in payload.rules) {
             if (rule.familyId != expectedFamilyId) return WebRuleIngressOutcome.RejectedWrongFamily
         }

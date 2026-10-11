@@ -55,6 +55,7 @@ public enum FamilyTrustSetCodec {
     public static func parseWire(_ data: Data) throws -> UntrustedTrustSetEpoch {
         try checked {
             guard data.count <= maximumWireUTF16Units * 3 else { throw malformed }
+            try StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: maximumWireUTF16Units * 3)
             let text = try strictUTF8(Array(data))
             guard text.utf16.count <= maximumWireUTF16Units else { throw malformed }
             // JSONDecoder's strict string decoding rejects unpaired surrogate escapes;

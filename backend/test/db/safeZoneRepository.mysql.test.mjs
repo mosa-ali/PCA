@@ -121,12 +121,12 @@ test('MySQL Safe Zone delivery: list is restricted to the authenticated family a
   await repository.create({ ...newZone(familyId), recipientEndpointId: otherDeviceId });
   await repository.create({ ...newZone(otherFamilyId), recipientEndpointId: recipientDeviceId });
 
-  const result = await repository.listForRecipient(familyId, recipientDeviceId);
+  const result = await repository.listForRecipient(familyId, recipientDeviceId, 2);
   assert.deepEqual(result.safeZones.map((zone) => zone.zoneId), [recipientZone.zoneId]);
   assert.equal(result.safeZones[0].ciphertextB64, recipientZone.ciphertextB64);
   assert.equal(result.safeZones[0].deliveryState, 'PENDING_OFFLINE');
   assert.equal(result.nextCursor, null);
-  assert.deepEqual(await repository.listForRecipient(randomUUID(), recipientDeviceId), { safeZones: [], nextCursor: null });
+  assert.deepEqual(await repository.listForRecipient(randomUUID(), recipientDeviceId, 2), { safeZones: [], nextCursor: null });
 });
 
 test('MySQL Safe Zone delivery: pages are bounded and advance without crossing recipient scope', async () => {
@@ -142,16 +142,61 @@ test('MySQL Safe Zone delivery: pages are bounded and advance without crossing r
       keyEpoch: 1,
     }));
   }
-  const firstPage = await repository.listForRecipient(familyId, recipientDeviceId);
+  const firstPage = await repository.listForRecipient(familyId, recipientDeviceId, 1);
   assert.equal(firstPage.safeZones.length, 16);
   assert.ok(firstPage.nextCursor);
-  const secondPage = await repository.listForRecipient(familyId, recipientDeviceId, firstPage.nextCursor);
+  assert.equal(firstPage.nextCursor, `v1~1~${firstPage.safeZones.at(-1).zoneId}`);
+  const secondPage = await repository.listForRecipient(familyId, recipientDeviceId, 1, firstPage.nextCursor);
   assert.equal(secondPage.safeZones.length, 2);
   assert.equal(secondPage.nextCursor, null);
   assert.deepEqual(
     [...firstPage.safeZones, ...secondPage.safeZones].map((zone) => zone.zoneId).sort(),
     created.map((zone) => zone.zoneId).sort(),
   );
+});
+
+test('MySQL Safe Zone delivery restarts when a cursor epoch is stale after rows are rekeyed', async () => {
+  const familyId = randomUUID();
+  const recipientDeviceId = randomUUID();
+  const created = [];
+  for (let index = 0; index < 18; index += 1) {
+    created.push(await repository.create({
+      familyId,
+      recipientEndpointId: recipientDeviceId,
+      ciphertextB64: Buffer.from(`epoch-1-policy-${index}`).toString('base64url'),
+      nonceB64: 'AAECAwQFBgcICQoL',
+      keyEpoch: 1,
+    }));
+  }
+
+  const firstPage = await repository.listForRecipient(familyId, recipientDeviceId, 1);
+  assert.equal(firstPage.safeZones.length, 16);
+  assert.ok(firstPage.nextCursor);
+  const oldCursor = firstPage.nextCursor;
+  const rowAtOrBeforeCursor = firstPage.safeZones[0].zoneId;
+
+  for (const zone of created) {
+    await repository.update(familyId, zone.zoneId, {
+      ciphertextB64: 'BAUG',
+      nonceB64: 'EBESExQVFhcYGRob',
+      keyEpoch: 2,
+    });
+  }
+
+  const expectedFirstPageIds = created.map((zone) => zone.zoneId).sort().slice(0, 16);
+  const resumed = await repository.listForRecipient(familyId, recipientDeviceId, 2, oldCursor);
+  assert.deepEqual(resumed.safeZones.map((zone) => zone.zoneId), expectedFirstPageIds);
+  assert.ok(resumed.safeZones.some((zone) => zone.zoneId === rowAtOrBeforeCursor));
+  assert.ok(resumed.safeZones.every((zone) => zone.keyEpoch === 2));
+  assert.equal(resumed.nextCursor, `v1~2~${resumed.safeZones.at(-1).zoneId}`);
+
+  const legacyRestart = await repository.listForRecipient(
+    familyId,
+    recipientDeviceId,
+    2,
+    firstPage.safeZones.at(-1).zoneId,
+  );
+  assert.deepEqual(legacyRestart.safeZones.map((zone) => zone.zoneId), expectedFirstPageIds);
 });
 
 test('MySQL Safe Zone CONCURRENCY: serialized epoch updates leave the highest accepted key epoch', async () => {

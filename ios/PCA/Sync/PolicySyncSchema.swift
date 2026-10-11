@@ -198,12 +198,98 @@ public enum PolicySyncDecodeError: Error, Equatable {
     case unsupportedSchemaVersion(found: Int, expected: Int)
     case unrecognizedTimeZone(String)
     case invalidWindowConfig([String])
+    case invalidExceptionConfig([String])
     case emptyActivityId
     case emptyAppToken
     case invalidUsageConfig
 }
 
+/// `Codable` intentionally ignores unknown object members. That is convenient
+/// for many APIs, but a persisted schema-versioned policy must be a closed
+/// document: otherwise a newer or corrupt writer could add policy semantics
+/// that this extension silently ignores. StrictJSONDocument has already
+/// rejected malformed grammar and duplicate decoded member names before this
+/// shape check runs.
+private enum StoredPolicyJSONShapeValidator {
+    static func accepts(_ data: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let policy = object(root, required: [
+                "schemaVersion", "activityId", "appToken", "timeZoneIdentifier",
+                "windows", "bonusGrants", "exceptions", "enforcementCapability",
+              ], optional: ["dailyLimit"]),
+              let windows = policy["windows"] as? [Any], windows.allSatisfy(window),
+              let bonusGrants = policy["bonusGrants"] as? [Any], bonusGrants.allSatisfy(bonusGrant),
+              let exceptions = policy["exceptions"] as? [Any], exceptions.allSatisfy(parentException) else {
+            return false
+        }
+        if let dailyLimit = policy["dailyLimit"], !(dailyLimit is NSNull), !dailyAppLimit(dailyLimit) {
+            return false
+        }
+        return true
+    }
+
+    private static func window(_ value: Any) -> Bool {
+        guard let fields = object(value, required: ["id", "kind", "daysOfWeek", "start", "end", "appScope"],
+                                  optional: ["timezone"]),
+              let scope = fields["appScope"], appScope(scope),
+              let start = fields["start"], object(start, required: ["hour", "minute"]) != nil,
+              let end = fields["end"], object(end, required: ["hour", "minute"]) != nil else {
+            return false
+        }
+        return true
+    }
+
+    private static func bonusGrant(_ value: Any) -> Bool {
+        guard let fields = object(value, required: ["id", "appScope", "extraMinutes", "grantedAtUtc", "expiresAtUtc"]),
+              let scope = fields["appScope"] else {
+            return false
+        }
+        return appScope(scope)
+    }
+
+    private static func parentException(_ value: Any) -> Bool {
+        guard let fields = object(value, required: ["id", "appScope", "startAtUtc", "endAtUtc"]),
+              let scope = fields["appScope"] else {
+            return false
+        }
+        return appScope(scope)
+    }
+
+    private static func dailyAppLimit(_ value: Any) -> Bool {
+        guard let fields = object(value, required: ["appScope", "limitMinutes", "usedMinutesToday", "anchorLocalDate"]),
+              let scope = fields["appScope"] else {
+            return false
+        }
+        return appScope(scope)
+    }
+
+    /// Synthesized Codable enum form: `{ "all": {} }` or
+    /// `{ "apps": { "_0": ["..."] } }`.
+    private static func appScope(_ value: Any) -> Bool {
+        guard let cases = value as? [String: Any], cases.count == 1 else { return false }
+        if let allPayload = cases["all"] {
+            guard let fields = allPayload as? [String: Any] else { return false }
+            return fields.isEmpty
+        }
+        guard let appsPayload = cases["apps"],
+              let fields = object(appsPayload, required: ["_0"]),
+              let appIds = fields["_0"] as? [Any] else { return false }
+        return appIds.allSatisfy { $0 is String }
+    }
+
+    private static func object(_ value: Any, required: Set<String>, optional: Set<String> = []) -> [String: Any]? {
+        guard let fields = value as? [String: Any] else { return nil }
+        let keys = Set(fields.keys)
+        guard required.isSubset(of: keys), keys.isSubset(of: required.union(optional)) else { return nil }
+        return fields
+    }
+}
+
 public enum PolicySyncDecoder {
+    /// Match ScheduleEngine's JavaScript Date range before decoded exceptions
+    /// can reach persistence or enforcement.
+    private static let maximumPolicyDateSeconds = 8_640_000_000_000.0
+
     /// Decodes and validates raw bytes into a `DecodedSchedulePolicy`.
     /// NEVER guesses/invents a substitute value for a missing or
     /// malformed field -- every failure mode throws a specific,
@@ -211,6 +297,9 @@ public enum PolicySyncDecoder {
     /// (PCA-15 correction F1: "never invent policy").
     public static func decode(_ data: Data) -> Result<DecodedSchedulePolicy, PolicySyncDecodeError> {
         guard data.count <= 1_048_576 else { return .failure(.malformedData) }
+        do { try StrictJSONDocument.validateNoDuplicateMembers(data) }
+        catch { return .failure(.malformedData) }
+        guard StoredPolicyJSONShapeValidator.accepts(data) else { return .failure(.malformedData) }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let stored = try? decoder.decode(StoredDeviceActivityPolicy.self, from: data) else {
@@ -233,6 +322,17 @@ public enum PolicySyncDecoder {
                   isCanonicalGregorianLocalDate($0.anchorLocalDate) }) ?? true else {
             return .failure(.invalidUsageConfig)
         }
+        let exceptionErrors = stored.exceptions.compactMap { exception -> String? in
+            let start = exception.startAtUtc.timeIntervalSince1970
+            let end = exception.endAtUtc.timeIntervalSince1970
+            guard start.isFinite, end.isFinite,
+                  abs(start) <= maximumPolicyDateSeconds, abs(end) <= maximumPolicyDateSeconds,
+                  start < end else {
+                return "parent exception \(exception.id): startAt and endAt must be finite in-range instants with startAt before endAt"
+            }
+            return nil
+        }
+        guard exceptionErrors.isEmpty else { return .failure(.invalidExceptionConfig(exceptionErrors)) }
         guard let timeZone = TimeZone(identifier: stored.timeZoneIdentifier) else {
             return .failure(.unrecognizedTimeZone(stored.timeZoneIdentifier))
         }

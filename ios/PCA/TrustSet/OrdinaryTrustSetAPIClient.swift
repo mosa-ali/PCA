@@ -32,6 +32,59 @@ private final class OrdinaryTrustSetNoRedirectDelegate: NSObject, URLSessionTask
     }
 }
 
+/// Transport v1 DTOs are closed objects, so validate their response shape
+/// after the shared strict JSON parser rejects malformed or duplicate members.
+enum OrdinaryTrustSetJSON {
+    enum Kind { case submission, acceptedHead, acceptedRecord }
+    private typealias Shape = StrictJSONDocument.Shape
+
+    static func validate(_ data: Data, as kind: Kind) throws {
+        let shape = try parse(data)
+        switch kind {
+        case .submission:
+            let root = try object(shape, keys: ["outcome", "acceptedEpoch", "acceptedHead"])
+            _ = try record(root[key("acceptedHead")])
+            guard let accepted = root[key("acceptedEpoch")] else { throw PCAAPIError.malformedResponse }
+            switch accepted {
+            case .null: break
+            case .object(_): _ = try record(accepted)
+            default: throw PCAAPIError.malformedResponse
+            }
+        case .acceptedHead:
+            let root = try object(shape, keys: ["acceptedHead"])
+            _ = try record(root[key("acceptedHead")])
+        case .acceptedRecord:
+            let root = try object(shape, keys: ["acceptedEpoch"])
+            _ = try record(root[key("acceptedEpoch")])
+        }
+    }
+
+    private static func parse(_ data: Data) throws -> Shape {
+        do { return try StrictJSONDocument.parse(data) }
+        catch { throw PCAAPIError.malformedResponse }
+    }
+
+    private static let recordKeys = ["canonicalEpochBase64", "signatureBase64", "signerDeviceId",
+                                     "signerKeyId", "trustSetEpoch", "keyEpoch"]
+    private static func record(_ shape: Shape?) throws -> [Data: Shape] {
+        guard let shape else { throw PCAAPIError.malformedResponse }
+        return try object(shape, keys: recordKeys)
+    }
+    private static func object(_ shape: Shape, keys: [String]) throws -> [Data: Shape] {
+        guard case let .object(values) = shape,
+              Set(values.keys) == Set(keys.map(key)) else { throw PCAAPIError.malformedResponse }
+        return values
+    }
+    private static func key(_ value: String) -> Data {
+        var result = Data()
+        for scalar in value.unicodeScalars {
+            var encoded = scalar.value.bigEndian
+            withUnsafeBytes(of: &encoded) { result.append(contentsOf: $0) }
+        }
+        return result
+    }
+}
+
 /// Device-session-only implementation of OrdinaryEpochTransportV1. The caller owns session renewal.
 public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     private let baseURL: URL
@@ -55,16 +108,20 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             guard canonicalEpochBase64.utf8.count <= 349_528, signatureBase64.utf8.count == 88,
                   let bytes = Data(base64Encoded: canonicalEpochBase64), bytes.base64EncodedString() == canonicalEpochBase64,
                   let sig = Data(base64Encoded: signatureBase64), sig.count == 64, sig.base64EncodedString() == signatureBase64,
-                  !signerDeviceId.isEmpty, signerDeviceId.utf8.count <= 64, !signerKeyId.isEmpty, signerKeyId.utf8.count <= 64
+                  !signerDeviceId.isEmpty, signerDeviceId.utf16.count <= 128,
+                  !signerKeyId.isEmpty, signerKeyId.utf16.count <= 128
             else { throw PCAAPIError.malformedResponse }
             let signature = signatureBase64.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
                 .replacingOccurrences(of: "=", with: "")
             let value = OrdinaryTrustSetHead(familyId: familyId, canonicalBytes: bytes, signature: signature)
             let epoch = try value.epoch()
-            let owners = epoch.entries.filter { $0.role == .owner && $0.status == .active }
-            guard owners.count == 1, Data(owners[0].deviceId.utf8) == Data(signerDeviceId.utf8),
-                  Data(owners[0].dskKeyId.utf8) == Data(signerKeyId.utf8),
-                  epoch.trustSetEpoch == trustSetEpoch, epoch.keyEpoch == keyEpoch else { throw PCAAPIError.malformedResponse }
+            // The accepted record signer is the Owner of the predecessor epoch.
+            // During a valid transfer that signer deliberately differs from the
+            // resulting epoch's incoming Owner. The coordinator verifies the
+            // signature against its persisted acceptedBase before adoption.
+            guard epoch.trustSetEpoch == trustSetEpoch, epoch.keyEpoch == keyEpoch else {
+                throw PCAAPIError.malformedResponse
+            }
             return value
         }
     }
@@ -116,6 +173,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             if response.statusCode == 409 || response.statusCode == 422 { return .rejected }
             throw PCAAPIError.unavailable
         }
+        try OrdinaryTrustSetJSON.validate(response.data, as: .submission)
         let result = try JSONDecoder().decode(Result.self, from: response.data)
         // Optional decoding alone cannot distinguish an explicit null receipt from
         // an omitted field. The v1 status contract requires the field on every
@@ -153,7 +211,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             throw OrdinaryTrustSetError.scopeMismatch
         }
         let response = try await call(suffix: "/records/\(epoch)", pending: nil)
-        try requireAcceptedRead(response)
+        try requireAcceptedRead(response, shape: .acceptedRecord)
         let head = try JSONDecoder().decode(RecordResult.self, from: response.data).acceptedEpoch.head(familyId: familyId)
         guard try head.epoch().trustSetEpoch == epoch else { throw PCAAPIError.malformedResponse }
         return head
@@ -161,13 +219,13 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     public func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead {
         guard Data(familyId.utf8) == Data(self.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
         let response = try await call(suffix: "/head", pending: nil)
-        try requireAcceptedRead(response)
+        try requireAcceptedRead(response, shape: .acceptedHead)
         return try JSONDecoder().decode(HeadResult.self, from: response.data).acceptedHead.head(familyId: familyId)
     }
 
-    private func requireAcceptedRead(_ response: PCAHTTPResponse) throws {
+    private func requireAcceptedRead(_ response: PCAHTTPResponse, shape: OrdinaryTrustSetJSON.Kind) throws {
         switch response.statusCode {
-        case 200: return
+        case 200: try OrdinaryTrustSetJSON.validate(response.data, as: shape)
         case 401: throw PCAAPIError.unauthorized
         case 403: throw PCAAPIError.forbidden
         default: throw PCAAPIError.unavailable

@@ -118,6 +118,45 @@ class UsageSessionRecorderTest {
     }
 
     @Test
+    fun `snapshot read failure starts a fresh baseline and never credits historical sessions`() = runTest {
+        source.accessState = UsageAccessState.GRANTED
+        source.events = listOf(
+            UsageEvent("com.example.before-baseline", UsageEventType.FOREGROUND, 1L),
+            UsageEvent("com.example.before-baseline", UsageEventType.BACKGROUND, 1_001L),
+        )
+        advanceTo(5_000L)
+        var stored: UsageObservationSnapshot? = null
+        var failInitialRead = true
+        val failingInitialReadStore = object : UsageObservationSnapshotStore {
+            override fun load(): UsageObservationSnapshot? {
+                if (failInitialRead) {
+                    failInitialRead = false
+                    throw java.io.IOException("snapshot read unavailable")
+                }
+                return stored
+            }
+
+            override fun save(snapshot: UsageObservationSnapshot) {
+                stored = snapshot
+            }
+        }
+        val recorder = newRecorder(store = failingInitialReadStore)
+
+        val baseline = recorder.poll()
+
+        assertEquals(0, baseline.recordedSessionCount)
+        assertEquals(UsageObservationCoverage.BASELINE, baseline.coverage)
+        assertTrue(repository.getForDevice("device-1").isEmpty())
+        assertEquals(5_000L, stored?.engineState?.lastProcessedElapsedMillis)
+
+        advanceTo(6_000L)
+        val resumed = recorder.poll()
+
+        assertEquals(0, resumed.recordedSessionCount)
+        assertTrue(repository.getForDevice("device-1").isEmpty())
+    }
+
+    @Test
     fun `enrollment completing after construction is picked up on the next poll without recreating the recorder`() = runTest {
         source.accessState = UsageAccessState.GRANTED
         var enrolledId: String? = null

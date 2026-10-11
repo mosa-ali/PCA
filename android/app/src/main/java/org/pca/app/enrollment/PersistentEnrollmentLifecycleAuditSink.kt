@@ -1,5 +1,6 @@
 package org.pca.app.enrollment
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,18 +31,26 @@ class PersistentEnrollmentLifecycleAuditSink(
 ) : EnrollmentLifecycleAuditSink {
     override fun append(record: EnrollmentLifecycleAuditRecord) {
         scope.launch {
-            repository.insert(
-                EnrollmentLifecycleAuditEntity(
-                    id = UUID.randomUUID().toString(),
-                    familyId = record.familyId,
-                    deviceId = record.deviceId,
-                    actorId = record.actorId,
-                    fromState = record.fromState?.name,
-                    toState = record.toState.name,
-                    reason = record.reason,
-                    occurredAtEpochMillis = record.occurredAtUtc.toEpochMilli(),
-                ),
-            )
+            try {
+                repository.insert(
+                    EnrollmentLifecycleAuditEntity(
+                        id = UUID.randomUUID().toString(),
+                        familyId = record.familyId,
+                        deviceId = record.deviceId,
+                        actorId = record.actorId,
+                        fromState = record.fromState?.name,
+                        toState = record.toState.name,
+                        reason = record.reason,
+                        occurredAtEpochMillis = record.occurredAtUtc.toEpochMilli(),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // This sink is explicitly best-effort and has no synchronous
+                // failure channel. A Room/storage failure must not become an
+                // uncaught coroutine exception that crashes enrollment.
+            }
         }
     }
 }

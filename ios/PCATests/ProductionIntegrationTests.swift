@@ -101,6 +101,56 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertThrowsError(try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([2]), minimumTrustSetEpoch: 1, minimumKeyEpoch: 3), assertAuthority: {}))
         XCTAssertThrowsError(try ledger.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([2]), minimumTrustSetEpoch: Int(Int32.max) + 1, minimumKeyEpoch: 3), assertAuthority: {}))
     }
+    func testSecurityCriticalKeychainSnapshotsRejectEscapedDuplicateMembers() throws {
+        func duplicateVersion(_ bytes: Data, value: Int) throws -> Data {
+            let text = String(decoding: bytes, as: UTF8.self)
+            let field = "\"version\":\(value)"
+            guard text.contains(field) else { throw PCAInboundInboxError.unavailable }
+            return Data(text.replacingOccurrences(of: field,
+                with: "\(field),\"vers\\u0069on\":\(value)").utf8)
+        }
+
+        let keychain = InMemoryKeychainStore()
+        let (envelope, scope) = try replayEnvelope()
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: "strict-denial",
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        try denial.install(PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)]),
+            assertAuthority: {})
+        let denialAccount = "current.replay-denial", denialService = "strict-denial.replay-denial"
+        let corruptDenial = try duplicateVersion(keychain.retrieve(forAccount: denialAccount, service: denialService), value: 1)
+        try keychain.storeReplacingAtomically(corruptDenial,
+            forAccount: denialAccount, service: denialService, accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try denial.boundaries()) {
+            XCTAssertTrue($0 is PCAInboundInboxError)
+        }
+        XCTAssertEqual(try keychain.retrieve(forAccount: denialAccount, service: denialService), corruptDenial)
+
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "strict-journal")
+        try journal.prepare(try journalIntent(id: envelope.messageId))
+        let journalAccount = "current.inbound-application-journal", journalService = "strict-journal.inbound-application"
+        let corruptJournal = try duplicateVersion(keychain.retrieve(forAccount: journalAccount, service: journalService), value: 1)
+        try keychain.storeReplacingAtomically(corruptJournal,
+            forAccount: journalAccount, service: journalService, accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try journal.records()) {
+            XCTAssertTrue($0 is PCAInboundInboxError)
+        }
+        XCTAssertEqual(try keychain.retrieve(forAccount: journalAccount, service: journalService), corruptJournal)
+
+        let response = try inboundResponse(id: "strict-inbox")
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "strict-inbox")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        let inboxAccount = "current.ciphertext-inbox", inboxService = "strict-inbox.ciphertext-inbox"
+        let corruptInbox = try duplicateVersion(keychain.retrieve(forAccount: inboxAccount, service: inboxService), value: 2)
+        try keychain.storeReplacingAtomically(corruptInbox,
+            forAccount: inboxAccount, service: inboxService, accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try inbox.pendingCrypto(scope: response.scope)) {
+            XCTAssertTrue($0 is PCAInboundInboxError)
+        }
+        XCTAssertEqual(try keychain.retrieve(forAccount: inboxAccount, service: inboxService), corruptInbox)
+    }
     func testEpochRejectionDoesNotCoverFreshEpochReplayAliasForReclamation() throws {
         let (original, scope) = try replayEnvelope(trust: 1, key: 1)
         let alias = try replayEnvelope(id: "alias", trust: 2, key: 2).0
@@ -975,6 +1025,8 @@ final class ProductionIntegrationTests: XCTestCase {
             let safeZoneInbox = PCAKeychainSafeZoneDeliveryInbox(keychain: makeSafeZoneKeychain(), serviceNamespace: "optional-safe-zones-\(label)",
                 scopeProvider: { scope })
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
                 runtimeSyncClient: runtimeClient,
                 inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "optional-safe-zone-inbound-\(label)"),
                 safeZoneDeliveryClient: safeZoneClient, safeZoneDeliveryInbox: safeZoneInbox)
@@ -1000,6 +1052,8 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: statusCode, data: Data())
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
                 inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
                     serviceNamespace: "safe-zone-auth-inbound-\(statusCode)"),
@@ -1079,6 +1133,8 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: 200, data: response)
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
                 inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
                     serviceNamespace: "safe-zone-scope-change-inbound"),
@@ -1115,6 +1171,8 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: 200, data: body)
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
                 inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
                     serviceNamespace: "safe-zone-revision-inbound"),
@@ -1136,6 +1194,8 @@ final class ProductionIntegrationTests: XCTestCase {
                 throw CancellationError()
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+                firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                    seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
                 inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
                     serviceNamespace: "safe-zone-cancel-inbound"),
@@ -1625,7 +1685,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 firstDeviceRootStore: root, keyDeletion: deletion, enrollmentTransport: transport)
             if recovery { model.start() } else { await model.requestAuthorization() }
             if !recovery {
-                XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "A", count: 43))")!))
+                XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "A", count: 43))")!))
             }
             await waitForRecoverableEnrollment(model)
             let retained = try XCTUnwrap(attempts.loadAttempt())
@@ -1673,8 +1733,8 @@ final class ProductionIntegrationTests: XCTestCase {
             keyDeletion: deletion,
             enrollmentTransport: transport
         )
-        let firstLink = URL(string: "https://enroll.pca.app/\(String(repeating: "A", count: 43))")!
-        let secondLink = URL(string: "https://enroll.pca.app/\(String(repeating: "B", count: 43))")!
+        let firstLink = URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "A", count: 43))")!
+        let secondLink = URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "B", count: 43))")!
 
         model.start()
         XCTAssertTrue(model.receiveEnrollmentLink(firstLink))
@@ -1745,7 +1805,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(deletion.deletedAliases, ["pca.dsk.\(attempt.attemptId)", "pca.dek.\(attempt.attemptId)"])
         XCTAssertTrue(identity.savedDeviceIds.isEmpty)
         let rescannedToken = String(repeating: "B", count: 43)
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(rescannedToken)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(rescannedToken)")!))
         for _ in 0..<100 {
             if model.pendingDisclosure != nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -1871,7 +1931,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 } else {
                     model.start()
                     let token = String(repeating: "R", count: 43)
-                    XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+                    XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
                 }
                 let requestArrived = await transport.waitUntilRequestArrives()
                 XCTAssertTrue(requestArrived, "the request must suspend before root state changes")
@@ -1905,7 +1965,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 } else {
                     XCTAssertTrue(roots.failCurrent)
                 }
-                XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "S", count: 43))")!))
+                XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "S", count: 43))")!))
                 XCTAssertEqual(transport.requestPaths(), [recovery ? "/v1/enrollment/bootstrap/recover" : "/v1/enrollment/bootstrap"], "a fresh invite must not trigger another bootstrap after root custody is detected")
             }
         }
@@ -1927,7 +1987,7 @@ final class ProductionIntegrationTests: XCTestCase {
         let differentToken = String(repeating: "U", count: 43)
 
         firstModel.start()
-        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(originalToken)")!))
+        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(originalToken)")!))
         let originalRequestArrived = await originalTransport.waitUntilRequestArrives()
         XCTAssertTrue(originalRequestArrived, "the original bootstrap remains suspended in transport")
         let submittedAttempt = try XCTUnwrap(try attempts.loadAttempt())
@@ -1954,8 +2014,8 @@ final class ProductionIntegrationTests: XCTestCase {
 
         XCTAssertEqual(try attempts.loadAttempt(), submittedAttempt)
 
-        XCTAssertFalse(recoveryModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(differentToken)")!))
-        XCTAssertTrue(recoveryModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(originalToken)")!))
+        XCTAssertFalse(recoveryModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(differentToken)")!))
+        XCTAssertTrue(recoveryModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(originalToken)")!))
         let secondRecoveryArrived = await recoveryTransport.waitUntilRequestCount(2)
         XCTAssertTrue(secondRecoveryArrived)
         XCTAssertEqual(recoveryTransport.requestPaths(), [
@@ -1994,7 +2054,7 @@ final class ProductionIntegrationTests: XCTestCase {
             let token = String(repeating: ownershipFailure == "replaced" ? "P" : "Q", count: 43)
 
             model.start()
-            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
             let prepareArrived = await transport.waitUntilRequestCount(1)
             XCTAssertTrue(prepareArrived, "the prepare request must suspend before ownership changes")
             XCTAssertEqual(transport.requestPaths(), ["/v1/enrollment/bootstrap/prepare"])
@@ -2040,7 +2100,7 @@ final class ProductionIntegrationTests: XCTestCase {
             let token = String(repeating: ownershipFailure == "replaced" ? "M" : "N", count: 43)
 
             model.start()
-            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
             for _ in 0..<100 {
                 if model.pendingDisclosure != nil { break }
                 try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2089,7 +2149,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "F", count: 43))")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "F", count: 43))")!))
         for _ in 0..<100 {
             if model.pendingDisclosure != nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2124,7 +2184,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         firstModel.start()
-        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "H", count: 43))")!))
+        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "H", count: 43))")!))
         for _ in 0..<100 {
             if firstModel.pendingDisclosure != nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2207,7 +2267,7 @@ final class ProductionIntegrationTests: XCTestCase {
             enrollmentTransport: firstTransport
         )
         firstModel.start()
-        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "W", count: 43))")!))
+        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "W", count: 43))")!))
         for _ in 0..<100 {
             if firstModel.pendingDisclosure != nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2268,7 +2328,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
         attempts.failNextAttemptWrite = true
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         await waitForRecoverableEnrollment(model)
 
         let preparedAttempt = try XCTUnwrap(try attempts.loadAttempt())
@@ -2320,7 +2380,7 @@ final class ProductionIntegrationTests: XCTestCase {
                     model.start()
                 } else {
                     model.start()
-                    let link = URL(string: "https://enroll.pca.app/\(String(repeating: "C", count: 43))")!
+                    let link = URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "C", count: 43))")!
                     XCTAssertTrue(model.receiveEnrollmentLink(link))
                 }
                 let requestArrived = await transport.waitUntilRequestArrives()
@@ -2618,7 +2678,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
             model.start()
             if route == "bootstrap" {
-                XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "Q", count: 43))")!))
+                XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "Q", count: 43))")!))
             }
             await waitForRecoverableEnrollment(model)
 
@@ -2666,7 +2726,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "R", count: 43))")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "R", count: 43))")!))
         await waitForRecoverableEnrollment(model)
         let submittedAttempt = try XCTUnwrap(try attempts.loadAttempt())
         XCTAssertTrue(model.hasPendingEnrollmentStatusCheck)
@@ -2707,7 +2767,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         firstModel.start()
-        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "Z", count: 43))")!))
+        XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "Z", count: 43))")!))
         for _ in 0..<100 {
             if firstModel.pendingDisclosure != nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2788,7 +2848,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "Y", count: 43))")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "Y", count: 43))")!))
         await waitForRecoverableEnrollment(model)
 
         let recoveryAttempt = try XCTUnwrap(try attempts.loadAttempt())
@@ -2838,7 +2898,7 @@ final class ProductionIntegrationTests: XCTestCase {
         )
 
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "W", count: 43))")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "W", count: 43))")!))
         for _ in 0..<100 {
             if transport.requests.count == 2, (try? attempts.loadAttempt()) == nil { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -2888,7 +2948,7 @@ final class ProductionIntegrationTests: XCTestCase {
             let token = String(repeating: index == 0 ? "X" : "V", count: 43)
 
             model.start()
-            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+            XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
             await waitForRecoverableEnrollment(model)
 
             let recoveryAttempt = try XCTUnwrap(try attempts.loadAttempt())
@@ -3025,7 +3085,7 @@ final class ProductionIntegrationTests: XCTestCase {
         model.start()
 
         let token = String(repeating: "A", count: 43)
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         await waitForRecoverableEnrollment(model)
 
         XCTAssertNil(identityStore.loadDeviceId())
@@ -3057,7 +3117,7 @@ final class ProductionIntegrationTests: XCTestCase {
         model.start()
 
         let token = String(repeating: "A", count: 43)
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         await waitForRecoverableEnrollment(model)
 
         XCTAssertTrue(identityStore.savedDeviceIds.isEmpty, "identity must not be committed before the ceremony seed is durable")
@@ -3081,7 +3141,7 @@ final class ProductionIntegrationTests: XCTestCase {
             enrollmentTransport: transport
         )
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(String(repeating: "A", count: 43))")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "A", count: 43))")!))
         await waitForEnrollmentSecurityGate(model)
 
         XCTAssertNil(rootStore.current())
@@ -3109,7 +3169,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 enrollmentTransport: firstTransport
             )
             firstModel.start()
-            XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+            XCTAssertTrue(firstModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
             await waitForEnrollmentSecurityGate(firstModel)
             let preparedAttempt = try XCTUnwrap(try attempts.loadAttempt())
             XCTAssertEqual(preparedAttempt.submissionState, .prepared)
@@ -3128,7 +3188,7 @@ final class ProductionIntegrationTests: XCTestCase {
             XCTAssertTrue(secondTransport.requests.isEmpty, "a prepared attempt has no remote outcome to recover after restart")
 
             let presentedToken = useSameInvitation ? token : replacementToken
-            let accepted = secondModel.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(presentedToken)")!)
+            let accepted = secondModel.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(presentedToken)")!)
             XCTAssertEqual(accepted, useSameInvitation, "only the invitation bound to the durable attempt may resume it")
             if useSameInvitation {
                 for _ in 0..<100 {
@@ -3164,7 +3224,7 @@ final class ProductionIntegrationTests: XCTestCase {
         model.start()
 
         let token = String(repeating: "A", count: 43)
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         await waitForRecoverableEnrollment(model)
         XCTAssertTrue(identityStore.savedDeviceIds.isEmpty)
         XCTAssertNotNil(try attemptStore.loadAttempt())
@@ -3542,7 +3602,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 if mode == "exchange-root" { var changed = root; changed.familyId = "family-2"; _ = roots.save(changed) }
                 if mode == "exchange-session" { try state.saveSession(replacement) }
                 if mode == "exchange-cancel" { throw CancellationError() }
-                return PCAHTTPResponse(statusCode: 200, data: Data(#"{"sessionToken":"old-completion","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
+                return PCAHTTPResponse(statusCode: 200, data: Data(#"{"sessionToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
             }
             let client = try PCADeviceSessionClient(baseURL: URL(string: "https://api.example.test")!, transport: transport, proof: TestEnrollmentProofProvider())
             let model = try makeEnrollmentModel(identityStore: identity, attemptStore: state, firstDeviceRootStore: roots, sessionClient: client)
@@ -3567,7 +3627,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 return await withCheckedContinuation { continuation in suspended = continuation; began.fulfill() }
             }
             exchanges += 1
-            return PCAHTTPResponse(statusCode: 200, data: Data(#"{"sessionToken":"single-session","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
+            return PCAHTTPResponse(statusCode: 200, data: Data(#"{"sessionToken":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
         }
         let client = try PCADeviceSessionClient(baseURL: URL(string: "https://api.example.test")!, transport: transport, proof: TestEnrollmentProofProvider())
         let model = try makeEnrollmentModel(identityStore: identity, attemptStore: state, firstDeviceRootStore: roots, sessionClient: client)
@@ -3578,7 +3638,7 @@ final class ProductionIntegrationTests: XCTestCase {
         suspended?.resume(returning: PCAHTTPResponse(statusCode: 200, data: Data(#"{"challengeId":"challenge-1","nonce":"nonce-1","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8)))
         await first.value
         XCTAssertEqual(exchanges, 1)
-        XCTAssertEqual(try state.loadSession()?.sessionToken, "single-session")
+        XCTAssertEqual(try state.loadSession()?.sessionToken, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
     }
 
     func testInboundInboxRetainsFullSignedWrapperAcrossRestartAndAck() throws {
@@ -4404,6 +4464,36 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(keychain.storedAccessibility(forAccount: "current.session", service: "org.pca.test.device-state"), nil)
     }
 
+    func testDeviceSessionAndEnrollmentAttemptRejectEscapedDuplicateKeychainMembers() throws {
+        let keychain = InMemoryKeychainStore()
+        let service = "strict-device-state.device-state"
+        let store = PCAKeychainDeviceStateStore(keychain: keychain, serviceNamespace: "strict-device-state")
+        try store.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session",
+            expiresAt: Date(timeIntervalSince1970: 10)))
+        let session = String(decoding: try keychain.retrieve(forAccount: "current.session", service: service), as: UTF8.self)
+        let duplicateSession = session.replacingOccurrences(of: "\"deviceId\":\"device-1\"",
+            with: "\"deviceId\":\"device-1\",\"device\\u0049d\":\"attacker-device\"")
+        XCTAssertNotEqual(duplicateSession, session)
+        try keychain.storeReplacingAtomically(Data(duplicateSession.utf8), forAccount: "current.session",
+            service: service, accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try store.loadSession()) {
+            XCTAssertEqual($0 as? KeychainStoreError, .unexpectedStatus(-1))
+        }
+        XCTAssertEqual(try keychain.retrieve(forAccount: "current.session", service: service), Data(duplicateSession.utf8))
+
+        try store.saveAttempt(PCAEnrollmentAttempt(attemptId: "attempt-1", attemptRecoveryToken: "opaque-recovery"))
+        let attempt = String(decoding: try keychain.retrieve(forAccount: "current.enrollment-attempt", service: service), as: UTF8.self)
+        let duplicateAttempt = attempt.replacingOccurrences(of: "\"attemptRecoveryToken\":\"opaque-recovery\"",
+            with: "\"attemptRecoveryToken\":\"opaque-recovery\",\"attemptRecovery\\u0054oken\":\"attacker-recovery\"")
+        XCTAssertNotEqual(duplicateAttempt, attempt)
+        try keychain.storeReplacingAtomically(Data(duplicateAttempt.utf8), forAccount: "current.enrollment-attempt",
+            service: service, accessibility: .whenUnlockedThisDeviceOnly)
+        XCTAssertThrowsError(try store.loadAttempt()) {
+            XCTAssertEqual($0 as? KeychainStoreError, .unexpectedStatus(-1))
+        }
+        XCTAssertEqual(try keychain.retrieve(forAccount: "current.enrollment-attempt", service: service), Data(duplicateAttempt.utf8))
+    }
+
     func testAttemptCompareAndClearPreservesReplacementSnapshot() throws {
         let store = PCAKeychainDeviceStateStore(keychain: InMemoryKeychainStore(), serviceNamespace: "org.pca.test")
         let expected = PCAEnrollmentAttempt(attemptId: "expected-attempt", attemptRecoveryToken: "expected-recovery")
@@ -4515,7 +4605,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(try attempts.loadAttempt(), legacy)
 
         let token = String(repeating: "G", count: 43)
-        XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         XCTAssertEqual(try attempts.loadAttempt(), legacy, "a legacy attempt with no invitation digest cannot safely claim a newly presented invite")
         XCTAssertTrue(identity.savedDeviceIds.isEmpty)
         XCTAssertEqual(transport.requests.map { $0.url?.path }, ["/v1/enrollment/bootstrap/recover"])
@@ -4546,7 +4636,7 @@ final class ProductionIntegrationTests: XCTestCase {
         model.start()
         await waitForRecoverableEnrollment(model)
         XCTAssertEqual(transport.requests.map { $0.url?.path }, ["/v1/enrollment/bootstrap/recover"])
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(token)")!))
         for _ in 0..<100 {
             if transport.requests.count >= 2 { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -4577,14 +4667,14 @@ final class ProductionIntegrationTests: XCTestCase {
         let replacementToken = String(repeating: "K", count: 43)
 
         model.start()
-        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(expiredToken)")!))
+        XCTAssertTrue(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(expiredToken)")!))
         await waitForRecoverableEnrollment(model)
         let submittedAttempt = try XCTUnwrap(try attempts.loadAttempt())
         XCTAssertEqual(submittedAttempt.submissionState, .submitted)
         XCTAssertEqual(submittedAttempt.invitationTokenSHA256, FirstDeviceCanonical.sha256Hex(expiredToken))
         XCTAssertTrue(identity.savedDeviceIds.isEmpty)
 
-        XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(replacementToken)")!))
+        XCTAssertFalse(model.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(replacementToken)")!))
 
         // A restarted process asks recovery first. A 404 leaves the same
         // attempt/invitation pair intact; rescanning A only retries recovery.
@@ -4603,8 +4693,8 @@ final class ProductionIntegrationTests: XCTestCase {
         recoveryTransport.resume(with: recoveryNotFound)
         await waitForRecoverableEnrollment(restarted)
         XCTAssertEqual(try attempts.loadAttempt(), submittedAttempt)
-        XCTAssertFalse(restarted.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(replacementToken)")!))
-        XCTAssertTrue(restarted.receiveEnrollmentLink(URL(string: "https://enroll.pca.app/\(expiredToken)")!))
+        XCTAssertFalse(restarted.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(replacementToken)")!))
+        XCTAssertTrue(restarted.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(expiredToken)")!))
         let secondRecoveryArrived = await recoveryTransport.waitUntilRequestCount(2)
         XCTAssertTrue(secondRecoveryArrived)
         XCTAssertEqual(initialTransport.requests.map { $0.url?.path }, ["/v1/enrollment/bootstrap"])

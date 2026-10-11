@@ -54,6 +54,38 @@ class SafeZoneDeliveryInboxCorruptException(cause: Throwable? = null) :
 /** A server/local row reused a revision with different opaque bytes. */
 class SafeZoneDeliveryRevisionConflictException : Exception("conflicting_safe_zone_delivery_revision")
 
+private data class ParsedSafeZoneDeliveryCursor(val keyEpoch: Int?, val zoneId: String)
+
+/** Accepts old raw zone-ID cursors while binding new cursors to the key epoch they traverse. */
+private object SafeZoneDeliveryCursors {
+    private const val MAX_CURSOR_BYTES = 160
+    private val ZONE_ID = Regex("^[A-Za-z0-9_-]{1,128}$")
+    private val VERSIONED = Regex("^v1~([1-9][0-9]{0,9})~([A-Za-z0-9_-]{1,128})$")
+
+    fun parse(value: String): ParsedSafeZoneDeliveryCursor? {
+        if (value.toByteArray(Charsets.UTF_8).size > MAX_CURSOR_BYTES) return null
+        val match = VERSIONED.matchEntire(value)
+        if (match != null) {
+            val epoch = match.groupValues[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+            return ParsedSafeZoneDeliveryCursor(epoch, match.groupValues[2])
+        }
+        return if (ZONE_ID.matches(value)) ParsedSafeZoneDeliveryCursor(null, value) else null
+    }
+
+    fun matchesPage(value: String, records: List<OpaqueSafeZoneDelivery>): Boolean {
+        val cursor = parse(value) ?: return false
+        val last = records.lastOrNull() ?: return false
+        if (cursor.zoneId != last.zoneId) return false
+        return cursor.keyEpoch == null || records.all { it.keyEpoch == cursor.keyEpoch }
+    }
+
+    fun referencesRecord(value: String, records: List<OpaqueSafeZoneDelivery>): Boolean {
+        val cursor = parse(value) ?: return false
+        return if (cursor.keyEpoch == null) records.any { it.zoneId == cursor.zoneId }
+        else records.any { it.zoneId == cursor.zoneId && it.keyEpoch == cursor.keyEpoch }
+    }
+}
+
 /** Authenticated read-only client for the device-session-scoped Safe Zone delivery route. */
 class HttpSafeZoneDeliveryClient(
     private val baseUrl: String,
@@ -196,7 +228,7 @@ class HttpSafeZoneDeliveryClient(
         val nextCursorValue = response.get("nextCursor")
         val nextCursor = when (nextCursorValue) {
             JSONObject.NULL -> null
-            is String -> nextCursorValue.also { require(isCursor(it)) }
+            is String -> nextCursorValue.also { require(SafeZoneDeliveryCursors.parse(it) != null) }
             else -> error("invalid_safe_zone_cursor")
         }
         val seenIds = mutableSetOf<String>()
@@ -218,14 +250,13 @@ class HttpSafeZoneDeliveryClient(
             OpaqueSafeZoneDelivery(zoneId, ciphertext, nonce, keyEpoch, revision, deliveryState, updatedAtUtc)
         }
         require(records.zipWithNext().all { (first, second) -> first.zoneId < second.zoneId })
-        if (requestedCursor != null) require(isCursor(requestedCursor) && records.all { it.zoneId > requestedCursor })
+        if (requestedCursor != null) require(SafeZoneDeliveryCursors.parse(requestedCursor) != null)
         if (nextCursor != null) {
-            require(records.size == PAGE_SIZE && records.lastOrNull()?.zoneId == nextCursor && nextCursor != requestedCursor)
+            require(records.size == PAGE_SIZE && nextCursor != requestedCursor &&
+                SafeZoneDeliveryCursors.matchesPage(nextCursor, records))
         }
         return DeliveryPage(records, nextCursor)
     }
-
-    private fun isCursor(value: String): Boolean = value.length in 1..MAX_CURSOR_BYTES && TOKEN.matches(value)
 
     private fun isCanonicalBase64Url(value: String, minBytes: Int, maxBytes: Int): Boolean {
         if (value.isEmpty() || value.any { !(it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '-' || it == '_') }) return false
@@ -250,7 +281,6 @@ class HttpSafeZoneDeliveryClient(
         const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         const val MAX_PAGES = 8
         const val PAGE_SIZE = 16
-        const val MAX_CURSOR_BYTES = 128
         const val MAX_CIPHERTEXT_BYTES = 65_535
         const val MIN_NONCE_BYTES = 12
         const val MAX_NONCE_BYTES = 64
@@ -302,7 +332,9 @@ class PersistentSafeZoneDeliveryInbox(
         synchronized(state.coordinationLock) {
             check(currentScope() == scope) { "Safe Zone delivery scope changed" }
             val current = readSnapshot(scope)
-            persist(scope, merge(current.records, records), current.nextCursor)
+            val merged = merge(current.records, records)
+            val cursor = current.nextCursor?.takeIf { SafeZoneDeliveryCursors.referencesRecord(it, merged) }
+            persist(scope, merged, cursor)
         }
     }
 
@@ -317,6 +349,9 @@ class PersistentSafeZoneDeliveryInbox(
                 throw SafeZoneDeliveryIncompleteException("safe_zone_delivery_stale_cursor")
             }
             val merged = merge(current.records, records)
+            if (nextCursor != null && !SafeZoneDeliveryCursors.referencesRecord(nextCursor, merged)) {
+                throw SafeZoneDeliveryIncompleteException("safe_zone_delivery_cursor_record_mismatch")
+            }
             persist(scope, merged, nextCursor)
         }
     }
@@ -338,13 +373,13 @@ class PersistentSafeZoneDeliveryInbox(
     private fun validatePage(records: List<OpaqueSafeZoneDelivery>, requestedCursor: String?, nextCursor: String?) {
         require(records.size <= PAGE_SIZE)
         records.forEach(::validatePersistableRecord)
-        require(requestedCursor == null || TOKEN.matches(requestedCursor))
-        require(nextCursor == null || TOKEN.matches(nextCursor))
+        require(requestedCursor == null || SafeZoneDeliveryCursors.parse(requestedCursor) != null)
+        require(nextCursor == null || SafeZoneDeliveryCursors.parse(nextCursor) != null)
         require(records.map { it.zoneId }.distinct().size == records.size)
         require(records.zipWithNext().all { (first, second) -> first.zoneId < second.zoneId })
-        require(requestedCursor == null || records.all { it.zoneId > requestedCursor })
         if (nextCursor != null) {
-            require(records.size == PAGE_SIZE && records.lastOrNull()?.zoneId == nextCursor && nextCursor != requestedCursor)
+            require(records.size == PAGE_SIZE && nextCursor != requestedCursor &&
+                SafeZoneDeliveryCursors.matchesPage(nextCursor, records))
         }
     }
 
@@ -408,8 +443,7 @@ class PersistentSafeZoneDeliveryInbox(
                 require(it.zipWithNext().all { (first, second) -> first.zoneId < second.zoneId })
             }
             val nextCursor = if (version == 1 || json.isNull("nextCursor")) null else json.getString("nextCursor")
-            require(nextCursor == null || TOKEN.matches(nextCursor))
-            require(nextCursor == null || records.any { it.zoneId == nextCursor })
+            require(nextCursor == null || SafeZoneDeliveryCursors.referencesRecord(nextCursor, records))
             InboxSnapshot(records, nextCursor)
         } catch (io: IOException) {
             throw SafeZoneDeliveryPersistenceIoException(io)

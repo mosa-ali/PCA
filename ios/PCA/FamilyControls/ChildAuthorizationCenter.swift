@@ -119,6 +119,11 @@ public final class InMemoryChildAuthorizationObservationStore: ChildAuthorizatio
 /// revocation signal can never be silently skipped by a call site that
 /// forgot to compare against the previous observation.
 public final class ChildAuthorizationCenter {
+    /// Keep sampling Apple's live status and committing the corresponding prior-state observation
+    /// in one process-wide critical section. Without this, two app/runtime callers can interleave:
+    /// a stale `.approved` sample may be persisted after a newer `.denied` sample and briefly
+    /// re-open an enforcement gate.
+    private static let refreshLock = NSLock()
     private let source: AuthorizationStatusSource
     private let observationStore: ChildAuthorizationObservationStore
 
@@ -133,6 +138,8 @@ public final class ChildAuthorizationCenter {
     /// `.approved` and the new one is not.
     @discardableResult
     public func refresh() -> ChildAuthorizationState {
+        Self.refreshLock.lock()
+        defer { Self.refreshLock.unlock() }
         let raw = source.currentRawStatus()
         let previous = observationStore.recordObservedStatus(raw)
 

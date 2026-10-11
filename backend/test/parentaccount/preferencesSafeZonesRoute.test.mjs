@@ -22,6 +22,9 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   deviceDskKeyId = 'device-a-key',
   safeZonePolicyAuthorizerOverride,
   trustSetRoleResolverOverride,
+  deviceChildBindingRepositoryOverride,
+  childProfileRegistryRepositoryOverride,
+  onActiveFamilyRole,
 } = {}) {
   const sessions = new Map([
     ['session-a', { accountId: 'account-a', familyId: 'family-a', emailVerified: true }],
@@ -30,6 +33,8 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   const preferences = new Map();
   const zones = new Map();
   const authorizationRequests = [];
+  const childBindingCalls = [];
+  let currentParentRole = role;
   let roleReadCount = 0;
   const parentAccountService = {
     async readSession(token) {
@@ -39,7 +44,11 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
     },
     async activeFamilyRole(accountId, familyId) {
       if (familyId !== 'family-a') return null;
-      const selectedRole = Array.isArray(role) ? role[Math.min(roleReadCount++, role.length - 1)] : role;
+      const readIndex = roleReadCount++;
+      const selectedRole = Array.isArray(currentParentRole)
+        ? currentParentRole[Math.min(readIndex, currentParentRole.length - 1)]
+        : currentParentRole;
+      if (onActiveFamilyRole) await onActiveFamilyRole(readIndex, selectedRole);
       return selectedRole === 'OWNER' ? 'ADMINISTRATOR' : selectedRole;
     },
   };
@@ -79,7 +88,7 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   Object.assign(safeZoneRepository, safeZoneRepositoryOverrides);
   const deviceRepository = {
     async findDeviceForFamily(familyId, deviceId) {
-      return familyId === 'family-a' && deviceId === 'device-a' ? { deviceId, familyId } : null;
+      return familyId === 'family-a' && ['device-a', 'child-device'].includes(deviceId) ? { deviceId, familyId } : null;
     },
   };
   const deviceSessionService = {
@@ -90,13 +99,37 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   };
   const defaultTrustSetRoleResolver = {
     resolveActor(familyId, deviceId, dskKeyId) {
-      if (familyId !== 'family-a' || deviceId !== 'device-a' || dskKeyId !== 'device-a-key') {
+      if (familyId !== 'family-a') {
         return 'DEVICE_NOT_ACTIVE';
       }
-      return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+      if (dskKeyId !== undefined) {
+        return deviceId === 'device-a' && dskKeyId === 'device-a-key'
+          ? { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }
+          : 'DEVICE_NOT_ACTIVE';
+      }
+      if (deviceId === 'child-device') return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      if (deviceId === 'device-a') return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+      return 'DEVICE_NOT_ACTIVE';
     },
   };
   const trustSetRoleResolver = trustSetRoleResolverOverride ?? defaultTrustSetRoleResolver;
+  const deviceChildBindingRepository = deviceChildBindingRepositoryOverride ?? {
+    async resolveBinding(familyId, deviceId) {
+      childBindingCalls.push({ familyId, deviceId });
+      return familyId === 'family-a' && deviceId === 'child-device'
+        ? { outcome: 'BOUND', childProfileId: 'child-profile-a' }
+        : { outcome: 'UNBOUND' };
+    },
+  };
+  const childProfileRegistryRepository = childProfileRegistryRepositoryOverride === null
+    ? undefined
+    : childProfileRegistryRepositoryOverride ?? {
+        async resolveMembership(familyId, childProfileId) {
+          return familyId === 'family-a' && childProfileId === 'child-profile-a'
+            ? 'MEMBER'
+            : 'NOT_MEMBER_OR_NOT_FOUND';
+        },
+      };
   const defaultSafeZonePolicyAuthorizer = {
     async authorize(request) {
       authorizationRequests.push(request);
@@ -113,10 +146,14 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
     deviceSessionService: withDeviceSessionService ? deviceSessionService : undefined,
     safeZonePolicyAuthorizer: withSafeZonePolicyAuthorizer ? safeZonePolicyAuthorizer : undefined,
     trustSetRoleResolver: withTrustSetRoleResolver ? trustSetRoleResolver : undefined,
+    deviceChildBindingRepository,
+    childProfileRegistryRepository,
   });
   app.safeZoneZones = zones;
   app.safeZoneRepository = safeZoneRepository;
   app.safeZoneAuthorizationRequests = authorizationRequests;
+  app.safeZoneChildBindingCalls = childBindingCalls;
+  app.setParentFamilyRole = (nextRole) => { currentParentRole = nextRole; };
   return app;
 }
 
@@ -196,7 +233,7 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(wrongFamily.statusCode, 403);
   recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_cross_family_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: wrongFamily });
 
-  const opaquePayload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const opaquePayload = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const noCsrf = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders, payload: opaquePayload });
   assert.equal(noCsrf.statusCode, 403);
   recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_requires_csrf', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: noCsrf });
@@ -215,7 +252,11 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(app.safeZoneAuthorizationRequests[0].actorDeviceId, 'device-a');
   assert.equal(app.safeZoneAuthorizationRequests[0].actorDskKeyId, 'device-a-key');
   assert.equal(app.safeZoneAuthorizationRequests[0].operation, 'EDIT_CHILD_POLICY');
-  assert.deepEqual(app.safeZoneAuthorizationRequests[0].targetScope, { kind: 'DEVICE', id: 'device-a' });
+  assert.deepEqual(app.safeZoneAuthorizationRequests[0].targetScope, { kind: 'DEVICE', id: 'child-device' });
+  assert.deepEqual(app.safeZoneChildBindingCalls, [
+    { familyId: 'family-a', deviceId: 'child-device' },
+    { familyId: 'family-a', deviceId: 'child-device' },
+  ], 'recipient profile binding is checked before authorization completes and again at persistence');
 
   const list = await app.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(list.statusCode, 200);
@@ -224,13 +265,146 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(list.json().safeZones.length, 1);
 });
 
+test('Safe Zone writes reject non-CHILD or unbound recipients before persistence', async () => {
+  const cases = [
+    {
+      name: 'active Parent recipient',
+      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }) },
+      binding: { async resolveBinding() { return { outcome: 'BOUND', childProfileId: 'child-profile-a' }; } },
+    },
+    {
+      name: 'active Viewer recipient',
+      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'VIEWER', trustSetEpoch: 1, keyEpoch: 1 }) },
+      binding: { async resolveBinding() { return { outcome: 'BOUND', childProfileId: 'child-profile-a' }; } },
+    },
+    {
+      name: 'paired recipient absent from accepted active Trust Set',
+      expectedStatus: 403,
+      resolver: { resolveActor: () => 'DEVICE_NOT_ACTIVE' },
+      binding: { async resolveBinding() { return { outcome: 'BOUND', childProfileId: 'child-profile-a' }; } },
+    },
+    {
+      name: 'unbound legacy recipient',
+      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
+      binding: { async resolveBinding() { return { outcome: 'UNBOUND' }; } },
+    },
+    {
+      name: 'ambiguous enrollment recipient',
+      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
+      binding: { async resolveBinding() { return { outcome: 'AMBIGUOUS' }; } },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const app = buildApp('OWNER', 'ALLOW', {}, {
+      trustSetRoleResolverOverride: scenario.resolver,
+      deviceChildBindingRepositoryOverride: scenario.binding,
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/parent/families/family-a/safe-zones',
+        headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+        payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+      });
+      const expectedStatus = scenario.expectedStatus ?? 400;
+      assert.equal(response.statusCode, expectedStatus, scenario.name);
+      assert.deepEqual(response.json(), { error: expectedStatus === 400 ? 'invalid_recipient' : 'forbidden' }, scenario.name);
+      assert.equal(app.safeZoneZones.size, 0, scenario.name);
+    } finally {
+      await app.close();
+    }
+  }
+
+  const unavailable = buildApp('OWNER', 'ALLOW', {}, {
+    deviceChildBindingRepositoryOverride: { async resolveBinding() { throw new Error('binding store sentinel'); } },
+  });
+  try {
+    const response = await unavailable.inject({
+      method: 'POST',
+      url: '/api/parent/families/family-a/safe-zones',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'family_authority_unavailable' });
+    assert.equal(response.body.includes('binding store sentinel'), false);
+    assert.equal(unavailable.safeZoneZones.size, 0);
+  } finally {
+    await unavailable.close();
+  }
+});
+
+test('Safe Zone mutations require the bound child profile to be a current family registry member', async () => {
+  for (const scenario of [
+    { name: 'profile is absent or belongs to another family', registry: { async resolveMembership() { return 'NOT_MEMBER_OR_NOT_FOUND'; } }, expectedStatus: 400, expectedError: 'invalid_recipient' },
+    { name: 'registry dependency is missing', registry: null, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
+    { name: 'registry lookup failed', registry: { async resolveMembership() { throw new Error('registry store sentinel'); } }, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
+    { name: 'registry returned an unknown outcome', registry: { async resolveMembership() { return 'UNKNOWN'; } }, expectedStatus: 503, expectedError: 'family_authority_unavailable' },
+  ]) {
+    const app = buildApp('OWNER', 'ALLOW', {}, {
+      childProfileRegistryRepositoryOverride: scenario.registry,
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/parent/families/family-a/safe-zones',
+        headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+        payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+      });
+      assert.equal(response.statusCode, scenario.expectedStatus, scenario.name);
+      assert.deepEqual(response.json(), { error: scenario.expectedError }, scenario.name);
+      assert.equal(app.safeZoneZones.size, 0, scenario.name);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('Safe Zone final persistence authorization rejects a changed child-profile binding', async () => {
+  let bindingReads = 0;
+  const app = buildApp('OWNER', 'ALLOW', {}, {
+    deviceChildBindingRepositoryOverride: {
+      async resolveBinding(familyId, deviceId) {
+        assert.equal(familyId, 'family-a');
+        assert.equal(deviceId, 'child-device');
+        bindingReads += 1;
+        return { outcome: 'BOUND', childProfileId: bindingReads === 1 ? 'child-profile-a' : 'child-profile-b' };
+      },
+    },
+    childProfileRegistryRepositoryOverride: {
+      async resolveMembership(familyId, childProfileId) {
+        return familyId === 'family-a' && ['child-profile-a', 'child-profile-b'].includes(childProfileId)
+          ? 'MEMBER'
+          : 'NOT_MEMBER_OR_NOT_FOUND';
+      },
+    },
+  });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/parent/families/family-a/safe-zones',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    });
+    assert.equal(bindingReads, 2);
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'authority_changed' });
+    assert.equal(app.safeZoneZones.size, 0);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Safe Zone authorization rechecks the exact session DSK after a Trust Set key rotation', async () => {
   const resolverCalls = [];
   let acceptedKeyId = 'device-a-key';
   const trustSetRoleResolver = {
     resolveActor(familyId, deviceId, dskKeyId) {
-      resolverCalls.push(dskKeyId);
-      if (familyId !== 'family-a' || deviceId !== 'device-a') return 'DEVICE_NOT_IN_TRUST_SET';
+      if (familyId !== 'family-a') return 'DEVICE_NOT_IN_TRUST_SET';
+      if (deviceId === 'child-device') return { deviceId, role: 'CHILD', trustSetEpoch: 2, keyEpoch: 1 };
+      if (deviceId !== 'device-a') return 'DEVICE_NOT_IN_TRUST_SET';
+      if (dskKeyId !== undefined) resolverCalls.push(dskKeyId);
       // The legacy unbound lookup resolves the current member, while a
       // session-bound lookup must match its exact accepted key.
       if (dskKeyId !== undefined && dskKeyId !== acceptedKeyId) return 'DEVICE_NOT_ACTIVE';
@@ -256,7 +430,7 @@ test('Safe Zone authorization rechecks the exact session DSK after a Trust Set k
       method: 'POST',
       url: '/api/parent/families/family-a/safe-zones',
       headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-      payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
     });
     assert.equal(response.statusCode, 403);
     assert.deepEqual(authorizationRequests.map((request) => request.actorDskKeyId), ['device-a-key']);
@@ -302,7 +476,7 @@ test('unconfigured Safe Zone routes preserve session, role, CSRF, and device-ses
     { method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, url: '/api/parent/families/family-a/safe-zones/zone-a' },
     { method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, url: '/api/parent/families/family-a/safe-zones/zone-a' },
   ];
-  const validBody = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const validBody = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   for (const endpoint of mutations) {
     const noCsrfApp = buildApp('OWNER', 'ALLOW', {}, { withSafeZoneRepository: false });
     try {
@@ -343,7 +517,7 @@ test('unconfigured Safe Zone routes preserve session, role, CSRF, and device-ses
 
 test('Safe Zone mutation checks the actor bearer before reporting unavailable edit authority', async () => {
   const app = buildApp('OWNER', 'ALLOW', {}, { withSafeZonePolicyAuthorizer: false });
-  const payload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const payload = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   try {
     const missingActor = await app.inject({
       method: 'POST', url: '/api/parent/families/family-a/safe-zones',
@@ -368,7 +542,7 @@ test('Safe Zone mutation checks the actor bearer before reporting unavailable ed
 test('safe-zone HTTP validation enforces canonical bytes, repository epoch bounds, and opaque-only fields', async () => {
   const app = buildApp();
   const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
-  const valid = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const valid = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const invalidCreates = [
     { ...valid, ciphertextB64: 'AB' }, // Valid alphabet/length, but non-canonical unused bits.
     { ...valid, nonceB64: 'AAECAwQFBgcICQ' }, // Decodes below the repository's 12-byte minimum.
@@ -423,11 +597,11 @@ test('Safe Zone ciphertext keyEpoch must match the actor current accepted Trust 
   const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
   const actorResolver = (keyEpoch) => ({
     resolveActor(_familyId, deviceId) {
-      return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch };
+      return { deviceId, role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: 1, keyEpoch };
     },
   });
   const payloadFor = (keyEpoch) => ({
-    recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch,
+    recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch,
   });
 
   for (const { actorKeyEpoch, payloadKeyEpoch } of [
@@ -465,7 +639,7 @@ test('Safe Zone ciphertext keyEpoch must match the actor current accepted Trust 
   const rotatingResolver = {
     resolveActor(_familyId, deviceId) {
       resolverCalls += 1;
-      return { deviceId, role: 'OWNER', trustSetEpoch: resolverCalls, keyEpoch: acceptedKeyEpoch };
+      return { deviceId, role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: resolverCalls, keyEpoch: acceptedKeyEpoch };
     },
   };
   const rotationRace = buildApp('OWNER', 'ALLOW', {
@@ -543,7 +717,7 @@ test('safe-zone repository validation errors are returned as client errors', asy
   const createApp = buildApp('OWNER', 'ALLOW', {
     async create() { throw new SafeZoneError('INVALID_INPUT'); },
   });
-  const payload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const payload = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const create = await createApp.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',
@@ -558,7 +732,7 @@ test('safe-zone repository validation errors are returned as client errors', asy
   updateApp.safeZoneZones.set('zone-a', {
     zoneId: 'zone-a',
     familyId: 'family-a',
-    recipientEndpointId: 'device-a',
+    recipientEndpointId: 'child-device',
     ...payload,
     revision: 1,
     deliveryState: 'PENDING_OFFLINE',
@@ -584,7 +758,7 @@ test('safe-zone update and delete re-authorize the stored recipient endpoint', a
   assert.equal(remove.statusCode, 404);
   recordParentRouteScenario({ method: 'DELETE', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_delete_wrong_recipient_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 404, response: remove });
 
-  app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'device-a', keyEpoch: 1 });
+  app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'child-device', keyEpoch: 1 });
   const allowedUpdate = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } });
   assert.equal(allowedUpdate.statusCode, 200);
   recordParentRouteScenario({ method: 'PATCH', route: SAFE_ZONE_DETAIL_ROUTE, scenarioId: 'safe_zones_update_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: allowedUpdate });
@@ -603,7 +777,7 @@ test('safe-zone update and delete deny inactive roles before looking up zone exi
           app.safeZoneZones.set(zoneId, {
             zoneId,
             familyId: 'family-a',
-            recipientEndpointId: 'device-a',
+            recipientEndpointId: 'child-device',
             ciphertextB64: 'AQID',
             nonceB64: 'AAECAwQFBgcICQoL',
             keyEpoch: 1,
@@ -647,7 +821,7 @@ test('safe-zone update and delete return the same denial if membership is revoke
         app.safeZoneZones.set(zoneId, {
           zoneId,
           familyId: 'family-a',
-          recipientEndpointId: 'device-a',
+          recipientEndpointId: 'child-device',
           ciphertextB64: 'AQID',
           nonceB64: 'AAECAwQFBgcICQoL',
           keyEpoch: 1,
@@ -674,17 +848,283 @@ test('safe-zone update and delete return the same denial if membership is revoke
   }
 });
 
+test('Safe Zone mutations recheck active Parent Administrator membership after authority lookups', async () => {
+  const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
+  for (const method of ['POST', 'PATCH', 'DELETE']) {
+    let app;
+    let bindingReads = 0;
+    const writes = { create: 0, update: 0, remove: 0 };
+    const expectedBindingReads = 1;
+    const bindingRepository = {
+      async resolveBinding(familyId, deviceId) {
+        assert.equal(familyId, 'family-a');
+        assert.equal(deviceId, 'child-device');
+        bindingReads += 1;
+        if (bindingReads === expectedBindingReads) {
+          // Simulate an Administrator revocation during the initial recipient
+          // binding lookup, after the route's earlier role checks. The final
+          // Parent-role check must reject before enqueue.
+          app.setParentFamilyRole('VIEWER');
+        }
+        return { outcome: 'BOUND', childProfileId: 'child-profile-a' };
+      },
+    };
+    app = buildApp('OWNER', 'ALLOW', {
+      async create(input) {
+        writes.create += 1;
+        return { zoneId: 'zone-new', ...input };
+      },
+      async update(familyId, zoneId, patch) {
+        writes.update += 1;
+        return { zoneId, familyId, ...patch };
+      },
+      async remove() {
+        writes.remove += 1;
+        return true;
+      },
+    }, { deviceChildBindingRepositoryOverride: bindingRepository });
+    app.safeZoneZones.set('zone-a', {
+      zoneId: 'zone-a',
+      familyId: 'family-a',
+      recipientEndpointId: 'child-device',
+      ciphertextB64: 'AQID',
+      nonceB64: 'AAECAwQFBgcICQoL',
+      keyEpoch: 1,
+      revision: 1,
+      deliveryState: 'PENDING_OFFLINE',
+    });
+
+    try {
+      const response = await app.inject({
+        method,
+        url: method === 'POST'
+          ? '/api/parent/families/family-a/safe-zones'
+          : `/api/parent/families/family-a/safe-zones/zone-a`,
+        headers,
+        ...(method === 'POST'
+          ? { payload: { recipientEndpointId: 'child-device', ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } }
+          : method === 'PATCH'
+            ? { payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } }
+            : {}),
+      });
+      assert.equal(response.statusCode, 403, `${method} must reject the revoked Parent role`);
+      assert.deepEqual(response.json(), { error: 'forbidden' });
+      assert.equal(bindingReads, expectedBindingReads);
+      assert.deepEqual(writes, { create: 0, update: 0, remove: 0 });
+      assert.equal(app.safeZoneZones.has('zone-a'), true);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('Safe Zone POST and PATCH recheck actor and recipient binding after the final Parent-role await', async () => {
+  const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
+  for (const method of ['POST', 'PATCH']) {
+    for (const changedAuthority of ['actor-key-epoch', 'recipient-binding']) {
+      let actorRotated = false;
+      let bindingChanged = false;
+      let writes = 0;
+      const finalRoleReadIndex = method === 'POST' ? 1 : 2;
+      const app = buildApp('OWNER', 'ALLOW', {
+        async create(input) {
+          writes += 1;
+          return { zoneId: 'zone-new', ...input };
+        },
+        async update(familyId, zoneId, patch) {
+          writes += 1;
+          return { zoneId, familyId, ...patch };
+        },
+      }, {
+        onActiveFamilyRole: async (readIndex) => {
+          if (readIndex !== finalRoleReadIndex) return;
+          if (changedAuthority === 'actor-key-epoch') actorRotated = true;
+          else bindingChanged = true;
+        },
+        trustSetRoleResolverOverride: {
+          resolveActor(familyId, deviceId, dskKeyId) {
+            if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
+            if (dskKeyId !== undefined) {
+              return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
+            }
+            return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+          },
+        },
+        deviceChildBindingRepositoryOverride: {
+          async resolveBinding(familyId, deviceId) {
+            assert.equal(familyId, 'family-a');
+            assert.equal(deviceId, 'child-device');
+            return {
+              outcome: 'BOUND',
+              childProfileId: bindingChanged ? 'child-profile-b' : 'child-profile-a',
+            };
+          },
+        },
+        childProfileRegistryRepositoryOverride: {
+          async resolveMembership(familyId, childProfileId) {
+            return familyId === 'family-a' && ['child-profile-a', 'child-profile-b'].includes(childProfileId)
+              ? 'MEMBER'
+              : 'NOT_MEMBER_OR_NOT_FOUND';
+          },
+        },
+      });
+      const existingZone = {
+        zoneId: 'zone-a',
+        familyId: 'family-a',
+        recipientEndpointId: 'child-device',
+        ciphertextB64: 'AQID',
+        nonceB64: 'AAECAwQFBgcICQoL',
+        keyEpoch: 1,
+        revision: 1,
+        deliveryState: 'PENDING_OFFLINE',
+      };
+      app.safeZoneZones.set(existingZone.zoneId, existingZone);
+
+      try {
+        const response = await app.inject({
+          method,
+          url: method === 'POST'
+            ? '/api/parent/families/family-a/safe-zones'
+            : '/api/parent/families/family-a/safe-zones/zone-a',
+          headers,
+          ...(method === 'POST'
+            ? { payload: { recipientEndpointId: 'child-device', ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } }
+            : { payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL' } }),
+        });
+        assert.equal(response.statusCode, 409, `${method} ${changedAuthority}`);
+        assert.deepEqual(response.json(), {
+          error: changedAuthority === 'actor-key-epoch' ? 'key_epoch_mismatch' : 'authority_changed',
+        });
+        assert.equal(writes, 0, `${method} must not write after authority changes during the final role lookup`);
+        assert.equal(app.safeZoneZones.get('zone-a'), existingZone);
+      } finally {
+        await app.close();
+      }
+    }
+  }
+});
+
+test('Safe Zone DELETE rechecks actor DSK and accepted epochs after child-binding authority lookup', async () => {
+  let bindingResolved = false;
+  let removeCalls = 0;
+  const app = buildApp('OWNER', 'ALLOW', {
+    async remove() {
+      removeCalls += 1;
+      return true;
+    },
+  }, {
+    trustSetRoleResolverOverride: {
+      resolveActor(familyId, deviceId, dskKeyId) {
+        if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
+        if (dskKeyId !== undefined) {
+          return {
+            deviceId,
+            role: 'OWNER',
+            trustSetEpoch: 1,
+            // Simulate accepted-head key rotation while the earlier recipient
+            // binding lookup is in flight. The final actor read must see it.
+            keyEpoch: bindingResolved ? 2 : 1,
+          };
+        }
+        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    },
+    deviceChildBindingRepositoryOverride: {
+      async resolveBinding(familyId, deviceId) {
+        assert.equal(familyId, 'family-a');
+        assert.equal(deviceId, 'child-device');
+        bindingResolved = true;
+        return { outcome: 'BOUND', childProfileId: 'child-profile-a' };
+      },
+    },
+  });
+  app.safeZoneZones.set('zone-a', {
+    zoneId: 'zone-a',
+    familyId: 'family-a',
+    recipientEndpointId: 'child-device',
+    ciphertextB64: 'AQID',
+    nonceB64: 'AAECAwQFBgcICQoL',
+    keyEpoch: 1,
+    revision: 1,
+    deliveryState: 'PENDING_OFFLINE',
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/parent/families/family-a/safe-zones/zone-a',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+    });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.equal(bindingResolved, true);
+    assert.equal(removeCalls, 0);
+    assert.equal(app.safeZoneZones.has('zone-a'), true);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Safe Zone DELETE re-resolves actor authority after the final Parent-role await', async () => {
+  let actorRotated = false;
+  let removeCalls = 0;
+  const app = buildApp('OWNER', 'ALLOW', {
+    async remove() {
+      removeCalls += 1;
+      return true;
+    },
+  }, {
+    onActiveFamilyRole: async (readIndex) => {
+      if (readIndex === 2) actorRotated = true;
+    },
+    trustSetRoleResolverOverride: {
+      resolveActor(familyId, deviceId, dskKeyId) {
+        if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
+        if (dskKeyId !== undefined) {
+          return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
+        }
+        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    },
+  });
+  app.safeZoneZones.set('zone-a', {
+    zoneId: 'zone-a',
+    familyId: 'family-a',
+    recipientEndpointId: 'child-device',
+    ciphertextB64: 'AQID',
+    nonceB64: 'AAECAwQFBgcICQoL',
+    keyEpoch: 1,
+    revision: 1,
+    deliveryState: 'PENDING_OFFLINE',
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/parent/families/family-a/safe-zones/zone-a',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+    });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.equal(actorRotated, true);
+    assert.equal(removeCalls, 0);
+    assert.equal(app.safeZoneZones.has('zone-a'), true);
+  } finally {
+    await app.close();
+  }
+});
+
 test('safe-zone Parent membership allows reads for Viewer and mutations only for Administrator', async () => {
   const owner = await buildApp('OWNER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(owner.statusCode, 200);
 
-  const administrator = await buildApp('ADMINISTRATOR').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  const administrator = await buildApp('ADMINISTRATOR').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(administrator.statusCode, 201);
 
   const viewerRead = await buildApp('VIEWER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(viewerRead.statusCode, 200);
   recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_viewer_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: viewerRead });
-  const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(viewerMutation.statusCode, 403);
   recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_viewer_denied', classification: 'EXPECTED_DENIAL', expectedStatus: 403, response: viewerMutation });
 
@@ -715,7 +1155,7 @@ test('safe-zone mutation fails closed when the Trust Set-backed policy authorize
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',
     headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-    payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
   });
   assert.equal(denied.statusCode, 403);
   assert.equal(app.safeZoneZones.size, 0);
@@ -724,7 +1164,7 @@ test('safe-zone mutation fails closed when the Trust Set-backed policy authorize
 
 test('safe-zone mutation requires a verified device bearer and rejects a mismatched legacy actor header', async () => {
   const app = buildApp('OWNER');
-  const payload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const payload = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const missingBearer = await app.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',
@@ -752,7 +1192,7 @@ test('safe-zone mutation rejects a stale device-session DSK before authorization
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',
     headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-    payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
   });
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().error, 'forbidden');
@@ -766,7 +1206,7 @@ test('safe-zone mutation fails closed before authorization when accepted Trust S
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',
     headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
-    payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
   });
   assert.equal(response.statusCode, 503);
   assert.equal(response.json().error, 'family_authority_unavailable');
@@ -776,7 +1216,7 @@ test('safe-zone mutation fails closed before authorization when accepted Trust S
 
 test('client-supplied device identity cannot grant Parent membership authority', async () => {
   const app = buildApp('VIEWER');
-  const opaquePayload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const opaquePayload = { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const legitimate = await app.inject({
     method: 'POST',
     url: '/api/parent/families/family-a/safe-zones',

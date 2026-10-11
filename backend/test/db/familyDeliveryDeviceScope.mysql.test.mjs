@@ -50,10 +50,14 @@ test('MySQL FamilyAudit queue is family-and-parent-device scoped and exact retry
   const actorParentDeviceId = `parent-${randomUUID()}`;
   const otherParentDeviceId = `parent-${randomUUID()}`;
   const actorEnvelope = familyAuditEnvelope({ familyId, parentDeviceId: actorParentDeviceId });
+  const staleEpochEnvelope = familyAuditEnvelope({ familyId, parentDeviceId: actorParentDeviceId, keyEpoch: 6 });
+  const futureEpochEnvelope = familyAuditEnvelope({ familyId, parentDeviceId: actorParentDeviceId, keyEpoch: 8 });
   const sameFamilyOtherDevice = familyAuditEnvelope({ familyId, parentDeviceId: otherParentDeviceId });
   const otherFamilySameDevice = familyAuditEnvelope({ familyId: otherFamilyId, parentDeviceId: actorParentDeviceId });
 
   assert.deepEqual(await familyAuditLedger.record(actorEnvelope), { outcome: 'RECORDED' });
+  assert.deepEqual(await familyAuditLedger.record(staleEpochEnvelope), { outcome: 'RECORDED' });
+  assert.deepEqual(await familyAuditLedger.record(futureEpochEnvelope), { outcome: 'RECORDED' });
   assert.deepEqual(await familyAuditLedger.record(sameFamilyOtherDevice), { outcome: 'RECORDED' });
   assert.deepEqual(await familyAuditLedger.record(otherFamilySameDevice), { outcome: 'RECORDED' });
   assert.deepEqual(await familyAuditLedger.record(actorEnvelope), { outcome: 'IDEMPOTENT_MATCH' });
@@ -64,16 +68,20 @@ test('MySQL FamilyAudit queue is family-and-parent-device scoped and exact retry
 
   assert.deepEqual(await familyAuditLedger.get(actorEnvelope.envelopeId), actorEnvelope);
   assert.deepEqual(
-    await familyAuditLedger.listForParentDevice(familyId, actorParentDeviceId, { now: READ_NOW }),
+    await familyAuditLedger.listForParentDevice(familyId, actorParentDeviceId, 7, { now: READ_NOW }),
     [actorEnvelope],
   );
   assert.deepEqual(
-    await familyAuditLedger.listForParentDevice(familyId, otherParentDeviceId, { now: READ_NOW }),
+    await familyAuditLedger.listForParentDevice(familyId, otherParentDeviceId, 7, { now: READ_NOW }),
     [sameFamilyOtherDevice],
   );
   assert.deepEqual(
-    await familyAuditLedger.listForParentDevice(otherFamilyId, actorParentDeviceId, { now: READ_NOW }),
+    await familyAuditLedger.listForParentDevice(otherFamilyId, actorParentDeviceId, 7, { now: READ_NOW }),
     [otherFamilySameDevice],
+  );
+  await assert.rejects(
+    () => familyAuditLedger.listForParentDevice(familyId, actorParentDeviceId, 0, { now: READ_NOW }),
+    /key epoch is outside the supported family epoch range/,
   );
 });
 
@@ -83,10 +91,14 @@ test('MySQL ProtectionAlert queue is family-and-parent-device scoped and exact r
   const actorParentDeviceId = `parent-${randomUUID()}`;
   const otherParentDeviceId = `parent-${randomUUID()}`;
   const actorAlert = protectionAlert({ familyId, parentDeviceId: actorParentDeviceId });
+  const staleEpochAlert = protectionAlert({ familyId, parentDeviceId: actorParentDeviceId, keyEpoch: 6 });
+  const futureEpochAlert = protectionAlert({ familyId, parentDeviceId: actorParentDeviceId, keyEpoch: 8 });
   const sameFamilyOtherDevice = protectionAlert({ familyId, parentDeviceId: otherParentDeviceId });
   const otherFamilySameDevice = protectionAlert({ familyId: otherFamilyId, parentDeviceId: actorParentDeviceId });
 
   assert.deepEqual(await protectionAlertLedger.record(actorAlert), { outcome: 'RECORDED' });
+  assert.deepEqual(await protectionAlertLedger.record(staleEpochAlert), { outcome: 'RECORDED' });
+  assert.deepEqual(await protectionAlertLedger.record(futureEpochAlert), { outcome: 'RECORDED' });
   assert.deepEqual(await protectionAlertLedger.record(sameFamilyOtherDevice), { outcome: 'RECORDED' });
   assert.deepEqual(await protectionAlertLedger.record(otherFamilySameDevice), { outcome: 'RECORDED' });
   assert.deepEqual(await protectionAlertLedger.record(actorAlert), { outcome: 'IDEMPOTENT_MATCH' });
@@ -97,15 +109,15 @@ test('MySQL ProtectionAlert queue is family-and-parent-device scoped and exact r
 
   assert.deepEqual(await protectionAlertLedger.get(actorAlert.alertId), actorAlert);
   assert.deepEqual(
-    await protectionAlertLedger.listForParentDevice(familyId, actorParentDeviceId, { now: READ_NOW }),
+    await protectionAlertLedger.listForParentDevice(familyId, actorParentDeviceId, 7, { now: READ_NOW }),
     [actorAlert],
   );
   assert.deepEqual(
-    await protectionAlertLedger.listForParentDevice(familyId, otherParentDeviceId, { now: READ_NOW }),
+    await protectionAlertLedger.listForParentDevice(familyId, otherParentDeviceId, 7, { now: READ_NOW }),
     [sameFamilyOtherDevice],
   );
   assert.deepEqual(
-    await protectionAlertLedger.listForParentDevice(otherFamilyId, actorParentDeviceId, { now: READ_NOW }),
+    await protectionAlertLedger.listForParentDevice(otherFamilyId, actorParentDeviceId, 7, { now: READ_NOW }),
     [otherFamilySameDevice],
   );
 });

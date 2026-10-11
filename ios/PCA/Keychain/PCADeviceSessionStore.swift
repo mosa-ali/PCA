@@ -140,7 +140,9 @@ public final class PCAInboundReplayDenialLedger {
     private func load() throws -> Snapshot {
         guard try keychain.retrieve(forAccount: requiredAccount, service: service) == requiredMarker else { throw PCAInboundInboxError.unavailable }
         let data = try keychain.retrieve(forAccount: account, service: service)
-        guard data.count <= 131072, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data), snapshot.version == 1,
+        guard data.count <= 131072,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 131072)) != nil,
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data), snapshot.version == 1,
               snapshot.boundaries.count <= 16, snapshot.boundaries.reduce(0, { $0 + $1.closedNumericPrefixes.count }) <= 64 else { throw PCAInboundInboxError.unavailable }
         var scopes = Set<Data>()
         for boundary in snapshot.boundaries {
@@ -667,7 +669,9 @@ public final class PCAInboundApplicationJournal {
         do { data = try keychain.retrieve(forAccount: account, service: service) }
         catch KeychainStoreError.itemNotFound { return Snapshot(version: 1, records: []) }
         catch { throw PCAInboundInboxError.unavailable }
-        guard data.count <= 1_048_576, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+        guard data.count <= 1_048_576,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 1_048_576)) != nil,
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
               snapshot.version == 1, snapshot.records.count <= 64 else { throw PCAInboundInboxError.unavailable }
         if snapshot.retirementRequired == true {
             guard let marker = try retirementMarker(), let value = String(data: marker, encoding: .utf8),
@@ -983,7 +987,9 @@ public final class PCAKeychainInboundInboxStore: PCAInboundInboxStoring {
         do { data = try keychain.retrieve(forAccount: account, service: service) }
         catch KeychainStoreError.itemNotFound { return nil }
         catch { throw PCAInboundInboxError.unavailable }
-        guard data.count <= maxBytes, let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+        guard data.count <= maxBytes,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: maxBytes)) != nil,
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
               (snapshot.version == 1 || snapshot.version == 2), snapshot.entries.count <= maxRecords,
               snapshot.receipts.count <= 256, Set(snapshot.receipts.map { Data($0.messageId.utf8) }).count == snapshot.receipts.count else { throw PCAInboundInboxError.unavailable }
         try snapshot.navigation?.validate()
@@ -1197,12 +1203,17 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
     }
 
     private func saveValue<T: Encodable>(_ value: T, account: String) throws {
-        try keychain.store(try encoder.encode(value), forAccount: account, service: service, accessibility: .whenUnlockedThisDeviceOnly)
+        let data = try encoder.encode(value)
+        guard data.count <= 1_048_576 else { throw KeychainStoreError.unexpectedStatus(-1) }
+        try keychain.store(data, forAccount: account, service: service, accessibility: .whenUnlockedThisDeviceOnly)
     }
 
     private func loadValue<T: Decodable>(_ type: T.Type, account: String) throws -> T? {
         do {
-            return try decoder.decode(type, from: keychain.retrieve(forAccount: account, service: service))
+            let data = try keychain.retrieve(forAccount: account, service: service)
+            guard data.count <= 1_048_576 else { throw KeychainStoreError.unexpectedStatus(-1) }
+            try StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 1_048_576)
+            return try decoder.decode(type, from: data)
         } catch KeychainStoreError.itemNotFound {
             return nil
         } catch {

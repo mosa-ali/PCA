@@ -110,6 +110,80 @@ class OrdinaryTrustSetBootstrapAnchorTest {
     }
 
     @Test
+    fun `ordinary store accepts owner transfer only from the exact previous owner and stores its predecessor`() {
+        val rootStore = rootStore()
+        val backing = InMemoryPersistentStateStore()
+        val ordinaryStore = PersistentOrdinaryEpochStore(backing)
+        val root = OrdinaryTrustSetBootstrapAnchor.seed(
+            rootStore,
+            ordinaryStore,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+        )
+        val current = ordinaryStore.read()!!
+        val replacementEpoch = UntrustedTrustSetEpoch(
+            familyId = "family",
+            trustSetEpoch = 2,
+            keyEpoch = 1,
+            entries = listOf(
+                UntrustedTrustSetEntry(
+                    "device-1", TrustSetRole.ADMINISTRATOR, "dsk-id", "public-dsk", "dek-id", "public-dek",
+                    TrustSetMembershipStatus.ACTIVE,
+                ),
+                UntrustedTrustSetEntry(
+                    "device-2", TrustSetRole.OWNER, "dsk-2", "public-dsk-2", "dek-2", "public-dek-2",
+                    TrustSetMembershipStatus.ACTIVE,
+                ),
+            ),
+            issuedAt = "2026-10-09T00:00:00.000Z",
+            supersedesEpoch = 1,
+        )
+        val request = OrdinaryEpochRequest(
+            Base64.getEncoder().encodeToString(TrustSetEpochCodec.canonicalize(replacementEpoch).toByteArray()),
+            Base64.getEncoder().encodeToString(ByteArray(64) { 9 }),
+        )
+        val selfSignedReplacement = AcceptedEpochRecord(request, "device-2", "dsk-2", 2, 1)
+        assertFalse(ordinaryStore.compareAndSetDurably(
+            current,
+            current.copy(accepted = selfSignedReplacement, acceptedBase = current.accepted),
+        ))
+        assertEquals(root, ordinaryStore.read()!!.accepted)
+
+        val transferSignedByPreviousOwner = selfSignedReplacement.copy(signerDeviceId = "device-1", signerKeyId = "dsk-id")
+        assertTrue(ordinaryStore.compareAndSetDurably(
+            current,
+            current.copy(accepted = transferSignedByPreviousOwner, acceptedBase = current.accepted),
+        ))
+        val reopened = PersistentOrdinaryEpochStore(backing).read()!!
+        assertEquals(transferSignedByPreviousOwner, reopened.accepted)
+        assertEquals(root, reopened.acceptedBase)
+        assertEquals(root, reopened.rootAnchor)
+        assertFalse("an older accepted snapshot cannot replace the current floor",
+            ordinaryStore.compareAndSetDurably(reopened, reopened.copy(accepted = root, acceptedBase = null)))
+        assertEquals(reopened, ordinaryStore.read())
+
+        val alternateRoot = root.copy(request = root.request.copy(
+            signatureBase64 = Base64.getEncoder().encodeToString(ByteArray(64) { 11 }),
+        ))
+        fun acceptedJson(value: AcceptedEpochRecord) = JSONObject()
+            .put("canonicalEpochBase64", value.request.canonicalEpochBase64)
+            .put("signatureBase64", value.request.signatureBase64)
+            .put("signerDeviceId", value.signerDeviceId)
+            .put("signerKeyId", value.signerKeyId)
+            .put("trustSetEpoch", value.trustSetEpoch)
+            .put("keyEpoch", value.keyEpoch)
+        val tamperedState = JSONObject(requireNotNull(backing.getString("ordinary_trust_set_v1")))
+            .put("acceptedBase", acceptedJson(alternateRoot))
+        backing.putString("ordinary_trust_set_v1", tamperedState.toString())
+        backing.flush()
+        try {
+            PersistentOrdinaryEpochStore(backing).read()
+            fail("acceptedBase must remain the exact previously accepted record")
+        } catch (failure: IllegalStateException) {
+            assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+        }
+    }
+
+    @Test
     fun `tampered signature fails verification and leaves ordinary custody empty`() {
         val rootStore = rootStore(rootRecord(signature = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(ByteArray(64) { 99 })))

@@ -49,6 +49,7 @@ export interface ProtectionAlertLedger {
   listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options?: ProtectionAlertListOptions,
   ): Promise<ProtectionAlertEvent[]>;
   /**
@@ -108,10 +109,14 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
   async listForParentDevice(
     familyId: string,
     parentDeviceId: string,
+    keyEpoch: number,
     options: ProtectionAlertListOptions = {},
   ): Promise<ProtectionAlertEvent[]> {
+    if (!isFamilyEpochNumber(keyEpoch, 1)) {
+      throw new Error('Protection alert key epoch is outside the supported family epoch range.');
+    }
     const ascending = [...this.events.values()]
-      .filter((event) => event.familyId === familyId && event.parentDeviceId === parentDeviceId)
+      .filter((event) => event.familyId === familyId && event.parentDeviceId === parentDeviceId && event.keyEpoch === keyEpoch)
       .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
     return applyServerCiphertextFeedWindow(ascending, options.now ?? this.now(), options.limit).map(snapshotEvent);
   }

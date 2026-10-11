@@ -1,21 +1,22 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { RuntimeSyncAuthError, type DeviceSessionIdentity, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import type { SafeZoneRepository } from '../../location/SafeZoneRepository.js';
-import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
+import { validateSafeZoneDeliveryCursor, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
+import { isActorResolutionFailure, type ActorResolutionFailure, type ResolvedActor, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
+import type { DeviceChildBindingRepository } from '../../device/DeviceChildBindingRepository.js';
+import type { ChildProfileRegistryRepository } from '../../childprofiles/ChildProfileRegistryRepository.js';
 import type { createRateLimiter } from '../rateLimit.js';
 
 export interface SafeZoneDeliveryRoutesDeps {
   deviceSessionService: DeviceSessionService;
   trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
+  deviceChildBindingRepository?: Pick<DeviceChildBindingRepository, 'resolveBinding'>;
+  childProfileRegistryRepository?: Pick<ChildProfileRegistryRepository, 'resolveMembership'>;
   safeZoneRepository?: Pick<SafeZoneRepository, 'listForRecipient'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
-const MAX_CURSOR_BYTES = 128;
 const DELIVERY_RATE_LIMIT = { windowMs: 60_000, max: 30, bucket: 'safe-zone-delivery' } as const;
-const FAMILY_ROLES: ReadonlySet<string> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD']);
-
 /**
  * Delivers only opaque, recipient-addressed Safe Zone envelopes. Family and
  * device scope come exclusively from the verified device-session token; no
@@ -44,30 +45,98 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
     }
     if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     if (!deps.trustSetRoleResolver) return reply.code(503).send({ error: 'family_authority_unavailable' });
-    let actor;
+    let actor: ResolvedActor | ActorResolutionFailure;
     try {
       actor = await deps.trustSetRoleResolver.resolveActor(identity.familyId, identity.deviceId, identity.dskKeyId);
     } catch {
       return reply.code(503).send({ error: 'family_authority_unavailable' });
     }
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' ||
-      actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role) ||
+      actor.deviceId !== identity.deviceId || actor.role !== 'CHILD' ||
       !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
       !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
       return reply.code(403).send({ error: 'forbidden' });
     }
+    if (!deps.deviceChildBindingRepository) return reply.code(503).send({ error: 'family_authority_unavailable' });
+    if (!deps.childProfileRegistryRepository) return reply.code(503).send({ error: 'family_authority_unavailable' });
     const query = request.query as { cursor?: unknown };
-    if (query.cursor !== undefined && (typeof query.cursor !== 'string' ||
-      query.cursor.length === 0 || Buffer.byteLength(query.cursor, 'utf8') > MAX_CURSOR_BYTES ||
-      !/^[A-Za-z0-9_-]+$/.test(query.cursor))) {
+    try {
+      validateSafeZoneDeliveryCursor(query.cursor);
+    } catch {
       return reply.code(400).send({ error: 'invalid_cursor' });
     }
+    // The device must still have a single durable enrollment-to-child binding.
+    // This does not authorize the read by itself: the accepted active CHILD
+    // Trust Set projection above is also required for every delivery request.
+    const capturedActor: ResolvedActor = actor;
+    const resolveBoundProfileId = async (): Promise<string | null> => {
+      try {
+        const binding = await deps.deviceChildBindingRepository!.resolveBinding(identity.familyId, identity.deviceId);
+        if (!binding || typeof binding !== 'object' || binding.outcome !== 'BOUND' ||
+            typeof binding.childProfileId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(binding.childProfileId)) {
+          await reply.code(403).send({ error: 'forbidden' });
+          return null;
+        }
+        return binding.childProfileId;
+      } catch {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return null;
+      }
+    };
+    const profileIsCurrentMember = async (childProfileId: string): Promise<boolean> => {
+      try {
+        const membership = await deps.childProfileRegistryRepository!.resolveMembership(identity.familyId, childProfileId);
+        if (membership === 'MEMBER') return true;
+        if (membership === 'NOT_MEMBER_OR_NOT_FOUND') {
+          await reply.code(403).send({ error: 'forbidden' });
+          return false;
+        }
+      } catch {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return false;
+      }
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return false;
+    };
+    const recheckAcceptedChildActor = async (): Promise<boolean> => {
+      let current: ResolvedActor | ActorResolutionFailure;
+      try {
+        current = await deps.trustSetRoleResolver!.resolveActor(identity.familyId, identity.deviceId, identity.dskKeyId);
+      } catch {
+        await reply.code(503).send({ error: 'family_authority_unavailable' });
+        return false;
+      }
+      if (isActorResolutionFailure(current) || !current || typeof current !== 'object' ||
+          current.deviceId !== identity.deviceId || current.role !== 'CHILD' ||
+          !Number.isSafeInteger(current.trustSetEpoch) || current.trustSetEpoch < 1 ||
+          !Number.isSafeInteger(current.keyEpoch) || current.keyEpoch < 1) {
+        await reply.code(403).send({ error: 'forbidden' });
+        return false;
+      }
+      if (current.trustSetEpoch !== capturedActor.trustSetEpoch) {
+        await reply.code(409).send({ error: 'authority_changed' });
+        return false;
+      }
+      if (current.keyEpoch !== capturedActor.keyEpoch) {
+        await reply.code(409).send({ error: 'key_epoch_mismatch' });
+        return false;
+      }
+      return true;
+    };
+    const boundChildProfileId = await resolveBoundProfileId();
+    if (!boundChildProfileId || !(await profileIsCurrentMember(boundChildProfileId)) ||
+        !(await recheckAcceptedChildActor())) return;
     try {
       const page = await deps.safeZoneRepository.listForRecipient(
         identity.familyId,
         identity.deviceId,
+        capturedActor.keyEpoch,
         query.cursor as string | undefined,
       );
+      const currentChildProfileId = await resolveBoundProfileId();
+      if (!currentChildProfileId) return;
+      if (currentChildProfileId !== boundChildProfileId) return reply.code(403).send({ error: 'forbidden' });
+      if (!(await profileIsCurrentMember(currentChildProfileId)) || !(await recheckAcceptedChildActor())) return;
       return reply.code(200).send({ safeZones: page.safeZones.map((zone) => ({
         zoneId: zone.zoneId,
         ciphertextB64: zone.ciphertextB64,

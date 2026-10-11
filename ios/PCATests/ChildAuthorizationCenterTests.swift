@@ -16,6 +16,44 @@ final class FakeAuthorizationStatusSource: AuthorizationStatusSource {
     }
 }
 
+private final class InterleavingAuthorizationStatusSource: AuthorizationStatusSource {
+    private let lock = NSLock()
+    private var status: RawAuthorizationStatus = .approved
+    private var readCount = 0
+    let firstReadStarted = DispatchSemaphore(value: 0)
+    let secondReadStarted = DispatchSemaphore(value: 0)
+    let releaseFirstRead = DispatchSemaphore(value: 0)
+
+    var currentStatus: RawAuthorizationStatus {
+        get { lock.lock(); defer { lock.unlock() }; return status }
+        set { lock.lock(); defer { lock.unlock() }; status = newValue }
+    }
+
+    func currentRawStatus() -> RawAuthorizationStatus {
+        lock.lock()
+        readCount += 1
+        let read = readCount
+        let sampled = status
+        lock.unlock()
+        if read == 1 {
+            firstReadStarted.signal()
+            _ = releaseFirstRead.wait(timeout: .now() + 2)
+        } else if read == 2 {
+            secondReadStarted.signal()
+        }
+        return sampled
+    }
+
+    func requestChildAuthorization() async throws {}
+}
+
+private final class AuthorizationStateBox {
+    private let lock = NSLock()
+    private var state: ChildAuthorizationState?
+    func set(_ state: ChildAuthorizationState) { lock.lock(); defer { lock.unlock() }; self.state = state }
+    func get() -> ChildAuthorizationState? { lock.lock(); defer { lock.unlock() }; return state }
+}
+
 final class ChildAuthorizationCenterTests: XCTestCase {
     private func makeCenter(source: AuthorizationStatusSource) -> ChildAuthorizationCenter {
         ChildAuthorizationCenter(source: source,
@@ -125,6 +163,41 @@ final class ChildAuthorizationCenterTests: XCTestCase {
         XCTAssertEqual(firstCenter.refresh(), .revoked(to: .denied))
         XCTAssertEqual(secondCenter.refresh(), .denied,
             "a second coordinator observes the already-recorded raw state instead of emitting a duplicate transition")
+    }
+
+    func testConcurrentRefreshCannotCommitAnOlderApprovedSampleAfterRevocation() {
+        let source = InterleavingAuthorizationStatusSource()
+        let persisted = InMemoryChildAuthorizationObservationStore(status: .approved)
+        let firstCenter = ChildAuthorizationCenter(source: source, observationStore: persisted)
+        let secondCenter = ChildAuthorizationCenter(source: source, observationStore: persisted)
+        let firstResult = AuthorizationStateBox()
+        let secondResult = AuthorizationStateBox()
+        let firstFinished = DispatchSemaphore(value: 0)
+        let secondFinished = DispatchSemaphore(value: 0)
+        let secondTaskReady = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            firstResult.set(firstCenter.refresh())
+            firstFinished.signal()
+        }
+        XCTAssertEqual(source.firstReadStarted.wait(timeout: .now() + 2), .success)
+        source.currentStatus = .denied
+        DispatchQueue.global().async {
+            secondTaskReady.signal()
+            secondResult.set(secondCenter.refresh())
+            secondFinished.signal()
+        }
+
+        XCTAssertEqual(secondTaskReady.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(source.secondReadStarted.wait(timeout: .now() + 1), .timedOut,
+            "the second status read must not enter while the first sample is in flight")
+        source.releaseFirstRead.signal()
+        XCTAssertEqual(firstFinished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(secondFinished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(source.secondReadStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(firstResult.get(), .approved)
+        XCTAssertEqual(secondResult.get(), .revoked(to: .denied))
+        XCTAssertEqual(secondCenter.refresh(), .denied)
     }
 
     func testCorruptPersistedObservationIsDiscardedAndLiveStatusWins() throws {

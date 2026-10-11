@@ -298,11 +298,33 @@ public struct PCADeviceSessionChallenge: Decodable, Equatable {
     public let challengeId: String
     public let nonce: String
     public let expiresAt: Date
+
+    fileprivate func isUsable(at now: Date) -> Bool {
+        let challengeIdIsPresent = !challengeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let nonceIsPresent = !nonce.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return challengeIdIsPresent && nonceIsPresent && now.timeIntervalSince1970.isFinite
+            && expiresAt.timeIntervalSince1970.isFinite && expiresAt > now
+    }
 }
 
 public struct PCADeviceSessionResponse: Decodable, Equatable {
     public let sessionToken: String
     public let expiresAt: Date
+
+    fileprivate func isUsable(at now: Date) -> Bool {
+        Self.hasCanonicalTokenShape(sessionToken)
+            && now.timeIntervalSince1970.isFinite && expiresAt.timeIntervalSince1970.isFinite
+            && expiresAt > now
+    }
+
+    private static func hasCanonicalTokenShape(_ token: String) -> Bool {
+        let bytes = Array(token.utf8)
+        guard bytes.count == 43 else { return false }
+        return bytes.allSatisfy { byte in
+            (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
+                || (byte >= 0x30 && byte <= 0x39) || byte == 0x5F || byte == 0x2D
+        }
+    }
 }
 
 public protocol PCADeviceProofProvider {
@@ -384,6 +406,13 @@ public struct PCADeviceSessionClient {
         default: throw PCAAPIError.rejected
         }
         guard let value = try? decoder.decode(type, from: response.data) else { throw PCAAPIError.malformedResponse }
+        let now = Date()
+        if let challenge = value as? PCADeviceSessionChallenge, !challenge.isUsable(at: now) {
+            throw PCAAPIError.malformedResponse
+        }
+        if let session = value as? PCADeviceSessionResponse, !session.isUsable(at: now) {
+            throw PCAAPIError.malformedResponse
+        }
         return value
     }
 }

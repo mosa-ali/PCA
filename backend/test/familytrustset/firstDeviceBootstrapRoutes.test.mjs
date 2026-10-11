@@ -10,10 +10,19 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
 import { registerFirstDeviceBootstrapRoutes } from '../../dist/http/routes/firstDeviceBootstrapRoutes.js';
+import { FirstDeviceBootstrapService } from '../../dist/familytrustset/FirstDeviceBootstrapService.js';
 import { ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
 import { csrfCookieName, sessionCookieName } from '../../dist/parentaccount/cookies.js';
 import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
-import { makeP256Device } from './firstDeviceBootstrapFixtures.mjs';
+import {
+  buildCeremonyRecord,
+  buildPerfectSubmission,
+  FakeFirstDeviceBootstrapStore,
+  makeAttempt,
+  makeP256Device,
+  ScriptedAttestationVerifier,
+  submissionInput,
+} from './firstDeviceBootstrapFixtures.mjs';
 
 const FAMILY = 'family-bootstrap-routes';
 const OTHER_FAMILY = 'family-bootstrap-routes-other';
@@ -66,6 +75,7 @@ function buildApp(options = {}) {
     stepUpAccepted = true,
     eligibility = true,
     ceremony = null,
+    bootstrapServiceOverride = null,
     challengeOutcome = { status: 'UNAVAILABLE' },
     submitOutcome = { status: 'UNAVAILABLE' },
     statusOutcome = { status: 'UNAVAILABLE' },
@@ -134,7 +144,11 @@ function buildApp(options = {}) {
   };
 
   const app = Fastify();
-  registerFirstDeviceBootstrapRoutes(app, { parentAccountService, bootstrapService, rateLimiter: createRateLimiter() });
+  registerFirstDeviceBootstrapRoutes(app, {
+    parentAccountService,
+    bootstrapService: bootstrapServiceOverride ?? bootstrapService,
+    rateLimiter: createRateLimiter(),
+  });
   return { app, consumeCalls, serviceCalls };
 }
 
@@ -248,6 +262,109 @@ test('submit accepts a large-but-bounded payload (H5: 320 KiB body limit) and re
       payload: { ...submitBody(), proofBytes: 'A'.repeat(321 * 1024) },
     });
     assert.equal(oversize.statusCode, 413, 'beyond 320 KiB the transport must refuse the body');
+  } finally {
+    await app.close();
+  }
+});
+
+test('submit accepts the valid maximum-shaped request at the exact 320 KiB route boundary and rejects the next byte', async () => {
+  const device = makeP256Device('max-bootstrap-body');
+  const { attemptId, rawRecoveryToken, attempt } = makeAttempt(device);
+  const ceremony = buildCeremonyRecord(attempt);
+
+  // Opaque fields are allowed to contain well-formed Unicode control
+  // characters. These are the worst JSON-string expansion case: each one
+  // canonical byte becomes a six-byte `\\u00xx` escape on the wire.
+  let opaqueSequence = 0;
+  const maxOpaque = () => {
+    const high = 1 + Math.floor(opaqueSequence / 31);
+    const low = 1 + (opaqueSequence % 31);
+    opaqueSequence += 1;
+    return String.fromCharCode(high, low) + '\u0001'.repeat(126);
+  };
+  const entries = [{
+    deviceId: device.deviceId,
+    role: 'OWNER',
+    dskKeyId: device.dskKeyId,
+    dskPublicKey: device.dskPublicKey,
+    dekKeyId: maxOpaque(),
+    dekPublicKey: maxOpaque(),
+    status: 'ACTIVE',
+  }];
+  for (let index = 1; index < 64; index += 1) {
+    entries.push({
+      deviceId: maxOpaque(),
+      role: 'CHILD',
+      dskKeyId: maxOpaque(),
+      dskPublicKey: maxOpaque(),
+      dekKeyId: maxOpaque(),
+      dekPublicKey: maxOpaque(),
+      status: 'RECOVERY_REQUIRED',
+    });
+  }
+
+  const evidenceBase = JSON.stringify({
+    attemptId,
+    chain: ['A'.repeat(128), 'B'.repeat(128)],
+    platform: 'ANDROID',
+    v: 1,
+  });
+  const evidence = evidenceBase + '\n'.repeat(16_384 - Buffer.byteLength(evidenceBase, 'utf8'));
+  assert.equal(Buffer.byteLength(evidence, 'utf8'), 16_384, 'attestation evidence uses the service byte maximum');
+
+  const submission = buildPerfectSubmission({
+    attempt,
+    ceremony,
+    device,
+    attestationEvidence: evidence,
+    epochOverrides: { entries },
+  });
+  const payload = submissionInput(attempt, rawRecoveryToken, ceremony, submission);
+  const serialized = JSON.stringify(payload);
+  const requestBytes = Buffer.byteLength(serialized, 'utf8');
+
+  assert.equal(entries.length, 64);
+  assert.ok(Buffer.byteLength(submission.epoch1Bytes, 'utf8') <= 262_144, 'canonical epoch remains within its accepted byte bound');
+  assert.ok(Buffer.byteLength(submission.proofBytes, 'utf8') <= 16_384, 'canonical proof remains within its accepted byte bound');
+  assert.ok(requestBytes > 256 * 1024, 'this contract-shaped request needs the route-local exception');
+  const MAX_SUBMIT_BODY_BYTES = 320 * 1024;
+  assert.ok(requestBytes <= MAX_SUBMIT_BODY_BYTES,
+    `maximum-shaped serialized request must fit the route limit (actual ${requestBytes} of ${MAX_SUBMIT_BODY_BYTES} bytes)`);
+
+  // This is an actual service-accepted epoch/proof/signature payload. The
+  // test-only verifier explicitly exercises the verifier interface; production
+  // composition remains fail-closed until its attestation evidence passes the
+  // platform's cryptographic verifier.
+  const store = new FakeFirstDeviceBootstrapStore({ attempt, ceremony });
+  const bootstrapService = new FirstDeviceBootstrapService({
+    store,
+    attestationVerifier: new ScriptedAttestationVerifier(),
+  });
+  const { app } = buildApp({ bootstrapServiceOverride: bootstrapService });
+  try {
+    // JSON permits trailing whitespace. Pad the already valid, maximum-shaped
+    // request to exercise the actual parser boundary without changing its
+    // decoded value or weakening any service-side field validation.
+    const exactLimitBody = serialized + ' '.repeat(MAX_SUBMIT_BODY_BYTES - requestBytes);
+    assert.equal(Buffer.byteLength(exactLimitBody, 'utf8'), MAX_SUBMIT_BODY_BYTES);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/first-device-bootstrap/submit',
+      headers: { 'content-type': 'application/json' },
+      payload: exactLimitBody,
+    });
+    assert.equal(response.statusCode, 200,
+      `the route must accept the valid maximum-shaped request at exactly ${MAX_SUBMIT_BODY_BYTES} bytes`);
+    assert.equal(store.commitCalls.length, 1, 'the complete canonical epoch/proof was accepted and committed by the service');
+
+    const overLimit = await app.inject({
+      method: 'POST',
+      url: '/v1/first-device-bootstrap/submit',
+      headers: { 'content-type': 'application/json' },
+      payload: `${exactLimitBody} `,
+    });
+    assert.equal(overLimit.statusCode, 413, 'the route must reject the first byte beyond its 320 KiB body limit');
+    assert.equal(store.commitCalls.length, 1, 'an over-limit body must be rejected before reaching the bootstrap service');
   } finally {
     await app.close();
   }

@@ -28,3 +28,22 @@ test('in-memory protection status keeps its server receipt time isolated from mu
   assert.equal(secondRead.updatedAt.toISOString(), '2026-10-09T12:00:00.000Z');
   assert.equal(await repository.findForDevice('another-family', 'device-one'), null);
 });
+
+test('in-memory recordAndReadPrevious serializes concurrent status transitions', async () => {
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  const record = (protectionLevel) => ({
+    deviceId: 'device-one',
+    familyId: 'family-one',
+    protectionLevel,
+    updatedAt: new Date(),
+  });
+  await repository.upsert(record('PROTECTED'));
+
+  const prior = await Promise.all([
+    repository.recordAndReadPrevious(record('DEGRADED')),
+    repository.recordAndReadPrevious(record('DEGRADED')),
+  ]);
+
+  assert.deepEqual(prior.map((item) => item?.protectionLevel).sort(), ['DEGRADED', 'PROTECTED']);
+  assert.equal((await repository.findForDevice('family-one', 'device-one'))?.protectionLevel, 'DEGRADED');
+});

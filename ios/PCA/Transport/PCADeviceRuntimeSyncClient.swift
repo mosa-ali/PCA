@@ -238,6 +238,8 @@ public enum PCAReportedProtectionLevel: String, Encodable {
 /// remains the approved crypto layer's responsibility, and a received item
 /// is never reported as an applied policy by this transport.
 public final class PCADeviceRuntimeSyncClient {
+    /// Matches the production URLSession transport's default response bound.
+    private static let maximumResponseBytes = 4 * 1024 * 1024
     private let baseURL: URL
     private let transport: PCAHTTPTransport
     private let decoder = JSONDecoder()
@@ -295,6 +297,7 @@ public final class PCADeviceRuntimeSyncClient {
         catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
         catch { throw PCAAPIError.transport(.network) }
         try Task.checkCancellation()
+        guard response.data.count <= Self.maximumResponseBytes else { throw PCAAPIError.malformedResponse }
         switch response.statusCode {
         case 200...299: return
         case 401: throw PCAAPIError.unauthorized
@@ -319,15 +322,22 @@ public final class PCADeviceRuntimeSyncClient {
         case 403: throw PCAAPIError.forbidden
         case 400:
             if request.url?.path == baseURL.appendingPathComponent("v1/runtime-sync/inbound").path,
-               request.url?.query != nil,
-               let body = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
-               body["error"] as? String == "invalid_cursor" { throw PCAInboundNavigationError.invalidCursor }
+               request.url?.query != nil {
+                guard (try? StrictJSONDocument.validateNoDuplicateMembers(response.data,
+                    maximumBytes: Self.maximumResponseBytes)) != nil else { throw PCAAPIError.malformedResponse }
+                if let body = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+                   body["error"] as? String == "invalid_cursor" { throw PCAInboundNavigationError.invalidCursor }
+            }
             throw PCAAPIError.invalidRequest
         case 404: throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
         }
-        guard let value = try? decoder.decode(type, from: response.data) else { throw PCAAPIError.malformedResponse }
+        guard (try? StrictJSONDocument.validateNoDuplicateMembers(response.data,
+                  maximumBytes: Self.maximumResponseBytes)) != nil,
+              let value = try? decoder.decode(type, from: response.data) else {
+            throw PCAAPIError.malformedResponse
+        }
         return value
     }
 }

@@ -218,7 +218,8 @@ public struct PCAEnrollmentLinkParser {
     public static let customScheme = "pca"
     public static let customHost = "enroll"
     public static let universalLinkScheme = "https"
-    public static let universalLinkHost = "enroll.pca.app"
+    public static let universalLinkHost = "www.pcasafe.com"
+    private static let universalLinkPath = "/enroll/"
     private static let tokenLength = 43
 
     public init() {}
@@ -226,13 +227,13 @@ public struct PCAEnrollmentLinkParser {
     public func parse(_ url: URL) -> PCAEnrollmentLink? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.percentEncodedFragment == nil,
-              components.user == nil, components.password == nil,
-              components.port == nil else { return nil }
+              components.user == nil, components.password == nil else { return nil }
         let scheme = (components.scheme ?? "").lowercased()
         let host = (components.host ?? "").lowercased()
 
         if scheme == Self.customScheme && host == Self.customHost {
-            guard components.percentEncodedPath.isEmpty,
+            guard components.port == nil,
+                  components.percentEncodedPath.isEmpty,
                   let queryItems = components.queryItems,
                   queryItems.count == 1, queryItems[0].name == "token",
                   let token = queryItems[0].value,
@@ -248,6 +249,7 @@ public struct PCAEnrollmentLinkParser {
 
         guard scheme == Self.universalLinkScheme,
               host == Self.universalLinkHost,
+              components.port == nil || components.port == 443,
               components.percentEncodedQuery == nil,
               components.percentEncodedPath.hasPrefix("/"),
               let token = Self.canonicalUniversalPathToken(components.percentEncodedPath),
@@ -262,8 +264,9 @@ public struct PCAEnrollmentLinkParser {
 
     private static func canonicalUniversalPathToken(_ path: String) -> String? {
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.count == 2, components[0].isEmpty else { return nil }
-        return String(components[1])
+        guard components.count == 3, components[0].isEmpty,
+              components[1] == "enroll", path.hasPrefix(universalLinkPath) else { return nil }
+        return String(components[2])
     }
 
     private static func isCanonicalToken(_ token: String) -> Bool {

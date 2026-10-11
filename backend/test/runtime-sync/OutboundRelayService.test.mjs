@@ -85,8 +85,24 @@ test('a recipient in the caller\'s own family is queued', async () => {
   const senderDeviceId = await registerDevice(deviceRepository, familyId);
   const recipientDeviceId = await registerDevice(deviceRepository, familyId);
 
-  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId })]);
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId })], async (candidate) => candidate === recipientDeviceId);
   assert.equal(result.results[0].outcome, 'QUEUED');
+});
+
+test('a same-family directory device absent from accepted Trust Set is not queued', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const unacceptedRecipientId = await registerDevice(deviceRepository, familyId);
+
+  const result = await outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ recipientDeviceId: unacceptedRecipientId, messageId: 'recipient-not-in-trust-set' })],
+    async () => false,
+  );
+  assert.deepEqual(result.results, [{ messageId: 'recipient-not-in-trust-set', outcome: 'INVALID' }]);
+  assert.deepEqual(await relayService.listQueuedForRecipient(unacceptedRecipientId), []);
 });
 
 test('IDOR: a recipient device that belongs to a DIFFERENT family is rejected, not queued', async () => {
@@ -95,11 +111,13 @@ test('IDOR: a recipient device that belongs to a DIFFERENT family is rejected, n
   const familyB = `family-${randomUUID()}`;
   const senderDeviceId = await registerDevice(deviceRepository, familyA);
   const victimDeviceInOtherFamily = await registerDevice(deviceRepository, familyB);
+  let membershipCheckCalled = false;
 
   const result = await outboundService.submitBatch(senderDeviceId, familyA, [
     item({ recipientDeviceId: victimDeviceInOtherFamily }),
-  ]);
+  ], async () => { membershipCheckCalled = true; return true; });
   assert.equal(result.results[0].outcome, 'CROSS_FAMILY_RECIPIENT');
+  assert.equal(membershipCheckCalled, false, 'directory family scope must reject before accepted-membership lookup');
 
   const queuedForVictim = await relayService.listQueuedForRecipient(victimDeviceInOtherFamily);
   assert.equal(queuedForVictim.length, 0);
@@ -156,9 +174,14 @@ test('a batch larger than MAX_OUTBOUND_BATCH_SIZE only attempts the bound, repor
   const items = Array.from({ length: MAX_OUTBOUND_BATCH_SIZE + 5 }, (_, i) =>
     item({ recipientDeviceId, messageType: 'ACTIVITY_SUMMARY', enqueuedAtEpochMillis: i }),
   );
-  const result = await outboundService.submitBatch(senderDeviceId, familyId, items);
+  let recipientAuthorizationCalls = 0;
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, items, async () => {
+    recipientAuthorizationCalls += 1;
+    return true;
+  });
   assert.equal(result.results.length, MAX_OUTBOUND_BATCH_SIZE);
   assert.equal(result.droppedForBatchBound.length, 5);
+  assert.equal(recipientAuthorizationCalls, MAX_OUTBOUND_BATCH_SIZE, 'only the bounded attempted slice reaches recipient authorization');
 });
 
 test('high-priority items win the bounded batch\'s slots over low-priority ones', async () => {

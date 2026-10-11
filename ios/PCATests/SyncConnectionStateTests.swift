@@ -46,4 +46,44 @@ final class SyncConnectionStateTests: XCTestCase {
         let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false, hasPendingLocalWork: false, lastSuccessfulSyncAtUtc: old, nowUtc: now)
         XCTAssertNotEqual(SyncConnectionStateComputer.compute(input), .live)
     }
+
+    func testNonFiniteEvaluationTimeCannotClaimLive() {
+        for timestamp in [Double.nan, Double.infinity, -Double.infinity] {
+            let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false,
+                hasPendingLocalWork: false, lastSuccessfulSyncAtUtc: now,
+                nowUtc: Date(timeIntervalSince1970: timestamp))
+            XCTAssertEqual(SyncConnectionStateComputer.compute(input), .stale, "invalid evaluation timestamp: \(timestamp)")
+        }
+    }
+
+    func testNonFiniteLastSuccessTimeCannotClaimLive() {
+        for timestamp in [Double.nan, Double.infinity, -Double.infinity] {
+            let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false,
+                hasPendingLocalWork: false, lastSuccessfulSyncAtUtc: Date(timeIntervalSince1970: timestamp), nowUtc: now)
+            XCTAssertEqual(SyncConnectionStateComputer.compute(input), .stale, "invalid last-sync timestamp: \(timestamp)")
+        }
+    }
+
+    func testInvalidStaleThresholdCannotClaimLive() {
+        for threshold in [Double.nan, Double.infinity, -Double.infinity, -1] {
+            let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false,
+                hasPendingLocalWork: false, lastSuccessfulSyncAtUtc: now, nowUtc: now,
+                staleThresholdSeconds: threshold)
+            XCTAssertEqual(SyncConnectionStateComputer.compute(input), .stale, "invalid stale threshold: \(threshold)")
+        }
+    }
+
+    func testNonFiniteComputedAgeCannotClaimLiveEvenWhenInputsAreFinite() {
+        let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false,
+            hasPendingLocalWork: false,
+            lastSuccessfulSyncAtUtc: Date(timeIntervalSince1970: -Double.greatestFiniteMagnitude),
+            nowUtc: Date(timeIntervalSince1970: Double.greatestFiniteMagnitude))
+        XCTAssertEqual(SyncConnectionStateComputer.compute(input), .stale)
+    }
+
+    func testInvalidTimestampRemainsStaleWhenLocalWorkIsPending() {
+        let input = SyncConnectionStateInput(isTransportConnected: true, isSyncing: false,
+            hasPendingLocalWork: true, lastSuccessfulSyncAtUtc: Date(timeIntervalSince1970: .nan), nowUtc: now)
+        XCTAssertEqual(SyncConnectionStateComputer.compute(input), .stale)
+    }
 }

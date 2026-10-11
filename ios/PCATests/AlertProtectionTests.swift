@@ -3,6 +3,15 @@ import XCTest
 
 final class AlertProtectionTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
+    private func generate(
+        alertId: String = "alert-1", familyId: String = "family-1", deviceId: String? = "device-1",
+        parentDeviceId: String = "parent-1", generatedAtUtc: Date? = nil,
+        encryptedPayload: Data = Data([1]), nonce: Data = Data([2])
+    ) throws -> E2EEProtectionAlert? {
+        try ProtectionAlertGenerator().generate(alertId: alertId, familyId: familyId, deviceId: deviceId,
+            parentDeviceId: parentDeviceId, trigger: .timeTampering, keyEpoch: 1,
+            generatedAtUtc: generatedAtUtc ?? now, encryptedPayload: encryptedPayload, nonce: nonce, alertsEnabled: true)
+    }
 
     func testEveryAddendumTriggerProducesAnOpaqueParentAlert() throws {
         let generator = ProtectionAlertGenerator()
@@ -59,6 +68,45 @@ final class AlertProtectionTests: XCTestCase {
             trigger: .repeatedInvalidPin, keyEpoch: 1, generatedAtUtc: now, encryptedPayload: Data([1]), nonce: Data([2]), alertsEnabled: true
         )) { error in
             XCTAssertEqual(error as? ProtectionAlertGenerationError, .deviceRequired)
+        }
+    }
+
+    func testOpaqueIdentifiersUseBackendBoundsIncludingOptionalDeviceId() {
+        for attempt in [
+            { try generate(alertId: "") },
+            { try generate(familyId: String(repeating: "a", count: 129)) },
+            { try generate(parentDeviceId: String(repeating: "😀", count: 65)) },
+            { try generate(deviceId: "") },
+            { try generate(deviceId: String(repeating: "d", count: 129)) },
+        ] {
+            XCTAssertThrowsError(try attempt()) { error in
+                XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidOpaqueIdentifier)
+            }
+        }
+        XCTAssertNoThrow(try generate(deviceId: nil))
+        XCTAssertNoThrow(try generate(deviceId: String(repeating: "d", count: 128)))
+    }
+
+    func testGeneratedTimestampMustBeFiniteAndInsideJavaScriptDateRange() {
+        for timestamp in [Double.nan, .infinity, -.infinity, 8_640_000_000_001, -8_640_000_000_001] {
+            XCTAssertThrowsError(try generate(generatedAtUtc: Date(timeIntervalSince1970: timestamp))) { error in
+                XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidGeneratedAtUtc)
+            }
+        }
+        XCTAssertNoThrow(try generate(generatedAtUtc: Date(timeIntervalSince1970: 8_640_000_000_000)))
+        XCTAssertNoThrow(try generate(generatedAtUtc: Date(timeIntervalSince1970: -8_640_000_000_000)))
+    }
+
+    func testEncryptedPayloadAndNonceMatchBackendByteBounds() throws {
+        XCTAssertNoThrow(try generate(encryptedPayload: Data(repeating: 1, count: 16 * 1024),
+            nonce: Data(repeating: 2, count: 64)))
+        for attempt in [
+            { try generate(encryptedPayload: Data(repeating: 1, count: 16 * 1024 + 1)) },
+            { try generate(nonce: Data(repeating: 2, count: 65)) },
+        ] {
+            XCTAssertThrowsError(try attempt()) { error in
+                XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidEncryptedPayload)
+            }
         }
     }
 }

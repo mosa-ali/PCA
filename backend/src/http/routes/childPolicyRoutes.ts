@@ -13,18 +13,13 @@
  * The request body is the existing signed FamilyEnvelope wire shape. This
  * route validates its structure and binds family/sender/recipient metadata,
  * but does not verify the envelope signature or decrypt/apply its opaque
- * payload. recipientDeviceId is deliberately envelope-bound (not resolved
- * server-side from childProfileId) because this schema has
- * no child-profile-to-device mapping anywhere (checked: devices/
- * DeviceRepository carry no child_profile_id column, and
- * ChildProfileMembershipResolver's own doc comment says a readable
- * central child-profile directory is deliberately out of scope) -- the
- * parent browser is the party that holds decrypted family state and
- * therefore knows which device(s) belong to which child. OutboundRelayService.submitBatch
+ * payload. recipientDeviceId remains envelope-bound, and the route also
+ * checks the existing durable enrollment binding (device -> bootstrap
+ * attempt -> invitation) matches the requested child profile. There is no
+ * direct child_profile_id column on devices; legacy, inactive, ambiguous,
+ * or otherwise unbound devices fail closed. OutboundRelayService.submitBatch
  * independently verifies recipientDeviceId resolves to a real device in
- * the CALLER's own family (CROSS_FAMILY_RECIPIENT otherwise), so a
- * spoofed or foreign recipientDeviceId is rejected regardless of what the
- * childProfileId authorization pre-check above it decided.
+ * the CALLER's own family (CROSS_FAMILY_RECIPIENT otherwise).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -33,7 +28,12 @@ import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } fro
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { AuthorizationDecision, ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
 import type { ActorResolutionFailure, ResolvedActor, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
-import type { OutboundBatchResult, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
+import type { DeviceChildBindingOutcome, DeviceChildBindingRepository } from '../../device/DeviceChildBindingRepository.js';
+import {
+  RecipientAuthorizationUnavailableError,
+  type OutboundBatchResult,
+  type OutboundRelayService,
+} from '../../runtime-sync/OutboundRelayService.js';
 import { parseFamilyEnvelope } from '../../familyenvelope/parse.js';
 import { envelopeToRelayCiphertext } from '../../runtime-sync/envelopeWireCodec.js';
 
@@ -47,6 +47,8 @@ export interface ChildPolicyRoutesDeps {
   parentActionAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
   /** Binds policy writes to the exact DSK held by the current accepted Trust Set member entry. Omission fails closed. */
   trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
+  /** Resolves the device's durable invitation-to-child binding. Omission fails closed. */
+  deviceChildBindingRepository?: Pick<DeviceChildBindingRepository, 'resolveBinding'>;
   outboundRelayService: Pick<OutboundRelayService, 'submitBatch'>;
   now?: () => Date;
 }
@@ -208,6 +210,15 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(503).send({ error: 'authority_unavailable' });
       }
 
+      // The actor is resolved from the current accepted Trust Set, so the
+      // signed envelope metadata must describe that same authority snapshot.
+      // A stale or not-yet-accepted future epoch must never get a successful
+      // queue receipt; the receiving device would reject it later, but the
+      // server already has enough non-content metadata to fail it closed.
+      if (envelope.trustSetEpoch !== acceptedActor.trustSetEpoch || envelope.keyEpoch !== acceptedActor.keyEpoch) {
+        return reply.code(409).send({ error: 'authority_changed' });
+      }
+
       // TRUE authority is the receiving device's own signed-envelope
       // verification against its own trust set -- this call is a pre-check
       // only (ParentActionAuthorizationService's own doc comment). The
@@ -236,6 +247,53 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(403).send({ error: 'forbidden' });
       }
 
+      // This endpoint targets a child profile, so its recipient must be an
+      // ACTIVE CHILD in the current accepted Trust Set, at the envelope's
+      // authority epochs, and bound to this exact profile by the durable
+      // enrollment-attempt -> invitation relationship. Do these lookups only
+      // after ParentAction authorization so a denied Parent cannot probe
+      // device roles or child bindings through response differences.
+      let acceptedRecipient: ResolvedActor | ActorResolutionFailure;
+      try {
+        acceptedRecipient = await deps.trustSetRoleResolver.resolveActor(
+          session.familyId,
+          envelope.recipient.recipientDeviceId,
+        );
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (typeof acceptedRecipient === 'string') {
+        return reply.code(400).send({ error: 'invalid_recipient' });
+      }
+      if (acceptedRecipient === null || typeof acceptedRecipient !== 'object' || Array.isArray(acceptedRecipient) ||
+          acceptedRecipient.deviceId !== envelope.recipient.recipientDeviceId ||
+          !Number.isSafeInteger(acceptedRecipient.trustSetEpoch) || acceptedRecipient.trustSetEpoch < 1 ||
+          !Number.isSafeInteger(acceptedRecipient.keyEpoch) || acceptedRecipient.keyEpoch < 1) {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (acceptedRecipient.role !== 'CHILD') return reply.code(400).send({ error: 'invalid_recipient' });
+      if (acceptedRecipient.trustSetEpoch !== envelope.trustSetEpoch || acceptedRecipient.keyEpoch !== envelope.keyEpoch) {
+        return reply.code(409).send({ error: 'authority_changed' });
+      }
+
+      if (!deps.deviceChildBindingRepository) return reply.code(503).send({ error: 'authority_unavailable' });
+      let recipientBinding: DeviceChildBindingOutcome;
+      try {
+        recipientBinding = await deps.deviceChildBindingRepository.resolveBinding(
+          session.familyId,
+          envelope.recipient.recipientDeviceId,
+        );
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (recipientBinding === null || typeof recipientBinding !== 'object' || Array.isArray(recipientBinding) ||
+          typeof recipientBinding.outcome !== 'string') {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (recipientBinding.outcome !== 'BOUND' || recipientBinding.childProfileId !== childProfileId) {
+        return reply.code(400).send({ error: 'invalid_recipient' });
+      }
+
       // Do not turn an already-expired signed envelope into a successful
       // PENDING receipt. Recheck before recipient resolution for a truthful
       // route response, then pass the signed absolute expiry so the relay can
@@ -245,6 +303,11 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       const remainingEnvelopeLifetimeMs = envelope.expiresAt.getTime() - enqueueAtMs;
       if (!Number.isFinite(enqueueAtMs)) return reply.code(503).send({ error: 'relay_unavailable' });
       if (remainingEnvelopeLifetimeMs <= 0) return reply.code(400).send({ error: 'expired' });
+      // Keep the repository reference stable for the async enqueue callback.
+      // The preflight above gives useful early errors; this second lookup is
+      // the authority check immediately before relay persistence.
+      const bindingRepository = deps.deviceChildBindingRepository;
+      if (!bindingRepository) return reply.code(503).send({ error: 'authority_unavailable' });
 
       let result: OutboundBatchResult;
       try {
@@ -257,8 +320,44 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
             enqueuedAtEpochMillis: envelope.issuedAt.getTime(),
             validUntil: envelope.expiresAt,
           },
-        ]);
-      } catch {
+        ], async (recipientDeviceId) => {
+          let currentRecipient: ResolvedActor | ActorResolutionFailure;
+          try {
+            currentRecipient = await deps.trustSetRoleResolver!.resolveActor(session.familyId, recipientDeviceId);
+          } catch {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (typeof currentRecipient === 'string') return false;
+          if (currentRecipient === null || typeof currentRecipient !== 'object' || Array.isArray(currentRecipient) ||
+              currentRecipient.deviceId !== recipientDeviceId ||
+              !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(currentRecipient.role) ||
+              !Number.isSafeInteger(currentRecipient.trustSetEpoch) || currentRecipient.trustSetEpoch < 1 ||
+              !Number.isSafeInteger(currentRecipient.keyEpoch) || currentRecipient.keyEpoch < 1) {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (currentRecipient.role !== 'CHILD' ||
+              currentRecipient.trustSetEpoch !== envelope.trustSetEpoch ||
+              currentRecipient.keyEpoch !== envelope.keyEpoch) return false;
+          // Binding can change between request preflight and enqueue. Require
+          // the same durable profile edge at the final authorization boundary;
+          // receiver-side session and cryptographic checks remain authoritative
+          // for delivery/application after this queue-eligibility decision.
+          let currentBinding: DeviceChildBindingOutcome;
+          try {
+            currentBinding = await bindingRepository.resolveBinding(session.familyId, recipientDeviceId);
+          } catch {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (currentBinding === null || typeof currentBinding !== 'object' || Array.isArray(currentBinding) ||
+              typeof currentBinding.outcome !== 'string') {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          return currentBinding.outcome === 'BOUND' && currentBinding.childProfileId === childProfileId;
+        });
+      } catch (error) {
+        if (error instanceof RecipientAuthorizationUnavailableError) {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
         // A thrown persistence/relay error has no accepted queue receipt. The
         // caller may retry the exact same signed envelope and message ID.
         return reply.code(503).send({ error: 'relay_unavailable' });

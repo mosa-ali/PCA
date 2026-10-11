@@ -66,6 +66,7 @@ function trustedRoleResolver() {
     entries: [
       { deviceId: 'dev-owner', role: 'OWNER', dskKeyId: 'owner-key-1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' },
       { deviceId: 'dev-viewer', role: 'VIEWER', dskKeyId: 'k5', dskPublicKey: 'pk5', dekKeyId: 'k6', dekPublicKey: 'pk6', status: 'ACTIVE' },
+      { deviceId: 'dev-child', role: 'CHILD', dskKeyId: 'k7', dskPublicKey: 'pk7', dekKeyId: 'k8', dekPublicKey: 'pk8', status: 'ACTIVE' },
     ],
     issuedAt: T0,
     supersedesEpoch: null,
@@ -74,7 +75,7 @@ function trustedRoleResolver() {
   return new FamilyTrustSetRoleResolver(store);
 }
 
-function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR', trustSetRoleResolver = trustedRoleResolver(), deviceSessionFailure = false, nowFn = () => T0 } = {}) {
+function buildApp({ authorization, submitBatchImpl, configured = true, parentRole = 'ADMINISTRATOR', trustSetRoleResolver = trustedRoleResolver(), deviceChildBindingRepository, deviceSessionFailure = false, nowFn = () => T0 } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
   const callCounts = { activeFamilyRole: 0, actorDevice: 0 };
   const parentAccountService = {
@@ -106,11 +107,44 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     },
   };
   const submittedBatches = [];
+  const delegatedBatches = [];
+  const bindingCalls = [];
+  const effectiveDeviceChildBindingRepository = deviceChildBindingRepository === undefined
+    ? {
+      async resolveBinding(familyId, deviceId) {
+        bindingCalls.push([familyId, deviceId]);
+        return familyId === FAMILY && deviceId === 'dev-child'
+          ? { outcome: 'BOUND', childProfileId: 'child-1' }
+          : { outcome: 'UNBOUND' };
+      },
+    }
+    : deviceChildBindingRepository;
   const outboundRelayService = {
-    async submitBatch(senderDeviceId, familyId, items) {
+    async submitBatch(senderDeviceId, familyId, items, authorizeRecipient) {
       submittedBatches.push({ senderDeviceId, familyId, items });
-      if (submitBatchImpl) return submitBatchImpl(senderDeviceId, familyId, items);
-      return { results: items.map((item) => ({ messageId: item.messageId, outcome: 'QUEUED' })), droppedForBatchBound: [] };
+      const results = [];
+      const eligible = [];
+      for (const item of items) {
+        if (authorizeRecipient && !(await authorizeRecipient(item.recipientDeviceId))) {
+          results.push({ messageId: item.messageId, outcome: 'INVALID' });
+        } else {
+          eligible.push(item);
+        }
+      }
+      if (eligible.length === 0) return { results, droppedForBatchBound: [] };
+      delegatedBatches.push({ senderDeviceId, familyId, items: eligible });
+      const delegated = submitBatchImpl
+        ? await submitBatchImpl(senderDeviceId, familyId, eligible)
+        : { results: eligible.map((item) => ({ messageId: item.messageId, outcome: 'QUEUED' })), droppedForBatchBound: [] };
+      const outcomes = new Map(results.map((item) => [item.messageId, item]));
+      for (const item of delegated.results) outcomes.set(item.messageId, item);
+      return {
+        results: items.flatMap((item) => {
+          const outcome = outcomes.get(item.messageId);
+          return outcome ? [outcome] : [];
+        }),
+        droppedForBatchBound: delegated.droppedForBatchBound,
+      };
     },
   };
 
@@ -120,10 +154,11 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     deviceSessionService,
     parentActionAuthorization: configured ? authorization : undefined,
     trustSetRoleResolver,
+    deviceChildBindingRepository: effectiveDeviceChildBindingRepository,
     outboundRelayService,
     now: nowFn,
   });
-  return { app, submittedBatches, callCounts };
+  return { app, submittedBatches, delegatedBatches, bindingCalls, callCounts };
 }
 
 test('stale device-session DSK is rejected before authorization or relay submission', async () => {
@@ -163,7 +198,7 @@ test('current accepted DSK is resolved with the exact authenticated family/devic
     },
   };
   const authorization = buildAuthorization({ roleResolver: trustSetRoleResolver });
-  const { app } = buildApp({ authorization, trustSetRoleResolver });
+  const { app, bindingCalls } = buildApp({ authorization, trustSetRoleResolver });
   try {
     const response = await app.inject({
       method: 'POST',
@@ -175,7 +210,10 @@ test('current accepted DSK is resolved with the exact authenticated family/devic
     assert.deepEqual(resolverCalls, [
       [FAMILY, 'dev-owner', 'owner-key-1'],
       [FAMILY, 'dev-owner', 'owner-key-1'],
+      [FAMILY, 'dev-child'],
+      [FAMILY, 'dev-child'],
     ]);
+    assert.deepEqual(bindingCalls, [[FAMILY, 'dev-child'], [FAMILY, 'dev-child']]);
   } finally {
     await app.close();
   }
@@ -394,20 +432,36 @@ test('relay reports envelope expiry during async recipient resolution as a truth
   }
 });
 
-test('schedule-policy accepts protocol-boundary key epochs including zero', async () => {
-  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+test('schedule-policy rejects stale or unaccepted future envelope epochs before authorization or relay', async () => {
+  let authorizationCalls = 0;
+  const authorization = {
+    async authorize() {
+      authorizationCalls += 1;
+      return { verdict: 'ALLOW' };
+    },
+  };
   const { app, submittedBatches } = buildApp({ authorization });
   try {
-    for (const keyEpoch of [0, MAX_FAMILY_EPOCH]) {
+    const mismatchedEpochs = [
+      { name: 'stale trust-set epoch', trustSetEpoch: 4, keyEpoch: 3 },
+      { name: 'future trust-set epoch', trustSetEpoch: 6, keyEpoch: 3 },
+      { name: 'stale key epoch', trustSetEpoch: 5, keyEpoch: 2 },
+      { name: 'future key epoch', trustSetEpoch: 5, keyEpoch: 4 },
+      { name: 'bootstrap key epoch zero', trustSetEpoch: 5, keyEpoch: 0 },
+      { name: 'maximum key epoch', trustSetEpoch: 5, keyEpoch: MAX_FAMILY_EPOCH },
+    ];
+    for (const epochs of mismatchedEpochs) {
       const response = await app.inject({
         method: 'POST',
         url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
         headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
-        payload: { ...VALID_ENVELOPE, keyEpoch },
+        payload: { ...VALID_ENVELOPE, trustSetEpoch: epochs.trustSetEpoch, keyEpoch: epochs.keyEpoch },
       });
-      assert.equal(response.statusCode, 202, `keyEpoch=${keyEpoch}`);
+      assert.equal(response.statusCode, 409, epochs.name);
+      assert.deepEqual(response.json(), { error: 'authority_changed' }, epochs.name);
     }
-    assert.equal(submittedBatches.length, 2);
+    assert.equal(authorizationCalls, 0);
+    assert.equal(submittedBatches.length, 0);
   } finally {
     await app.close();
   }
@@ -485,14 +539,10 @@ test('when the explicit UnavailableTrustSetRoleResolver is supplied, every submi
   }
 });
 
-test('a foreign/spoofed recipientDeviceId is rejected by the relay even after authorization allows the childProfileId target', async () => {
+test('a recipient absent from the accepted Trust Set is rejected before relay submission', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
-  const { app, submittedBatches } = buildApp({
+  const { app, submittedBatches, delegatedBatches } = buildApp({
     authorization,
-    submitBatchImpl: (senderDeviceId, familyId, items) => ({
-      results: items.map((item) => ({ messageId: item.messageId, outcome: 'CROSS_FAMILY_RECIPIENT' })),
-      droppedForBatchBound: [],
-    }),
   });
   try {
     const response = await app.inject({
@@ -503,9 +553,157 @@ test('a foreign/spoofed recipientDeviceId is rejected by the relay even after au
     });
     assert.equal(response.statusCode, 400);
     recordParentRouteScenario({ method: 'POST', route: SCHEDULE_POLICY_ROUTE, scenarioId: 'schedule_policy_foreign_recipient_rejected', classification: 'VALIDATION_OR_PROTOCOL', expectedStatus: 400, response });
-    assert.equal(submittedBatches.length, 1); // the relay WAS called (and correctly rejected it) -- authorization alone is not the whole defense
+    assert.equal(submittedBatches.length, 0, 'recipient preflight rejects an unaccepted target before submitBatch');
+    assert.equal(delegatedBatches.length, 0, 'unaccepted recipient ciphertext must not reach relay storage');
   } finally {
     await app.close();
+  }
+});
+
+test('schedule-policy rejects an accepted same-family VIEWER recipient after Parent authorization and before relay', async () => {
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches, delegatedBatches } = buildApp({ authorization });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, recipientDeviceId: 'dev-viewer' },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'invalid_recipient' });
+    assert.equal(authorizationCalls, 1);
+    assert.equal(submittedBatches.length, 0);
+    assert.equal(delegatedBatches.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy rejects a CHILD device whose durable enrollment binding is unbound, ambiguous, inactive, or for another profile', async () => {
+  const bindingOutcomes = [
+    { outcome: 'UNBOUND' },
+    { outcome: 'AMBIGUOUS' },
+    { outcome: 'DEVICE_INACTIVE' },
+    { outcome: 'BOUND', childProfileId: 'child-in-another-family' },
+  ];
+  for (const binding of bindingOutcomes) {
+    let authorizationCalls = 0;
+    const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+    const bindingCalls = [];
+    const deviceChildBindingRepository = {
+      async resolveBinding(...args) {
+        bindingCalls.push(args);
+        return binding;
+      },
+    };
+    const { app, submittedBatches, delegatedBatches } = buildApp({ authorization, deviceChildBindingRepository });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: VALID_ENVELOPE,
+      });
+      assert.equal(response.statusCode, 400, JSON.stringify(binding));
+      assert.deepEqual(response.json(), { error: 'invalid_recipient' });
+      assert.deepEqual(bindingCalls, [[FAMILY, 'dev-child']]);
+      assert.equal(authorizationCalls, 1);
+      assert.equal(submittedBatches.length, 0);
+      assert.equal(delegatedBatches.length, 0);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('schedule-policy fails closed when the durable child binding repository is absent or unavailable', async () => {
+  for (const deviceChildBindingRepository of [
+    null,
+    { async resolveBinding() { throw new Error('binding store unavailable'); } },
+  ]) {
+    const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+    const { app, submittedBatches, delegatedBatches } = buildApp({ authorization, deviceChildBindingRepository });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: VALID_ENVELOPE,
+      });
+      assert.equal(response.statusCode, 503);
+      assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+      assert.equal(submittedBatches.length, 0);
+      assert.equal(delegatedBatches.length, 0);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('schedule-policy rechecks CHILD membership at enqueue and fails closed if the accepted head changed', async () => {
+  const childCalls = new Map();
+  const accepted = trustedRoleResolver();
+  const trustSetRoleResolver = {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      if (deviceId !== 'dev-child') return accepted.resolveActor(familyId, deviceId, dskKeyId);
+      const count = (childCalls.get(deviceId) ?? 0) + 1;
+      childCalls.set(deviceId, count);
+      if (count === 1) return accepted.resolveActor(familyId, deviceId, dskKeyId);
+      return { deviceId, role: 'CHILD', trustSetEpoch: 6, keyEpoch: 3 };
+    },
+  };
+  const authorization = buildAuthorization({ roleResolver: trustSetRoleResolver });
+  const { app, submittedBatches, delegatedBatches } = buildApp({ authorization, trustSetRoleResolver });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'invalid_recipient' });
+    assert.equal(childCalls.get('dev-child'), 2, 'recipient authority is checked before authorization and again at enqueue');
+    assert.equal(submittedBatches.length, 1);
+    assert.equal(delegatedBatches.length, 0, 'a stale recipient must not reach relay storage');
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy rechecks the durable child-profile binding at enqueue before relay storage', async () => {
+  for (const changedBinding of [
+    { outcome: 'UNBOUND' },
+    { outcome: 'BOUND', childProfileId: 'another-child-profile' },
+  ]) {
+    const bindingCalls = [];
+    const deviceChildBindingRepository = {
+      async resolveBinding(familyId, deviceId) {
+        bindingCalls.push([familyId, deviceId]);
+        return bindingCalls.length === 1
+          ? { outcome: 'BOUND', childProfileId: 'child-1' }
+          : changedBinding;
+      },
+    };
+    const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+    const { app, submittedBatches, delegatedBatches } = buildApp({ authorization, deviceChildBindingRepository });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: VALID_ENVELOPE,
+      });
+      assert.equal(response.statusCode, 400, JSON.stringify(changedBinding));
+      assert.deepEqual(response.json(), { error: 'invalid_recipient' });
+      assert.deepEqual(bindingCalls, [[FAMILY, 'dev-child'], [FAMILY, 'dev-child']]);
+      assert.equal(submittedBatches.length, 1, 'the final eligibility callback runs inside the attempted relay submission');
+      assert.equal(delegatedBatches.length, 0, 'a changed or removed profile binding must not reach relay storage');
+    } finally {
+      await app.close();
+    }
   }
 });
 

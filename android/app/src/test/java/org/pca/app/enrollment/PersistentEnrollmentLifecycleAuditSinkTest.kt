@@ -1,8 +1,11 @@
 package org.pca.app.enrollment
 
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
@@ -15,6 +18,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.persistence.PcaLocalDatabase
 import org.pca.app.persistence.PersistenceTestSupport
+import org.pca.app.persistence.dao.EnrollmentLifecycleAuditDao
+import org.pca.app.persistence.entity.EnrollmentLifecycleAuditEntity
 import org.pca.app.persistence.repository.EnrollmentLifecycleAuditRepository
 import org.robolectric.RobolectricTestRunner
 
@@ -102,6 +107,44 @@ class PersistentEnrollmentLifecycleAuditSinkTest {
         assertEquals("actor-1", stored[0].actorId)
         assertEquals("first enrollment", stored[0].reason)
         assertEquals(1_700_000_000_000L, stored[0].occurredAtEpochMillis)
+    }
+
+    @Test
+    fun `repository write failure stays contained in best effort sink without uncaught process failure`() {
+        val uncaught = AtomicReference<Throwable?>(null)
+        val handler = CoroutineExceptionHandler { _, failure -> uncaught.set(failure) }
+        val failingScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher() + handler)
+        val failingDao = object : EnrollmentLifecycleAuditDao {
+            override suspend fun insert(entity: EnrollmentLifecycleAuditEntity) {
+                throw IllegalStateException("database unavailable")
+            }
+
+            override suspend fun getForDevice(deviceId: String): List<EnrollmentLifecycleAuditEntity> = emptyList()
+            override suspend fun count(): Int = 0
+            override suspend fun deleteAll(): Int = 0
+        }
+        val failingSink = PersistentEnrollmentLifecycleAuditSink(
+            EnrollmentLifecycleAuditRepository(failingDao),
+            failingScope,
+        )
+        val record = EnrollmentLifecycleAuditRecord(
+            familyId = null,
+            deviceId = "device-1",
+            actorId = "actor-1",
+            fromState = null,
+            toState = PairingState.PAIRING_PENDING,
+            reason = "first enrollment",
+            occurredAtUtc = Instant.ofEpochSecond(1_700_000_000),
+        )
+
+        try {
+            failingSink.append(record)
+            runBlockingForTest { failingScope.coroutineContext.job.children.toList().joinAll() }
+
+            assertNull("best-effort DB failure must not reach the process exception handler", uncaught.get())
+        } finally {
+            failingScope.cancel()
+        }
     }
 }
 

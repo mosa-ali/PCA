@@ -257,6 +257,13 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                         scheduler.stop(activityId: id)
                     }
                     guard authorizationIsApproved() else {
+                        // A persisted active policy is not authority to leave
+                        // stale ManagedSettings restrictions in place after
+                        // FamilyControls approval is lost. Clear only the
+                        // current enforcement state; preserve the committed
+                        // manifest and payload so approval restoration can
+                        // reconcile this exact generation later.
+                        shieldEnforcer.removeAll()
                         markStartupRecoveryRequired(for: installation)
                         return
                     }
@@ -296,6 +303,14 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         defer { mutationLock.unlock() }
         reconcileRetirementIntent()
         guard authorizationIsApproved() else {
+            if let installation = currentInstallation(), installation.state == .active {
+                markStartupRecoveryRequired(for: installation)
+            }
+            // Authorization can be revoked after startup while the prior
+            // ManagedSettings state is still present. Match the callback and
+            // startup gates: clear this app's current shields, but retain the
+            // committed generation for exact recovery after approval returns.
+            shieldEnforcer.removeAll()
             throw PCAProtectionPolicyApplicationError.authorizationRequired
         }
         guard case .success(let policy) = PolicySyncDecoder.decode(scheduleData) else {
@@ -323,7 +338,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.unsafePolicy
         }
 
-        let planningTime = installationClock()
+        // The caller supplies the authoritative evaluation instant for this
+        // policy application. installationClock is reserved for recording
+        // when the OS monitor generation was actually installed.
+        let planningTime = now
         let triggers: [DeviceActivityBoundaryTrigger]
         do {
             triggers = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy, now: planningTime)
@@ -507,7 +525,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             scheduler.stop(activityId: id)
         }
 
-        let evaluationTime = installationClock()
+        let evaluationTime = now
         var usageAvailable = false
         var observationPlan: DeviceActivityUsageDayPlan?
         let retainedPlan = usagePlan ?? previousInstallation?.usageDayPlan
@@ -732,6 +750,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     // DeviceActivity remains authorized; require exact-generation
                     // reconciliation if approval is later restored.
                     markStartupRecoveryRequired(for: installation)
+                    shieldEnforcer.removeAll()
                     return .enforcementUnavailable
                 }
                 if startupMonitorFailureGeneration == installation.generation {

@@ -4,6 +4,16 @@ public enum OrdinaryTrustSetError: Error, Equatable {
     case malformedState, scopeMismatch, unauthorizedSigner, staleCandidate, pendingSubmission, responseMismatch
 }
 
+/// Bounds the canonical epoch included in an OrdinaryEpochTransportV1 request.
+/// This is intentionally narrower than the general epoch codec/head bound.
+enum OrdinaryTrustSetRequestLimits {
+    static let maximumCanonicalBytes = 196_506
+
+    static func validateCandidateCanonicalBytes(_ bytes: Data) throws {
+        guard bytes.count <= maximumCanonicalBytes else { throw OrdinaryTrustSetError.malformedState }
+    }
+}
+
 /// An authenticated server projection. It remains distinct from a cryptographically
 /// verified mobile policy anchor; this coordinator never installs policy or activates devices.
 public struct OrdinaryTrustSetHead: Codable, Equatable {
@@ -45,6 +55,7 @@ public struct OrdinaryTrustSetPending: Codable, Equatable {
         self.signerDeviceId = signerDeviceId; self.signerKeyId = signerKeyId
     }
     public func validate() throws {
+        try OrdinaryTrustSetRequestLimits.validateCandidateCanonicalBytes(candidate.canonicalBytes)
         let before = try previousHead.epoch(), after = try candidate.epoch()
         guard Data(before.familyId.utf8) == Data(after.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
         guard before.trustSetEpoch < Int(Int32.max),
@@ -54,21 +65,25 @@ public struct OrdinaryTrustSetPending: Codable, Equatable {
         let owners = before.entries.filter { $0.role == .owner && $0.status == .active }
         let nextOwners = after.entries.filter { $0.role == .owner && $0.status == .active }
         guard owners.count == 1, nextOwners.count == 1 else { throw OrdinaryTrustSetError.unauthorizedSigner }
-        let owner = owners[0], next = nextOwners[0]
+        let owner = owners[0]
         guard Data(owner.deviceId.utf8) == Data(signerDeviceId.utf8),
-              Data(owner.dskKeyId.utf8) == Data(signerKeyId.utf8),
-              Data(next.deviceId.utf8) == Data(owner.deviceId.utf8),
-              Data(next.dskKeyId.utf8) == Data(owner.dskKeyId.utf8),
-              Data(next.dskPublicKey.utf8) == Data(owner.dskPublicKey.utf8) else { throw OrdinaryTrustSetError.unauthorizedSigner }
+              Data(owner.dskKeyId.utf8) == Data(signerKeyId.utf8) else { throw OrdinaryTrustSetError.unauthorizedSigner }
+        // The predecessor's Owner authorizes the complete successor epoch,
+        // including a legitimate transfer to a different Owner/DSK.
     }
 }
 
 public struct OrdinaryTrustSetRecord: Codable, Equatable {
     public var head: OrdinaryTrustSetHead
     public var rootAnchor: OrdinaryTrustSetHead?
+    /// Exact previous accepted head that authorized `head`. Nil is retained
+    /// for backward decoding of root-owner-only records; the first verified
+    /// advance materializes this checkpoint.
+    public var acceptedBase: OrdinaryTrustSetHead?
     public var pending: OrdinaryTrustSetPending?
-    public init(head: OrdinaryTrustSetHead, pending: OrdinaryTrustSetPending? = nil, rootAnchor: OrdinaryTrustSetHead? = nil) {
-        self.head = head; self.pending = pending; self.rootAnchor = rootAnchor
+    public init(head: OrdinaryTrustSetHead, pending: OrdinaryTrustSetPending? = nil, rootAnchor: OrdinaryTrustSetHead? = nil,
+                acceptedBase: OrdinaryTrustSetHead? = nil) {
+        self.head = head; self.pending = pending; self.rootAnchor = rootAnchor; self.acceptedBase = acceptedBase
     }
     public func validate() throws {
         let current = try head.epoch()
@@ -78,6 +93,22 @@ public struct OrdinaryTrustSetRecord: Codable, Equatable {
                   Data(root.familyId.utf8) == Data(current.familyId.utf8), current.trustSetEpoch >= root.trustSetEpoch,
                   current.keyEpoch >= root.keyEpoch else { throw OrdinaryTrustSetError.malformedState }
         }
+        if let acceptedBase {
+            let base = try acceptedBase.epoch()
+            guard Data(base.familyId.utf8) == Data(current.familyId.utf8),
+                  current.trustSetEpoch > base.trustSetEpoch,
+                  current.keyEpoch >= base.keyEpoch,
+                  current.supersedesEpoch == base.trustSetEpoch else { throw OrdinaryTrustSetError.malformedState }
+            if let rootAnchor {
+                let root = try rootAnchor.epoch()
+                guard base.trustSetEpoch >= root.trustSetEpoch, base.keyEpoch >= root.keyEpoch else {
+                    throw OrdinaryTrustSetError.malformedState
+                }
+                if base.trustSetEpoch == 1, !OrdinaryTrustSetRecord.sameHeadExactly(acceptedBase, rootAnchor) {
+                    throw OrdinaryTrustSetError.malformedState
+                }
+            }
+        }
         if let pending {
             try pending.validate()
             let previous = try pending.previousHead.epoch()
@@ -85,7 +116,22 @@ public struct OrdinaryTrustSetRecord: Codable, Equatable {
                   previous.trustSetEpoch <= current.trustSetEpoch, previous.keyEpoch <= current.keyEpoch else {
                 throw OrdinaryTrustSetError.malformedState
             }
-            if previous.trustSetEpoch == current.trustSetEpoch, pending.previousHead != head { throw OrdinaryTrustSetError.malformedState }
+            if previous.trustSetEpoch == current.trustSetEpoch,
+               !OrdinaryTrustSetRecord.sameHeadExactly(pending.previousHead, head) { throw OrdinaryTrustSetError.malformedState }
+        }
+    }
+
+    fileprivate static func sameHeadExactly(_ lhs: OrdinaryTrustSetHead, _ rhs: OrdinaryTrustSetHead) -> Bool {
+        Data(lhs.familyId.utf8) == Data(rhs.familyId.utf8)
+            && lhs.canonicalBytes == rhs.canonicalBytes
+            && Data(lhs.signature.utf8) == Data(rhs.signature.utf8)
+    }
+
+    fileprivate static func sameHeadExactlyOptional(_ lhs: OrdinaryTrustSetHead?, _ rhs: OrdinaryTrustSetHead?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (left?, right?): return sameHeadExactly(left, right)
+        default: return false
         }
     }
 }
@@ -109,6 +155,8 @@ public final class KeychainOrdinaryTrustSetStore: OrdinaryTrustSetStoring {
     private func loadUnlocked() throws -> OrdinaryTrustSetRecord {
         let bytes = try keychain.retrieve(forAccount: account, service: service)
         guard bytes.count <= 1_048_576 else { throw OrdinaryTrustSetError.malformedState }
+        do { try StrictJSONDocument.validateNoDuplicateMembers(bytes) }
+        catch { throw OrdinaryTrustSetError.malformedState }
         let value = try JSONDecoder().decode(OrdinaryTrustSetRecord.self, from: bytes)
         try value.validate(); return value
     }
@@ -127,10 +175,20 @@ public final class KeychainOrdinaryTrustSetStore: OrdinaryTrustSetStoring {
         guard current == expected else { return false }
         if let current {
             let old = try current.head.epoch(), new = try next.head.epoch()
-            if let root = current.rootAnchor, next.rootAnchor != root { throw OrdinaryTrustSetError.responseMismatch }
+            if !OrdinaryTrustSetRecord.sameHeadExactlyOptional(current.rootAnchor, next.rootAnchor) { throw OrdinaryTrustSetError.responseMismatch }
             guard Data(old.familyId.utf8) == Data(new.familyId.utf8), new.trustSetEpoch >= old.trustSetEpoch,
                   new.keyEpoch >= old.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
-            if new.trustSetEpoch == old.trustSetEpoch, next.head != current.head { throw OrdinaryTrustSetError.responseMismatch }
+            if new.trustSetEpoch == old.trustSetEpoch {
+                if !OrdinaryTrustSetRecord.sameHeadExactly(next.head, current.head) ||
+                    !OrdinaryTrustSetRecord.sameHeadExactlyOptional(next.acceptedBase, current.acceptedBase) {
+                    throw OrdinaryTrustSetError.responseMismatch
+                }
+            } else if !OrdinaryTrustSetRecord.sameHeadExactlyOptional(next.acceptedBase, current.head) {
+                throw OrdinaryTrustSetError.responseMismatch
+            }
+        } else if let root = next.rootAnchor,
+                  (next.acceptedBase != nil || !OrdinaryTrustSetRecord.sameHeadExactly(next.head, root)) {
+            throw OrdinaryTrustSetError.responseMismatch
         }
         try saveUnlocked(next)
         return try loadUnlocked() == next
@@ -191,7 +249,7 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
     /// Signs once. A failed persistence never sends; a persisted attempt is immutable until authoritative acceptance.
     public func prepare(_ candidate: UntrustedTrustSetEpoch) async throws {
         try await gate.run {
-            try self.prepareUnlocked(candidate)
+            try await self.prepareUnlocked(candidate)
         }
     }
     /// A network exception leaves the same durable request available after restart. Never re-signs.
@@ -221,16 +279,22 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
     }
     public func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult {
         try await gate.run {
-            try self.prepareUnlocked(candidate)
+            try await self.prepareUnlocked(candidate)
             return try await self.submitPendingUnlocked()
         }
     }
-    private func prepareUnlocked(_ candidate: UntrustedTrustSetEpoch) throws {
+    private func prepareUnlocked(_ candidate: UntrustedTrustSetEpoch) async throws {
         var record = try checkedRecord()
         let expected = record
         guard record.pending == nil else { throw OrdinaryTrustSetError.pendingSubmission }
-        guard candidate.trustSetEpoch == (try record.head.epoch()).trustSetEpoch + 1 else { throw OrdinaryTrustSetError.staleCandidate }
+        let accepted = try record.head.epoch()
+        let serverHead = try await transport.acceptedHead(familyId: familyId)
+        guard Self.sameHeadExactly(serverHead, record.head) else { throw OrdinaryTrustSetError.responseMismatch }
+        guard accepted.trustSetEpoch < Int(Int32.max), candidate.trustSetEpoch == accepted.trustSetEpoch + 1 else {
+            throw OrdinaryTrustSetError.staleCandidate
+        }
         let bytes = try FamilyTrustSetCodec.canonicalize(candidate)
+        try OrdinaryTrustSetRequestLimits.validateCandidateCanonicalBytes(bytes)
         let unsigned = OrdinaryTrustSetHead(familyId: familyId, canonicalBytes: bytes, signature: "pending")
         let draft = OrdinaryTrustSetPending(previousHead: record.head, candidate: unsigned,
             signerDeviceId: deviceId, signerKeyId: dskKeyId)
@@ -250,6 +314,15 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         guard let pending = record.pending else { throw OrdinaryTrustSetError.pendingSubmission }
         try verifyPending(pending)
         guard try store.confirmDurable(record) else { throw OrdinaryTrustSetError.responseMismatch }
+        let serverHead = try await transport.acceptedHead(familyId: familyId)
+        if Self.sameHeadExactly(serverHead, pending.candidate) {
+            try acceptExact(serverHead, record: record, pending: pending)
+            return .accepted(serverHead)
+        }
+        guard Self.sameHeadExactly(record.head, pending.previousHead),
+              Self.sameHeadExactly(serverHead, pending.previousHead) else {
+            throw OrdinaryTrustSetError.responseMismatch
+        }
         let result = try await transport.submit(pending)
         if case let .accepted(head) = result { try acceptExact(head, record: record, pending: pending) }
         return result
@@ -260,42 +333,54 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         try await gate.run {
             let record = try self.checkedRecord()
             guard let pending = record.pending else { return false }
+            try self.verifyPending(pending)
+            guard try self.store.confirmDurable(record) else { throw OrdinaryTrustSetError.responseMismatch }
             let result = try await self.transport.status(pending)
             guard case let .accepted(head) = result else { return false }
             try self.acceptExact(head, record: record, pending: pending)
             return true
         }
     }
-    /// Walk a bounded signed predecessor chain from the persisted trusted floor. Head projection
-    /// chooses a target only; every linked hop is verified with its prior owner before durable adoption.
+    /// Walk a bounded signed predecessor chain from the persisted accepted head. The immutable root
+    /// anchors the family; every linked hop is verified by the immediately prior Owner before adoption.
     /// Progress remains valid after timeout/process death; a later invocation resumes from that floor.
     @discardableResult
     public func catchUp(maximumRecords: Int = 32) async throws -> Bool {
         guard (1...64).contains(maximumRecords) else { throw OrdinaryTrustSetError.malformedState }
         return try await gate.run {
             var record = try self.checkedRecord()
-            let rootOwner = try self.trustedRootOwner()
             let target = try await self.transport.acceptedHead(familyId: self.familyId)
-            let targetEpoch = try self.validateTrustedHead(target, owner: rootOwner)
+            let targetEpoch = try self.validateHeadStructure(target)
             let localEpoch = try record.head.epoch()
             guard targetEpoch.trustSetEpoch >= localEpoch.trustSetEpoch,
                   targetEpoch.keyEpoch >= localEpoch.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
             if targetEpoch.trustSetEpoch == localEpoch.trustSetEpoch {
                 guard Self.sameHeadExactly(target, record.head) else { throw OrdinaryTrustSetError.responseMismatch }
+                if let pending = record.pending, !Self.sameHeadExactly(pending.previousHead, record.head) {
+                    // A prior Owner's durable attempt can survive an accepted
+                    // transfer checkpoint. It is already stale by predecessor
+                    // identity; retire it even when the remote head is exactly
+                    // our current floor so the incoming Owner can resume.
+                    let expected = record
+                    record.pending = nil
+                    guard try self.store.compareAndSetDurably(expected: expected, next: record) else {
+                        throw OrdinaryTrustSetError.responseMismatch
+                    }
+                }
                 return true
             }
             var chain = [OrdinaryTrustSetHead]()
             var current = target
             var anchored = false
             for _ in 0..<maximumRecords {
-                let currentEpoch = try self.validateTrustedHead(current, owner: rootOwner)
+                let currentEpoch = try self.validateHeadStructure(current)
                 guard currentEpoch.trustSetEpoch > localEpoch.trustSetEpoch,
                       currentEpoch.keyEpoch >= localEpoch.keyEpoch else {
                     throw OrdinaryTrustSetError.staleCandidate
                 }
                 chain.append(current)
-                // A root-owner signature authenticates the record, not its descent from our
-                // trusted floor. Catch-up must prove the exact predecessor chain to that floor.
+                // Catch-up proves exact predecessor continuity back to the current persisted floor;
+                // the accepted base remains the signer checkpoint even after an Owner transfer.
                 guard let predecessor = currentEpoch.supersedesEpoch else { return false }
                 guard predecessor < currentEpoch.trustSetEpoch else {
                     throw OrdinaryTrustSetError.staleCandidate
@@ -309,7 +394,7 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
             guard anchored else { return false }
             for next in chain.reversed() {
                 let before = try record.head.epoch()
-                let nextEpoch = try self.validateTrustedHead(next, owner: rootOwner)
+                let nextEpoch = try self.validateSuccessor(next, previous: record.head)
                 guard Data(next.familyId.utf8) == Data(self.familyId.utf8),
                       nextEpoch.trustSetEpoch > before.trustSetEpoch,
                       nextEpoch.keyEpoch >= before.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
@@ -317,8 +402,13 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                     throw OrdinaryTrustSetError.responseMismatch
                 }
                 let expected = record
+                record.acceptedBase = record.head
                 record.head = next
-                if let pending = record.pending, Self.sameHeadExactly(pending.candidate, next) { record.pending = nil }
+                // Any accepted-head advance invalidates an attempt based on the
+                // prior floor. Exact acceptance is also cleared here; preserving
+                // a different branch (even with a higher candidate epoch) would
+                // cause restart-safe retries to remain stale or be replayed.
+                record.pending = nil
                 guard try self.store.compareAndSetDurably(expected: expected, next: record) else { throw OrdinaryTrustSetError.responseMismatch }
             }
             return Self.sameHeadExactly(record.head, target)
@@ -330,11 +420,32 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         guard let storedRoot = value.rootAnchor, Self.sameHeadExactly(storedRoot, trustedRootAnchor) else {
             throw OrdinaryTrustSetError.responseMismatch
         }
-        _ = try validateTrustedHead(value.head, owner: rootOwner)
-        guard Data(rootOwner.deviceId.utf8) == Data(deviceId.utf8),
-              Data(rootOwner.dskKeyId.utf8) == Data(dskKeyId.utf8),
-              Data(value.head.familyId.utf8) == Data(familyId.utf8),
-              value.pending.map({ Data($0.signerDeviceId.utf8) == Data(deviceId.utf8) && Data($0.signerKeyId.utf8) == Data(dskKeyId.utf8) }) ?? true else { throw OrdinaryTrustSetError.scopeMismatch }
+        if let acceptedBase = value.acceptedBase {
+            let baseEpoch = try validateHeadStructure(acceptedBase)
+            guard Data(acceptedBase.familyId.utf8) == Data(familyId.utf8),
+                  baseEpoch.trustSetEpoch >= 1, baseEpoch.keyEpoch >= 1,
+                  Data(value.head.familyId.utf8) == Data(familyId.utf8) else {
+                throw OrdinaryTrustSetError.scopeMismatch
+            }
+            let rootEpoch = try trustedRootAnchor.epoch()
+            guard baseEpoch.trustSetEpoch >= rootEpoch.trustSetEpoch,
+                  baseEpoch.keyEpoch >= rootEpoch.keyEpoch else { throw OrdinaryTrustSetError.staleCandidate }
+            if baseEpoch.trustSetEpoch == 1, !Self.sameHeadExactly(acceptedBase, trustedRootAnchor) {
+                throw OrdinaryTrustSetError.responseMismatch
+            }
+            _ = try validateSuccessor(value.head, previous: acceptedBase)
+        } else {
+            // Legacy records predate the accepted-base checkpoint. They may
+            // be loaded only under the original immutable genesis Owner; the
+            // first verified advance creates an acceptedBase checkpoint.
+            _ = try validateLegacyHead(value.head, owner: rootOwner)
+        }
+        guard Data(value.head.familyId.utf8) == Data(familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
+        if let pending = value.pending, Self.sameHeadExactly(pending.previousHead, value.head),
+           (Data(pending.signerDeviceId.utf8) != Data(deviceId.utf8) ||
+            Data(pending.signerKeyId.utf8) != Data(dskKeyId.utf8)) {
+            throw OrdinaryTrustSetError.scopeMismatch
+        }
         return value
     }
     private func trustedRootOwner() throws -> UntrustedTrustSetEntry {
@@ -350,7 +461,7 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         }
         return owner
     }
-    private func validateTrustedHead(_ head: OrdinaryTrustSetHead, owner rootOwner: UntrustedTrustSetEntry) throws -> UntrustedTrustSetEpoch {
+    private func validateHeadStructure(_ head: OrdinaryTrustSetHead) throws -> UntrustedTrustSetEpoch {
         let epoch = try head.epoch()
         guard Data(head.familyId.utf8) == Data(familyId.utf8),
               Data(epoch.familyId.utf8) == Data(familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
@@ -358,20 +469,33 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         if let predecessor = epoch.supersedesEpoch, predecessor >= epoch.trustSetEpoch {
             throw OrdinaryTrustSetError.staleCandidate
         }
-        guard let owner = epoch.entries.first(where: { $0.role == .owner && $0.status == .active }),
-              Data(owner.deviceId.utf8) == Data(rootOwner.deviceId.utf8),
-              Data(owner.dskKeyId.utf8) == Data(rootOwner.dskKeyId.utf8),
-              Data(owner.dskPublicKey.utf8) == Data(rootOwner.dskPublicKey.utf8) else {
-            throw OrdinaryTrustSetError.unauthorizedSigner
-        }
         if epoch.trustSetEpoch == 1, !Self.sameHeadExactly(head, trustedRootAnchor) {
             throw OrdinaryTrustSetError.responseMismatch
         }
-        guard try verifier.verify(signature: head.signature, canonicalBytes: head.canonicalBytes,
+        return epoch
+    }
+    private func validateLegacyHead(_ head: OrdinaryTrustSetHead, owner rootOwner: UntrustedTrustSetEntry) throws -> UntrustedTrustSetEpoch {
+        let epoch = try validateHeadStructure(head)
+        guard let owner = epoch.entries.first(where: { $0.role == .owner && $0.status == .active }),
+              Data(owner.deviceId.utf8) == Data(rootOwner.deviceId.utf8),
+              Data(owner.dskKeyId.utf8) == Data(rootOwner.dskKeyId.utf8),
+              Data(owner.dskPublicKey.utf8) == Data(rootOwner.dskPublicKey.utf8),
+              try verifier.verify(signature: head.signature, canonicalBytes: head.canonicalBytes,
                                   publicKey: rootOwner.dskPublicKey) else {
             throw OrdinaryTrustSetError.unauthorizedSigner
         }
         return epoch
+    }
+    private func validateSuccessor(_ next: OrdinaryTrustSetHead, previous: OrdinaryTrustSetHead) throws -> UntrustedTrustSetEpoch {
+        let before = try validateHeadStructure(previous)
+        let after = try validateHeadStructure(next)
+        guard Data(before.familyId.utf8) == Data(after.familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
+        guard after.trustSetEpoch > before.trustSetEpoch, after.keyEpoch >= before.keyEpoch,
+              after.supersedesEpoch == before.trustSetEpoch else { throw OrdinaryTrustSetError.staleCandidate }
+        guard let owner = before.entries.first(where: { $0.role == .owner && $0.status == .active }),
+              try verifier.verify(signature: next.signature, canonicalBytes: next.canonicalBytes,
+                                  publicKey: owner.dskPublicKey) else { throw OrdinaryTrustSetError.unauthorizedSigner }
+        return after
     }
     private static func sameHeadExactly(_ lhs: OrdinaryTrustSetHead, _ rhs: OrdinaryTrustSetHead) -> Bool {
         Data(lhs.familyId.utf8) == Data(rhs.familyId.utf8)
@@ -380,20 +504,23 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
     }
     private func verifyPending(_ pending: OrdinaryTrustSetPending) throws {
         try pending.validate()
-        let owner = try trustedRootOwner()
-        _ = try validateTrustedHead(pending.previousHead, owner: owner)
-        _ = try validateTrustedHead(pending.candidate, owner: owner)
+        _ = try validateHeadStructure(pending.previousHead)
+        _ = try validateSuccessor(pending.candidate, previous: pending.previousHead)
     }
     private func acceptExact(_ head: OrdinaryTrustSetHead, record: OrdinaryTrustSetRecord, pending: OrdinaryTrustSetPending) throws {
-        let owner = try trustedRootOwner()
-        _ = try validateTrustedHead(head, owner: owner)
+        _ = try validateHeadStructure(head)
         try verifyPending(pending)
         guard Self.sameHeadExactly(head, pending.candidate) else { throw OrdinaryTrustSetError.responseMismatch }
         var updated = record
         let currentEpoch = try record.head.epoch(), acceptedEpoch = try head.epoch()
         if acceptedEpoch.trustSetEpoch > currentEpoch.trustSetEpoch {
+            guard Self.sameHeadExactly(pending.previousHead, record.head) else {
+                throw OrdinaryTrustSetError.responseMismatch
+            }
+            updated.acceptedBase = record.head
             updated.head = head
-        } else if acceptedEpoch.trustSetEpoch == currentEpoch.trustSetEpoch, head != record.head {
+        } else if acceptedEpoch.trustSetEpoch == currentEpoch.trustSetEpoch,
+                  !Self.sameHeadExactly(head, record.head) {
             throw OrdinaryTrustSetError.responseMismatch
         }
         // Historical exact acceptance acknowledges custody without regressing a newer verified floor.

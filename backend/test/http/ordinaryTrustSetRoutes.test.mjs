@@ -4,7 +4,8 @@ import Fastify from 'fastify';
 import { registerOrdinaryTrustSetRoutes } from '../../dist/http/routes/ordinaryTrustSetRoutes.js';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
-import { OrdinaryTrustSetError } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
+import { MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES,
+  OrdinaryTrustSetError } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
 
 const BASE = '/api/device/families/family-one/trust-set/epochs';
 const HEAD = { canonicalEpochBase64: 'Ynl0ZXM=', signatureBase64: Buffer.alloc(64, 1).toString('base64'),
@@ -237,20 +238,44 @@ test('body limit prevents oversized canonical payload reaching service', async (
   assert.equal(result.statusCode, 413); assert.equal(calls.length, 0);
 });
 
-test('route override accepts maximum-sized canonical epoch transport under the ordinary global body limit', async (t) => {
+test('maximum canonical epoch transport fits the global body ceiling and the next byte is rejected before service use', async (t) => {
   let receivedBody;
+  let submitCalls = 0;
   const { request } = fixture(t, { service: {
     submit: async (_scope, body) => {
+      submitCalls += 1;
       receivedBody = body;
       const acceptedEpoch = { ...HEAD, canonicalEpochBase64: body.canonicalEpochBase64 };
       return { outcome: 'ACCEPTED', acceptedEpoch, acceptedHead: acceptedEpoch };
     },
   } });
-  const canonicalEpochBase64 = Buffer.alloc(256 * 1024, 7).toString('base64');
-  assert.equal(canonicalEpochBase64.length, 349_528);
-  const result = await request('POST', BASE, { ...BODY, canonicalEpochBase64 });
+  const canonicalEpochBase64 = Buffer.alloc(MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES, 7).toString('base64');
+  assert.equal(canonicalEpochBase64.length, 262_008);
+  const maximumRequest = { ...BODY, canonicalEpochBase64 };
+  assert.equal(Buffer.byteLength(JSON.stringify(maximumRequest)), 256 * 1024);
+  const result = await request('POST', BASE, maximumRequest);
   assert.equal(result.statusCode, 200);
-  assert.equal(receivedBody.canonicalEpochBase64.length, 349_528);
+  assert.equal(receivedBody.canonicalEpochBase64.length, 262_008);
+  assert.equal(submitCalls, 1);
+
+  const oversizedRequest = {
+    ...BODY,
+    canonicalEpochBase64: Buffer.alloc(MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES + 1, 7).toString('base64'),
+  };
+  assert.equal(Buffer.byteLength(JSON.stringify(oversizedRequest)), 256 * 1024 + 4);
+  const rejected = await request('POST', BASE, oversizedRequest);
+  assert.equal(rejected.statusCode, 413);
+  assert.equal(submitCalls, 1, 'the over-limit body must not reach the acceptance service');
+});
+
+test('accepted bootstrap/head DTO projection retains the general signed-record bound', async (t) => {
+  const canonicalEpochBase64 = Buffer.alloc(MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES + 1, 7).toString('base64');
+  assert.ok(Buffer.from(canonicalEpochBase64, 'base64').length <= MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES);
+  const acceptedBootstrapHead = { ...HEAD, canonicalEpochBase64, trustSetEpoch: 1, keyEpoch: 1 };
+  const { request } = fixture(t, { service: { head: async () => acceptedBootstrapHead } });
+  const result = await request('GET', `${BASE}/head`);
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.json(), { acceptedHead: acceptedBootstrapHead });
 });
 
 test('independent route buckets throttle submission without exhausting read/status budgets', async (t) => {

@@ -4,7 +4,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
 import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
-import { OrdinaryTrustSetService } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
+import { MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES, OrdinaryTrustSetService } from '../../dist/familytrustset/OrdinaryTrustSetService.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
 import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 
@@ -309,6 +309,16 @@ test('malformed, noncanonical base64, invalid UTF8, high-S and huge bodies rejec
     { ...valid, canonicalEpochBase64: 'A'.repeat(400000) }]) {
     await assert.rejects(f.service.submit(scope, bad), rejectsCode('INVALID_REQUEST'));
   }
+  assert.equal(f.appends, 0);
+});
+
+test('ordinary service rejects canonical bytes one byte above the global-body transport maximum', async () => {
+  const f = fixture();
+  const oversized = {
+    canonicalEpochBase64: Buffer.alloc(MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES + 1, 7).toString('base64'),
+    signatureBase64: Buffer.alloc(64, 1).toString('base64'),
+  };
+  await assert.rejects(f.service.submit(scope, oversized), rejectsCode('INVALID_REQUEST'));
   assert.equal(f.appends, 0);
 });
 

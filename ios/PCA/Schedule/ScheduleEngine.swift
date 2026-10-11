@@ -8,15 +8,28 @@ import Foundation
 /// authority). Any precedence change here without a matching backend
 /// change would itself become a cross-platform policy divergence bug.
 public enum ScheduleEngine {
+    /// JavaScript Date's inclusive ISO-8601 instant range, matching the
+    /// backend policy runtime that consumes the same UTC exception values.
+    private static let maximumPolicyDateSeconds = 8_640_000_000_000.0
+
     /// Precedence, highest first -- identical to engine.ts's documented
     /// order: parent exception > bedtime > school mode (INTERSECTION
     /// across all simultaneously-active school windows, per backend
     /// FINDING-006 -- never insertion order) > block period > allow
     /// period > daily limit (bonus-extended) > default allow.
     public static func evaluate(_ input: ScheduleEvaluationInput) -> ScheduleDecision {
-        let configErrors = input.windows.flatMap(validate)
+        let configErrors = input.windows.flatMap(validate) + input.exceptions.compactMap { exception -> String? in
+            let start = exception.startAt.timeIntervalSince1970
+            let end = exception.endAt.timeIntervalSince1970
+            guard start.isFinite, end.isFinite,
+                  abs(start) <= maximumPolicyDateSeconds, abs(end) <= maximumPolicyDateSeconds,
+                  start < end else {
+                return "parent exception \(exception.id): startAt and endAt must be finite in-range instants with startAt before endAt"
+            }
+            return nil
+        }
         if !configErrors.isEmpty {
-            return ScheduleDecision(kind: .invalidConfig, reason: "One or more schedule windows failed validation.", configErrors: configErrors)
+            return ScheduleDecision(kind: .invalidConfig, reason: "One or more schedule policy inputs failed validation.", configErrors: configErrors)
         }
 
         let intended = evaluateIntended(input)
@@ -77,14 +90,19 @@ public enum ScheduleEngine {
         }
 
         let localDate = localDateString(now, timeZone: input.timeZone)
-        let usedMinutesToday = dailyLimit.anchorLocalDate == localDate ? dailyLimit.usedMinutesToday : 0
+        let usedMinutesToday = dailyLimit.anchorLocalDate == localDate ? Int64(dailyLimit.usedMinutesToday) : 0
 
         let activeBonusMinutes = input.bonusGrants
             .filter { $0.appScope.includes(appToken) && now >= $0.grantedAt && now < $0.expiresAt }
-            .reduce(0) { $0 + $1.extraMinutes }
+            .reduce(Int64(0)) { saturatingAdd($0, Int64($1.extraMinutes)) }
 
-        let effectiveLimit = dailyLimit.limitMinutes + activeBonusMinutes
-        let remaining = effectiveLimit - usedMinutesToday
+        let effectiveLimit = saturatingAdd(Int64(dailyLimit.limitMinutes), activeBonusMinutes)
+        // Subtract usage before adding grants so a large limit and equally large usage cancel
+        // exactly even if their intermediate effective limit would exceed Int64.max.
+        let remaining = saturatingAdd(
+            saturatingSubtract(Int64(dailyLimit.limitMinutes), usedMinutesToday),
+            activeBonusMinutes
+        )
 
         if remaining <= 0 {
             return ScheduleDecision(
@@ -98,6 +116,22 @@ public enum ScheduleEngine {
             reason: activeBonusMinutes > 0 ? "Allowed with \(activeBonusMinutes) active bonus minutes." : "Within daily limit.",
             remainingMinutesToday: remaining
         )
+    }
+
+    /// Keep totals full-width and prevent malformed/extreme policy lists from wrapping into a
+    /// smaller limit (which could incorrectly block) or a negative remaining value (which could
+    /// incorrectly block despite a large positive grant). Normal supported policy values match
+    /// backend Number and Android Long arithmetic exactly.
+    private static func saturatingAdd(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (value, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return value }
+        return rhs >= 0 ? Int64.max : Int64.min
+    }
+
+    private static func saturatingSubtract(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (value, overflow) = lhs.subtractingReportingOverflow(rhs)
+        guard overflow else { return value }
+        return rhs < 0 ? Int64.max : Int64.min
     }
 
     // MARK: - Window matching (Calendar-based, mirrors schedule/policy.ts's cross-midnight logic)

@@ -109,6 +109,79 @@ class SafeZoneDeliveryClientTest {
         assertTrue(server.requests.all { it.contains("Authorization: Bearer session-for-device-1") })
     }
 
+    @Test fun `versioned cursor epoch and last zone bind each returned page`() = runBlocking {
+        val rows = (0 until 16).map { row("zone-%02d".format(it), keyEpoch = 3) }
+        val session = sessions().also { it.authenticate() }
+        val valid = LocalServer(200 to page(rows, "v1~3~zone-15"), 200 to page(listOf(row("zone-16", keyEpoch = 3)), null))
+        assertEquals(17, HttpSafeZoneDeliveryClient(valid.url, session, allowInsecureLocal = true).fetch().size)
+        assertTrue(valid.finished.await(2, TimeUnit.SECONDS))
+        assertTrue(valid.requests[1].startsWith("GET /v1/runtime-sync/safe-zones?cursor=v1~3~zone-15 HTTP/1.1"))
+
+        val invalidCursors = listOf("v1~4~zone-15", "v1~3~zone-14", "v1~0~zone-15", "v1~2147483648~zone-15")
+        for (cursor in invalidCursors) {
+            val malformed = LocalServer(200, page(rows, cursor))
+            val freshSession = sessions().also { it.authenticate() }
+            val failure = runCatching {
+                HttpSafeZoneDeliveryClient(malformed.url, freshSession, allowInsecureLocal = true).fetch()
+            }.exceptionOrNull()
+            assertTrue("cursor $cursor must be rejected", failure is SafeZoneDeliveryMalformedResponseException)
+        }
+    }
+
+    @Test fun `legacy and stale epoch cursors accept a restarted first page and resume on the new epoch`() = runBlocking {
+        for (requestedCursor in listOf("zone-15", "v1~1~zone-15")) {
+            val scope = GeofenceStorageScope("family-1", "device-1")
+            val backing = InMemoryPersistentStateStore()
+            val inbox = PersistentSafeZoneDeliveryInbox(backing) { scope }
+            val previousPage = (0 until 16).map {
+                delivery("AQID", 1).copy(zoneId = "zone-%02d".format(it), keyEpoch = 1)
+            }
+            inbox.stagePage(scope, previousPage, requestedCursor = null, nextCursor = requestedCursor)
+
+            // The backend restarts at page one for a legacy raw cursor or stale epoch cursor.
+            // These rows intentionally include IDs earlier than the requested zone-15 cursor.
+            val restartedPage = (0 until 16).map { row("zone-%02d".format(it), revision = 2, keyEpoch = 2) }
+            val currentCursor = "v1~2~zone-15"
+            val interruptedServer = LocalServer(200 to page(restartedPage, currentCursor), 503 to "{}")
+            val session = sessions().also { it.authenticate() }
+            val interruption = runCatching {
+                HttpSafeZoneDeliveryClient(interruptedServer.url, session, allowInsecureLocal = true).synchronize(inbox)
+            }.exceptionOrNull()
+
+            assertTrue(interruption is SafeZoneDeliveryHttpFailure)
+            assertTrue(interruptedServer.finished.await(2, TimeUnit.SECONDS))
+            assertTrue(interruptedServer.requests[0].startsWith(
+                "GET /v1/runtime-sync/safe-zones?cursor=$requestedCursor HTTP/1.1"))
+            assertEquals(currentCursor, inbox.nextCursor())
+            assertTrue(inbox.read().all { it.keyEpoch == 2 && it.revision == 2L })
+
+            val resumedServer = LocalServer(200, page(listOf(row("zone-16", revision = 2, keyEpoch = 2)), null))
+            HttpSafeZoneDeliveryClient(resumedServer.url, session, allowInsecureLocal = true).synchronize(inbox)
+            assertTrue(resumedServer.finished.await(2, TimeUnit.SECONDS))
+            assertTrue(resumedServer.request.get().startsWith(
+                "GET /v1/runtime-sync/safe-zones?cursor=$currentCursor HTTP/1.1"))
+            assertEquals((0..16).map { "zone-%02d".format(it) }, inbox.read().map { it.zoneId })
+            assertNull(inbox.nextCursor())
+        }
+    }
+
+    @Test fun `persisted versioned cursor must match a stored epoch and zone`() {
+        val scope = GeofenceStorageScope("family-1", "device-1")
+        val backing = InMemoryPersistentStateStore()
+        val inbox = PersistentSafeZoneDeliveryInbox(backing) { scope }
+        val rows = (0 until 16).map { delivery("AQID", 1).copy(zoneId = "zone-%02d".format(it), keyEpoch = 3) }
+        inbox.stagePage(scope, rows, requestedCursor = null, nextCursor = "v1~3~zone-15")
+        assertEquals("v1~3~zone-15", inbox.nextCursor())
+
+        val storageKey = "opaque_safe_zone_delivery_v1:${scope.keyPart()}"
+        val persisted = org.json.JSONObject(requireNotNull(backing.getString(storageKey)))
+        persisted.put("nextCursor", "v1~4~zone-15")
+        backing.putString(storageKey, persisted.toString())
+        val reopened = PersistentSafeZoneDeliveryInbox(backing) { scope }
+        val failure = runCatching { reopened.read() }.exceptionOrNull()
+        assertTrue(failure is SafeZoneDeliveryInboxCorruptException)
+    }
+
     @Test fun `later page failure leaves the durable inbox unchanged`() = runBlocking {
         val scope = GeofenceStorageScope("family-1", "device-1")
         val state = InMemoryPersistentStateStore()
@@ -448,8 +521,8 @@ class SafeZoneDeliveryClientTest {
         revision = revision, deliveryState = SafeZoneDeliveryState.READY, updatedAtUtc = "2026-10-10T10:20:30.000Z",
     )
 
-    private fun row(zoneId: String, revision: Long = 1L): String =
-        """{"zoneId":"$zoneId","ciphertextB64":"AQID","nonceB64":"${"A".repeat(16)}","keyEpoch":1,"revision":$revision,"deliveryState":"READY","updatedAtUtc":"2026-10-10T10:20:30.000Z"}"""
+    private fun row(zoneId: String, revision: Long = 1L, keyEpoch: Int = 1): String =
+        """{"zoneId":"$zoneId","ciphertextB64":"AQID","nonceB64":"${"A".repeat(16)}","keyEpoch":$keyEpoch,"revision":$revision,"deliveryState":"READY","updatedAtUtc":"2026-10-10T10:20:30.000Z"}"""
 
     private fun page(rows: List<String>, nextCursor: String?): String =
         """{"safeZones":[${rows.joinToString(",")}],"nextCursor":${nextCursor?.let { "\"$it\"" } ?: "null"}}"""

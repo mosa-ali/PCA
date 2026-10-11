@@ -149,6 +149,25 @@ final class FamilyTrustSetCodecTests: XCTestCase {
         }
     }
 
+    func testWireRejectsDuplicateAndEscapedEquivalentObjectMembers() throws {
+        let vector = try XCTUnwrap(try corpus().vectors.first)
+        let duplicate = vector.wireJson.replacingOccurrences(
+            of: "\"trustSetEpoch\":1",
+            with: "\"trustSetEpoch\":1,\"trustSetEpoch\":1"
+        )
+        XCTAssertNotEqual(duplicate, vector.wireJson)
+        reject { _ = try FamilyTrustSetCodec.parseWire(Data(duplicate.utf8)) }
+
+        // JSON escape decoding makes this member name identical to the
+        // preceding literal key, even though its source spelling differs.
+        let escapedDuplicate = vector.wireJson.replacingOccurrences(
+            of: "\"trustSetEpoch\":1",
+            with: "\"trustSetEpoch\":1,\"trustSet\\u0045poch\":1"
+        )
+        XCTAssertNotEqual(escapedDuplicate, vector.wireJson)
+        reject { _ = try FamilyTrustSetCodec.parseWire(Data(escapedDuplicate.utf8)) }
+    }
+
     func testGregorianValidityAndExactExtendedRangeBoundaries() throws {
         let value = try candidate()
         for invalid in ["2026-02-29T00:00:00.000Z", "1900-02-29T00:00:00.000Z", "2026-01-01T24:00:00.000Z",

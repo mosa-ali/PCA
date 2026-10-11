@@ -1,7 +1,9 @@
 package org.pca.app.runtime.schedule
 
 import org.pca.app.runtime.EpochBounds
+import java.time.LocalDate
 import java.time.Instant
+import java.time.format.DateTimeParseException
 
 /**
  * See `contracts/schedule-runtime/SchedulePolicyV1.md` "Policy-acceptance state machine" for the
@@ -36,6 +38,9 @@ data class PolicyAcceptanceInput(
     val connectivity: Connectivity,
     val lastPolicySyncAtUtc: Instant?,
     val remoteStalenessThresholdMillis: Long = DEFAULT_REMOTE_STALENESS_THRESHOLD_MILLIS,
+    /** Null together means legacy callers did not supply runtime identity. Production binds both. */
+    val expectedFamilyId: String? = null,
+    val expectedChildProfileId: String? = null,
 ) {
     companion object {
         const val DEFAULT_REMOTE_STALENESS_THRESHOLD_MILLIS: Long = 259_200_000L // 72 hours
@@ -50,10 +55,13 @@ object SchedulePolicyValidator {
         if (!EpochBounds.isValid(input.deviceTrustSetEpoch) || !EpochBounds.isValid(input.deviceKeyEpoch)) {
             return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
         }
+        if (!isScopeInputValid(input)) return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
 
         val safeFallback = input.lastKnownGoodPolicy?.takeIf { policy ->
             hasValidEpochs(policy) &&
                 isStructurallyValid(policy) &&
+                matchesExpectedScope(policy, input) &&
+                !input.nowUtc.isBefore(policy.effectiveFrom) &&
                 !isExpired(policy, input.nowUtc) &&
                 !isEpochBehind(policy, input.deviceTrustSetEpoch, input.deviceKeyEpoch)
         }
@@ -63,8 +71,12 @@ object SchedulePolicyValidator {
             val lastKnownGood = input.lastKnownGoodPolicy
                 ?: return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
 
-            if (!hasValidEpochs(lastKnownGood) || !isStructurallyValid(lastKnownGood) || isExpired(lastKnownGood, input.nowUtc)) {
+            if (!hasValidEpochs(lastKnownGood) || !isStructurallyValid(lastKnownGood) ||
+                !matchesExpectedScope(lastKnownGood, input) || isExpired(lastKnownGood, input.nowUtc)) {
                 return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
+            }
+            if (input.nowUtc.isBefore(lastKnownGood.effectiveFrom)) {
+                return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
             }
             if (isEpochBehind(lastKnownGood, input.deviceTrustSetEpoch, input.deviceKeyEpoch)) {
                 return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, null)
@@ -74,6 +86,10 @@ object SchedulePolicyValidator {
         }
 
         if (!hasValidEpochs(candidate) || !isStructurallyValid(candidate)) {
+            return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
+        }
+
+        if (!matchesExpectedScope(candidate, input)) {
             return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, safeFallback)
         }
 
@@ -89,25 +105,71 @@ object SchedulePolicyValidator {
             return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, safeFallback ?: candidate)
         }
 
-        if (input.connectivity == Connectivity.OFFLINE) {
-            val staleByThreshold = input.lastPolicySyncAtUtc == null ||
-                java.time.Duration.between(input.lastPolicySyncAtUtc, input.nowUtc).toMillis() > input.remoteStalenessThresholdMillis
-            if (staleByThreshold) {
-                return PolicyAcceptanceResult(ScheduleRuntimeState.STALE_REMOTE, candidate)
-            }
+        // A future revision may already be durably received, but it cannot replace the active
+        // policy before its signed effectiveFrom instant. Keep the eligible current LKG active;
+        // without one, report no currently enforceable policy so the production port does not
+        // apply the scheduled revision early or silently turn it into an allow-all decision.
+        if (input.nowUtc.isBefore(candidate.effectiveFrom)) {
+            val currentPolicy = safeFallback
+                ?: return PolicyAcceptanceResult(ScheduleRuntimeState.NO_ACCEPTED_POLICY, null)
+            return PolicyAcceptanceResult(remoteFreshnessState(input), currentPolicy)
+        }
+
+        if (remoteFreshnessState(input) == ScheduleRuntimeState.STALE_REMOTE) {
+            return PolicyAcceptanceResult(ScheduleRuntimeState.STALE_REMOTE, candidate)
         }
 
         return PolicyAcceptanceResult(ScheduleRuntimeState.CURRENT, candidate)
     }
 
+    private fun remoteFreshnessState(input: PolicyAcceptanceInput): ScheduleRuntimeState {
+        if (input.connectivity != Connectivity.OFFLINE) return ScheduleRuntimeState.CURRENT
+        val staleByThreshold = input.lastPolicySyncAtUtc == null ||
+            java.time.Duration.between(input.lastPolicySyncAtUtc, input.nowUtc).toMillis() > input.remoteStalenessThresholdMillis
+        return if (staleByThreshold) ScheduleRuntimeState.STALE_REMOTE else ScheduleRuntimeState.CURRENT
+    }
+
     private fun isStructurallyValid(policy: SchedulePolicyV1): Boolean {
         if (policy.policyRevision <= 0) return false
         if (!isRecognizedTimezone(policy.timezone)) return false
-        return validateScheduleWindows(policy.windows).isEmpty()
+        if (validateScheduleWindows(policy.windows).isNotEmpty()) return false
+        return policy.dailyLimits.all(::isStructurallyValid)
+    }
+
+    /** The schedule engine treats a mismatched local-date anchor as a day reset. Reject malformed
+     * counters and dates before that reset can widen access, including on an authenticated policy
+     * that is syntactically valid JSON. Product authoring permits zero-minute limits, so zero stays
+     * a valid boundary; negative values are malformed. */
+    private fun isStructurallyValid(limit: DailyAppLimit): Boolean =
+        limit.limitMinutes >= 0 &&
+            limit.usedMinutesToday >= 0 &&
+            isCanonicalGregorianLocalDate(limit.anchorLocalDate)
+
+    private fun isCanonicalGregorianLocalDate(value: String): Boolean {
+        if (!CANONICAL_LOCAL_DATE.matches(value)) return false
+        return try {
+            val parsed = LocalDate.parse(value)
+            parsed.year in 1..9999 && parsed.toString() == value
+        } catch (_: DateTimeParseException) {
+            false
+        }
     }
 
     private fun hasValidEpochs(policy: SchedulePolicyV1): Boolean =
         EpochBounds.isValid(policy.trustSetEpoch) && EpochBounds.isValid(policy.keyEpoch)
+
+    private fun isScopeInputValid(input: PolicyAcceptanceInput): Boolean {
+        val familyId = input.expectedFamilyId
+        val childProfileId = input.expectedChildProfileId
+        return if (familyId == null && childProfileId == null) true
+        else !familyId.isNullOrBlank() && !childProfileId.isNullOrBlank()
+    }
+
+    private fun matchesExpectedScope(policy: SchedulePolicyV1, input: PolicyAcceptanceInput): Boolean {
+        val familyId = input.expectedFamilyId ?: return input.expectedChildProfileId == null
+        val childProfileId = input.expectedChildProfileId ?: return false
+        return policy.familyId == familyId && policy.childProfileId == childProfileId
+    }
 
     private fun isExpired(policy: SchedulePolicyV1, nowUtc: Instant): Boolean {
         val expiresAt = policy.expiresAt ?: return false
@@ -116,6 +178,8 @@ object SchedulePolicyValidator {
 
     private fun isEpochBehind(policy: SchedulePolicyV1, deviceTrustSetEpoch: Int, deviceKeyEpoch: Int): Boolean =
         policy.trustSetEpoch < deviceTrustSetEpoch || policy.keyEpoch < deviceKeyEpoch
+
+    private val CANONICAL_LOCAL_DATE = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
     /** Local defense-in-depth revision-monotonicity check; see SchedulePolicyV1.md "Revision
      * acceptance". The primary authority for monotonic version enforcement in transit remains

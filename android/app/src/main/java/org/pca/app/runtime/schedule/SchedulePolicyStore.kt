@@ -23,6 +23,15 @@ data class SchedulePolicySnapshot(
     val deviceKeyEpoch: Int,
 )
 
+/** Current locally enrolled child scope used to reject a persisted or delivered policy after
+ * the active family/profile changes. This is runtime identity, not envelope authority. */
+data class SchedulePolicyRuntimeScope(
+    val familyId: String,
+    val childProfileId: String,
+    val trustSetEpoch: Int,
+    val keyEpoch: Int,
+)
+
 interface SchedulePolicyStore {
     fun save(snapshot: SchedulePolicySnapshot)
 

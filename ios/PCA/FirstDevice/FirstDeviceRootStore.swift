@@ -431,6 +431,11 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
             return .invalid
         }
         guard data.count <= Self.maximumRecordBytes else { return .invalid }
+        do {
+            try StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: Self.maximumRecordBytes)
+        } catch {
+            return .invalid
+        }
         guard let record = try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data) else {
             return .invalid
         }

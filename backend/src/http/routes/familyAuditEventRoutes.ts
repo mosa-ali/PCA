@@ -24,7 +24,7 @@ import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-s
 import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { FamilyRole } from '../../familyrbac/types.js';
 
-const FAMILY_ROLES: ReadonlySet<FamilyRole> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD']);
+const PARENT_DEVICE_ROLES: ReadonlySet<FamilyRole> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER']);
 
 export interface FamilyAuditEventRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -117,7 +117,7 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
       return reply.code(503).send({ error: 'family_authority_unavailable' });
     }
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' || Array.isArray(actor) ||
-      actor.deviceId !== actorDeviceId || !FAMILY_ROLES.has(actor.role) ||
+      actor.deviceId !== actorDeviceId || !PARENT_DEVICE_ROLES.has(actor.role) ||
       !isFamilyEpochNumber(actor.trustSetEpoch, 1) || !isFamilyEpochNumber(actor.keyEpoch, 1)) {
       return reply.code(403).send({ error: 'forbidden' });
     }
@@ -125,8 +125,8 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     // Each encrypted envelope is recipient-keyed. A family role grants the
     // family scope, but only the proof-of-possession session above identifies
     // which device may fetch its own ciphertext. The ledger's exact
-    // (familyId, parentDeviceId) query is the binding boundary.
-    const envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId);
+    // (familyId, parentDeviceId, accepted keyEpoch) query is the binding boundary.
+    const envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
     return reply.code(200).send({ envelopes: envelopes.map(toEnvelopeDto) });
   });
 }

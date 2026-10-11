@@ -102,7 +102,12 @@ final class CallbackObservationLogTests: XCTestCase {
             installedAtUtc: now, timeZoneIdentifier: "UTC", state: .starting
         )
         defaults.set(try JSONEncoder().encode(installation), forKey: deviceActivityMonitorInstallationStorageKey)
-        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+        // The production extension reads the active manifest from the durable
+        // App Group file store. Inject the same snapshot source here instead
+        // of relying on a second UserDefaults suite instance to observe the
+        // test writer's most recent installation write.
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite,
+            installationReader: { defaults.data(forKey: deviceActivityMonitorInstallationStorageKey) })
         log.record(kind: .intervalDidStart, activityId: monitor, at: now)
         log.record(kind: .intervalDidStart, activityId: "monitor-old", at: now)
         let records = log.readAll()
@@ -148,11 +153,14 @@ final class CallbackObservationLogTests: XCTestCase {
         let corrupt = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-corrupt",
             observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max)
         defaults.set(try JSONEncoder().encode([corrupt]), forKey: "com.pca.app.deviceactivity.callbacklog")
-        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite,
+            installationReader: { defaults.data(forKey: deviceActivityMonitorInstallationStorageKey) })
 
         XCTAssertTrue(log.readAll().isEmpty, "overflowing persisted sequence is not trusted as callback evidence")
         log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: Date(timeIntervalSince1970: 1_700_000_060))
 
+        XCTAssertNil(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"),
+            "a callback for the active manifest monitor must use the readable anchor ring")
         let recovered = log.readAll()
         XCTAssertEqual(recovered.count, 1)
         XCTAssertEqual(recovered.first?.sequence, 1)
@@ -169,11 +177,14 @@ final class CallbackObservationLogTests: XCTestCase {
         let boundary = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-old",
             observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max - 1)
         defaults.set(try JSONEncoder().encode([boundary]), forKey: "com.pca.app.deviceactivity.callbacklog")
-        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite,
+            installationReader: { defaults.data(forKey: deviceActivityMonitorInstallationStorageKey) })
 
         XCTAssertEqual(log.readAll().map(\.sequence), [Int.max - 1])
         log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: Date(timeIntervalSince1970: 1_700_000_060))
 
+        XCTAssertNil(defaults.data(forKey: "com.pca.app.deviceactivity.callbacklog.boundaries"),
+            "overflow rotation must occur in the same anchor ring the host reconciles")
         let recovered = log.readAll()
         XCTAssertEqual(recovered.map(\.sequence), [1])
         XCTAssertEqual(recovered.map(\.activityId), [activeMonitor])

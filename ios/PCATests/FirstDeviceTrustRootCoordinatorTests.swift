@@ -603,6 +603,33 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(keychain.storedData, malformed, "an unreadable root must not be replaced as if the slot were empty")
     }
 
+    func testKeychainRootRejectsEscapedDuplicateJSONMemberWithoutReplacingDurableState() throws {
+        let valid = try JSONEncoder().encode(approvedRecord())
+        let validJSON = try XCTUnwrap(String(data: valid, encoding: .utf8))
+        let stateMember = "\"state\":\"APPROVED\""
+        XCTAssertTrue(validJSON.contains(stateMember))
+        let duplicateJSON = validJSON.replacingOccurrences(
+            of: stateMember,
+            with: "\"state\":\"APPROVED\",\"sta\\u0074e\":\"UNKNOWN\""
+        )
+        let duplicate = Data(duplicateJSON.utf8)
+        XCTAssertThrowsError(try StrictJSONDocument.validateNoDuplicateMembers(
+            duplicate, maximumBytes: KeychainFirstDeviceRootStore.maximumRecordBytes
+        ))
+
+        let keychain = FailingOverwriteKeychainStore()
+        keychain.storedData = duplicate
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+        let candidate = FirstDeviceRootRecord(seed: makeSeed())
+
+        XCTAssertNil(store.current(), "escaped duplicate names invalidate the persisted trust-root record")
+        XCTAssertFalse(store.writeIfCurrent(expected: nil, record: candidate))
+        XCTAssertFalse(store.captureSeed(candidate, replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertFalse(store.withConfirmedCurrentRecord { _ in XCTFail("duplicate-key state must never authorize key cleanup") })
+        XCTAssertEqual(keychain.storedData, duplicate, "corrupt authority state must be preserved, not treated as empty")
+        XCTAssertEqual(keychain.atomicReplaceCalls, 0)
+    }
+
     func testOversizedKeychainRootIsRejectedWithoutTreatingItAsMissing() throws {
         let oversized = Data(repeating: 0x41, count: KeychainFirstDeviceRootStore.maximumRecordBytes + 1)
         let keychain = FailingOverwriteKeychainStore()

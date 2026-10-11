@@ -126,11 +126,11 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
 
     /** Keep the device client inside the ordinary transport's canonical-byte and HTTP body caps. */
     private fun encodeRequestBody(request: OrdinaryEpochRequest): ByteArray {
-        require(request.canonicalEpochBase64.length in 4..MAX_CANONICAL_BASE64_CHARS &&
+        require(request.canonicalEpochBase64.length in 4..OrdinaryEpochHttpRequestBounds.MAX_CANONICAL_BASE64_CHARS &&
             request.canonicalEpochBase64.length % 4 == 0)
         val canonicalBytes = Base64.getDecoder().decode(request.canonicalEpochBase64)
-        require(canonicalBytes.isNotEmpty() && canonicalBytes.size <= MAX_CANONICAL_BYTES &&
-            Base64.getEncoder().encodeToString(canonicalBytes) == request.canonicalEpochBase64)
+        OrdinaryEpochHttpRequestBounds.requireCanonicalByteCount(canonicalBytes.size)
+        require(Base64.getEncoder().encodeToString(canonicalBytes) == request.canonicalEpochBase64)
         val decodedEpoch = TrustSetEpochCodec.decodeCanonical(canonicalBytes)
         require(TrustSetEpochCodec.canonicalize(decodedEpoch).toByteArray(Charsets.UTF_8).contentEquals(canonicalBytes))
         require(request.signatureBase64.length == 88)
@@ -139,7 +139,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
 
         return JSONObject().put("canonicalEpochBase64", request.canonicalEpochBase64)
             .put("signatureBase64", request.signatureBase64).toString().toByteArray(Charsets.UTF_8)
-            .also { require(it.size <= MAX_REQUEST_BODY_BYTES) }
+            .also { OrdinaryEpochHttpRequestBounds.requireJsonBodyByteCount(it.size) }
     }
 
     private fun record(json: JSONObject): AcceptedEpochRecord {
@@ -149,10 +149,20 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
             json.getString("signerDeviceId"), json.getString("signerKeyId"), EpochBounds.decodeJson(json, "trustSetEpoch"), EpochBounds.decodeJson(json, "keyEpoch"))
     }
 
-    private companion object {
-        const val MAX_CANONICAL_BYTES = 256 * 1024
-        const val MAX_CANONICAL_BASE64_CHARS = 4 * ((MAX_CANONICAL_BYTES + 2) / 3)
-        const val MAX_REQUEST_BODY_BYTES = 352 * 1024
+}
+
+/** Server-aligned limits for ordinary POST requests; bootstrap and inbound record caps are separate. */
+internal object OrdinaryEpochHttpRequestBounds {
+    const val MAX_CANONICAL_BYTES = 196_506
+    const val MAX_CANONICAL_BASE64_CHARS = 4 * ((MAX_CANONICAL_BYTES + 2) / 3)
+    const val MAX_JSON_BODY_BYTES = 262_144
+
+    fun requireCanonicalByteCount(size: Int) {
+        require(size in 1..MAX_CANONICAL_BYTES)
+    }
+
+    fun requireJsonBodyByteCount(size: Int) {
+        require(size in 1..MAX_JSON_BODY_BYTES)
     }
 }
 

@@ -106,10 +106,10 @@ test('record snapshots the accepted event before asynchronous expiry cleanup', a
     const fetched = await ledger.get(accepted.alertId);
     assert.deepEqual(fetched, accepted, 'stored routing, metadata, date, and opaque bytes remain bound to accepted input');
     assert.deepEqual(
-      await ledger.listForParentDevice(accepted.familyId, accepted.parentDeviceId),
+      await ledger.listForParentDevice(accepted.familyId, accepted.parentDeviceId, accepted.keyEpoch),
       [accepted],
     );
-    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId), []);
+    assert.deepEqual(await ledger.listForParentDevice(event.familyId, event.parentDeviceId, event.keyEpoch), []);
     assert.deepEqual(await ledger.record(accepted), { outcome: 'IDEMPOTENT_MATCH' });
   } finally {
     releaseCleanup.resolve();
@@ -147,7 +147,7 @@ test('listForParentDevice filters to the exact parent device within a family', a
   const forB = alertEvent({ familyId, parentDeviceId: parentB });
   await ledger.record(forA);
   await ledger.record(forB);
-  const events = await ledger.listForParentDevice(familyId, parentA);
+  const events = await ledger.listForParentDevice(familyId, parentA, forA.keyEpoch);
   assert.deepEqual(events.map((e) => e.alertId), [forA.alertId]);
 });
 

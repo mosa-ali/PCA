@@ -49,6 +49,7 @@ import { MySqlTrustSetEpochStore } from './familytrustset/MySqlTrustSetEpochStor
 import { MySqlKeyEpochStore } from './familytrustset/MySqlKeyEpochStore.js';
 import { MySqlEpochFloorStore } from './familytrustset/MySqlEpochFloorStore.js';
 import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
+import { DeviceRepositoryFamilyAuthorityKeyResolver } from './familycommercial/authority/FamilyAuthorityKeyResolver.js';
 import { GenesisAnchorStoreSource } from './familytrustset/GenesisAnchorSource.js';
 import { P256TrustSetSignatureVerifier } from './familytrustset/P256TrustSetSignatureVerifier.js';
 import { TrustSetEpochAcceptanceService } from './familytrustset/TrustSetEpochAcceptance.js';
@@ -91,6 +92,7 @@ import { ProtectionAlertProducer } from './alerts/ProtectionAlertProducer.js';
 import { MySqlProtectionAlertLedger } from './alerts/MySqlProtectionAlertLedger.js';
 import { createRejectingOpaqueProtectionAlertComposer } from './alerts/RejectingOpaqueProtectionAlertComposer.js';
 import { FamilyAuditEventProducer } from './familyrbac/FamilyAuditEventProducer.js';
+import { FamilyAuditParentDeviceResolver } from './familyrbac/FamilyAuditParentDeviceResolver.js';
 import { MySqlFamilyAuditEventLedger } from './familyrbac/MySqlFamilyAuditEventLedger.js';
 import { createRejectingOpaqueFamilyAuditEventComposer } from './familyrbac/FamilyAuditEventComposer.js';
 import { MySqlOwnerParentDeviceResolver } from './alerts/MySqlOwnerParentDeviceResolver.js';
@@ -813,12 +815,20 @@ async function start(): Promise<void> {
   // producer below and read by registerFamilyAuditEventRoutes further down
   // this file -- never two independently-constructed copies.
   const familyAuditEventLedger = new MySqlFamilyAuditEventLedger();
+  // FamilyAudit has a separate recipient resolver from Protection Alerts:
+  // the attestation selects the current Owner device and DSK, while the
+  // accepted Trust Set resolver verifies that tuple is still an active OWNER
+  // and supplies the live FDEK key epoch used for envelope routing.
+  const familyAuditParentDeviceResolver = new FamilyAuditParentDeviceResolver(
+    familyAuthorityAttestationChainStore,
+    trustSetRoleResolver,
+    new RejectingDeviceSignatureVerifier(),
+    new DeviceRepositoryFamilyAuthorityKeyResolver(deviceRepository),
+  );
   // Configures the SHARED familyAuditService instance (constructed above,
   // already injected into every family-rbac event source in this file) to
   // best-effort-deliver an opaque AUDIT_EVENT envelope for every record()
-  // call, to the SAME family-Owner-device resolver protection alerts
-  // already use (protectionAlertParentDeviceResolver) -- reusing the real,
-  // signature-chain-verified resolver rather than inventing a second one.
+  // call, using current accepted Trust Set membership and key-epoch state.
   // composeOpaquePayload is createRejectingOpaqueFamilyAuditEventComposer:
   // the SAME CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as
   // protectionAlertProducer above, so delivery fails closed (records
@@ -829,7 +839,7 @@ async function start(): Promise<void> {
     new FamilyAuditEventProducer(
       familyAuditEventLedger,
       createRejectingOpaqueFamilyAuditEventComposer(),
-      (familyId: string) => protectionAlertParentDeviceResolver.resolveParentDevices(familyId),
+      (familyId: string) => familyAuditParentDeviceResolver.resolveParentDevices(familyId),
     ),
   );
   const removalDecisionAuthority = new RemovalDecisionAuthority({
@@ -924,6 +934,9 @@ async function start(): Promise<void> {
   // childProfileMembership check and childProfileRoutes' ChildProfileService
   // must observe the SAME rows, never two independently-constructed copies.
   const childProfileService = new ChildProfileService(childProfileRegistryRepository);
+  // The same durable enrollment binding scopes schedule-policy recipients and
+  // removal targets; consumers never infer a child association from request data.
+  const deviceChildBindingRepository = new MySqlDeviceChildBindingRepository();
 
   const app = buildServer({
     dashboardAggregatorService,
@@ -951,6 +964,8 @@ async function start(): Promise<void> {
     // this file shares (see its own doc comment above) -- never a second,
     // independently-constructed copy.
     childPolicyAuthorization: safeZoneParentActionAuthorization,
+    childProfileRegistryRepository,
+    deviceChildBindingRepository,
     inboundReconnectService: new InboundReconnectService(relayService, syncCoordinator),
     statusTracker: new DeviceSyncStatusTracker(),
     deleteNowLedger,
@@ -1043,7 +1058,7 @@ async function start(): Promise<void> {
     // protection remains a device-session-authenticated self-report, not
     // independent hardware attestation.
     removalTargetResolver: new RemovalTargetResolver({
-      bindings: new MySqlDeviceChildBindingRepository(),
+      bindings: deviceChildBindingRepository,
       memberships: childProfileRegistryRepository,
       protectionStatuses: deviceProtectionStatusRepository,
     }),

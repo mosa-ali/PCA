@@ -121,7 +121,10 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
       return reply.code(403).send({ error: 'forbidden' });
     }
 
-    const alerts = await protectionAlertLedger.listForParentDevice(familyId, actorDeviceId);
+    // Match the accepted encryption epoch in the storage query, before the
+    // bounded feed window is selected. Stale ciphertext must not occupy page
+    // slots or be sent to a device whose current Trust Set key cannot open it.
+    const alerts = await protectionAlertLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
     return reply.code(200).send({ alerts: alerts.map(toAlertDto) });
   });
 }

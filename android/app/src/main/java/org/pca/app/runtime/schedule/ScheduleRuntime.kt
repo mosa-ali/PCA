@@ -1,6 +1,7 @@
 package org.pca.app.runtime.schedule
 
 import java.time.Instant
+import org.pca.app.runtime.EpochBounds
 
 /**
  * The single entry point PCA enforcement (screentime/accessibility blocking) and future WELL-1/
@@ -14,6 +15,8 @@ import java.time.Instant
  */
 class ScheduleRuntime(
     private val store: SchedulePolicyStore,
+    /** Production supplies the current ACTIVE local enrollment scope. Null means no such scope. */
+    private val currentPolicyScopeProvider: (() -> SchedulePolicyRuntimeScope?)? = null,
     private val communicationSurfacesProvider: () -> CommunicationSafetySurfaceTokens = { CommunicationSafetySurfaceTokens() },
 ) {
 
@@ -94,18 +97,39 @@ class ScheduleRuntime(
         return acceptanceFor(snapshot, nowUtc, Connectivity.OFFLINE).effectivePolicy
     }
 
-    private fun acceptanceFor(snapshot: SchedulePolicySnapshot?, nowUtc: Instant, connectivity: Connectivity): PolicyAcceptanceResult =
-        SchedulePolicyValidator.evaluate(
+    private fun acceptanceFor(snapshot: SchedulePolicySnapshot?, nowUtc: Instant, connectivity: Connectivity): PolicyAcceptanceResult {
+        val scope = currentPolicyScopeProvider?.let { provider ->
+            val current = try {
+                provider()
+            } catch (_: Exception) {
+                null
+            } ?: return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
+
+            // An ACTIVE enrollment must have a concrete identity and established positive epoch
+            // floors. Validate the live state before combining it with snapshot floors, so an
+            // invalid FamilyStateStore value can never be hidden by maxOf(snapshot, scope).
+            if (current.familyId.isBlank() || current.childProfileId.isBlank() ||
+                current.trustSetEpoch < 1 || !EpochBounds.isValid(current.trustSetEpoch) ||
+                current.keyEpoch < 1 || !EpochBounds.isValid(current.keyEpoch)
+            ) {
+                return PolicyAcceptanceResult(ScheduleRuntimeState.INVALID, null)
+            }
+            current
+        }
+        return SchedulePolicyValidator.evaluate(
             PolicyAcceptanceInput(
                 candidatePolicy = snapshot?.candidatePolicy,
                 lastKnownGoodPolicy = snapshot?.lastKnownGoodPolicy,
                 nowUtc = nowUtc,
-                deviceTrustSetEpoch = snapshot?.deviceTrustSetEpoch ?: 0,
-                deviceKeyEpoch = snapshot?.deviceKeyEpoch ?: 0,
+                deviceTrustSetEpoch = maxOf(snapshot?.deviceTrustSetEpoch ?: 0, scope?.trustSetEpoch ?: 0),
+                deviceKeyEpoch = maxOf(snapshot?.deviceKeyEpoch ?: 0, scope?.keyEpoch ?: 0),
                 connectivity = connectivity,
                 lastPolicySyncAtUtc = snapshot?.lastPolicySyncAtUtc,
+                expectedFamilyId = scope?.familyId,
+                expectedChildProfileId = scope?.childProfileId,
             ),
         )
+    }
 
     private fun emptyEvaluationInput(
         nowUtc: Instant,

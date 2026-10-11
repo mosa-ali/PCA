@@ -63,6 +63,19 @@ class WebRulePolicyConsumerTest {
         assertEquals(1, repository.findMatching("family-1", "example.test").size)
     }
 
+    @Test
+    fun `a negative revision is rejected without throwing or mutating the previous LKG rules`() {
+        val (consumer, repository) = consumer()
+        val original = WebRule("example.test", WebRuleListType.DENY, WebRuleSource.PARENT_DENYLIST, "family-1", 0L)
+        assertTrue(consumer.apply("family-1", FamilyWebRulePayload("family-1", 4L, listOf(original))) is WebRuleIngressOutcome.Applied)
+
+        val outcome = consumer.apply("family-1", FamilyWebRulePayload("family-1", -1L, emptyList()))
+
+        assertTrue(outcome is WebRuleIngressOutcome.RejectedInvalidRevision)
+        assertEquals(4L, repository.parentRulesRevision)
+        assertEquals(listOf(original), repository.findMatching("family-1", "example.test"))
+    }
+
     /**
      * Coordinator correction: an [expectedFamilyId] of `""` (the same placeholder
      * `EnrollmentCoordinator.persistSuccess()` currently persists) must never be trusted

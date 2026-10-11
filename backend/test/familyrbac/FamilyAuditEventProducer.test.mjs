@@ -78,8 +78,8 @@ test('queues one opaque envelope per resolved parent device without claiming dev
   assert.equal(composed[0].parentDeviceId, 'parent-device-a');
   assert.equal(composed[0].keyEpoch, 3);
 
-  const forA = await ledger.listForParentDevice('fam-1', 'parent-device-a');
-  const forB = await ledger.listForParentDevice('fam-1', 'parent-device-b');
+  const forA = await ledger.listForParentDevice('fam-1', 'parent-device-a', 3);
+  const forB = await ledger.listForParentDevice('fam-1', 'parent-device-b', 3);
   assert.equal(forA.length, 1);
   assert.equal(forB.length, 1);
   assert.equal(forA[0].encryptedPayloadB64, 'ZW5jcnlwdGVk');
@@ -105,7 +105,7 @@ test('in-memory FamilyAudit bounded feeds use the MySQL binary envelope-id tie-b
     'the SQL feed selects the greatest envelope IDs at a tied timestamp, then returns them ascending',
   );
   assert.deepEqual(
-    (await ledger.listForParentDevice('fam-ties', 'parent-device-ties', { limit: 2 })).map((envelope) => envelope.envelopeId),
+    (await ledger.listForParentDevice('fam-ties', 'parent-device-ties', 1, { limit: 2 })).map((envelope) => envelope.envelopeId),
     ['env-b', 'env-c'],
   );
 });
@@ -413,7 +413,7 @@ test('in-memory family audit ledger snapshots envelope input and every returned 
   fromFamilyFeed[0].generatedAtUtc.setTime(0);
   fromFamilyFeed[0].nonceB64 = 'family-feed-nonce-mutated';
 
-  const fromDeviceFeed = await ledger.listForParentDevice(expected.familyId, expected.parentDeviceId);
+  const fromDeviceFeed = await ledger.listForParentDevice(expected.familyId, expected.parentDeviceId, expected.keyEpoch);
   assert.deepEqual(fromDeviceFeed, [expected]);
   fromDeviceFeed[0].envelopeId = 'device-feed-mutated';
   fromDeviceFeed[0].generatedAtUtc.setTime(0);

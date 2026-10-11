@@ -141,6 +141,20 @@ function buildStubDeps({ withDeviceSessionService }) {
     parentPreferenceRepository: undefined,
     safeZoneRepository,
     trustSetRoleResolver: { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }; } },
+    deviceChildBindingRepository: {
+      async resolveBinding(familyId, deviceId) {
+        return familyId === 'family-a' && ['child-device', 'device-a'].includes(deviceId)
+          ? { outcome: 'BOUND', childProfileId: 'child-profile-a' }
+          : { outcome: 'UNBOUND' };
+      },
+    },
+    childProfileRegistryRepository: {
+      async resolveMembership(familyId, childProfileId) {
+        return familyId === 'family-a' && childProfileId === 'child-profile-a'
+          ? 'MEMBER'
+          : 'NOT_MEMBER_OR_NOT_FOUND';
+      },
+    },
     // Threaded only when the test wants the "wired" configuration; the
     // "not wired" case below still passes safeZonePolicyAuthorizer so the
     // ONLY variable under test is deviceSessionService's presence.
@@ -199,6 +213,55 @@ test('buildServer wires device Safe Zone delivery to the authenticated recipient
       keyEpoch: 1, revision: 1, deliveryState: 'PENDING_OFFLINE',
       updatedAtUtc: response.json().safeZones[0].updatedAtUtc,
     }], nextCursor: null });
+  } finally {
+    await app.close();
+  }
+});
+
+test('buildServer wires Parent Safe Zone writes to the durable child-profile binding resolver', async () => {
+  const deps = buildStubDeps({ withDeviceSessionService: true });
+  const bindingCalls = [];
+  const creates = [];
+  deps.deviceRepository = {
+    async findDeviceForFamily(familyId, deviceId) {
+      return familyId === 'family-a' && deviceId === 'child-device' ? { familyId, deviceId } : null;
+    },
+  };
+  deps.deviceChildBindingRepository = {
+    async resolveBinding(familyId, deviceId) {
+      bindingCalls.push({ familyId, deviceId });
+      return familyId === 'family-a' && deviceId === 'child-device'
+        ? { outcome: 'BOUND', childProfileId: 'child-profile-a' }
+        : { outcome: 'UNBOUND' };
+    },
+  };
+  deps.safeZoneRepository = {
+    ...deps.safeZoneRepository,
+    async create(input) {
+      creates.push(input);
+      return { zoneId: 'zone-a', ...input, revision: 1, deliveryState: 'PENDING_OFFLINE' };
+    },
+  };
+  const app = buildServer(deps);
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/parent/families/family-a/safe-zones',
+      headers: {
+        cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a',
+        authorization: 'Bearer devtoken-a',
+        'x-pca-csrf-token': 'csrf-a',
+      },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    });
+    assert.equal(response.statusCode, 201, JSON.stringify(response.json()));
+    assert.equal(bindingCalls.length, 2, 'binding is checked both before authorization and at the final persistence boundary');
+    assert.deepEqual(bindingCalls, [
+      { familyId: 'family-a', deviceId: 'child-device' },
+      { familyId: 'family-a', deviceId: 'child-device' },
+    ]);
+    assert.equal(creates.length, 1);
+    assert.equal(creates[0].recipientEndpointId, 'child-device');
   } finally {
     await app.close();
   }

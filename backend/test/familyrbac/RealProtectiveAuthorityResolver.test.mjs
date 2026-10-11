@@ -57,6 +57,27 @@ test('a report exactly at the freshness boundary still resolves to true (inclusi
   assert.equal(await resolver.resolve(FAMILY, DEVICE), true);
 });
 
+test('a future-dated PROTECTED report fails closed instead of refreshing authority', async () => {
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  await repository.upsert({ deviceId: DEVICE, familyId: FAMILY, protectionLevel: 'PROTECTED', updatedAt: new Date(NOW.getTime() + 1) });
+  const resolver = new RealProtectiveAuthorityResolver(repository, { now: () => NOW });
+  assert.equal(await resolver.resolve(FAMILY, DEVICE), false);
+});
+
+test('an invalid stored receipt timestamp fails closed', async () => {
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  await repository.upsert({ deviceId: DEVICE, familyId: FAMILY, protectionLevel: 'PROTECTED', updatedAt: new Date(Number.NaN) });
+  const resolver = new RealProtectiveAuthorityResolver(repository, { now: () => NOW });
+  assert.equal(await resolver.resolve(FAMILY, DEVICE), false);
+});
+
+test('invalid freshness configuration is rejected instead of weakening the authority gate', () => {
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  for (const maxStalenessMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => new RealProtectiveAuthorityResolver(repository, { maxStalenessMs }), RangeError);
+  }
+});
+
 test('a report for a different device in the same family never resolves for this device', async () => {
   const repository = new InMemoryDeviceProtectionStatusRepository();
   await repository.upsert({ deviceId: 'device-pa-other', familyId: FAMILY, protectionLevel: 'PROTECTED', updatedAt: new Date(NOW.getTime() - 60_000) });

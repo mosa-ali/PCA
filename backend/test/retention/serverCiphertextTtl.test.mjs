@@ -98,7 +98,7 @@ test('protection alerts: an expired alert disappears from both feeds and is purg
 
   now = plus(SERVER_CIPHERTEXT_TTL_MS);
   const family = await ledger.listForFamily('family-1');
-  const device = await ledger.listForParentDevice('family-1', 'parent-1');
+  const device = await ledger.listForParentDevice('family-1', 'parent-1', 1);
   assert.deepEqual(family.map((event) => event.alertId), [fresh.alertId]);
   assert.deepEqual(device.map((event) => event.alertId), [fresh.alertId]);
 
@@ -128,7 +128,7 @@ test('protection alerts: the feed is bounded even when a family generates far mo
   const all = await ledger.listForFamily('family-1');
   assert.equal(all.length, MAX_SERVER_CIPHERTEXT_FEED_ROWS, 'an unbounded SELECT * is the defect this closes');
   assert.equal(all.at(-1).alertId, `alert-${MAX_SERVER_CIPHERTEXT_FEED_ROWS + 24}`, 'the newest row must be present');
-  assert.equal((await ledger.listForParentDevice('family-1', 'parent-1', { limit: 7 })).length, 7);
+  assert.equal((await ledger.listForParentDevice('family-1', 'parent-1', 1, { limit: 7 })).length, 7);
 });
 
 test('family audit events: an expired envelope disappears from both feeds and is purged', async () => {
@@ -144,7 +144,7 @@ test('family audit events: an expired envelope disappears from both feeds and is
   now = plus(SERVER_CIPHERTEXT_TTL_MS);
   assert.deepEqual((await ledger.listForFamily('family-1')).map((e) => e.envelopeId), [fresh.envelopeId]);
   assert.deepEqual(
-    (await ledger.listForParentDevice('family-1', 'parent-1')).map((e) => e.envelopeId),
+    (await ledger.listForParentDevice('family-1', 'parent-1', 1)).map((e) => e.envelopeId),
     [fresh.envelopeId],
   );
 

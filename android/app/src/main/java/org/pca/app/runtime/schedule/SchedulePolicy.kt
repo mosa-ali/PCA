@@ -107,7 +107,7 @@ data class ScheduleDecision(
      * so the UI can show an honest "should be X, cannot confirm enforcement" state rather than a
      * bare unknown. */
     val intendedDecision: ScheduleDecisionKind? = null,
-    val remainingMinutesToday: Int? = null,
+    val remainingMinutesToday: Long? = null,
     val configErrors: List<String>? = null,
 )
 

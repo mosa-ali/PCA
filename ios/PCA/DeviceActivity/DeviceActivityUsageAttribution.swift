@@ -699,7 +699,9 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
             guard owner == nil else { throw DeviceActivityUsageError.unavailableState }
             return State(schemaVersion: 1, records: [])
         }
-        guard data.count <= 131_072, let state = try? JSONDecoder().decode(State.self, from: data),
+        guard data.count <= 131_072,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 131_072)) != nil,
+              let state = try? JSONDecoder().decode(State.self, from: data),
               state.schemaVersion == 1, state.records.count <= 8 else { throw DeviceActivityUsageError.unavailableState }
         for record in state.records {
             guard record.binding.isValid, let zone = TimeZone(identifier: record.zone),
@@ -785,7 +787,9 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
     }
     private func pending(for plan: DeviceActivityUsageDayPlan) throws -> Pending? {
         guard let data = store.read(forKey: "usage.pending." + plan.generation) else { return nil }
-        guard data.count <= 32_768, let value = try? JSONDecoder().decode(Pending.self, from: data),
+        guard data.count <= 32_768,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 32_768)) != nil,
+              let value = try? JSONDecoder().decode(Pending.self, from: data),
               value.plan == plan, value.plan.isValid, plan.thresholds.contains(where: { $0.minutes == value.minutes }) else {
             throw DeviceActivityUsageError.unavailableState
         }

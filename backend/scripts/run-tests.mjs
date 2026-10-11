@@ -268,6 +268,7 @@ const files = [
   "test/http/familyMemberRoutes.test.mjs",
   "test/http/invitationParentRoleAuthorization.test.mjs",
   "test/familyrbac/FamilyAuditEventProducer.test.mjs",
+  "test/familyrbac/FamilyAuditParentDeviceResolver.test.mjs",
   "test/familyrbac/auditEventDelivery.wiring.test.mjs",
   "test/http/familyAuditEventRoutes.test.mjs",
   "test/http/protectionAlertRoutes.test.mjs",

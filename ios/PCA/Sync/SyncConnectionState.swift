@@ -41,11 +41,17 @@ public enum SyncConnectionStateComputer {
         guard input.isTransportConnected else { return .offline }
         if input.isSyncing { return .syncing }
 
+        let nowSeconds = input.nowUtc.timeIntervalSince1970
+        guard nowSeconds.isFinite,
+              input.staleThresholdSeconds.isFinite,
+              input.staleThresholdSeconds >= 0 else { return .stale }
         guard let lastSync = input.lastSuccessfulSyncAtUtc else {
             return input.hasPendingLocalWork ? .syncPending : .stale
         }
-        let age = input.nowUtc.timeIntervalSince(lastSync)
-        if age < 0 || age > input.staleThresholdSeconds { return .stale }
+        let lastSyncSeconds = lastSync.timeIntervalSince1970
+        guard lastSyncSeconds.isFinite else { return .stale }
+        let age = nowSeconds - lastSyncSeconds
+        guard age.isFinite, age >= 0, age <= input.staleThresholdSeconds else { return .stale }
         return input.hasPendingLocalWork ? .syncPending : .live
     }
 }

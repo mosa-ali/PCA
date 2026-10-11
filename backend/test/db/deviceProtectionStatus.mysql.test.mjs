@@ -5,15 +5,27 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
+import Fastify from 'fastify';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
-import { MySqlDeviceProtectionStatusRepository } from '../../dist/device/DeviceProtectionStatusRepository.js';
+import {
+  MySqlDeviceProtectionStatusRepository,
+  ProtectionStatusDeviceUnavailableError,
+} from '../../dist/device/DeviceProtectionStatusRepository.js';
+import { MySqlDeviceChallengeRepository } from '../../dist/deviceauth/MySqlDeviceChallengeRepository.js';
+import { DeviceAuthService } from '../../dist/deviceauth/DeviceAuthService.js';
+import { DeviceSessionService } from '../../dist/runtime-sync/DeviceSessionService.js';
+import { InMemoryDeviceSessionRepository } from '../../dist/runtime-sync/DeviceSessionRepository.js';
+import { DeviceSyncStatusTracker } from '../../dist/runtime-sync/StatusService.js';
+import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../support/testOnlyDeviceSignatureVerifier.mjs';
+import { registerRuntimeSyncRoutes } from '../../dist/http/routes/runtimeSyncRoutes.js';
 import { RealProtectiveAuthorityResolver } from '../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
 const repository = new MySqlDeviceProtectionStatusRepository();
 const deviceRepository = new MySqlDeviceRepository();
+const noOpPreHandler = async () => {};
 
 async function seedFamily() {
   const familyId = randomUUID();
@@ -31,6 +43,74 @@ async function seedDevice(familyId) {
     [deviceId, familyId],
   );
   return deviceId;
+}
+
+async function registerStatusTestDevice(familyId) {
+  const deviceId = randomUUID();
+  const keyId = randomUUID();
+  const publicKey = `test-dsk-${randomUUID()}`;
+  const createdAt = new Date();
+  const created = await deviceRepository.createDeviceWithKey(
+    {
+      deviceId,
+      familyId,
+      platform: 'ANDROID',
+      status: 'ACTIVE',
+      createdAt,
+      revokedAt: null,
+      pairedAt: null,
+      pairedByAccountId: null,
+      registeredByAccountId: null,
+    },
+    {
+      deviceId,
+      keyId,
+      keyPurpose: 'DSK',
+      publicKey,
+      status: 'ACTIVE',
+      createdAt,
+      revokedAt: null,
+    },
+  );
+  assert.equal(created.outcome, 'CREATED');
+  return { deviceId, keyId, publicKey };
+}
+
+function buildRuntimeSyncStatusApp({ deviceProtectionStatusRepository, trustSetRoleResolver }) {
+  const deviceAuthService = new DeviceAuthService(
+    new MySqlDeviceChallengeRepository(),
+    deviceRepository,
+    createTestOnlyDeviceSignatureVerifier(),
+  );
+  const deviceSessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository());
+  const app = Fastify({ logger: false });
+  registerRuntimeSyncRoutes(app, {
+    deviceSessionService,
+    // These dependencies are required by sibling runtime-sync routes but are
+    // not reached by this protection-status-only integration test.
+    outboundRelayService: {},
+    inboundReconnectService: {},
+    statusTracker: new DeviceSyncStatusTracker(),
+    resolveEnvelopeContext: () => { throw new Error('not reached by protection-status'); },
+    rateLimiter: () => noOpPreHandler,
+    authAttemptLimiter: noOpPreHandler,
+    deviceProtectionStatusRepository,
+    trustSetRoleResolver,
+  });
+  return { app, deviceSessionService };
+}
+
+async function authenticateRuntimeSyncDevice(app, deviceId, publicKey) {
+  const challenge = await app.inject({ method: 'POST', url: `/v1/runtime-sync/devices/${deviceId}/challenge` });
+  assert.equal(challenge.statusCode, 200, challenge.body);
+  const { challengeId, nonce } = challenge.json();
+  const session = await app.inject({
+    method: 'POST',
+    url: `/v1/runtime-sync/devices/${deviceId}/session`,
+    payload: { challengeId, signature: signTestOnlyChallenge(publicKey, nonce) },
+  });
+  assert.equal(session.statusCode, 200, session.body);
+  return session.json().sessionToken;
 }
 
 test('upsert persists a real row, readable back with the exact protection level and a server-stamped updated_at', async () => {
@@ -58,6 +138,73 @@ test('upsert is a true upsert -- reporting a new level overwrites the old one, n
   assert.equal(rows[0].n, 1);
   const record = await repository.findForDevice(familyId, deviceId);
   assert.equal(record.protectionLevel, 'DEGRADED');
+});
+
+test('concurrent MySQL status transitions serialize on the device row and expose exactly one DEGRADED transition', async () => {
+  const familyId = await seedFamily();
+  const deviceId = await seedDevice(familyId);
+  await repository.upsert({ deviceId, familyId, protectionLevel: 'PROTECTED', updatedAt: new Date() });
+
+  const prior = await Promise.all([
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+  ]);
+
+  assert.deepEqual(prior.map((item) => item?.protectionLevel).sort(), ['DEGRADED', 'PROTECTED']);
+  assert.equal((await repository.findForDevice(familyId, deviceId))?.protectionLevel, 'DEGRADED');
+  const [[rows]] = await getPool().query(
+    `SELECT COUNT(*) AS count FROM device_protection_status WHERE device_id = ? AND family_id = ?`,
+    [deviceId, familyId],
+  );
+  assert.equal(Number(rows.count), 1);
+});
+
+test('concurrent first MySQL status reports serialize even though no status row exists yet', async () => {
+  const familyId = await seedFamily();
+  const deviceId = await seedDevice(familyId);
+
+  const previous = await Promise.all([
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+  ]);
+
+  assert.equal(previous.filter((item) => item === null).length, 1);
+  assert.deepEqual(previous.filter(Boolean).map((item) => item.protectionLevel), ['DEGRADED']);
+  assert.equal((await repository.findForDevice(familyId, deviceId))?.protectionLevel, 'DEGRADED');
+});
+
+test('status writes reject a device revoked or family suspended before the transaction lock', async () => {
+  const revokedFamilyId = await seedFamily();
+  const revokedDeviceId = await seedDevice(revokedFamilyId);
+  await getPool().query(
+    `UPDATE devices SET status = 'REVOKED', revoked_at = NOW(3) WHERE device_id = ? AND family_id = ?`,
+    [revokedDeviceId, revokedFamilyId],
+  );
+  await assert.rejects(
+    repository.upsert({ deviceId: revokedDeviceId, familyId: revokedFamilyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+    ProtectionStatusDeviceUnavailableError,
+  );
+  assert.equal(await repository.findForDevice(revokedFamilyId, revokedDeviceId), null);
+
+  const suspendedFamilyId = await seedFamily();
+  const suspendedDeviceId = await seedDevice(suspendedFamilyId);
+  const adminId = randomUUID();
+  await getPool().query(
+    `INSERT INTO platform_admin_accounts (admin_id, email_hash, display_name, password_credential, status, created_at, disabled_at)
+     VALUES (?, ?, 'Device protection test admin', 'test-placeholder', 'ACTIVE', NOW(3), NULL)`,
+    [adminId, randomBytes(32)],
+  );
+  await getPool().query(
+    `UPDATE families
+        SET status = 'SUSPENDED', suspended_at = NOW(3), suspended_by_admin_id = ?, suspension_reason = 'protection test fixture'
+      WHERE family_id = ?`,
+    [adminId, suspendedFamilyId],
+  );
+  await assert.rejects(
+    repository.upsert({ deviceId: suspendedDeviceId, familyId: suspendedFamilyId, protectionLevel: 'PROTECTED', updatedAt: new Date() }),
+    ProtectionStatusDeviceUnavailableError,
+  );
+  assert.equal(await repository.findForDevice(suspendedFamilyId, suspendedDeviceId), null);
 });
 
 test('an unknown device/family pair reads back null, never a fabricated default', async () => {
@@ -118,6 +265,144 @@ test('protective authority immediately fails closed after device revocation desp
   assert.equal(revoked.outcome, 'REVOKED');
   assert.equal(await repository.findForDevice(familyId, deviceId), null);
   assert.equal(await resolver.resolve(familyId, deviceId), false);
+});
+
+test('MySQL HTTP: authenticated runtime-sync protection-status writes only the session device with server receipt time and current authority', async () => {
+  const familyId = await seedFamily();
+  const foreignFamilyId = await seedFamily();
+  const device = await registerStatusTestDevice(familyId);
+  const foreignDeviceId = await seedDevice(foreignFamilyId);
+  const foreignBefore = new Date(Date.now() - 60_000);
+  await repository.upsert({
+    deviceId: foreignDeviceId,
+    familyId: foreignFamilyId,
+    protectionLevel: 'STANDARD',
+    updatedAt: foreignBefore,
+  });
+
+  let authorityAvailable = true;
+  const trustSetRoleResolver = {
+    async resolveActor(requestFamilyId, requestDeviceId, requestKeyId) {
+      if (!authorityAvailable || requestFamilyId !== familyId || requestDeviceId !== device.deviceId || requestKeyId !== device.keyId) {
+        return 'DEVICE_NOT_ACTIVE';
+      }
+      return { deviceId: device.deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+    },
+  };
+  const { app } = buildRuntimeSyncStatusApp({
+    deviceProtectionStatusRepository: repository,
+    trustSetRoleResolver,
+  });
+  try {
+    const sessionToken = await authenticateRuntimeSyncDevice(app, device.deviceId, device.publicKey);
+    const url = '/v1/runtime-sync/protection-status';
+
+    const unauthenticated = await app.inject({ method: 'POST', url, payload: { protectionLevel: 'PROTECTED' } });
+    assert.equal(unauthenticated.statusCode, 401);
+    assert.equal(await repository.findForDevice(familyId, device.deviceId), null);
+
+    const beforeWrite = new Date();
+    const written = await app.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: {
+        protectionLevel: 'PROTECTED',
+        familyId: foreignFamilyId,
+        deviceId: foreignDeviceId,
+        updatedAt: '2000-01-01T00:00:00.000Z',
+      },
+    });
+    const afterWrite = new Date();
+    assert.equal(written.statusCode, 204, written.body);
+
+    const actual = await repository.findForDevice(familyId, device.deviceId);
+    assert.ok(actual);
+    assert.equal(actual.protectionLevel, 'PROTECTED');
+    assert.ok(actual.updatedAt.getTime() >= beforeWrite.getTime() - 1000, 'the client timestamp must not backdate the receipt');
+    assert.ok(actual.updatedAt.getTime() <= afterWrite.getTime() + 1000, 'the timestamp must be server-received time');
+    assert.equal(await repository.findForDevice(foreignFamilyId, foreignDeviceId).then(row => row.protectionLevel), 'STANDARD');
+    assert.equal(await repository.findForDevice(foreignFamilyId, device.deviceId), null);
+    assert.equal(await repository.findForDevice(familyId, foreignDeviceId), null);
+
+    const [[rowCounts]] = await getPool().query(
+      `SELECT SUM(device_id = ?) AS actual_rows, SUM(device_id = ?) AS foreign_rows
+         FROM device_protection_status WHERE device_id IN (?, ?)`,
+      [device.deviceId, foreignDeviceId, device.deviceId, foreignDeviceId],
+    );
+    assert.equal(Number(rowCounts.actual_rows), 1);
+    assert.equal(Number(rowCounts.foreign_rows), 1);
+
+    authorityAvailable = false;
+    const staleAuthority = await app.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { protectionLevel: 'DEGRADED' },
+    });
+    assert.equal(staleAuthority.statusCode, 403);
+    assert.equal((await repository.findForDevice(familyId, device.deviceId))?.protectionLevel, 'PROTECTED');
+
+    authorityAvailable = true;
+    const revoked = await deviceRepository.revokeDeviceAndKeysAtomically(familyId, device.deviceId, new Date());
+    assert.equal(revoked.outcome, 'REVOKED');
+    const afterRevocation = await app.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { protectionLevel: 'DEGRADED' },
+    });
+    assert.equal(afterRevocation.statusCode, 401);
+    const [[persisted]] = await getPool().query(
+      `SELECT protection_level FROM device_protection_status WHERE device_id = ?`,
+      [device.deviceId],
+    );
+    assert.equal(persisted.protection_level, 'PROTECTED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('MySQL HTTP: device revoked after session/Trust Set checks but before persistence cannot write protection status', async () => {
+  const familyId = await seedFamily();
+  const device = await registerStatusTestDevice(familyId);
+  let resolverCalls = 0;
+  const trustSetRoleResolver = {
+    async resolveActor(requestFamilyId, requestDeviceId, requestKeyId) {
+      assert.equal(requestFamilyId, familyId);
+      assert.equal(requestDeviceId, device.deviceId);
+      assert.equal(requestKeyId, device.keyId);
+      resolverCalls += 1;
+      const revoked = await deviceRepository.revokeDeviceAndKeysAtomically(familyId, device.deviceId, new Date());
+      assert.equal(revoked.outcome, 'REVOKED');
+      return { deviceId: device.deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+    },
+  };
+  const { app } = buildRuntimeSyncStatusApp({
+    deviceProtectionStatusRepository: repository,
+    trustSetRoleResolver,
+  });
+  try {
+    const sessionToken = await authenticateRuntimeSyncDevice(app, device.deviceId, device.publicKey);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { protectionLevel: 'DEGRADED' },
+    });
+
+    assert.equal(resolverCalls, 1);
+    assert.equal(response.statusCode, 403, response.body);
+    assert.deepEqual(response.json(), { error: 'device_not_authorized' });
+    assert.equal(await repository.findForDevice(familyId, device.deviceId), null);
+    const [[rows]] = await getPool().query(
+      `SELECT COUNT(*) AS count FROM device_protection_status WHERE device_id = ?`,
+      [device.deviceId],
+    );
+    assert.equal(Number(rows.count), 0);
+  } finally {
+    await app.close();
+  }
 });
 
 test('protective authority fails closed while the family is suspended or deleted', async () => {
