@@ -42,6 +42,7 @@ class UriEnrollmentLinkParser(
 ) : EnrollmentLinkParser {
 
     override fun parse(uri: String): ParsedEnrollmentLink? {
+        if (uri.length > EnrollmentDeepLinkConfig.MAX_INVITATION_URI_LENGTH) return null
         val parsed = try {
             URI(uri)
         } catch (_: Exception) {

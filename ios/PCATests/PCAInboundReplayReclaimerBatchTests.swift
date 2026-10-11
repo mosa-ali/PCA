@@ -20,7 +20,7 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
         } catch let error as PCAAPIError {
             XCTAssertEqual(error, .malformedResponse)
         }
-        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertNil(try inbox.retainedScope(), "a malformed response must not be captured into the inbox")
     }
 
     @MainActor func testBoundedReclaimUsesBatchKeychainWritesAndPreservesUnacknowledgedTerminal() async throws {

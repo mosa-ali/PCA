@@ -228,7 +228,8 @@ class EnrollmentCoordinator(
             // Synchronous callers have no result channel for reopen/duplicate guidance. Keep the
             // current confirmation state intact; Activity deep links use the reserved async path.
             if (pendingProfileConfirmation != null) return
-            submitInvitationLinkLocked(uri)
+            val boundedUri = uri.takeIf { it.length <= EnrollmentDeepLinkConfig.MAX_INVITATION_URI_LENGTH } ?: ""
+            submitInvitationLinkLocked(boundedUri)
         } catch (_: EnrollmentPersistenceException) {
             _state.value = EnrollmentState.LocalPersistenceUnavailable
         } finally { operationMutex.unlock() }

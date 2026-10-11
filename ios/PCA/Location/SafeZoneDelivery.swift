@@ -135,19 +135,27 @@ public struct PCAOpaqueSafeZoneDeliveryPage: Equatable {
 /// committed only after every row has been durably written and read back; interrupted pages replay
 /// safely. There is no deletion/receipt semantics, so absent rows are retained.
 public final class PCAKeychainSafeZoneDeliveryInbox {
+    private struct CursorAnchor: Codable, Equatable {
+        let zoneId: String
+        let keyEpoch: Int
+    }
+
     private struct Manifest: Codable, Equatable {
         let version: Int
         let zoneIds: [String]
         let nextCursor: String?
-        // Write-ahead list for newly introduced rows in a page whose final
-        // cursor/manifest has not committed. Relaunch removes these rows and
-        // safely retries the page from the prior cursor.
+        let cursorAnchor: CursorAnchor?
+        // Presence marks an interrupted page write; its values list only the
+        // newly introduced rows that recovery may delete. Recovery also resets
+        // the cursor because an existing row may have been replaced mid-page.
         let stagedNewZoneIds: [String]?
 
-        init(version: Int, zoneIds: [String], nextCursor: String?, stagedNewZoneIds: [String]? = nil) {
+        init(version: Int, zoneIds: [String], nextCursor: String?, cursorAnchor: CursorAnchor? = nil,
+             stagedNewZoneIds: [String]? = nil) {
             self.version = version
             self.zoneIds = zoneIds
             self.nextCursor = nextCursor
+            self.cursorAnchor = cursorAnchor
             self.stagedNewZoneIds = stagedNewZoneIds
         }
     }
@@ -224,7 +232,8 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             replacements.append(incoming)
         }
         let sortedRecords = byId.values.sorted { $0.zoneId < $1.zoneId }
-        let manifest = Manifest(version: 1, zoneIds: sortedRecords.map(\.zoneId), nextCursor: page.nextCursor)
+        let manifest = Manifest(version: 2, zoneIds: sortedRecords.map(\.zoneId), nextCursor: page.nextCursor,
+            cursorAnchor: Self.cursorAnchor(for: page))
         let encodedManifest = try JSONEncoder().encode(manifest)
         guard encodedManifest.count <= Self.maximumManifestBytes else {
             throw PCADeviceSafeZoneDeliveryError.persistenceUnavailable
@@ -247,9 +256,12 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             encodedById[record.zoneId] = bytes
         }
 
-        if !newlyAddedZoneIds.isEmpty {
-            let intent = Manifest(version: 1, zoneIds: current.manifest.zoneIds,
-                nextCursor: current.manifest.nextCursor, stagedNewZoneIds: newlyAddedZoneIds.sorted())
+        if !replacements.isEmpty {
+            // A partial page may replace an old row at a different epoch as
+            // well as add new rows. Reset navigation on recovery, since the
+            // previous cursor's row may have been one of those replacements.
+            let intent = Manifest(version: 2, zoneIds: current.manifest.zoneIds,
+                nextCursor: nil, cursorAnchor: nil, stagedNewZoneIds: newlyAddedZoneIds.sorted())
             try persistManifest(intent, scope: scope)
         }
 
@@ -276,7 +288,10 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             let bytes = try keychain.retrieve(forAccount: Self.manifestAccount(scope), service: service)
             guard bytes.count <= Self.maximumManifestBytes,
                   (try? StrictJSONDocument.validateNoDuplicateMembers(bytes, maximumBytes: Self.maximumManifestBytes)) != nil,
-                  let decoded = try? JSONDecoder().decode(Manifest.self, from: bytes), decoded.version == 1,
+                  let decoded = try? JSONDecoder().decode(Manifest.self, from: bytes),
+                  (decoded.version == 1 || decoded.version == 2),
+                  (decoded.version != 1 || decoded.cursorAnchor == nil),
+                  (decoded.version != 2 || (decoded.nextCursor == nil ? decoded.cursorAnchor == nil : decoded.cursorAnchor != nil)),
                   decoded.zoneIds == decoded.zoneIds.sorted(), Set(decoded.zoneIds).count == decoded.zoneIds.count,
                   decoded.zoneIds.allSatisfy(PCADeviceSafeZoneDeliveryScope.token),
                   (decoded.stagedNewZoneIds ?? []).count <= Self.maximumPageRows,
@@ -290,7 +305,7 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             manifest = decoded
             manifestEncodedBytes = bytes.count
         } catch KeychainStoreError.itemNotFound {
-            return (Manifest(version: 1, zoneIds: [], nextCursor: nil), [])
+            return (Manifest(version: 2, zoneIds: [], nextCursor: nil), [])
         } catch KeychainStoreError.unexpectedStatus(_) {
             // Keychain access can be temporarily unavailable while the device
             // is locked. Do not mislabel that ordinary storage condition as
@@ -299,12 +314,11 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
         } catch let error as PCADeviceSafeZoneDeliveryError { throw error }
         catch { throw PCADeviceSafeZoneDeliveryError.corruptInbox }
 
-        // A process can die after writing some new rows but before the final
-        // manifest/cursor. Remove only rows explicitly covered by the durable
-        // write-ahead marker, then clear that marker before allowing a retry.
-        // Existing zone rows are never included, so replacement writes remain
-        // monotonic and are safely replayable.
-        if let stagedIds = manifest.stagedNewZoneIds, !stagedIds.isEmpty {
+        // A process can die after writing some rows but before the final
+        // manifest/cursor. Remove only new rows explicitly covered by the
+        // write-ahead marker. Replacements remain monotonic; the cursor resets
+        // so the server can replay the interrupted page safely.
+        if let stagedIds = manifest.stagedNewZoneIds {
             try requireCurrentScope(scope)
             do {
                 for zoneId in stagedIds {
@@ -313,7 +327,7 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
                 }
             } catch let error as PCADeviceSafeZoneDeliveryError { throw error }
             catch { throw PCADeviceSafeZoneDeliveryError.persistenceUnavailable }
-            let recovered = Manifest(version: 1, zoneIds: manifest.zoneIds, nextCursor: manifest.nextCursor)
+            let recovered = Manifest(version: 2, zoneIds: manifest.zoneIds, nextCursor: nil, cursorAnchor: nil)
             try persistManifest(recovered, scope: scope)
             manifest = recovered
             manifestEncodedBytes = try JSONEncoder().encode(recovered).count
@@ -342,17 +356,30 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
             } catch let error as PCADeviceSafeZoneDeliveryError { throw error }
             catch { throw PCADeviceSafeZoneDeliveryError.corruptInbox }
         }
-        if let cursor = manifest.nextCursor {
+        if manifest.version == 1 {
+            // Version 1 persisted the cursor but not the page tail that
+            // produced it. Preserve all durable zone rows and restart paging
+            // from the beginning rather than inferring a boundary from a
+            // merged, potentially stale row set.
+            let migrated = Manifest(version: 2, zoneIds: manifest.zoneIds, nextCursor: nil, cursorAnchor: nil)
+            try persistManifest(migrated, scope: scope)
+            manifest = migrated
+            manifestEncodedBytes = try JSONEncoder().encode(migrated).count
+        } else if let cursor = manifest.nextCursor {
             guard let parsedCursor = PCADeviceSafeZoneDeliveryCursor.parse(cursor) else {
+                throw PCADeviceSafeZoneDeliveryError.corruptInbox
+            }
+            guard let anchor = manifest.cursorAnchor,
+                  records.contains(where: { $0.zoneId == anchor.zoneId && $0.keyEpoch == anchor.keyEpoch }) else {
                 throw PCADeviceSafeZoneDeliveryError.corruptInbox
             }
             switch parsedCursor {
             case .legacy(let zoneId):
-                guard records.contains(where: { $0.zoneId == zoneId }) else {
+                guard anchor.zoneId == zoneId else {
                     throw PCADeviceSafeZoneDeliveryError.corruptInbox
                 }
             case .epochBound(let keyEpoch, let zoneId):
-                guard records.contains(where: { $0.zoneId == zoneId && $0.keyEpoch == keyEpoch }) else {
+                guard anchor.zoneId == zoneId, anchor.keyEpoch == keyEpoch else {
                     throw PCADeviceSafeZoneDeliveryError.corruptInbox
                 }
             }
@@ -434,6 +461,11 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
                 }
             }
         }
+    }
+
+    private static func cursorAnchor(for page: PCAOpaqueSafeZoneDeliveryPage) -> CursorAnchor? {
+        guard page.nextCursor != nil, let tail = page.safeZones.last else { return nil }
+        return CursorAnchor(zoneId: tail.zoneId, keyEpoch: tail.keyEpoch)
     }
 
     private static func manifestAccount(_ scope: PCADeviceSafeZoneDeliveryScope) -> String {

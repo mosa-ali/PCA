@@ -331,7 +331,7 @@ final class SafeZoneDeliveryTests: XCTestCase {
         XCTAssertEqual(try store.nextCursor(scope: scope), validCursor)
     }
 
-    func testPersistedCursorMustReferToStoredZoneAndEpoch() throws {
+    func testPersistedCursorMustMatchDurablePageTailAndEpoch() throws {
         let rows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
             row(String(format: "zone-%03d", index), keyEpoch: 2)
         }
@@ -360,6 +360,61 @@ final class SafeZoneDeliveryTests: XCTestCase {
                 XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .corruptInbox)
             }
         }
+    }
+
+    func testPersistedCursorUsesPageTailWhenHigherIdFromPriorStateIsRetained() throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: [row("zone-999", keyEpoch: 2)], nextCursor: nil),
+            for: scope, requestedCursor: nil)
+        let pageRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        let pageCursor = epochCursor(2, pageRows.last!.zoneId)
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: pageRows, nextCursor: pageCursor),
+            for: scope, requestedCursor: nil)
+
+        XCTAssertEqual(try store.nextCursor(scope: scope), pageCursor)
+        XCTAssertEqual(try store.read(scope: scope).last?.zoneId, "zone-999",
+            "retained rows can sort after the current page tail")
+
+        let account = "safe-zone-delivery.v1.\(scope.storageKey).manifest"
+        let original = try keychain.retrieve(forAccount: account, service: "test.pca.safe-zone-delivery.v1")
+        var manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        manifest["nextCursor"] = epochCursor(2, pageRows[pageRows.count - 2].zoneId)
+        let corrupted = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+        try keychain.storeReplacingAtomically(corrupted, forAccount: account,
+            service: "test.pca.safe-zone-delivery.v1", accessibility: .whenUnlockedThisDeviceOnly)
+
+        XCTAssertThrowsError(try store.nextCursor(scope: scope)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .corruptInbox)
+        }
+    }
+
+    func testVersionOneCursorMigrationRetainsRowsAndRestartsFromBeginning() throws {
+        let keychain = InMemoryKeychainStore()
+        let store = inbox(keychain)
+        let rows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), keyEpoch: 2)
+        }
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: rows,
+            nextCursor: epochCursor(2, rows.last!.zoneId)), for: scope, requestedCursor: nil)
+
+        let account = "safe-zone-delivery.v1.\(scope.storageKey).manifest"
+        let original = try keychain.retrieve(forAccount: account, service: "test.pca.safe-zone-delivery.v1")
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        legacy["version"] = 1
+        legacy.removeValue(forKey: "cursorAnchor")
+        let legacyBytes = try JSONSerialization.data(withJSONObject: legacy, options: [.sortedKeys])
+        try keychain.storeReplacingAtomically(legacyBytes, forAccount: account,
+            service: "test.pca.safe-zone-delivery.v1", accessibility: .whenUnlockedThisDeviceOnly)
+
+        XCTAssertNil(try store.nextCursor(scope: scope), "unproven legacy navigation restarts safely")
+        XCTAssertEqual(try store.read(scope: scope), rows, "migration retains all durable opaque rows")
+        let migratedBytes = try keychain.retrieve(forAccount: account, service: "test.pca.safe-zone-delivery.v1")
+        let migrated = try XCTUnwrap(JSONSerialization.jsonObject(with: migratedBytes) as? [String: Any])
+        XCTAssertEqual(migrated["version"] as? Int, 2)
+        XCTAssertTrue(migrated["nextCursor"] is NSNull)
     }
 
     func testSynchronizationDeadlineShrinksRequestTimeoutAndDoesNotStageLatePage() async throws {
@@ -516,6 +571,35 @@ final class SafeZoneDeliveryTests: XCTestCase {
         XCTAssertEqual(try relaunchedStore.nextCursor(scope: scope), "zone-016")
     }
 
+    func testInterruptedRowReplacementResetsCursorWithoutLosingRetainedRows() throws {
+        let keychain = InterruptingKeychainStore(failZoneWriteNumber: 18)
+        let store = inbox(keychain)
+        let oldRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 1, keyEpoch: 2)
+        }
+        let oldCursor = epochCursor(2, oldRows.last!.zoneId)
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: oldRows, nextCursor: oldCursor),
+            for: scope, requestedCursor: nil)
+        let newerRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 2, keyEpoch: 3)
+        }
+
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: newerRows,
+            nextCursor: epochCursor(3, newerRows.last!.zoneId)), for: scope, requestedCursor: oldCursor)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .persistenceUnavailable)
+        }
+        XCTAssertNil(try store.nextCursor(scope: scope), "recovery cannot retain an anchor to a partially replaced row")
+        let recoveredRows = try store.read(scope: scope)
+        XCTAssertEqual(recoveredRows.count, oldRows.count, "interrupted replacement retains all rows")
+        XCTAssertEqual(recoveredRows.first, newerRows.first, "the first replacement completed before interruption")
+        XCTAssertEqual(Array(recoveredRows.dropFirst()), Array(oldRows.dropFirst()),
+            "rows after the interrupted write retain their previous revisions")
+
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: newerRows,
+            nextCursor: epochCursor(3, newerRows.last!.zoneId)), for: scope, requestedCursor: nil)
+        XCTAssertEqual(try store.nextCursor(scope: scope), epochCursor(3, newerRows.last!.zoneId))
+    }
+
     func testTemporaryKeychainLockIsRetryableNotCorruptAndPreservesStagedData() throws {
         let keychain = TemporarilyUnavailableKeychainStore()
         let store = inbox(keychain)
@@ -609,11 +693,11 @@ final class SafeZoneDeliveryTests: XCTestCase {
         let manifestAccount = "safe-zone-delivery.v1.\(scope.storageKey).manifest"
         let validManifest = String(decoding: try manifestKeychain.retrieve(forAccount: manifestAccount,
             service: "test.pca.safe-zone-delivery.v1"), as: UTF8.self)
-        let versionField = "\"version\":1"
+        let versionField = "\"version\":2"
         XCTAssertTrue(validManifest.contains(versionField))
         let duplicateManifest = validManifest.replacingOccurrences(
             of: versionField,
-            with: "\"version\":1,\"vers\\u0069on\":1"
+            with: "\"version\":2,\"vers\\u0069on\":2"
         )
         try manifestKeychain.storeReplacingAtomically(Data(duplicateManifest.utf8),
             forAccount: manifestAccount, service: "test.pca.safe-zone-delivery.v1",

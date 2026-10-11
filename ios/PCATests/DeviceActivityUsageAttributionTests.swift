@@ -1118,22 +1118,24 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertEqual(try usage.record(plan: value, activityId: value.monitorActivityId,
             eventId: high.eventId, at: now, deviceTimeZone: utc), 75)
     }
-    func testSharedEnforcementBoundaryPreservesShieldsOnAttributionOrSafetyFailure() throws {
+    func testSharedEnforcementBoundaryPreservesShieldsOnAttributionFailure() throws {
         var applied = 0, removed = 0
         let tokens = Set([Token(value: "opaque")])
+        let protectedFloor = Set([Token(value: "protected-floor")])
         let store = Store(), value = try plan(policy())
         store.values["com.pca.app.deviceactivity.usage-lower-bound.v1"] = Data("corrupt".utf8)
         XCTAssertFalse(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: tokens, protectedApplications: [], coverageAvailable: true,
+            applications: tokens, protectedApplications: protectedFloor, coverageAvailable: true,
             loadLowerBound: { try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: value) },
             apply: { _ in applied += 1 }, remove: { removed += 1 }))
         XCTAssertFalse(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: tokens, protectedApplications: tokens, coverageAvailable: true,
-            loadLowerBound: { 60 }, apply: { _ in applied += 1 }, remove: { removed += 1 }))
+            applications: tokens, protectedApplications: protectedFloor, coverageAvailable: true,
+            loadLowerBound: { throw DeviceActivityUsageError.unavailableState },
+            apply: { _ in applied += 1 }, remove: { removed += 1 }))
         XCTAssertEqual(applied, 0)
         XCTAssertEqual(removed, 0)
         XCTAssertTrue(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: tokens, protectedApplications: [], coverageAvailable: true,
+            applications: tokens, protectedApplications: protectedFloor, coverageAvailable: true,
             loadLowerBound: { 60 }, apply: { _ in applied += 1 }, remove: { removed += 1 }))
         XCTAssertEqual(applied, 1)
         XCTAssertEqual(removed, 0)
@@ -1152,15 +1154,16 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             try usage.activate(plan: value)
             return try usage.lowerBound(for: value)
         }
+        let protectedFloor = Set([Token(value: "protected-floor")])
         XCTAssertFalse(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: Set([Token(value: "opaque")]), protectedApplications: [],
+            applications: Set([Token(value: "opaque")]), protectedApplications: protectedFloor,
             coverageAvailable: true, loadLowerBound: load,
             apply: { _ in mutations += 1 }, remove: { mutations += 1 }))
         XCTAssertEqual(mutations, 0)
         XCTAssertNotNil(store.read(forKey: "usage.pending." + value.generation))
         store.ignoreWrites = false
         XCTAssertTrue(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: Set([Token(value: "opaque")]), protectedApplications: [],
+            applications: Set([Token(value: "opaque")]), protectedApplications: protectedFloor,
             coverageAvailable: true, loadLowerBound: load,
             apply: { _ in mutations += 1 }, remove: { XCTFail("Retained quota must restrict") }))
         XCTAssertEqual(mutations, 1)

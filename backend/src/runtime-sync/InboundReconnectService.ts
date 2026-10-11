@@ -161,6 +161,7 @@ export class InboundReconnectService {
 
     const applied: FamilyEnvelope[] = [];
     const receipts: SyncReceipt[] = [];
+    let eligibleOutsideCurrentPage = false;
 
     for (const [senderKeyId, envelopes] of bySenderKey) {
       const context = resolveContext(senderKeyId, nowUtc);
@@ -187,7 +188,14 @@ export class InboundReconnectService {
         if (decision.kind === 'APPLY_NOW') applied.push(envelope);
         for (const drainedItem of result.drained) {
           const candidate = allEnvelopesByMessageId.get(drainedItem.messageId);
-          if (!candidate) continue; // never expose ciphertext outside this bounded relay batch
+          if (!candidate) {
+            // A pending envelope from a prior page can become eligible when
+            // this page supplies its predecessor. Keep delivery bounded to
+            // ciphertext fetched in this page, but do not report convergence:
+            // the client must start another reconnect sweep to receive it.
+            if (drainedItem.decision.kind !== 'HOLD_PENDING') eligibleOutsideCurrentPage = true;
+            continue;
+          }
           const drainedDecision = await decideDelivery(candidate, drainedItem.decision);
           receipts.push(buildReceipt(candidate, drainedDecision, nowUtc));
           if (drainedDecision.kind === 'APPLY_NOW') applied.push(candidate);
@@ -205,7 +213,7 @@ export class InboundReconnectService {
     const dedupedReceipts = [...receiptsByMessageId.values()];
     const dedupedApplied = [...new Map(applied.map((envelope) => [envelope.messageId, envelope])).values()]
       .filter((envelope) => receiptsByMessageId.get(envelope.messageId)?.outcome === 'APPLIED');
-    const hasUnresolved = unparseableMessageIds.length > 0 || droppedForListBound.length > 0
+    const hasUnresolved = eligibleOutsideCurrentPage || unparseableMessageIds.length > 0 || droppedForListBound.length > 0
       || dedupedReceipts.some((receipt) => receipt.outcome !== 'APPLIED');
     return { applied: dedupedApplied, receipts: dedupedReceipts, unparseableMessageIds, droppedForListBound,
       hasMore, nextCursor, hasUnresolved, sessionIncarnation: scope?.sessionIncarnation ?? null };

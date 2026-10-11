@@ -82,6 +82,81 @@ test('a campaign traverses empty malformed pages and reaches later eligible ciph
   assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 206);
 });
 
+test('promotion of a prior-page pending envelope keeps the later page unresolved until a fresh delivery sweep', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, inboundService } = buildHarness({ relayNow: () => now });
+  const child = buildEnvelope({ messageId: 'zz-child-request', messageType: 'CHILD_REQUEST' });
+  const parent = buildEnvelope({ messageId: 'a-parent-decision', messageType: 'PARENT_DECISION', correlationId: child.messageId,
+    senderKeyId: 'parent-key', senderDeviceId: 'parent-device' });
+  // Put the dependent envelope and enough unrelated queue entries on page 1;
+  // its predecessor appears only on page 2.
+  await queueForRecipient(relayService, parent);
+  for (let i = 0; i < MAX_INBOUND_LIST_SIZE - 1; i += 1) {
+    const filler = buildEnvelope({ messageId: `b-filler-${String(i).padStart(2, '0')}` });
+    await queueForRecipient(relayService, filler);
+  }
+  const highWater = buildEnvelope({ messageId: 'zzz-high-water' });
+  await queueForRecipient(relayService, highWater);
+
+  const first = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64) });
+  assert.equal(first.hasMore, true);
+  assert.equal(first.receipts.find((receipt) => receipt.messageId === parent.messageId)?.outcome, 'HELD_PENDING');
+  // The predecessor arrives after page 1 was read but before its fixed
+  // high-water mark. It belongs to page 2 and is not a supplement on page 1.
+  await queueForRecipient(relayService, child);
+
+  const second = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64), cursor: first.nextCursor });
+  assert.deepEqual(new Set(second.applied.map((envelope) => envelope.messageId)), new Set([child.messageId, highWater.messageId]));
+  assert.equal(second.hasMore, false);
+  assert.equal(second.hasUnresolved, true, 'prior-page ciphertext was promoted but is not part of this bounded response');
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, MAX_INBOUND_LIST_SIZE + 2,
+    'no relay entry is implicitly acknowledged');
+
+  const freshSweep = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64) });
+  assert.ok(freshSweep.applied.some((envelope) => envelope.messageId === parent.messageId));
+});
+
+test('rejection of a prior-page pending envelope remains unresolved until its fresh-page receipt is delivered', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, inboundService } = buildHarness({ relayNow: () => now });
+  const child = buildEnvelope({ messageId: 'zz-reject-child', messageType: 'CHILD_REQUEST' });
+  const parent = buildEnvelope({ messageId: 'a-reject-parent', messageType: 'PARENT_DECISION', correlationId: child.messageId,
+    senderKeyId: 'parent-key', senderDeviceId: 'parent-device' });
+  await queueForRecipient(relayService, parent);
+  for (let i = 0; i < MAX_INBOUND_LIST_SIZE - 1; i += 1) {
+    await queueForRecipient(relayService, buildEnvelope({ messageId: `b-reject-filler-${String(i).padStart(2, '0')}` }));
+  }
+  const highWater = buildEnvelope({ messageId: 'zzz-reject-high-water' });
+  await queueForRecipient(relayService, highWater);
+
+  const first = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'b'.repeat(64) });
+  assert.equal(first.receipts.find((receipt) => receipt.messageId === parent.messageId)?.outcome, 'HELD_PENDING');
+  await queueForRecipient(relayService, child);
+
+  let parentContextReads = 0;
+  const context = (senderKeyId) => ({ ...resolveContext(now)(),
+    senderPublicKey: senderKeyId === 'parent-key' && ++parentContextReads > 1 ? 'rotated-parent-key' : SENDER_PUBLIC_KEY });
+  const second = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', context, now,
+    { sessionIncarnation: 'b'.repeat(64), cursor: first.nextCursor });
+  assert.equal(second.hasMore, false);
+  assert.equal(second.hasUnresolved, true, 'terminal rejection outside this page still requires a later response receipt');
+  assert.ok(!second.receipts.some((receipt) => receipt.messageId === parent.messageId));
+  assert.ok(second.applied.some((envelope) => envelope.messageId === child.messageId));
+
+  const freshSweep = await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', context, now,
+    { sessionIncarnation: 'b'.repeat(64) });
+  const parentReceipt = freshSweep.receipts.find((receipt) => receipt.messageId === parent.messageId);
+  assert.equal(parentReceipt?.outcome, 'REJECTED');
+  assert.equal(parentReceipt?.reason, 'INVALID_SIGNATURE');
+  assert.ok(!freshSweep.applied.some((envelope) => envelope.messageId === parent.messageId));
+  assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, MAX_INBOUND_LIST_SIZE + 2,
+    'a rejected envelope remains queued until explicit recipient ACK');
+});
+
 test('an aggregate byte-full permanently held head cannot starve a valid tail in the same campaign', async () => {
   const now = new Date('2026-01-01T01:00:00.000Z');
   const { relayService, inboundService } = buildHarness({ relayNow: () => now });

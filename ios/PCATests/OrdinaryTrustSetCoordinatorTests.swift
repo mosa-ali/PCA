@@ -124,7 +124,11 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             entries: entries, issuedAt: "2026-10-09T00:00:00.000Z", supersedesEpoch: supersedes)
     }
     private func rootHead() throws -> OrdinaryTrustSetHead {
-        OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(1)), signature: "accepted-root")
+        let signature = Data(repeating: 1, count: 64).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return OrdinaryTrustSetHead(familyId: "family-test",
+            canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(1)), signature: signature)
     }
     private func fixture(verifier: Verifier = Verifier()) throws -> (Store, Signer, Transport, OrdinaryTrustSetCoordinator) {
         let head = try rootHead()
@@ -211,6 +215,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             next: OrdinaryTrustSetRecord(head: root, rootAnchor: root)))
         let firstSigner = Signer()
         let transport = Transport()
+        transport.head = root
         transport.failure = true
         let firstCoordinator = OrdinaryTrustSetCoordinator(store: firstStore, signer: firstSigner,
             verifier: Verifier(), transport: transport, trustedRootAnchor: root,
@@ -925,7 +930,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
 
     func testCatchUpOwnerTransferPersistsCheckpointAndValidatesAfterRestart() async throws {
         let verifier = Verifier(acceptedSignerKeys: [
-            "accepted-root": "public-dsk",
+            try rootHead().signature: "public-dsk",
             "transfer-by-genesis": "public-dsk",
             "next-by-new-owner": "new-public-dsk",
         ])
@@ -978,7 +983,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
 
     func testCatchUpOwnerCanTransferAwayAndBackAcrossVerifiedHops() async throws {
         let verifier = Verifier(acceptedSignerKeys: [
-            "accepted-root": "public-dsk",
+            try rootHead().signature: "public-dsk",
             "to-new-owner": "public-dsk",
             "back-to-genesis": "new-public-dsk",
             "genesis-next": "public-dsk",
@@ -1027,12 +1032,14 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
     func testCatchUpClearsHigherEpochPendingCandidateWhoseBaseWasSuperseded() async throws {
         let (store, _, transport, coordinator) = try fixture()
         let root = try XCTUnwrap(store.value.rootAnchor)
+        let localEpochTwo = try signedHead(epoch(2), signature: "local-epoch-two")
         let staleHigherCandidate = try signedHead(epoch(3), signature: "stale-higher-candidate")
-        let accepted = try signedHead(epoch(2), signature: "server-accepted")
-        store.value.pending = OrdinaryTrustSetPending(previousHead: root, candidate: staleHigherCandidate,
+        let accepted = try signedHead(epoch(3), signature: "server-accepted")
+        store.value = OrdinaryTrustSetRecord(head: localEpochTwo, rootAnchor: root, acceptedBase: root)
+        store.value.pending = OrdinaryTrustSetPending(previousHead: localEpochTwo, candidate: staleHigherCandidate,
             signerDeviceId: "owner-device", signerKeyId: "owner-dsk")
         transport.head = accepted
-        transport.records[2] = accepted
+        transport.records[3] = accepted
 
         let caughtUp = try await coordinator.catchUp()
         XCTAssertTrue(caughtUp)
@@ -1069,7 +1076,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
 
     func testTransferMustBeSignedByOutgoingOwnerAndCheckpointCannotSkipBase() async throws {
         let verifier = Verifier(acceptedSignerKeys: [
-            "accepted-root": "public-dsk",
+            try rootHead().signature: "public-dsk",
             "transfer-by-new-owner": "new-public-dsk",
             "transfer-by-genesis": "public-dsk",
             "next-by-new-owner": "new-public-dsk",
@@ -1235,7 +1242,7 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
     func testKeychainPersistedTrustSetRejectsEscapedDuplicateMembers() throws {
         let root = try rootHead()
         let encodedRoot = String(decoding: try JSONEncoder().encode(root), as: UTF8.self)
-        let headWithEscapedDuplicate = "{\"familyId\":\"family-test\",\"canonicalBytes\":\"\(root.canonicalBytes.base64EncodedString())\",\"signature\":\"accepted-root\",\"sign\\u0061ture\":\"accepted-root\"}"
+        let headWithEscapedDuplicate = "{\"familyId\":\"family-test\",\"canonicalBytes\":\"\(root.canonicalBytes.base64EncodedString())\",\"signature\":\"\(root.signature)\",\"sign\\u0061ture\":\"\(root.signature)\"}"
         let duplicateHeadBytes = Data(headWithEscapedDuplicate.utf8)
         if let directDecode = try? JSONDecoder().decode(OrdinaryTrustSetHead.self, from: duplicateHeadBytes) {
             XCTAssertEqual(directDecode, root, "If Codable accepts the escaped duplicate, it must resolve to the valid root")
@@ -1265,18 +1272,21 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(signer.calls, 1)
         XCTAssertTrue(transport.sent.isEmpty)
     }
-    func testConflictingCatchUpKeepsPendingUntilAuthoritativeExactReceipt() async throws {
+    func testConflictingCatchUpRetiresPendingAfterAcceptedFloorAdvances() async throws {
         let (store, _, transport, coordinator) = try fixture()
         try await coordinator.prepare(epoch(2))
         let pending = try XCTUnwrap(store.value.pending)
         transport.head = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: pending.candidate.canonicalBytes, signature: "different-valid-signature")
         let complete = try await coordinator.catchUp()
         XCTAssertTrue(complete)
-        XCTAssertEqual(store.value.pending, pending)
-        transport.statusValue = .rejected
-        let reconciled = try await coordinator.reconcile()
-        XCTAssertFalse(reconciled)
-        XCTAssertEqual(store.value.pending, pending)
+        XCTAssertNil(store.value.pending)
+        do {
+            _ = try await coordinator.submitPending()
+            XCTFail("a request based on the superseded floor cannot be replayed")
+        } catch let error as OrdinaryTrustSetError {
+            XCTAssertEqual(error, .pendingSubmission)
+        }
+        XCTAssertTrue(transport.sent.isEmpty)
     }
 
 }

@@ -15,6 +15,16 @@ class UriEnrollmentLinkParserTest {
     }
 
     @Test
+    fun `accepts a valid link at the configured URI length limit and rejects the next character`() {
+        val prefix = "pca://enroll?token=$canonicalToken&tracking="
+        val exactLimit = prefix + "x".repeat(EnrollmentDeepLinkConfig.MAX_INVITATION_URI_LENGTH - prefix.length)
+
+        assertEquals(EnrollmentDeepLinkConfig.MAX_INVITATION_URI_LENGTH, exactLimit.length)
+        assertEquals(canonicalToken, parser.parse(exactLimit)?.rawInvitationToken)
+        assertNull(parser.parse("${exactLimit}x"))
+    }
+
+    @Test
     fun `ignores other query parameters, extracting only token`() {
         val result = parser.parse("pca://enroll?utm_source=qr&token=$canonicalToken&extra=ignored")
         assertEquals(canonicalToken, result?.rawInvitationToken)

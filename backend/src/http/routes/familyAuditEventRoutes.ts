@@ -18,7 +18,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
-import type { FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
+import type { FamilyAuditEventEnvelope, FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
 import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
@@ -86,7 +86,12 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     if (!familyId || familyId !== familyIdFromSession) {
       return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
-    const role = await parentAccountService.activeFamilyRole(accountId, familyId);
+    let role;
+    try {
+      role = await parentAccountService.activeFamilyRole(accountId, familyId);
+    } catch {
+      return reply.code(503).send({ error: 'family_authority_unavailable' });
+    }
     if (role !== 'ADMINISTRATOR' && role !== 'VIEWER') return reply.code(403).send({ error: 'forbidden' });
 
     if (!deviceSessionService) return reply.code(503).send({ error: 'device_session_unavailable' });
@@ -126,7 +131,46 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     // family scope, but only the proof-of-possession session above identifies
     // which device may fetch its own ciphertext. The ledger's exact
     // (familyId, parentDeviceId, accepted keyEpoch) query is the binding boundary.
-    const envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
-    return reply.code(200).send({ envelopes: envelopes.map(toEnvelopeDto) });
+    // Recheck both Parent membership and the device's accepted Trust Set
+    // snapshot after the asynchronous read: a role revocation or key rotation
+    // during the ledger lookup must not receive a successful stale-scope read.
+    let envelopes: FamilyAuditEventEnvelope[];
+    try {
+      envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
+    } catch {
+      return reply.code(503).send({ error: 'family_audit_unavailable' });
+    }
+    let currentRole;
+    try {
+      currentRole = await parentAccountService.activeFamilyRole(accountId, familyId);
+    } catch {
+      return reply.code(503).send({ error: 'family_authority_unavailable' });
+    }
+    if (currentRole !== 'ADMINISTRATOR' && currentRole !== 'VIEWER') {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+    let currentActor;
+    try {
+      currentActor = await trustSetRoleResolver.resolveActor(familyId, actorDeviceId, actorDskKeyId);
+    } catch {
+      return reply.code(503).send({ error: 'family_authority_unavailable' });
+    }
+    if (isActorResolutionFailure(currentActor) || !currentActor || typeof currentActor !== 'object' ||
+        Array.isArray(currentActor) || currentActor.deviceId !== actorDeviceId ||
+        !PARENT_DEVICE_ROLES.has(currentActor.role) ||
+        !isFamilyEpochNumber(currentActor.trustSetEpoch, 1) || !isFamilyEpochNumber(currentActor.keyEpoch, 1)) {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+    if (currentActor.trustSetEpoch !== actor.trustSetEpoch) {
+      return reply.code(409).send({ error: 'authority_changed' });
+    }
+    if (currentActor.keyEpoch !== actor.keyEpoch) {
+      return reply.code(409).send({ error: 'key_epoch_mismatch' });
+    }
+    try {
+      return reply.code(200).send({ envelopes: envelopes.map(toEnvelopeDto) });
+    } catch {
+      return reply.code(503).send({ error: 'family_audit_unavailable' });
+    }
   });
 }

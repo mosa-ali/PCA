@@ -70,10 +70,11 @@ final class DeviceActivityUsageBindingResolverTests: XCTestCase {
             deviceTimeZone: TimeZone(secondsFromGMT: 0)!, historicalActivitySupported: true, otherMonitorCount: 1)
         XCTAssertTrue(plan.matches(policy: policy()))
 
+        let protectedFloor = Set([Token(value: "protected-floor")])
         var applied: Set<Token>?
         var removed = false
         XCTAssertTrue(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: [token], protectedApplications: [], coverageAvailable: true,
+            applications: [token], protectedApplications: protectedFloor, coverageAvailable: true,
             loadLowerBound: { plan.thresholds[0].minutes },
             apply: { applied = $0 }, remove: { removed = true }))
         XCTAssertEqual(applied, [token])

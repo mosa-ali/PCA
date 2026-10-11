@@ -483,6 +483,22 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
+    fun `oversized link through synchronous coordinator entry is rejected before key generation`() = runTest {
+        val keys = CountingKeyPairGenerator(TestConformanceDeviceKeyPairGenerator())
+        val c = coordinator(NeverCalledBootstrapApiClient(), keys)
+        val prefix = "pca://enroll?token=$VALID_LINK_TOKEN&tracking="
+        val oversized = prefix + "x".repeat(EnrollmentDeepLinkConfig.MAX_INVITATION_URI_LENGTH + 1 - prefix.length)
+
+        c.submitInvitationLink(oversized)
+        assertEquals(EnrollmentState.FailedInvitationInvalid, c.state.value)
+        c.beginBootstrap()
+
+        assertEquals(EnrollmentState.FailedInvitationInvalid, c.state.value)
+        assertEquals(0, keys.signingCallCount)
+        assertEquals(0, keys.encryptionCallCount)
+    }
+
+    @Test
     fun `production crypto gate blocks bootstrap before any network call is reached`() = runTest {
         val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()

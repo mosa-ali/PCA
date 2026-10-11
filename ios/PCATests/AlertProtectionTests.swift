@@ -83,7 +83,10 @@ final class AlertProtectionTests: XCTestCase {
                 XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidOpaqueIdentifier)
             }
         }
-        XCTAssertNoThrow(try generate(deviceId: nil))
+        XCTAssertNoThrow(try ProtectionAlertGenerator().generate(
+            alertId: "alert-1", familyId: "family-1", deviceId: nil, parentDeviceId: "parent-1",
+            trigger: .invitationRedeemed, keyEpoch: 1, generatedAtUtc: now,
+            encryptedPayload: Data([1]), nonce: Data([2]), alertsEnabled: true))
         XCTAssertNoThrow(try generate(deviceId: String(repeating: "d", count: 128)))
     }
 

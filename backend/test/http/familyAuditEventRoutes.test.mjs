@@ -43,7 +43,7 @@ function buildApp({
       if (!session) throw new Error('unauthorized');
       return session;
     },
-    async activeFamilyRole() { return role; },
+    async activeFamilyRole() { return typeof role === 'function' ? role() : role; },
   };
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, familyId) {
@@ -218,6 +218,82 @@ test('accepted Trust Set membership is bound to the live session DSK before reci
     assert.equal(response.statusCode, 200);
     assert.deepEqual(resolverArgs, [FAMILY, OWNER_DEVICE, 'dsk-owner-1']);
     assert.deepEqual(listCalls, [[FAMILY, OWNER_DEVICE, 4]]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('key rotation during the ledger read returns no ciphertext from the stale accepted epoch', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  await ledger.record({ envelopeId: 'env-owner-rotation-race', familyId: FAMILY,
+    parentDeviceId: OWNER_DEVICE, keyEpoch: 4, generatedAtUtc: LEDGER_NOW,
+    encryptedPayloadB64: 'c3RhbGU=', nonceB64: 'bm9uY2U' });
+  const resolverCalls = [];
+  const { app } = buildApp({ ledger, trustSetRoleResolver: {
+    async resolveActor(...args) {
+      resolverCalls.push(args);
+      return { deviceId: OWNER_DEVICE, role: 'OWNER', trustSetEpoch: 7,
+        keyEpoch: resolverCalls.length === 1 ? 4 : 5 };
+    },
+  } });
+  try {
+    const response = await app.inject({ method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerDeviceHeaders });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.equal(response.body.includes('c3RhbGU='), false);
+    assert.equal(resolverCalls.length, 2);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Parent role revoked during the ledger read returns no ciphertext', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  await ledger.record({ envelopeId: 'env-owner-role-revocation-race', familyId: FAMILY,
+    parentDeviceId: OWNER_DEVICE, keyEpoch: 4, generatedAtUtc: LEDGER_NOW,
+    encryptedPayloadB64: 'c3RhbGU=', nonceB64: 'bm9uY2U' });
+  let roleChecks = 0;
+  const { app } = buildApp({ ledger, role: () => ++roleChecks === 1 ? 'ADMINISTRATOR' : 'MEMBER' });
+  try {
+    const response = await app.inject({ method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerDeviceHeaders });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(response.body.includes('c3RhbGU='), false);
+    assert.equal(roleChecks, 2);
+  } finally {
+    await app.close();
+  }
+});
+
+test('ledger read failure returns a sanitized retryable response', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  ledger.listForParentDevice = async () => { throw new Error('database-password-or-row-content'); };
+  const { app } = buildApp({ ledger });
+  try {
+    const response = await app.inject({ method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerDeviceHeaders });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'family_audit_unavailable' });
+    assert.equal(response.body.includes('database-password-or-row-content'), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Parent membership authority outage returns a sanitized retryable response before ledger access', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let listCalls = 0;
+  ledger.listForParentDevice = async () => { listCalls += 1; return []; };
+  const { app } = buildApp({ ledger, role: () => { throw new Error('private membership storage failure'); } });
+  try {
+    const response = await app.inject({ method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events`, headers: ownerDeviceHeaders });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'family_authority_unavailable' });
+    assert.equal(response.body.includes('private membership storage failure'), false);
+    assert.equal(listCalls, 0);
   } finally {
     await app.close();
   }

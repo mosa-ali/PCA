@@ -394,7 +394,10 @@ test('buildServer wires accepted Trust Set authority into FamilyAudit delivery',
     });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json(), { envelopes: [] });
-    assert.deepEqual(resolverCalls, [['family-a', 'device-a', 'dsk-a']]);
+    assert.deepEqual(resolverCalls, [
+      ['family-a', 'device-a', 'dsk-a'],
+      ['family-a', 'device-a', 'dsk-a'],
+    ]);
   } finally {
     await app.close();
   }
