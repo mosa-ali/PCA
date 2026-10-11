@@ -297,6 +297,7 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
         // consume unbounded memory in a DeviceActivity callback. Invalid
         // history is not evidence; a later real callback may start a fresh log.
         guard data.count <= Self.maximumEncodedBytes,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: Self.maximumEncodedBytes)) != nil,
               let records = try? decoder.decode([PersistedCallbackObservation].self, from: data),
               records.count <= capacity,
               records.allSatisfy(Self.isValidPersistedObservation),

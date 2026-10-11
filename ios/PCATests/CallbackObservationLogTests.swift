@@ -144,6 +144,30 @@ final class CallbackObservationLogTests: XCTestCase {
         XCTAssertNil(decoded.installationGeneration)
     }
 
+    func testPersistedCallbackLogRejectsDirectAndEscapedDuplicateMembers() throws {
+        let suite = "org.pca.tests.callback.duplicate-members.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let record = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "duplicate",
+            observedAtUtc: Date(timeIntervalSince1970: 0), sequence: 1)
+        let encoded = try XCTUnwrap(String(data: JSONEncoder().encode([record]), encoding: .utf8))
+        let originalMember = #""activityId":"duplicate""#
+        XCTAssertTrue(encoded.contains(originalMember), "fixture uses the synthesized activityId member")
+        let duplicateFixtures = [
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""activityId":"duplicate","activityId":"different""#),
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""activityId":"duplicate","activity\u0049d":"different""#),
+        ]
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
+
+        for fixture in duplicateFixtures {
+            defaults.set(Data(fixture.utf8), forKey: "com.pca.app.deviceactivity.callbacklog")
+            XCTAssertTrue(log.readAll().isEmpty, "duplicate decoded member names are not callback evidence")
+        }
+    }
+
     func testCorruptMaximumSequenceIsDiscardedBeforeRecordingNextCallback() throws {
         let suite = "org.pca.tests.callback.corrupt-sequence.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
