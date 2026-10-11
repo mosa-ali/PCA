@@ -48,6 +48,11 @@ class UriEnrollmentLinkParser(
         } catch (_: Exception) {
             return null
         }
+        // A user-info component makes an otherwise trusted host misleading in
+        // copied/displayed URLs (for example `https://alias@www.pcasafe.com`).
+        // Enrollment links have a fixed authority, so reject this noncanonical
+        // form for both the custom scheme and the HTTPS App Link.
+        if (parsed.rawUserInfo != null) return null
         // expectedScheme/appLinkScheme are guaranteed non-null when compared; calling equals on
         // them (rather than on the possibly-null parsed.scheme, e.g. for a relative/schemeless
         // input like "") safely handles a null scheme as "not equal".

@@ -133,6 +133,12 @@ class UriEnrollmentLinkParserTest {
     }
 
     @Test
+    fun `rejects user-info authority forms for custom and public enrollment links`() {
+        assertNull(parser.parse("pca://alias@enroll?token=$canonicalToken"))
+        assertNull(appLinkParser.parse("https://login@www.pcasafe.com/enroll/$appLinkToken"))
+    }
+
+    @Test
     fun `App Link form -- rejects the http (non-https) scheme`() {
         assertNull(appLinkParser.parse("http://www.pcasafe.com/enroll/$appLinkToken"))
     }
