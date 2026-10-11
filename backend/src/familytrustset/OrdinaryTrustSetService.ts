@@ -158,12 +158,25 @@ export class OrdinaryTrustSetService {
     const scope = snapshotScope(sourceScope);
     const request = parseRequest(input);
     if (request.epoch.familyId !== scope.familyId) throw new OrdinaryTrustSetError('FAMILY_MISMATCH');
-    const head = await this.authorizedHead(scope, true);
+    await this.authorizedHead(scope, true);
     const accepted = await this.acceptanceService.readAcceptedEpoch(scope.familyId, request.epoch.trustSetEpoch);
-    // A racing acceptance can advance the head, but never make an immutable record disappear.
+    // A racing acceptance can commit after the initial head read but before
+    // this indexed lookup. Reconcile against a fresh authoritative head
+    // before telling a mobile client that its durable request was not
+    // accepted; otherwise a lost-response retry can receive a stale
+    // NOT_ACCEPTED receipt after the server already committed it.
     if (accepted === null) {
-      if (request.epoch.trustSetEpoch === head.trustSetEpoch) throw new Error('Accepted head disappeared from indexed lookup.');
-      return { outcome: 'NOT_ACCEPTED', acceptedEpoch: null, acceptedHead: dto(head) };
+      const currentHead = await this.authorizedHead(scope, true);
+      const reconciled = await this.acceptanceService.readAcceptedEpoch(scope.familyId, request.epoch.trustSetEpoch);
+      if (reconciled !== null) {
+        const exact = reconciled.signedEpochBytes.equals(request.bytes) && reconciled.signature === request.signature;
+        return { outcome: exact ? 'ACCEPTED' : 'CONFLICT', acceptedEpoch: exact ? dto(reconciled) : null,
+          acceptedHead: dto(await this.authorizedHead(scope, true)) };
+      }
+      if (request.epoch.trustSetEpoch === currentHead.trustSetEpoch) {
+        throw new Error('Accepted head disappeared from indexed lookup.');
+      }
+      return { outcome: 'NOT_ACCEPTED', acceptedEpoch: null, acceptedHead: dto(currentHead) };
     }
     const exact = accepted.signedEpochBytes.equals(request.bytes) && accepted.signature === request.signature;
     return { outcome: exact ? 'ACCEPTED' : 'CONFLICT', acceptedEpoch: exact ? dto(accepted) : null,

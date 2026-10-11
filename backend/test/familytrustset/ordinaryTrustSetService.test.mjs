@@ -228,6 +228,30 @@ test('status absence is distinct from corrupt state or durable read failure', as
   await assert.rejects(f.service.head(scope), /inconsistent durable state/);
 });
 
+test('status reconciles a commit racing the indexed lookup before returning NOT_ACCEPTED', async () => {
+  const f = fixture(); await f.bootstrap();
+  const request = f.request(2);
+  const readEpoch = f.store.readEpoch;
+  let injectedCommit = false;
+  f.store.readEpoch = async (familyId, trustSetEpoch) => {
+    if (!injectedCommit && familyId === FAMILY && trustSetEpoch === 2) {
+      injectedCommit = true;
+      const committed = await f.acceptance.acceptCandidate({ familyId: FAMILY,
+        signedCanonicalBytes: Buffer.from(request.canonicalEpochBase64, 'base64').toString('utf8'),
+        signature: Buffer.from(request.signatureBase64, 'base64').toString('base64url'), receivedAt: new Date() });
+      assert.deepEqual(committed, { outcome: 'ACCEPTED' });
+      return null;
+    }
+    return readEpoch(familyId, trustSetEpoch);
+  };
+
+  const result = await f.service.status(scope, request);
+  assert.equal(injectedCommit, true);
+  assert.equal(result.outcome, 'ACCEPTED');
+  assert.deepEqual(result.acceptedEpoch, result.acceptedHead);
+  assert.equal(result.acceptedHead.trustSetEpoch, 2);
+});
+
 test('accepted metadata, byte corruption, and signature corruption fail closed', async () => {
   for (const corrupt of [(r) => { r.familyId = 'foreign'; }, (r) => { r.signerDeviceId = 'foreign'; },
     (r) => { r.signedEpochBytes = Buffer.from([0xff]); }, (r) => { r.signature = 'invalid'; }]) {

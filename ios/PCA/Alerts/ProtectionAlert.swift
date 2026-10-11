@@ -64,8 +64,8 @@ public struct ProtectionAlertGenerator {
         alertsEnabled: Bool
     ) throws -> E2EEProtectionAlert? {
         guard alertsEnabled else { return nil }
-        guard isValidOpaqueIdentifier(alertId), isValidOpaqueIdentifier(familyId),
-              isValidOpaqueIdentifier(parentDeviceId), deviceId.map(isValidOpaqueIdentifier) ?? true else {
+        guard Self.isValidOpaqueIdentifier(alertId), Self.isValidOpaqueIdentifier(familyId),
+              Self.isValidOpaqueIdentifier(parentDeviceId), deviceId.map(Self.isValidOpaqueIdentifier) ?? true else {
             throw ProtectionAlertGenerationError.invalidOpaqueIdentifier
         }
         guard (0...Self.maxSupportedKeyEpoch).contains(keyEpoch) else {
