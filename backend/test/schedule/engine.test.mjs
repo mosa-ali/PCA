@@ -113,6 +113,23 @@ test('timezone change alone can flip the daily-limit local-date reset', () => {
   assert.equal(travelledZone.decision, 'ALLOWED');
 });
 
+test('malformed daily-limit counters and anchors cannot become a fresh allowance', () => {
+  const valid = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
+  const malformedLimits = [
+    { ...valid, usedMinutesToday: -1 },
+    { ...valid, usedMinutesToday: Number.NaN },
+    { ...valid, limitMinutes: -1 },
+    { ...valid, anchorLocalDate: 'not-a-date' },
+    { ...valid, anchorLocalDate: '2026-02-30' },
+  ];
+
+  for (const dailyLimit of malformedLimits) {
+    const result = evaluateSchedule(baseInput({ dailyLimit }));
+    assert.equal(result.decision, 'INVALID_CONFIG', JSON.stringify(dailyLimit));
+    assert.ok(result.configErrors?.length);
+  }
+});
+
 test('bonus grant extends the limit only while active, then reverts on expiry', () => {
   const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
   const grant = {
@@ -131,6 +148,73 @@ test('bonus grant extends the limit only while active, then reverts on expiry', 
     baseInput({ nowUtc: new Date('2026-01-07T09:20:00.000Z'), dailyLimit, bonusGrants: [grant] }),
   );
   assert.equal(afterExpiry.decision, 'BLOCKED_LIMIT_REACHED');
+});
+
+test('malformed active bonus grants cannot turn an invalid allowance into ALLOWED_BONUS', () => {
+  const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
+  const malformedGrants = [
+    { id: 'nan', appScope: 'ALL', extraMinutes: Number.NaN,
+      grantedAtUtc: new Date('2026-01-07T09:00:00.000Z'), expiresAtUtc: new Date('2026-01-07T10:00:00.000Z') },
+    { id: 'negative', appScope: 'ALL', extraMinutes: -1,
+      grantedAtUtc: new Date('2026-01-07T09:00:00.000Z'), expiresAtUtc: new Date('2026-01-07T10:00:00.000Z') },
+    { id: 'bad-dates', appScope: 'ALL', extraMinutes: 15,
+      grantedAtUtc: new Date(Number.NaN), expiresAtUtc: new Date('2026-01-07T10:00:00.000Z') },
+    { id: 'null-granted-at', appScope: 'ALL', extraMinutes: 15,
+      grantedAtUtc: null, expiresAtUtc: new Date('2026-01-07T10:00:00.000Z') },
+    { id: 'string-expires-at', appScope: 'ALL', extraMinutes: 15,
+      grantedAtUtc: new Date('2026-01-07T09:00:00.000Z'), expiresAtUtc: '2026-01-07T10:00:00.000Z' },
+  ];
+
+  for (const bonusGrant of malformedGrants) {
+    const result = evaluateSchedule(baseInput({ dailyLimit, bonusGrants: [bonusGrant] }));
+    assert.equal(result.decision, 'INVALID_CONFIG', bonusGrant.id);
+    assert.ok(result.configErrors?.length);
+  }
+});
+
+test('active bonus arithmetic rejects precision loss without rejecting irrelevant grants', () => {
+  const grant = (id, extraMinutes, overrides = {}) => ({
+    id,
+    appScope: 'ALL',
+    extraMinutes,
+    grantedAtUtc: new Date('2026-01-07T11:00:00.000Z'),
+    expiresAtUtc: new Date('2026-01-07T13:00:00.000Z'),
+    ...overrides,
+  });
+  const maxSafe = Number.MAX_SAFE_INTEGER;
+  const invalidCases = [
+    {
+      dailyLimit: { appScope: 'ALL', limitMinutes: 1, usedMinutesToday: 0, anchorLocalDate: '2026-01-07' },
+      bonusGrants: [grant('base-plus-bonus-overflow', maxSafe)],
+    },
+    {
+      dailyLimit: { appScope: 'ALL', limitMinutes: 0, usedMinutesToday: 0, anchorLocalDate: '2026-01-07' },
+      bonusGrants: [grant('bonus-max', maxSafe), grant('bonus-extra', 1)],
+    },
+  ];
+
+  for (const input of invalidCases) {
+    const result = evaluateSchedule(baseInput(input));
+    assert.equal(result.decision, 'INVALID_CONFIG');
+    assert.ok(result.configErrors?.some((error) => error.includes('safe-integer range')));
+  }
+
+  const zeroLimit = { appScope: 'ALL', limitMinutes: 0, usedMinutesToday: 0, anchorLocalDate: '2026-01-07' };
+  const irrelevantCases = [
+    [
+      grant('other-app-max', maxSafe, { appScope: { apps: ['other-app'] } }),
+      grant('other-app-extra', 1, { appScope: { apps: ['other-app'] } }),
+    ],
+    [
+      grant('expired-max', maxSafe, { expiresAtUtc: new Date('2026-01-07T12:00:00.000Z') }),
+      grant('expired-extra', 1, { expiresAtUtc: new Date('2026-01-07T12:00:00.000Z') }),
+    ],
+  ];
+  for (const bonusGrants of irrelevantCases) {
+    const result = evaluateSchedule(baseInput({ dailyLimit: zeroLimit, bonusGrants }));
+    assert.equal(result.decision, 'BLOCKED_LIMIT_REACHED');
+    assert.ok(!result.configErrors?.some((error) => error.includes('safe-integer range')));
+  }
 });
 
 test('precedence: parent exception overrides an active bedtime window', () => {

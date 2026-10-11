@@ -43,7 +43,12 @@ import type { SupportedLocale } from '../i18n/types.js';
  * diagnostic string existing callers/tests key off.
  */
 export function evaluateSchedule(input: ScheduleEvaluationInput, locale: SupportedLocale = 'en'): ScheduleDecision {
-  const configErrors = input.windows.flatMap(validateScheduleWindow);
+  const configErrors = [
+    ...input.windows.flatMap(validateScheduleWindow),
+    ...validateDailyLimit(input.dailyLimit),
+    ...validateBonusGrants(input.bonusGrants),
+    ...validateActiveBonusTotal(input),
+  ];
   if (configErrors.length > 0) {
     return {
       decision: 'INVALID_CONFIG',
@@ -67,6 +72,83 @@ export function evaluateSchedule(input: ScheduleEvaluationInput, locale: Support
   }
 
   return intended;
+}
+
+/**
+ * A malformed usage counter or date anchor must not become an implicit daily
+ * reset. Mobile policy receivers reject these shapes before accepting a
+ * policy; keep the platform-neutral evaluator fail-closed as well because it
+ * is also used directly by server-side callers and conformance vectors.
+ */
+function validateDailyLimit(dailyLimit: ScheduleEvaluationInput['dailyLimit']): string[] {
+  if (dailyLimit === undefined) return [];
+  const errors: string[] = [];
+  if (!Number.isSafeInteger(dailyLimit.limitMinutes) || dailyLimit.limitMinutes < 0) {
+    errors.push('daily limit limitMinutes must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(dailyLimit.usedMinutesToday) || dailyLimit.usedMinutesToday < 0) {
+    errors.push('daily limit usedMinutesToday must be a non-negative safe integer');
+  }
+  if (!isCanonicalGregorianLocalDate(dailyLimit.anchorLocalDate)) {
+    errors.push('daily limit anchorLocalDate must be a canonical Gregorian date');
+  }
+  return errors;
+}
+
+function isCanonicalGregorianLocalDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number(value.slice(0, 4)) < 1) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function validateBonusGrants(grants: ScheduleEvaluationInput['bonusGrants']): string[] {
+  const errors: string[] = [];
+  for (const grant of grants) {
+    if (!Number.isSafeInteger(grant.extraMinutes) || grant.extraMinutes < 0) {
+      errors.push(`bonus grant ${grant.id}: extraMinutes must be a non-negative safe integer`);
+    }
+    const grantedAt = grant.grantedAtUtc instanceof Date ? grant.grantedAtUtc.getTime() : Number.NaN;
+    const expiresAt = grant.expiresAtUtc instanceof Date ? grant.expiresAtUtc.getTime() : Number.NaN;
+    if (!Number.isFinite(grantedAt) || !Number.isFinite(expiresAt) || expiresAt <= grantedAt) {
+      errors.push(`bonus grant ${grant.id}: grant and expiry must be valid increasing instants`);
+    }
+  }
+  return errors;
+}
+
+/** Only grants that are active for this app and evaluation instant contribute
+ * to the arithmetic. Check each addition before performing it so unrelated
+ * or expired grants cannot reject an otherwise valid evaluation. */
+function validateActiveBonusTotal(input: ScheduleEvaluationInput): string[] {
+  const dailyLimit = input.dailyLimit;
+  if (!dailyLimit || !appScopeIncludes(dailyLimit.appScope, input.appToken)) return [];
+
+  const nowMillis = input.nowUtc instanceof Date ? input.nowUtc.getTime() : Number.NaN;
+  if (!Number.isFinite(nowMillis)) return [];
+
+  let activeBonusMinutes = 0;
+  for (const grant of input.bonusGrants) {
+    const grantedAtMillis = grant.grantedAtUtc instanceof Date ? grant.grantedAtUtc.getTime() : Number.NaN;
+    const expiresAtMillis = grant.expiresAtUtc instanceof Date ? grant.expiresAtUtc.getTime() : Number.NaN;
+    // validateBonusGrants reports malformed timestamps. Do not dereference
+    // malformed runtime values here before evaluateSchedule can return that
+    // fail-closed INVALID_CONFIG result.
+    if (!Number.isFinite(grantedAtMillis) || !Number.isFinite(expiresAtMillis) ||
+        !appScopeIncludes(grant.appScope, input.appToken) ||
+        nowMillis < grantedAtMillis || nowMillis >= expiresAtMillis) continue;
+    const nextTotal = activeBonusMinutes + grant.extraMinutes;
+    if (!Number.isSafeInteger(nextTotal)) {
+      return ['active bonus grants exceed the exact safe-integer range'];
+    }
+    activeBonusMinutes = nextTotal;
+  }
+  if (Number.isSafeInteger(dailyLimit.limitMinutes) && dailyLimit.limitMinutes >= 0 &&
+      !Number.isSafeInteger(dailyLimit.limitMinutes + activeBonusMinutes)) {
+    return ['daily limit with active bonus grants exceeds the exact safe-integer range'];
+  }
+  return [];
 }
 
 function isRestrictive(decision: ScheduleDecisionKind): boolean {
