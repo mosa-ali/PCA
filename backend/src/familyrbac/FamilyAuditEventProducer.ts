@@ -25,6 +25,17 @@ function shouldLogFailure(occurrences: number): boolean {
   return occurrences === 1 || occurrences % LOG_EVERY_NTH_FAILURE === 0;
 }
 
+/** Diagnostics are best-effort too: a broken console sink must not make an
+ * already-committed audit append fail through the delivery side channel. */
+function warnFamilyAuditDelivery(detail: Readonly<Record<string, unknown>>): void {
+  try {
+    // eslint-disable-next-line no-console -- bounded structured warning contains no audit record content.
+    console.warn(JSON.stringify(detail));
+  } catch {
+    // Never let logging failure escape best-effort audit delivery.
+  }
+}
+
 /**
  * Best-effort delivery of one already-recorded FamilyAuditRecord to every
  * one of the family's registered parent devices, as an opaque encrypted
@@ -91,14 +102,12 @@ export class FamilyAuditEventProducer {
     if (!isPlausibleOpaqueId(familyId)) {
       this.scopeValidationFailureCount += 1;
       if (shouldLogFailure(this.scopeValidationFailureCount)) {
-        console.warn(
-          JSON.stringify({
-            event: 'family_audit_event_scope_validation_failed',
-            occurrences: this.scopeValidationFailureCount,
-            failureStage: 'SCOPE_VALIDATION',
-            note: 'audit delivery rejected malformed family scope before recipient resolution; no record content or scope value is logged.',
-          }),
-        );
+        warnFamilyAuditDelivery({
+          event: 'family_audit_event_scope_validation_failed',
+          occurrences: this.scopeValidationFailureCount,
+          failureStage: 'SCOPE_VALIDATION',
+          note: 'audit delivery rejected malformed family scope before recipient resolution; no record content or scope value is logged.',
+        });
       }
       return [];
     }
@@ -115,15 +124,13 @@ export class FamilyAuditEventProducer {
     } catch {
       this.recipientResolutionFailureCount += 1;
       if (shouldLogFailure(this.recipientResolutionFailureCount)) {
-        console.warn(
-          JSON.stringify({
-            event: 'family_audit_event_recipient_resolution_failed',
-            familyId,
-            occurrences: this.recipientResolutionFailureCount,
-            failureStage: 'RECIPIENT_RESOLUTION',
-            note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged on the first failure and every Nth thereafter.',
-          }),
-        );
+        warnFamilyAuditDelivery({
+          event: 'family_audit_event_recipient_resolution_failed',
+          familyId,
+          occurrences: this.recipientResolutionFailureCount,
+          failureStage: 'RECIPIENT_RESOLUTION',
+          note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged on the first failure and every Nth thereafter.',
+        });
       }
       return [];
     }
@@ -188,16 +195,14 @@ export class FamilyAuditEventProducer {
         // without this the failure existed only in a value nobody reads.
         this.deviceDeliveryFailureCount += 1;
         if (shouldLogFailure(this.deviceDeliveryFailureCount)) {
-          console.warn(
-            JSON.stringify({
-              event: 'family_audit_event_device_delivery_failed',
-              familyId,
-              parentDeviceId: parentDevice.deviceId,
-              occurrences: this.deviceDeliveryFailureCount,
-              failureStage,
-              note: 'this audit event was not queued for this parent device. Logged on the first failure and every Nth thereafter.',
-            }),
-          );
+          warnFamilyAuditDelivery({
+            event: 'family_audit_event_device_delivery_failed',
+            familyId,
+            parentDeviceId: parentDevice.deviceId,
+            occurrences: this.deviceDeliveryFailureCount,
+            failureStage,
+            note: 'this audit event was not queued for this parent device. Logged on the first failure and every Nth thereafter.',
+          });
         }
       }
     }

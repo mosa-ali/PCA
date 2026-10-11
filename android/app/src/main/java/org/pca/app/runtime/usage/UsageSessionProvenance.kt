@@ -47,6 +47,13 @@ internal object UsageSessionProvenanceCodec {
     private fun validateBinding(binding: UsageProvenanceBinding, value: UsageSessionProvenance) {
         require(binding.start >= 0 && binding.end >= 0)
         value.validate(binding.duration)
+        // The row start is part of the authenticated binding too. Without this check, the
+        // encrypted provenance could be attached to a row whose start timestamp names a
+        // different interval from the sampled elapsed-time start. The generation anchor is the
+        // original wall/elapsed reference; use the shared bridge tolerance for ordinary clock
+        // sampling drift, matching the other provenance continuity checks.
+        require(UsageClockBridge.continuous(value.generationAnchor,
+            UsageClockSample(value.startedAtElapsedMillis, binding.start)))
         require(UsageClockBridge.elapsedAtWall(binding.end, value.closingQueryBefore) == value.endedAtElapsedMillis)
     }
 

@@ -374,7 +374,8 @@ public final class UserDefaultsPCAEnrollmentProfileStore: PCAEnrollmentProfileSt
         guard !deviceId.isEmpty else { throw PCAEnrollmentProfileStoreError.invalidDeviceId }
         guard let data = defaults.data(forKey: key(for: deviceId)) else { return nil }
         do {
-            guard data.count <= Self.maximumEncodedBytes else {
+            guard data.count <= Self.maximumEncodedBytes,
+                  (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: Self.maximumEncodedBytes)) != nil else {
                 throw PCAEnrollmentProfileStoreError.invalidStoredProfile
             }
             let profile = try JSONDecoder().decode(PCAEnrollmentProfile.self, from: data)

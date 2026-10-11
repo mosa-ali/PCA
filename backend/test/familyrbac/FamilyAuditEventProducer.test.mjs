@@ -487,6 +487,37 @@ test('audit delivery warnings never expose dependency exception text or stringif
   assert.equal(stringified, false);
 });
 
+test('a failing warning sink never escapes any best-effort FamilyAudit delivery failure path', async () => {
+  const originalWarn = console.warn;
+  console.warn = () => { throw new Error('stderr is unavailable'); };
+  try {
+    const invalidScopeProducer = new FamilyAuditEventProducer(
+      { record: async () => { throw new Error('must not record'); } },
+      async () => { throw new Error('must not compose'); },
+      async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }],
+    );
+    assert.deepEqual(await invalidScopeProducer.deliver(sampleRecord({ familyId: '' })), []);
+
+    const resolutionFailureProducer = new FamilyAuditEventProducer(
+      { record: async () => { throw new Error('must not record'); } },
+      async () => { throw new Error('must not compose'); },
+      async () => { throw new Error('resolver unavailable'); },
+    );
+    assert.deepEqual(await resolutionFailureProducer.deliver(sampleRecord()), []);
+
+    const deviceFailureProducer = new FamilyAuditEventProducer(
+      { record: async () => { throw new Error('ledger unavailable'); } },
+      async () => ({ encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }),
+      async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }],
+    );
+    assert.deepEqual(await deviceFailureProducer.deliver(sampleRecord()), [
+      { parentDeviceId: 'parent-device-a', outcome: 'FAILED' },
+    ]);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('audit composition captures caller routing, target and timestamp before recipient resolution', async () => {
   let resolveRecipients;
   const seen = [];

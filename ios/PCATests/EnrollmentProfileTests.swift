@@ -113,4 +113,28 @@ final class EnrollmentProfileTests: XCTestCase {
             XCTAssertEqual($0 as? PCAEnrollmentProfileStoreError, .invalidStoredProfile)
         }
     }
+
+    func testEnrollmentProfileStoreRejectsDirectAndEscapedDuplicateMembers() throws {
+        let suite = "org.pca.tests.enrollment.duplicate-members.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsPCAEnrollmentProfileStore(defaults: defaults, namespace: "test.profile")
+        let profile = PCAEnrollmentProfile(childProfileId: "opaque-child", ageUxTier: .teen, initialPolicyProfile: .balanced)
+        let encoded = try XCTUnwrap(String(data: JSONEncoder().encode(profile), encoding: .utf8))
+        let originalMember = #""ageUxTier":"TEEN""#
+        XCTAssertTrue(encoded.contains(originalMember), "fixture uses the synthesized ageUxTier member")
+        let duplicateFixtures = [
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""ageUxTier":"TEEN","ageUxTier":"YOUNG_CHILD""#),
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""ageUxTier":"TEEN","ageUx\u0054ier":"YOUNG_CHILD""#),
+        ]
+
+        for fixture in duplicateFixtures {
+            defaults.set(Data(fixture.utf8), forKey: "test.profile.device-duplicate")
+            XCTAssertThrowsError(try store.load(forDeviceId: "device-duplicate")) {
+                XCTAssertEqual($0 as? PCAEnrollmentProfileStoreError, .invalidStoredProfile)
+            }
+        }
+    }
 }
