@@ -667,6 +667,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
     private struct Pending: Codable { let plan: DeviceActivityUsageDayPlan; let minutes: Int }
     private let store: OpaqueBlobStore
     private let key = "com.pca.app.deviceactivity.usage-lower-bound.v1"
+    private let ownershipKey = "com.pca.app.deviceactivity.usage-lower-bound.owner.v1"
+    private let ownershipValue = Data("pca-usage-lower-bound-v1".utf8)
     public init(store: OpaqueBlobStore) { self.store = store }
 
     private func installedState(for plan: DeviceActivityUsageDayPlan) -> DeviceActivityMonitorInstallationState? {
@@ -691,7 +693,12 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
             record.dayStart == plan.dayStartUtc && record.dayEnd == plan.dayEndUtc
     }
     private func load() throws -> State {
-        guard let data = store.read(forKey: key) else { return State(schemaVersion: 1, records: []) }
+        let owner = store.read(forKey: ownershipKey)
+        guard owner == nil || owner == ownershipValue else { throw DeviceActivityUsageError.unavailableState }
+        guard let data = store.read(forKey: key) else {
+            guard owner == nil else { throw DeviceActivityUsageError.unavailableState }
+            return State(schemaVersion: 1, records: [])
+        }
         guard data.count <= 131_072, let state = try? JSONDecoder().decode(State.self, from: data),
               state.schemaVersion == 1, state.records.count <= 8 else { throw DeviceActivityUsageError.unavailableState }
         for record in state.records {
@@ -717,7 +724,18 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
                 }
             }
         }
+        // Upgrade a valid legacy snapshot before relying on it. Once the marker
+        // exists, a missing snapshot is distinguishable from a never-used
+        // store and must not be interpreted as zero usage after relaunch.
+        if owner == nil { try persistOwnershipMarker() }
         return state
+    }
+    private func persistOwnershipMarker() throws {
+        do { try store.write(ownershipValue, forKey: ownershipKey) }
+        catch { throw DeviceActivityUsageError.persistenceFailed }
+        guard store.read(forKey: ownershipKey) == ownershipValue else {
+            throw DeviceActivityUsageError.persistenceFailed
+        }
     }
     public func lowerBound(for plan: DeviceActivityUsageDayPlan) throws -> Int? {
         guard plan.isValid else { throw DeviceActivityUsageError.malformedPlan }
@@ -745,6 +763,10 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
         guard data.count <= 131_072 else { throw DeviceActivityUsageError.unavailableState }
         try store.write(data, forKey: key)
         guard store.read(forKey: key) == data else { throw DeviceActivityUsageError.persistenceFailed }
+        // Persist the snapshot first, then the marker. A crash before the
+        // marker leaves recoverable data; a marker without its snapshot fails
+        // closed rather than reconstructing an empty counter.
+        if store.read(forKey: ownershipKey) == nil { try persistOwnershipMarker() }
         return state.records.first(where: { matches($0, plan) })!.minutes
     }
 

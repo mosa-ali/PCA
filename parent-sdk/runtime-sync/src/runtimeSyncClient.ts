@@ -29,7 +29,7 @@ export class RuntimeSyncClient {
   private session: DeviceSession | null = null;
   private lastSuccessfulSyncAtUtc: Date | null = null;
   private pendingCount = 0;
-  private syncing = false;
+  private activeSyncOperations = 0;
 
   constructor(
     private readonly transport: RuntimeSyncTransport,
@@ -71,25 +71,25 @@ export class RuntimeSyncClient {
 
   async sendBatch(items: readonly OutboundEnvelopeInput[]): Promise<OutboundBatchResult> {
     const token = this.requireSessionToken();
-    this.syncing = true;
+    this.activeSyncOperations += 1;
     try {
       const result = await this.transport.submitOutbound(token, items);
       this.lastSuccessfulSyncAtUtc = this.now();
       return result;
     } finally {
-      this.syncing = false;
+      this.activeSyncOperations -= 1;
     }
   }
 
   async retrieve(): Promise<ReconnectDrainResult> {
     const token = this.requireSessionToken();
-    this.syncing = true;
+    this.activeSyncOperations += 1;
     try {
       const result = await this.transport.listInbound(token);
       this.lastSuccessfulSyncAtUtc = this.now();
       return result;
     } finally {
-      this.syncing = false;
+      this.activeSyncOperations -= 1;
     }
   }
 
@@ -102,7 +102,7 @@ export class RuntimeSyncClient {
   getConnectionState(nowUtc: Date = this.now()): SyncConnectionState {
     return computeSyncConnectionState({
       isTransportConnected: this.isAuthenticated(),
-      isSyncing: this.syncing,
+      isSyncing: this.activeSyncOperations > 0,
       hasPendingLocalWork: this.pendingCount > 0,
       lastSuccessfulSyncAtUtc: this.lastSuccessfulSyncAtUtc,
       nowUtc,

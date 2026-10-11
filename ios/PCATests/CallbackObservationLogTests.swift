@@ -143,18 +143,20 @@ final class CallbackObservationLogTests: XCTestCase {
         let suite = "org.pca.tests.callback.corrupt-sequence.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        let activeMonitor = "pca-monitor-33333333-3333-4333-8333-333333333333"
+        try seedActiveInstallation(defaults, monitorActivityId: activeMonitor)
         let corrupt = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-corrupt",
             observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max)
         defaults.set(try JSONEncoder().encode([corrupt]), forKey: "com.pca.app.deviceactivity.callbacklog")
         let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
 
         XCTAssertTrue(log.readAll().isEmpty, "overflowing persisted sequence is not trusted as callback evidence")
-        log.record(kind: .intervalDidEnd, activityId: "pca-monitor-fresh", at: Date(timeIntervalSince1970: 1_700_000_060))
+        log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: Date(timeIntervalSince1970: 1_700_000_060))
 
         let recovered = log.readAll()
         XCTAssertEqual(recovered.count, 1)
         XCTAssertEqual(recovered.first?.sequence, 1)
-        XCTAssertEqual(recovered.first?.activityId, "pca-monitor-fresh")
+        XCTAssertEqual(recovered.first?.activityId, activeMonitor)
         XCTAssertEqual(recovered.first?.kind, .intervalDidEnd)
     }
 
@@ -162,17 +164,31 @@ final class CallbackObservationLogTests: XCTestCase {
         let suite = "org.pca.tests.callback.sequence-boundary.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        let activeMonitor = "pca-monitor-33333333-3333-4333-8333-333333333333"
+        try seedActiveInstallation(defaults, monitorActivityId: activeMonitor)
         let boundary = PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-old",
             observedAtUtc: Date(timeIntervalSince1970: 1_700_000_000), sequence: Int.max - 1)
         defaults.set(try JSONEncoder().encode([boundary]), forKey: "com.pca.app.deviceactivity.callbacklog")
         let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite)
 
         XCTAssertEqual(log.readAll().map(\.sequence), [Int.max - 1])
-        log.record(kind: .intervalDidEnd, activityId: "pca-monitor-fresh", at: Date(timeIntervalSince1970: 1_700_000_060))
+        log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: Date(timeIntervalSince1970: 1_700_000_060))
 
         let recovered = log.readAll()
         XCTAssertEqual(recovered.map(\.sequence), [1])
-        XCTAssertEqual(recovered.map(\.activityId), ["pca-monitor-fresh"])
+        XCTAssertEqual(recovered.map(\.activityId), [activeMonitor])
+    }
+
+    private func seedActiveInstallation(_ defaults: UserDefaults, monitorActivityId: String) throws {
+        let installation = DeviceActivityMonitorInstallation(
+            policyActivityId: "callback-log-test-policy",
+            monitorActivityId: monitorActivityId,
+            generation: "22222222-2222-4222-8222-222222222222",
+            installedAtUtc: Date(timeIntervalSince1970: 1_700_000_000),
+            timeZoneIdentifier: "UTC",
+            state: .active
+        )
+        defaults.set(try JSONEncoder().encode(installation), forKey: deviceActivityMonitorInstallationStorageKey)
     }
 }
 

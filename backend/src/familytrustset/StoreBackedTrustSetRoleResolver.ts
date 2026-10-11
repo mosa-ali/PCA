@@ -9,6 +9,11 @@ import type { TrustSetEpochStore } from './TrustSetEpochStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from './types.js';
 
+// Match the maximum accepted-record size enforced before persistence. Role
+// resolution runs on many authenticated routes and must reject a corrupt or
+// manually altered oversized row before decoding/copying its payload.
+const MAX_SIGNED_EPOCH_BYTES = 262_144;
+
 export interface StoreBackedTrustSetRoleResolverDeps {
   epochStore: TrustSetEpochStore;
   /** Current device/key lifecycle state, independent of accepted epoch bytes. */
@@ -65,7 +70,8 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
     try {
       const latest = await this.deps.epochStore.readLatestEpoch(familyId);
       if (latest === null) return 'NO_TRUST_SET';
-      if (!Buffer.isBuffer(latest.signedEpochBytes) || latest.signedEpochBytes.length < 1) return 'NO_TRUST_SET';
+      if (!Buffer.isBuffer(latest.signedEpochBytes) || latest.signedEpochBytes.length < 1 ||
+          latest.signedEpochBytes.length > MAX_SIGNED_EPOCH_BYTES) return 'NO_TRUST_SET';
       const epoch = decodeCanonicalTrustSetEpochBytes(latest.signedEpochBytes);
       const canonicalBytes = latest.signedEpochBytes.toString('utf8');
       const owner = findActiveOwner(epoch);

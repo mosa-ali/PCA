@@ -787,8 +787,9 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt), .degraded)
         let previous = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
             try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+        let currentPolicy = try policy("current", capability: .unavailable, restrictive: true)
         shields.failNextApply = true
-        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policy("current", capability: .unavailable, restrictive: true),
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: currentPolicy,
             applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt))
         let current = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
             try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
@@ -806,7 +807,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertNil(store.read(forKey: "schedule.previous\(previousSuffix)"),
             "superseded generation must remain retired")
         XCTAssertEqual(store.read(forKey: "schedule.current\(currentSuffix)"),
-            try policy("current", capability: .unavailable, restrictive: true))
+            currentPolicy)
         XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(
             try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))), current)
     }
@@ -882,10 +883,12 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let store = CallbackRuntimeBlobStore()
         let initialScheduler = CallbackRuntimeScheduler()
         let log = CallbackRuntimeLog()
+        let initialShields = ShieldRecorder()
         let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
         let initial = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
             scheduler: initialScheduler, blobStore: store, callbackLog: log,
-            installationClock: { self.installedAt }, pendingUsageActivator: { _ in })
+            installationClock: { self.installedAt }, shieldEnforcer: initialShields,
+            pendingUsageActivator: { _ in })
         _ = try initial.applyVerifiedPolicy(
             scheduleData: policy("monitor-recovery", capability: .unavailable, restrictive: true),
             applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt)
@@ -896,10 +899,12 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             observedAtUtc: installedAt.addingTimeInterval(1), sequence: 1)]
 
         let recoveryScheduler = CallbackRuntimeScheduler()
+        let recoveryShields = ShieldRecorder()
         recoveryScheduler.failStart = true
         let restarted = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
             scheduler: recoveryScheduler, blobStore: store, callbackLog: log,
-            installationClock: { self.installedAt }, pendingUsageActivator: { _ in })
+            installationClock: { self.installedAt }, shieldEnforcer: recoveryShields,
+            pendingUsageActivator: { _ in })
         XCTAssertEqual(recoveryScheduler.started, [installation.monitorActivityId])
         XCTAssertEqual(recoveryScheduler.stopped, [installation.monitorActivityId],
             "a failed OS registration is rolled back while the active manifest remains committed")
@@ -910,8 +915,13 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         recoveryScheduler.failStart = false
         XCTAssertEqual(restarted.callbackHealth(now: installedAt.addingTimeInterval(180)), .healthy,
             "health returns to callback evidence only after monitor recovery succeeds")
-        XCTAssertEqual(recoveryScheduler.started.count, 3)
-        XCTAssertTrue(recoveryScheduler.ownedMonitorActivityIds().contains(installation.monitorActivityId))
+        let successfulRecoveryIds = Array(recoveryScheduler.started.dropFirst(2))
+        XCTAssertEqual(Set(successfulRecoveryIds), Set(installation.allMonitorActivityIds),
+            "successful retry restores the complete committed monitor generation")
+        XCTAssertEqual(successfulRecoveryIds.count, installation.allMonitorActivityIds.count)
+        XCTAssertEqual(recoveryScheduler.started.count, 2 + installation.allMonitorActivityIds.count,
+            "two failed primary-monitor attempts precede one complete generation restore")
+        XCTAssertTrue(installation.allMonitorActivityIds.allSatisfy(recoveryScheduler.ownedMonitorActivityIds().contains))
         XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(
             try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))), installation)
     }
@@ -995,7 +1005,10 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
     }
 
     private func seed(_ store: CallbackRuntimeBlobStore, state: DeviceActivityMonitorInstallationState = .active) throws {
+        let emptyTokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
         try store.write(policy(), forKey: "schedule.policy")
+        try store.write(emptyTokens, forKey: "applicationTokens.policy")
+        try store.write(emptyTokens, forKey: "protectedApplicationTokens")
         try store.write(Data("policy".utf8), forKey: "activeActivityId")
         try store.write(JSONEncoder().encode(installation(state)), forKey: deviceActivityMonitorInstallationStorageKey)
     }
@@ -1008,6 +1021,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let scheduler = CallbackRuntimeScheduler()
         scheduler.orphanIds = [monitor]
         scheduler.failStart = true
+        let shields = ShieldRecorder()
         scheduler.onStart = { id, _ in
             let pending = DeviceActivityMonitorInstallation.decodeValidated(store.read(forKey: deviceActivityMonitorInstallationStorageKey)!)
             XCTAssertEqual(pending?.state, .active)
@@ -1015,7 +1029,9 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             XCTAssertNotEqual(id, self.monitor)
             XCTAssertEqual(pending?.installedAtUtc, self.installedAt)
         }
-        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, callbackLog: InMemoryCallbackObservationLog(), installationClock: { self.installedAt })
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler,
+            blobStore: store, callbackLog: InMemoryCallbackObservationLog(),
+            installationClock: { self.installedAt }, shieldEnforcer: shields)
         XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt.addingTimeInterval(-3600))) {
             XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .schedulingFailed)
         }
@@ -1065,11 +1081,15 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let store = CallbackRuntimeBlobStore()
         try seed(store)
         let log = CallbackRuntimeLog()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
         log.records = [PersistedCallbackObservation(kind: .intervalDidStart, activityId: monitor, installationGeneration: generation, observedAtUtc: installedAt.addingTimeInterval(1), sequence: 1)]
-        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: CallbackRuntimeScheduler(), blobStore: store, callbackLog: log)
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler,
+            blobStore: store, callbackLog: log, shieldEnforcer: shields)
         let now = installedAt.addingTimeInterval(180)
         XCTAssertEqual(runtime.callbackHealth(now: now), .healthy)
-        let restored = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: CallbackRuntimeScheduler(), blobStore: store, callbackLog: log)
+        let restored = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler,
+            blobStore: store, callbackLog: log, shieldEnforcer: shields)
         XCTAssertEqual(restored.callbackHealth(now: now), .healthy)
         log.records = [PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-33333333-3333-4333-8333-333333333333", installationGeneration: generation, observedAtUtc: installedAt.addingTimeInterval(1), sequence: 2)]
         XCTAssertEqual(restored.callbackHealth(now: now), .unknown, "old monitor callback must not certify the current installation")

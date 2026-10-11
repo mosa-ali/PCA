@@ -14,6 +14,14 @@ function fakeTransport(overrides = {}) {
   };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 test('operations before authenticate() throw RuntimeSyncClientError, never reach the transport', async () => {
   const client = new RuntimeSyncClient(fakeTransport(), () => new Date('2026-01-01T00:00:00.000Z'));
   await assert.rejects(() => client.sendEnvelope({ messageId: 'm1', recipientDeviceId: 'r1', ciphertext: new Uint8Array(), messageType: 'STATUS_SNAPSHOT', enqueuedAtEpochMillis: 1 }), RuntimeSyncClientError);
@@ -51,6 +59,28 @@ test('connection state becomes LIVE only after a successful retrieve/send, and r
   client.setPendingCount(3);
   assert.equal(client.getConnectionState(), 'SYNC_PENDING');
   assert.equal(client.getPendingCount(), 3);
+});
+
+test('overlapping sync operations remain SYNCING until the last operation settles', async () => {
+  const outbound = deferred();
+  const inbound = deferred();
+  const client = new RuntimeSyncClient(fakeTransport({
+    submitOutbound() { return outbound.promise; },
+    listInbound() { return inbound.promise; },
+  }), () => new Date('2026-01-01T00:00:00.000Z'));
+  await client.authenticate('device-1', async () => 'sig-1');
+
+  const sending = client.sendBatch([]);
+  const retrieving = client.retrieve();
+  assert.equal(client.getConnectionState(), 'SYNCING');
+
+  outbound.resolve({ results: [], droppedForBatchBound: [] });
+  await sending;
+  assert.equal(client.getConnectionState(), 'SYNCING');
+
+  inbound.resolve({ applied: [], receipts: [], unparseableMessageIds: [], droppedForListBound: [] });
+  await retrieving;
+  assert.equal(client.getConnectionState(), 'LIVE');
 });
 
 test('sendEnvelope forwards a single item and returns its outcome', async () => {

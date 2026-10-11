@@ -305,6 +305,72 @@ class HttpOrdinaryTrustSetApiTest {
         }
     }
 
+    @Test fun `duplicate top level response members are rejected even when escape aliases match`() = runBlocking {
+        val pending = accepted(epoch(2))
+        val valid = response(OrdinaryEpochOutcome.ACCEPTED, pending, pending)
+        val ambiguous = valid.replace(
+            "\"outcome\":\"ACCEPTED\"",
+            "\"outcome\":\"ACCEPTED\",\"outc\\u006fme\":\"CONFLICT\"",
+        )
+        val server = LocalServer(ambiguous)
+        try {
+            val session = sessions().also { it.authenticate() }
+            val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+            val failure = runCatching { api.submit("family", pending.request) }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test fun `duplicate nested accepted record members are rejected`() = runBlocking {
+        val pending = accepted(epoch(2))
+        val valid = response(OrdinaryEpochOutcome.ACCEPTED, pending, pending)
+        val acceptedRecord = recordJson(pending).toString()
+        val duplicatedRecord = acceptedRecord.replace(
+            "\"trustSetEpoch\":2",
+            "\"trustSetEpoch\":2,\"trustSetEpoch\":2",
+        )
+        val ambiguous = valid.replace(acceptedRecord, duplicatedRecord)
+        val server = LocalServer(ambiguous)
+        try {
+            val session = sessions().also { it.authenticate() }
+            val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+            val failure = runCatching { api.submit("family", pending.request) }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test fun `duplicate accepted head members are rejected on the read only path`() = runBlocking {
+        val head = accepted(epoch(2))
+        val acceptedHead = recordJson(head).toString()
+        val duplicatedHead = acceptedHead.replace(
+            "\"keyEpoch\":1",
+            "\"keyEpoch\":1,\"keyEpoch\":1",
+        )
+        val server = LocalServer("""{"acceptedHead":$duplicatedHead}""")
+        try {
+            val session = sessions().also { it.authenticate() }
+            val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+            val failure = runCatching { api.getHead("family") }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+            assertTrue(server.request.get().startsWith("GET /api/device/families/family/trust-set/epochs/head HTTP/1.1"))
+        } finally {
+            server.close()
+        }
+    }
+
     private class LocalServer(private val body: String) {
         private val socket = ServerSocket(0)
         val url = "http://127.0.0.1:${socket.localPort}"

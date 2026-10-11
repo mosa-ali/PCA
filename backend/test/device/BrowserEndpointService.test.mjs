@@ -57,6 +57,40 @@ test('registerEndpoint rejects a public key already registered to another device
   );
 });
 
+test('committed browser registration returns its device id when the one-shot audit append fails', async () => {
+  const repository = createInMemoryDeviceRepository();
+  let auditAttempts = 0;
+  const service = new BrowserEndpointService(repository, () => new Date('2026-01-01T00:00:00.000Z'), {
+    async record() {
+      auditAttempts += 1;
+      throw new Error('private audit storage failure');
+    },
+  });
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    const registeredBy = randomUUID();
+    const publicKey = key();
+    const result = await service.registerEndpoint(FAMILY, registeredBy, publicKey);
+    assert.equal(result.status, 'PAIRING_PENDING');
+    const device = await repository.findDeviceForFamily(FAMILY, result.deviceId);
+    assert.equal(device.status, 'PAIRING_PENDING');
+    assert.equal(device.registeredByAccountId, registeredBy);
+    assert.equal((await repository.findKeysByDeviceForFamily(FAMILY, result.deviceId)).length, 1);
+    await assert.rejects(() => service.registerEndpoint(FAMILY, registeredBy, publicKey), { code: 'DUPLICATE_KEY' });
+    assert.equal(auditAttempts, 1, 'the original committed device remains discoverable from its returned id');
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(JSON.parse(warnings[0]), {
+      event: 'browser_endpoint_registration_audit_append_failed',
+      occurrences: 1,
+    });
+    assert.equal(warnings[0].includes('private audit storage failure'), false);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('two different families can register browser endpoints independently, with independent deviceIds', async () => {
   const { service } = buildService();
   const a = await service.registerEndpoint('family-a', randomUUID(), key());

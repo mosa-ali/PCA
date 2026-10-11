@@ -51,7 +51,9 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                     }
                     output.toByteArray()
                 }
-                val json = JSONObject(bytes.toString(Charsets.UTF_8))
+                val responseBody = bytes.toString(Charsets.UTF_8)
+                StrictJsonObjectKeys.requireUnique(responseBody)
+                val json = JSONObject(responseBody)
                 require(json.keys().asSequence().toSet() == setOf(field))
                 record(json.getJSONObject(field))
             } finally { connection.disconnect() }
@@ -91,7 +93,9 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                     }
                     output.toByteArray()
                 }
-                val json = JSONObject(bytes.toString(Charsets.UTF_8))
+                val responseBody = bytes.toString(Charsets.UTF_8)
+                StrictJsonObjectKeys.requireUnique(responseBody)
+                val json = JSONObject(responseBody)
                 require(json.keys().asSequence().toSet() == setOf("outcome", "acceptedEpoch", "acceptedHead"))
                 val outcome = OrdinaryEpochOutcome.valueOf(json.getString("outcome"))
                 require(if (status) outcome != OrdinaryEpochOutcome.IDEMPOTENT_MATCH else
@@ -150,4 +154,141 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
         const val MAX_CANONICAL_BASE64_CHARS = 4 * ((MAX_CANONICAL_BYTES + 2) / 3)
         const val MAX_REQUEST_BODY_BYTES = 352 * 1024
     }
+}
+
+/** JSON object member names must be unique before JSONObject's last-value-wins parser runs. */
+private object StrictJsonObjectKeys {
+    fun requireUnique(source: String) = Scanner(source).scan()
+
+    private class Scanner(private val source: String) {
+        private var offset = 0
+
+        fun scan() {
+            whitespace()
+            value(0)
+            whitespace()
+            require(offset == source.length) { "invalid_json_response" }
+        }
+
+        private fun value(depth: Int) {
+            require(depth <= MAX_DEPTH) { "invalid_json_response" }
+            whitespace()
+            require(offset < source.length) { "invalid_json_response" }
+            when (source[offset]) {
+                '{' -> objectValue(depth + 1)
+                '[' -> arrayValue(depth + 1)
+                '"' -> stringValue()
+                't' -> literal("true")
+                'f' -> literal("false")
+                'n' -> literal("null")
+                '-', in '0'..'9' -> numberValue()
+                else -> error("invalid_json_response")
+            }
+        }
+
+        private fun objectValue(depth: Int) {
+            offset++ // {
+            whitespace()
+            if (consume('}')) return
+            val names = HashSet<String>()
+            while (true) {
+                whitespace()
+                require(offset < source.length && source[offset] == '"') { "invalid_json_response" }
+                val name = stringValue()
+                require(names.add(name)) { "duplicate_json_object_key" }
+                whitespace()
+                expect(':')
+                value(depth)
+                whitespace()
+                if (consume('}')) return
+                expect(',')
+            }
+        }
+
+        private fun arrayValue(depth: Int) {
+            offset++ // [
+            whitespace()
+            if (consume(']')) return
+            while (true) {
+                value(depth)
+                whitespace()
+                if (consume(']')) return
+                expect(',')
+            }
+        }
+
+        private fun stringValue(): String {
+            expect('"')
+            val result = StringBuilder()
+            while (offset < source.length) {
+                val character = source[offset++]
+                when {
+                    character == '"' -> return result.toString()
+                    character == '\\' -> {
+                        require(offset < source.length) { "invalid_json_response" }
+                        when (val escaped = source[offset++]) {
+                            '"', '\\', '/' -> result.append(escaped)
+                            'b' -> result.append('\b')
+                            'f' -> result.append('\u000c')
+                            'n' -> result.append('\n')
+                            'r' -> result.append('\r')
+                            't' -> result.append('\t')
+                            'u' -> {
+                                require(offset + 4 <= source.length) { "invalid_json_response" }
+                                val codeUnit = source.substring(offset, offset + 4).toIntOrNull(16)
+                                    ?: error("invalid_json_response")
+                                result.append(codeUnit.toChar())
+                                offset += 4
+                            }
+                            else -> error("invalid_json_response")
+                        }
+                    }
+                    character.code < 0x20 -> error("invalid_json_response")
+                    else -> result.append(character)
+                }
+            }
+            error("invalid_json_response")
+        }
+
+        private fun numberValue() {
+            if (consume('-')) require(offset < source.length) { "invalid_json_response" }
+            if (consume('0')) {
+                require(offset >= source.length || source[offset] !in '0'..'9') { "invalid_json_response" }
+            } else {
+                require(offset < source.length && source[offset] in '1'..'9') { "invalid_json_response" }
+                while (offset < source.length && source[offset] in '0'..'9') offset++
+            }
+            if (consume('.')) {
+                require(offset < source.length && source[offset] in '0'..'9') { "invalid_json_response" }
+                while (offset < source.length && source[offset] in '0'..'9') offset++
+            }
+            if (offset < source.length && source[offset] in "eE") {
+                offset++
+                if (offset < source.length && source[offset] in "+-") offset++
+                require(offset < source.length && source[offset] in '0'..'9') { "invalid_json_response" }
+                while (offset < source.length && source[offset] in '0'..'9') offset++
+            }
+        }
+
+        private fun literal(value: String) {
+            require(source.startsWith(value, offset)) { "invalid_json_response" }
+            offset += value.length
+        }
+
+        private fun whitespace() {
+            while (offset < source.length && source[offset] in charArrayOf(' ', '\t', '\r', '\n')) offset++
+        }
+
+        private fun expect(character: Char) {
+            require(consume(character)) { "invalid_json_response" }
+        }
+
+        private fun consume(character: Char): Boolean {
+            if (offset >= source.length || source[offset] != character) return false
+            offset++
+            return true
+        }
+    }
+
+    private const val MAX_DEPTH = 64
 }

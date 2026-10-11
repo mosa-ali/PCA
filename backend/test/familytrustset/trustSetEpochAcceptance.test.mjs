@@ -1171,6 +1171,15 @@ test('RESOLVER_UNDECODABLE_BYTES: stored bytes that fail strict decode resolve f
   assert.equal(await resolver.resolveActor(FAMILY_ID, 'device-1'), 'NO_TRUST_SET');
 });
 
+test('RESOLVER_OVERSIZED_BYTES: an accepted-row payload beyond the durable append ceiling is denied before authority resolution', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.signedEpochBytes = Buffer.alloc(262_145, 0x41);
+  const resolver = createStoreBackedResolver(harness, [owner]);
+  assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId), 'NO_TRUST_SET');
+});
+
 test('RESOLVER_FOREIGN_PAYLOAD: stored bytes declaring a different family fail closed', async () => {
   const owner = makeDevice('owner');
   const harness = createHarness({});

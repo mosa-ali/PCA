@@ -885,6 +885,35 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         store.values["com.pca.app.deviceactivity.usage-lower-bound.v1"] = Data("broken".utf8)
         XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: value))
     }
+    func testMissingPreviouslyOwnedUsageSnapshotFailsClosedAfterRelaunch() throws {
+        let store = Store(), value = try plan(policy())
+        let usage = DeviceActivityUsageLowerBoundStore<Token>(store: store)
+        let event = try XCTUnwrap(value.thresholds.first)
+        try install(value, store: store, active: true)
+        XCTAssertEqual(try usage.record(plan: value, activityId: value.monitorActivityId,
+            eventId: event.eventId, at: now, deviceTimeZone: TimeZone(identifier: "UTC")!), 60)
+        XCTAssertEqual(store.read(forKey: "com.pca.app.deviceactivity.usage-lower-bound.owner.v1"),
+            Data("pca-usage-lower-bound-v1".utf8))
+
+        store.remove(forKey: "com.pca.app.deviceactivity.usage-lower-bound.v1")
+        let relaunchedUsage = DeviceActivityUsageLowerBoundStore<Token>(store: store)
+        XCTAssertThrowsError(try relaunchedUsage.lowerBound(for: value)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState,
+                "a durable ownership marker with no usage snapshot is missing evidence, not zero usage")
+        }
+
+        var shieldApplications = 0
+        var shieldRemovals = 0
+        XCTAssertFalse(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
+            applications: Set([Token(value: "opaque")]), protectedApplications: [],
+            coverageAvailable: true,
+            loadLowerBound: { try relaunchedUsage.lowerBound(for: value) },
+            apply: { _ in shieldApplications += 1 },
+            remove: { shieldRemovals += 1 }))
+        XCTAssertEqual(shieldApplications, 0)
+        XCTAssertEqual(shieldRemovals, 0,
+            "lost usage evidence must preserve the existing enforcement state")
+    }
     func testPersistedZeroMinuteRecordIsUnavailableState() throws {
         let store = Store(), value = try plan(policy())
         let impossible = PersistedRecordFixture(binding: value.binding, localDate: value.localDate,

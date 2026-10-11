@@ -993,12 +993,16 @@ final class ProductionIntegrationTests: XCTestCase {
             let state = InMemoryPCADeviceStateStore()
             try state.saveSession(session)
             let scope = PCADeviceSafeZoneDeliveryScope(familyId: "family-1", deviceId: "device-1")
+            var paths: [String] = []
             let transport = InMemoryPCAHTTPTransport { request in
+                paths.append(request.url?.path ?? "")
                 XCTAssertEqual(request.url?.path, "/v1/runtime-sync/safe-zones")
                 return PCAHTTPResponse(statusCode: statusCode, data: Data())
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+                    serviceNamespace: "safe-zone-auth-inbound-\(statusCode)"),
                 safeZoneDeliveryClient: try PCADeviceSafeZoneDeliveryClient(baseURL: URL(string: "https://api.example.test")!,
                     currentSession: { try state.loadSession() }, transport: transport),
                 safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox(keychain: InMemoryKeychainStore(), serviceNamespace: "safe-zone-auth-\(statusCode)",
@@ -1006,6 +1010,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
             let outcome = try await model.synchronizeRuntimeCampaign()
             XCTAssertEqual(outcome, expectedOutcome)
+            XCTAssertEqual(paths, ["/v1/runtime-sync/safe-zones"])
             XCTAssertEqual(try state.loadSession(), statusCode == 401 ? nil : session)
             XCTAssertEqual(model.syncConnectionState, .stale)
         }
@@ -1075,6 +1080,8 @@ final class ProductionIntegrationTests: XCTestCase {
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+                    serviceNamespace: "safe-zone-scope-change-inbound"),
                 safeZoneDeliveryClient: try PCADeviceSafeZoneDeliveryClient(baseURL: URL(string: "https://api.example.test")!,
                     currentSession: { try state.loadSession() }, transport: transport),
                 safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox(keychain: InMemoryKeychainStore(), serviceNamespace: "safe-zone-scope-change",
@@ -1109,6 +1116,8 @@ final class ProductionIntegrationTests: XCTestCase {
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+                    serviceNamespace: "safe-zone-revision-inbound"),
                 safeZoneDeliveryClient: try PCADeviceSafeZoneDeliveryClient(baseURL: URL(string: "https://api.example.test")!,
                     currentSession: { try state.loadSession() }, transport: transport), safeZoneDeliveryInbox: safeZoneInbox)
 
@@ -1128,6 +1137,8 @@ final class ProductionIntegrationTests: XCTestCase {
             }
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
                 runtimeSyncClient: try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+                inboundInbox: PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+                    serviceNamespace: "safe-zone-cancel-inbound"),
                 safeZoneDeliveryClient: try PCADeviceSafeZoneDeliveryClient(baseURL: URL(string: "https://api.example.test")!,
                     currentSession: { try state.loadSession() }, transport: transport),
                 safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox(keychain: InMemoryKeychainStore(), serviceNamespace: "safe-zone-cancel",

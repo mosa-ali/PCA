@@ -51,6 +51,7 @@ export class BrowserEndpointService {
   private readonly deviceRepository: DeviceRepository;
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
+  private auditAppendFailureCount = 0;
 
   constructor(
     deviceRepository: DeviceRepository,
@@ -91,23 +92,40 @@ export class BrowserEndpointService {
     );
     if (result.outcome === 'DUPLICATE_KEY') throw new BrowserEndpointError('DUPLICATE_KEY');
 
-    await this.auditService.record({
-      familyId,
-      actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-      actorDeviceId: registeredByAccountId,
-      actorMemberId: null,
-      targetScope: { kind: 'DEVICE', id: deviceId },
-      authorizationRole: null,
-      trustSetEpoch: 0,
-      policyRevision: null,
-      clientMonotonicSequence: null,
-      resultStatus: 'SUCCESS',
-      targetAcknowledgementCount: 0,
-      reasonCategory: null,
-      correlationId: null,
-      actionId: null,
-      freeTextNote: 'BROWSER endpoint registered -> PAIRING_PENDING',
-    });
+    try {
+      await this.auditService.record({
+        familyId,
+        actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+        actorDeviceId: registeredByAccountId,
+        actorMemberId: null,
+        targetScope: { kind: 'DEVICE', id: deviceId },
+        authorizationRole: null,
+        trustSetEpoch: 0,
+        policyRevision: null,
+        clientMonotonicSequence: null,
+        resultStatus: 'SUCCESS',
+        targetAcknowledgementCount: 0,
+        reasonCategory: null,
+        correlationId: null,
+        actionId: null,
+        freeTextNote: 'BROWSER endpoint registered -> PAIRING_PENDING',
+      });
+      this.auditAppendFailureCount = 0;
+    } catch {
+      // The device and DSK have already committed atomically. Returning an
+      // error would hide the only deviceId the browser needs to continue,
+      // and retrying with its key would only report DUPLICATE_KEY. Keep the
+      // committed result truthful and expose audit-storage failure through a
+      // bounded warning without including identifiers or private errors.
+      this.auditAppendFailureCount += 1;
+      if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
+        // eslint-disable-next-line no-console -- structured warning is bounded and contains no identifiers or private payload.
+        console.warn(JSON.stringify({
+          event: 'browser_endpoint_registration_audit_append_failed',
+          occurrences: this.auditAppendFailureCount,
+        }));
+      }
+    }
 
     return { deviceId, status: 'PAIRING_PENDING' };
   }
