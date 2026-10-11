@@ -73,11 +73,11 @@ final class AlertProtectionTests: XCTestCase {
 
     func testOpaqueIdentifiersUseBackendBoundsIncludingOptionalDeviceId() {
         for attempt in [
-            { try generate(alertId: "") },
-            { try generate(familyId: String(repeating: "a", count: 129)) },
-            { try generate(parentDeviceId: String(repeating: "😀", count: 65)) },
-            { try generate(deviceId: "") },
-            { try generate(deviceId: String(repeating: "d", count: 129)) },
+            { try self.generate(alertId: "") },
+            { try self.generate(familyId: String(repeating: "a", count: 129)) },
+            { try self.generate(parentDeviceId: String(repeating: "😀", count: 65)) },
+            { try self.generate(deviceId: "") },
+            { try self.generate(deviceId: String(repeating: "d", count: 129)) },
         ] {
             XCTAssertThrowsError(try attempt()) { error in
                 XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidOpaqueIdentifier)
@@ -101,8 +101,8 @@ final class AlertProtectionTests: XCTestCase {
         XCTAssertNoThrow(try generate(encryptedPayload: Data(repeating: 1, count: 16 * 1024),
             nonce: Data(repeating: 2, count: 64)))
         for attempt in [
-            { try generate(encryptedPayload: Data(repeating: 1, count: 16 * 1024 + 1)) },
-            { try generate(nonce: Data(repeating: 2, count: 65)) },
+            { try self.generate(encryptedPayload: Data(repeating: 1, count: 16 * 1024 + 1)) },
+            { try self.generate(nonce: Data(repeating: 2, count: 65)) },
         ] {
             XCTAssertThrowsError(try attempt()) { error in
                 XCTAssertEqual(error as? ProtectionAlertGenerationError, .invalidEncryptedPayload)
