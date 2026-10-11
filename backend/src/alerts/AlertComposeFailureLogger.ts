@@ -21,7 +21,13 @@ export interface AlertComposeFailureLogger {
 export const CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER: AlertComposeFailureLogger = {
   warn(event, detail) {
     // eslint-disable-next-line no-console -- intentional structured operational log, no alert payload content.
-    console.warn(JSON.stringify({ event, ...detail }));
+    try {
+      console.warn(JSON.stringify({ event, ...detail }));
+    } catch {
+      // Alert logging is a best-effort side channel. A closed stderr pipe or
+      // failing console sink must not turn a swallowed alert failure into a
+      // request failure.
+    }
   },
 };
 

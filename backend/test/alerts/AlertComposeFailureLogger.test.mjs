@@ -33,3 +33,14 @@ test('console logger preserves structured operation metadata and bounded failure
   });
   assert.doesNotMatch(warnings[0], /SECRET|SQL|KEY MATERIAL/);
 });
+
+test('a failing console sink cannot escape the best-effort alert failure logger', () => {
+  const original = console.warn;
+  console.warn = () => { throw new Error('stderr is unavailable'); };
+  try {
+    assert.doesNotThrow(() => CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER.warn(
+      'runtime_sync.protection_degraded_alert.compose_failed',
+      { error: 'ALERT_DELIVERY_FAILED' },
+    ));
+  } finally { console.warn = original; }
+});
