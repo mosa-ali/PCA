@@ -101,6 +101,47 @@ final class ScheduleEngineTests: XCTestCase {
         }
     }
 
+    func testDirectEvaluationRejectsNonFiniteAndOutOfRangeRuntimeInstants() {
+        let malformedDates = [
+            Date(timeIntervalSince1970: .nan),
+            Date(timeIntervalSince1970: .infinity),
+            Date(timeIntervalSince1970: 8_640_000_000_001),
+        ]
+        for date in malformedDates {
+            let result = ScheduleEngine.evaluate(input(now: date))
+            XCTAssertEqual(result.kind, .invalidConfig)
+            XCTAssertTrue(result.configErrors.contains { $0.contains("evaluation time") })
+        }
+    }
+
+    func testDirectEvaluationRejectsMalformedBonusAndDailyLimitInputs() {
+        let now = date("2026-01-07T09:05:00Z")
+        let validStart = date("2026-01-07T09:00:00Z")
+        let validEnd = date("2026-01-07T10:00:00Z")
+        let malformedGrants = [
+            BonusGrant(id: "negative", appScope: .all, extraMinutes: -1, grantedAt: validStart, expiresAt: validEnd),
+            BonusGrant(id: "reversed", appScope: .all, extraMinutes: 10, grantedAt: validEnd, expiresAt: validStart),
+            BonusGrant(id: "non-finite", appScope: .all, extraMinutes: 10,
+                grantedAt: Date(timeIntervalSince1970: .infinity), expiresAt: validEnd),
+        ]
+        for grant in malformedGrants {
+            let result = ScheduleEngine.evaluate(input(now: now, bonusGrants: [grant]))
+            XCTAssertEqual(result.kind, .invalidConfig, "malformed grant \(grant.id) must not affect an allow decision")
+            XCTAssertTrue(result.configErrors.contains { $0.contains("bonus grant \(grant.id)") })
+        }
+
+        let malformedLimits = [
+            DailyAppLimit(appScope: .all, limitMinutes: -1, usedMinutesToday: 0, anchorLocalDate: "2026-01-07"),
+            DailyAppLimit(appScope: .all, limitMinutes: 30, usedMinutesToday: -1, anchorLocalDate: "2026-01-07"),
+            DailyAppLimit(appScope: .all, limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: "2026-02-30"),
+        ]
+        for limit in malformedLimits {
+            let result = ScheduleEngine.evaluate(input(now: now, dailyLimit: limit))
+            XCTAssertEqual(result.kind, .invalidConfig, "malformed daily limit must not reset usage or allow")
+            XCTAssertTrue(result.configErrors.contains { $0.contains("daily limit") })
+        }
+    }
+
     func testSchoolModeIntersectionAcrossTwoOverlappingWindowsWithDifferentAllowScopes() {
         let windowA = window(id: "school-a", kind: .schoolMode, appScope: .apps(["homework-app"]))
         let windowB = window(id: "school-b", kind: .schoolMode, appScope: .all)
@@ -145,7 +186,7 @@ final class ScheduleEngineTests: XCTestCase {
         XCTAssertEqual(result.remainingMinutesToday, Int64(Int32.max) * 3)
     }
 
-    func testExtremeIntPolicyTotalsSaturateWithoutOverflowingIntoAFalseBlock() {
+    func testUnsafeIntPolicyValuesFailClosedLikeBackend() {
         let now = date("2026-01-07T09:05:00Z")
         let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: Int.max,
             usedMinutesToday: Int.max, anchorLocalDate: "2026-01-07")
@@ -154,8 +195,26 @@ final class ScheduleEngineTests: XCTestCase {
 
         let result = ScheduleEngine.evaluate(input(now: now, bonusGrants: [grant], dailyLimit: dailyLimit))
 
-        XCTAssertEqual(result.kind, .allowedBonus)
-        XCTAssertEqual(result.remainingMinutesToday, Int64.max)
+        XCTAssertEqual(result.kind, .invalidConfig)
+        XCTAssertTrue(result.configErrors.contains { $0.contains("safe integer") })
+    }
+
+    func testActiveBonusTotalMustRemainWithinBackendSafeIntegerRange() {
+        let now = date("2026-01-07T09:05:00Z")
+        let dateStart = date("2026-01-07T09:00:00Z")
+        let dateEnd = date("2026-01-07T10:00:00Z")
+        let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: 0, usedMinutesToday: 0, anchorLocalDate: "2026-01-07")
+        let grants = [
+            BonusGrant(id: "large-a", appScope: .all, extraMinutes: 5_000_000_000_000_000,
+                grantedAt: dateStart, expiresAt: dateEnd),
+            BonusGrant(id: "large-b", appScope: .all, extraMinutes: 5_000_000_000_000_000,
+                grantedAt: dateStart, expiresAt: dateEnd),
+        ]
+
+        let result = ScheduleEngine.evaluate(input(now: now, bonusGrants: grants, dailyLimit: dailyLimit))
+
+        XCTAssertEqual(result.kind, .invalidConfig)
+        XCTAssertTrue(result.configErrors.contains { $0.contains("active bonus grants") })
     }
 
     func testEnforcementUnavailableReportsIntendedDecisionInsteadOfBareBlock() {

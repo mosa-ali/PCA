@@ -124,8 +124,10 @@ object SchedulePolicyValidator {
 
     private fun remoteFreshnessState(input: PolicyAcceptanceInput): ScheduleRuntimeState {
         if (input.connectivity != Connectivity.OFFLINE) return ScheduleRuntimeState.CURRENT
-        val staleByThreshold = input.lastPolicySyncAtUtc == null ||
-            java.time.Duration.between(input.lastPolicySyncAtUtc, input.nowUtc).toMillis() > input.remoteStalenessThresholdMillis
+        val lastSync = input.lastPolicySyncAtUtc
+        val staleByThreshold = lastSync == null ||
+            java.time.Duration.between(lastSync, input.nowUtc)
+                .compareTo(java.time.Duration.ofMillis(input.remoteStalenessThresholdMillis)) > 0
         return if (staleByThreshold) ScheduleRuntimeState.STALE_REMOTE else ScheduleRuntimeState.CURRENT
     }
 

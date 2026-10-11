@@ -45,6 +45,7 @@ import type { SupportedLocale } from '../i18n/types.js';
 export function evaluateSchedule(input: ScheduleEvaluationInput, locale: SupportedLocale = 'en'): ScheduleDecision {
   const configErrors = [
     ...input.windows.flatMap(validateScheduleWindow),
+    ...validateEvaluationInstant(input.nowUtc),
     ...validateDailyLimit(input.dailyLimit),
     ...validateBonusGrants(input.bonusGrants),
     ...validateActiveBonusTotal(input),
@@ -72,6 +73,13 @@ export function evaluateSchedule(input: ScheduleEvaluationInput, locale: Support
   }
 
   return intended;
+}
+
+function validateEvaluationInstant(value: unknown): string[] {
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+    return ['evaluation time must be a finite in-range instant'];
+  }
+  return [];
 }
 
 /**

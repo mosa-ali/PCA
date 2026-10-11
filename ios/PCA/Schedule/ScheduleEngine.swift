@@ -11,6 +11,9 @@ public enum ScheduleEngine {
     /// JavaScript Date's inclusive ISO-8601 instant range, matching the
     /// backend policy runtime that consumes the same UTC exception values.
     private static let maximumPolicyDateSeconds = 8_640_000_000_000.0
+    /// JavaScript's exact integer boundary; backend policy evaluation rejects
+    /// unsafe values before computing a decision.
+    private static let maximumSafePolicyInteger: Int64 = 9_007_199_254_740_991
 
     /// Precedence, highest first -- identical to engine.ts's documented
     /// order: parent exception > bedtime > school mode (INTERSECTION
@@ -18,16 +21,35 @@ public enum ScheduleEngine {
     /// FINDING-006 -- never insertion order) > block period > allow
     /// period > daily limit (bonus-extended) > default allow.
     public static func evaluate(_ input: ScheduleEvaluationInput) -> ScheduleDecision {
-        let configErrors = input.windows.flatMap(validate) + input.exceptions.compactMap { exception -> String? in
+        var configErrors = input.windows.flatMap(validate)
+        let nowSeconds = input.nowUtc.timeIntervalSince1970
+        if !isValidPolicyInstant(nowSeconds) {
+            configErrors.append("evaluation time must be a finite in-range instant")
+        }
+        configErrors += input.bonusGrants.compactMap { grant -> String? in
+            let start = grant.grantedAt.timeIntervalSince1970
+            let end = grant.expiresAt.timeIntervalSince1970
+            guard isSafeNonnegativePolicyInteger(grant.extraMinutes), isValidPolicyInstant(start), isValidPolicyInstant(end), start < end else {
+                return "bonus grant \(grant.id): extraMinutes must be a nonnegative safe integer and grant dates must be finite in-range instants with grantedAt before expiresAt"
+            }
+            return nil
+        }
+        if let dailyLimit = input.dailyLimit,
+           (!isSafeNonnegativePolicyInteger(dailyLimit.limitMinutes) ||
+            !isSafeNonnegativePolicyInteger(dailyLimit.usedMinutesToday) ||
+            !isCanonicalGregorianDate(dailyLimit.anchorLocalDate)) {
+            configErrors.append("daily limit must have nonnegative safe-integer minutes and a canonical Gregorian anchorLocalDate")
+        }
+        configErrors += input.exceptions.compactMap { exception -> String? in
             let start = exception.startAt.timeIntervalSince1970
             let end = exception.endAt.timeIntervalSince1970
-            guard start.isFinite, end.isFinite,
-                  abs(start) <= maximumPolicyDateSeconds, abs(end) <= maximumPolicyDateSeconds,
+            guard isValidPolicyInstant(start), isValidPolicyInstant(end),
                   start < end else {
                 return "parent exception \(exception.id): startAt and endAt must be finite in-range instants with startAt before endAt"
             }
             return nil
         }
+        configErrors += validateActiveBonusTotal(input)
         if !configErrors.isEmpty {
             return ScheduleDecision(kind: .invalidConfig, reason: "One or more schedule policy inputs failed validation.", configErrors: configErrors)
         }
@@ -43,6 +65,55 @@ public enum ScheduleEngine {
             )
         }
         return intended
+    }
+
+    private static func isValidPolicyInstant(_ seconds: TimeInterval) -> Bool {
+        seconds.isFinite && abs(seconds) <= maximumPolicyDateSeconds
+    }
+
+    private static func isSafeNonnegativePolicyInteger(_ value: Int) -> Bool {
+        value >= 0 && Int64(value) <= maximumSafePolicyInteger
+    }
+
+    private static func validateActiveBonusTotal(_ input: ScheduleEvaluationInput) -> [String] {
+        guard let dailyLimit = input.dailyLimit, dailyLimit.appScope.includes(input.appToken) else { return [] }
+        let now = input.nowUtc.timeIntervalSince1970
+        guard isValidPolicyInstant(now) else { return [] }
+        var activeBonusMinutes: Int64 = 0
+        for grant in input.bonusGrants where grant.appScope.includes(input.appToken) {
+            let grantedAt = grant.grantedAt.timeIntervalSince1970
+            let expiresAt = grant.expiresAt.timeIntervalSince1970
+            guard isValidPolicyInstant(grantedAt), isValidPolicyInstant(expiresAt), now >= grantedAt, now < expiresAt else { continue }
+            let (nextTotal, overflow) = activeBonusMinutes.addingReportingOverflow(Int64(grant.extraMinutes))
+            if overflow || nextTotal > maximumSafePolicyInteger {
+                return ["active bonus grants exceed the exact safe-integer range"]
+            }
+            activeBonusMinutes = nextTotal
+        }
+        let (effectiveLimit, overflow) = Int64(dailyLimit.limitMinutes).addingReportingOverflow(activeBonusMinutes)
+        if overflow || effectiveLimit > maximumSafePolicyInteger {
+            return ["daily limit with active bonus grants exceeds the exact safe-integer range"]
+        }
+        return []
+    }
+
+    private static func isCanonicalGregorianDate(_ value: String) -> Bool {
+        guard value.utf8.count == 10,
+              value.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || $0.value == 45 }) else { return false }
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              let year = Int(parts[0]), year >= 1, let month = Int(parts[1]), let day = Int(parts[2]) else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        components.year = year
+        components.month = month
+        components.day = day
+        guard let date = calendar.date(from: components) else { return false }
+        let actual = calendar.dateComponents([.year, .month, .day], from: date)
+        return actual.year == year && actual.month == month && actual.day == day
     }
 
     private static func evaluateIntended(_ input: ScheduleEvaluationInput) -> ScheduleDecision {

@@ -130,6 +130,15 @@ test('malformed daily-limit counters and anchors cannot become a fresh allowance
   }
 });
 
+test('invalid runtime evaluation instants fail closed as INVALID_CONFIG', () => {
+  const malformedInstants = [new Date(Number.NaN), new Date(Number.POSITIVE_INFINITY), null, '2026-01-07T12:00:00.000Z'];
+  for (const nowUtc of malformedInstants) {
+    const result = evaluateSchedule(baseInput({ nowUtc }));
+    assert.equal(result.decision, 'INVALID_CONFIG');
+    assert.ok(result.configErrors?.some((error) => error.includes('evaluation time')));
+  }
+});
+
 test('bonus grant extends the limit only while active, then reverts on expiry', () => {
   const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
   const grant = {

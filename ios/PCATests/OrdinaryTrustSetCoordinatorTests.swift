@@ -88,11 +88,11 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         func acceptedRecord(familyId: String, epoch: Int) async throws -> OrdinaryTrustSetHead { guard let value = records[epoch] else { throw PCAAPIError.unavailable }; return value }
         func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead { guard let value = head else { throw PCAAPIError.unavailable }; return value }
     }
-    private func epoch(_ number: Int, family: String = "family-test", key: Int = 1) -> UntrustedTrustSetEpoch {
+    private func epoch(_ number: Int, family: String = "family-test", key: Int = 1, supersedes: Int? = nil) -> UntrustedTrustSetEpoch {
         UntrustedTrustSetEpoch(familyId: family, trustSetEpoch: number, keyEpoch: key,
             entries: [UntrustedTrustSetEntry(deviceId: "owner-device", role: .owner, dskKeyId: "owner-dsk", dskPublicKey: "public-dsk",
                 dekKeyId: "owner-dek", dekPublicKey: "public-dek", status: .active)],
-            issuedAt: "2026-10-09T00:00:00.000Z", supersedesEpoch: number == 1 ? nil : number - 1)
+            issuedAt: "2026-10-09T00:00:00.000Z", supersedesEpoch: supersedes ?? (number == 1 ? nil : number - 1))
     }
     private func transferredEpoch(_ number: Int, supersedes: Int, ownerIsNew: Bool) -> UntrustedTrustSetEpoch {
         let genesisOwner = UntrustedTrustSetEntry(deviceId: "owner-device", role: ownerIsNew ? .administrator : .owner,
@@ -444,12 +444,29 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertNil(store.value.pending)
         XCTAssertTrue(transport.sent.isEmpty)
     }
-    func testRollbackCrossFamilyAndSkippingRejectedBeforeSigning() async throws {
+    func testRollbackWrongPredecessorCrossFamilyAndBadKeyRejectedBeforeSigning() async throws {
         let (_, signer, _, coordinator) = try fixture()
         for candidate in [epoch(1), epoch(3), epoch(2, family: "another-family"), epoch(2, key: 0)] {
             do { try await coordinator.prepare(candidate); XCTFail("invalid candidate accepted") } catch {}
         }
         XCTAssertEqual(signer.calls, 0)
+    }
+    func testCandidateMaySkipEpochWhenItLinksToExactAcceptedHead() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        let initialHead = store.value.head
+        try await coordinator.prepare(epoch(3, supersedes: 1))
+        let pending = try XCTUnwrap(store.value.pending)
+        XCTAssertEqual(try pending.candidate.epoch().trustSetEpoch, 3)
+        XCTAssertEqual(try pending.candidate.epoch().supersedesEpoch, 1)
+        XCTAssertEqual(pending.previousHead, initialHead)
+        XCTAssertEqual(signer.calls, 1)
+
+        let result = try await coordinator.submitPending()
+        guard case let .accepted(accepted) = result else { return XCTFail("linked non-contiguous epoch was not accepted") }
+        XCTAssertEqual(accepted, pending.candidate)
+        XCTAssertEqual(store.value.head, pending.candidate)
+        XCTAssertNil(store.value.pending)
+        XCTAssertEqual(transport.sent, [pending])
     }
     func testConflictingStatusAndConcurrentPrepareCannotReplacePending() async throws {
         let (store, signer, transport, coordinator) = try fixture()

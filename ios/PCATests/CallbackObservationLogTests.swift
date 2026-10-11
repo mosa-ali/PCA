@@ -291,6 +291,33 @@ final class BoundaryCallbackIsolationTests: XCTestCase {
             XCTAssertNil(DeviceActivityMonitorInstallation.decodeValidated(try JSONEncoder().encode(manifest)))
         }
     }
+
+    func testManifestRejectsDuplicateDecodedMembersAndOversizedBytes() throws {
+        let monitor = "pca-monitor-\(UUID().uuidString.lowercased())"
+        let manifest = DeviceActivityMonitorInstallation(policyActivityId: "policy", monitorActivityId: monitor,
+            generation: UUID().uuidString.lowercased(), installedAtUtc: Date(timeIntervalSince1970: 1_700_000_000),
+            timeZoneIdentifier: "UTC", state: .active, schemaVersion: 2,
+            boundaryMonitors: [])
+        let data = try JSONEncoder().encode(manifest)
+        XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(data), manifest)
+
+        let encoded = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let originalMember = #""state":"active""#
+        XCTAssertTrue(encoded.contains(originalMember), "fixture uses the synthesized state member")
+        let duplicateFixtures = [
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""state":"active","state":"invalidated""#),
+            encoded.replacingOccurrences(of: originalMember,
+                with: #""state":"active","sta\u0074e":"invalidated""#),
+        ]
+        for fixture in duplicateFixtures {
+            XCTAssertNil(DeviceActivityMonitorInstallation.decodeValidated(Data(fixture.utf8)))
+        }
+
+        let oversized = data + Data(repeating: 0x20, count: 131_073)
+        XCTAssertNil(DeviceActivityMonitorInstallation.decodeValidated(oversized),
+            "a committed monitor manifest is rejected before unbounded decode")
+    }
 }
 
 #if canImport(Darwin)

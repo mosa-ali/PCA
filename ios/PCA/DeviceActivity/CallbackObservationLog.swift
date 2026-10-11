@@ -78,6 +78,8 @@ public struct DeviceActivityBoundaryMonitor: Codable, Equatable {
 }
 
 public struct DeviceActivityMonitorInstallation: Codable, Equatable {
+    private static let maximumEncodedBytes = 131_072
+
     public let policyActivityId: String
     public let monitorActivityId: String
     public let generation: String
@@ -137,7 +139,9 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
     public func containsMonitor(_ id: String) -> Bool { allMonitorActivityIds.contains(id) }
 
     public static func decodeValidated(_ data: Data) -> DeviceActivityMonitorInstallation? {
-        guard let value = try? JSONDecoder().decode(Self.self, from: data),
+        guard data.count <= maximumEncodedBytes,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: maximumEncodedBytes)) != nil,
+              let value = try? JSONDecoder().decode(Self.self, from: data),
               !value.policyActivityId.isEmpty,
               value.monitorActivityId.hasPrefix("pca-monitor-"),
               UUID(uuidString: String(value.monitorActivityId.dropFirst("pca-monitor-".count))) != nil,

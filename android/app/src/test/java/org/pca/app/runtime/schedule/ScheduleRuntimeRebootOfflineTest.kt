@@ -85,6 +85,31 @@ class ScheduleRuntimeRebootOfflineTest {
     }
 
     @Test
+    fun `extreme persisted sync timestamp reports stale after restart without overflow`() {
+        val snapshot = SchedulePolicySnapshot(
+            candidatePolicy = bedtimePolicy(),
+            lastKnownGoodPolicy = bedtimePolicy(),
+            lastPolicySyncAtUtc = Instant.MIN,
+            deviceTrustSetEpoch = 1,
+            deviceKeyEpoch = 1,
+        )
+        val disk = DiskBackedPersistentStateStore()
+        PersistentSchedulePolicyStore(disk).save(snapshot)
+
+        val result = ScheduleRuntime(
+            PersistentSchedulePolicyStore(disk.afterProcessDeath()),
+        ).evaluate(
+            Instant.parse("2026-01-07T20:00:00Z"),
+            "app-a",
+            EnforcementCapabilityState.ENFORCED,
+            Connectivity.OFFLINE,
+        )
+
+        assertEquals(ScheduleRuntimeState.STALE_REMOTE, result.runtimeState)
+        assertEquals(ScheduleDecisionKind.BLOCKED_BEDTIME, result.decision.decision)
+    }
+
+    @Test
     fun `WELL-3 bedtime and quiet-context helpers reflect the same effective policy`() {
         val disk = DiskBackedPersistentStateStore()
         PersistentSchedulePolicyStore(disk).save(

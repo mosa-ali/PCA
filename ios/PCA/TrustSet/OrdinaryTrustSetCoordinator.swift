@@ -290,7 +290,7 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         let accepted = try record.head.epoch()
         let serverHead = try await transport.acceptedHead(familyId: familyId)
         guard Self.sameHeadExactly(serverHead, record.head) else { throw OrdinaryTrustSetError.responseMismatch }
-        guard accepted.trustSetEpoch < Int(Int32.max), candidate.trustSetEpoch == accepted.trustSetEpoch + 1 else {
+        guard accepted.trustSetEpoch < Int(Int32.max), candidate.trustSetEpoch > accepted.trustSetEpoch else {
             throw OrdinaryTrustSetError.staleCandidate
         }
         let bytes = try FamilyTrustSetCodec.canonicalize(candidate)
