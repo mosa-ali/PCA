@@ -709,7 +709,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let scheduler = CallbackRuntimeScheduler()
         let log = CallbackRuntimeLog()
         let shields = ShieldRecorder()
-        let policyData = policy("startup-revoked", capability: .unavailable, restrictive: true)
+        let policyData = try policy("startup-revoked", capability: .unavailable, restrictive: true)
         let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
         let writer = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
             scheduler: scheduler, blobStore: store, callbackLog: log,
@@ -1188,13 +1188,13 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let shields = ShieldRecorder()
         log.records = [PersistedCallbackObservation(kind: .intervalDidStart, activityId: monitor, installationGeneration: generation, observedAtUtc: installedAt.addingTimeInterval(1), sequence: 1)]
         let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler,
-            blobStore: store, callbackLog: log, shieldEnforcer: shields,
-            installationClock: { self.installedAt })
+            blobStore: store, callbackLog: log, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
         let now = installedAt.addingTimeInterval(180)
         XCTAssertEqual(runtime.callbackHealth(now: now), .healthy)
         let restored = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler,
-            blobStore: store, callbackLog: log, shieldEnforcer: shields,
-            installationClock: { self.installedAt })
+            blobStore: store, callbackLog: log, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
         XCTAssertEqual(restored.callbackHealth(now: now), .healthy)
         log.records = [PersistedCallbackObservation(kind: .intervalDidStart, activityId: "pca-monitor-33333333-3333-4333-8333-333333333333", installationGeneration: generation, observedAtUtc: installedAt.addingTimeInterval(1), sequence: 2)]
         XCTAssertEqual(restored.callbackHealth(now: now), .unknown, "old monitor callback must not certify the current installation")
