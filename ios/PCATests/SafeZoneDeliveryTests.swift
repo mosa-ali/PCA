@@ -414,7 +414,7 @@ final class SafeZoneDeliveryTests: XCTestCase {
         let migratedBytes = try keychain.retrieve(forAccount: account, service: "test.pca.safe-zone-delivery.v1")
         let migrated = try XCTUnwrap(JSONSerialization.jsonObject(with: migratedBytes) as? [String: Any])
         XCTAssertEqual(migrated["version"] as? Int, 2)
-        XCTAssertTrue(migrated["nextCursor"] is NSNull)
+        XCTAssertNil(migrated["nextCursor"], "synthesized Codable omits the nil migrated cursor")
     }
 
     func testSynchronizationDeadlineShrinksRequestTimeoutAndDoesNotStageLatePage() async throws {
