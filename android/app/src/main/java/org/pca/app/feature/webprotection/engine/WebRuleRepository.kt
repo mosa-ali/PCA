@@ -9,6 +9,7 @@ import org.pca.app.feature.webprotection.policy.WebRuleListType
 import org.pca.app.feature.webprotection.policy.WebRuleSource
 import org.pca.app.feature.webprotection.policy.canonicalizeDomain
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -388,6 +389,9 @@ class PersistentWebRuleRepository(
             return
         }
         try {
+            // Do not let JSONObject collapse duplicate names or accept trailing data in a
+            // persisted policy snapshot. Ambiguous bytes cannot safely authorize a rule set.
+            StrictJsonMemberNames.requireUnique(raw)
             val envelope = JSONObject(raw)
             val rootFields = envelope.keys().asSequence().toSet()
             require("rules" in rootFields && rootFields.all { it in ENVELOPE_FIELDS })

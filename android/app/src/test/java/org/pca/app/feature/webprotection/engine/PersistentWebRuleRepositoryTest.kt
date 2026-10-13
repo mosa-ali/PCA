@@ -40,6 +40,21 @@ class PersistentWebRuleRepositoryTest {
     }
 
     @Test
+    fun `duplicate persisted rule fields are corrupt and retain the in-memory last known good`() {
+        val backing = InMemoryPersistentStateStore()
+        val repo = PersistentWebRuleRepository(backing)
+        val original = WebRule("blocked.example", WebRuleListType.DENY, WebRuleSource.PARENT_DENYLIST, "family-1", 0L)
+        repo.replaceParentRules("family-1", listOf(original), revision = 1L)
+
+        val ambiguousRaw = """{"rules":[{"domain":"blocked.example","listType":"DENY","source":"PARENT_DENYLIST","familyId":"family-1","createdAtEpochMillis":0}],"rules":[],"parentRulesRevision":1,"securityFeedVersion":null,"securityFeedAccepted":false}"""
+        backing.putString("webprotection_rules_v1", ambiguousRaw)
+
+        assertEquals(WebRulePolicyState.CORRUPT_USING_LKG, repo.state)
+        assertEquals(listOf(original), repo.findMatching("family-1", "blocked.example"))
+        assertEquals(ambiguousRaw, backing.getString("webprotection_rules_v1"))
+    }
+
+    @Test
     fun `removing a rule persists across instances`() {
         val backing = InMemoryPersistentStateStore()
         val first = PersistentWebRuleRepository(backing)

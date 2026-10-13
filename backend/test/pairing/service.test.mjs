@@ -145,6 +145,25 @@ test('committed pairing returns PAIRED when audit append fails and logs no priva
   assert.equal(warnings[0].includes('private audit payload'), false);
 });
 
+test('committed pairing still returns PAIRED when both audit append and warning sink fail', async () => {
+  const repository = createInMemoryDeviceRepository();
+  const now = () => new Date('2026-01-01T00:00:00.000Z');
+  const deviceService = new DeviceDirectoryService(repository, now);
+  const { device } = await pairedCandidateDevice(deviceService);
+  const pairingService = new PairingService(repository, now, {
+    async record() { throw new Error('private audit payload'); },
+  });
+  const originalWarn = console.warn;
+  console.warn = () => { throw new Error('stderr unavailable'); };
+  try {
+    const result = await confirmCurrent(pairingService, device.deviceId, randomUUID());
+    assert.equal(result.status, 'PAIRED');
+    assert.equal((await repository.findDeviceForFamily(FAMILY_A, device.deviceId))?.status, 'PAIRED');
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('confirmation is idempotent', async () => {
   const repository = createInMemoryDeviceRepository();
   let currentTime = new Date('2026-01-01T00:00:00.000Z').getTime();

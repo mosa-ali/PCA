@@ -111,8 +111,13 @@ export class PairingService {
         // one-shot transition audit without a shared transactional outbox.
         this.auditAppendFailureCount += 1;
         if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
-          console.warn(JSON.stringify({ event: 'pairing_lifecycle_audit_append_failed',
-            occurrences: this.auditAppendFailureCount }));
+          try {
+            console.warn(JSON.stringify({ event: 'pairing_lifecycle_audit_append_failed',
+              occurrences: this.auditAppendFailureCount }));
+          } catch {
+            // Diagnostics are best-effort too; a broken stderr sink cannot
+            // turn a committed pairing transition into an apparent failure.
+          }
         }
       }
     }
