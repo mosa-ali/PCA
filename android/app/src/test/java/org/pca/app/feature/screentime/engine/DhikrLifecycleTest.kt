@@ -111,18 +111,22 @@ class DhikrLifecycleTest {
     }
 
     @Test
-    fun `completion discovered only upon restoration still clears the count`() {
+    fun `completion during process downtime is not inferred and preserves the pending break count`() {
         var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
         state = dhikr(state, 60.minutes.inWholeNanoseconds)
         state = dhikr(state, 61.minutes.inWholeNanoseconds)
         assertEquals(2, state.dhikrInteractionCount)
 
         val snapshot = ScreenTimeSnapshot(state = state, snapshotWallClockMillis = 1_000L, bootId = "boot-1")
-        // Process was dead well past the end of the break (60 + 30 = 90 min mark).
+        // Process was dead well past the nominal end of the break (60 + 30 = 90 min mark),
+        // but downtime is not proof that a Break Shield was observed or completed.
         val restored = ScreenTimeRestorer.restoreAfterProcessRestart(snapshot, nowNanos = 120.minutes.inWholeNanoseconds, config = config)
 
-        assertEquals(ScreenTimeMode.ACTIVE, restored.mode)
-        assertEquals(0, restored.dhikrInteractionCount)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, restored.mode)
+        assertEquals(1.minutes.inWholeNanoseconds, state.breakElapsedNanos)
+        assertEquals(state.breakElapsedNanos, restored.breakElapsedNanos)
+        assertEquals(2, restored.dhikrInteractionCount)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test

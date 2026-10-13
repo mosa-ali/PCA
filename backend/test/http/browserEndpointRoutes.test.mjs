@@ -17,8 +17,10 @@ function key() {
 
 const FAMILY = 'family-browser-http-1';
 const OTHER_FAMILY = 'family-browser-http-other';
-const ACCOUNT_A = 'account-a';
-const ACCOUNT_B = 'account-b';
+const SERVICE_ACCOUNT_A = 'service-account-a';
+const SERVICE_ACCOUNT_B = 'service-account-b';
+const PARENT_ACCOUNT_A = 'parent-account-a';
+const PARENT_ACCOUNT_B = 'parent-account-b';
 
 function assertPrivateNoStore(response) {
   assert.equal(response.headers['cache-control'], 'private, no-store');
@@ -36,32 +38,37 @@ function buildAuthService(validAccountsByToken) {
 
 function buildApp({
   withService = true,
-  roles = { [ACCOUNT_A]: 'ADMINISTRATOR', [ACCOUNT_B]: 'ADMINISTRATOR' },
-  structuralOwnerAccountIds = [ACCOUNT_B],
+  roles = { [SERVICE_ACCOUNT_A]: 'ADMINISTRATOR', [SERVICE_ACCOUNT_B]: 'ADMINISTRATOR' },
+  structuralOwnerAccountIds = [PARENT_ACCOUNT_B],
 } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const authzRepository = createInMemoryAuthzRepository();
-  authzRepository._grantScope(ACCOUNT_A, FAMILY, 'ACTIVE');
-  authzRepository._grantScope(ACCOUNT_B, FAMILY, 'ACTIVE');
-  authzRepository._grantScope(ACCOUNT_A, OTHER_FAMILY, 'ACTIVE');
+  authzRepository._grantScope(SERVICE_ACCOUNT_A, FAMILY, 'ACTIVE');
+  authzRepository._grantScope(SERVICE_ACCOUNT_B, FAMILY, 'ACTIVE');
+  authzRepository._grantScope(SERVICE_ACCOUNT_A, OTHER_FAMILY, 'ACTIVE');
   const authzService = new AuthzService(authzRepository);
   const tokens = new Map([
-    ['token-a', ACCOUNT_A],
-    ['token-b', ACCOUNT_B],
+    ['token-a', SERVICE_ACCOUNT_A],
+    ['token-b', SERVICE_ACCOUNT_B],
   ]);
   const authService = buildAuthService(tokens);
   const stepUpConsumptionAttempts = [];
   const structuralOwnerChecks = [];
+  const parentAccountByServiceAccountId = new Map([
+    [SERVICE_ACCOUNT_A, PARENT_ACCOUNT_A],
+    [SERVICE_ACCOUNT_B, PARENT_ACCOUNT_B],
+  ]);
   const parentAccountService = {
-    async isStructuralFamilyOwner(accountId, familyId) {
-      structuralOwnerChecks.push({ accountId, familyId });
-      return familyId === FAMILY && structuralOwnerAccountIds.includes(accountId);
+    async isStructuralFamilyOwnerForServiceAccount(serviceAccountId, familyId) {
+      structuralOwnerChecks.push({ serviceAccountId, familyId });
+      const parentAccountId = parentAccountByServiceAccountId.get(serviceAccountId);
+      return familyId === FAMILY && parentAccountId !== undefined && structuralOwnerAccountIds.includes(parentAccountId);
     },
     async consumeSensitiveStepUp(accountId, familyId, operation, token) {
       stepUpConsumptionAttempts.push({ accountId, familyId, operation, token });
       return familyId === FAMILY &&
         operation === 'family.security.settings.change' &&
-        token === `valid-step-up-${accountId === ACCOUNT_A ? 'a' : 'b'}`;
+        token === `valid-step-up-${accountId === SERVICE_ACCOUNT_A ? 'a' : 'b'}`;
     },
   };
   const familyMembershipRepository = {
@@ -165,7 +172,7 @@ test('a real service-authenticated registration succeeds, records the registerin
 
     const device = await deviceRepository.findDeviceForFamily(FAMILY, body.deviceId);
     assert.equal(device.platform, 'BROWSER');
-    assert.equal(device.registeredByAccountId, ACCOUNT_A);
+    assert.equal(device.registeredByAccountId, SERVICE_ACCOUNT_A);
   } finally {
     await app.close();
   }
@@ -189,7 +196,7 @@ test('the structural Owner can confirm a different Administrator\'s endpoint aft
     assert.equal(otherConfirm.statusCode, 200);
     assertPrivateNoStore(otherConfirm);
     assert.equal(otherConfirm.json().status, 'PAIRED');
-    assert.deepEqual(structuralOwnerChecks, [{ accountId: ACCOUNT_B, familyId: FAMILY }]);
+    assert.deepEqual(structuralOwnerChecks, [{ serviceAccountId: SERVICE_ACCOUNT_B, familyId: FAMILY }]);
     assert.equal(stepUpConsumptionAttempts.length, 1);
   } finally {
     await app.close();
@@ -353,7 +360,7 @@ test('pairing confirmation rejects absent fingerprint expectations without chang
 });
 
 test('family membership roles: VIEWER can read pairing status but cannot register or confirm a browser endpoint', async () => {
-  const { app } = buildApp({ roles: { [ACCOUNT_A]: 'VIEWER', [ACCOUNT_B]: 'ADMINISTRATOR' } });
+  const { app } = buildApp({ roles: { [SERVICE_ACCOUNT_A]: 'VIEWER', [SERVICE_ACCOUNT_B]: 'ADMINISTRATOR' } });
   try {
     const deniedRegistration = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,

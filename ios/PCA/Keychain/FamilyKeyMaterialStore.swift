@@ -19,6 +19,7 @@ public enum FamilyKeyMaterialKind: String {
 
 public enum FamilyKeyMaterialStoreError: Error, Equatable {
     case invalidDeviceId
+    case invalidAccessibility
 }
 
 public struct FamilyKeyMaterialStore {
@@ -51,6 +52,13 @@ public struct FamilyKeyMaterialStore {
     /// `account`, not a new identity scheme.
     public func store(_ keyBytes: Data, kind: FamilyKeyMaterialKind, deviceId: String, accessibility: KeychainAccessibility = .whenUnlockedThisDeviceOnly) throws {
         try validateDeviceId(deviceId)
+        // Device signing/encryption keys and family key material must remain
+        // non-synchronizable. The synchronizable mode is reserved for a
+        // separately reviewed multi-device key-sync design (architecture 07
+        // §12); exposing it here would let callers bypass that gate.
+        guard accessibility == .whenUnlockedThisDeviceOnly else {
+            throw FamilyKeyMaterialStoreError.invalidAccessibility
+        }
         try keychain.store(keyBytes, forAccount: deviceId, service: service(for: kind), accessibility: accessibility)
     }
 

@@ -14,7 +14,7 @@ class ScreenTimeRestorerTest {
     private val config = ScreenTimeConfig(activeThreshold = 60.minutes, breakDuration = 30.minutes)
 
     @Test
-    fun `process restart within the same boot continues accumulating from the persisted reference`() {
+    fun `process restart preserves only the checkpoint and does not count time while process was absent`() {
         val stateAtCrash = ScreenTimeEngine.reduce(
             ScreenTimeState.initial(0L),
             ScreenTimeEvent.Tick(20.minutes.inWholeNanoseconds),
@@ -22,15 +22,19 @@ class ScreenTimeRestorerTest {
         )
         val snapshot = ScreenTimeSnapshot(state = stateAtCrash, snapshotWallClockMillis = 1_000L, bootId = "boot-1")
 
-        // process was dead for 50 minutes of monotonic time, still the same boot.
+        // Process was dead for 50 minutes of monotonic time, still the same boot. The clock can
+        // measure that gap but it cannot establish qualifying use or a completed break.
         val restored = ScreenTimeRestorer.restoreAfterProcessRestart(
             snapshot,
             nowNanos = 70.minutes.inWholeNanoseconds,
             config = config,
         )
 
-        assertEquals(ScreenTimeMode.BREAK_SHIELD, restored.mode)
-        assertEquals(10.minutes.inWholeNanoseconds, restored.breakElapsedNanos)
+        assertEquals(ScreenTimeMode.ACTIVE, restored.mode)
+        assertEquals(20.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
+        assertEquals(0L, restored.breakElapsedNanos)
+        assertEquals(70.minutes.inWholeNanoseconds, restored.lastTickMonotonicNanos)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test
@@ -49,6 +53,7 @@ class ScreenTimeRestorerTest {
         assertEquals(ScreenTimeMode.ACTIVE, restored.mode)
         assertEquals(45.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
         assertEquals(nowAfterBoot, restored.lastTickMonotonicNanos)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test
@@ -64,6 +69,7 @@ class ScreenTimeRestorerTest {
 
         assertEquals(ScreenTimeMode.BREAK_SHIELD, restored.mode)
         assertEquals(10.minutes.inWholeNanoseconds, restored.breakElapsedNanos)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test
@@ -82,7 +88,7 @@ class ScreenTimeRestorerTest {
     }
 
     @Test
-    fun `restore treats a matching bootId as an ordinary process restart`() {
+    fun `restore with a matching bootId still preserves only the checkpoint`() {
         val stateAtCrash = ScreenTimeEngine.reduce(
             ScreenTimeState.initial(0L),
             ScreenTimeEvent.Tick(20.minutes.inWholeNanoseconds),
@@ -92,8 +98,105 @@ class ScreenTimeRestorerTest {
 
         val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 70.minutes.inWholeNanoseconds, currentBootId = "boot-1", config = config)
 
+        assertEquals(ScreenTimeMode.ACTIVE, restored.mode)
+        assertEquals(20.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
+        assertEquals(0L, restored.breakElapsedNanos)
+        assertEquals(true, restored.coverageUncertain)
+    }
+
+    @Test
+    fun `same boot restart cannot complete a pending break from unobserved downtime`() {
+        val stateInBreak = ScreenTimeEngine.reduce(
+            ScreenTimeState.initial(0L),
+            ScreenTimeEvent.Tick(80.minutes.inWholeNanoseconds),
+            config,
+        )
+        val snapshot = ScreenTimeSnapshot(stateInBreak, snapshotWallClockMillis = 1_000L, bootId = "boot-1")
+
+        val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 200.minutes.inWholeNanoseconds, currentBootId = "boot-1", config = config)
+
         assertEquals(ScreenTimeMode.BREAK_SHIELD, restored.mode)
-        assertEquals(10.minutes.inWholeNanoseconds, restored.breakElapsedNanos)
+        assertEquals(20.minutes.inWholeNanoseconds, restored.breakElapsedNanos)
+        assertEquals(true, restored.coverageUncertain)
+
+        val afterObservedBreak = ScreenTimeEngine.reduce(
+            restored,
+            ScreenTimeEvent.Tick(210.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(ScreenTimeMode.ACTIVE, afterObservedBreak.mode)
+        assertEquals(false, afterObservedBreak.coverageUncertain)
+    }
+
+    @Test
+    fun `restart clears only unverified paused duration and requires a fresh continuous recovery`() {
+        val pausedState = ScreenTimeState.initial(0L).copy(
+            mode = ScreenTimeMode.PAUSED,
+            activeElapsedNanos = 59.minutes.inWholeNanoseconds,
+            pauseElapsedNanos = 29.minutes.inWholeNanoseconds,
+            lastTickMonotonicNanos = 30.minutes.inWholeNanoseconds,
+        )
+        val snapshot = ScreenTimeSnapshot(pausedState, snapshotWallClockMillis = 1_000L, bootId = "boot-1")
+
+        val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 120.minutes.inWholeNanoseconds, currentBootId = "boot-1", config = config)
+        assertEquals(ScreenTimeMode.PAUSED, restored.mode)
+        assertEquals(59.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
+        assertEquals(0L, restored.pauseElapsedNanos)
+        assertEquals(true, restored.coverageUncertain)
+
+        val afterObservedRest = ScreenTimeEngine.reduce(
+            restored,
+            ScreenTimeEvent.Tick(150.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(0L, afterObservedRest.activeElapsedNanos)
+        assertEquals(false, afterObservedRest.coverageUncertain)
+    }
+
+    @Test
+    fun `emergency exception recovery resets paused time and preserves active and break checkpoints`() {
+        val active = ScreenTimeEngine.reduce(
+            ScreenTimeState.initial(0L),
+            ScreenTimeEvent.Tick(40.minutes.inWholeNanoseconds),
+            config,
+        )
+        val paused = ScreenTimeEngine.reduce(
+            active,
+            ScreenTimeEvent.Pause(40.minutes.inWholeNanoseconds),
+            config,
+        )
+        val pauseProgress = ScreenTimeEngine.reduce(
+            paused,
+            ScreenTimeEvent.Tick(55.minutes.inWholeNanoseconds),
+            config,
+        )
+        val duringEmergency = ScreenTimeEngine.reduce(
+            pauseProgress,
+            ScreenTimeEvent.EmergencyExceptionActivate(55.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(ScreenTimeMode.PAUSED, duringEmergency.preEmergencyMode)
+
+        val restored = ScreenTimeRestorer.restore(
+            ScreenTimeSnapshot(duringEmergency, snapshotWallClockMillis = 1_000L, bootId = "boot-1"),
+            nowNanos = 90.minutes.inWholeNanoseconds,
+            currentBootId = "boot-1",
+            config = config,
+        )
+        assertEquals(ScreenTimeMode.EMERGENCY_EXCEPTION, restored.mode)
+        assertEquals(ScreenTimeMode.PAUSED, restored.preEmergencyMode)
+        assertEquals(0L, restored.preEmergencyPauseElapsedNanos)
+        val afterEmergency = ScreenTimeEngine.reduce(
+            restored,
+            ScreenTimeEvent.EmergencyExceptionDeactivate(restored.lastTickMonotonicNanos),
+            config,
+        )
+
+        assertEquals(ScreenTimeMode.PAUSED, afterEmergency.mode)
+        assertEquals(40.minutes.inWholeNanoseconds, afterEmergency.activeElapsedNanos)
+        assertEquals(0L, afterEmergency.breakElapsedNanos)
+        assertEquals(0L, afterEmergency.pauseElapsedNanos)
+        assertEquals(true, afterEmergency.coverageUncertain)
     }
 
     @Test
@@ -111,7 +214,7 @@ class ScreenTimeRestorerTest {
 
         val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = now, currentBootId = "boot-1", config = config)
 
-        assertEquals(futureTick.copy(lastTickMonotonicNanos = now), restored)
+        assertEquals(futureTick.copy(lastTickMonotonicNanos = now, coverageUncertain = true), restored)
         val nextTick = ScreenTimeEngine.reduce(restored, ScreenTimeEvent.Tick(now + 1.minutes.inWholeNanoseconds), config)
         assertEquals(8.minutes.inWholeNanoseconds, nextTick.breakElapsedNanos)
     }
@@ -136,6 +239,7 @@ class ScreenTimeRestorerTest {
         assertEquals(20.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
         assertEquals(0L, restored.breakElapsedNanos)
         assertEquals(70.minutes.inWholeNanoseconds, restored.lastTickMonotonicNanos)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test

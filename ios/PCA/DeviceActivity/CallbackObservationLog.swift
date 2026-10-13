@@ -489,22 +489,38 @@ public final class AppGroupDeviceActivityFileStore: OpaqueBlobStore {
         let name = Data(key.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
         return directory.appendingPathComponent(name)
     }
+    private func ownershipMarker(for key: String) -> URL {
+        let name = Data(key.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
+        return directory.appendingPathComponent("file-storage-owner-" + name)
+    }
     public func write(_ data: Data, forKey key: String) throws {
-        try Data("2".utf8).write(to: marker, options: .atomic)
         try data.write(to: url(for: key), options: .atomic)
+        // Claim ownership only after the new value is durable. A process
+        // death between these writes must continue reading the legacy value,
+        // rather than hiding a previously committed policy behind a marker
+        // with no corresponding file.
+        try Data("2".utf8).write(to: ownershipMarker(for: key), options: .atomic)
     }
     public func read(forKey key: String) -> Data? {
-        if FileManager.default.fileExists(atPath: marker.path) {
+        // The old global marker remains authoritative for stores created by
+        // earlier versions. New writes claim only their own key so the first
+        // staged generation cannot hide untouched legacy manifest/payload
+        // records before the replacement commit point.
+        if FileManager.default.fileExists(atPath: marker.path) ||
+            FileManager.default.fileExists(atPath: ownershipMarker(for: key).path) {
             return try? Data(contentsOf: url(for: key))
         }
         return legacy.read(forKey: key)
     }
     public func remove(forKey key: String) {
-        // A failed marker write must not authorize a legacy fallback removal.
-        do { try Data("2".utf8).write(to: marker, options: .atomic) }
-        catch { return }
-        try? FileManager.default.removeItem(at: url(for: key))
+        // Remove both copies before claiming an unowned key. If the process
+        // stops during cleanup, no stale legacy value can be resurrected;
+        // if marker creation then fails, reads at worst see nil.
         legacy.remove(forKey: key)
+        try? FileManager.default.removeItem(at: url(for: key))
+        if FileManager.default.fileExists(atPath: marker.path) ||
+            FileManager.default.fileExists(atPath: ownershipMarker(for: key).path) { return }
+        try? Data("2".utf8).write(to: ownershipMarker(for: key), options: .atomic)
     }
 }
 #endif

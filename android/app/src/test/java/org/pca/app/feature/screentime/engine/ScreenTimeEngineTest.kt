@@ -111,7 +111,7 @@ class ScreenTimeEngineTest {
     }
 
     @Test
-    fun `elapsed time beyond the split cap fails closed into a full break`() {
+    fun `elapsed time beyond the split cap fails closed and marks coverage uncertain`() {
         val start = ScreenTimeState.initial(0L)
         // After 50,000 complete cycles (100,000 splits), another active threshold remains.
         // The bounded loop cannot process it, so it must not silently reset to ACTIVE.
@@ -124,10 +124,11 @@ class ScreenTimeEngineTest {
         assertEquals(0L, state.breakElapsedNanos)
         assertEquals(0, state.dhikrInteractionCount)
         assertEquals(50_000, state.completedBreakCount)
+        assertEquals(true, state.coverageUncertain)
         assertEquals(nowNanos, state.lastTickMonotonicNanos)
     }
 
-    // ---- offline behaviour / process restart is the same code path ------
+    // ---- offline behavior while the PCA runtime remains active ------
 
     @Test
     fun `offline gap while ACTIVE is accounted for on the next tick`() {

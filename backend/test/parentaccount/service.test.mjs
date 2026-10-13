@@ -324,6 +324,10 @@ test('email verification creates no family; password login provisions it and eac
   assert.equal(await harness.service.isStructuralFamilyOwner(verifiedAccount.accountId, first.familyId), true, 'the provisioned account is the structural Owner even though its membership role is ADMINISTRATOR');
   assert.equal(await harness.service.isStructuralFamilyOwner(verifiedAccount.accountId, 'another-family'), false, 'the owner marker is family-scoped');
   assert.equal(await harness.service.isStructuralFamilyOwner('unrelated-account', first.familyId), false, 'an unrelated account cannot inherit structural Owner authority');
+  const serviceAccountId = await harness.authService.validateSession(first.rawSessionToken);
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, first.familyId), true, 'service sessions resolve back to their verified Parent account before Owner evaluation');
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, 'another-family'), false, 'service-account owner lookup is family-scoped');
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(verifiedAccount.accountId, first.familyId), false, 'a Parent-account id is not accepted in place of an authenticated service-account id');
   assert.equal(first.mfa.status, 'GRACE');
   assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
 
@@ -339,6 +343,41 @@ test('email verification creates no family; password login provisions it and eac
   assert.equal((await accountFor(harness)).familyId, first.familyId, 'exactly one family per account');
   assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
   assert.equal(harness.emailSender.countFor(EMAIL, 'LOGIN_SUCCESSFUL'), 0);
+});
+
+test('SECURITY: service-account structural Owner resolution fails closed for unverified, disabled, suspended, or missing families', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  const login = await loginWithDailyGrant(harness);
+  const account = await accountFor(harness);
+  const serviceAccountId = await harness.authService.validateSession(login.rawSessionToken);
+
+  const findByServiceAccountId = harness.parentAccountRepository.findByServiceAccountId.bind(harness.parentAccountRepository);
+  harness.parentAccountRepository.findByServiceAccountId = async (requestedId) => {
+    const found = await findByServiceAccountId(requestedId);
+    return found ? { ...found, status: 'PENDING_VERIFICATION' } : null;
+  };
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, login.familyId), false,
+    'a service-account mapping to a PENDING_VERIFICATION Parent account is not Owner authority');
+
+  harness.parentAccountRepository.findByServiceAccountId = async (requestedId) => {
+    const found = await findByServiceAccountId(requestedId);
+    return found ? { ...found, disabledAt: new Date(BASE_TIME) } : null;
+  };
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, login.familyId), false,
+    'a disabled Parent account is not Owner authority');
+
+  harness.parentAccountRepository.findByServiceAccountId = findByServiceAccountId;
+  harness.parentAccountRepository._setFamilyStatusForTest(login.familyId, 'SUSPENDED');
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, login.familyId), false,
+    'a suspended family is not Owner authority');
+
+  harness.parentAccountRepository._setFamilyStatusForTest(login.familyId, 'ACTIVE');
+  const findFamilyStatus = harness.parentAccountRepository.findFamilyStatus.bind(harness.parentAccountRepository);
+  harness.parentAccountRepository.findFamilyStatus = async (familyId) => familyId === login.familyId ? null : findFamilyStatus(familyId);
+  assert.equal(await harness.service.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, login.familyId), false,
+    'a missing family cannot confer Owner authority even when the account retains its family id');
+  assert.equal(account.status, 'VERIFIED', 'the baseline account used by the negative cases is a real verified Parent account');
 });
 
 test('SECURITY: sessions without an authenticator receive the ordinary 12-hour lifetime', async () => {

@@ -35,7 +35,7 @@ import { createTestOnlyDeviceSignatureVerifier } from '../support/testOnlyDevice
 import { createTestOnlyEnvelopeSignatureVerifier } from '../support/testOnlyEnvelopeSignatureVerifier.mjs';
 import { verifyTestOnlyIdentity } from '../support/testOnlyIdentityProvider.mjs';
 
-function buildApp() {
+function buildApp({ structuralOwnerLookup = async () => true } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
@@ -57,14 +57,40 @@ function buildApp() {
   const inboundReconnectService = new InboundReconnectService(relayService, syncCoordinator);
   const statusTracker = new DeviceSyncStatusTracker();
   const authService = new AuthService(createInMemoryAuthRepository());
+  const parentAccountByServiceAccountId = new Map();
+  authService._testParentAccountByServiceAccountId = parentAccountByServiceAccountId;
   const authzRepository = createInMemoryAuthzRepository();
   const auditRepo = new InMemoryFamilyAuditRepository();
   const familyAuditService = new FamilyAuditService(auditRepo);
-  const deleteNowLedger = new InMemoryDeleteNowLedger();
+  const stepUpConsumptionAttempts = [];
+  const structuralOwnerChecks = [];
+  const deleteNowLedgerCalls = [];
+  const storedDeleteNowLedger = new InMemoryDeleteNowLedger();
+  const deleteNowLedger = {
+    async get(actionId) {
+      deleteNowLedgerCalls.push({ method: 'get', actionId });
+      return storedDeleteNowLedger.get(actionId);
+    },
+    async record(actionId, plan, completedAtUtc) {
+      deleteNowLedgerCalls.push({ method: 'record', actionId });
+      return storedDeleteNowLedger.record(actionId, plan, completedAtUtc);
+    },
+  };
 
   const app = buildServer({
     authService,
-    parentAccountService: { async consumeSensitiveStepUp(_accountId, _familyId, _operation, token) { return token === 'test-sensitive-step-up'; } },
+    parentAccountService: {
+      async isStructuralFamilyOwnerForServiceAccount(serviceAccountId, familyId) {
+        const parentAccountId = parentAccountByServiceAccountId.get(serviceAccountId);
+        structuralOwnerChecks.push({ serviceAccountId, parentAccountId: parentAccountId ?? null, familyId });
+        if (!parentAccountId) return false;
+        return structuralOwnerLookup(parentAccountId, familyId);
+      },
+      async consumeSensitiveStepUp(accountId, familyId, operation, token) {
+        stepUpConsumptionAttempts.push({ accountId, familyId, operation, token });
+        return token === 'test-sensitive-step-up';
+      },
+    },
     authzService: new AuthzService(authzRepository),
     authzRepository,
     invitationService: new InvitationService(createInMemoryInvitationRepository()),
@@ -93,15 +119,17 @@ function buildApp() {
     }
     return inject(options);
   };
-  return { app, authService, authzRepository, auditRepo };
+  return { app, authService, authzRepository, auditRepo, stepUpConsumptionAttempts, structuralOwnerChecks, deleteNowLedgerCalls };
 }
 
 async function authenticatedAccount(authService, authzRepository, familyId) {
   const { rawToken } = await authService.issueSession(verifyTestOnlyIdentity(randomUUID()));
   // Re-derive the accountId the same way requireServiceSession would, purely for scope-grant bookkeeping.
   const accountId = await authService.validateSession(rawToken);
+  const parentAccountId = `parent-${accountId}`;
+  authService._testParentAccountByServiceAccountId.set(accountId, parentAccountId);
   authzRepository._grantScope(accountId, familyId, 'ACTIVE');
-  return { rawToken, accountId };
+  return { rawToken, accountId, parentAccountId };
 }
 
 const RETENTION_POLICY_BODY = { generalWindow: '3_MONTHS', locationMode: 'CURRENT_LAST_ONLY', timezone: 'UTC' };
@@ -142,6 +170,52 @@ test('RBAC: an authenticated account WITH active family scope may reach retentio
     assert.equal(body.persisted, false);
     assert.equal(body.deliveryStatus, 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW');
     assert.deepEqual(body.policy, RETENTION_POLICY_BODY);
+  } finally {
+    await app.close();
+  }
+});
+
+test('doc 18 Owner-only retention, deletion, and export requests fail before step-up or side effects for a non-Owner Administrator', async () => {
+  const { app, authService, authzRepository, auditRepo, stepUpConsumptionAttempts, structuralOwnerChecks, deleteNowLedgerCalls } = buildApp({
+    structuralOwnerLookup: async () => false,
+  });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken, accountId, parentAccountId } = await authenticatedAccount(authService, authzRepository, familyId);
+    const responses = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: `/v1/families/${familyId}/retention-policy`,
+        headers: { authorization: `Bearer ${rawToken}` },
+        payload: { ...RETENTION_POLICY_BODY, stepUpToken: 'test-sensitive-step-up' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/v1/families/${familyId}/delete-now`,
+        headers: { authorization: `Bearer ${rawToken}` },
+        payload: { actionId: 'non-owner-delete', records: [], stepUpToken: 'test-sensitive-step-up' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/v1/families/${familyId}/export-requests`,
+        headers: { authorization: `Bearer ${rawToken}` },
+        payload: { stepUpToken: 'test-sensitive-step-up' },
+      }),
+    ]);
+
+    assert.deepEqual(responses.map((response) => response.statusCode), [403, 403, 403]);
+    assert.ok(responses.every((response) => response.json().error === 'forbidden'));
+    assert.equal(structuralOwnerChecks.length, 3);
+    assert.ok(structuralOwnerChecks.every((check) => check.serviceAccountId === accountId && check.parentAccountId === parentAccountId && check.familyId === familyId));
+    assert.equal(stepUpConsumptionAttempts.length, 0, 'a denied non-Owner must not burn the single-use TOTP grant');
+    assert.equal(deleteNowLedgerCalls.length, 0, 'delete-now must be denied before touching its idempotency ledger');
+
+    const events = await auditRepo.listForFamily(familyId);
+    assert.deepEqual(events.map((event) => [event.actionType, event.resultStatus, event.freeTextNote]).sort(), [
+      ['CHANGE_RETENTION', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED'],
+      ['DELETE_NOW', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED'],
+      ['EXPORT_FAMILY_DATA', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED'],
+    ]);
   } finally {
     await app.close();
   }
@@ -477,18 +551,24 @@ test('PCA-NFR-062: a parent can complete delete-now AND request an export end-to
   }
 });
 
-test('every accepted retention/delete-now/export request is audited via the shared FamilyAuditService', async () => {
-  const { app, authService, authzRepository, auditRepo } = buildApp();
+test('every accepted Owner retention/delete-now/export request is audited via the shared FamilyAuditService', async () => {
+  const { app, authService, authzRepository, auditRepo, structuralOwnerChecks, stepUpConsumptionAttempts } = buildApp();
   try {
     const familyId = `family-${randomUUID()}`;
-    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
-    await app.inject({ method: 'POST', url: `/v1/families/${familyId}/retention-policy`, headers: { authorization: `Bearer ${rawToken}` }, payload: RETENTION_POLICY_BODY });
-    await app.inject({ method: 'POST', url: `/v1/families/${familyId}/delete-now`, headers: { authorization: `Bearer ${rawToken}` }, payload: { actionId: 'audit-check-1' } });
-    await app.inject({ method: 'POST', url: `/v1/families/${familyId}/export-requests`, headers: { authorization: `Bearer ${rawToken}` }, payload: {} });
+    const { rawToken, accountId, parentAccountId } = await authenticatedAccount(authService, authzRepository, familyId);
+    const responses = await Promise.all([
+      app.inject({ method: 'POST', url: `/v1/families/${familyId}/retention-policy`, headers: { authorization: `Bearer ${rawToken}` }, payload: RETENTION_POLICY_BODY }),
+      app.inject({ method: 'POST', url: `/v1/families/${familyId}/delete-now`, headers: { authorization: `Bearer ${rawToken}` }, payload: { actionId: 'audit-check-1' } }),
+      app.inject({ method: 'POST', url: `/v1/families/${familyId}/export-requests`, headers: { authorization: `Bearer ${rawToken}` }, payload: {} }),
+    ]);
+    assert.deepEqual(responses.map((response) => response.statusCode), [202, 200, 202]);
 
     const events = await auditRepo.listForFamily(familyId);
     const actionTypes = events.map((e) => e.actionType).sort();
     assert.deepEqual(actionTypes, ['CHANGE_RETENTION', 'DELETE_NOW', 'EXPORT_FAMILY_DATA']);
+    assert.equal(structuralOwnerChecks.length, 3);
+    assert.ok(structuralOwnerChecks.every((check) => check.serviceAccountId === accountId && check.parentAccountId === parentAccountId && check.familyId === familyId));
+    assert.equal(stepUpConsumptionAttempts.length, 3);
   } finally {
     await app.close();
   }

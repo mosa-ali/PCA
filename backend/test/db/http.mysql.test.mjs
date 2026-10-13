@@ -41,6 +41,22 @@ const authService = new AuthService(authRepository);
 const familyMembershipRepository = new MySqlFamilyMembershipRepository();
 const stepUpGrants = new Map();
 const parentAccountService = {
+  async isStructuralFamilyOwnerForServiceAccount(serviceAccountId, familyId) {
+    const [rows] = await getPool().query(
+      `SELECT pa.account_id
+       FROM parent_accounts pa
+       JOIN families f ON f.family_id = pa.family_id
+       WHERE pa.service_account_id = ?
+         AND pa.family_id = ?
+         AND pa.status = 'VERIFIED'
+         AND pa.disabled_at IS NULL
+         AND f.status = 'ACTIVE'
+         AND f.provisioned_for_account_id = pa.account_id
+       LIMIT 1`,
+      [serviceAccountId, familyId],
+    );
+    return rows.length === 1;
+  },
   async consumeSensitiveStepUp(serviceAccountId, familyId, operation, token) {
     const grant = stepUpGrants.get(token);
     if (!grant || grant.consumed || grant.serviceAccountId !== serviceAccountId || grant.familyId !== familyId || grant.operation !== operation) return false;
@@ -181,12 +197,15 @@ async function disableAccount(accountId) {
 }
 
 /** A DB-backed service session linked to an ACTIVE Parent Administrator membership, with a one-use step-up test grant. */
-async function authorizedParent({ withLicense = true } = {}) {
+async function authorizedParent({ withLicense = true, withOwnerMarker = true } = {}) {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   const parentAccountId = randomUUID();
   const now = new Date();
-  await getPool().query('INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, ?)', [familyId, randomBytes(32), now]);
+  await getPool().query(
+    'INSERT INTO families (family_id, family_reference_hash, created_at, provisioned_for_account_id) VALUES (?, ?, ?, ?)',
+    [familyId, randomBytes(32), now, withOwnerMarker ? parentAccountId : null],
+  );
   await getPool().query(
     `INSERT INTO parent_accounts (account_id, email_hash, password_hash, status, family_id, service_account_id, free_access_mode, free_access_started_at, default_parent_member_limit, default_managed_device_limit, created_at, verified_at)
      VALUES (?, ?, ?, 'VERIFIED', ?, ?, 'PERPETUAL', ?, 4, 5, ?, ?)`,
@@ -1075,6 +1094,40 @@ test('MySQL HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
   assert.notEqual(confirm.json().status, 'ACTIVE');
+});
+
+test('MySQL HTTP: pairing confirmation resolves service-account identity and denies a missing Owner marker before consuming step-up', async () => {
+  const app = freshApp();
+  const parent = await authorizedParent({ withOwnerMarker: false });
+  const deviceId = await bootstrapDevice(app, parent.familyId);
+  const payload = await pairingConfirmationPayload(app, parent, deviceId);
+
+  const denied = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
+    headers: authHeader(parent.rawToken),
+    payload,
+  });
+  assert.equal(denied.statusCode, 403);
+  assert.deepEqual(denied.json(), { error: 'forbidden' });
+  const stillPending = await deviceRepository.findDeviceForFamily(parent.familyId, deviceId);
+  assert.equal(stillPending.status, 'PAIRING_PENDING');
+
+  const [accountRows] = await getPool().query(
+    'SELECT account_id FROM parent_accounts WHERE service_account_id = ? AND family_id = ?',
+    [parent.accountId, parent.familyId],
+  );
+  assert.equal(accountRows.length, 1, 'the service-account id maps to one Parent account in this family');
+  await getPool().query('UPDATE families SET provisioned_for_account_id = ? WHERE family_id = ?', [accountRows[0].account_id, parent.familyId]);
+
+  const allowed = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
+    headers: authHeader(parent.rawToken),
+    payload,
+  });
+  assert.equal(allowed.statusCode, 200, 'the same single-use step-up grant remains available after marker denial');
+  assert.equal(allowed.json().status, 'PAIRED');
 });
 
 test('MySQL HTTP: wrong-family pairing view/confirm is 404 (family-scoped device lookup, indistinguishable from nonexistent)', async () => {

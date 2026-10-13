@@ -52,6 +52,21 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertEqual(store.storedAccessibility(forAccount: "device-1", service: "com.pca.app.keymaterial.dsk"), .whenUnlockedThisDeviceOnly)
     }
 
+    func testKeyMaterialRejectsSynchronizableAccessibilityWithoutWriting() throws {
+        let store = InMemoryKeychainStore()
+        let keyMaterial = FamilyKeyMaterialStore(keychain: store, serviceNamespace: "com.pca.app")
+
+        XCTAssertThrowsError(try keyMaterial.store(
+            Data("device-key".utf8), kind: .deviceSigningKey, deviceId: "device-1",
+            accessibility: .whenUnlockedSynchronizable
+        )) {
+            XCTAssertEqual($0 as? FamilyKeyMaterialStoreError, .invalidAccessibility)
+        }
+        XCTAssertThrowsError(try store.retrieve(forAccount: "device-1", service: "com.pca.app.keymaterial.dsk")) {
+            XCTAssertEqual($0 as? KeychainStoreError, .itemNotFound)
+        }
+    }
+
     func testDSKAndDEKAreStoredUnderDistinctServicesAndNeverInterchangeable() throws {
         let store = InMemoryKeychainStore()
         let keyMaterial = FamilyKeyMaterialStore(keychain: store, serviceNamespace: "com.pca.app")

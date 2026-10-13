@@ -89,6 +89,10 @@ data class ScreenTimeState(
     val preCommunicationActiveElapsedNanos: Long = 0L,
     val preCommunicationBreakElapsedNanos: Long = 0L,
     val preCommunicationPauseElapsedNanos: Long = 0L,
+    /** True while a process/reboot gap remains unmeasured and has not yet been resolved by a
+     * complete, continuously observed recovery break. This is a status signal only: it never
+     * changes the persisted active or Break Shield checkpoint. */
+    val coverageUncertain: Boolean = false,
 ) {
     companion object {
         fun initial(nowNanos: Long): ScreenTimeState = ScreenTimeState(
@@ -108,6 +112,7 @@ data class ScreenTimeState(
             preCommunicationActiveElapsedNanos = 0L,
             preCommunicationBreakElapsedNanos = 0L,
             preCommunicationPauseElapsedNanos = 0L,
+            coverageUncertain = false,
         )
     }
 }
@@ -160,9 +165,10 @@ object ScreenTimeEngine {
 
     /**
      * Advances [state] to [nowNanos], splitting the elapsed delta across as many
-     * ACTIVE -> BREAK_SHIELD -> ACTIVE cycles as the delta actually spans (e.g. after a long
-     * offline period or process restart). The delta itself is clamped to be non-negative so a
-     * monotonic clock reading that appears to regress can never subtract accumulated progress.
+     * ACTIVE -> BREAK_SHIELD -> ACTIVE cycles as the delta actually spans during an active
+     * runtime interval. Process restoration re-anchors first, so time while PCA was absent never
+     * reaches this method as a creditable delta. Negative deltas are clamped to zero so a
+     * monotonic clock reading that appears to regress cannot subtract accumulated progress.
      */
     internal fun advance(state: ScreenTimeState, nowNanos: Long, config: ScreenTimeConfig): ScreenTimeState {
         var current = state
@@ -207,6 +213,7 @@ object ScreenTimeEngine {
                             // by a fresh BREAK_SHIELD entry.
                             dhikrInteractionCount = 0,
                             completedBreakCount = current.completedBreakCount + 1,
+                            coverageUncertain = false,
                         )
                     }
                 }
@@ -230,7 +237,11 @@ object ScreenTimeEngine {
                     }
                     remaining = 0
                     if (newPauseElapsed >= config.recoveryThresholdNanos) {
-                        current.copy(pauseElapsedNanos = newPauseElapsed, activeElapsedNanos = 0L)
+                        current.copy(
+                            pauseElapsedNanos = newPauseElapsed,
+                            activeElapsedNanos = 0L,
+                            coverageUncertain = false,
+                        )
                     } else {
                         current.copy(pauseElapsedNanos = newPauseElapsed)
                     }
@@ -263,6 +274,7 @@ object ScreenTimeEngine {
                 breakElapsedNanos = 0L,
                 pauseElapsedNanos = 0L,
                 dhikrInteractionCount = 0,
+                coverageUncertain = true,
             )
         }
 

@@ -18,21 +18,22 @@ class ScreenTimeAntiGamingInvariantTest {
 
     private val config = ScreenTimeConfig(activeThreshold = 60.minutes, breakDuration = 30.minutes)
 
-    // 59m use + process restart + 1m use => BREAK_SHIELD
+    // 59m checkpoint + process downtime + 1m observed use => BREAK_SHIELD
     @Test
-    fun `59m use, process restart same boot, 1m use reaches BREAK_SHIELD`() {
+    fun `59m use, process restart same boot does not credit downtime and 1m observed use reaches BREAK_SHIELD`() {
         var state = ScreenTimeEngine.reduce(
             ScreenTimeState.initial(0L),
             ScreenTimeEvent.Tick(59.minutes.inWholeNanoseconds),
             config,
         )
-        // Process dies; on restart the snapshot is fed back through the normal restorer path
-        // with a fresh "now" reading from the same boot's monotonic clock.
+        // Process dies; same-boot monotonic time can measure the process gap, but it cannot prove
+        // qualifying use. Restore only the checkpoint and begin a new observed interval.
         val snapshot = ScreenTimeSnapshot(state = state, snapshotWallClockMillis = 0L, bootId = "boot-1")
         val restoredNowNanos = 59.minutes.inWholeNanoseconds + 10.seconds.inWholeNanoseconds // process was dead briefly
         state = ScreenTimeRestorer.restore(snapshot, restoredNowNanos, currentBootId = "boot-1", config = config)
         assertEquals(ScreenTimeMode.ACTIVE, state.mode)
-        assertEquals(59.minutes.inWholeNanoseconds + 10.seconds.inWholeNanoseconds, state.activeElapsedNanos)
+        assertEquals(59.minutes.inWholeNanoseconds, state.activeElapsedNanos)
+        assertEquals(true, state.coverageUncertain)
 
         state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.Tick(restoredNowNanos + 1.minutes.inWholeNanoseconds), config)
         assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)

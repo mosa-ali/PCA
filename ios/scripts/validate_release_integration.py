@@ -40,6 +40,16 @@ TARGETS = {
         "com.apple.ManagedSettings.shield-action-service",
     ),
 }
+EXTENSION_PRINCIPAL_CLASSES = {
+    "PCADeviceActivityMonitor": "PCADeviceActivityMonitorExtension",
+    "PCAShieldConfiguration": "PCAShieldConfigurationExtension",
+    "PCAShieldAction": "PCAShieldActionExtension",
+}
+EXTENSION_SOURCE_FILES = {
+    "PCADeviceActivityMonitor": "PCADeviceActivityMonitor/DeviceActivityMonitorExtension.swift",
+    "PCAShieldConfiguration": "PCAShieldConfiguration/ShieldConfigurationExtension.swift",
+    "PCAShieldAction": "PCAShieldAction/ShieldActionExtension.swift",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -113,6 +123,31 @@ def validate_target_identity_settings(
             f"{target} {configuration} must use bundle id {bundle_id}")
     require(settings.get("CODE_SIGN_ENTITLEMENTS") == entitlement_path,
             f"{target} {configuration} must use entitlements {entitlement_path}")
+
+
+def validate_extension_info(info: dict, target: str, extension_point: str) -> None:
+    """Check the extension bundle metadata resolves to its compiled entry point."""
+    require(info.get("CFBundlePackageType") == "XPC!",
+            f"{target} Info.plist must declare the XPC! extension package type")
+    require(info.get("CFBundleIdentifier") == "$(PRODUCT_BUNDLE_IDENTIFIER)",
+            f"{target} Info.plist must use its target bundle identifier")
+    extension = info.get("NSExtension", {})
+    require(extension.get("NSExtensionPointIdentifier") == extension_point,
+            f"{target} has the wrong extension point")
+    principal_class = EXTENSION_PRINCIPAL_CLASSES.get(target)
+    require(principal_class is not None,
+            f"{target} has no registered extension principal class")
+    require(extension.get("NSExtensionPrincipalClass") == f"$(PRODUCT_MODULE_NAME).{principal_class}",
+            f"{target} principal class does not match its extension entry point")
+
+
+def validate_extension_source(source: str, target: str) -> None:
+    """Require the Info.plist principal class to exist in the target source."""
+    principal_class = EXTENSION_PRINCIPAL_CLASSES.get(target)
+    require(principal_class is not None,
+            f"{target} has no registered extension principal class")
+    require(re.search(rf"\bclass\s+{re.escape(principal_class)}\b", source) is not None,
+            f"{target} principal class is missing from its extension source")
 
 
 def validate_enrollment_link_configuration(entitlements: dict, info: dict) -> None:
@@ -221,11 +256,9 @@ def main() -> int:
             )
         require((ROOT / info_path).is_file(), f"{target} Info.plist is missing")
         if extension_point is not None:
-            extension = info.get("NSExtension", {})
-            require(extension.get("NSExtensionPointIdentifier") == extension_point,
-                    f"{target} has the wrong extension point")
-            require(bool(extension.get("NSExtensionPrincipalClass")),
-                    f"{target} has no extension principal class")
+            validate_extension_info(info, target, extension_point)
+            source_path = EXTENSION_SOURCE_FILES[target]
+            validate_extension_source((ROOT / source_path).read_text(encoding="utf-8"), target)
 
     validate_enrollment_link_configuration(
         parse_plist(ROOT / TARGETS["PCA"][0]),

@@ -353,7 +353,18 @@ private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listO
     StatusRowContent(stringResource(R.string.child_home_wellbeing_availability), wellbeingLabel(status.wellbeingNotificationsAvailable)),
     StatusRowContent(stringResource(R.string.child_home_pending_requests), localizedNumber(status.pendingChildRequestCount.toLong())),
     StatusRowContent(stringResource(R.string.child_home_call_state_permission), callStatePermissionLabel(status.callStatePermissionAvailable)),
-)
+) + listOfNotNull(screenTimeCoverageRow(status))
+
+@Composable
+private fun screenTimeCoverageRow(status: PcaRuntimeStatus): StatusRowContent? =
+    if (status.screenTimeCoverageUncertain) {
+        StatusRowContent(
+            label = stringResource(R.string.child_home_screen_time_coverage),
+            value = stringResource(R.string.child_home_screen_time_coverage_limited),
+        )
+    } else {
+        null
+    }
 
 /**
  * PCA-FR-081 / doc 06 closure: the app's ONLY user-facing route to the `PACKAGE_USAGE_STATS`

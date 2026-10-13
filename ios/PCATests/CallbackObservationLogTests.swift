@@ -379,6 +379,23 @@ final class DeviceActivityFileStorageTests: XCTestCase {
         try Data("corrupt marker".utf8).write(to: marker)
         XCTAssertNil(restarted.read(forKey: "manifest"))
     }
+    func testFirstFileWriteDoesNotHideUntouchedLegacyPolicyRecords() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-policy-mixed-migration-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let legacy = InMemoryBlobStore()
+        try legacy.write(Data("legacy-manifest".utf8), forKey: "installation")
+        try legacy.write(Data("legacy-schedule".utf8), forKey: "schedule.active")
+        let store = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: legacy)
+
+        try store.write(Data("staged-payload".utf8), forKey: "schedule.replacement.generation")
+
+        let restarted = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: legacy)
+        XCTAssertEqual(restarted.read(forKey: "schedule.replacement.generation"), Data("staged-payload".utf8))
+        XCTAssertEqual(restarted.read(forKey: "installation"), Data("legacy-manifest".utf8),
+            "staging one file-backed generation must not hide the still-committed legacy installation")
+        XCTAssertEqual(restarted.read(forKey: "schedule.active"), Data("legacy-schedule".utf8),
+            "unmodified legacy payloads remain readable until individually replaced or retired")
+    }
     func testSeparateLockHandlesSerializeDecisionAndReplacement() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-coordination-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

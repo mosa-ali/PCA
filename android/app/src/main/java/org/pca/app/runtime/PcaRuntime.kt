@@ -117,6 +117,8 @@ class PcaRuntime(
     private val communicationExceptionCoordinator = CommunicationExceptionCoordinator(
         onCommunicationStarted = ::activateCommunicationException,
         onCommunicationEnded = ::deactivateCommunicationException,
+        onCommunicationObservationUnavailable = ::deactivateCommunicationException,
+        initiallyActive = screenTimeStateFlow.value.mode == ScreenTimeMode.COMMUNICATION_EXCEPTION,
     )
     private val communicationCallLifecycle = CommunicationCallLifecycleAdapter(
         observer = communicationCallStateObserver,
@@ -146,6 +148,7 @@ class PcaRuntime(
                 // recovery boundary instead.
                 mode = ScreenTimeMode.BREAK_SHIELD,
                 activeElapsedNanos = currentScreenTimeConfig.activeThresholdNanos,
+                coverageUncertain = true,
             )
             is ScreenTimeSnapshotRead.Present -> ScreenTimeRestorer.restore(
                 persisted.snapshot,
@@ -383,6 +386,7 @@ class PcaRuntime(
             pendingChildRequestCount = childRequestQueue.outboxPendingCount(),
             scheduleEnforcementOutcome = scheduleEnforcementOutcomeFlow.value,
             callStatePermissionAvailable = communicationCallStateObserver.isAvailable(),
+            screenTimeCoverageUncertain = screenTime.coverageUncertain,
         )
     }
 

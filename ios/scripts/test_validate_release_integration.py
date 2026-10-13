@@ -41,6 +41,39 @@ class ReleaseIntegrationValidatorTests(unittest.TestCase):
                     base | changes, "PCA", "Release", "org.pca.app", "PCA/PCA.entitlements"
                 )
 
+    def test_extension_info_requires_package_identity_and_exact_runtime_principal_class(self):
+        for target, (_entitlements, info_path, _bundle_id, extension_point) in VALIDATOR.TARGETS.items():
+            if extension_point is None:
+                continue
+            info = VALIDATOR.parse_plist(VALIDATOR.ROOT / info_path)
+            VALIDATOR.validate_extension_info(info, target, extension_point)
+            source_path = VALIDATOR.EXTENSION_SOURCE_FILES[target]
+            source = (VALIDATOR.ROOT / source_path).read_text(encoding="utf-8")
+            VALIDATOR.validate_extension_source(source, target)
+
+            wrong_principal = {
+                **info,
+                "NSExtension": {
+                    **info["NSExtension"],
+                    "NSExtensionPrincipalClass": "$(PRODUCT_MODULE_NAME).WrongExtension",
+                },
+            }
+            with self.subTest(target=target, defect="principal class"), self.assertRaises(ValueError):
+                VALIDATOR.validate_extension_info(wrong_principal, target, extension_point)
+
+            wrong_package = {**info, "CFBundlePackageType": "APPL"}
+            with self.subTest(target=target, defect="package type"), self.assertRaises(ValueError):
+                VALIDATOR.validate_extension_info(wrong_package, target, extension_point)
+
+            wrong_bundle = {**info, "CFBundleIdentifier": "org.pca.wrong"}
+            with self.subTest(target=target, defect="bundle identifier"), self.assertRaises(ValueError):
+                VALIDATOR.validate_extension_info(wrong_bundle, target, extension_point)
+
+            principal_class = VALIDATOR.EXTENSION_PRINCIPAL_CLASSES[target]
+            source_without_entry_point = source.replace(principal_class, "WrongExtension", 1)
+            with self.subTest(target=target, defect="missing runtime class"), self.assertRaises(ValueError):
+                VALIDATOR.validate_extension_source(source_without_entry_point, target)
+
     def test_enrollment_links_require_custom_scheme_and_universal_link_domain(self):
         entitlements = VALIDATOR.parse_plist(VALIDATOR.ROOT / VALIDATOR.TARGETS["PCA"][0])
         info = VALIDATOR.parse_plist(VALIDATOR.ROOT / VALIDATOR.TARGETS["PCA"][1])

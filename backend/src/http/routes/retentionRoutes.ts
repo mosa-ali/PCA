@@ -62,7 +62,7 @@ const MAX_DELETE_NOW_RECORDS = 5000;
 
 export interface RetentionRoutesDeps {
   authService: AuthService;
-  parentAccountService?: Pick<ParentAccountService, 'consumeSensitiveStepUp'>;
+  parentAccountService?: Pick<ParentAccountService, 'consumeSensitiveStepUp' | 'isStructuralFamilyOwnerForServiceAccount'>;
   /**
    * Deliberately the raw AuthzRepository, NOT AuthzService -- see this
    * file's top-of-module doc comment for why CHANGE_RETENTION/DELETE_NOW/
@@ -84,8 +84,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Authenticates the service session and requires an ACTIVE family scope,
  * ACTIVE Parent membership, and ACTIVE family. The sensitive mutation
- * handlers then consume a single-use TOTP grant; ParentAccountService
- * revalidates that the account is an ACTIVE Administrator in this family.
+ * handlers require the structural Family Owner, then consume a single-use
+ * TOTP grant; ParentAccountService revalidates that the account is an
+ * ACTIVE Administrator in this family.
  * These routes validate and audit requests only: retention policy is not
  * persisted or delivered, deletion remains pending device acknowledgement,
  * and export remains pending crypto review.
@@ -103,6 +104,15 @@ function createRequireActiveFamilyScope(authzRepository: AuthzRepository) {
       return;
     }
   };
+}
+
+async function isStructuralFamilyOwnerForServiceAccount(
+  parentAccountService: RetentionRoutesDeps['parentAccountService'],
+  serviceAccountId: string,
+  familyId: string,
+): Promise<boolean> {
+  if (!parentAccountService || typeof parentAccountService.isStructuralFamilyOwnerForServiceAccount !== 'function') return false;
+  return parentAccountService.isStructuralFamilyOwnerForServiceAccount(serviceAccountId, familyId);
 }
 
 function isValidRetentionWindow(value: unknown): value is RetentionWindow {
@@ -157,8 +167,9 @@ function parseDeleteNowRecords(value: unknown): RetentionRecord[] | null {
 /**
  * Registers the family privacy-control intake routes: retention policy
  * validation, "Delete now" (idempotent by client-supplied actionId), and
- * export request intake. They require active Parent membership and reserve
- * sensitive writes for the ACTIVE Administrator with fresh TOTP step-up.
+ * export request intake. Doc 18 §2 reserves these actions for the structural
+ * Owner with fresh TOTP step-up; ParentAccountService additionally verifies
+ * current Administrator membership during step-up consumption.
  *
  * NONE of these routes execute a real data purge/export against family
  * activity data -- that data is device-local/E2EE (docs/architecture/10,
@@ -194,6 +205,10 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
       const policy = parseRetentionPolicy(body);
       if (policy === null) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await isStructuralFamilyOwnerForServiceAccount(deps.parentAccountService, request.accountId as string, familyId))) {
+        await deps.auditService.record(auditRecord(familyId, 'CHANGE_RETENTION', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED'));
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       if (!deps.parentAccountService || typeof body.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.retention.update', body.stepUpToken))) {
         await deps.auditService.record(auditRecord(familyId, 'CHANGE_RETENTION', 'DENIED', 'SENSITIVE_STEP_UP_REQUIRED'));
         return reply.code(403).send({ error: 'forbidden' });
@@ -228,6 +243,10 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
       const { actionId } = body;
       if (!isPlausibleDeleteNowActionId(actionId)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await isStructuralFamilyOwnerForServiceAccount(deps.parentAccountService, request.accountId as string, familyId))) {
+        await deps.auditService.record(auditRecord(familyId, 'DELETE_NOW', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED', actionId));
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       if (!deps.parentAccountService || typeof body.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.history.delete', body.stepUpToken))) {
         await deps.auditService.record(auditRecord(familyId, 'DELETE_NOW', 'DENIED', 'SENSITIVE_STEP_UP_REQUIRED', actionId));
         return reply.code(403).send({ error: 'forbidden' });
@@ -268,6 +287,10 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (body !== undefined && !isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await isStructuralFamilyOwnerForServiceAccount(deps.parentAccountService, request.accountId as string, familyId))) {
+        await deps.auditService.record(auditRecord(familyId, 'EXPORT_FAMILY_DATA', 'DENIED', 'STRUCTURAL_OWNER_REQUIRED'));
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       if (!deps.parentAccountService || typeof body?.stepUpToken !== 'string' || !(await deps.parentAccountService.consumeSensitiveStepUp(request.accountId as string, familyId, 'family.history.export', body.stepUpToken))) {
         return reply.code(403).send({ error: 'forbidden' });
       }
@@ -322,7 +345,7 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
 
   function auditRecord(
     familyId: string,
-    actionType: 'CHANGE_RETENTION' | 'DELETE_NOW',
+    actionType: 'CHANGE_RETENTION' | 'DELETE_NOW' | 'EXPORT_FAMILY_DATA',
     resultStatus: 'SUCCESS' | 'DENIED',
     freeTextNote: string,
     correlationId: string | null = null,

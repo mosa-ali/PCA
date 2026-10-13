@@ -17,8 +17,9 @@ import java.util.concurrent.Executor
  * API 31+ uses [TelephonyCallback.CallStateListener]; older supported API levels use the public
  * [PhoneStateListener] equivalent. Registration is permission-gated, idempotent, and reversible.
  * The callback consumes only RINGING/OFFHOOK/IDLE, and deliberately ignores the legacy number
- * argument. If READ_PHONE_STATE is unavailable, the adapter remains inactive and PCA reports no
- * fabricated communication timing exception.
+ * argument. If READ_PHONE_STATE is unavailable or registration fails, the observer reports no
+ * registration; the lifecycle adapter uses a distinct unavailable signal rather than fabricating
+ * an IDLE call-ended event.
  */
 class AndroidTelephonyCallStateObserver(
     context: Context,
@@ -31,8 +32,9 @@ class AndroidTelephonyCallStateObserver(
     private var legacyListener: PhoneStateListener? = null
 
     @Synchronized
-    override fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit) {
-        if (started || telephonyManager == null || !hasReadPhoneState()) return
+    override fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit): Boolean {
+        if (started) return true
+        if (telephonyManager == null || !hasReadPhoneState()) return false
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 registerModern(onState)
@@ -40,15 +42,25 @@ class AndroidTelephonyCallStateObserver(
                 registerLegacy(onState)
             }
             started = true
+            return true
         } catch (_: SecurityException) {
-            modernCallback = null
-            legacyListener = null
+            clearRegistration()
+            return false
+        } catch (_: IllegalStateException) {
+            // Android may reject registration when its callback/listener limit is reached.
+            // Treat that as unavailable and best-effort undo any partial registration.
+            clearRegistration()
+            return false
         }
     }
 
     @Synchronized
     override fun stop() {
         if (!started) return
+        clearRegistration()
+    }
+
+    private fun clearRegistration() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 modernCallback?.let { telephonyManager?.unregisterTelephonyCallback(it) }
@@ -58,6 +70,8 @@ class AndroidTelephonyCallStateObserver(
             }
         } catch (_: SecurityException) {
             // Permission revocation must not crash shutdown or leak PCA process state.
+        } catch (_: IllegalStateException) {
+            // A partially registered callback may already have been removed by the framework.
         } finally {
             modernCallback = null
             legacyListener = null
@@ -78,8 +92,8 @@ class AndroidTelephonyCallStateObserver(
                 onState(mapState(state))
             }
         }
-        telephonyManager?.registerTelephonyCallback(executor, callback)
         modernCallback = callback
+        telephonyManager?.registerTelephonyCallback(executor, callback)
     }
 
     @Suppress("DEPRECATION")
@@ -89,13 +103,14 @@ class AndroidTelephonyCallStateObserver(
                 onState(mapState(state))
             }
         }
-        telephonyManager?.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
         legacyListener = listener
+        telephonyManager?.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
     }
 
     private fun mapState(state: Int): CommunicationExceptionCoordinator.CallState = when (state) {
         TelephonyManager.CALL_STATE_RINGING -> CommunicationExceptionCoordinator.CallState.RINGING
         TelephonyManager.CALL_STATE_OFFHOOK -> CommunicationExceptionCoordinator.CallState.OFFHOOK
-        else -> CommunicationExceptionCoordinator.CallState.IDLE
+        TelephonyManager.CALL_STATE_IDLE -> CommunicationExceptionCoordinator.CallState.IDLE
+        else -> CommunicationExceptionCoordinator.CallState.UNAVAILABLE
     }
 }

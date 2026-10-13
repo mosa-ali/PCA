@@ -27,6 +27,33 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
+    fun `v3 round-trip preserves limited-coverage recovery status`() {
+        val store = PersistentScreenTimeSnapshotStore(InMemoryPersistentStateStore())
+        val snapshot = ScreenTimeSnapshot(
+            state = ScreenTimeState.initial(nowNanos = 42L).copy(coverageUncertain = true),
+            snapshotWallClockMillis = 1_700_000_000_000L,
+            bootId = "boot-coverage",
+        )
+
+        store.save(snapshot)
+
+        assertEquals(snapshot, store.load())
+    }
+
+    @Test
+    fun `legacy v2 snapshot remains readable with default coverage status`() {
+        val underlying = InMemoryPersistentStateStore()
+        val snapshot = ScreenTimeSnapshot(
+            state = ScreenTimeState.initial(nowNanos = 42L).copy(activeElapsedNanos = 30L),
+            snapshotWallClockMillis = 1_700_000_000_000L,
+            bootId = "boot-v2",
+        )
+        underlying.putString("screen_time_snapshot_v1", encodeV2(snapshot))
+
+        assertEquals(snapshot, PersistentScreenTimeSnapshotStore(underlying).load())
+    }
+
+    @Test
     fun `round-trips a snapshot with pre-emergency state and a null bootId`() {
         val store = PersistentScreenTimeSnapshotStore(InMemoryPersistentStateStore())
         val snapshot = ScreenTimeSnapshot(
@@ -68,7 +95,7 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
-    fun `communication exception restart preserves prior active paused and break state`() {
+    fun `communication exception restart preserves observed counters and clears unobserved pause progress`() {
         val priorStates = listOf(
             ScreenTimeState.initial(nowNanos = 100L).copy(activeElapsedNanos = 30L),
             ScreenTimeState.initial(nowNanos = 100L).copy(
@@ -106,7 +133,7 @@ class PersistentScreenTimeSnapshotStoreTest {
             assertEquals(prior.mode, afterCall.mode)
             assertEquals(prior.activeElapsedNanos, afterCall.activeElapsedNanos)
             assertEquals(prior.breakElapsedNanos, afterCall.breakElapsedNanos)
-            assertEquals(prior.pauseElapsedNanos, afterCall.pauseElapsedNanos)
+            assertEquals(0L, afterCall.pauseElapsedNanos)
         }
     }
 
@@ -140,7 +167,7 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
-    fun `negative counters in v2 snapshot fail safe to null`() {
+    fun `negative counters in v3 snapshot fail safe to null`() {
         val underlying = InMemoryPersistentStateStore()
         val store = PersistentScreenTimeSnapshotStore(underlying)
         val valid = ScreenTimeSnapshot(
@@ -157,7 +184,7 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
-    fun `legacy v1 communication exception reconstructs prior mode without dropping counters`() {
+    fun `legacy v1 communication exception preserves observed counters and clears unobserved pause progress`() {
         val underlying = InMemoryPersistentStateStore()
         val priorStates = listOf(
             ScreenTimeState.initial(nowNanos = 42L).copy(activeElapsedNanos = 30L),
@@ -195,7 +222,7 @@ class PersistentScreenTimeSnapshotStoreTest {
             assertEquals(prior.mode, afterCall.mode)
             assertEquals(prior.activeElapsedNanos, afterCall.activeElapsedNanos)
             assertEquals(prior.breakElapsedNanos, afterCall.breakElapsedNanos)
-            assertEquals(prior.pauseElapsedNanos, afterCall.pauseElapsedNanos)
+            assertEquals(0L, afterCall.pauseElapsedNanos)
         }
     }
 
@@ -255,7 +282,7 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
-    fun `same boot process recovery cannot wrap an oversized paused duration`() {
+    fun `same boot process recovery discards the unverified pause instead of counting or wrapping it`() {
         val backing = InMemoryPersistentStateStore()
         val initialState = ScreenTimeState.initial(nowNanos = 0L).copy(
             mode = ScreenTimeMode.PAUSED,
@@ -267,14 +294,16 @@ class PersistentScreenTimeSnapshotStoreTest {
         )
 
         // Reopen the adapter to exercise the process-death serialization path, then continue on
-        // the confirmed same boot. A wrapped negative pause would preserve active-time debt.
+        // the confirmed same boot. A pause that elapsed while PCA was absent is not proven to be
+        // continuous; only the active-time checkpoint survives.
         val reopened = PersistentScreenTimeSnapshotStore(backing)
         val snapshot = reopened.load()!!
         val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 10L, currentBootId = "boot-persisted")
 
         assertEquals(ScreenTimeMode.PAUSED, restored.mode)
-        assertEquals(Long.MAX_VALUE, restored.pauseElapsedNanos)
-        assertEquals(0L, restored.activeElapsedNanos)
+        assertEquals(0L, restored.pauseElapsedNanos)
+        assertEquals(ScreenTimeConfig().activeThresholdNanos - 1L, restored.activeElapsedNanos)
+        assertEquals(true, restored.coverageUncertain)
     }
 
     @Test
@@ -314,6 +343,31 @@ class PersistentScreenTimeSnapshotStoreTest {
             state.preEmergencyActiveElapsedNanos.toString(),
             state.preEmergencyBreakElapsedNanos.toString(),
             state.preEmergencyPauseElapsedNanos.toString(),
+            snapshot.snapshotWallClockMillis.toString(),
+            snapshot.bootId ?: "NULL",
+        ).joinToString("|")
+    }
+
+    private fun encodeV2(snapshot: ScreenTimeSnapshot): String {
+        val state = snapshot.state
+        return listOf(
+            "v2",
+            state.mode.name,
+            state.activeElapsedNanos.toString(),
+            state.breakElapsedNanos.toString(),
+            state.pauseElapsedNanos.toString(),
+            state.dhikrInteractionCount.toString(),
+            state.completedBreakCount.toString(),
+            state.overriddenBreakCount.toString(),
+            state.lastTickMonotonicNanos.toString(),
+            state.preEmergencyMode?.name ?: "NULL",
+            state.preEmergencyActiveElapsedNanos.toString(),
+            state.preEmergencyBreakElapsedNanos.toString(),
+            state.preEmergencyPauseElapsedNanos.toString(),
+            state.preCommunicationMode?.name ?: "NULL",
+            state.preCommunicationActiveElapsedNanos.toString(),
+            state.preCommunicationBreakElapsedNanos.toString(),
+            state.preCommunicationPauseElapsedNanos.toString(),
             snapshot.snapshotWallClockMillis.toString(),
             snapshot.bootId ?: "NULL",
         ).joinToString("|")

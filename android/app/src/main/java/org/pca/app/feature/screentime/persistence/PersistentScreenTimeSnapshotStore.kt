@@ -46,7 +46,7 @@ class PersistentScreenTimeSnapshotStore(
     internal fun encode(snapshot: ScreenTimeSnapshot): String {
         val s = snapshot.state
         val fields = listOf(
-            VERSION_2,
+            VERSION_3,
             s.mode.name,
             s.activeElapsedNanos.toString(),
             s.breakElapsedNanos.toString(),
@@ -63,6 +63,7 @@ class PersistentScreenTimeSnapshotStore(
             s.preCommunicationActiveElapsedNanos.toString(),
             s.preCommunicationBreakElapsedNanos.toString(),
             s.preCommunicationPauseElapsedNanos.toString(),
+            s.coverageUncertain.toString(),
             snapshot.snapshotWallClockMillis.toString(),
             snapshot.bootId ?: NULL_SENTINEL,
         )
@@ -70,7 +71,50 @@ class PersistentScreenTimeSnapshotStore(
     }
 
     internal fun decode(raw: String): ScreenTimeSnapshot? =
-        if (raw.startsWith("$VERSION_2$FIELD_SEPARATOR")) decodeV2(raw) else decodeV1(raw)
+        when {
+            raw.startsWith("$VERSION_3$FIELD_SEPARATOR") -> decodeV3(raw)
+            raw.startsWith("$VERSION_2$FIELD_SEPARATOR") -> decodeV2(raw)
+            else -> decodeV1(raw)
+        }
+
+    private fun decodeV3(raw: String): ScreenTimeSnapshot? {
+        val parts = raw.split(FIELD_SEPARATOR, limit = V3_FIELD_COUNT)
+        if (parts.size != V3_FIELD_COUNT || parts[0] != VERSION_3) return null
+        return try {
+            val coverageUncertain = when (parts[17]) {
+                "true" -> true
+                "false" -> false
+                else -> return null
+            }
+            val state = ScreenTimeState(
+                mode = ScreenTimeMode.valueOf(parts[1]),
+                activeElapsedNanos = parts[2].toLong(),
+                breakElapsedNanos = parts[3].toLong(),
+                pauseElapsedNanos = parts[4].toLong(),
+                dhikrInteractionCount = parts[5].toInt(),
+                completedBreakCount = parts[6].toInt(),
+                overriddenBreakCount = parts[7].toInt(),
+                lastTickMonotonicNanos = parts[8].toLong(),
+                preEmergencyMode = parts[9].takeIf { it != NULL_SENTINEL }?.let { ScreenTimeMode.valueOf(it) },
+                preEmergencyActiveElapsedNanos = parts[10].toLong(),
+                preEmergencyBreakElapsedNanos = parts[11].toLong(),
+                preEmergencyPauseElapsedNanos = parts[12].toLong(),
+                preCommunicationMode = parts[13].takeIf { it != NULL_SENTINEL }?.let { ScreenTimeMode.valueOf(it) },
+                preCommunicationActiveElapsedNanos = parts[14].toLong(),
+                preCommunicationBreakElapsedNanos = parts[15].toLong(),
+                preCommunicationPauseElapsedNanos = parts[16].toLong(),
+                coverageUncertain = coverageUncertain,
+            )
+            requireValidPersistedState(state)
+            ScreenTimeSnapshot(
+                state = state,
+                snapshotWallClockMillis = parts[18].toLong(),
+                bootId = parts[19].takeIf { it != NULL_SENTINEL },
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
 
     private fun decodeV1(raw: String): ScreenTimeSnapshot? {
         val parts = raw.split(FIELD_SEPARATOR, limit = V1_FIELD_COUNT)
@@ -193,8 +237,10 @@ class PersistentScreenTimeSnapshotStore(
         const val KEY = "screen_time_snapshot_v1"
         const val FIELD_SEPARATOR = "|"
         const val VERSION_2 = "v2"
+        const val VERSION_3 = "v3"
         const val V1_FIELD_COUNT = 14
         const val V2_FIELD_COUNT = 19
+        const val V3_FIELD_COUNT = 20
         const val NULL_SENTINEL = "NULL"
     }
 }

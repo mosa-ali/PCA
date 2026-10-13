@@ -21,7 +21,7 @@ export interface PairingRoutesDeps {
   pairingService: PairingService;
   authService: AuthService;
   authzService: AuthzService;
-  parentAccountService: Pick<ParentAccountService, 'consumeSensitiveStepUp' | 'isStructuralFamilyOwner'>;
+  parentAccountService: Pick<ParentAccountService, 'consumeSensitiveStepUp' | 'isStructuralFamilyOwnerForServiceAccount'>;
   familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   /** Runs before requireServiceSession on every route below -- bounds session-validation DB load per IP regardless of token validity. */
@@ -91,7 +91,7 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
           !(expectedDekFingerprint === null || isKeyFingerprint(expectedDekFingerprint))) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (!(await deps.parentAccountService.isStructuralFamilyOwner(request.accountId as string, familyId))) {
+      if (!(await deps.parentAccountService.isStructuralFamilyOwnerForServiceAccount(request.accountId as string, familyId))) {
         return reply.code(403).send({ error: 'forbidden' });
       }
       if (

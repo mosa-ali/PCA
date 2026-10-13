@@ -40,6 +40,8 @@
     <string name="child_home_screen_time_break">Break time</string>
     <string name="child_home_screen_time_communication">Call in progress; protection remains active</string>
     <string name="child_home_screen_time_emergency">Emergency access in use</string>
+    <string name="child_home_screen_time_coverage">Screen-time coverage</string>
+    <string name="child_home_screen_time_coverage_limited">Limited — time while PCA was stopped was not measured; saved progress is preserved</string>
 
     <string name="child_home_break_state">Break</string>
     <string name="child_home_break_active">Break in progress — %1$s minutes remaining</string>

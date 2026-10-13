@@ -3,7 +3,8 @@ package org.pca.app.runtime.communication
 /** Public platform seam for the minimum call-state signal PCA needs. No number, contact,
  * message, audio, or call-content data crosses this boundary. */
 interface CommunicationCallStateObserver {
-    fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit)
+    /** Returns true only when current-state observation was successfully registered. */
+    fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit): Boolean
     fun stop()
     fun isAvailable(): Boolean = false
 }
@@ -11,7 +12,7 @@ interface CommunicationCallStateObserver {
 /** Conservative capability fallback when READ_PHONE_STATE is unavailable or the platform cannot
  * register a callback. It preserves native telephony behavior and avoids fabricating timing. */
 object NoOpCommunicationCallStateObserver : CommunicationCallStateObserver {
-    override fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit) = Unit
+    override fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit): Boolean = false
     override fun stop() = Unit
 }
 
@@ -24,8 +25,8 @@ class CommunicationCallLifecycleAdapter(
 
     fun start() {
         if (started) return
-        observer.start(coordinator::onCallState)
-        started = true
+        started = observer.start(coordinator::onCallState)
+        if (!started) coordinator.onCallState(CommunicationExceptionCoordinator.CallState.UNAVAILABLE)
     }
 
     fun stop() {

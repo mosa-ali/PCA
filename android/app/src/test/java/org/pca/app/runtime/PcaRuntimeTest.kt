@@ -13,8 +13,12 @@ import org.pca.app.feature.eyedistance.engine.EyeDistanceConfig
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.InMemoryEyeDistanceSnapshotStore
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
+import org.pca.app.feature.screentime.engine.ScreenTimeEngine
+import org.pca.app.feature.screentime.engine.ScreenTimeEvent
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
+import org.pca.app.feature.screentime.engine.ScreenTimeState
 import org.pca.app.feature.screentime.persistence.InMemoryScreenTimeSnapshotStore
+import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotRead
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
@@ -26,6 +30,8 @@ import org.pca.app.feature.wellbeing.persistence.WellbeingRateStateStore
 import org.pca.app.platform.UsageAccessState
 import org.pca.app.platform.LocationCapabilityLevel
 import org.pca.app.runtime.child.ChildRequestOfflineQueue
+import org.pca.app.runtime.communication.CommunicationCallStateObserver
+import org.pca.app.runtime.communication.CommunicationExceptionCoordinator
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import org.pca.app.foundation.InMemoryPersistentStateStore
@@ -44,6 +50,30 @@ import kotlin.time.Duration.Companion.seconds
 @RunWith(RobolectricTestRunner::class)
 class PcaRuntimeTest {
 
+    private class FakeCommunicationCallStateObserver(
+        var available: Boolean = true,
+        private val initialState: CommunicationExceptionCoordinator.CallState? = null,
+    ) : CommunicationCallStateObserver {
+        private var onState: ((CommunicationExceptionCoordinator.CallState) -> Unit)? = null
+
+        override fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit): Boolean {
+            if (!available) return false
+            this.onState = onState
+            initialState?.let(onState)
+            return true
+        }
+
+        override fun stop() {
+            onState = null
+        }
+
+        fun emit(state: CommunicationExceptionCoordinator.CallState) {
+            onState?.invoke(state)
+        }
+
+        override fun isAvailable(): Boolean = available
+    }
+
     private fun buildRuntime(
         scope: kotlinx.coroutines.CoroutineScope,
         monotonic: FakeMonotonicTimeSource = FakeMonotonicTimeSource(),
@@ -61,6 +91,8 @@ class PcaRuntimeTest {
         wellbeingCoordinator: WellbeingRuntimeCoordinator = buildTestWellbeingCoordinator(),
         tickIntervalMillis: Long = Long.MAX_VALUE / 2,
         screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
+        communicationCallStateObserver: CommunicationCallStateObserver =
+            org.pca.app.runtime.communication.NoOpCommunicationCallStateObserver,
     ): PcaRuntime = PcaRuntime(
         monotonicTimeSource = monotonic,
         wallClockTimeSource = wallClock,
@@ -78,6 +110,7 @@ class PcaRuntimeTest {
         wellbeingDispatcherProvider = ::buildTestDispatcher,
         wellbeingCoordinator = wellbeingCoordinator,
         screenStateObserver = screenStateObserver,
+        communicationCallStateObserver = communicationCallStateObserver,
         childRequestQueue = childRequestQueue,
         externalScope = scope,
         screenTimeConfig = screenTimeConfig,
@@ -288,7 +321,7 @@ class PcaRuntimeTest {
     }
 
     @Test
-    fun `process recreation restores accumulated state from the persistence ports`() = runTest {
+    fun `process recreation preserves checkpoint but does not count missing runtime time`() = runTest {
         val screenTimeStore: ScreenTimeSnapshotStore = InMemoryScreenTimeSnapshotStore()
         val eyeDistanceStore: EyeDistanceSnapshotStore = InMemoryEyeDistanceSnapshotStore()
         val monotonic1 = FakeMonotonicTimeSource()
@@ -299,11 +332,116 @@ class PcaRuntimeTest {
         assertEquals(59.minutes.inWholeNanoseconds, runtime1.screenTimeState.value.activeElapsedNanos)
 
         // Simulate process death/recreation: a brand new PcaRuntime instance, same boot,
-        // same persistence ports, monotonic clock continues from where it left off.
+        // same persistence ports. The monotonic clock includes an unobserved minute while PCA
+        // was absent, so the runtime restores the last checkpoint and reports limited coverage.
         val monotonic2 = FakeMonotonicTimeSource(nowNanos = 59.minutes.inWholeNanoseconds + 1.minutes.inWholeNanoseconds)
         val runtime2 = buildRuntime(backgroundScope, monotonic = monotonic2, screenTimeSnapshotStore = screenTimeStore, eyeDistanceSnapshotStore = eyeDistanceStore)
 
+        assertEquals(ScreenTimeMode.ACTIVE, runtime2.screenTimeState.value.mode)
+        assertEquals(59.minutes.inWholeNanoseconds, runtime2.screenTimeState.value.activeElapsedNanos)
+        assertTrue(runtime2.status.value.screenTimeCoverageUncertain)
+
+        monotonic2.nowNanos += 1.minutes.inWholeNanoseconds
+        runtime2.tick()
         assertEquals(ScreenTimeMode.BREAK_SHIELD, runtime2.screenTimeState.value.mode)
+        assertTrue(runtime2.status.value.screenTimeCoverageUncertain)
+
+        monotonic2.nowNanos += 30.minutes.inWholeNanoseconds
+        runtime2.tick()
+        assertEquals(ScreenTimeMode.ACTIVE, runtime2.screenTimeState.value.mode)
+        assertEquals(false, runtime2.status.value.screenTimeCoverageUncertain)
+    }
+
+    @Test
+    fun `initial idle callback clears persisted ordinary call exception after process recreation`() = runTest {
+        val config = ScreenTimeConfig()
+        val screenTimeStore = InMemoryScreenTimeSnapshotStore()
+        var persisted = ScreenTimeEngine.reduce(
+            ScreenTimeState.initial(0L),
+            ScreenTimeEvent.Tick(60.minutes.inWholeNanoseconds),
+            config,
+        )
+        persisted = ScreenTimeEngine.reduce(
+            persisted,
+            ScreenTimeEvent.Tick(70.minutes.inWholeNanoseconds),
+            config,
+        )
+        persisted = ScreenTimeEngine.reduce(
+            persisted,
+            ScreenTimeEvent.CommunicationExceptionActivate(70.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(ScreenTimeMode.COMMUNICATION_EXCEPTION, persisted.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, persisted.preCommunicationBreakElapsedNanos)
+        screenTimeStore.save(
+            ScreenTimeSnapshot(persisted, snapshotWallClockMillis = 1_000L, bootId = "boot-1"),
+        )
+
+        val observer = FakeCommunicationCallStateObserver()
+        val runtime = buildRuntime(
+            backgroundScope,
+            monotonic = FakeMonotonicTimeSource(nowNanos = 80.minutes.inWholeNanoseconds),
+            screenTimeSnapshotStore = screenTimeStore,
+            communicationCallStateObserver = observer,
+        )
+        assertEquals(ScreenTimeMode.COMMUNICATION_EXCEPTION, runtime.screenTimeState.value.mode)
+
+        runtime.start()
+        observer.emit(CommunicationExceptionCoordinator.CallState.IDLE)
+
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, runtime.screenTimeState.value.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, runtime.screenTimeState.value.breakElapsedNanos)
+    }
+
+    @Test
+    fun `unavailable telephony observer releases checkpoint then permission recovery observes offhook and idle`() = runTest {
+        val config = ScreenTimeConfig()
+        val screenTimeStore = InMemoryScreenTimeSnapshotStore()
+        var persisted = ScreenTimeEngine.reduce(
+            ScreenTimeState.initial(0L),
+            ScreenTimeEvent.Tick(60.minutes.inWholeNanoseconds),
+            config,
+        )
+        persisted = ScreenTimeEngine.reduce(
+            persisted,
+            ScreenTimeEvent.Tick(70.minutes.inWholeNanoseconds),
+            config,
+        )
+        persisted = ScreenTimeEngine.reduce(
+            persisted,
+            ScreenTimeEvent.CommunicationExceptionActivate(70.minutes.inWholeNanoseconds),
+            config,
+        )
+        screenTimeStore.save(
+            ScreenTimeSnapshot(persisted, snapshotWallClockMillis = 1_000L, bootId = "boot-1"),
+        )
+
+        val observer = FakeCommunicationCallStateObserver(
+            available = false,
+            initialState = CommunicationExceptionCoordinator.CallState.OFFHOOK,
+        )
+        val runtime = buildRuntime(
+            backgroundScope,
+            monotonic = FakeMonotonicTimeSource(nowNanos = 80.minutes.inWholeNanoseconds),
+            screenTimeSnapshotStore = screenTimeStore,
+            communicationCallStateObserver = observer,
+        )
+
+        runtime.start()
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, runtime.screenTimeState.value.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, runtime.screenTimeState.value.breakElapsedNanos)
+        assertFalse(runtime.status.value.callStatePermissionAvailable)
+
+        observer.available = true
+        runtime.refreshCommunicationCallStateObserver()
+
+        assertEquals(true, runtime.status.value.callStatePermissionAvailable)
+        assertEquals(ScreenTimeMode.COMMUNICATION_EXCEPTION, runtime.screenTimeState.value.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, runtime.screenTimeState.value.preCommunicationBreakElapsedNanos)
+
+        observer.emit(CommunicationExceptionCoordinator.CallState.IDLE)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, runtime.screenTimeState.value.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, runtime.screenTimeState.value.breakElapsedNanos)
     }
 
     @Test
@@ -401,8 +539,8 @@ class PcaRuntimeTest {
         assertEquals(0L, runtime.screenTimeState.value.activeElapsedNanos)
     }
 
-    // E: process restart preserves active debt -- already proven end-to-end by
-    // `process recreation restores accumulated state from the persistence ports` above.
+    // E: process restart preserves the checkpoint without crediting the missing interval --
+    // already proven end-to-end by the restart recovery test above.
     // F: Internet loss does not reset active debt -- already proven end-to-end by
     // `screen time continues to advance while offline` and `break shield continues while offline`
     // above (both run with connectivity permanently offline throughout).

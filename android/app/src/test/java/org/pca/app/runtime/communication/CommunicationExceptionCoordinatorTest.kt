@@ -9,6 +9,7 @@ class CommunicationExceptionCoordinatorTest {
         val coordinator = CommunicationExceptionCoordinator(
             onCommunicationStarted = { events += "START" },
             onCommunicationEnded = { events += "END" },
+            onCommunicationObservationUnavailable = { events += "UNAVAILABLE" },
         )
         states.forEach(coordinator::onCallState)
         return events
@@ -46,6 +47,21 @@ class CommunicationExceptionCoordinatorTest {
                 CommunicationExceptionCoordinator.CallState.IDLE,
             ),
         )
+    }
+
+    @Test
+    fun `restored active call exception ends when initial state is idle`() {
+        val events = mutableListOf<String>()
+        val coordinator = CommunicationExceptionCoordinator(
+            onCommunicationStarted = { events += "START" },
+            onCommunicationEnded = { events += "END" },
+            onCommunicationObservationUnavailable = {},
+            initiallyActive = true,
+        )
+
+        coordinator.onCallState(CommunicationExceptionCoordinator.CallState.IDLE)
+
+        assertEquals(listOf("END"), events)
     }
 
     @Test

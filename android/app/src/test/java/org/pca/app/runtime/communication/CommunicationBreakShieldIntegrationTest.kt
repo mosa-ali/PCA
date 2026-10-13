@@ -27,6 +27,7 @@ class CommunicationBreakShieldIntegrationTest {
             onCommunicationEnded = {
                 state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.CommunicationExceptionDeactivate(now), config)
             },
+            onCommunicationObservationUnavailable = {},
         )
 
         coordinator.onCallState(CommunicationExceptionCoordinator.CallState.RINGING)
