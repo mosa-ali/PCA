@@ -882,6 +882,10 @@ final class ProductionIntegrationTests: XCTestCase {
 
         let synchronization = Task { @MainActor in try await model.synchronizeRuntimeCampaign() }
         await fulfillment(of: [recoveryBegan], timeout: 5)
+        XCTAssertEqual(acknowledgements, 1,
+            "relay ACK confirms durable ciphertext custody before policy recovery resumes")
+        XCTAssertTrue(try inbox.pendingAcknowledgements(scope: response.scope).isEmpty)
+        XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).map(\.processingState), ["PENDING_CRYPTO"])
         try state.saveSession(replacement)
         resumeRecovery?.resume()
 
@@ -889,13 +893,14 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(outcome, .retryableFailure)
         XCTAssertEqual(try state.loadSession(), replacement)
         XCTAssertEqual(pulls, 1)
-        XCTAssertEqual(acknowledgements, 0)
+        XCTAssertEqual(acknowledgements, 1,
+            "the completed custody ACK remains valid if the host session changes during later recovery")
         XCTAssertTrue(handler.applied.isEmpty)
         let retainedIntent = try XCTUnwrap(journal.records().first)
         XCTAssertEqual(retainedIntent.intent, intent)
         XCTAssertNil(retainedIntent.outcome)
         XCTAssertEqual(try inbox.pendingCrypto(scope: response.scope).map(\.envelope), [envelope])
-        XCTAssertEqual(try inbox.pendingAcknowledgements(scope: response.scope).map(\.envelope), [envelope])
+        XCTAssertTrue(try inbox.pendingAcknowledgements(scope: response.scope).isEmpty)
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
     }
     @MainActor func testRuntimeTrustSetForbiddenRetainsSessionButUnauthorizedClearsIt() async throws {
@@ -1599,16 +1604,21 @@ final class ProductionIntegrationTests: XCTestCase {
             "link admission must re-prove store absence instead of relying on stale launch state")
 
         let pairingIdentity = RecordingDeviceIdentityStore()
+        let pairingAttempts = InMemoryPCADeviceStateStore()
         let pairing = try makeEnrollmentModel(
             identityStore: pairingIdentity,
-            attemptStore: InMemoryPCADeviceStateStore(),
+            attemptStore: pairingAttempts,
             bootstrapStatus: "PAIRING_PENDING"
         )
         pairing.start()
-        XCTAssertTrue(pairing.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "P", count: 43))")!))
-        await waitForEnrollmentInProgress(pairing)
-        XCTAssertFalse(pairing.canEnterEnrollmentLink,
-            "a server pairing-pending result must not be presented as a fresh enrollment opportunity")
+        let pairingToken = String(repeating: "P", count: 43)
+        XCTAssertTrue(pairing.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(pairingToken)")!))
+        await waitForRecoverableEnrollment(pairing)
+        let retainedPairingAttempt = try XCTUnwrap(try pairingAttempts.loadAttempt())
+        XCTAssertEqual(retainedPairingAttempt.invitationTokenSHA256, FirstDeviceCanonical.sha256Hex(pairingToken))
+        XCTAssertFalse(pairing.receiveEnrollmentLink(
+            URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "Q", count: 43))")!
+        ), "PAIRING_PENDING may recover only through its original invitation, never a fresh invitation")
         XCTAssertTrue(pairingIdentity.savedDeviceIds.isEmpty,
             "PAIRING_PENDING does not commit a client-owned device identity")
 
@@ -4251,6 +4261,8 @@ final class ProductionIntegrationTests: XCTestCase {
         let keychain = InMemoryKeychainStore()
         let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "custody-ack-before-apply")
         let response = try inboundResponse()
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "custody-ack-before-apply")
+        let consumer = PCAInboundCommandConsumer(journal: journal, verifier: ConsumerVerifier(), handler: ConsumerHandler())
         let responseData = try JSONSerialization.data(withJSONObject: [
             "scope": ["familyId": response.scope.familyId, "recipientDeviceId": response.scope.recipientDeviceId],
             "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(try XCTUnwrap(response.applied.first)))],
@@ -4274,7 +4286,7 @@ final class ProductionIntegrationTests: XCTestCase {
         let model = try makeEnrollmentModel(
             identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
             runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
-            inboundInbox: inbox, ordinaryTrustSetCoordinator: trustSet
+            inboundInbox: inbox, inboundConsumer: consumer, ordinaryTrustSetCoordinator: trustSet
         )
 
         let outcome = try await model.synchronizeRuntimeCampaign()
@@ -4895,7 +4907,8 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(requests.first?.url?.host, "api.example.test")
         XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session-secret")
-        XCTAssertEqual(requests.first?.httpBody, request.httpBody)
+        XCTAssertFalse(requests.contains { $0.url?.host == "redirect-target.example" },
+            "the redirect target must never receive the secret-bearing request")
     }
 
     func testRuntimePullDecodesContinuationAndUsesDeferredIdsForLegacyResponses() async throws {
@@ -5628,15 +5641,28 @@ private final class RedirectingRuntimeURLProtocol: URLProtocol {
         Self.lock.lock()
         Self.requests.append(request)
         Self.lock.unlock()
-        guard let url = request.url,
-              let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
-                  headerFields: ["Location": "https://redirect-target.example/collect"]) else {
+        guard let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data())
-        client?.urlProtocolDidFinishLoading(self)
+        if url.host == "redirect-target.example" {
+            guard let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: "HTTP/1.1", headerFields: nil) else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+                return
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data())
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        guard let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": "https://redirect-target.example/collect"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        var redirectedRequest = request
+        redirectedRequest.url = URL(string: "https://redirect-target.example/collect")
+        client?.urlProtocol(self, wasRedirectedTo: redirectedRequest, redirectResponse: response)
     }
 
     override func stopLoading() { }

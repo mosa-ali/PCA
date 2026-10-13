@@ -88,6 +88,8 @@ final class FamilyTrustSetCodecTests: XCTestCase {
         let verifier = P256OrdinaryTrustSetSignatureVerifier()
 
         XCTAssertTrue(try verifier.verify(signature: signature, canonicalBytes: canonicalBytes, publicKey: publicKey))
+        XCTAssertFalse(try verifier.verify(signature: signature, canonicalBytes: canonicalBytes, publicKey: publicKey + "="),
+                       "Backend requires unpadded canonical base64url public keys")
         XCTAssertFalse(try verifier.verify(signature: signature + "=", canonicalBytes: canonicalBytes, publicKey: publicKey),
                        "Backend requires unpadded canonical base64url")
         XCTAssertFalse(try verifier.verify(signature: signature + "!", canonicalBytes: canonicalBytes, publicKey: publicKey))

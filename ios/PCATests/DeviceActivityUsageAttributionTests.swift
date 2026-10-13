@@ -892,7 +892,8 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         let applications: Set<Token> = [Token(value: "opaque")]
 
         let reconciled = try DeviceActivityUsageEnforcement.reconcile(
-            policy: policy(), now: now, applications: applications, protectedApplications: [],
+            policy: policy(), now: now, applications: applications,
+            protectedApplications: [Token(value: "protected-floor")],
             coverageAvailable: false,
             loadLowerBound: {
                 lowerBoundReads += 1
@@ -916,7 +917,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
 
         let reconciled = try DeviceActivityUsageEnforcement.reconcile(
             policy: policy(exceptions: [exception]), now: now,
-            applications: [Token(value: "opaque")], protectedApplications: [],
+            applications: [Token(value: "opaque")], protectedApplications: [Token(value: "protected-floor")],
             coverageAvailable: false, loadLowerBound: { nil },
             apply: { _ in applied = true }, remove: { removals += 1 })
 

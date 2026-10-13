@@ -117,8 +117,8 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
             persistedAttemptId: { "existing" },
             persistedAttemptMayBeReplaced: { attemptId in attemptId == "existing" && terminal })
 
-        XCTAssertEqual(provider.signingPublicKey, "",
-            "a terminal root cannot remain the active signing identity before a replacement is prepared")
+        XCTAssertEqual(provider.signingPublicKey, "old-dsk",
+            "a nonterminal persisted root remains the active identity and blocks a second attempt")
         XCTAssertThrowsError(try provider.prepareEnrollmentKeys(attemptId: "replacement")) { error in
             XCTAssertEqual(error as? SecureEnclaveDskError, .keyAliasConflict,
                 "nonterminal root state must preserve the existing second-root guard")
@@ -126,6 +126,8 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         XCTAssertTrue(fake.generatedRoles.isEmpty)
 
         terminal = true
+        XCTAssertEqual(provider.signingPublicKey, "",
+            "a terminal root must stop exposing its old signing identity before replacement preparation")
         fake.failEncryptionGeneration = true
         XCTAssertThrowsError(try provider.prepareEnrollmentKeys(attemptId: "replacement"),
             "a transient second-key failure must preserve the first replacement key for recovery")

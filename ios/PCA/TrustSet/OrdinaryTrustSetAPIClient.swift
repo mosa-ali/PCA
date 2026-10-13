@@ -9,18 +9,24 @@ import CryptoKit
 public struct P256OrdinaryTrustSetSignatureVerifier: OrdinaryTrustSetSignatureVerifying {
     public init() {}
     public func verify(signature: String, canonicalBytes: Data, publicKey: String) throws -> Bool {
-        func urlBytes(_ value: String) throws -> Data {
+        // The shared backend acceptance contract treats a malformed or
+        // non-canonical base64url key/signature as a verification failure,
+        // not an exception. Keep this boundary fail-closed and consistent
+        // with that Bool result so callers never need to distinguish parse
+        // failures from cryptographic rejection.
+        func urlBytes(_ value: String) -> Data? {
             let padded = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
                 + String(repeating: "=", count: (4 - value.count % 4) % 4)
             guard let bytes = Data(base64Encoded: padded),
                   bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-                    .replacingOccurrences(of: "=", with: "") == value else { throw OrdinaryTrustSetError.malformedState }
+                    .replacingOccurrences(of: "=", with: "") == value else { return nil }
             return bytes
         }
-        let key = try urlBytes(publicKey), signed = try urlBytes(signature)
+        guard let key = urlBytes(publicKey), let signed = urlBytes(signature) else { return false }
         guard key.count == 65, key.first == 4, signed.count == 64, P256DerSignature.isLowS(signed) else { return false }
-        return try P256.Signing.PublicKey(x963Representation: key).isValidSignature(
-            P256.Signing.ECDSASignature(rawRepresentation: signed), for: canonicalBytes)
+        guard let verifier = try? P256.Signing.PublicKey(x963Representation: key),
+              let decodedSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signed) else { return false }
+        return verifier.isValidSignature(decodedSignature, for: canonicalBytes)
     }
 }
 #endif

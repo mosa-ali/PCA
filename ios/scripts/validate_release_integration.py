@@ -14,6 +14,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "PCA.xcodeproj" / "project.pbxproj"
 APP_GROUP = "group.org.pca.app"
+ENROLLMENT_URL_SCHEME = "pca"
+ENROLLMENT_ASSOCIATED_DOMAIN = "applinks:www.pcasafe.com"
 MINIMUM_IOS_DEPLOYMENT_TARGET = "17.0"
 TARGETS = {
     "PCA": ("PCA/PCA.entitlements", "PCA/Info.plist", "org.pca.app", None),
@@ -101,6 +103,36 @@ def target_build_settings(project: str, target: str) -> dict[str, dict[str, str]
     return configurations
 
 
+def validate_target_identity_settings(
+    settings: dict[str, str], target: str, configuration: str,
+    bundle_id: str, entitlement_path: str,
+) -> None:
+    require(settings.get("PRODUCT_BUNDLE_IDENTIFIER") == bundle_id,
+            f"{target} {configuration} must use bundle id {bundle_id}")
+    require(settings.get("CODE_SIGN_ENTITLEMENTS") == entitlement_path,
+            f"{target} {configuration} must use entitlements {entitlement_path}")
+
+
+def validate_enrollment_link_configuration(entitlements: dict, info: dict) -> None:
+    """Keep release URL registration aligned with the implemented invite router."""
+    domains = entitlements.get("com.apple.developer.associated-domains")
+    require(isinstance(domains, list) and ENROLLMENT_ASSOCIATED_DOMAIN in domains,
+            f"PCA is missing associated domain {ENROLLMENT_ASSOCIATED_DOMAIN}")
+
+    url_types = info.get("CFBundleURLTypes")
+    require(isinstance(url_types, list), "PCA is missing its custom enrollment URL type")
+    registered_schemes = {
+        scheme
+        for url_type in url_types
+        if isinstance(url_type, dict)
+        and url_type.get("CFBundleURLName") == "org.pca.app.enrollment"
+        for scheme in url_type.get("CFBundleURLSchemes", [])
+        if isinstance(scheme, str)
+    }
+    require(ENROLLMENT_URL_SCHEME in registered_schemes,
+            f"PCA is missing the {ENROLLMENT_URL_SCHEME} enrollment URL scheme")
+
+
 def validate_build_settings(settings: dict[str, str], target: str, configuration: str) -> None:
     deployment = settings.get("IPHONEOS_DEPLOYMENT_TARGET")
     require(deployment == MINIMUM_IOS_DEPLOYMENT_TARGET,
@@ -165,13 +197,10 @@ def main() -> int:
         require(entitlements.get("com.apple.security.application-groups") == [APP_GROUP],
                 f"{target} must share exactly {APP_GROUP}")
 
-        config_matches = re.findall(
-            rf"PRODUCT_BUNDLE_IDENTIFIER = {re.escape(bundle_id)};[^}}]*CODE_SIGN_ENTITLEMENTS = {re.escape(entitlement_path)};|"
-            rf"CODE_SIGN_ENTITLEMENTS = {re.escape(entitlement_path)};[^}}]*PRODUCT_BUNDLE_IDENTIFIER = {re.escape(bundle_id)};",
-            project,
-        )
-        require(len(config_matches) == 2,
-                f"{target} Debug and Release must use bundle id {bundle_id} and {entitlement_path}")
+        for configuration, settings in target_build_settings(project, target).items():
+            validate_target_identity_settings(
+                settings, target, configuration, bundle_id, entitlement_path
+            )
         require((ROOT / info_path).is_file(), f"{target} Info.plist is missing")
         if extension_point is not None:
             extension = info.get("NSExtension", {})
@@ -179,6 +208,11 @@ def main() -> int:
                     f"{target} has the wrong extension point")
             require(bool(extension.get("NSExtensionPrincipalClass")),
                     f"{target} has no extension principal class")
+
+    validate_enrollment_link_configuration(
+        parse_plist(ROOT / TARGETS["PCA"][0]),
+        parse_plist(ROOT / TARGETS["PCA"][1]),
+    )
 
     # The app must embed all three Screen Time extensions in its PlugIns
     # directory. Their source files must be compiled by their own targets.

@@ -1308,6 +1308,11 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         } catch let error as OrdinaryTrustSetError {
             XCTAssertEqual(error, .unauthorizedSigner)
         }
+        // The rejected server projection remains ahead of the local trust
+        // floor. Restore the fake server to the exact current head so this
+        // next assertion exercises local candidate authorization, rather
+        // than prepareUnlocked's earlier remote-head mismatch guard.
+        transport.head = store.value.head
         do {
             try await coordinator.prepare(transferredEpoch(2, supersedes: 1, ownerIsNew: true))
             XCTFail("a candidate that transfers the active Owner must fail before signing")

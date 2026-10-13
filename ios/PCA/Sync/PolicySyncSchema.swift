@@ -311,7 +311,23 @@ public enum PolicySyncDecoder {
         catch { return .failure(.malformedData) }
         guard StoredPolicyJSONShapeValidator.accepts(data) else { return .failure(.malformedData) }
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        // Backend Date.toISOString() emits RFC3339 timestamps with fractional
+        // milliseconds (for example `...T09:00:00.000Z`). Foundation's
+        // `.iso8601` strategy has historically accepted only the no-fraction
+        // form, so decode both forms explicitly while keeping the wire field
+        // a timezone-qualified ISO-8601 string.
+        decoder.dateDecodingStrategy = .custom { valueDecoder in
+            let container = try valueDecoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: raw) { return date }
+            let wholeSeconds = ISO8601DateFormatter()
+            wholeSeconds.formatOptions = [.withInternetDateTime]
+            if let date = wholeSeconds.date(from: raw) { return date }
+            throw DecodingError.dataCorruptedError(in: container,
+                debugDescription: "Expected an ISO-8601 timestamp with timezone")
+        }
         guard let stored = try? decoder.decode(StoredDeviceActivityPolicy.self, from: data) else {
             return .failure(.malformedData)
         }

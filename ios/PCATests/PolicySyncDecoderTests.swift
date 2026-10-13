@@ -156,6 +156,47 @@ final class PolicySyncDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.enforcementCapability, .enforced)
     }
 
+    func testPolicyDecoderAcceptsBackendFractionalIso8601Dates() throws {
+        let grantStart = "2026-01-07T09:00:00.123Z"
+        let grantEnd = "2026-01-07T09:15:00.456Z"
+        let exceptionStart = "2026-01-07T11:00:00.789Z"
+        let exceptionEnd = "2026-01-07T13:00:00.321Z"
+        let source = wellFormedPolicy()
+        let policy = StoredDeviceActivityPolicy(
+            schemaVersion: source.schemaVersion, activityId: source.activityId,
+            appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier,
+            windows: source.windows,
+            bonusGrants: [StoredBonusGrant(id: "bonus-ms", appScope: .all, extraMinutes: 15,
+                grantedAtUtc: Date(timeIntervalSince1970: 1_767_776_400.123),
+                expiresAtUtc: Date(timeIntervalSince1970: 1_767_777_300.456))],
+            exceptions: [StoredParentException(id: "exception-ms", appScope: .all,
+                startAtUtc: Date(timeIntervalSince1970: 1_767_783_600.789),
+                endAtUtc: Date(timeIntervalSince1970: 1_767_790_800.321))],
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability
+        )
+        var object = try policyObject(encode(policy))
+        var grants = try XCTUnwrap(object["bonusGrants"] as? [[String: Any]])
+        grants[0]["grantedAtUtc"] = grantStart
+        grants[0]["expiresAtUtc"] = grantEnd
+        object["bonusGrants"] = grants
+        var exceptions = try XCTUnwrap(object["exceptions"] as? [[String: Any]])
+        exceptions[0]["startAtUtc"] = exceptionStart
+        exceptions[0]["endAtUtc"] = exceptionEnd
+        object["exceptions"] = exceptions
+
+        guard case .success(let decoded) = PolicySyncDecoder.decode(try encodedPolicyObject(object)) else {
+            return XCTFail("backend RFC3339 timestamps with fractional milliseconds must decode")
+        }
+        XCTAssertEqual(try XCTUnwrap(decoded.bonusGrants.first?.grantedAt).timeIntervalSince1970,
+            1_767_776_400.123, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(decoded.bonusGrants.first?.expiresAt).timeIntervalSince1970,
+            1_767_777_300.456, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(decoded.exceptions.first?.startAt).timeIntervalSince1970,
+            1_767_783_600.789, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(decoded.exceptions.first?.endAt).timeIntervalSince1970,
+            1_767_790_800.321, accuracy: 0.001)
+    }
+
     func testEmptyOpaqueAppScopeTokenIsRejectedAcrossEveryPolicyDimension() {
         let source = wellFormedPolicy()
         let now = Date(timeIntervalSince1970: 1_760_000_000)

@@ -133,7 +133,7 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
             closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
         let verifier = FixedRetirementVerifier(boundary: boundary)
 
-        keychain.failNextInboxReadbackAfterReplace = true
+        keychain.failReadbackAfterDeletingInboxMessage(envelope.messageId)
         let firstReclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
             verifier: verifier)
         do {
@@ -141,6 +141,8 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
             XCTFail("A committed inbox replacement with unavailable readback must remain an uncertain failure")
         } catch { }
 
+        XCTAssertEqual(keychain.deletionReadbackFailureCount, 1,
+            "the one-shot readback fault must fire after ciphertext deletion is committed")
         XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty,
             "the Keychain replacement committed before its readback became unavailable")
         XCTAssertEqual(try journal.records().count, 1,
@@ -181,7 +183,7 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
             closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
         let verifier = FixedRetirementVerifier(boundary: boundary)
 
-        keychain.failNextInboxReadbackAfterReplace = true
+        keychain.failReadbackAfterDeletingInboxMessage(envelope.messageId)
         let firstReclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
             verifier: verifier)
         do {
@@ -189,6 +191,8 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
             XCTFail("A committed inbox-only deletion with unavailable readback must remain an uncertain failure")
         } catch { }
 
+        XCTAssertEqual(keychain.deletionReadbackFailureCount, 1,
+            "the one-shot readback fault must fire after ciphertext deletion is committed")
         XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty,
             "the batched deletion committed even though its readback was unavailable")
         XCTAssertTrue(try journal.records().isEmpty,
@@ -265,20 +269,18 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
 
     private final class CommitThenUnreadableKeychainStore: KeychainStoreProtocol {
         private let backing = InMemoryKeychainStore()
-        var failNextInboxReadbackAfterReplace = false {
-            didSet {
-                if failNextInboxReadbackAfterReplace {
-                    inboxReplacementsUntilReadbackFailure = 2
-                }
-            }
-        }
+        private var readbackFailureMessageId: String?
+        private(set) var deletionReadbackFailureCount = 0
         private var inboxReadbackUnavailable = false
-        private var inboxReplacementsUntilReadbackFailure = 0
         private let inboxAccount = "current.ciphertext-inbox"
         private let inboxService: String
 
         init(serviceNamespace: String = "reclaimer-ambiguous-inbox-write") {
             inboxService = serviceNamespace + ".ciphertext-inbox"
+        }
+
+        func failReadbackAfterDeletingInboxMessage(_ messageId: String) {
+            readbackFailureMessageId = messageId
         }
 
         func store(_ data: Data, forAccount account: String, service: String,
@@ -290,12 +292,18 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
                                       accessibility: KeychainAccessibility) throws {
             try backing.storeReplacingAtomically(data, forAccount: account, service: service,
                 accessibility: accessibility)
-            if failNextInboxReadbackAfterReplace && account == inboxAccount && service == inboxService {
-                inboxReplacementsUntilReadbackFailure -= 1
-                if inboxReplacementsUntilReadbackFailure == 0 {
-                    failNextInboxReadbackAfterReplace = false
-                    inboxReadbackUnavailable = true
-                }
+            guard account == inboxAccount, service == inboxService,
+                  let messageId = readbackFailureMessageId,
+                  let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let entries = snapshot["entries"] as? [[String: Any]] else { return }
+            let retainedMessageIds = entries.compactMap { entry -> String? in
+                guard let envelope = entry["envelope"] as? [String: Any] else { return nil }
+                return envelope["messageId"] as? String
+            }
+            if !retainedMessageIds.contains(messageId) {
+                readbackFailureMessageId = nil
+                inboxReadbackUnavailable = true
+                deletionReadbackFailureCount += 1
             }
         }
 

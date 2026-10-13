@@ -381,6 +381,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
                 try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
             XCTAssertEqual(active.policyActivityId.utf8.count, activityId.utf8.count)
 
+            let removalsBeforeClear = shields.removeCount
             runtime.clearPolicy(activityId: activityId)
 
             XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey),
@@ -388,7 +389,8 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             XCTAssertNil(store.read(forKey: "activeActivityId"))
             XCTAssertNil(store.read(forKey: "schedule.\(activityId).\(active.generation)"))
             XCTAssertTrue(Set(active.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)))
-            XCTAssertEqual(shields.removeCount, 1)
+            XCTAssertEqual(shields.removeCount, removalsBeforeClear + 1,
+                "clear removes shields once after policy application")
         }
     }
 
@@ -1638,7 +1640,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true }, scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
         _ = try runtime.applyVerifiedPolicy(scheduleData: boundaryPolicy(), applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()), protectedApplicationTokenData: nil, now: installedAt)
         let manifest = store.read(forKey: deviceActivityMonitorInstallationStorageKey)
-        store.ignoreRemovals = true
+        store.failKey = deviceActivityMonitorInstallationStorageKey
         runtime.clearPolicy(activityId: "policy")
         XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifest)
         XCTAssertEqual(store.read(forKey: "activeActivityId"), Data("policy".utf8))
