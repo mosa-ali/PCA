@@ -1,9 +1,7 @@
 package org.pca.app.runtime.schedule
 
 import org.pca.app.runtime.EpochBounds
-import java.time.LocalDate
 import java.time.Instant
-import java.time.format.DateTimeParseException
 
 /**
  * See `contracts/schedule-runtime/SchedulePolicyV1.md` "Policy-acceptance state machine" for the
@@ -101,7 +99,8 @@ object SchedulePolicyValidator {
             // A last-known-good snapshot may be applied only when it is itself structurally
             // valid, unexpired, epoch-valid, and current with respect to both device floors.
             // If no such fallback exists, retain the structurally valid candidate for honest
-            // diagnostics; the production port keeps EPOCH_STALE unavailable.
+            // diagnostics; the production port applies this retained candidate, but reports
+            // EPOCH_STALE + null effectivePolicy as unavailable when no eligible policy exists.
             return PolicyAcceptanceResult(ScheduleRuntimeState.EPOCH_STALE, safeFallback ?: candidate)
         }
 
@@ -132,29 +131,13 @@ object SchedulePolicyValidator {
     }
 
     private fun isStructurallyValid(policy: SchedulePolicyV1): Boolean {
+        if (policy.version != "1") return false
         if (policy.policyRevision <= 0) return false
         if (!isRecognizedTimezone(policy.timezone)) return false
         if (validateScheduleWindows(policy.windows).isNotEmpty()) return false
-        return policy.dailyLimits.all(::isStructurallyValid)
-    }
-
-    /** The schedule engine treats a mismatched local-date anchor as a day reset. Reject malformed
-     * counters and dates before that reset can widen access, including on an authenticated policy
-     * that is syntactically valid JSON. Product authoring permits zero-minute limits, so zero stays
-     * a valid boundary; negative values are malformed. */
-    private fun isStructurallyValid(limit: DailyAppLimit): Boolean =
-        limit.limitMinutes >= 0 &&
-            limit.usedMinutesToday >= 0 &&
-            isCanonicalGregorianLocalDate(limit.anchorLocalDate)
-
-    private fun isCanonicalGregorianLocalDate(value: String): Boolean {
-        if (!CANONICAL_LOCAL_DATE.matches(value)) return false
-        return try {
-            val parsed = LocalDate.parse(value)
-            parsed.year in 1..9999 && parsed.toString() == value
-        } catch (_: DateTimeParseException) {
-            false
-        }
+        if (policy.bonusGrants.any { validateBonusGrant(it).isNotEmpty() }) return false
+        if (policy.parentExceptions.any { validateParentException(it).isNotEmpty() }) return false
+        return policy.dailyLimits.all { validateDailyAppLimit(it).isEmpty() }
     }
 
     private fun hasValidEpochs(policy: SchedulePolicyV1): Boolean =
@@ -180,8 +163,6 @@ object SchedulePolicyValidator {
 
     private fun isEpochBehind(policy: SchedulePolicyV1, deviceTrustSetEpoch: Int, deviceKeyEpoch: Int): Boolean =
         policy.trustSetEpoch < deviceTrustSetEpoch || policy.keyEpoch < deviceKeyEpoch
-
-    private val CANONICAL_LOCAL_DATE = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
     /** Local defense-in-depth revision-monotonicity check; see SchedulePolicyV1.md "Revision
      * acceptance". The primary authority for monotonic version enforcement in transit remains

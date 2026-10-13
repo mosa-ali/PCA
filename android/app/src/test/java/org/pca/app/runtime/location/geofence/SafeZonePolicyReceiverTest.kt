@@ -26,6 +26,7 @@ class SafeZonePolicyReceiverTest {
     private val backing = InMemoryPersistentStateStore()
     private val zoneStore = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
     private val zoneStateStore = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
+    private val nonceBytes = ByteArray(12) { (it + 4).toByte() }
 
     private val zone = GeofenceZone(
         zoneId = "zone-home",
@@ -96,7 +97,7 @@ class SafeZonePolicyReceiverTest {
         val verifier = object : SafeZoneEnvelopeSignatureVerifier {
             override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
                 entered.complete(Unit); release.await()
-                return envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)) && envelope.nonce.contentEquals(byteArrayOf(4, 5, 6))
+                return envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)) && envelope.nonce.contentEquals(nonceBytes)
             }
         }
         val receiver = SafeZonePolicyReceiver("family-a", "child-a", authority(), verifier,
@@ -125,7 +126,7 @@ class SafeZonePolicyReceiverTest {
             object : SafeZonePayloadDecryptor {
                 override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
                     assertTrue(envelope.ciphertext.contentEquals(byteArrayOf(1, 2, 3)))
-                    assertTrue(envelope.nonce.contentEquals(byteArrayOf(4, 5, 6)))
+                    assertTrue(envelope.nonce.contentEquals(nonceBytes))
                     return envelope.payloadForTest()
                 }
             }, zoneStore, zoneStateStore)
@@ -210,7 +211,7 @@ class SafeZonePolicyReceiverTest {
         revision = 1L,
         zoneId = "zone-home",
         ciphertext = byteArrayOf(1, 2, 3),
-        nonce = byteArrayOf(4, 5, 6),
+        nonce = nonceBytes.copyOf(),
         signature = "signature",
         issuedAtEpochMillis = 1_000L,
         expiresAtEpochMillis = 10_000L,
@@ -237,6 +238,55 @@ class SafeZonePolicyReceiverTest {
     private val approvingVerifier = object : SafeZoneEnvelopeSignatureVerifier {
         override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean =
             senderPublicSigningKey == "parent-public-key" && envelope.signature == "signature"
+    }
+
+    @Test
+    fun `receiver rejects opaque envelope bounds before crypto and preserves accepted policy`() = runTest {
+        var verifierCalls = 0
+        var decryptCalls = 0
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = object : SafeZoneEnvelopeSignatureVerifier {
+                override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                    verifierCalls++
+                    return approvingVerifier.verify(envelope, senderPublicSigningKey)
+                }
+            },
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray {
+                    decryptCalls++
+                    return envelope.payloadForTest()
+                }
+            },
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+        )
+
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), 2_000L))
+        val maximumWireBounds = envelope().copy(
+            revision = 2L,
+            ciphertext = ByteArray(65_535),
+            nonce = ByteArray(64),
+        )
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(maximumWireBounds, 2_000L))
+        val retained = zoneStore.loadZones()
+        val callsBeforeInvalid = verifierCalls to decryptCalls
+        val invalidEnvelopes = listOf(
+            envelope().copy(ciphertext = byteArrayOf()),
+            envelope().copy(ciphertext = ByteArray(65_536)),
+            envelope().copy(nonce = ByteArray(11)),
+            envelope().copy(nonce = ByteArray(65)),
+            envelope().copy(revision = GeofenceZone.MAX_REVISION + 1L),
+        )
+
+        invalidEnvelopes.forEach { invalid ->
+            assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(invalid, 2_000L))
+        }
+
+        assertEquals(callsBeforeInvalid, verifierCalls to decryptCalls)
+        assertEquals(retained, zoneStore.loadZones())
     }
 
     @Test
@@ -377,6 +427,47 @@ class SafeZonePolicyReceiverTest {
     }
 
     @Test
+    fun `payload revision enforces exact numeric value and shared unsigned counter bounds`() {
+        val payload = SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone)
+        val envelope = envelope()
+        val encoded = String(SafeZonePolicyPayloadCodec.encode(payload), Charsets.UTF_8)
+        val fraction = encoded.replace("\"revision\":1", "\"revision\":1.5")
+        val aboveUnsignedRange = encoded.replace("\"revision\":1", "\"revision\":4294967296")
+
+        assertEquals(payload, SafeZonePolicyPayloadCodec.decode(encoded.toByteArray(), envelope))
+        assertNull(SafeZonePolicyPayloadCodec.decode(fraction.toByteArray(), envelope))
+        assertNull(SafeZonePolicyPayloadCodec.decode(aboveUnsignedRange.toByteArray(), envelope))
+
+        val maxRevision = 4_294_967_295L
+        val boundaryPayload = payload.copy(revision = maxRevision, zone = zone.copy(revision = maxRevision))
+        val boundaryEnvelope = envelope.copy(revision = maxRevision)
+        val boundaryEncoded = SafeZonePolicyPayloadCodec.encode(boundaryPayload)
+        assertEquals(boundaryPayload, SafeZonePolicyPayloadCodec.decode(boundaryEncoded, boundaryEnvelope))
+        assertThrows(IllegalArgumentException::class.java) {
+            SafeZonePolicyPayloadCodec.encode(payload.copy(revision = maxRevision + 1L))
+        }
+    }
+
+    @Test
+    fun `payload decoder rejects duplicate names and malformed UTF8 instead of normalizing them`() {
+        val payload = SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone)
+        val envelope = envelope()
+        val encoded = String(SafeZonePolicyPayloadCodec.encode(payload), Charsets.UTF_8)
+        val duplicate = encoded.replaceFirst("{", "{\"familyId\":\"family-other\",")
+        val escapedAlias = encoded.replaceFirst("{", "{\"family\\u0049d\":\"family-other\",")
+        val labelMarker = "\"label\":\""
+        val labelStart = encoded.indexOf(labelMarker) + labelMarker.length
+        assertTrue(labelStart >= labelMarker.length)
+        val malformedUtf8 = encoded.substring(0, labelStart).toByteArray(Charsets.UTF_8) +
+            byteArrayOf(0xC3.toByte(), 0x28) + encoded.substring(labelStart).toByteArray(Charsets.UTF_8)
+
+        assertNull(SafeZonePolicyPayloadCodec.decode(duplicate.toByteArray(Charsets.UTF_8), envelope))
+        assertNull(SafeZonePolicyPayloadCodec.decode(escapedAlias.toByteArray(Charsets.UTF_8), envelope))
+        assertNull(SafeZonePolicyPayloadCodec.decode(malformedUtf8, envelope))
+        assertEquals(payload, SafeZonePolicyPayloadCodec.decode(encoded.toByteArray(Charsets.UTF_8), envelope))
+    }
+
+    @Test
     fun `malformed location payload cannot be normalized into a stored policy`() = runTest {
         val receiver = SafeZonePolicyReceiver(
             localFamilyId = "family-a",
@@ -510,6 +601,69 @@ class SafeZonePolicyReceiverTest {
         assertTrue(events.isEmpty())
         assertTrue(alerts.delivered.isEmpty())
         assertEquals(GeofenceMembership.OUTSIDE, zoneStateStore.load(zone.zoneId)?.confirmedMembership)
+    }
+
+    @Test
+    fun `deleted zone replay and key epoch rollback stay rejected after process restart`() = runTest {
+        val flexibleAuthority = object : SafeZoneFamilyAuthority {
+            override suspend fun isRecipientAuthorized(
+                familyId: String,
+                recipientEndpointId: String,
+                trustSetEpoch: Long,
+                keyEpoch: Long,
+            ) = familyId == "family-a" && recipientEndpointId == "child-a" && trustSetEpoch == 2L && keyEpoch > 0L
+
+            override suspend fun resolveAuthorizedSender(
+                familyId: String,
+                senderDeviceId: String,
+                senderKeyId: String,
+                trustSetEpoch: Long,
+                keyEpoch: Long,
+            ) = if (isRecipientAuthorized(familyId, "child-a", trustSetEpoch, keyEpoch) &&
+                senderDeviceId == "parent-a" && senderKeyId == "parent-signing-key") {
+                SafeZoneAuthorizedSender(SafeZoneFamilyRole.OWNER, "parent-public-key")
+            } else null
+        }
+
+        suspend fun apply(payload: SafeZonePolicyPayload, zones: GeofenceZoneStore, states: GeofenceZoneStateStore) =
+            SafeZonePolicyReceiver(
+                "family-a", "child-a", flexibleAuthority, approvingVerifier,
+                object : SafeZonePayloadDecryptor {
+                    override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String) =
+                        SafeZonePolicyPayloadCodec.encode(payload)
+                },
+                zones, states,
+            ).receive(envelope().copy(zoneId = payload.zoneId, revision = payload.revision, keyEpoch = payload.keyEpoch), 2_000L)
+
+        val initial = SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 4L, zone.copy(revision = 1L))
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, apply(initial, zoneStore, zoneStateStore))
+        zoneStateStore.save(GeofenceZoneState(zoneId = "zone-home", confirmedMembership = GeofenceMembership.INSIDE))
+        zoneStore.remove("zone-home")
+
+        // Reconstruct both stores as Android would after process death. The tombstone and
+        // accepted key-epoch floor must survive independently of the active zone row.
+        val reopenedZones = GeofenceZoneStore(backing, scopeProvider = scopeProvider)
+        val reopenedStates = GeofenceZoneStateStore(backing, scopeProvider = scopeProvider)
+        assertTrue(reopenedZones.loadZones().isEmpty())
+        assertEquals(1L, reopenedZones.revisionFloor(familyScope, "zone-home"))
+        assertEquals(4L, reopenedZones.acceptedKeyEpochFloor(familyScope))
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, apply(initial, reopenedZones, reopenedStates))
+        assertTrue(reopenedZones.loadZones().isEmpty())
+
+        val restored = initial.copy(revision = 2L, zone = zone.copy(revision = 2L))
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, apply(restored, reopenedZones, reopenedStates))
+        assertNull(reopenedStates.load("zone-home"))
+
+        val otherZoneRollback = SafeZonePolicyPayload(
+            "family-a", "child-a", "zone-school", 1L, 3L, zone.copy(zoneId = "zone-school", revision = 1L),
+        )
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, apply(otherZoneRollback, reopenedZones, reopenedStates))
+        assertTrue(reopenedZones.loadZones().none { it.zoneId == "zone-school" })
+
+        val currentEpoch = otherZoneRollback.copy(keyEpoch = 5L)
+        assertEquals(SafeZonePolicyReceiveResult.APPLIED, apply(currentEpoch, reopenedZones, reopenedStates))
+        assertEquals(setOf("zone-home", "zone-school"), reopenedZones.loadZones().map { it.zoneId }.toSet())
+        assertEquals(5L, reopenedZones.acceptedKeyEpochFloor(familyScope))
     }
 
     @Test

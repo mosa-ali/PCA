@@ -1,9 +1,11 @@
 import type { ProtectionAlertEvent } from './types.js';
 import {
   applyServerCiphertextFeedWindow,
+  isPersistableServerCiphertextWindow,
   isServerCiphertextExpired,
 } from '../retention/serverCiphertextTtl.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { InvalidProtectionAlertInputError } from './ProtectionAlertGenerator.js';
 
 export type RecordProtectionAlertResult =
   | { readonly outcome: 'RECORDED' }
@@ -69,6 +71,9 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
   }
 
   async record(event: ProtectionAlertEvent): Promise<RecordProtectionAlertResult> {
+    if (!isPersistableServerCiphertextWindow(event.generatedAtUtc)) {
+      throw new InvalidProtectionAlertInputError('invalid generatedAtUtc');
+    }
     if (!isFamilyEpochNumber(event.keyEpoch)) {
       throw new Error('Protection alert key epoch is outside the supported family epoch range.');
     }

@@ -46,6 +46,8 @@ public enum SecureEnclaveDskError: Error, Equatable {
     case malformedSignature
     /// Caller bug: the attempt id must not be empty.
     case invalidAttemptId
+    /// Caller bug: an operation was given an alias outside the owned DSK/DEK namespace.
+    case invalidKeyAlias
 }
 
 /// Generates a device's Signing Key pair (DSK) or Encryption Key pair
@@ -195,6 +197,12 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
     // MARK: - FirstDeviceDskSigning
 
     public func signCanonical(alias: String, message: Data) throws -> Data {
+        // This protocol is specifically the DSK signing boundary. Do not let
+        // a caller accidentally turn the independently generated DEK into a
+        // signing key by passing its alias (or a foreign keychain tag).
+        guard Self.isOwnedAlias(alias, prefix: Self.aliasPrefixDsk) else {
+            throw SecureEnclaveDskError.invalidKeyAlias
+        }
         guard let privateKey = try loadPrivateKey(alias: alias) else {
             throw SecureEnclaveDskError.keyMaterialMissing
         }
@@ -228,6 +236,7 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
     /// [SecureEnclaveDskError.keyMaterialMissing] when absent -- never
     /// generates anything.
     public func loadPublicKeyBase64(alias: String) throws -> String {
+        guard Self.isOwnedAlias(alias) else { throw SecureEnclaveDskError.invalidKeyAlias }
         guard let privateKey = try loadPrivateKey(alias: alias) else {
             throw SecureEnclaveDskError.keyMaterialMissing
         }
@@ -240,6 +249,10 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
     // MARK: - FirstDeviceKeyPairDeletion
 
     public func deleteKeyPair(alias: String) {
+        // Keychain deletion is broader than our generator: an arbitrary
+        // caller-provided application tag could belong to another app or
+        // another PCA key family. Keep direct cleanup inside our namespaces.
+        guard Self.isOwnedAlias(alias) else { return }
         let query: [CFString: Any] = [
             kSecClass: kSecClassKey,
             kSecAttrApplicationTag: tagData(alias: alias),
@@ -368,6 +381,14 @@ public final class SecureEnclaveDskProvider: FirstDeviceKeyPairGenerating, First
 
     private func tagData(alias: String) -> Data {
         Data(alias.utf8)
+    }
+
+    private static func isOwnedAlias(_ alias: String) -> Bool {
+        isOwnedAlias(alias, prefix: aliasPrefixDsk) || isOwnedAlias(alias, prefix: aliasPrefixDek)
+    }
+
+    private static func isOwnedAlias(_ alias: String, prefix: String) -> Bool {
+        alias.hasPrefix(prefix) && alias.utf8.count > prefix.utf8.count
     }
 
     private func cfErrorCode(_ error: Unmanaged<CFError>?) -> Int32 {

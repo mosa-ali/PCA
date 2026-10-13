@@ -37,6 +37,10 @@
 # Exclude everything...
 *
 
+# Local Xcode test diagnostics are never part of the repository-root image context.
+.tmp/ios-diagnostics-*/
+tmp/ios-diagnostics-*/
+
 # ...then re-admit exactly what public-web/deploy/Dockerfile COPYs.
 !public-web
 !docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv

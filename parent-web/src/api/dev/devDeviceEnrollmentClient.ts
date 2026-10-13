@@ -156,7 +156,13 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
    * Only reaches PAIRED -- never ACTIVE. Confirming an already-PAIRED or
    * REVOKED target is a CONFLICT, matching the real backend.
    */
-  async confirmPairing(familyId: string, deviceId: string, _stepUpToken: string): Promise<PairingRequestDto> {
+  async confirmPairing(
+    familyId: string,
+    deviceId: string,
+    _stepUpToken: string,
+    expectedDskFingerprint: string,
+    expectedDekFingerprint: string | null,
+  ): Promise<PairingRequestDto> {
     await delay();
     const entry = pairingRequests.get(deviceId);
     if (!entry || entry.familyId !== familyId) throw new DeviceEnrollmentError('NOT_FOUND', 'Pairing request not found.', 404);
@@ -165,6 +171,11 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
     if (record.status !== 'PAIRING_PENDING') {
       throw new DeviceEnrollmentError('CONFLICT', `Cannot confirm pairing in status ${record.status}.`, 409);
     }
+    const currentDsk = record.dskFingerprint ?? 'dev:dsk:aa11-bb22-cc33-dd44';
+    const currentDek = record.dekFingerprint ?? 'dev:dek:ee55-ff66-0077-8899';
+    if (expectedDskFingerprint !== currentDsk || expectedDekFingerprint !== currentDek) {
+      throw new DeviceEnrollmentError('CONFLICT', 'Pairing fingerprints changed; review the current request again.', 409);
+    }
     // If fingerprints are still unresolved, the dev fixture mirrors the
     // real backend's implicit precondition -- the UI must not have offered
     // this action, but if called anyway, resolve fingerprints now so the
@@ -172,8 +183,8 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
     const resolved: DevPairingRecord = {
       ...record,
       status: 'PAIRED',
-      dskFingerprint: record.dskFingerprint ?? 'dev:dsk:aa11-bb22-cc33-dd44',
-      dekFingerprint: record.dekFingerprint ?? 'dev:dek:ee55-ff66-0077-8899',
+      dskFingerprint: currentDsk,
+      dekFingerprint: currentDek,
     };
     pairingRequests.set(deviceId, { ...entry, request: resolved });
     return { ...resolved };

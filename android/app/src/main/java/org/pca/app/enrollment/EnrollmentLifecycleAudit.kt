@@ -93,8 +93,8 @@ class EnrollmentLifecycleAuditor(
     private val now: () -> Instant = Instant::now,
 ) {
     init {
-        if (deviceId.isBlank()) throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
-        if (familyId != null && familyId.isBlank()) {
+        if (isUnicodeWhitespaceOnly(deviceId)) throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
+        if (familyId != null && isUnicodeWhitespaceOnly(familyId)) {
             throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
         }
     }
@@ -106,8 +106,8 @@ class EnrollmentLifecycleAuditor(
         actorId: String,
         reason: String,
     ): EnrollmentLifecycleAuditRecord {
-        if (actorId.isBlank()) throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
-        if (reason.isBlank() || reason.length > 280) throw EnrollmentLifecycleTransitionError.InvalidReason
+        if (isUnicodeWhitespaceOnly(actorId)) throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
+        if (isUnicodeWhitespaceOnly(reason) || reason.length > 280) throw EnrollmentLifecycleTransitionError.InvalidReason
         if (!isAllowed(from, to)) throw EnrollmentLifecycleTransitionError.InvalidTransition(from, to)
 
         val record = EnrollmentLifecycleAuditRecord(
@@ -124,6 +124,34 @@ class EnrollmentLifecycleAuditor(
     }
 
     companion object {
+        /**
+         * Shared Parent/Platform blank rule: every Unicode scalar must be in Unicode White_Space.
+         * Keep this explicit so Android runtime Unicode tables cannot drift from the Swift and JS
+         * implementations. The fixed set is U+0009–000D, U+0020, U+0085, U+00A0, U+1680,
+         * U+2000–200A, U+2028–2029, U+202F, U+205F, and U+3000.
+         */
+        private fun isUnicodeWhitespaceOnly(value: String): Boolean {
+            var index = 0
+            while (index < value.length) {
+                val scalar = Character.codePointAt(value, index)
+                if (!isUnicodeWhiteSpace(scalar)) return false
+                index += Character.charCount(scalar)
+            }
+            return true
+        }
+
+        private fun isUnicodeWhiteSpace(scalar: Int): Boolean =
+            scalar in 0x0009..0x000D ||
+                scalar == 0x0020 ||
+                scalar == 0x0085 ||
+                scalar == 0x00A0 ||
+                scalar == 0x1680 ||
+                scalar in 0x2000..0x200A ||
+                scalar in 0x2028..0x2029 ||
+                scalar == 0x202F ||
+                scalar == 0x205F ||
+                scalar == 0x3000
+
         fun isAllowed(from: PairingState?, to: PairingState): Boolean {
             if (from == to) return true
             return when (from) {

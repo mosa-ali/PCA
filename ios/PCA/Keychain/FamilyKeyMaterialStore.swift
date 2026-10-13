@@ -17,6 +17,10 @@ public enum FamilyKeyMaterialKind: String {
     case familyDataEncryptionKey = "fdek"
 }
 
+public enum FamilyKeyMaterialStoreError: Error, Equatable {
+    case invalidDeviceId
+}
+
 public struct FamilyKeyMaterialStore {
     private let keychain: KeychainStoreProtocol
     private let serviceNamespace: String
@@ -33,15 +37,25 @@ public struct FamilyKeyMaterialStore {
         "\(serviceNamespace).keymaterial.\(kind.rawValue)"
     }
 
+    private func validateDeviceId(_ deviceId: String) throws {
+        // Match backend/src/familyenvelope/policy.ts's opaque-ID bound.
+        // Swift UTF-16 length matches JavaScript string length for this contract.
+        guard (1...128).contains(deviceId.utf16.count) else {
+            throw FamilyKeyMaterialStoreError.invalidDeviceId
+        }
+    }
+
     /// `deviceId` is the opaque device identifier the backend already
     /// assigns (same value as `OpaqueDeviceId` in
     /// backend/src/familyenvelope/types.ts) -- reused as the Keychain
     /// `account`, not a new identity scheme.
     public func store(_ keyBytes: Data, kind: FamilyKeyMaterialKind, deviceId: String, accessibility: KeychainAccessibility = .whenUnlockedThisDeviceOnly) throws {
+        try validateDeviceId(deviceId)
         try keychain.store(keyBytes, forAccount: deviceId, service: service(for: kind), accessibility: accessibility)
     }
 
     public func retrieve(kind: FamilyKeyMaterialKind, deviceId: String) throws -> Data {
+        try validateDeviceId(deviceId)
         try keychain.retrieve(forAccount: deviceId, service: service(for: kind))
     }
 
@@ -52,6 +66,7 @@ public struct FamilyKeyMaterialStore {
     /// Section 9's same honest limitation applies to Keychain-backed
     /// storage as to any other on-device store).
     public func delete(kind: FamilyKeyMaterialKind, deviceId: String) throws {
+        try validateDeviceId(deviceId)
         try keychain.delete(forAccount: deviceId, service: service(for: kind))
     }
 }

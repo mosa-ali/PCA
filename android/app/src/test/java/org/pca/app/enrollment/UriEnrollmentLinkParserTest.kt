@@ -31,6 +31,28 @@ class UriEnrollmentLinkParserTest {
     }
 
     @Test
+    fun `rejects duplicate token parameters instead of selecting an ambiguous invitation`() {
+        val secondCanonicalToken = "${"A".repeat(42)}E"
+
+        assertNull(parser.parse("pca://enroll?token=$canonicalToken&token=$canonicalToken"))
+        assertNull(parser.parse("pca://enroll?token=$canonicalToken&token=$secondCanonicalToken"))
+        assertNull(parser.parse("pca://enroll?token&token=$canonicalToken"))
+        assertNull(parser.parse("pca://enroll?token=$canonicalToken&%74oken=$secondCanonicalToken"))
+    }
+
+    @Test
+    fun `accepts one percent-encoded token query key after decoding its name`() {
+        val result = parser.parse("pca://enroll?%74oken=$canonicalToken")
+
+        assertEquals(canonicalToken, result?.rawInvitationToken)
+    }
+
+    @Test
+    fun `rejects query keys with invalid percent-encoded UTF-8`() {
+        assertNull(parser.parse("pca://enroll?%FF=ignored&token=$canonicalToken"))
+    }
+
+    @Test
     fun `rejects a wrong scheme`() {
         assertNull(parser.parse("https://enroll?token=$canonicalToken"))
     }

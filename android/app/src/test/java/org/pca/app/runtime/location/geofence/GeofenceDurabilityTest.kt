@@ -105,7 +105,7 @@ class GeofenceDurabilityTest {
                 }, object : SafeZonePayloadDecryptor {
                     override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String) = payload
                 }, zoneStore, stateStore)
-            val envelope = SafeZonePolicyEnvelope("family-a", "child-a", "parent-a", "key-a", 2, 3, 2, "home", byteArrayOf(1), byteArrayOf(2), "signature", 1000, 10000)
+            val envelope = SafeZonePolicyEnvelope("family-a", "child-a", "parent-a", "key-a", 2, 3, 2, "home", byteArrayOf(1), ByteArray(12) { (it + 2).toByte() }, "signature", 1000, 10000)
             assertEquals(if (clearFailure) SafeZonePolicyReceiveResult.REJECTED else SafeZonePolicyReceiveResult.APPLIED,
                 receiver.receive(envelope, 2000))
             assertEquals(listOf(zone(revision = if (clearFailure) 1 else 2)), zones(DiskStore(zoneBacking.disk)).loadZones())
@@ -211,7 +211,7 @@ class GeofenceDurabilityTest {
             }, object : SafeZonePayloadDecryptor {
                 override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String) = payload
             }, zoneStore, stateStore)
-        val envelope = SafeZonePolicyEnvelope("family-a", "child-a", "parent-a", "key-a", 2, 3, 2, "home", byteArrayOf(1), byteArrayOf(2), "signature", 1000, 10000)
+        val envelope = SafeZonePolicyEnvelope("family-a", "child-a", "parent-a", "key-a", 2, 3, 2, "home", byteArrayOf(1), ByteArray(12) { (it + 2).toByte() }, "signature", 1000, 10000)
         assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope, 2000))
         assertTrue(competingWrite)
         assertEquals(listOf(zone(revision = competingRevision).copy(label = "Competing")),

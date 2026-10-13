@@ -33,6 +33,26 @@ final class PolicySyncDecoderTests: XCTestCase {
         try store.write(Data("corrupt applications".utf8), forKey: "applicationTokens.activity-1")
         XCTAssertNil(restarted.load(activityId: "activity-1"))
     }
+
+    func testRestoredPolicyRejectsOversizedApplicationAndSafetyFloorTokenBlobs() throws {
+        let store = InMemoryBlobStore()
+        try store.write(encode(wellFormedPolicy()), forKey: "schedule.activity-1")
+        let ordinary = try PropertyListEncoder().encode(Set(["ordinary-app"]))
+        let oversized = try PropertyListEncoder().encode(Set([String(repeating: "x", count: 1_100_000)]))
+        XCTAssertGreaterThan(oversized.count, 1_048_576)
+        let loader = StoredDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store)
+
+        try store.write(oversized, forKey: "applicationTokens.activity-1")
+        try store.write(ordinary, forKey: "protectedApplicationTokens")
+        XCTAssertNil(loader.load(activityId: "activity-1"),
+            "oversized FamilyControls application bytes must be rejected before plist decoding")
+
+        try store.write(ordinary, forKey: "applicationTokens.activity-1")
+        try store.write(oversized, forKey: "protectedApplicationTokens")
+        XCTAssertNil(loader.load(activityId: "activity-1"),
+            "an oversized safety-floor payload must make the whole stored policy unavailable")
+    }
+
     private func encode(_ stored: StoredDeviceActivityPolicy) -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -134,6 +154,45 @@ final class PolicySyncDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.windows.first?.id, "bedtime")
         XCTAssertEqual(decoded.dailyLimit?.limitMinutes, 60)
         XCTAssertEqual(decoded.enforcementCapability, .enforced)
+    }
+
+    func testEmptyOpaqueAppScopeTokenIsRejectedAcrossEveryPolicyDimension() {
+        let source = wellFormedPolicy()
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        let invalidScope = StoredAppScope.apps([""])
+        let candidates = [
+            StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion, activityId: source.activityId,
+                appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier,
+                windows: [StoredScheduleWindow(id: "blank-window", kind: .bedtime, daysOfWeek: [0],
+                    start: .init(hour: 22, minute: 0), end: .init(hour: 6, minute: 0), appScope: invalidScope)],
+                bonusGrants: [], exceptions: [], dailyLimit: nil, enforcementCapability: source.enforcementCapability),
+            StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion, activityId: source.activityId,
+                appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier, windows: [],
+                bonusGrants: [StoredBonusGrant(id: "blank-bonus", appScope: invalidScope, extraMinutes: 5,
+                    grantedAtUtc: now, expiresAtUtc: now.addingTimeInterval(60))],
+                exceptions: [], dailyLimit: nil, enforcementCapability: source.enforcementCapability),
+            StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion, activityId: source.activityId,
+                appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier, windows: [],
+                bonusGrants: [],
+                exceptions: [StoredParentException(id: "blank-exception", appScope: invalidScope,
+                    startAtUtc: now, endAtUtc: now.addingTimeInterval(60))],
+                dailyLimit: nil, enforcementCapability: source.enforcementCapability),
+            StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion, activityId: source.activityId,
+                appToken: source.appToken, timeZoneIdentifier: source.timeZoneIdentifier, windows: [],
+                bonusGrants: [], exceptions: [],
+                dailyLimit: StoredDailyAppLimit(appScope: invalidScope, limitMinutes: 30,
+                    usedMinutesToday: 0, anchorLocalDate: "2026-01-07"),
+                enforcementCapability: source.enforcementCapability),
+        ]
+
+        for candidate in candidates {
+            guard case .failure(.invalidAppScope(let errors)) = PolicySyncDecoder.decode(encode(candidate)) else {
+                XCTFail("empty opaque app-scope tokens must fail before policy reaches enforcement")
+                continue
+            }
+            XCTAssertEqual(errors.count, 1)
+            XCTAssertTrue(errors[0].contains("appScope must contain non-empty app tokens"))
+        }
     }
 
     func testMalformedParentExceptionIntervalsAreRejectedBeforePolicyCanLoad() throws {
@@ -406,6 +465,30 @@ final class PolicySyncDecoderTests: XCTestCase {
         }
     }
 
+    func testBonusGrantDatesOutsideScheduleInstantRangeAreRejectedBeforePublication() {
+        let original = wellFormedPolicy()
+        let cases: [(Date, Date)] = [
+            (Date(timeIntervalSince1970: 8_640_000_000_001),
+             Date(timeIntervalSince1970: 8_640_000_000_002)),
+            (Date(timeIntervalSince1970: -8_640_000_000_002),
+             Date(timeIntervalSince1970: -8_640_000_000_001)),
+            (Date(timeIntervalSince1970: 1_760_000_000),
+             Date(timeIntervalSince1970: .infinity)),
+        ]
+        for (start, end) in cases {
+            let malformed = StoredDeviceActivityPolicy(
+                schemaVersion: original.schemaVersion, activityId: original.activityId,
+                appToken: original.appToken, timeZoneIdentifier: original.timeZoneIdentifier,
+                windows: original.windows,
+                bonusGrants: [StoredBonusGrant(id: "invalid-instant", appScope: .all,
+                    extraMinutes: 5, grantedAtUtc: start, expiresAtUtc: end)],
+                exceptions: original.exceptions, dailyLimit: original.dailyLimit,
+                enforcementCapability: original.enforcementCapability
+            )
+            XCTAssertEqual(PolicySyncDecoder.validate(malformed), .failure(.invalidUsageConfig))
+        }
+    }
+
     func testDailyLimitAnchorAcceptsGregorianLeapDay() throws {
         let original = wellFormedPolicy()
         let originalDaily = try XCTUnwrap(original.dailyLimit)
@@ -439,6 +522,43 @@ final class PolicySyncDecoderTests: XCTestCase {
             return XCTFail("expected invalidWindowConfig failure")
         }
         XCTAssertFalse(errors.isEmpty)
+    }
+
+    func testDuplicateWindowIdsAreRejectedBeforePolicyIsPublished() throws {
+        let source = wellFormedPolicy()
+        let template = try XCTUnwrap(source.windows.first)
+        let duplicate = StoredScheduleWindow(id: template.id, kind: template.kind,
+            daysOfWeek: template.daysOfWeek, start: template.start, end: template.end,
+            appScope: template.appScope, timezone: template.timezone)
+        let repeated = StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion,
+            activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier, windows: [template, duplicate],
+            bonusGrants: source.bonusGrants, exceptions: source.exceptions,
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability)
+
+        guard case .failure(.invalidWindowConfig(let errors)) = PolicySyncDecoder.decode(encode(repeated)) else {
+            return XCTFail("a duplicate window identity must not reach persisted runtime policy")
+        }
+        XCTAssertTrue(errors.contains("duplicate window id"))
+
+        // String equality normalizes canonical Unicode, but these are distinct
+        // opaque UTF-8 IDs and must remain distinct under the shared contract.
+        let composedId = "caf\u{00E9}"
+        let decomposedId = "cafe\u{0301}"
+        let composed = StoredScheduleWindow(id: composedId, kind: template.kind,
+            daysOfWeek: template.daysOfWeek, start: template.start, end: template.end,
+            appScope: template.appScope, timezone: template.timezone)
+        let decomposed = StoredScheduleWindow(id: decomposedId, kind: template.kind,
+            daysOfWeek: template.daysOfWeek, start: template.start, end: template.end,
+            appScope: template.appScope, timezone: template.timezone)
+        let byteDistinct = StoredDeviceActivityPolicy(schemaVersion: source.schemaVersion,
+            activityId: source.activityId, appToken: source.appToken,
+            timeZoneIdentifier: source.timeZoneIdentifier, windows: [composed, decomposed],
+            bonusGrants: source.bonusGrants, exceptions: source.exceptions,
+            dailyLimit: source.dailyLimit, enforcementCapability: source.enforcementCapability)
+        guard case .success = PolicySyncDecoder.decode(encode(byteDistinct)) else {
+            return XCTFail("byte-distinct opaque window IDs must remain distinct")
+        }
     }
 
     func testOutOfContractWeekdayIndicesAreRejectedBeforeCalendarConversion() {
@@ -560,6 +680,27 @@ final class InstalledPolicyGenerationTests: XCTestCase {
             }
             XCTAssertNil(InstalledDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store).load(monitorActivityId: auxiliary))
         }
+    }
+    func testLegacyPointerReplacementDuringPayloadReadRejectsStalePolicy() throws {
+        let store = GenerationPolicyTestStore()
+        let policy = StoredDeviceActivityPolicy(schemaVersion: 1, activityId: anchor, appToken: "opaque",
+            timeZoneIdentifier: "UTC", windows: [], bonusGrants: [], exceptions: [], dailyLimit: nil,
+            enforcementCapability: .enforced)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try store.write(encoder.encode(policy), forKey: "schedule.\(anchor)")
+        try store.write(PropertyListEncoder().encode(Set(["ordinary"])), forKey: "applicationTokens.\(anchor)")
+        try store.write(Data(anchor.utf8), forKey: "activeActivityId")
+        let loader = InstalledDeviceActivityPolicyLoader<String>(scheduleStore: store, tokenStore: store)
+        XCTAssertEqual(loader.load(monitorActivityId: anchor)?.applicationTokens, ["ordinary"])
+
+        store.onRead = { key in
+            if key == "applicationTokens.\(self.anchor)" {
+                store.onRead = nil
+                store.values["activeActivityId"] = Data(self.auxiliary.utf8)
+            }
+        }
+        XCTAssertNil(loader.load(monitorActivityId: anchor),
+            "a legacy pointer replaced during payload reads cannot publish the old policy")
     }
 }
 private final class GenerationPolicyTestStore: OpaqueBlobStore {

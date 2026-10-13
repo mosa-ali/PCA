@@ -14,3 +14,9 @@ export interface PairingRequestView {
   dskFingerprint: string | null;
   dekFingerprint: string | null;
 }
+
+/** Key fingerprints shown by GET pairing request and echoed by explicit parent confirmation. */
+export interface PairingFingerprintExpectation {
+  expectedDskFingerprint: string;
+  expectedDekFingerprint: string | null;
+}

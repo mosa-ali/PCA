@@ -182,6 +182,20 @@ public struct FirstDeviceRootRecord: Codable, Equatable {
 
 }
 
+/// EXPIRED is persisted only after an authoritative server status proves the
+/// ceremony cannot commit. A record retaining the signed submission payload
+/// contradicts that terminal result and must not be treated as replaceable.
+/// REJECTED may retain its exact signed submission for status-first recovery,
+/// but neither terminal state can retain the accepted-root material that is
+/// written only after a server-authoritative COMMITTED/ACCEPTED result.
+private func hasValidFirstDeviceRootTerminalMaterial(_ record: FirstDeviceRootRecord) -> Bool {
+    if record.state == .expired && record.submission != nil { return false }
+    if record.state == .expired || record.state == .rejected {
+        return record.acceptedEpoch1 == nil && record.committedAtMillis == nil
+    }
+    return true
+}
+
 public protocol FirstDeviceRootStoring {
     func current() -> FirstDeviceRootRecord?
     @discardableResult func save(_ record: FirstDeviceRootRecord) -> Bool
@@ -226,6 +240,31 @@ public extension FirstDeviceRootStoring {
 
     @discardableResult func withConfirmedNoCurrentRecord(_ operation: () -> Void) -> Bool {
         false
+    }
+}
+
+/// Serializes compare-and-write operations across distinct root-store objects
+/// that address the same Keychain item. The lock is process-wide; Keychain
+/// does not expose a cross-process compare-and-swap primitive.
+private struct FirstDeviceRootKeychainItemIdentity: Hashable {
+    let account: String
+    let service: String
+}
+
+private final class FirstDeviceRootKeychainLockRegistry: @unchecked Sendable {
+    static let shared = FirstDeviceRootKeychainLockRegistry()
+
+    private let registryLock = NSLock()
+    private var locks: [FirstDeviceRootKeychainItemIdentity: NSRecursiveLock] = [:]
+
+    func lock(account: String, service: String) -> NSRecursiveLock {
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        let identity = FirstDeviceRootKeychainItemIdentity(account: account, service: service)
+        if let existing = locks[identity] { return existing }
+        let created = NSRecursiveLock()
+        locks[identity] = created
+        return created
     }
 }
 
@@ -321,7 +360,7 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
     private let keychain: KeychainStoreProtocol
     private let account: String
     private let service: String
-    private let lock = NSRecursiveLock()
+    private let lock: NSRecursiveLock
 
     public init(
         keychain: KeychainStoreProtocol,
@@ -331,6 +370,7 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
         self.keychain = keychain
         self.account = account
         self.service = "\(serviceNamespace).\(Self.defaultServiceSuffix)"
+        self.lock = FirstDeviceRootKeychainLockRegistry.shared.lock(account: account, service: self.service)
     }
 
     public func current() -> FirstDeviceRootRecord? {
@@ -436,7 +476,8 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
         } catch {
             return .invalid
         }
-        guard let record = try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data) else {
+        guard let record = try? JSONDecoder().decode(FirstDeviceRootRecord.self, from: data),
+              hasValidFirstDeviceRootTerminalMaterial(record) else {
             return .invalid
         }
         return .valid(record)
@@ -453,7 +494,8 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
     }
 
     private func saveUnlocked(_ record: FirstDeviceRootRecord) -> Bool {
-        guard let data = try? JSONEncoder().encode(record), data.count <= Self.maximumRecordBytes else { return false }
+        guard hasValidFirstDeviceRootTerminalMaterial(record),
+              let data = try? JSONEncoder().encode(record), data.count <= Self.maximumRecordBytes else { return false }
         do {
             try keychain.storeReplacingAtomically(
                 data,

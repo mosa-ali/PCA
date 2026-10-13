@@ -50,3 +50,15 @@ test('connected transport alone never implies successful policy application (LIV
   );
   assert.notEqual(result, 'LIVE');
 });
+
+test('invalid timestamps and stale thresholds cannot certify a successful sync', () => {
+  for (const overrides of [
+    { nowUtc: new Date(Number.NaN) },
+    { lastSuccessfulSyncAtUtc: new Date(Number.NaN) },
+    { staleThresholdMs: Number.NaN },
+    { staleThresholdMs: -1 },
+  ]) {
+    assert.equal(computeSyncConnectionState(input(overrides)), 'STALE');
+    assert.equal(computeSyncConnectionState(input({ ...overrides, hasPendingLocalWork: true })), 'SYNC_PENDING');
+  }
+});

@@ -25,7 +25,7 @@ object EyeDistanceRestorer {
         nowNanos: Long,
         config: EyeDistanceConfig = EyeDistanceConfig(),
     ): EyeDistanceState {
-        val state = snapshot.state
+        val state = resetOutOfRangeRestProgress(snapshot, nowNanos, config).state
         return when (state.phase) {
             EyeDistancePhase.REST_DUE, EyeDistancePhase.REST_ACTIVE, EyeDistancePhase.RECOVERY ->
                 // The monotonic clock survived the process restart within the same boot, so
@@ -40,8 +40,12 @@ object EyeDistanceRestorer {
         }
     }
 
-    fun restoreAfterReboot(snapshot: EyeDistanceSnapshot, nowNanos: Long): EyeDistanceState {
-        val state = snapshot.state
+    fun restoreAfterReboot(
+        snapshot: EyeDistanceSnapshot,
+        nowNanos: Long,
+        config: EyeDistanceConfig = EyeDistanceConfig(),
+    ): EyeDistanceState {
+        val state = resetOutOfRangeRestProgress(snapshot, nowNanos, config).state
         return when (state.phase) {
             EyeDistancePhase.REST_DUE, EyeDistancePhase.REST_ACTIVE ->
                 // A reboot resets the monotonic origin, so the old lastTickMonotonicNanos is not
@@ -70,8 +74,36 @@ object EyeDistanceRestorer {
         return if (sameBootConfirmed) {
             restoreAfterProcessRestart(snapshot, nowNanos, config)
         } else {
-            restoreAfterReboot(snapshot, nowNanos)
+            restoreAfterReboot(snapshot, nowNanos, config)
         }
+    }
+
+    /**
+     * REST_ACTIVE progress beyond the configured duration is not a state the engine can emit:
+     * reaching the duration transitions to RECOVERY. Treat an over-duration or negative stored
+     * counter as corrupt and require a fresh rest from this restore point. Re-anchoring at
+     * [nowNanos] is essential on same-boot process restart; otherwise the downtime delta could
+     * immediately complete the replacement rest and preserve the corrupt record's bypass.
+     * Equality remains valid and keeps the engine's exact completion-boundary behavior.
+     */
+    private fun resetOutOfRangeRestProgress(
+        snapshot: EyeDistanceSnapshot,
+        nowNanos: Long,
+        config: EyeDistanceConfig,
+    ): EyeDistanceSnapshot {
+        val state = snapshot.state
+        if (
+            state.phase != EyeDistancePhase.REST_ACTIVE ||
+            (state.restElapsedNanos >= 0L && state.restElapsedNanos <= config.restDurationNanos)
+        ) {
+            return snapshot
+        }
+        return snapshot.copy(
+            state = state.copy(
+                restElapsedNanos = 0L,
+                lastTickMonotonicNanos = nowNanos,
+            ),
+        )
     }
 
     private fun freshBaseline(priorPhase: EyeDistancePhase, nowNanos: Long): EyeDistanceState =

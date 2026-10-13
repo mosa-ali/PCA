@@ -160,6 +160,16 @@ test('parseFamilyEnvelope rejects protocolMajor/protocolMinor below the minimum 
   assert.equal(parseFamilyEnvelope(rawEnvelope({ protocolMinor: -1 })), null);
 });
 
+test('parseFamilyEnvelope accepts safe-integer protocol bounds and rejects values outside the JSON safe-integer domain', () => {
+  assert.ok(parseFamilyEnvelope(rawEnvelope({ protocolMajor: Number.MAX_SAFE_INTEGER })));
+  const maximumMinor = parseFamilyEnvelope(rawEnvelope({ protocolMinor: Number.MAX_SAFE_INTEGER }));
+  assert.ok(maximumMinor);
+  assert.equal(maximumMinor.protocolMinor, Number.MAX_SAFE_INTEGER);
+
+  assert.equal(parseFamilyEnvelope(rawEnvelope({ protocolMajor: Number.MAX_SAFE_INTEGER + 1 })), null);
+  assert.equal(parseFamilyEnvelope(rawEnvelope({ protocolMinor: Number.MAX_SAFE_INTEGER + 1 })), null);
+});
+
 test('parseFamilyEnvelope accepts a higher, unknown protocolMinor -- extension fields are simply not read', () => {
   const parsed = parseFamilyEnvelope(rawEnvelope({ protocolMinor: 99, someFutureExtensionField: 'ignored' }));
   assert.ok(parsed);

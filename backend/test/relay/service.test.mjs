@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { RelayService, RelayError } from '../../dist/relay/RelayService.js';
+import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
+import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
 import { MAX_CIPHERTEXT_BYTES, MAX_RELAY_TTL_MS, MAX_OPAQUE_ID_LENGTH } from '../../dist/relay/policy.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
 
@@ -29,6 +31,14 @@ function envelope(overrides = {}) {
     ...overrides,
   };
 }
+
+test('production MySQL relay repository requires an accepted authority snapshot before any transaction', async () => {
+  const repository = new MySqlRelayRepository();
+  await assert.rejects(
+    () => repository.createOrMatchEnvelope(envelope()),
+    { name: 'TypeError', message: 'MySQL relay enqueue requires an accepted authority snapshot.' },
+  );
+});
 
 test('queue valid opaque envelope', async () => {
   const { service } = buildService();
@@ -229,6 +239,36 @@ test('ack twice is idempotent, not an error', async () => {
   const first = await service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId);
   const second = await service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId);
   assert.equal(first.acknowledgedAt.getTime(), second.acknowledgedAt.getTime());
+});
+
+test('in-memory ACK rejects an authority snapshot invalidated after route resolution and preserves queued custody', async () => {
+  let authorityCurrent = true;
+  const repository = createInMemoryRelayRepository({ isAuthorityCurrent: async ({ authority }) =>
+    authorityCurrent && authority.dskKeyId === 'active-recipient-dsk' &&
+    authority.trustSetEpoch === 4 && authority.keyEpoch === 2,
+  });
+  const service = new RelayService(repository, () => new Date(BASE_TIME));
+  const input = envelope({ familyId: 'family-ack-scope' });
+  await service.queueEnvelope(input);
+  const capturedAuthority = {
+    familyId: input.familyId,
+    dskKeyId: 'active-recipient-dsk',
+    trustSetEpoch: 4,
+    keyEpoch: 2,
+  };
+
+  // Simulate a floor/key change committed after the route's actor resolution,
+  // immediately before the repository ACK boundary.
+  authorityCurrent = false;
+  await assert.rejects(
+    () => service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId, capturedAuthority),
+    RelayAuthorityChangedError,
+  );
+  assert.equal((await service.fetchEnvelope(input.recipientDeviceId, input.messageId)).state, 'QUEUED');
+
+  authorityCurrent = true;
+  const acknowledged = await service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId, capturedAuthority);
+  assert.equal(acknowledged.state, 'ACKNOWLEDGED');
 });
 
 test('expired envelope is unavailable to fetch', async () => {

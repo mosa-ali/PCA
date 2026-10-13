@@ -1,6 +1,7 @@
 package org.pca.app.feature.installapproval
 
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import org.json.JSONObject
 import org.pca.app.platform.PlatformProtectionCapabilities
 import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
@@ -64,9 +65,10 @@ class InstallApprovalController(
      * request is still real and still worth a parent's attention even when nothing on-device can
      * enforce it (REQUEST_ONLY is an honest, valid outcome, not a reason to skip the request).
      *
-     * The suspend call is best-effort: a platform failure here never blocks the request from being
-     * created (the child install already happened; the ONLY thing at stake is whether it can be
-     * quarantined pending decision, not whether the parent gets to know about it at all).
+     * The suspend call is best-effort for ordinary platform exceptions: they never block the
+     * request from being created (the child install already happened; the ONLY thing at stake is
+     * whether it can be quarantined pending decision, not whether the parent gets to know about
+     * it at all). Coroutine cancellation and fatal JVM Errors still propagate.
      */
     fun handleNewInstall(packageName: String, appLabel: String?, nowEpochMillis: Long): DetectionResult {
         val capabilityState = InstallApprovalCapabilityResolver.resolve(protectionCapabilities.currentMode())
@@ -75,7 +77,13 @@ class InstallApprovalController(
             communicationSurfacesProvider(),
         )
         if (capabilityState == InstallApprovalCapabilityState.ENFORCED && !isProtectedSurface) {
-            runCatching { packageSuspensionExecutor.setSuspended(packageName, true) }
+            try {
+                packageSuspensionExecutor.setSuspended(packageName, true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The child request remains useful even if local quarantine fails.
+            }
         }
         return DetectionResult(
             requestId = requestIdFactory(),

@@ -84,6 +84,82 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertThrowsError(try keyMaterial.retrieve(kind: .deviceSigningKey, deviceId: "device-1"))
         XCTAssertEqual(try keyMaterial.retrieve(kind: .deviceEncryptionKey, deviceId: "device-1"), Data("dek".utf8))
     }
+
+    func testFamilyKeyMaterialEnforcesBackendOpaqueDeviceIdUtf16Bounds() throws {
+        let store = InMemoryKeychainStore()
+        let keyMaterial = FamilyKeyMaterialStore(keychain: store, serviceNamespace: "com.pca.app")
+        let maximum = String(repeating: "😀", count: 64) // 128 UTF-16 code units, matching JS string length.
+        try keyMaterial.store(Data("key".utf8), kind: .deviceSigningKey, deviceId: maximum)
+        XCTAssertEqual(try keyMaterial.retrieve(kind: .deviceSigningKey, deviceId: maximum), Data("key".utf8))
+
+        for invalid in ["", String(repeating: "d", count: 129), String(repeating: "😀", count: 65)] {
+            XCTAssertThrowsError(try keyMaterial.store(Data("key".utf8), kind: .deviceSigningKey, deviceId: invalid)) {
+                XCTAssertEqual($0 as? FamilyKeyMaterialStoreError, .invalidDeviceId)
+            }
+            XCTAssertThrowsError(try keyMaterial.retrieve(kind: .deviceSigningKey, deviceId: invalid)) {
+                XCTAssertEqual($0 as? FamilyKeyMaterialStoreError, .invalidDeviceId)
+            }
+            XCTAssertThrowsError(try keyMaterial.delete(kind: .deviceSigningKey, deviceId: invalid)) {
+                XCTAssertEqual($0 as? FamilyKeyMaterialStoreError, .invalidDeviceId)
+            }
+        }
+    }
+
+    func testConditionalSessionClearPreservesReplacementWrittenDuringKeychainRead() throws {
+        let keychain = ReentrantSessionKeychainStore()
+        let clearer = PCAKeychainDeviceStateStore(keychain: keychain, serviceNamespace: "session-rotation")
+        let writer = PCAKeychainDeviceStateStore(keychain: keychain, serviceNamespace: "session-rotation")
+        let rejected = PCADeviceSession(deviceId: "device-1", sessionToken: "rejected",
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "replacement",
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_100))
+        try clearer.saveSession(rejected)
+
+        keychain.afterNextRetrieve = { try writer.saveSession(replacement) }
+        XCTAssertFalse(try clearer.clearSession(ifCurrent: rejected),
+            "a 401 for the old bearer cannot delete a replacement session")
+        XCTAssertEqual(try writer.loadSession(), replacement)
+        XCTAssertFalse(try clearer.clearSession(ifCurrent: rejected))
+        XCTAssertTrue(try clearer.clearSession(ifCurrent: replacement))
+        XCTAssertNil(try writer.loadSession())
+    }
+
+    func testInMemoryConditionalSessionClearPreservesReplacement() throws {
+        let store = InMemoryPCADeviceStateStore()
+        let rejected = PCADeviceSession(deviceId: "device-1", sessionToken: "rejected",
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "replacement",
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_100))
+        try store.saveSession(rejected)
+        try store.saveSession(replacement)
+        XCTAssertFalse(try store.clearSession(ifCurrent: rejected))
+        XCTAssertEqual(try store.loadSession(), replacement)
+        XCTAssertTrue(try store.clearSession(ifCurrent: replacement))
+        XCTAssertNil(try store.loadSession())
+    }
+}
+
+private final class ReentrantSessionKeychainStore: KeychainStoreProtocol {
+    private let backing = InMemoryKeychainStore()
+    var afterNextRetrieve: (() throws -> Void)?
+
+    func store(_ data: Data, forAccount account: String, service: String,
+               accessibility: KeychainAccessibility) throws {
+        try backing.store(data, forAccount: account, service: service, accessibility: accessibility)
+    }
+
+    func retrieve(forAccount account: String, service: String) throws -> Data {
+        let data = try backing.retrieve(forAccount: account, service: service)
+        if let callback = afterNextRetrieve {
+            afterNextRetrieve = nil
+            try callback()
+        }
+        return data
+    }
+
+    func delete(forAccount account: String, service: String) throws {
+        try backing.delete(forAccount: account, service: service)
+    }
 }
 
 #if canImport(Security)

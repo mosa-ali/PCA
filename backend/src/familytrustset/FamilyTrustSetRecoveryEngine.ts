@@ -32,6 +32,70 @@ export type RecoveryFtsVerdict =
   | { accepted: false; reason: RecoveryFtsRejectionReason };
 
 /**
+ * Detach the authority inputs before the verifier/ledger async boundaries.
+ * The opened proof selects the one-time transaction claim, and the exact
+ * candidate object is eventually written to the receiving store; neither may
+ * remain caller-mutable after the bytes and authority checks were derived.
+ */
+function snapshotRecoveryEpoch(epoch: FamilyTrustSetEpoch): FamilyTrustSetEpoch {
+  return {
+    familyId: epoch?.familyId,
+    trustSetEpoch: epoch?.trustSetEpoch,
+    keyEpoch: epoch?.keyEpoch,
+    entries: Array.isArray(epoch?.entries)
+      ? Array.from(epoch.entries, (entry) => entry !== null && typeof entry === 'object'
+        ? {
+          deviceId: entry.deviceId,
+          role: entry.role,
+          dskKeyId: entry.dskKeyId,
+          dskPublicKey: entry.dskPublicKey,
+          dekKeyId: entry.dekKeyId,
+          dekPublicKey: entry.dekPublicKey,
+          status: entry.status,
+        }
+        : entry)
+      : epoch?.entries,
+    issuedAt: epoch?.issuedAt instanceof Date ? new Date(epoch.issuedAt.getTime()) : epoch?.issuedAt,
+    supersedesEpoch: epoch?.supersedesEpoch,
+    signature: epoch?.signature,
+  };
+}
+
+function snapshotOpenedEnvelope(opened: OpenedRecoveryEnvelope): OpenedRecoveryEnvelope | null {
+  return opened !== null && typeof opened === 'object'
+    ? {
+      familyId: opened.familyId,
+      recoveryEnvelopeId: opened.recoveryEnvelopeId,
+      recoveryTransactionId: opened.recoveryTransactionId,
+      boundTrustSetEpoch: opened.boundTrustSetEpoch,
+      boundKeyEpoch: opened.boundKeyEpoch,
+    }
+    : null;
+}
+
+function hasSameEpochAuthority(left: FamilyTrustSetEpoch, right: FamilyTrustSetEpoch): boolean {
+  return left.familyId === right.familyId &&
+    left.trustSetEpoch === right.trustSetEpoch &&
+    left.keyEpoch === right.keyEpoch &&
+    left.issuedAt instanceof Date && right.issuedAt instanceof Date &&
+    left.issuedAt.getTime() === right.issuedAt.getTime() &&
+    left.supersedesEpoch === right.supersedesEpoch &&
+    left.signature === right.signature &&
+    Array.isArray(left.entries) && Array.isArray(right.entries) &&
+    left.entries.length === right.entries.length &&
+    left.entries.every((entry, index) => {
+      const other = right.entries[index];
+      return entry?.deviceId === other?.deviceId &&
+        entry?.role === other?.role &&
+        entry?.dskKeyId === other?.dskKeyId &&
+        entry?.dskPublicKey === other?.dskPublicKey &&
+        entry?.dekKeyId === other?.dekKeyId &&
+        entry?.dekPublicKey === other?.dekPublicKey &&
+        entry?.status === other?.status;
+    });
+}
+
+/**
  * The dedicated recovery-authorized FTS epoch acceptance path (doc 09
  * Section 10 / doc 21 Section 5) that closes the
  * FTS_RECOVERY_ACCEPTANCE = PENDING_RECOVERY_WORKSTREAM gap left in
@@ -61,12 +125,14 @@ export type RecoveryFtsVerdict =
  * runtime bypass.
  */
 export async function acceptRecoveryEpoch(
-  epoch: FamilyTrustSetEpoch,
-  opened: OpenedRecoveryEnvelope,
+  candidateInput: FamilyTrustSetEpoch,
+  openedInput: OpenedRecoveryEnvelope,
   store: FamilyTrustSetStore,
   verifier: TrustSetSignatureVerifier,
   ledger: RecoveryTransactionLedger,
 ): Promise<RecoveryFtsVerdict> {
+  const epoch = snapshotRecoveryEpoch(candidateInput);
+  const opened = snapshotOpenedEnvelope(openedInput);
   // THE PROOF'S OWN SHAPE IS VALIDATED BEFORE IT IS TRUSTED FOR ANYTHING --
   // before the store is even consulted -- and this is not defensive
   // boilerplate, it closes a real hole.
@@ -96,7 +162,7 @@ export async function acceptRecoveryEpoch(
   // is the one that matters, because it is the key the one-time claim is taken
   // on, and an empty key would put every malformed request in the same claim
   // slot instead of each representing a distinct, unguessable transaction.
-  if (!isPlausibleOpaqueId(opened.recoveryEnvelopeId) || !isPlausibleOpaqueId(opened.recoveryTransactionId)) {
+  if (!opened || !isPlausibleOpaqueId(opened.recoveryEnvelopeId) || !isPlausibleOpaqueId(opened.recoveryTransactionId)) {
     return { accepted: false, reason: 'MALFORMED_RECOVERY_PROOF' };
   }
   // The bound epochs are the SAME KINDS of number as the epoch's own (a
@@ -143,7 +209,8 @@ export async function acceptRecoveryEpoch(
   // family (doc 09 Section 10's opening line: "Recovery is a controlled
   // trust transition, not a support reset"). A family with no prior epoch
   // has nothing to recover FROM -- that is genesis, acceptEpoch's job.
-  const currentEpoch = store.getCurrentEpoch();
+  const currentEpochInStore = store.getCurrentEpoch();
+  const currentEpoch = currentEpochInStore ? snapshotRecoveryEpoch(currentEpochInStore) : null;
   if (!currentEpoch) {
     return { accepted: false, reason: 'NO_ESTABLISHED_FAMILY' };
   }
@@ -272,12 +339,8 @@ export async function acceptRecoveryEpoch(
   // permanently claimed either way (per RecoveryTransactionLedger's
   // contract) -- losing this race does not entitle a retry with the same
   // id, since the recovery this specific proposal represented is now moot.
-  const stillCurrent = store.getCurrentEpoch();
-  if (
-    stillCurrent?.trustSetEpoch !== currentEpoch.trustSetEpoch ||
-    stillCurrent?.keyEpoch !== currentEpoch.keyEpoch ||
-    stillCurrent?.signature !== currentEpoch.signature
-  ) {
+  const stillCurrentInStore = store.getCurrentEpoch();
+  if (!stillCurrentInStore || !hasSameEpochAuthority(snapshotRecoveryEpoch(stillCurrentInStore), currentEpoch)) {
     return { accepted: false, reason: 'CONCURRENT_EPOCH_CHANGED' };
   }
 

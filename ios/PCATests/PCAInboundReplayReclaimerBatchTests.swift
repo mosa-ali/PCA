@@ -7,10 +7,10 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
         let transport = InMemoryPCAHTTPTransport { _ in PCAHTTPResponse(statusCode: 200, data: body) }
         let client = try PCADeviceRuntimeSyncClient(
             baseURL: URL(string: "https://api.example.test")!, transport: transport)
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "session-token",
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43),
             expiresAt: Date().addingTimeInterval(3_600))
-        let scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
-        let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(),
+        let keychain = CountingKeychainStore()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain,
             serviceNamespace: "runtime-sync-duplicate-epoch")
 
         do {
@@ -20,7 +20,8 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
         } catch let error as PCAAPIError {
             XCTAssertEqual(error, .malformedResponse)
         }
-        XCTAssertNil(try inbox.retainedScope(), "a malformed response must not be captured into the inbox")
+        XCTAssertEqual(keychain.writeCount, 0,
+            "a malformed response must be rejected before inbox persistence; avoid treating a Keychain read failure as an empty inbox")
     }
 
     @MainActor func testBoundedReclaimUsesBatchKeychainWritesAndPreservesUnacknowledgedTerminal() async throws {
@@ -108,6 +109,106 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
         XCTAssertTrue(try denial.coversReplayIdentityPermanently(aliases[0], scope: scope))
     }
 
+    @MainActor func testRestartResumesWhenInboxDeletionCommittedButReadbackFailed() async throws {
+        let keychain = CommitThenUnreadableKeychainStore()
+        let scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
+        let response = try inboundResponse(id: "terminal-after-ambiguous-write", nonce: "1")
+        let envelope = try XCTUnwrap(response.applied.first)
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "reclaimer-ambiguous-inbox-write")
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: "reclaimer-ambiguous-inbox-write")
+        let intent = PCAInboundApplicationIntent(operationId: UUID().uuidString.lowercased(), scope: scope,
+            envelope: envelope, authorityBinding: Data("authority".utf8),
+            acceptedCommandBinding: Data("command".utf8), preparedAt: Date(timeIntervalSince1970: 1_760_000_000))
+        try journal.prepare(intent)
+        try journal.complete(intent, outcome: .applied, at: intent.preparedAt)
+
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain,
+            serviceNamespace: "reclaimer-ambiguous-inbox-write", expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let verifier = FixedRetirementVerifier(boundary: boundary)
+
+        keychain.failNextInboxReadbackAfterReplace = true
+        let firstReclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: verifier)
+        do {
+            _ = try await firstReclaimer.reclaim(scope: scope, assertAuthority: {})
+            XCTFail("A committed inbox replacement with unavailable readback must remain an uncertain failure")
+        } catch { }
+
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty,
+            "the Keychain replacement committed before its readback became unavailable")
+        XCTAssertEqual(try journal.records().count, 1,
+            "the terminal receipt must remain until a later process proves ciphertext absence")
+
+        // Reconstruct all stores to model process death. The next run observes
+        // the committed inbox snapshot and safely completes journal retirement.
+        let restoredInbox = PCAKeychainInboundInboxStore(keychain: keychain,
+            serviceNamespace: "reclaimer-ambiguous-inbox-write")
+        let restoredJournal = PCAInboundApplicationJournal(keychain: keychain,
+            serviceNamespace: "reclaimer-ambiguous-inbox-write")
+        let restoredDenial = PCAInboundReplayDenialLedger(keychain: keychain,
+            serviceNamespace: "reclaimer-ambiguous-inbox-write", expectedDeviceId: scope.recipientDeviceId)
+        let restoredReclaimer = try PCAInboundReplayReclaimer(journal: restoredJournal, inbox: restoredInbox,
+            denial: restoredDenial, verifier: verifier)
+        let resumed = try await restoredReclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(resumed, 1)
+        XCTAssertTrue(try restoredJournal.records().isEmpty)
+        XCTAssertTrue(try restoredInbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertTrue(try restoredDenial.coversReplayIdentityPermanently(envelope, scope: scope))
+    }
+
+    @MainActor func testInboxOnlyBatchRestartResumesAfterCommittedDeletionReadbackFailure() async throws {
+        let serviceNamespace = "reclaimer-inbox-only-ambiguous-write"
+        let keychain = CommitThenUnreadableKeychainStore(serviceNamespace: serviceNamespace)
+        let scope = PCAInboundScope(familyId: "family-1", recipientDeviceId: "device-1")
+        let response = try inboundResponse(id: "inbox-only-after-ambiguous-write", nonce: "1")
+        let envelope = try XCTUnwrap(response.applied.first)
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: serviceNamespace)
+        try inbox.capture(response, sessionDeviceId: scope.recipientDeviceId)
+        try inbox.markAcknowledged(envelope, scope: scope)
+        let journal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: serviceNamespace)
+        let denial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: serviceNamespace,
+            expectedDeviceId: scope.recipientDeviceId)
+        try denial.initializeFresh(assertAuthority: {})
+        let boundary = PCAInboundReplayRetirementBoundary(scope: scope, authorityBinding: Data([1]),
+            minimumTrustSetEpoch: 0, minimumKeyEpoch: 0,
+            closedNumericPrefixes: [PCAInboundReplayNumericPrefix(senderKeyId: "key-1", through: 1)])
+        let verifier = FixedRetirementVerifier(boundary: boundary)
+
+        keychain.failNextInboxReadbackAfterReplace = true
+        let firstReclaimer = try PCAInboundReplayReclaimer(journal: journal, inbox: inbox, denial: denial,
+            verifier: verifier)
+        do {
+            _ = try await firstReclaimer.reclaim(scope: scope, assertAuthority: {})
+            XCTFail("A committed inbox-only deletion with unavailable readback must remain an uncertain failure")
+        } catch { }
+
+        XCTAssertTrue(try inbox.pendingCrypto(scope: scope).isEmpty,
+            "the batched deletion committed even though its readback was unavailable")
+        XCTAssertTrue(try journal.records().isEmpty,
+            "inbox-only ciphertext has no journal record to remove")
+        XCTAssertTrue(try denial.coversReplayIdentityPermanently(envelope, scope: scope),
+            "the permanent denial boundary survives the ambiguous ciphertext deletion")
+
+        let restoredInbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: serviceNamespace)
+        let restoredJournal = PCAInboundApplicationJournal(keychain: keychain, serviceNamespace: serviceNamespace)
+        let restoredDenial = PCAInboundReplayDenialLedger(keychain: keychain, serviceNamespace: serviceNamespace,
+            expectedDeviceId: scope.recipientDeviceId)
+        let restoredReclaimer = try PCAInboundReplayReclaimer(journal: restoredJournal, inbox: restoredInbox,
+            denial: restoredDenial, verifier: verifier)
+        let resumed = try await restoredReclaimer.reclaim(scope: scope, assertAuthority: {})
+        XCTAssertEqual(resumed, 0,
+            "restart treats the already-committed inbox-only deletion as an idempotent no-op")
+        XCTAssertTrue(try restoredInbox.pendingCrypto(scope: scope).isEmpty)
+        XCTAssertTrue(try restoredDenial.coversReplayIdentityPermanently(envelope, scope: scope))
+    }
+
     private func inboundResponse(id: String, nonce: String) throws -> PCAInboundRuntimeSyncResponse {
         let envelope: [String: Any] = [
             "protocolMajor": 1, "protocolMinor": 0, "messageId": id,
@@ -154,6 +255,55 @@ final class PCAInboundReplayReclaimerBatchTests: XCTestCase {
 
         func retrieve(forAccount account: String, service: String) throws -> Data {
             readCount += 1
+            return try backing.retrieve(forAccount: account, service: service)
+        }
+
+        func delete(forAccount account: String, service: String) throws {
+            try backing.delete(forAccount: account, service: service)
+        }
+    }
+
+    private final class CommitThenUnreadableKeychainStore: KeychainStoreProtocol {
+        private let backing = InMemoryKeychainStore()
+        var failNextInboxReadbackAfterReplace = false {
+            didSet {
+                if failNextInboxReadbackAfterReplace {
+                    inboxReplacementsUntilReadbackFailure = 2
+                }
+            }
+        }
+        private var inboxReadbackUnavailable = false
+        private var inboxReplacementsUntilReadbackFailure = 0
+        private let inboxAccount = "current.ciphertext-inbox"
+        private let inboxService: String
+
+        init(serviceNamespace: String = "reclaimer-ambiguous-inbox-write") {
+            inboxService = serviceNamespace + ".ciphertext-inbox"
+        }
+
+        func store(_ data: Data, forAccount account: String, service: String,
+                   accessibility: KeychainAccessibility) throws {
+            try backing.store(data, forAccount: account, service: service, accessibility: accessibility)
+        }
+
+        func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String,
+                                      accessibility: KeychainAccessibility) throws {
+            try backing.storeReplacingAtomically(data, forAccount: account, service: service,
+                accessibility: accessibility)
+            if failNextInboxReadbackAfterReplace && account == inboxAccount && service == inboxService {
+                inboxReplacementsUntilReadbackFailure -= 1
+                if inboxReplacementsUntilReadbackFailure == 0 {
+                    failNextInboxReadbackAfterReplace = false
+                    inboxReadbackUnavailable = true
+                }
+            }
+        }
+
+        func retrieve(forAccount account: String, service: String) throws -> Data {
+            if inboxReadbackUnavailable && account == inboxAccount && service == inboxService {
+                inboxReadbackUnavailable = false
+                throw KeychainStoreError.unexpectedStatus(-1)
+            }
             return try backing.retrieve(forAccount: account, service: service)
         }
 

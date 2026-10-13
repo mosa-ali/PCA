@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { RelayService } from '../../dist/relay/RelayService.js';
 import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
+import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
+import { OutboundRelayService } from '../../dist/runtime-sync/OutboundRelayService.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { relayQueuePosition, compareRelayQueuePositions } from '../../dist/relay/queuePage.js';
 import { encodeRelayContinuation, decodeRelayContinuation } from '../../dist/runtime-sync/relayContinuation.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new MySqlRelayRepository();
+// Storage-focused DB cases intentionally omit Trust Set fixtures. Production
+// uses the default strict repository configuration.
+const repository = new MySqlRelayRepository({ allowMissingAuthorityForTests: true });
 
 function buildService(now = () => new Date()) {
   return new RelayService(repository, now);
@@ -24,6 +29,65 @@ function envelope(overrides = {}) {
     ciphertext: Buffer.from('opaque-bytes-' + randomUUID()),
     ...overrides,
   };
+}
+
+async function seedOutboundAuthorityFixture() {
+  const familyId = randomUUID();
+  const senderDeviceId = randomUUID();
+  const senderDskKeyId = randomUUID();
+  const recipientDeviceId = randomUUID();
+  const recipientDskKeyId = randomUUID();
+  const createdAt = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`,
+    [familyId, randomBytes(32)],
+  );
+  for (const [deviceId, dskKeyId] of [[senderDeviceId, senderDskKeyId], [recipientDeviceId, recipientDskKeyId]]) {
+    await getPool().query(
+      `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
+       VALUES (?, ?, 'ANDROID', 'ACTIVE', ?, NULL)`,
+      [deviceId, familyId, createdAt],
+    );
+    await getPool().query(
+      `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+       VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+      [deviceId, dskKeyId, `test-key-${randomUUID()}`, createdAt],
+    );
+  }
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, 1, 1, NOW(3))`,
+    [familyId],
+  );
+  return {
+    familyId,
+    senderDeviceId,
+    senderDskKeyId,
+    recipientDeviceId,
+    recipientDskKeyId,
+    snapshot: {
+      familyId,
+      trustSetEpoch: 1,
+      keyEpoch: 1,
+      sender: { deviceId: senderDeviceId, dskKeyId: senderDskKeyId },
+      recipient: { deviceId: recipientDeviceId, dskKeyId: recipientDskKeyId },
+    },
+  };
+}
+
+function outboundItem(fixture, messageId = randomUUID()) {
+  return {
+    messageId,
+    recipientDeviceId: fixture.recipientDeviceId,
+    ciphertext: Buffer.from('outbound-authority-' + messageId),
+    messageType: 'STATUS_SNAPSHOT',
+    enqueuedAtEpochMillis: Date.now(),
+  };
+}
+
+function buildAuthorizedOutboundService() {
+  return new OutboundRelayService(buildService(), new MySqlDeviceRepository());
 }
 
 test('MySQL: queue + retrieve by correct recipient, ciphertext stored as opaque blob', async () => {
@@ -125,6 +189,237 @@ test('MySQL: acknowledgement is idempotent', async () => {
   const first = await service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId);
   const second = await service.acknowledgeEnvelope(input.recipientDeviceId, input.messageId);
   assert.equal(first.acknowledgedAt.getTime(), second.acknowledgedAt.getTime());
+});
+
+test('MySQL AUTHORITY RACE: ACK refuses a stale accepted-head snapshot after Trust Set rotation commits', async () => {
+  const service = buildService();
+  const familyId = randomUUID();
+  const deviceId = randomUUID();
+  const keyId = randomUUID();
+  const createdAt = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`,
+    [familyId, randomBytes(32)],
+  );
+  await getPool().query(
+    `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
+     VALUES (?, ?, 'ANDROID', 'ACTIVE', ?, NULL)`,
+    [deviceId, familyId, createdAt],
+  );
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [deviceId, keyId, `test-key-${randomUUID()}`, createdAt],
+  );
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, 1, 1, NOW(3))`,
+    [familyId],
+  );
+  const input = envelope({ familyId, recipientDeviceId: deviceId });
+  await service.queueEnvelope(input);
+
+  // Represents the accepted-head result captured by the route resolver;
+  // the epoch append commits before the ACK transaction obtains the floor lock.
+  await getPool().query(
+    `UPDATE family_epoch_floors
+        SET minimum_accepted_trust_set_epoch = 2, updated_at = NOW(3)
+      WHERE family_id = ?`,
+    [familyId],
+  );
+
+  await assert.rejects(
+    () => service.acknowledgeEnvelope(deviceId, input.messageId, {
+      familyId, dskKeyId: keyId, trustSetEpoch: 1, keyEpoch: 1,
+    }),
+    RelayAuthorityChangedError,
+  );
+  assert.equal((await service.fetchEnvelope(deviceId, input.messageId)).state, 'QUEUED');
+});
+
+test('MySQL AUTHORITY RACE: ACK refuses a revoked exact DSK without changing relay custody', async () => {
+  const service = buildService();
+  const familyId = randomUUID();
+  const deviceId = randomUUID();
+  const keyId = randomUUID();
+  const createdAt = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`,
+    [familyId, randomBytes(32)],
+  );
+  await getPool().query(
+    `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
+     VALUES (?, ?, 'ANDROID', 'ACTIVE', ?, NULL)`,
+    [deviceId, familyId, createdAt],
+  );
+  await getPool().query(
+    `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+     VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+    [deviceId, keyId, `test-key-${randomUUID()}`, createdAt],
+  );
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, 1, 1, NOW(3))`,
+    [familyId],
+  );
+  const input = envelope({ familyId, recipientDeviceId: deviceId });
+  await service.queueEnvelope(input);
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [deviceId, keyId],
+  );
+
+  await assert.rejects(
+    () => service.acknowledgeEnvelope(deviceId, input.messageId, {
+      familyId, dskKeyId: keyId, trustSetEpoch: 1, keyEpoch: 1,
+    }),
+    RelayAuthorityChangedError,
+  );
+  assert.equal((await service.fetchEnvelope(deviceId, input.messageId)).state, 'QUEUED');
+});
+
+test('MySQL AUTHORITY RACE: outbound enqueue refuses a sender removed by a committed Trust Set rotation', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const messageId = randomUUID();
+  const service = buildAuthorizedOutboundService();
+  const result = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [outboundItem(fixture, messageId)], async () => {
+    // The old epoch authorizes both snapshots, then its committed successor
+    // removes the sender before createOrMatchEnvelope obtains the floor lock.
+    await getPool().query(
+      `UPDATE family_epoch_floors SET minimum_accepted_trust_set_epoch = 2, updated_at = NOW(3)
+        WHERE family_id = ?`,
+      [fixture.familyId],
+    );
+    return fixture.snapshot;
+  });
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }]);
+  await assert.rejects(() => buildService().fetchEnvelope(fixture.recipientDeviceId, messageId), { code: 'NOT_FOUND' });
+});
+
+test('MySQL AUTHORITY RACE: outbound enqueue refuses a recipient removed by a committed Trust Set rotation', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const messageId = randomUUID();
+  const service = buildAuthorizedOutboundService();
+  const result = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [outboundItem(fixture, messageId)], async () => {
+    // A successor removing this recipient advances the same family floor;
+    // a stale recipient resolver result cannot authorize the relay insert.
+    await getPool().query(
+      `UPDATE family_epoch_floors SET minimum_accepted_trust_set_epoch = 2, updated_at = NOW(3)
+        WHERE family_id = ?`,
+      [fixture.familyId],
+    );
+    return fixture.snapshot;
+  });
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }]);
+  await assert.rejects(() => buildService().fetchEnvelope(fixture.recipientDeviceId, messageId), { code: 'NOT_FOUND' });
+});
+
+test('MySQL AUTHORITY RACE: outbound enqueue refuses an exact sender DSK revoked after resolution', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const messageId = randomUUID();
+  const service = buildAuthorizedOutboundService();
+  const result = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [outboundItem(fixture, messageId)], async () => {
+    await getPool().query(
+      `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+      [fixture.senderDeviceId, fixture.senderDskKeyId],
+    );
+    return fixture.snapshot;
+  });
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }]);
+  await assert.rejects(() => buildService().fetchEnvelope(fixture.recipientDeviceId, messageId), { code: 'NOT_FOUND' });
+});
+
+test('MySQL AUTHORITY RACE: outbound enqueue refuses an exact recipient DSK revoked after resolution', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const messageId = randomUUID();
+  const service = buildAuthorizedOutboundService();
+  const result = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [outboundItem(fixture, messageId)], async () => {
+    await getPool().query(
+      `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+      [fixture.recipientDeviceId, fixture.recipientDskKeyId],
+    );
+    return fixture.snapshot;
+  });
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }]);
+  await assert.rejects(() => buildService().fetchEnvelope(fixture.recipientDeviceId, messageId), { code: 'NOT_FOUND' });
+});
+
+test('MySQL AUTHORITY: active exact sender and recipient snapshots permit creation and idempotent replay', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const message = outboundItem(fixture);
+  const service = buildAuthorizedOutboundService();
+  const authorizeRecipient = async () => fixture.snapshot;
+  const first = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [message], authorizeRecipient);
+  const replay = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [message], authorizeRecipient);
+  assert.deepEqual(first.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
+  assert.deepEqual(replay.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
+  assert.equal((await buildService().fetchEnvelope(fixture.recipientDeviceId, message.messageId)).state, 'QUEUED');
+});
+
+test('MySQL AUTHORITY: authorized recipient snapshot permits inbound page and supplement reads', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const now = new Date();
+  const input = envelope({ familyId: fixture.familyId, senderDeviceId: fixture.senderDeviceId,
+    recipientDeviceId: fixture.recipientDeviceId, createdAt: now, expiresAt: new Date(now.getTime() + 60_000) });
+  await buildService(() => now).queueEnvelope(input);
+  const authority = { familyId: fixture.familyId, dskKeyId: fixture.recipientDskKeyId, trustSetEpoch: 1, keyEpoch: 1 };
+
+  const page = await repository.listQueuedPageForRecipient(fixture.recipientDeviceId, fixture.familyId, now,
+    { after: null, highWater: null, limit: 10 }, authority);
+  const supplement = await repository.findQueuedForRecipient(fixture.recipientDeviceId, fixture.familyId,
+    [input.messageId], now, authority);
+  assert.deepEqual(page.records.map((record) => record.messageId), [input.messageId]);
+  assert.deepEqual(supplement.map((record) => record.messageId), [input.messageId]);
+});
+
+test('MySQL AUTHORITY RACE: inbound page and supplement reject a committed Trust Set floor change', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const now = new Date();
+  const input = envelope({ familyId: fixture.familyId, senderDeviceId: fixture.senderDeviceId,
+    recipientDeviceId: fixture.recipientDeviceId, createdAt: now, expiresAt: new Date(now.getTime() + 60_000) });
+  await buildService(() => now).queueEnvelope(input);
+  const authority = { familyId: fixture.familyId, dskKeyId: fixture.recipientDskKeyId, trustSetEpoch: 1, keyEpoch: 1 };
+  await getPool().query(
+    `UPDATE family_epoch_floors SET minimum_accepted_trust_set_epoch = 2, updated_at = NOW(3) WHERE family_id = ?`,
+    [fixture.familyId],
+  );
+
+  await assert.rejects(() => repository.listQueuedPageForRecipient(fixture.recipientDeviceId, fixture.familyId, now,
+    { after: null, highWater: null, limit: 10 }, authority), RelayAuthorityChangedError);
+  await assert.rejects(() => repository.findQueuedForRecipient(fixture.recipientDeviceId, fixture.familyId,
+    [input.messageId], now, authority), RelayAuthorityChangedError);
+  assert.equal((await buildService(() => now).fetchEnvelope(fixture.recipientDeviceId, input.messageId)).state, 'QUEUED',
+    'failed authorized reads never alter relay custody');
+});
+
+test('MySQL AUTHORITY RACE: inbound page and supplement reject an exact recipient DSK revocation', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const now = new Date();
+  const input = envelope({ familyId: fixture.familyId, senderDeviceId: fixture.senderDeviceId,
+    recipientDeviceId: fixture.recipientDeviceId, createdAt: now, expiresAt: new Date(now.getTime() + 60_000) });
+  await buildService(() => now).queueEnvelope(input);
+  const authority = { familyId: fixture.familyId, dskKeyId: fixture.recipientDskKeyId, trustSetEpoch: 1, keyEpoch: 1 };
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [fixture.recipientDeviceId, fixture.recipientDskKeyId],
+  );
+
+  await assert.rejects(() => repository.listQueuedPageForRecipient(fixture.recipientDeviceId, fixture.familyId, now,
+    { after: null, highWater: null, limit: 10 }, authority), RelayAuthorityChangedError);
+  await assert.rejects(() => repository.findQueuedForRecipient(fixture.recipientDeviceId, fixture.familyId,
+    [input.messageId], now, authority), RelayAuthorityChangedError);
+  assert.equal((await buildService(() => now).fetchEnvelope(fixture.recipientDeviceId, input.messageId)).state, 'QUEUED',
+    'revocation blocks reads without deleting queued ciphertext');
 });
 
 test('MySQL CONCURRENCY: duplicate submission race -- many concurrent identical creates resolve consistently', async () => {

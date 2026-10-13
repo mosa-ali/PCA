@@ -1,9 +1,15 @@
 import Foundation
 
 let deviceActivityPolicyRetirementIntentStorageKey = "com.pca.app.deviceactivity.retirement-intent.v1"
+let deviceActivityPolicyClearIntentStorageKey = "com.pca.app.deviceactivity.clear-intent.v1"
 
 struct DeviceActivityPolicyRetirementIntent: Codable, Equatable {
     let previousInstallation: DeviceActivityMonitorInstallation
+}
+
+struct DeviceActivityPolicyClearIntent: Codable, Equatable {
+    let policyActivityId: String
+    let installation: DeviceActivityMonitorInstallation?
 }
 
 #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
@@ -59,6 +65,9 @@ public protocol PCAProtectionPolicyRuntime {
     func callbackHealth(now: Date) -> DeviceActivityCallbackHealth
     func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus
     func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult
+    /// Reconcile the exact committed policy after app foreground/background
+    /// lifecycle transitions. Nil means there is no active installation.
+    func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult?
 }
 
 public extension PCAProtectionPolicyRuntime {
@@ -66,6 +75,7 @@ public extension PCAProtectionPolicyRuntime {
     func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
         throw PCAProtectionPolicyApplicationError.frameworkUnavailable
     }
+    func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? { nil }
 }
 
 public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime {
@@ -173,6 +183,10 @@ public final class SystemPCADeviceActivityScheduler: PCADeviceActivityScheduler 
 }
 
 public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRuntime {
+    /// Keep every payload decoded into App Group state within the same bound
+    /// used for a complete stored policy document. Opaque FamilyControls
+    /// token blobs are otherwise unbounded before PropertyListDecoder runs.
+    private static let maximumPolicyInputBytes = 1_048_576
     private let authorizationIsApproved: () -> Bool
     private let scheduler: PCADeviceActivityScheduler
     private let blobStore: OpaqueBlobStore
@@ -243,6 +257,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         // the committed manifest cannot apply policy.
         do {
             try policyCoordination.withExclusiveAccess {
+                try reconcileClearIntent()
                 reconcileRetirementIntent()
                 if let installation = currentInstallation(), installation.state == .active {
                     let activeId = Data(installation.policyActivityId.utf8)
@@ -269,7 +284,15 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     }
                     recoverStartupState(for: installation)
                 } else {
-                    if let incomplete = currentInstallation() { invalidate(incomplete) }
+                    if let incomplete = currentInstallation() {
+                        if incomplete.state == .invalidated {
+                            try persistClearIntent(DeviceActivityPolicyClearIntent(
+                                policyActivityId: incomplete.policyActivityId, installation: incomplete))
+                            try reconcileClearIntent()
+                        } else {
+                            invalidate(incomplete)
+                        }
+                    }
                     for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
                 }
             }
@@ -299,6 +322,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private func applyPolicyUnderLock(scheduleData: Data, applicationTokenData: Data,
                                       protectedApplicationTokenData: Data?, now: Date,
                                       lockAccess: DeviceActivityPolicyLockAccess) throws -> PCAProtectionPolicyApplicationResult {
+        // Clear recovery takes mutationLock itself. Resolve it while the
+        // cross-process policy lock is held, but before entering the local
+        // mutation critical section.
+        try reconcileClearIntent()
         mutationLock.lock()
         defer { mutationLock.unlock() }
         reconcileRetirementIntent()
@@ -314,6 +341,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.authorizationRequired
         }
         guard case .success(let policy) = PolicySyncDecoder.decode(scheduleData) else {
+            throw PCAProtectionPolicyApplicationError.malformedPolicy
+        }
+        guard applicationTokenData.count <= Self.maximumPolicyInputBytes,
+              protectedApplicationTokenData.map({ $0.count <= Self.maximumPolicyInputBytes }) ?? true else {
             throw PCAProtectionPolicyApplicationError.malformedPolicy
         }
         guard let applicationTokens = try? plistDecoder.decode(Set<ApplicationToken>.self, from: applicationTokenData) else {
@@ -525,6 +556,14 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             scheduler.stop(activityId: id)
         }
 
+        // Authorization can change while DeviceActivity registrations are in
+        // flight. Recheck at the final ManagedSettings boundary so a policy
+        // staged under a previously approved state cannot reapply shields
+        // after FamilyControls approval has been revoked. Keep the committed
+        // generation for exact recovery, but stop its monitors and clear any
+        // restrictions until approval returns.
+        try requireEnforcementAuthorization(for: installation.confirmingActive())
+
         let evaluationTime = now
         var usageAvailable = false
         var observationPlan: DeviceActivityUsageDayPlan?
@@ -542,7 +581,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         do {
             reconciled = try DeviceActivityUsageEnforcement.reconcile(policy: policy, now: evaluationTime,
                 applications: applicationTokens, protectedApplications: protectedTokens,
-                coverageAvailable: usageAvailable, loadLowerBound: {
+                deviceTimeZone: deviceTimeZone(), coverageAvailable: usageAvailable, loadLowerBound: {
                     guard let observationPlan else { return nil }
                     let usageStore = DeviceActivityUsageLowerBoundStore<ApplicationToken>(store: self.blobStore)
                     if let usagePlan {
@@ -581,6 +620,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     /// Planned registration status only; this does not certify callback delivery.
     public func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus {
         return (try? policyCoordination.withExclusiveAccess {
+            try reconcileClearIntent()
             guard let installation = currentInstallation(), installation.state == .active,
                   let plan = installation.usageDayPlan,
                   let policy = StoredDeviceActivityPolicyLoader<ApplicationToken>(scheduleStore: blobStore, tokenStore: blobStore)
@@ -598,6 +638,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     /// The explicit binding provider and all registration checks run again.
     public func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
         try policyCoordination.withExclusiveAccessContext { access in
+            try reconcileClearIntent()
             guard let installation = currentInstallation(), installation.state == .active else {
                 throw PCAProtectionPolicyApplicationError.malformedPolicy
             }
@@ -614,35 +655,213 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         }
     }
 
-    public func clearPolicy(activityId: String) {
-        try? policyCoordination.withExclusiveAccess {
-            reconcileRetirementIntent()
-            clearPolicyUnderLock(activityId: activityId)
+    /// Reapply the exact locally committed policy without advancing its
+    /// generation. DeviceActivity callbacks normally drive policy edges while
+    /// the host is suspended, but a foreground/background wake can follow a
+    /// missed callback or an OS-cleared ManagedSettings state. The durable
+    /// active manifest remains the only input; this method cannot accept or
+    /// create policy authority.
+    public func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? {
+        do {
+            return try policyCoordination.withExclusiveAccess {
+                try reconcileClearIntent()
+                mutationLock.lock()
+                defer { mutationLock.unlock() }
+                reconcileRetirementIntent()
+                guard let installation = currentInstallation(), installation.state == .active else { return nil }
+                do {
+                    try requireEnforcementAuthorization(for: installation)
+                    try restoreMissingMonitors(for: installation)
+                    if let usagePlan = installation.usageDayPlan { try pendingUsageActivator(usagePlan) }
+                    try restoreCommittedEnforcement(for: installation, now: now)
+                    startupRecoveryDeferred = false
+                    startupMonitorFailureGeneration = nil
+                    startupUsageFailureGeneration = nil
+                    startupEnforcementFailureGeneration = nil
+
+                    guard let snapshot = StoredDeviceActivityPolicyLoader<ApplicationToken>(
+                        scheduleStore: blobStore, tokenStore: blobStore
+                    ).load(activityId: installation.policyActivityId,
+                           storageGeneration: installation.payloadStorageGeneration) else {
+                        throw PCAProtectionPolicyApplicationError.malformedPolicy
+                    }
+                    if snapshot.schedule.dailyLimit != nil {
+                        guard let plan = installation.usageDayPlan,
+                              plan.binding.matches(snapshot.applicationTokens, logicalAppToken: snapshot.schedule.appToken),
+                              plan.policyTimeZoneIdentifier.utf8.elementsEqual(snapshot.schedule.timeZone.identifier.utf8),
+                              plan.coverage == .wholePolicyDayPlanned,
+                              plan.contains(now, deviceTimeZone: deviceTimeZone()) else { return .degraded }
+                    }
+                    switch snapshot.schedule.enforcementCapability {
+                    case .enforced: return .applied
+                    case .degraded, .unavailable: return .degraded
+                    }
+                } catch {
+                    markStartupRecoveryRequired(for: installation)
+                    throw error
+                }
+            }
+        } catch let error as PCAProtectionPolicyApplicationError {
+            throw error
+        } catch {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
         }
     }
 
-    private func clearPolicyUnderLock(activityId: String) {
+    public func clearPolicy(activityId: String) {
+        try? policyCoordination.withExclusiveAccess {
+            try reconcileClearIntent()
+            reconcileRetirementIntent()
+            try clearPolicyUnderLock(activityId: activityId)
+        }
+    }
+
+    private func clearPolicyUnderLock(activityId: String) throws {
+        try reconcileClearIntent()
+        let shouldReconcile = try {
+            mutationLock.lock()
+            defer { mutationLock.unlock() }
+            let installationData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey)
+            let installation = installationData.flatMap { DeviceActivityMonitorInstallation.decodeValidated($0) }
+            let activeActivityId = currentActiveActivityId()
+            // A validated manifest is authoritative. The legacy pointer is only a
+            // fallback when no manifest exists; it may be stale if its best-effort
+            // repair failed after a process interruption.
+            guard installation?.policyActivityId == activityId ||
+                (installationData == nil && activeActivityId == activityId) else { return false }
+            let clearingInstallation = installation ?? DeviceActivityMonitorInstallation(
+                policyActivityId: activityId,
+                monitorActivityId: "pca-monitor-\(UUID().uuidString.lowercased())",
+                generation: UUID().uuidString.lowercased(), installedAtUtc: installationClock(),
+                timeZoneIdentifier: DeviceActivityScheduleMapper.monitoringCalendar().timeZone.identifier,
+                state: .invalidated)
+            let tombstone = clearingInstallation.invalidating()
+            try writeInstallation(tombstone)
+            let intent = DeviceActivityPolicyClearIntent(policyActivityId: activityId, installation: tombstone)
+            try persistClearIntent(intent)
+            return true
+        }()
+        // Keep policyCoordination held by the caller throughout this method,
+        // while letting reconciliation acquire mutationLock in its own scope.
+        guard shouldReconcile else { return }
+        try reconcileClearIntent()
+    }
+
+    private func persistClearIntent(_ intent: DeviceActivityPolicyClearIntent) throws {
+        let data = try encodeClearIntent(intent)
+        try blobStore.write(data, forKey: deviceActivityPolicyClearIntentStorageKey)
+        guard blobStore.read(forKey: deviceActivityPolicyClearIntentStorageKey) == data else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+    }
+
+    private func encodeClearIntent(_ intent: DeviceActivityPolicyClearIntent) throws -> Data {
+        guard Self.isValidClearIntent(intent) else { throw PCAProtectionPolicyApplicationError.persistenceFailed }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(intent)
+        guard data.count <= 262_144 else { throw PCAProtectionPolicyApplicationError.persistenceFailed }
+        return data
+    }
+
+    /// Completes an interrupted policy clear before any policy restore or
+    /// enforcement operation can observe the old installation as active.
+    /// The durable intent stays until monitor, manifest, payload, pointer and
+    /// ManagedSettings cleanup have all been attempted and the commit keys
+    /// read back absent.
+    private func reconcileClearIntent() throws {
+        guard let data = blobStore.read(forKey: deviceActivityPolicyClearIntentStorageKey) else {
+            if let manifestData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey),
+               let installation = DeviceActivityMonitorInstallation.decodeValidated(manifestData),
+               installation.state == .invalidated {
+                try persistClearIntent(DeviceActivityPolicyClearIntent(
+                    policyActivityId: installation.policyActivityId, installation: installation))
+                try reconcileClearIntent()
+            }
+            return
+        }
+        guard data.count <= 262_144,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 262_144)) != nil,
+              let intent = try? JSONDecoder().decode(DeviceActivityPolicyClearIntent.self, from: data),
+              Self.isValidClearIntent(intent) else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+
+        let manifestData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey)
+        if let manifestData, let current = DeviceActivityMonitorInstallation.decodeValidated(manifestData),
+           intent.installation != current {
+            // A newer committed policy superseded this clear request. Never
+            // let a stale marker erase its settings; normal writers reconcile
+            // this marker before publishing a new generation.
+            blobStore.remove(forKey: deviceActivityPolicyClearIntentStorageKey)
+            guard blobStore.read(forKey: deviceActivityPolicyClearIntentStorageKey) == nil else {
+                throw PCAProtectionPolicyApplicationError.persistenceFailed
+            }
+            return
+        }
+
         mutationLock.lock()
         defer { mutationLock.unlock() }
-        let installationData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey)
-        let installation = installationData.flatMap { DeviceActivityMonitorInstallation.decodeValidated($0) }
-        let activeActivityId = currentActiveActivityId()
-        // A validated manifest is authoritative. The legacy pointer is only a
-        // fallback when no manifest exists; it may be stale if its best-effort
-        // repair failed after a process interruption.
-        guard installation?.policyActivityId == activityId ||
-            (installationData == nil && activeActivityId == activityId) else { return }
-        blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
-        blobStore.remove(forKey: "activeActivityId")
-        guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == nil,
-              blobStore.read(forKey: "activeActivityId") == nil else { return }
-        if let installation { retire(installation) }
-        else {
-            scheduler.stop(activityId: activityId)
-            removePayloads(policyActivityId: activityId, generation: nil)
-            for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
-        }
         shieldEnforcer.removeAll()
+        if let installation = intent.installation {
+            for id in installation.allMonitorActivityIds { scheduler.stop(activityId: id) }
+            if installation.payloadStorageGeneration == nil {
+                scheduler.stop(activityId: intent.policyActivityId)
+                for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
+            }
+            if let manifestData,
+               DeviceActivityMonitorInstallation.decodeValidated(manifestData) == installation {
+                blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            } else if let manifestData,
+                      DeviceActivityMonitorInstallation.decodeValidated(manifestData) == nil {
+                // The durable clear intent was created from this validated
+                // generation before interruption; a now-corrupt manifest
+                // cannot become an active fallback after cleanup.
+                blobStore.remove(forKey: deviceActivityMonitorInstallationStorageKey)
+            }
+            if blobStore.read(forKey: "activeActivityId") != nil {
+                blobStore.remove(forKey: "activeActivityId")
+            }
+            retire(installation)
+        } else {
+            for id in scheduler.ownedMonitorActivityIds() { scheduler.stop(activityId: id) }
+            if blobStore.read(forKey: "activeActivityId") != nil {
+                blobStore.remove(forKey: "activeActivityId")
+            }
+            removePayloads(policyActivityId: intent.policyActivityId, generation: nil)
+        }
+
+        let remainingManifest = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey)
+        let remainingInstallation = remainingManifest.flatMap {
+            DeviceActivityMonitorInstallation.decodeValidated($0)
+        }
+        guard remainingManifest == nil || remainingInstallation?.policyActivityId != intent.policyActivityId,
+              blobStore.read(forKey: "activeActivityId") == nil else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+        let suffix = intent.installation?.payloadStorageGeneration.map { "." + $0 } ?? ""
+        let payloadKeys = [
+            "schedule.\(intent.policyActivityId)\(suffix)",
+            "applicationTokens.\(intent.policyActivityId)\(suffix)",
+            "protectedApplicationTokens\(suffix)",
+        ]
+        guard payloadKeys.allSatisfy({ blobStore.read(forKey: $0) == nil }) else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+        blobStore.remove(forKey: deviceActivityPolicyClearIntentStorageKey)
+        guard blobStore.read(forKey: deviceActivityPolicyClearIntentStorageKey) == nil else {
+            throw PCAProtectionPolicyApplicationError.persistenceFailed
+        }
+    }
+
+    private static func isValidClearIntent(_ intent: DeviceActivityPolicyClearIntent) -> Bool {
+        // Keep the clear recovery record aligned with PolicySyncDecoder's
+        // accepted opaque activity ID limit. A valid active generation must
+        // always be clearable, including after an interrupted tombstone write.
+        guard !intent.policyActivityId.isEmpty, intent.policyActivityId.utf8.count <= 256 else { return false }
+        guard let installation = intent.installation else { return true }
+        guard installation.policyActivityId.utf8.elementsEqual(intent.policyActivityId.utf8),
+              let bytes = try? JSONEncoder().encode(installation) else { return false }
+        return DeviceActivityMonitorInstallation.decodeValidated(bytes) == installation
     }
 
     private func removePayloads(policyActivityId: String, generation: String?) {
@@ -727,6 +946,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth {
         do {
             return try policyCoordination.withExclusiveAccess {
+                // Reconcile before taking mutationLock; reconciliation owns
+                // that lock while clearing persisted and system policy state.
+                try reconcileClearIntent()
                 mutationLock.lock()
                 defer { mutationLock.unlock() }
                 reconcileRetirementIntent()
@@ -828,6 +1050,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             // committed apply's post-reconcile update; do not invert lock order.
             mutationLock.lock()
             defer { mutationLock.unlock() }
+            if blobStore.read(forKey: deviceActivityPolicyClearIntentStorageKey) != nil {
+                return .enforcementUnavailable
+            }
             return !startupRecoveryDeferred && startupMonitorFailureGeneration == nil &&
                 startupUsageFailureGeneration == nil && startupEnforcementFailureGeneration == nil
                 ? .unknown : .enforcementUnavailable
@@ -848,6 +1073,19 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         startupMonitorFailureGeneration = installation.generation
         startupUsageFailureGeneration = installation.usageDayPlan == nil ? nil : installation.generation
         startupEnforcementFailureGeneration = installation.generation
+    }
+
+    /// Revalidate FamilyControls at the last local settings mutation boundary.
+    /// If approval changed while monitors were being restored or registered,
+    /// retain the committed policy for recovery but leave no stale shields or
+    /// callback-capable monitors active until authorization returns.
+    private func requireEnforcementAuthorization(for installation: DeviceActivityMonitorInstallation) throws {
+        guard authorizationIsApproved() else {
+            markStartupRecoveryRequired(for: installation)
+            for id in installation.allMonitorActivityIds { scheduler.stop(activityId: id) }
+            shieldEnforcer.removeAll()
+            throw PCAProtectionPolicyApplicationError.authorizationRequired
+        }
     }
 
     /// Replays the exact durable startup state in dependency order. In
@@ -892,7 +1130,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         return value
     }
 
-    private func restoreCommittedEnforcement(for installation: DeviceActivityMonitorInstallation) throws {
+    private func restoreCommittedEnforcement(for installation: DeviceActivityMonitorInstallation,
+                                             now suppliedNow: Date? = nil) throws {
         guard installation.state == .active,
               let manifestData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey),
               DeviceActivityMonitorInstallation.decodeValidated(manifestData) == installation,
@@ -903,7 +1142,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.malformedPolicy
         }
 
-        let now = installationClock()
+        try requireEnforcementAuthorization(for: installation)
+
+        let now = suppliedNow ?? installationClock()
         var observationPlan: DeviceActivityUsageDayPlan?
         var coverageAvailable = false
         if let plan = installation.usageDayPlan,
@@ -920,6 +1161,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             policy: snapshot.schedule, now: now,
             applications: snapshot.applicationTokens,
             protectedApplications: snapshot.protectedApplicationTokens,
+            deviceTimeZone: deviceTimeZone(),
             coverageAvailable: coverageAvailable,
             loadLowerBound: {
                 guard let observationPlan else { return nil }

@@ -43,7 +43,13 @@ class HttpUrlConnectionRelayHttpClient(
         }
     }
 
-    private suspend fun request(path: String, method: String, sessionToken: String?, body: JSONObject?): JSONObject =
+    private suspend fun request(
+        path: String,
+        method: String,
+        sessionToken: String?,
+        body: JSONObject?,
+        terminalMissingAcknowledgement: Boolean = false,
+    ): JSONObject =
         withContext(Dispatchers.IO) {
             val connection = try {
                 URL("$baseUrl$path").openConnection() as HttpURLConnection
@@ -68,6 +74,12 @@ class HttpUrlConnectionRelayHttpClient(
                 val parsed = if (text.isNotBlank()) JSONObject(text) else JSONObject()
 
                 if (status in 200..299) return@withContext parsed
+                // The authenticated ACK route returns this exact non-enumerating
+                // response after an envelope expires or is purged. There is no
+                // server copy left to acknowledge, so a durable retry can retire.
+                // Other 404 bodies may mean the route is unavailable and must fail.
+                if (terminalMissingAcknowledgement && status == 404 && text == """{"error":"not_found"}""")
+                    return@withContext JSONObject()
                 if (status == 401) throw RelayHttpException(RelayHttpErrorCode.Unauthorized, "Authentication failed.")
                 if (status == 400 && path.startsWith("/v1/runtime-sync/inbound?") && parsed.opt("error") == "invalid_cursor")
                     throw RelayHttpException(RelayHttpErrorCode.InvalidCursor, "Relay navigation expired or rejected.")
@@ -204,7 +216,8 @@ class HttpUrlConnectionRelayHttpClient(
 
     override suspend fun acknowledgeInbound(sessionToken: String, messageId: String) {
         val component = URLEncoder.encode(messageId, Charsets.UTF_8.name()).replace("+", "%20").replace(".", "%2E")
-        request("/v1/runtime-sync/inbound/$component/ack", "POST", sessionToken, null)
+        request("/v1/runtime-sync/inbound/$component/ack", "POST", sessionToken, null,
+            terminalMissingAcknowledgement = true)
     }
 
     override suspend fun getStatus(sessionToken: String): String {

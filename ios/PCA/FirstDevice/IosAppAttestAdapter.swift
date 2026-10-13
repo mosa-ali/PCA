@@ -81,10 +81,14 @@ public final class IosAppAttestAdapter {
         dskPublicKeyBase64: String
     ) async throws -> IosAppAttestEvidence {
         guard service.isSupported else { throw IosAppAttestError.appAttestUnsupported }
+        try Task.checkCancellation()
 
         let appleKeyId: String
         do {
             appleKeyId = try await service.generateKey()
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw IosAppAttestError.keyGenerationFailed
         }
@@ -98,24 +102,34 @@ public final class IosAppAttestAdapter {
         )
         let attestation: Data
         do {
+            try Task.checkCancellation()
             attestation = try await service.attestKey(
                 appleKeyId,
                 clientDataHash: FirstDeviceCanonical.sha256(Data(attestationClientData.utf8))
             )
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw IosAppAttestError.attestationFailed
         }
+        guard !attestation.isEmpty else { throw IosAppAttestError.attestationFailed }
 
         // Assertion: signs the ceremony transcript that binds the exact DSK.
         let assertion: Data
         do {
+            try Task.checkCancellation()
             assertion = try await service.generateAssertion(
                 appleKeyId,
                 clientDataHash: FirstDeviceCanonical.sha256(Data(transcript.utf8))
             )
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw IosAppAttestError.assertionFailed
         }
+        guard !assertion.isEmpty else { throw IosAppAttestError.assertionFailed }
 
         let envelope: [String: Any] = [
             "v": 1,

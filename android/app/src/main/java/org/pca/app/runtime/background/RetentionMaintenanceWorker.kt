@@ -3,6 +3,8 @@ package org.pca.app.runtime.background
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import androidx.work.ListenableWorker
+import kotlinx.coroutines.CancellationException
 import org.pca.app.runtime.graph.PcaAppGraph
 
 /**
@@ -23,25 +25,35 @@ import org.pca.app.runtime.graph.PcaAppGraph
  * singleton, so there is exactly one implementation of "what one retention-maintenance cycle
  * does," never two paths that could drift.
  *
- * Uses [Result.retry] (which respects [PcaBackgroundWorkConstraints]'s exponential backoff) on any
- * uncaught throwable from the cycle itself -- note [PcaAppGraph.runRetentionMaintenanceCycle]
- * (via [org.pca.app.persistence.retention.executeRetentionMaintenanceCycle]) already
- * `runCatching`-guards each of its own three engine calls internally, so this Worker's own
- * try/catch is a second, outer safety net (e.g. against [PcaAppGraph.getInstance] itself throwing
- * during a pathological early-process-start race), not the primary error-handling layer.
+ * Uses [Result.retry] (which respects [PcaBackgroundWorkConstraints]'s exponential backoff) on an
+ * ordinary exception from the cycle itself. Coroutine cancellation and fatal JVM errors propagate;
+ * [PcaAppGraph.runRetentionMaintenanceCycle]
+ * (via [org.pca.app.persistence.retention.executeRetentionMaintenanceCycle]) isolates ordinary
+ * failures per maintenance step while allowing cancellation and fatal errors to reach this
+ * Worker's outer retry boundary (e.g. a graph-construction exception during an early-process-start
+ * race).
  */
 class RetentionMaintenanceWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        val startNanos = System.nanoTime()
-        return try {
-            val graph = PcaAppGraph.getInstance(applicationContext)
-            graph.runRetentionMaintenanceCycle()
-            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = true)
-            Result.success()
-        } catch (t: Throwable) {
-            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = false)
-            Result.retry()
-        }
+    override suspend fun doWork(): Result = runRetentionMaintenanceWork {
+        val graph = PcaAppGraph.getInstance(applicationContext)
+        graph.runRetentionMaintenanceCycle()
+    }
+}
+
+/** Shared worker boundary kept independently testable from [PcaAppGraph]'s AndroidKeyStore-backed
+ * composition. WorkManager cancellation is lifecycle control, not a transient maintenance failure:
+ * propagate it so a stopped worker is not converted into a scheduled retry. */
+internal suspend fun runRetentionMaintenanceWork(cycle: suspend () -> Unit): ListenableWorker.Result {
+    val startNanos = System.nanoTime()
+    return try {
+        cycle()
+        BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = true)
+        ListenableWorker.Result.success()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = false)
+        ListenableWorker.Result.retry()
     }
 }

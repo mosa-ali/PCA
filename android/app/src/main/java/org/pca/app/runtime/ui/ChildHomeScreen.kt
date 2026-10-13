@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import org.pca.app.PcaApplication
 import org.pca.app.R
 import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.EnrollmentState
 import org.pca.app.enrollment.ReadingLevel
 import org.pca.app.enrollment.readingLevel
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
@@ -53,6 +54,8 @@ import java.util.concurrent.TimeUnit
 fun ChildHomeScreen(
     status: PcaRuntimeStatus,
     modifier: Modifier = Modifier,
+    enrollmentState: EnrollmentState? = null,
+    onOpenEnrollment: () -> Unit = {},
     ageUxTier: AgeUxTier? = null,
     onRequestParentContact: () -> Unit = {},
     onRequestBonusTime: () -> Unit = {},
@@ -81,6 +84,9 @@ fun ChildHomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { ScreenHeading(copy) }
+            if (enrollmentState != null && shouldShowEnrollmentEntry(enrollmentState)) {
+                item { EnrollmentEntryCard(onClick = onOpenEnrollment) }
+            }
             item { ManagementDisclosureCard(status.protectionMode) }
             item { ParentVisibilityCard(copy) }
             item { OfflineBanner(status) }
@@ -112,6 +118,35 @@ fun ChildHomeScreen(
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
             item { BonusTimeRequestCard(onClick = onRequestBonusTime) }
             item { AdminSecurityEntryCard(onClick = onOpenAdminSecurity) }
+        }
+    }
+}
+
+/** Only actionable setup/recovery states get the launcher entry. In particular, corrupt local
+ * custody and unavailable persistence explicitly block enrollment actions in EnrollmentCoordinator;
+ * exposing a setup CTA for those states would suggest the user can safely proceed. */
+internal fun shouldShowEnrollmentEntry(state: EnrollmentState): Boolean = when (state) {
+    EnrollmentState.NotEnrolled,
+    is EnrollmentState.InvitationReady,
+    is EnrollmentState.ProfileConfirmation,
+    EnrollmentState.FailedRetryable,
+    EnrollmentState.BootstrapResultUnknown,
+    is EnrollmentState.RecoveryPending -> true
+    else -> false
+}
+
+/** The launcher-owned path into the existing invitation flow for a fresh or unresolved setup. */
+@Composable
+private fun EnrollmentEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(text = stringResource(R.string.child_home_enrollment_entry_title), style = MaterialTheme.typography.titleMedium)
+            Text(text = stringResource(R.string.child_home_enrollment_entry_body))
         }
     }
 }

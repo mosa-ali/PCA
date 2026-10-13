@@ -28,6 +28,22 @@ public protocol PCAHTTPTransport {
     func send(_ request: URLRequest) async throws -> PCAHTTPResponse
 }
 
+/// Secret-bearing child-device requests must not follow redirects. In
+/// particular, enrollment bodies can contain invitation and recovery tokens;
+/// refusing a redirect prevents URLSession from replaying those bodies to a
+/// different endpoint.
+private final class PCARejectRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 /// Production HTTP transport. It accepts only HTTPS endpoints, applies
 /// bounded timeouts, never logs request headers/body, and returns the status
 /// code to the API adapter for explicit endpoint-specific mapping.
@@ -35,7 +51,18 @@ public final class PCAURLSessionTransport: PCAHTTPTransport {
     private let session: URLSession
     private let maxResponseBytes: Int
 
-    public init(session: URLSession = .shared, maxResponseBytes: Int = 4 * 1024 * 1024) {
+    /// Creates an owned session with redirects disabled. Production callers
+    /// should use this initializer so the transport, rather than a shared
+    /// process session, enforces the no-redirect rule.
+    public init(maxResponseBytes: Int = 4 * 1024 * 1024, configuration: URLSessionConfiguration = .ephemeral) {
+        self.session = URLSession(configuration: configuration, delegate: PCARejectRedirectDelegate(), delegateQueue: nil)
+        self.maxResponseBytes = maxResponseBytes
+    }
+
+    /// Injection seam for controlled URLProtocol tests and explicitly
+    /// configured clients. Callers supplying a session must also configure a
+    /// redirect-rejecting delegate.
+    public init(session: URLSession, maxResponseBytes: Int = 4 * 1024 * 1024) {
         self.session = session
         self.maxResponseBytes = maxResponseBytes
     }

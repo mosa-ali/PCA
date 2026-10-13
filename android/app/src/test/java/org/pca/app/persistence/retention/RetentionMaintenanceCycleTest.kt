@@ -2,9 +2,12 @@ package org.pca.app.persistence.retention
 
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -176,12 +179,12 @@ class RetentionMaintenanceCycleTest {
     }
 
     @Test
-    fun `a device that is not yet a recognized family member never crashes the cycle -- runCatching absorbs the scope failure`() = runTest {
+    fun `an ordinary scope failure for an unrecognized family member does not crash the cycle`() = runTest {
         // Deliberately no seedEnrolledDevice() call -- "device-1" is unknown to this database, so
         // RetentionEngine.runGeneralCycle's own scope validation throws IllegalArgumentException
-        // internally. This proves executeRetentionMaintenanceCycle's runCatching guard actually
-        // absorbs that failure rather than propagating it to the caller (the same "never crash the
-        // caller" contract PcaAppGraph.runUsageLocationIngestionCycle documents).
+        // internally. This proves executeRetentionMaintenanceCycle isolates an ordinary failure
+        // rather than propagating it to the caller, while cancellation and fatal errors remain
+        // visible to the worker boundary.
         executeRetentionMaintenanceCycle(
             engine = engine,
             familyId = "family-1",
@@ -190,6 +193,47 @@ class RetentionMaintenanceCycleTest {
             nowUtc = Instant.parse("2026-08-12T00:00:00Z"),
         )
         // Reaching this line without an uncaught exception is the assertion.
+    }
+
+    @Test
+    fun `retention cancellation propagates and stops later maintenance steps`() = runTest {
+        val cancelled = CancellationException("worker stopped")
+        var laterStepRan = false
+
+        try {
+            runRetentionMaintenanceSteps(
+                { throw cancelled },
+                { laterStepRan = true },
+            )
+            throw AssertionError("expected cancellation to propagate")
+        } catch (actual: CancellationException) {
+            assertSame(cancelled, actual)
+        }
+
+        assertFalse("later retention maintenance steps must not run after cancellation", laterStepRan)
+    }
+
+    @Test
+    fun `retention cycle continues after an ordinary step failure but propagates fatal errors`() = runTest {
+        var afterOrdinaryFailureRan = false
+        runRetentionMaintenanceSteps(
+            { throw IllegalStateException("ordinary database failure") },
+            { afterOrdinaryFailureRan = true },
+        )
+        assertTrue(afterOrdinaryFailureRan)
+
+        val fatal = LinkageError("fatal runtime failure")
+        var afterFatalRan = false
+        try {
+            runRetentionMaintenanceSteps(
+                { throw fatal },
+                { afterFatalRan = true },
+            )
+            throw AssertionError("expected fatal error to propagate")
+        } catch (actual: LinkageError) {
+            assertSame(fatal, actual)
+        }
+        assertFalse("later retention steps must not run after a fatal error", afterFatalRan)
     }
 
     @Test

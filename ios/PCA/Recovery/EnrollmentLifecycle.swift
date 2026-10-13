@@ -85,7 +85,7 @@ public final class EnrollmentLifecycleMachine {
         auditSink: EnrollmentLifecycleAuditSink,
         now: @escaping () -> Date = Date.init
     ) throws {
-        guard !familyId.isEmpty, !deviceId.isEmpty else {
+        guard !Self.isBlank(familyId), !Self.isBlank(deviceId) else {
             throw EnrollmentLifecycleTransitionError.missingOpaqueIdentifier
         }
         self.familyId = familyId
@@ -97,8 +97,13 @@ public final class EnrollmentLifecycleMachine {
 
     @discardableResult
     public func transition(to nextState: EnrollmentLifecycleState, actorId: String, reason: String) throws -> EnrollmentLifecycleAuditRecord {
-        guard !actorId.isEmpty else { throw EnrollmentLifecycleTransitionError.missingOpaqueIdentifier }
-        guard !reason.isEmpty, reason.count <= 280 else { throw EnrollmentLifecycleTransitionError.invalidReason }
+        guard !Self.isBlank(actorId) else { throw EnrollmentLifecycleTransitionError.missingOpaqueIdentifier }
+        // Kotlin's String.length and the backend's JS string length count
+        // UTF-16 code units. Match that bound rather than Swift grapheme
+        // clusters so supplementary Unicode cannot bypass the shared cap.
+        guard !Self.isBlank(reason), reason.utf16.count <= 280 else {
+            throw EnrollmentLifecycleTransitionError.invalidReason
+        }
         guard Self.isAllowed(from: state, to: nextState) else {
             throw EnrollmentLifecycleTransitionError.invalidTransition(from: state, to: nextState)
         }
@@ -135,6 +140,18 @@ public final class EnrollmentLifecycleMachine {
             return true
         default:
             return false
+        }
+    }
+
+    private static func isBlank(_ value: String) -> Bool {
+        value.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 0x0009...0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+                 0x2000...0x200A, 0x2028...0x2029, 0x202F, 0x205F, 0x3000:
+                return true
+            default:
+                return false
+            }
         }
     }
 }

@@ -1,5 +1,7 @@
 // Deterministic in-memory DeviceRepository for tests only.
 // Never used as a production substitute for the MySQL implementation.
+import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
+
 export function createInMemoryDeviceRepository() {
   const devicesById = new Map();
   const keysById = new Map(); // keyId -> key record
@@ -135,14 +137,23 @@ export function createInMemoryDeviceRepository() {
       return { outcome: 'REVOKED', key: { ...key } };
     },
 
-    async confirmPairing(familyId, deviceId, confirmedByAccountId, confirmedAt) {
+    async confirmPairing(familyId, deviceId, confirmedByAccountId, confirmedAt, expectedFingerprints) {
       const device = findOwnedDevice(familyId, deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
-      if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device }, transitioned: false }; // idempotent
-      if (device.status !== 'PAIRING_PENDING') return { outcome: 'INVALID_STATE' };
-      if (device.registeredByAccountId && device.registeredByAccountId === confirmedByAccountId) {
+      if (device.status === 'PAIRING_PENDING' && device.registeredByAccountId && device.registeredByAccountId === confirmedByAccountId) {
         return { outcome: 'SELF_APPROVAL_DENIED' };
       }
+      if (device.status !== 'PAIRING_PENDING' && device.status !== 'PAIRED') return { outcome: 'INVALID_STATE' };
+      const activeKeys = [...(keysByDevice.get(deviceId) ?? new Set())].map((id) => keysById.get(id)).filter((item) => item.status === 'ACTIVE');
+      const dsks = activeKeys.filter((item) => item.keyPurpose === 'DSK');
+      const deks = activeKeys.filter((item) => item.keyPurpose === 'DEK');
+      if (dsks.length !== 1 || deks.length > 1 ||
+          computeKeyFingerprint(dsks[0].publicKey) !== expectedFingerprints?.expectedDskFingerprint ||
+          (deks.length === 0 ? expectedFingerprints?.expectedDekFingerprint !== null
+            : computeKeyFingerprint(deks[0].publicKey) !== expectedFingerprints?.expectedDekFingerprint)) {
+        return { outcome: 'FINGERPRINT_MISMATCH' };
+      }
+      if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device }, transitioned: false }; // idempotent
       device.status = 'PAIRED';
       device.pairedAt = confirmedAt;
       device.pairedByAccountId = confirmedByAccountId;

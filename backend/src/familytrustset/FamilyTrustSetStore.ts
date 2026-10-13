@@ -5,6 +5,8 @@ import type { FamilyTrustSetEpoch } from './types.js';
  * (doc 09 Section 3.2/PCA-SEC-017). This is device-local state, never a
  * server-side source of truth -- the Relay only ever distributes opaque,
  * signed epoch objects; it does not adjudicate which one is current.
+ * Mutable stores must snapshot values on both read and write so callers
+ * cannot alter accepted authority through an object alias.
  */
 export interface FamilyTrustSetStore {
   /**
@@ -23,6 +25,6 @@ export interface FamilyTrustSetStore {
    * failure, never fall back to `null`.
    */
   getCurrentEpoch(): FamilyTrustSetEpoch | null;
-  /** Called ONLY by FamilyTrustSetEngine.acceptEpoch after full acceptance -- never on a rejected epoch. */
+  /** Called ONLY after full acceptance -- never on a rejected epoch. */
   setCurrentEpoch(epoch: FamilyTrustSetEpoch): void;
 }

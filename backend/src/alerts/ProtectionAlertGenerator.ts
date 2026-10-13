@@ -1,5 +1,6 @@
 import { PROTECTION_ALERT_POLICY, isPlausibleEncryptedPayload, isPlausibleNonce, isPlausibleOpaqueId } from './policy.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { isPersistableServerCiphertextWindow } from '../retention/serverCiphertextTtl.js';
 import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
 
 export class InvalidProtectionAlertInputError extends Error {}
@@ -37,7 +38,7 @@ export function generateProtectionAlert(input: GenerateProtectionAlertInput): Pr
   if (!isFamilyEpochNumber(input.keyEpoch)) {
     throw new InvalidProtectionAlertInputError('invalid keyEpoch');
   }
-  if (!(input.generatedAtUtc instanceof Date) || Number.isNaN(input.generatedAtUtc.getTime())) {
+  if (!isPersistableServerCiphertextWindow(input.generatedAtUtc)) {
     throw new InvalidProtectionAlertInputError('invalid generatedAtUtc');
   }
   if (!isPlausibleEncryptedPayload(input.encryptedPayloadB64)) {

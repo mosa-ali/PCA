@@ -23,6 +23,7 @@ import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.engine.ScreenTimeState
 import org.pca.app.feature.screentime.persistence.ScreenTimeRestorer
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
+import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotRead
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
 import org.pca.app.feature.wellbeing.model.NudgeTrigger
@@ -122,9 +123,29 @@ class PcaRuntime(
     val status: StateFlow<PcaRuntimeStatus> = statusFlow.asStateFlow()
 
     private fun restoreScreenTimeState(): ScreenTimeState {
-        val snapshot = screenTimeSnapshotStore.load()
-            ?: return ScreenTimeState.initial(nowNanos)
-        return ScreenTimeRestorer.restore(snapshot, nowNanos, currentBootId, screenTimeConfig)
+        val persisted = try {
+            screenTimeSnapshotStore.read()
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ScreenTimeSnapshotRead.Corrupt
+        }
+        return when (persisted) {
+            ScreenTimeSnapshotRead.Absent -> ScreenTimeState.initial(nowNanos)
+            ScreenTimeSnapshotRead.Corrupt -> ScreenTimeState.initial(nowNanos).copy(
+                // Corrupt enforcement state must not grant a fresh active interval. Preserve no
+                // untrusted counters; require the configured full break as the conservative
+                // recovery boundary instead.
+                mode = ScreenTimeMode.BREAK_SHIELD,
+                activeElapsedNanos = screenTimeConfig.activeThresholdNanos,
+            )
+            is ScreenTimeSnapshotRead.Present -> ScreenTimeRestorer.restore(
+                persisted.snapshot,
+                nowNanos,
+                currentBootId,
+                screenTimeConfig,
+            )
+        }
     }
 
     private fun restoreEyeDistanceState(): EyeDistanceState {

@@ -21,7 +21,10 @@ public enum ScheduleEngine {
     /// FINDING-006 -- never insertion order) > block period > allow
     /// period > daily limit (bonus-extended) > default allow.
     public static func evaluate(_ input: ScheduleEvaluationInput) -> ScheduleDecision {
-        var configErrors = input.windows.flatMap(validate)
+        var configErrors = validateWindows(input.windows)
+        if input.appToken.isEmpty {
+            configErrors.append("app token must be a non-empty string")
+        }
         let nowSeconds = input.nowUtc.timeIntervalSince1970
         if !isValidPolicyInstant(nowSeconds) {
             configErrors.append("evaluation time must be a finite in-range instant")
@@ -220,6 +223,19 @@ public enum ScheduleEngine {
         return errors
     }
 
+    /// Window identifiers are opaque UTF-8 identities. Reject exact duplicate
+    /// IDs before evaluation so provenance remains unambiguous, while keeping
+    /// canonically equivalent but byte-distinct IDs separate as the Android
+    /// schedule validator does.
+    static func validateWindows(_ windows: [ScheduleWindow]) -> [String] {
+        var errors = windows.flatMap(validate)
+        var seen = Set<Data>()
+        for window in windows where !seen.insert(Data(window.id.utf8)).inserted {
+            errors.append("duplicate window id")
+        }
+        return errors
+    }
+
     static func isWindowActive(_ window: ScheduleWindow, now: Date) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = window.timeZone
@@ -244,6 +260,10 @@ public enum ScheduleEngine {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = timeZone
+        // This value is compared with the signed/backend ASCII YYYY-MM-DD
+        // anchor. DateFormatter otherwise inherits the child's locale, which
+        // may render localized digits and make today's usage look stale.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }

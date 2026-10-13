@@ -1,21 +1,35 @@
 import type { FamilyTrustSetEpoch } from './types.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
 
-/**
- * In-memory reference FamilyTrustSetStore. Ordinary bookkeeping, not a
- * crypto-sensitive choice -- a real, usable default, not a test-only
- * stand-in. Production device storage may substitute a persistent
- * implementation of the same interface (the current epoch must survive
- * app restarts on a real device).
- */
+/** In-memory reference store. Production device storage must survive restarts. */
 export class InMemoryFamilyTrustSetStore implements FamilyTrustSetStore {
   private current: FamilyTrustSetEpoch | null = null;
 
   getCurrentEpoch(): FamilyTrustSetEpoch | null {
-    return this.current;
+    return this.current === null ? null : snapshotEpoch(this.current);
   }
 
   setCurrentEpoch(epoch: FamilyTrustSetEpoch): void {
-    this.current = epoch;
+    this.current = snapshotEpoch(epoch);
   }
+}
+
+function snapshotEpoch(epoch: FamilyTrustSetEpoch): FamilyTrustSetEpoch {
+  return {
+    familyId: epoch.familyId,
+    trustSetEpoch: epoch.trustSetEpoch,
+    keyEpoch: epoch.keyEpoch,
+    entries: epoch.entries.map((entry) => ({
+      deviceId: entry.deviceId,
+      role: entry.role,
+      dskKeyId: entry.dskKeyId,
+      dskPublicKey: entry.dskPublicKey,
+      dekKeyId: entry.dekKeyId,
+      dekPublicKey: entry.dekPublicKey,
+      status: entry.status,
+    })),
+    issuedAt: new Date(epoch.issuedAt.getTime()),
+    supersedesEpoch: epoch.supersedesEpoch,
+    signature: epoch.signature,
+  };
 }

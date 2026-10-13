@@ -1,6 +1,8 @@
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
-import type { AcknowledgeResult, CreateEnvelopeResult, RelayRepository } from './RelayRepository.js';
+import type { PoolConnection } from 'mysql2/promise';
+import { RelayAuthorityChangedError, type AcknowledgeResult, type CreateEnvelopeResult, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot, type RelayRepository } from './RelayRepository.js';
 import type { MessageId, OpaqueDeviceId, RelayEnvelopeRecord } from './types.js';
+import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
 import { MAX_CIPHERTEXT_BYTES } from './policy.js';
 import { MAX_RELAY_SUPPLEMENT_RECORDS, validateRelayQueuePageInput, type RelayQueuePage, type RelayQueuePageInput, type RelayQueuedRecord, type RelayQueuePosition } from './queuePage.js';
 
@@ -42,7 +44,95 @@ function mapRow(row: RelayRow): RelayEnvelopeRecord {
   };
 }
 
+function snapshotRecipientAuthority(authority: RelayRecipientAuthoritySnapshot | undefined): RelayRecipientAuthoritySnapshot | undefined {
+  return authority === undefined ? undefined : { ...authority };
+}
+
+function validateRecipientReadAuthority(
+  recipientDeviceId: string,
+  familyId: string,
+  authority: RelayRecipientAuthoritySnapshot | undefined,
+  allowMissing: boolean,
+): asserts authority is RelayRecipientAuthoritySnapshot | undefined {
+  if (authority === undefined) {
+    if (!allowMissing) throw new TypeError('MySQL relay read requires an accepted authority snapshot.');
+    return;
+  }
+  if (typeof authority.familyId !== 'string' || authority.familyId.length === 0 || authority.familyId !== familyId ||
+      typeof authority.dskKeyId !== 'string' || authority.dskKeyId.length === 0 ||
+      !isFamilyEpochNumber(authority.trustSetEpoch, 1) || !isFamilyEpochNumber(authority.keyEpoch, 1) ||
+      typeof recipientDeviceId !== 'string' || recipientDeviceId.length === 0) {
+    throw new TypeError('Relay recipient read authority snapshot is malformed.');
+  }
+}
+
+async function lockRecipientReadAuthority(
+  conn: PoolConnection,
+  recipientDeviceId: string,
+  familyId: string,
+  authority: RelayRecipientAuthoritySnapshot,
+): Promise<void> {
+  // Keep the accepted head, active device, and exact DSK stable through the
+  // scoped read. This uses the same floor -> device -> key order as Trust Set
+  // append, relay ACK, and outbound enqueue.
+  const { rows: floors } = await execute<{
+    minimum_accepted_trust_set_epoch: number | string | bigint;
+    minimum_accepted_key_epoch: number | string | bigint;
+  }>(
+    conn,
+    `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
+       FROM family_epoch_floors
+      WHERE family_id = ?
+      FOR UPDATE`,
+    [familyId],
+  );
+  const floor = floors[0];
+  if (!floor ||
+      familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch) !== authority.trustSetEpoch ||
+      familyEpochFromStorage(floor.minimum_accepted_key_epoch) !== authority.keyEpoch) {
+    throw new RelayAuthorityChangedError();
+  }
+
+  const { rows: devices } = await execute<{ device_id: string }>(
+    conn,
+    `SELECT d.device_id
+       FROM devices d
+       JOIN families f ON f.family_id = d.family_id
+      WHERE BINARY d.device_id = BINARY ?
+        AND BINARY d.family_id = BINARY ?
+        AND d.status = 'ACTIVE'
+        AND f.status = 'ACTIVE'
+        AND f.deleted_at IS NULL
+      FOR UPDATE`,
+    [recipientDeviceId, familyId],
+  );
+  if (devices.length !== 1 || devices[0]?.device_id !== recipientDeviceId) throw new RelayAuthorityChangedError();
+
+  const { rows: keys } = await execute<{ key_id: string }>(
+    conn,
+    `SELECT key_id
+       FROM device_public_keys
+      WHERE BINARY device_id = BINARY ?
+        AND BINARY key_id = BINARY ?
+        AND key_purpose = 'DSK'
+        AND status = 'ACTIVE'
+      LIMIT 1
+      FOR UPDATE`,
+    [recipientDeviceId, authority.dskKeyId],
+  );
+  if (keys.length !== 1 || keys[0]?.key_id !== authority.dskKeyId) throw new RelayAuthorityChangedError();
+}
+
 export class MySqlRelayRepository implements RelayRepository {
+  private readonly options: { allowMissingAuthorityForTests?: boolean };
+
+  constructor(options: { allowMissingAuthorityForTests?: boolean } = {}) {
+    if (options.allowMissingAuthorityForTests === true && process.env.NODE_ENV !== 'test') {
+      throw new Error('Missing relay authority is permitted only in the test environment.');
+    }
+    this.options = options;
+  }
+
   async purgeExpired(now: Date): Promise<number> {
     const { rowCount } = await runInTransaction((conn) =>
       execute(conn, `DELETE FROM relay_envelopes WHERE expires_at <= ?`, [now]),
@@ -57,8 +147,92 @@ export class MySqlRelayRepository implements RelayRepository {
    * through to comparing against whatever the winner (or an earlier
    * submission) actually stored.
    */
-  async createOrMatchEnvelope(record: RelayEnvelopeRecord): Promise<CreateEnvelopeResult> {
+  async createOrMatchEnvelope(record: RelayEnvelopeRecord, authority?: RelayEnvelopeAuthoritySnapshot): Promise<CreateEnvelopeResult> {
+    if (authority === undefined && this.options.allowMissingAuthorityForTests !== true) {
+      throw new TypeError('MySQL relay enqueue requires an accepted authority snapshot.');
+    }
     return runInTransaction(async (conn) => {
+      if (authority !== undefined) {
+        if (authority.familyId !== record.familyId ||
+            authority.sender.deviceId !== record.senderDeviceId ||
+            authority.recipient.deviceId !== record.recipientDeviceId ||
+            typeof authority.sender.dskKeyId !== 'string' || authority.sender.dskKeyId.length === 0 ||
+            typeof authority.recipient.dskKeyId !== 'string' || authority.recipient.dskKeyId.length === 0 ||
+            !isFamilyEpochNumber(authority.trustSetEpoch, 1) || !isFamilyEpochNumber(authority.keyEpoch, 1)) {
+          throw new TypeError('Relay enqueue authority snapshot is malformed.');
+        }
+
+        // A family's floor row serializes this write against Trust Set epoch
+        // advancement. Do not rely on the route's async resolver alone: the
+        // accepted head may rotate after it returns and before this insert.
+        const { rows: floors } = await execute<{
+          minimum_accepted_trust_set_epoch: number | string | bigint;
+          minimum_accepted_key_epoch: number | string | bigint;
+        }>(
+          conn,
+          `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
+             FROM family_epoch_floors
+            WHERE family_id = ?
+            FOR UPDATE`,
+          [authority.familyId],
+        );
+        const floor = floors[0];
+        if (!floor ||
+            familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch) !== authority.trustSetEpoch ||
+            familyEpochFromStorage(floor.minimum_accepted_key_epoch) !== authority.keyEpoch) {
+          throw new RelayAuthorityChangedError();
+        }
+
+        // Use a stable lock order for the two member devices, then lock each
+        // exact active DSK. This serializes the relay write against device or
+        // key revocation without depending on the resolver's earlier reads.
+        const expectedDevices = [...new Set([authority.sender.deviceId, authority.recipient.deviceId])].sort();
+        const deviceClauses = expectedDevices.map(() => 'BINARY d.device_id = BINARY ?').join(' OR ');
+        const { rows: devices } = await execute<{ device_id: string }>(
+          conn,
+          `SELECT d.device_id
+             FROM devices d
+             JOIN families f ON f.family_id = d.family_id
+            WHERE (${deviceClauses})
+              AND BINARY d.family_id = BINARY ?
+              AND d.status = 'ACTIVE'
+              AND f.status = 'ACTIVE'
+              AND f.deleted_at IS NULL
+            ORDER BY BINARY d.device_id
+            FOR UPDATE`,
+          [...expectedDevices, authority.familyId],
+        );
+        if (devices.length !== expectedDevices.length ||
+            expectedDevices.some((deviceId) => devices.filter((row) => row.device_id === deviceId).length !== 1)) {
+          throw new RelayAuthorityChangedError();
+        }
+
+        const requestedKeys = [
+          { deviceId: authority.sender.deviceId, keyId: authority.sender.dskKeyId },
+          { deviceId: authority.recipient.deviceId, keyId: authority.recipient.dskKeyId },
+        ];
+        const expectedKeys = requestedKeys.filter((key, index) =>
+          requestedKeys.findIndex((candidate) => candidate.deviceId === key.deviceId && candidate.keyId === key.keyId) === index,
+        )
+          .sort((left, right) => left.deviceId.localeCompare(right.deviceId) || left.keyId.localeCompare(right.keyId));
+        const keyClauses = expectedKeys.map(() => '(BINARY device_id = BINARY ? AND BINARY key_id = BINARY ?)').join(' OR ');
+        const keyValues = expectedKeys.flatMap((key) => [key.deviceId, key.keyId]);
+        const { rows: keys } = await execute<{ device_id: string; key_id: string }>(
+          conn,
+          `SELECT device_id, key_id
+             FROM device_public_keys
+            WHERE (${keyClauses})
+              AND key_purpose = 'DSK'
+              AND status = 'ACTIVE'
+            ORDER BY BINARY device_id, BINARY key_id
+            FOR UPDATE`,
+          keyValues,
+        );
+        if (keys.length !== expectedKeys.length || expectedKeys.some((key) =>
+          keys.filter((row) => row.device_id === key.deviceId && row.key_id === key.keyId).length !== 1)) {
+          throw new RelayAuthorityChangedError();
+        }
+      }
       try {
         await execute(
           conn,
@@ -133,9 +307,13 @@ export class MySqlRelayRepository implements RelayRepository {
 
   async listQueuedPageForRecipient(
     recipientDeviceId: OpaqueDeviceId, familyId: string, now: Date, input: RelayQueuePageInput,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<RelayQueuePage> {
     validateRelayQueuePageInput(input);
+    const safeAuthority = snapshotRecipientAuthority(authority);
+    validateRecipientReadAuthority(recipientDeviceId, familyId, safeAuthority, this.options.allowMissingAuthorityForTests === true);
     return runInTransaction(async (conn) => {
+      if (safeAuthority !== undefined) await lockRecipientReadAuthority(conn, recipientDeviceId, familyId, safeAuthority);
       let highWater: RelayQueuePosition | null = input.highWater;
       if (highWater === null) {
         const highest = await execute<Pick<RelayRow, 'created_at' | 'message_id'>>(
@@ -179,19 +357,25 @@ export class MySqlRelayRepository implements RelayRepository {
 
   async findQueuedForRecipient(
     recipientDeviceId: OpaqueDeviceId, familyId: string, messageIds: readonly MessageId[], now: Date,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<RelayQueuedRecord[]> {
     if (messageIds.length > MAX_RELAY_SUPPLEMENT_RECORDS) throw new RangeError('Relay supplement bound exceeded.');
+    const safeAuthority = snapshotRecipientAuthority(authority);
+    validateRecipientReadAuthority(recipientDeviceId, familyId, safeAuthority, this.options.allowMissingAuthorityForTests === true);
     if (messageIds.length === 0) return [];
-    const { rows } = await runInTransaction((conn) => execute<QueuedRow>(
-      conn,
-      `SELECT ${QUEUED_COLUMNS} FROM relay_envelopes
-       WHERE recipient_device_id = ? AND family_id = ?
-         AND BINARY recipient_device_id = BINARY ? AND BINARY family_id = BINARY ?
-         AND state = 'QUEUED' AND expires_at > ?
-         AND message_id IN (${messageIds.map(() => '?').join(',')})
-       ORDER BY created_at ASC, CAST(message_id AS BINARY) ASC LIMIT ${MAX_RELAY_SUPPLEMENT_RECORDS}`,
-      [recipientDeviceId, familyId, recipientDeviceId, familyId, now, ...messageIds],
-    ));
+    const { rows } = await runInTransaction(async (conn) => {
+      if (safeAuthority !== undefined) await lockRecipientReadAuthority(conn, recipientDeviceId, familyId, safeAuthority);
+      return execute<QueuedRow>(
+        conn,
+        `SELECT ${QUEUED_COLUMNS} FROM relay_envelopes
+         WHERE recipient_device_id = ? AND family_id = ?
+           AND BINARY recipient_device_id = BINARY ? AND BINARY family_id = BINARY ?
+           AND state = 'QUEUED' AND expires_at > ?
+           AND message_id IN (${messageIds.map(() => '?').join(',')})
+         ORDER BY created_at ASC, CAST(message_id AS BINARY) ASC LIMIT ${MAX_RELAY_SUPPLEMENT_RECORDS}`,
+        [recipientDeviceId, familyId, recipientDeviceId, familyId, now, ...messageIds],
+      );
+    });
     // IN uses the table's PAD SPACE collation. Exact comparison prevents a
     // different trailing-space identifier from masquerading as a predecessor.
     const exactIds = new Set(messageIds);
@@ -202,23 +386,85 @@ export class MySqlRelayRepository implements RelayRepository {
     recipientDeviceId: OpaqueDeviceId,
     messageId: MessageId,
     acknowledgedAt: Date,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<AcknowledgeResult> {
     return runInTransaction(async (conn) => {
+      if (authority !== undefined) {
+        if (typeof authority.familyId !== 'string' || authority.familyId.length === 0 ||
+            typeof authority.dskKeyId !== 'string' || authority.dskKeyId.length === 0 ||
+            !isFamilyEpochNumber(authority.trustSetEpoch, 1) || !isFamilyEpochNumber(authority.keyEpoch, 1)) {
+          throw new TypeError('Relay recipient authority snapshot is malformed.');
+        }
+
+        // Serialize ACK against accepted-head advancement using the same
+        // floor -> device -> key lock order used by Trust Set writes.
+        const { rows: floors } = await execute<{
+          minimum_accepted_trust_set_epoch: number | string | bigint;
+          minimum_accepted_key_epoch: number | string | bigint;
+        }>(
+          conn,
+          `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
+             FROM family_epoch_floors
+            WHERE family_id = ?
+            FOR UPDATE`,
+          [authority.familyId],
+        );
+        const floor = floors[0];
+        if (!floor ||
+            familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch) !== authority.trustSetEpoch ||
+            familyEpochFromStorage(floor.minimum_accepted_key_epoch) !== authority.keyEpoch) {
+          throw new RelayAuthorityChangedError();
+        }
+
+        const { rows: devices } = await execute<{ device_id: string }>(
+          conn,
+          `SELECT d.device_id
+             FROM devices d
+             JOIN families f ON f.family_id = d.family_id
+            WHERE d.device_id = ?
+              AND d.family_id = ?
+              AND d.status = 'ACTIVE'
+              AND f.status = 'ACTIVE'
+              AND f.deleted_at IS NULL
+            FOR UPDATE`,
+          [recipientDeviceId, authority.familyId],
+        );
+        if (!devices[0]) throw new RelayAuthorityChangedError();
+
+        const { rows: keys } = await execute<{ key_id: string }>(
+          conn,
+          `SELECT key_id
+             FROM device_public_keys
+            WHERE device_id = ?
+              AND key_id = ?
+              AND key_purpose = 'DSK'
+              AND status = 'ACTIVE'
+            LIMIT 1
+            FOR UPDATE`,
+          [recipientDeviceId, authority.dskKeyId],
+        );
+        if (keys.length !== 1) throw new RelayAuthorityChangedError();
+      }
+
+      const familyPredicate = authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?';
+      const familyParameters = authority === undefined ? [] : [authority.familyId, authority.familyId];
       const updated = await execute(
         conn,
         `UPDATE relay_envelopes SET state = 'ACKNOWLEDGED', acknowledged_at = ?
          WHERE message_id = ? AND recipient_device_id = ?
            AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
+           ${familyPredicate}
            AND state = 'QUEUED' AND expires_at > ?`,
-        [acknowledgedAt, messageId, recipientDeviceId, messageId, recipientDeviceId, acknowledgedAt],
+        [acknowledgedAt, messageId, recipientDeviceId, messageId, recipientDeviceId, ...familyParameters, acknowledgedAt],
       );
       if (updated.rowCount > 0) {
         const reread = await execute<RelayRow>(
           conn,
           `SELECT * FROM relay_envelopes
             WHERE message_id = ? AND recipient_device_id = ?
-              AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?`,
-          [messageId, recipientDeviceId, messageId, recipientDeviceId],
+              AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
+              ${authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
+          [messageId, recipientDeviceId, messageId, recipientDeviceId, ...familyParameters],
         );
         return { outcome: 'ACKNOWLEDGED', record: mapRow(reread.rows[0]!) };
       }
@@ -227,8 +473,9 @@ export class MySqlRelayRepository implements RelayRepository {
         conn,
         `SELECT * FROM relay_envelopes
           WHERE message_id = ? AND recipient_device_id = ?
-            AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?`,
-        [messageId, recipientDeviceId, messageId, recipientDeviceId],
+            AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
+            ${authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
+        [messageId, recipientDeviceId, messageId, recipientDeviceId, ...familyParameters],
       );
       const row = existing.rows[0];
       if (!row) return { outcome: 'NOT_FOUND' };

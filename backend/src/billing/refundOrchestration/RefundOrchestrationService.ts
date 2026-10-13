@@ -420,12 +420,14 @@ export class RefundOrchestrationService {
       let providerResult;
       try {
         providerResult = await provider.refund(transaction.providerTransactionRef, operation.amount.amountMinor, operation.reasonCode, operation.idempotencyKey);
-      } catch (error) {
+      } catch {
         // Provider call itself threw (network/timeout/etc): the CREATED
         // row is untouched -- durable, not lost -- a later retry with the
         // same idempotencyKey re-enters here and tries the provider call
         // again (never re-arbitrates the balance, never double-inserts).
-        return { outcome: 'PROVIDER_CALL_ERROR', operation, error: error instanceof Error ? error.message : String(error) };
+        // Provider exception text may contain response bodies, credentials,
+        // or request details, so only return a fixed diagnostic category.
+        return { outcome: 'PROVIDER_CALL_ERROR', operation, error: 'PROVIDER_CALL_FAILED' };
       }
 
       if (providerResult.status === 'FAILED') {
@@ -459,12 +461,13 @@ export class RefundOrchestrationService {
       );
       const finalized = await this.repository.markFinalized(operation.refundOperationId, refund.refundId, this.now());
       return { outcome: 'FINALIZED', operation: finalized, refund };
-    } catch (error) {
+    } catch {
       // RefundService.issueRefund threw AFTER the provider already
       // confirmed the refund -- this is exactly the split-state FIX 2
       // closes: the operation row remains PROVIDER_CONFIRMED, durable, NOT
       // lost. A retry with the same idempotencyKey resumes exactly here.
-      return { outcome: 'PENDING_FINALIZATION', operation, finalizeError: error instanceof Error ? error.message : String(error) };
+      // Dependency errors can contain SQL values or user-entered refund data.
+      return { outcome: 'PENDING_FINALIZATION', operation, finalizeError: 'REFUND_FINALIZATION_FAILED' };
     }
   }
 }

@@ -1,4 +1,4 @@
-import { appScopeIncludes, isWindowActive, validateScheduleWindow } from './policy.js';
+import { appScopeIncludes, isWindowActive, validateAppScope, validateScheduleWindow } from './policy.js';
 import { toZonedWallClock } from './timezone.js';
 import type { ScheduleDecision, ScheduleDecisionKind, ScheduleEvaluationInput } from './types.js';
 import { translate } from '../i18n/translate.js';
@@ -43,17 +43,21 @@ import type { SupportedLocale } from '../i18n/types.js';
  * diagnostic string existing callers/tests key off.
  */
 export function evaluateSchedule(input: ScheduleEvaluationInput, locale: SupportedLocale = 'en'): ScheduleDecision {
+  const windows = Array.isArray(input.windows) ? input.windows : null;
   const configErrors = [
-    ...input.windows.flatMap(validateScheduleWindow),
+    ...(windows ? windows.flatMap(validateScheduleWindow) : ['schedule windows must be an array']),
+    ...validateAppToken(input.appToken),
     ...validateEvaluationInstant(input.nowUtc),
+    ...validateEvaluationTimezone(input.timezone),
     ...validateDailyLimit(input.dailyLimit),
     ...validateBonusGrants(input.bonusGrants),
+    ...validateParentExceptions(input.exceptions),
     ...validateActiveBonusTotal(input),
   ];
   if (configErrors.length > 0) {
     return {
       decision: 'INVALID_CONFIG',
-      reason: 'One or more schedule windows failed validation.',
+      reason: 'One or more schedule configuration values failed validation.',
       reasonMessage: translate('schedule.INVALID_CONFIG', locale),
       configErrors,
     };
@@ -75,11 +79,46 @@ export function evaluateSchedule(input: ScheduleEvaluationInput, locale: Support
   return intended;
 }
 
+function validateAppToken(value: unknown): string[] {
+  return typeof value === 'string' && value.length > 0
+    ? []
+    : ['app token must be a non-empty string'];
+}
+
+function validateParentExceptions(exceptions: unknown): string[] {
+  const errors: string[] = [];
+  if (!Array.isArray(exceptions)) return ['parent exceptions must be an array'];
+  for (const exception of exceptions) {
+    errors.push(...validateAppScope(exception?.appScope, `parent exception ${exception?.id ?? '(unknown)'}`));
+    const startAt = exception?.startAtUtc instanceof Date ? exception.startAtUtc.getTime() : Number.NaN;
+    const endAt = exception?.endAtUtc instanceof Date ? exception.endAtUtc.getTime() : Number.NaN;
+    if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= startAt) {
+      errors.push(`parent exception ${exception?.id ?? '(unknown)'} must have finite dates with end after start`);
+    }
+  }
+  return errors;
+}
+
 function validateEvaluationInstant(value: unknown): string[] {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
     return ['evaluation time must be a finite in-range instant'];
   }
   return [];
+}
+
+function validateEvaluationTimezone(value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) {
+    return ['evaluation timezone must be a valid IANA timezone'];
+  }
+  try {
+    // The policy timezone is consumed for daily-limit rollover even when no
+    // recurring window uses it. Validate it before evaluation so an invalid
+    // persisted zone cannot escape as a RangeError from the success path.
+    toZonedWallClock(new Date('2000-01-01T00:00:00.000Z'), value);
+    return [];
+  } catch {
+    return ['evaluation timezone must be a valid IANA timezone'];
+  }
 }
 
 /**
@@ -88,16 +127,20 @@ function validateEvaluationInstant(value: unknown): string[] {
  * policy; keep the platform-neutral evaluator fail-closed as well because it
  * is also used directly by server-side callers and conformance vectors.
  */
-function validateDailyLimit(dailyLimit: ScheduleEvaluationInput['dailyLimit']): string[] {
+function validateDailyLimit(dailyLimit: unknown): string[] {
   if (dailyLimit === undefined) return [];
-  const errors: string[] = [];
-  if (!Number.isSafeInteger(dailyLimit.limitMinutes) || dailyLimit.limitMinutes < 0) {
+  if (typeof dailyLimit !== 'object' || dailyLimit === null || Array.isArray(dailyLimit)) {
+    return ['daily limit must be an object'];
+  }
+  const record = dailyLimit as Record<string, unknown>;
+  const errors = validateAppScope(record.appScope, 'daily limit');
+  if (!Number.isSafeInteger(record.limitMinutes) || (record.limitMinutes as number) < 0) {
     errors.push('daily limit limitMinutes must be a non-negative safe integer');
   }
-  if (!Number.isSafeInteger(dailyLimit.usedMinutesToday) || dailyLimit.usedMinutesToday < 0) {
+  if (!Number.isSafeInteger(record.usedMinutesToday) || (record.usedMinutesToday as number) < 0) {
     errors.push('daily limit usedMinutesToday must be a non-negative safe integer');
   }
-  if (!isCanonicalGregorianLocalDate(dailyLimit.anchorLocalDate)) {
+  if (!isCanonicalGregorianLocalDate(record.anchorLocalDate)) {
     errors.push('daily limit anchorLocalDate must be a canonical Gregorian date');
   }
   return errors;
@@ -111,9 +154,15 @@ function isCanonicalGregorianLocalDate(value: unknown): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function validateBonusGrants(grants: ScheduleEvaluationInput['bonusGrants']): string[] {
+function validateBonusGrants(grants: unknown): string[] {
   const errors: string[] = [];
-  for (const grant of grants) {
+  if (!Array.isArray(grants)) return ['bonus grants must be an array'];
+  for (const [index, grant] of grants.entries()) {
+    if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) {
+      errors.push(`bonus grant at index ${index} must be an object`);
+      continue;
+    }
+    errors.push(...validateAppScope(grant?.appScope, `bonus grant ${grant?.id ?? '(unknown)'}`));
     if (!Number.isSafeInteger(grant.extraMinutes) || grant.extraMinutes < 0) {
       errors.push(`bonus grant ${grant.id}: extraMinutes must be a non-negative safe integer`);
     }
@@ -130,6 +179,7 @@ function validateBonusGrants(grants: ScheduleEvaluationInput['bonusGrants']): st
  * to the arithmetic. Check each addition before performing it so unrelated
  * or expired grants cannot reject an otherwise valid evaluation. */
 function validateActiveBonusTotal(input: ScheduleEvaluationInput): string[] {
+  if (!Array.isArray(input.bonusGrants)) return [];
   const dailyLimit = input.dailyLimit;
   if (!dailyLimit || !appScopeIncludes(dailyLimit.appScope, input.appToken)) return [];
 
@@ -138,6 +188,7 @@ function validateActiveBonusTotal(input: ScheduleEvaluationInput): string[] {
 
   let activeBonusMinutes = 0;
   for (const grant of input.bonusGrants) {
+    if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) continue;
     const grantedAtMillis = grant.grantedAtUtc instanceof Date ? grant.grantedAtUtc.getTime() : Number.NaN;
     const expiresAtMillis = grant.expiresAtUtc instanceof Date ? grant.expiresAtUtc.getTime() : Number.NaN;
     // validateBonusGrants reports malformed timestamps. Do not dereference

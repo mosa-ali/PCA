@@ -159,6 +159,22 @@ test('MySQL: family_audit_events gets the same expiry, feed filtering, and purge
   assert.equal(await countRows('family_audit_events', familyId), 1);
 });
 
+test('MySQL: family_audit_events rejects generated/expiry timestamps outside DATETIME(3) before persistence', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const parentDeviceId = `parent-${randomUUID()}`;
+  const ledger = new MySqlFamilyAuditEventLedger(() => T0);
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - SERVER_CIPHERTEXT_TTL_MS);
+  for (const generatedAtUtc of [
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date(latestPersistable.getTime() + 1),
+  ]) {
+    const item = envelope(familyId, parentDeviceId, { generatedAtUtc });
+    await assert.rejects(ledger.record(item), RangeError);
+    assert.equal(await ledger.get(item.envelopeId), null);
+  }
+  assert.equal(await countRows('family_audit_events', familyId), 0);
+});
+
 test('MySQL: FamilyAudit recipient feed returns only the exact accepted key epoch and rejects invalid epochs', async () => {
   const familyId = `family-${randomUUID()}`;
   const parentDeviceId = `parent-${randomUUID()}`;
@@ -175,6 +191,25 @@ test('MySQL: FamilyAudit recipient feed returns only the exact accepted key epoc
     () => ledger.listForParentDevice(familyId, parentDeviceId, 0),
     /key epoch is outside the supported family epoch range/,
   );
+});
+
+test('MySQL: FamilyAudit recipient keyset cursor uses strict timestamp and utf8mb4_bin ID continuation', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const parentDeviceId = `parent-${randomUUID()}`;
+  const ledger = new MySqlFamilyAuditEventLedger(() => T0);
+  for (const envelopeId of ['cursor-c', 'cursor-a', 'cursor-b']) {
+    await ledger.record(envelope(familyId, parentDeviceId, { envelopeId, generatedAtUtc: T0 }));
+  }
+  await ledger.record(envelope(familyId, `other-${randomUUID()}`, { envelopeId: 'cursor-other-device', generatedAtUtc: T0 }));
+  await ledger.record(envelope(familyId, parentDeviceId, { envelopeId: 'cursor-other-epoch', keyEpoch: 2, generatedAtUtc: T0 }));
+
+  const first = await ledger.listForParentDevice(familyId, parentDeviceId, 1, { limit: 2 });
+  assert.deepEqual(first.map((item) => item.envelopeId), ['cursor-a', 'cursor-b']);
+  const next = await ledger.listForParentDevice(familyId, parentDeviceId, 1, {
+    limit: 2,
+    cursor: { generatedAtUtc: T0, envelopeId: 'cursor-b' },
+  });
+  assert.deepEqual(next.map((item) => item.envelopeId), ['cursor-c']);
 });
 
 test('MySQL: FamilyAudit record snapshots routing and opaque payload before expiry cleanup', async () => {

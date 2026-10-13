@@ -83,6 +83,75 @@ final class DeviceActivityUsageBindingResolverTests: XCTestCase {
             lowerBoundMinutes: plan.thresholds[0].minutes, coverageAvailable: true)).kind, .blockedLimitReached)
     }
 
+    func testDailyLimitAnchorUsesCurrentDeviceZoneAcrossDstAndTravelWhileWindowsStayAuthored() {
+        let utc = TimeZone(secondsFromGMT: 0)!
+        let newYork = TimeZone(identifier: "America/New_York")!
+        let riyadh = TimeZone(identifier: "Asia/Riyadh")!
+        let formatter = ISO8601DateFormatter()
+        let now = formatter.date(from: "2026-03-09T03:30:00Z")! // 23:30 after New York's spring DST jump
+        let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: 30,
+            usedMinutesToday: 30, anchorLocalDate: "2026-03-08")
+        let sourcePolicy = policy(dailyLimit: dailyLimit) // Policy default remains UTC.
+
+        let newYorkInput = DeviceActivityUsageEvaluation.input(policy: sourcePolicy, now: now,
+            lowerBoundMinutes: nil, deviceTimeZone: newYork, coverageAvailable: true)
+        XCTAssertEqual(newYorkInput.timeZone.identifier, newYork.identifier)
+        XCTAssertEqual(newYorkInput.dailyLimit?.anchorLocalDate, "2026-03-08")
+        XCTAssertEqual(newYorkInput.dailyLimit?.usedMinutesToday, 30)
+        XCTAssertEqual(ScheduleEngine.evaluate(newYorkInput).kind, .blockedLimitReached)
+
+        let afterTravel = DeviceActivityUsageEvaluation.input(policy: sourcePolicy, now: now,
+            lowerBoundMinutes: nil, deviceTimeZone: riyadh, coverageAvailable: true)
+        XCTAssertEqual(afterTravel.dailyLimit?.anchorLocalDate, "2026-03-09")
+        XCTAssertEqual(afterTravel.dailyLimit?.usedMinutesToday, 0,
+            "changing device timezone changes the local usage day without mutating authenticated policy")
+        XCTAssertEqual(ScheduleEngine.evaluate(afterTravel).kind, .allowed)
+        XCTAssertEqual(sourcePolicy.dailyLimit?.anchorLocalDate, "2026-03-08")
+
+        let window = ScheduleWindow(id: "authored-window", kind: .bedtime, daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+            start: TimeOfDay(hour: 22, minute: 0), end: TimeOfDay(hour: 23, minute: 59), appScope: .all,
+            timeZone: newYork)
+        let newYorkDecision = ScheduleEngine.evaluate(ScheduleEvaluationInput(nowUtc: now, timeZone: utc,
+            appToken: "logical-app", windows: [window], bonusGrants: [], exceptions: [], dailyLimit: nil,
+            enforcementCapability: .enforced))
+        let riyadhDecision = ScheduleEngine.evaluate(ScheduleEvaluationInput(nowUtc: now, timeZone: riyadh,
+            appToken: "logical-app", windows: [window], bonusGrants: [], exceptions: [], dailyLimit: nil,
+            enforcementCapability: .enforced))
+        XCTAssertEqual(newYorkDecision.kind, .blockedBedtime)
+        XCTAssertEqual(riyadhDecision.kind, .blockedBedtime,
+            "device timezone travel must not move a window away from its authored IANA zone")
+    }
+
+    func testAuthoredWindowUsesWallClockAtDstGapAndBothRepeatedInstants() {
+        let newYork = TimeZone(identifier: "America/New_York")!
+        let springWindow = ScheduleWindow(id: "spring-gap", kind: .bedtime,
+            daysOfWeek: [1, 2, 3, 4, 5, 6, 7], start: TimeOfDay(hour: 2, minute: 30),
+            end: TimeOfDay(hour: 3, minute: 30), appScope: .all, timeZone: newYork)
+        let fallWindow = ScheduleWindow(id: "fall-fold", kind: .bedtime,
+            daysOfWeek: [1, 2, 3, 4, 5, 6, 7], start: TimeOfDay(hour: 1, minute: 15),
+            end: TimeOfDay(hour: 1, minute: 45), appScope: .all, timeZone: newYork)
+        let formatter = ISO8601DateFormatter()
+        func decision(_ window: ScheduleWindow, _ instant: String) -> ScheduleDecision {
+            ScheduleEngine.evaluate(ScheduleEvaluationInput(
+                nowUtc: formatter.date(from: instant)!, timeZone: TimeZone(identifier: "Asia/Riyadh")!,
+                appToken: "logical-app", windows: [window], bonusGrants: [], exceptions: [], dailyLimit: nil,
+                enforcementCapability: .enforced
+            ))
+        }
+
+        XCTAssertEqual(decision(springWindow, "2026-03-08T06:59:00Z").kind, .allowed,
+            "before the nonexistent 02:30 wall time, the spring window is inactive")
+        XCTAssertEqual(decision(springWindow, "2026-03-08T07:00:00Z").kind, .blockedBedtime,
+            "the window becomes active at the first real New York wall time inside its range")
+        XCTAssertEqual(decision(springWindow, "2026-03-08T07:30:00Z").kind, .allowed)
+
+        XCTAssertEqual(decision(fallWindow, "2026-11-01T05:30:00Z").kind, .blockedBedtime,
+            "the first repeated 01:30 wall time is inside the authored window")
+        XCTAssertEqual(decision(fallWindow, "2026-11-01T06:30:00Z").kind, .blockedBedtime,
+            "the second repeated 01:30 wall time follows the same wall-clock policy")
+        XCTAssertEqual(decision(fallWindow, "2026-11-01T06:45:00Z").kind, .allowed)
+    }
+
     func testResolverRejectsWrongScopeSelectionAndStaleAuthority() throws {
         let (_, coordination, associations) = try installedStore()
         let wrongScopeResolver = DeviceActivityUsageAssociationBindingResolver<Token>(

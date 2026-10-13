@@ -36,12 +36,20 @@ interface BootInstanceSource {
  * [org.pca.app.runtime.identity.DeviceIdentityProvider] for the actual device-identity
  * authority). Reads via the standard `ContentResolver` API only; no private/hidden APIs, no root.
  */
-class AndroidBootInstanceSource(private val context: Context) : BootInstanceSource {
+class AndroidBootInstanceSource internal constructor(
+    private val readBootCount: () -> Int,
+) : BootInstanceSource {
+    constructor(context: Context) : this({
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT)
+    })
+
     override fun currentBootInstance(): BootInstanceResult {
-        val bootCount = runCatching {
-            Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT)
-        }.getOrNull()
-        return if (bootCount != null) BootInstanceResult.Known(bootCount.toString()) else BootInstanceResult.Unknown
+        val bootCount = try {
+            readBootCount()
+        } catch (_: Exception) {
+            return BootInstanceResult.Unknown
+        }
+        return BootInstanceResult.Known(bootCount.toString())
     }
 }
 

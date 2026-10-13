@@ -174,6 +174,22 @@ final class SecureEnclaveDskProviderTests: XCTestCase {
         XCTAssertFalse(keyExists(alias), "a missing key must never trigger regeneration")
     }
 
+    func testSigningRejectsEncryptionAndForeignAliasesBeforeKeychainLookup() {
+        let provider = SecureEnclaveDskProvider()
+        for alias in ["pca.dek.\(uniqueAttemptId())", "com.example.foreign-key"] {
+            XCTAssertThrowsError(try provider.signCanonical(alias: alias, message: Data("message".utf8))) { error in
+                XCTAssertEqual(error as? SecureEnclaveDskError, .invalidKeyAlias)
+            }
+        }
+    }
+
+    func testPublicKeyLoadingRejectsForeignAlias() {
+        let provider = SecureEnclaveDskProvider()
+        XCTAssertThrowsError(try provider.loadPublicKeyBase64(alias: "com.example.foreign-key")) { error in
+            XCTAssertEqual(error as? SecureEnclaveDskError, .invalidKeyAlias)
+        }
+    }
+
     func testSigningRefusesNonSecureEnclaveKeyMaterialUnderTag() throws {
         try requireUsableKeychain()
         let provider = SecureEnclaveDskProvider()
@@ -227,6 +243,20 @@ final class SecureEnclaveDskProviderTests: XCTestCase {
         provider.deleteKeyPair(alias: first)
         XCTAssertFalse(keyExists(first))
         XCTAssertTrue(keyExists(second), "deletion must never touch a sibling entry")
+    }
+
+    func testDeleteKeyPairIgnoresForeignAlias() throws {
+        try requireUsableKeychain()
+        let provider = SecureEnclaveDskProvider()
+        let foreign = "com.example.foreign-key.\(uniqueAttemptId())"
+        if let code = installSoftwareKey(foreign) {
+            throw XCTSkip("keychain refused test key install (OSStatus \(code))")
+        }
+        defer { removeKey(foreign) }
+
+        provider.deleteKeyPair(alias: foreign)
+
+        XCTAssertTrue(keyExists(foreign), "direct cleanup must not delete a key outside PCA's DSK/DEK namespaces")
     }
 
     func testOrphanSweepTouchesOnlyApplicationNamespaceAndKeepsReferencedAttempts() throws {

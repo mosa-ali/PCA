@@ -103,12 +103,16 @@ class AcceptingTestAttestationVerifier {
   }
 }
 
-function makeService({ attestationVerifier = new AcceptingTestAttestationVerifier(), commitHooks } = {}) {
+function makeService({ attestationVerifier = new AcceptingTestAttestationVerifier(), commitHooks, now, storeNow } = {}) {
   const epochStore = new MySqlTrustSetEpochStore();
   const store = new MySqlFirstDeviceBootstrapStore(
-    commitHooks === undefined ? { epochStore } : { epochStore, commitHooks },
+    {
+      epochStore,
+      ...(commitHooks === undefined ? {} : { commitHooks }),
+      ...(storeNow === undefined ? {} : { now: storeNow }),
+    },
   );
-  return new FirstDeviceBootstrapService({ store, attestationVerifier });
+  return new FirstDeviceBootstrapService({ store, attestationVerifier, ...(now === undefined ? {} : { now }) });
 }
 
 /** Fresh instances over the same durable state -- proves readback needs no process memory. */
@@ -825,6 +829,76 @@ test('EXPIRY: approve-after-expiry and submit-after-expiry both fail closed with
   const rowB = await ceremonyRowFor(approvedB.ceremony.ceremonyId);
   assert.equal(rowB.status, 'APPROVED');
   assert.equal(rowB.consumed_at, null);
+});
+
+test('EXPIRY AT LOCK BOUNDARY: approval that expires while commit waits on ceremony row lock is not consumed', async () => {
+  const seed = await seedBootstrappableFamily({ label: 'expire-lock-boundary' });
+  const prepared = await runCeremonyToApproved(makeService(), seed);
+  const expiry = new Date(Date.now() + 2_000);
+  await getPool().execute(
+    `UPDATE family_first_device_bootstrap_ceremonies SET expires_at = ? WHERE ceremony_id = ?`,
+    [expiry, prepared.ceremony.ceremonyId],
+  );
+
+  // The signed proof must carry the same durable expiry that the service will
+  // read. Rebuild the submission against the deliberately short-lived row.
+  const ceremony = { ...prepared.ceremony, expiresAt: expiry };
+  const submission = buildPerfectSubmission({
+    attempt: { attemptId: seed.attemptId, familyId: seed.familyId },
+    ceremony,
+    device: seed.device,
+    attestationEvidence: TEST_EVIDENCE,
+  });
+  const input = submissionInput({ attemptId: seed.attemptId }, seed.rawRecoveryToken, ceremony, submission);
+
+  let clockMillis = Date.now();
+  let callsToNow = 0;
+  let signalCommitNowSampled;
+  const commitNowSampled = new Promise((resolve) => { signalCommitNowSampled = resolve; });
+  const now = () => {
+    callsToNow += 1;
+    if (callsToNow === 2) signalCommitNowSampled();
+    return new Date(clockMillis);
+  };
+  const service = makeService({ now, storeNow: now });
+
+  // Hold the ceremony's serialization row before submit reaches commit. The
+  // service's pre-transaction clock is still before expiry; advance the store
+  // clock only after that instant has been sampled and commit is waiting.
+  const lock = await getPool().getConnection();
+  let lockTransactionOpen = false;
+  try {
+    await lock.beginTransaction();
+    lockTransactionOpen = true;
+    await lock.execute(
+      `SELECT ceremony_id FROM family_first_device_bootstrap_ceremonies WHERE ceremony_id = ? FOR UPDATE`,
+      [ceremony.ceremonyId],
+    );
+
+    let submissionSettled = false;
+    const pending = service.submit(input).then((result) => {
+      submissionSettled = true;
+      return result;
+    });
+    await commitNowSampled;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(submissionSettled, false, 'commit must be waiting for the held ceremony row lock');
+
+    clockMillis = expiry.getTime() + 1;
+    await lock.commit();
+    lockTransactionOpen = false;
+
+    assert.deepEqual(await pending, { status: 'REJECTED' });
+    assert.equal(await countRows('family_authority_genesis_anchors', seed.familyId), 0);
+    assert.equal(await countRows('family_trust_set_epochs', seed.familyId), 0);
+    assert.equal(await countRows('family_epoch_floors', seed.familyId), 0);
+    const row = await ceremonyRowFor(ceremony.ceremonyId);
+    assert.equal(row.status, 'APPROVED');
+    assert.equal(row.consumed_at, null);
+  } finally {
+    if (lockTransactionOpen) await lock.rollback();
+    lock.release();
+  }
 });
 
 test('0062: the step-up operation CHECK accepts family.device.bootstrap.root and still refuses an unknown operation', async () => {

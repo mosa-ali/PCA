@@ -388,6 +388,13 @@ export class FirstDeviceBootstrapService {
     if (attestation.attestedDskAlgorithm !== ceremony.dskAlgorithm) return rejected;
 
     // ---- 8. One atomic commit (or full rollback; challenge consumed only on success) ----
+    // Signature and attestation verification above can take long enough for
+    // the one-time ceremony to expire. Recheck at the commit boundary and
+    // use that instant for the durable receipt; the earlier verifier instant
+    // must not keep an expired challenge alive.
+    const commitNow = this.now();
+    if (ceremony.expiresAt.getTime() <= commitNow.getTime()) return unavailable;
+
     const epochRecord: TrustSetEpochRecord = {
       familyId: ceremony.familyId,
       trustSetEpoch: 1,
@@ -398,7 +405,7 @@ export class FirstDeviceBootstrapService {
       signerKeyId: proof.dskKeyId,
       signerDeviceId: proof.deviceId,
       issuedAt: epoch.issuedAt,
-      receivedAt: now,
+      receivedAt: commitNow,
     };
     const commit = await this.store.commitBootstrap({
       ceremonyId: ceremony.ceremonyId,
@@ -410,10 +417,10 @@ export class FirstDeviceBootstrapService {
         dskKeyId: proof.dskKeyId,
         dskPublicKey: proof.dskPublicKey,
         signature: input.proofSignature,
-        createdAt: now,
+        createdAt: commitNow,
       },
       epochRecord,
-      now,
+      now: commitNow,
     });
     return commit.outcome === 'ACCEPTED' || commit.outcome === 'IDEMPOTENT_ACCEPTED' ? { status: 'ACCEPTED' } : rejected;
   }

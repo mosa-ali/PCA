@@ -65,6 +65,46 @@ class GeofenceZoneStoreTest {
     }
 
     @Test
+    fun `invalid zone id cannot be normalized into a different persisted policy`() {
+        store.addOrReplace(zone("home"))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            store.addOrReplace(zone("home|other"))
+        }
+        assertEquals(listOf("home"), store.loadZones().map { it.zoneId })
+    }
+
+    @Test
+    fun `non-finite radius and revisions beyond shared unsigned counter are rejected`() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            zone("infinite").copy(radiusMeters = Double.POSITIVE_INFINITY)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            zone("too-new").copy(revision = GeofenceZone.MAX_REVISION + 1L)
+        }
+
+        // Old persisted text rows are decoded through the same model boundary and therefore
+        // cannot install a policy that is broader than the accepted wire contract.
+        val key = familyA.zoneStoreKey("geofence_zones_v2")
+        backing.putString(key, "home|Home|25.0|55.0|Infinity|true|ENTRY,EXIT|1")
+        org.junit.Assert.assertThrows(CorruptGeofenceZoneStoreException::class.java) {
+            store.loadZones()
+        }
+        backing.putString(key, "home|Home|25.0|55.0|100.0|true|ENTRY,EXIT|${GeofenceZone.MAX_REVISION + 1L}")
+        org.junit.Assert.assertThrows(CorruptGeofenceZoneStoreException::class.java) {
+            store.loadZones()
+        }
+    }
+
+    @Test
+    fun `persisted zone id unsupported by debounce store is corrupt`() {
+        backing.putString(familyA.zoneStoreKey("geofence_zones_v2"),
+            "home space|Home|25.0|55.0|100.0|true|ENTRY,EXIT|1")
+        org.junit.Assert.assertThrows(CorruptGeofenceZoneStoreException::class.java) {
+            store.loadZones()
+        }
+    }
+
+    @Test
     fun `clear removes all zones`() {
         store.addOrReplace(zone("home"))
         store.clear()

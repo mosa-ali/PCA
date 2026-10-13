@@ -113,13 +113,14 @@ test('loadCommercialMaintenanceConfig defaults to process.env when no argument i
  * blocks already do. Static source check: main.ts cannot be imported
  * without a live database.
  */
-test('PRIVACY WIRING: main.ts logs a failed maintenance pass through the bounded logger, never console.error with the raw mysql2 error', async () => {
+test('PRIVACY WIRING: main.ts logs a fixed failure category without inspecting or logging the thrown value', async () => {
   const mainTs = await readFile(new URL('../../src/main.ts', import.meta.url), 'utf8');
-  const runOnceCatch = /commercialMaintenanceRunner\.runOnce\(\)\.catch\(\(error\) => \{([\s\S]*?)\n {4}\}\);/.exec(mainTs);
+  const runOnceCatch = /commercialMaintenanceRunner\.runOnce\(\)\.catch\(\(\) => \{([\s\S]*?)\n {4}\}\);/.exec(mainTs);
   assert.ok(runOnceCatch, 'the runOnce().catch block must still exist');
   const body = runOnceCatch[1];
   assert.doesNotMatch(body, /console\.(error|warn|log)\s*\(/, 'the raw error object must never reach console.*');
   assert.match(body, /CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER\.warn\(/);
-  assert.match(body, /error: error instanceof Error \? error\.message : String\(error\)/);
+  assert.match(body, /failure: 'run_once_failed'/);
+  assert.doesNotMatch(body, /error\.message|String\(error\)|\berror\b/);
   assert.match(mainTs, /import \{[^}]*CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER[^}]*\} from '\.\/commercialmaintenance\/index\.js'/);
 });

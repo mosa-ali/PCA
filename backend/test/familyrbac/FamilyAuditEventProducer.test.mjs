@@ -9,6 +9,7 @@ import { FamilyAuditEventProducer } from '../../dist/familyrbac/FamilyAuditEvent
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
 import { createRejectingOpaqueFamilyAuditEventComposer } from '../../dist/familyrbac/FamilyAuditEventComposer.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
+import { SERVER_CIPHERTEXT_TTL_MS } from '../../dist/retention/serverCiphertextTtl.js';
 
 // Server-ciphertext TTL (migration 0034): these ledgers now expire rows
 // SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
@@ -85,7 +86,7 @@ test('queues one opaque envelope per resolved parent device without claiming dev
   assert.equal(forA[0].encryptedPayloadB64, 'ZW5jcnlwdGVk');
 });
 
-test('in-memory FamilyAudit bounded feeds use the MySQL binary envelope-id tie-breaker for equal timestamps', async () => {
+test('in-memory recipient FamilyAudit feed uses oldest-first MySQL binary ID order for equal timestamps', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   for (const envelopeId of ['env-c', 'env-a', 'env-b']) {
     await ledger.record({
@@ -106,8 +107,13 @@ test('in-memory FamilyAudit bounded feeds use the MySQL binary envelope-id tie-b
   );
   assert.deepEqual(
     (await ledger.listForParentDevice('fam-ties', 'parent-device-ties', 1, { limit: 2 })).map((envelope) => envelope.envelopeId),
-    ['env-b', 'env-c'],
+    ['env-a', 'env-b'],
   );
+  const next = await ledger.listForParentDevice('fam-ties', 'parent-device-ties', 1, {
+    limit: 2,
+    cursor: { generatedAtUtc: new Date(LEDGER_NOW), envelopeId: 'env-b' },
+  });
+  assert.deepEqual(next.map((envelope) => envelope.envelopeId), ['env-c']);
 });
 
 test('FamilyAudit in-memory tie ordering matches utf8mb4_bin for supplementary Unicode envelope IDs', async () => {
@@ -144,6 +150,46 @@ test('a family with zero resolved parent devices queues to no device, never thro
   // The other half of the pair below: no recipients is a NORMAL state and must
   // stay silent, or the warning would lose all diagnostic value.
   assert.deepEqual(warnings, [], 'legitimately having no parent devices must not log a delivery failure');
+});
+
+test('an already-expired audit event is not reported as queued or persisted for a recipient', async () => {
+  const now = new Date(LEDGER_NOW.getTime() + 8 * 24 * 60 * 60 * 1000);
+  const ledger = new InMemoryFamilyAuditEventLedger(() => now);
+  const producer = new FamilyAuditEventProducer(
+    ledger,
+    async () => ({ encryptedPayloadB64: 'b2s', nonceB64: 'bm9uY2U' }),
+    async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }],
+  );
+
+  const { result, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+
+  assert.deepEqual(result, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+  assert.deepEqual(await ledger.listForParentDevice('fam-1', 'parent-device-a', 1), []);
+  assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
+  assert.match(warnings[0], /LEDGER_RECORD/);
+});
+
+test('an audit event crossing its TTL during purge is not reported as queued', async () => {
+  let now = new Date(LEDGER_NOW.getTime() + SERVER_CIPHERTEXT_TTL_MS - 1);
+  const ledger = new InMemoryFamilyAuditEventLedger(() => now);
+  const purgeExpired = ledger.purgeExpired.bind(ledger);
+  ledger.purgeExpired = async (purgeTime) => {
+    const purged = await purgeExpired(purgeTime);
+    now = new Date(LEDGER_NOW.getTime() + SERVER_CIPHERTEXT_TTL_MS);
+    return purged;
+  };
+  const producer = new FamilyAuditEventProducer(
+    ledger,
+    async () => ({ encryptedPayloadB64: 'b2s', nonceB64: 'bm9uY2U' }),
+    async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }],
+  );
+
+  const { result, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+
+  assert.deepEqual(result, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+  assert.deepEqual(await ledger.listForParentDevice('fam-1', 'parent-device-a', 1), []);
+  assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
+  assert.match(warnings[0], /LEDGER_RECORD/);
 });
 
 test('a per-device composer failure is isolated -- other devices can still be queued', async () => {
@@ -321,6 +367,38 @@ test('a sustained resolver failure never goes PERMANENTLY silent -- it re-logs e
   });
   assert.equal(warnings.length, 2, 'the 1st and the 100th failure must both be logged');
   assert.match(warnings[1], /"occurrences":100/);
+});
+
+test('one recipient success cannot reset another recipient failure throttle', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let failingDeviceA = true;
+  const producer = new FamilyAuditEventProducer(
+    ledger,
+    async ({ parentDeviceId }) => {
+      if (parentDeviceId === 'parent-device-a' && failingDeviceA) throw new Error('private compose failure');
+      return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' };
+    },
+    async () => [
+      { deviceId: 'parent-device-a', keyEpoch: 1 },
+      { deviceId: 'parent-device-b', keyEpoch: 1 },
+    ],
+  );
+
+  const { warnings } = await withCapturedWarnings(async () => {
+    for (let index = 0; index < 100; index += 1) await producer.deliver(sampleRecord());
+    failingDeviceA = false;
+    await producer.deliver(sampleRecord()); // A's own success clears only A's failure history.
+    failingDeviceA = true;
+    await producer.deliver(sampleRecord()); // The next A failure is reported immediately.
+  });
+
+  assert.equal(warnings.length, 3, 'device A should log at failures 1 and 100, then again after its own recovery');
+  assert.match(warnings[0], /parent-device-a/);
+  assert.match(warnings[0], /"occurrences":1/);
+  assert.match(warnings[1], /parent-device-a/);
+  assert.match(warnings[1], /"occurrences":100/);
+  assert.match(warnings[2], /parent-device-a/);
+  assert.match(warnings[2], /"occurrences":1/);
 });
 
 test('after the dependency recovers, the NEXT failure reports immediately rather than waiting out the interval', async () => {

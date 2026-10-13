@@ -46,6 +46,20 @@ test('PCA-ADD-ENR-020 requires encrypted payloads and device identity for device
   assert.equal(invitation?.deviceId, null);
 });
 
+test('PCA-ADD-ENR-020 rejects dates outside the MySQL retained-window range', () => {
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - 7 * 24 * 60 * 60 * 1000);
+  for (const generatedAtUtc of [
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date(latestPersistable.getTime() + 1),
+  ]) {
+    assert.throws(
+      () => generateProtectionAlert({ ...BASE, generatedAtUtc }),
+      InvalidProtectionAlertInputError,
+    );
+  }
+  assert.equal(generateProtectionAlert({ ...BASE, generatedAtUtc: latestPersistable })?.generatedAtUtc.getTime(), latestPersistable.getTime());
+});
+
 test('PCA-ADD-ENR-020 ledger is append-only and idempotent without a plaintext read path', async () => {
   const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const event = generateProtectionAlert(BASE);
@@ -57,6 +71,19 @@ test('PCA-ADD-ENR-020 ledger is append-only and idempotent without a plaintext r
     { outcome: 'CONFLICT' },
   );
   assert.deepEqual((await ledger.listForParentDevice('family-1', 'parent-1', 3)).map((item) => item.alertId), ['alert-1']);
+});
+
+test('in-memory ledger matches MySQL persistence bounds and has no effects on rejection', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - 7 * 24 * 60 * 60 * 1000);
+  for (const generatedAtUtc of [
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date(latestPersistable.getTime() + 1),
+  ]) {
+    const event = { ...generateProtectionAlert(BASE), alertId: `invalid-${generatedAtUtc.getTime()}`, generatedAtUtc };
+    await assert.rejects(ledger.record(event), InvalidProtectionAlertInputError);
+    assert.equal(await ledger.get(event.alertId), null);
+  }
 });
 
 test('parent-device feed returns only ciphertext at the authenticated current key epoch', async () => {

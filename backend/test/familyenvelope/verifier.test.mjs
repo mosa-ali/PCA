@@ -249,6 +249,13 @@ test('numeric, not lexicographic, semantic version comparison: 1.9.0 < 1.10.0', 
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
+test('POLICY_UPDATE accepts an exact version increase above the safe-integer range', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '9007199254740992.0.0' }), baseContext(), harness);
+  const verdict = await evaluate(buildEnvelope({ semanticVersion: '9007199254740993.0.0' }), baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
 test('THIS MODULE ALONE still applies an out-of-order later version immediately -- hold-pending is implemented one layer up, in backend/src/familysync (see OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED doc comment)', async () => {
   assert.equal(
     OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED,

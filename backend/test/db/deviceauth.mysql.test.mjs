@@ -107,6 +107,37 @@ test('MySQL: challenge consume binds key id and public key exactly, not merely a
   assert.equal(stored.consumedAt, null);
 });
 
+test('MySQL: challenge consume snapshots a valid DATETIME clock before awaiting and rejects invalid clocks without consuming', async () => {
+  const { device } = await registerDeviceWithDsk();
+  const [dsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  const issued = await buildAuthService().issueChallenge(device.deviceId);
+  const consumedAt = new Date();
+  const expectedConsumedAt = new Date(consumedAt.getTime());
+  const consuming = challengeRepository.consumeAtomically(issued.challengeId, consumedAt, {
+    familyId: device.familyId,
+    deviceId: device.deviceId,
+    keyId: dsk.keyId,
+    publicKey: dsk.publicKey,
+  });
+  // Mutate the original after the repository has captured its snapshot but
+  // while connection acquisition/SQL execution may still be pending.
+  consumedAt.setFullYear(10000);
+  const outcome = await consuming;
+  assert.equal(outcome.outcome, 'CONSUMED');
+  const stored = await challengeRepository.findById(issued.challengeId);
+  assert.equal(stored.consumedAt.toISOString(), expectedConsumedAt.toISOString());
+
+  const second = await buildAuthService().issueChallenge(device.deviceId);
+  const invalid = await challengeRepository.consumeAtomically(second.challengeId, new Date(Number.NaN), {
+    familyId: device.familyId,
+    deviceId: device.deviceId,
+    keyId: dsk.keyId,
+    publicKey: dsk.publicKey,
+  });
+  assert.equal(invalid.outcome, 'EXPIRED');
+  assert.equal((await challengeRepository.findById(second.challengeId)).consumedAt, null);
+});
+
 test('MySQL: second verification with the same replayed valid signature is ALREADY_CONSUMED after a real commit', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();

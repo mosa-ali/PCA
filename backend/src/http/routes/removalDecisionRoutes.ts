@@ -159,6 +159,9 @@ function stepUpOperationForRemoval(operation: RemovalDecisionOperation): Sensiti
 
 export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: RemovalDecisionRoutesDeps): void {
   const { parentAccountService, removalDecisionAuthority } = deps;
+  const noStore = async (_request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    reply.header('Cache-Control', 'private, no-store');
+  };
 
   async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string; rawSessionToken: string } | null> {
     const token = readSessionCookie(request);
@@ -240,7 +243,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
     throw error;
   }
 
-  app.get('/api/parent/families/:familyId/removal-decisions', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/parent/families/:familyId/removal-decisions', { preHandler: noStore }, async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
     if (!(await requireActiveParentReader(session, reply))) return;
@@ -252,7 +255,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
     }
   });
 
-  app.get('/api/parent/families/:familyId/removal-decisions/:requestId', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/parent/families/:familyId/removal-decisions/:requestId', { preHandler: noStore }, async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
     if (!(await requireActiveParentReader(session, reply))) return;
@@ -268,7 +271,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   app.post(
     '/api/parent/families/:familyId/removal-decisions',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: noStore },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -323,7 +326,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   app.post(
     '/api/parent/families/:familyId/removal-decisions/:requestId/decide/local-pin',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: noStore },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -352,7 +355,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   app.post(
     '/api/parent/families/:familyId/removal-decisions/:requestId/decide/authorized-recovery',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: noStore },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -388,7 +391,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
   // parsing the request, without weakening that independent verification.
   app.post(
     '/api/parent/families/:familyId/removal-decisions/:requestId/decide/signed',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: noStore },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -417,6 +420,16 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
         return reply.code(400).send({ error: 'invalid_request' });
       }
       const temporaryDisableUntil = parseDate(body.temporaryDisableUntil);
+      const reasonCategory = parseReasonCategory(body.reasonCategory);
+      const policyRevision = body.policyRevision;
+      if (
+        reasonCategory === undefined ||
+        (body.temporaryDisableUntil !== undefined && body.temporaryDisableUntil !== null && temporaryDisableUntil === null) ||
+        (policyRevision !== undefined && policyRevision !== null &&
+          (typeof policyRevision !== 'number' || !Number.isSafeInteger(policyRevision) || policyRevision < 0))
+      ) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       const stepUp: StepUpAssertion = {
         state: stepUpRaw.state as StepUpAssertion['state'],
         assertedAt: parseDate(stepUpRaw.assertedAt),
@@ -429,14 +442,14 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
         deviceId: body.deviceId,
         operation: body.operation as RemovalDecisionOperation,
         protectionLevel: body.protectionLevel as RemovalProtectionLevel,
-        reasonCategory: (parseReasonCategory(body.reasonCategory) ?? null) as ReasonCategory | null,
+        reasonCategory: reasonCategory as ReasonCategory | null,
         decision: body.decision as SignedRemovalDecision['decision'],
-        temporaryDisableUntil: body.temporaryDisableUntil == null ? null : temporaryDisableUntil,
+        temporaryDisableUntil: temporaryDisableUntil,
         actorDeviceId: body.actorDeviceId,
         actionId: body.actionId,
         idempotencyKey: body.idempotencyKey,
         trustSetEpoch: body.trustSetEpoch,
-        policyRevision: typeof body.policyRevision === 'number' ? body.policyRevision : null,
+        policyRevision: policyRevision == null ? null : policyRevision,
         issuedAt: requestedAt,
         expiresAt,
         stepUp,
@@ -453,7 +466,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   const PIN_PATTERN = /^\d{6,64}$/;
 
-  app.get('/api/parent/families/:familyId/administration-pin', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/parent/families/:familyId/administration-pin', { preHandler: noStore }, async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
     if (!(await requireActiveParentReader(session, reply))) return;
@@ -469,7 +482,7 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
 
   app.post(
     '/api/parent/families/:familyId/administration-pin',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: noStore },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;

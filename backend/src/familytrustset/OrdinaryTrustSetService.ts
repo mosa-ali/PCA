@@ -114,7 +114,7 @@ export class OrdinaryTrustSetService {
     // accepted-head signature against the device-key directory, and current
     // ACTIVE DSK lifecycle. Requiring it here keeps all read/replay paths
     // fail-closed when production wiring is incomplete.
-    const resolved = await this.trustSetRoleResolver.resolveActor(scope.familyId, scope.deviceId);
+    const resolved = await this.trustSetRoleResolver.resolveActor(scope.familyId, scope.deviceId, scope.dskKeyId);
     if (typeof resolved === 'string') {
       if (resolved === 'FAMILY_MISMATCH') throw new OrdinaryTrustSetError('FAMILY_MISMATCH');
       if (resolved === 'DEVICE_NOT_IN_TRUST_SET' || resolved === 'DEVICE_NOT_ACTIVE') {
@@ -130,6 +130,7 @@ export class OrdinaryTrustSetService {
     if (resolved.deviceId !== scope.deviceId || resolved.role !== member.role) {
       throw new OrdinaryTrustSetError('NO_TRUST_SET');
     }
+    if (resolved.dskKeyId !== scope.dskKeyId) throw new OrdinaryTrustSetError('DEVICE_NOT_ACTIVE');
     // Compare the session's proof key only after the resolver has validated
     // the accepted head and its independent key-directory binding. This
     // preserves corrupt-head failures as NO_TRUST_SET while still denying
@@ -150,7 +151,15 @@ export class OrdinaryTrustSetService {
     await this.authorizedHead(scope, false);
     const record = await this.acceptanceService.readAcceptedEpoch(scope.familyId, trustSetEpoch);
     if (record === null) throw new OrdinaryTrustSetError('EPOCH_NOT_FOUND');
-    await this.authorizedHead(scope, false);
+    const currentHead = await this.authorizedHead(scope, false);
+    if (record.trustSetEpoch > currentHead.trustSetEpoch || record.keyEpoch > currentHead.keyEpoch ||
+        (record.trustSetEpoch === currentHead.trustSetEpoch &&
+          (!record.signedEpochBytes.equals(currentHead.signedEpochBytes) || record.signature !== currentHead.signature))) {
+      // The indexed history read and authoritative head are separate DB
+      // reads. Never project an orphaned/future row or a different record
+      // at the current head if those views disagree.
+      throw new OrdinaryTrustSetError('CONFLICT');
+    }
     return dto(record);
   }
 

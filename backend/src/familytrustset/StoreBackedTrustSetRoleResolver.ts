@@ -5,7 +5,7 @@ import { canonicalizeTrustSetEpoch } from './canonicalize.js';
 import { activeOwnerCount, findActiveOwner, findDuplicateIdentity } from './FamilyTrustSetEngine.js';
 import { decodeCanonicalTrustSetEpochBytes } from './decode.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
-import type { TrustSetEpochStore } from './TrustSetEpochStore.js';
+import type { TrustSetEpochRecord, TrustSetEpochStore } from './TrustSetEpochStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from './types.js';
 
@@ -23,6 +23,41 @@ export interface StoreBackedTrustSetRoleResolverDeps {
 
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime());
+}
+
+function sameAcceptedHead(
+  left: Awaited<ReturnType<TrustSetEpochStore['readLatestEpoch']>>,
+  right: Awaited<ReturnType<TrustSetEpochStore['readLatestEpoch']>>,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return left.familyId === right.familyId &&
+    left.trustSetEpoch === right.trustSetEpoch &&
+    left.keyEpoch === right.keyEpoch &&
+    left.supersedesEpoch === right.supersedesEpoch &&
+    Buffer.isBuffer(left.signedEpochBytes) && Buffer.isBuffer(right.signedEpochBytes) &&
+    left.signedEpochBytes.equals(right.signedEpochBytes) &&
+    left.signature === right.signature &&
+    left.signerKeyId === right.signerKeyId &&
+    left.signerDeviceId === right.signerDeviceId &&
+    isValidDate(left.issuedAt) && isValidDate(right.issuedAt) &&
+    left.issuedAt.getTime() === right.issuedAt.getTime() &&
+    isValidDate(left.receivedAt) && isValidDate(right.receivedAt) &&
+    left.receivedAt.getTime() === right.receivedAt.getTime();
+}
+
+function snapshotAcceptedHead(record: TrustSetEpochRecord): TrustSetEpochRecord {
+  return {
+    familyId: record.familyId,
+    trustSetEpoch: record.trustSetEpoch,
+    keyEpoch: record.keyEpoch,
+    supersedesEpoch: record.supersedesEpoch,
+    signedEpochBytes: Buffer.from(record.signedEpochBytes),
+    signature: record.signature,
+    signerKeyId: record.signerKeyId,
+    signerDeviceId: record.signerDeviceId,
+    issuedAt: new Date(record.issuedAt.getTime()),
+    receivedAt: new Date(record.receivedAt.getTime()),
+  };
 }
 
 /**
@@ -68,10 +103,14 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
     dskKeyId?: string,
   ): Promise<ResolvedActor | ActorResolutionFailure> {
     try {
-      const latest = await this.deps.epochStore.readLatestEpoch(familyId);
-      if (latest === null) return 'NO_TRUST_SET';
-      if (!Buffer.isBuffer(latest.signedEpochBytes) || latest.signedEpochBytes.length < 1 ||
-          latest.signedEpochBytes.length > MAX_SIGNED_EPOCH_BYTES) return 'NO_TRUST_SET';
+      const readHead = await this.deps.epochStore.readLatestEpoch(familyId);
+      if (readHead === null) return 'NO_TRUST_SET';
+      if (!Buffer.isBuffer(readHead.signedEpochBytes) || readHead.signedEpochBytes.length < 1 ||
+          readHead.signedEpochBytes.length > MAX_SIGNED_EPOCH_BYTES ||
+          !isValidDate(readHead.issuedAt) || !isValidDate(readHead.receivedAt)) return 'NO_TRUST_SET';
+      // Stores may return mutable row objects or Buffers. Detach the initial
+      // authority snapshot before any asynchronous verification or directory read.
+      const latest = snapshotAcceptedHead(readHead);
       const epoch = decodeCanonicalTrustSetEpochBytes(latest.signedEpochBytes);
       const canonicalBytes = latest.signedEpochBytes.toString('utf8');
       const owner = findActiveOwner(epoch);
@@ -129,7 +168,14 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
       ) {
         return 'DEVICE_NOT_ACTIVE';
       }
-      return resolved;
+
+      // Signature and device-directory checks above await external state.
+      // Re-read the complete accepted row at the end so a newer epoch that
+      // revoked or changed this member cannot return a stale actor. This
+      // query is the authorization decision's linearization point.
+      const current = await this.deps.epochStore.readLatestEpoch(familyId);
+      if (!sameAcceptedHead(latest, current)) return 'NO_TRUST_SET';
+      return { ...resolved, dskKeyId: member.dskKeyId };
     } catch {
       return 'NO_TRUST_SET';
     }

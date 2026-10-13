@@ -30,6 +30,8 @@ import org.pca.app.feature.prayer.location.PrayerLocationStalenessDetector
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
+import org.pca.app.feature.screentime.persistence.PersistentUsedAuthorizationStore
+import org.pca.app.feature.screentime.persistence.UsedAuthorizationStore
 import org.pca.app.feature.screentime.policy.ScreenTimePolicyApplier
 import org.pca.app.feature.webprotection.engine.PersistentWebRuleRepository
 import org.pca.app.feature.webprotection.engine.WebFilterEngine
@@ -96,6 +98,7 @@ import org.pca.app.foundation.EncryptedSharedPreferencesStateStore
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.foundation.SystemMonotonicTimeSource
 import org.pca.app.foundation.SystemWallClockTimeSource
+import org.pca.app.foundation.runBestEffortCycleSteps
 import org.pca.app.persistence.PcaLocalPersistence
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.retention.RetentionEngine
@@ -151,10 +154,11 @@ import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
 import org.pca.app.runtime.prayer.PrayerReminderIntents
 import org.pca.app.runtime.prayer.PrayerReminderScheduleCoordinator
 import org.pca.app.runtime.prayer.PrayerLocationStalenessNotificationDelivery
-import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
 import org.pca.app.runtime.schedule.SchedulePolicyRuntimeScope
+import org.pca.app.runtime.schedule.SchedulePolicyStorageScope
+import org.pca.app.runtime.schedule.ScopedSchedulePolicyStore
 import org.pca.app.runtime.schedule.AndroidCommunicationSurfaceResolver
 import org.pca.app.runtime.schedule.AndroidDevicePolicyPackageSuspensionExecutor
 import org.pca.app.runtime.schedule.DevicePolicyScheduleEnforcementConsumer
@@ -198,6 +202,8 @@ import java.util.UUID
  */
 internal suspend fun synchronizeWithSafeZoneDelivery(
     fetchAndStage: suspend () -> Unit,
+    ordinaryTrustSetOutcome: org.pca.app.runtime.sync.RuntimeCustodyOutcome =
+        org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE,
     custodySync: suspend () -> org.pca.app.runtime.sync.RuntimeCustodyOutcome,
 ): org.pca.app.runtime.sync.RuntimeCustodyOutcome {
     var safeZoneOutcome = org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
@@ -222,16 +228,44 @@ internal suspend fun synchronizeWithSafeZoneDelivery(
     }
 
     val custodyOutcome = custodySync()
-    return when {
+    val combined = when {
+        ordinaryTrustSetOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED ||
+            ordinaryTrustSetOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE -> ordinaryTrustSetOutcome
         custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED ||
             custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.INELIGIBLE -> custodyOutcome
         safeZoneOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED -> safeZoneOutcome
-        custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ||
+        ordinaryTrustSetOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ||
+            custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ||
             safeZoneOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE ->
             org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
         custodyOutcome == org.pca.app.runtime.sync.RuntimeCustodyOutcome.MORE_PENDING -> custodyOutcome
         else -> org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
     }
+    return combined
+}
+
+/** Known local/transient I/O failures may retry; integrity and authority failures remain blocked. */
+internal fun ordinaryTrustSetFailureOutcome(
+    failure: Exception,
+): org.pca.app.runtime.sync.RuntimeCustodyOutcome = when (failure) {
+    is IOException,
+    is org.pca.app.foundation.PersistentStateStoreDurabilityFailure ->
+        org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+    else -> org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+}
+
+/** Keeps Trust Set failure classification separate from independent Safe Zone/relay custody. */
+internal suspend fun ordinaryTrustSetReconciliationOutcome(
+    reconcile: suspend () -> Unit,
+    hasPendingRequest: suspend () -> Boolean,
+): org.pca.app.runtime.sync.RuntimeCustodyOutcome = try {
+    reconcile()
+    if (hasPendingRequest()) org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
+    else org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Exception) {
+    ordinaryTrustSetFailureOutcome(failure)
 }
 
 class PcaAppGraph private constructor(
@@ -268,6 +302,10 @@ class PcaAppGraph private constructor(
     val retentionEngine: RetentionEngine = persistence.retentionEngine
 
     val screenTimeSnapshotStore: ScreenTimeSnapshotStore = PersistentScreenTimeSnapshotStore(runtimeStateStore)
+    /** Durable one-time Parent authorization replay claims, sharing the same encrypted runtime
+     * state store as Screen Time snapshots; this store performs replay bookkeeping only and does
+     * not establish Parent authority or verify signatures. */
+    val usedAuthorizationStore: UsedAuthorizationStore = PersistentUsedAuthorizationStore(runtimeStateStore)
     val eyeDistanceSnapshotStore: EyeDistanceSnapshotStore = PersistentEyeDistanceSnapshotStore(runtimeStateStore)
     /** PCA-FR-021: the single [EyeDistanceConfig] instance shared by [runtime] (which restores/
      * ticks the real engine state) and [eyeRestShieldTrigger] below (which derives isShieldVisible
@@ -283,18 +321,16 @@ class PcaAppGraph private constructor(
     /** Agent 10's real schedule authority, durably backed (mission section 12's offline-restart
      * requirement) -- the single instance both [scheduleRuntimePort]'s status reporting and
      * [buildWellbeingDispatcher]'s WELL-3 closure read from, so they can never disagree. */
-    val schedulePolicyStore = PersistentSchedulePolicyStore(runtimeStateStore)
+    val schedulePolicyStore = ScopedSchedulePolicyStore(
+        runtimeStateStore,
+        currentScopeProvider = ::currentSchedulePolicyStorageScope,
+    )
     private val communicationSurfaceResolver = AndroidCommunicationSurfaceResolver(context)
     private val communicationCallStateObserver = AndroidTelephonyCallStateObserver(context)
-    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore, currentPolicyScopeProvider = {
-        val local = try { familyStateStore.currentState() } catch (_: CorruptLocalFamilyStateException) { null }
-        val profileId = local?.childProfileId?.takeIf { it.isNotBlank() }
-        if (local == null || local.pairingState != PairingState.ACTIVE || local.familyId.isBlank() || profileId == null) {
-            null
-        } else {
-            SchedulePolicyRuntimeScope(local.familyId, profileId, local.trustSetEpoch, local.keyEpoch)
-        }
-    }) {
+    val scheduleRuntime = ScheduleRuntime(
+        schedulePolicyStore,
+        currentPolicyScopeProvider = ::currentSchedulePolicyRuntimeScope,
+    ) {
         communicationSurfaceResolver.resolveCommunicationSurfaces()
     }
 
@@ -544,7 +580,7 @@ class PcaAppGraph private constructor(
                 ?: return org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
             // Missing/legacy epoch-1 anchors remain a closed Trust Set gate; do not synthesize a
             // root and keep the independent runtime-custody sync path available.
-            ordinaryTrustSetRuntime = runCatching {
+            ordinaryTrustSetRuntime = createOrdinaryTrustSetRuntimeOrNull {
                 OrdinaryTrustSetRuntime.create(
                     rootStore = firstDeviceRootStore,
                     ordinaryStore = PersistentOrdinaryEpochStore(runtimeStateStore),
@@ -552,17 +588,17 @@ class PcaAppGraph private constructor(
                     signer = androidKeystoreDskProvider,
                     verifier = P256OrdinaryEpochVerifier(),
                 )
-            }.getOrNull()
+            }
         }
+        var ordinaryTrustSetOutcome = org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
         val trustSetRuntime = ordinaryTrustSetRuntime
         if (trustSetRuntime != null) {
-            try {
-                trustSetRuntime.reconcile()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                return org.pca.app.runtime.sync.RuntimeCustodyOutcome.RETRYABLE_FAILURE
-            }
+            // Keep relay and opaque Safe Zone custody independent from Trust Set status. The
+            // aggregate below preserves the reconciliation result while those paths still run.
+            ordinaryTrustSetOutcome = ordinaryTrustSetReconciliationOutcome(
+                reconcile = { trustSetRuntime.reconcile() },
+                hasPendingRequest = { trustSetRuntime.hasPendingRequest() },
+            )
         }
         // Stage the server's opaque, recipient-addressed rows in encrypted local storage. This is
         // deliberately separate from policy application: the current delivery DTO has no signed
@@ -572,6 +608,7 @@ class PcaAppGraph private constructor(
                 val deliveryClient = safeZoneDeliveryClient
                 if (deliveryClient != null) deliveryClient.synchronize(safeZoneDeliveryInbox)
             },
+            ordinaryTrustSetOutcome = ordinaryTrustSetOutcome,
             custodySync = {
                 custodyOrchestrator?.syncNow() ?: org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
             },
@@ -1080,8 +1117,10 @@ class PcaAppGraph private constructor(
         if (custodyJob?.isActive != true) {
             custodyJob = coroutineScope.launch {
                 while (true) {
-                    runCatching { synchronizeRuntimeCustody() }
-                    delay(60_000L)
+                    runRuntimeCustodySyncIteration(
+                        synchronize = { synchronizeRuntimeCustody() },
+                        pause = { delay(60_000L) },
+                    )
                 }
             }
         }
@@ -1129,8 +1168,8 @@ class PcaAppGraph private constructor(
      * debounce state are each now guarded by their own internal `Mutex`, see their own doc
      * comments, so two overlapping calls serialize on the actual shared mutable state rather than
      * racing on it). [locationSampleRecorder] holds no mutable instance state, so it needs no lock
-     * of its own. Each step here is independently `runCatching`-guarded so a failure in one never
-     * skips the others, matching this app's "never crash the caller" tick discipline.
+     * of its own. Each independent suspend step isolates ordinary exceptions so one failure never
+     * skips the others. Cancellation propagates to stop the cycle, and fatal JVM errors propagate.
      *
      * PCA-NFR-034 (EVENT_DRIVEN_BATTERY_BUDGET): split via [BatteryBudgetedCycleRunner] into a
      * NON-critical half (usage-session/location collection, prayer-location staleness
@@ -1145,19 +1184,24 @@ class PcaAppGraph private constructor(
         BatteryBudgetedCycleRunner.run(
             shouldRunNonCritical = { PcaBatteryBudgetPolicy.shouldRunNonCriticalWork(powerSaveModeSource) },
             nonCriticalWork = {
-                runCatching { usageSessionRecorder.poll() }
                 val deviceId = enrolledDeviceIdOrNull()
-                if (deviceId != null) {
-                    val captureResult = runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
-                    // PCA-FR-063: evaluate the SAME fresh fix this cycle just captured against any
-                    // parent-defined geofence zones. Deliberately a second, independent
-                    // `lastKnownLocation()` read (never re-derived from the just-persisted, possibly
-                    // approximate-rounded record) -- geofence membership should reflect the real platform
-                    // fix, not the defense-in-depth-rounded value [locationSampleRecorder] chose to persist
-                    // for a COARSE-permission device. Cheap and side-effect-free: the same read-only
-                    // platform accessor [locationSampleRecorder] itself calls.
-                    if (captureResult.getOrNull()?.recorded == true) {
-                        runCatching {
+                var locationCaptured = false
+                runUsageLocationIngestionSteps(
+                    { usageSessionRecorder.poll() },
+                    {
+                        if (deviceId != null) {
+                            locationCaptured = locationSampleRecorder.captureSample(
+                                deviceId,
+                                RetentionPolicy.FOURTEEN_DAYS,
+                            ).recorded
+                        }
+                    },
+                    {
+                        if (deviceId != null && locationCaptured) {
+                            // PCA-FR-063: evaluate the SAME fresh fix this cycle just captured
+                            // against any parent-defined geofence zones. Deliberately a second,
+                            // independent `lastKnownLocation()` read (never re-derived from the
+                            // just-persisted, possibly approximate-rounded record).
                             val sample = locationCapabilitySource.lastKnownLocation()
                             if (sample != null) {
                                 if (prayerLocationStalenessDetector.shouldNotify(
@@ -1170,31 +1214,45 @@ class PcaAppGraph private constructor(
                                     prayerLocationStalenessDetector.markDelivered(deviceId)
                                 }
                                 geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
-                                // PPR1R-D005: arm the next prayer reminder for each of the five
-                                // prayers off this SAME real platform fix. Its own `runCatching`
-                                // (rather than riding the enclosing one) so a rejected coordinate
-                                // or an alarm failure can never skip geofence evaluation or the
-                                // staleness notice above it -- the same "one failure never skips
-                                // the others" discipline this cycle already applies step by step.
-                                runCatching {
-                                    prayerReminderScheduleCoordinator.scheduleUpcomingReminders(
-                                        coordinates = Coordinates(latitudeDegrees = sample.latitude, longitudeDegrees = sample.longitude),
-                                        zoneId = ZoneId.systemDefault(),
-                                    )
-                                }
+                                // PPR1R-D005: a schedule error stays isolated from the preceding
+                                // staleness and geofence work; cancellation still stops this cycle.
+                                runUsageLocationIngestionSteps(
+                                    {
+                                        prayerReminderScheduleCoordinator.scheduleUpcomingReminders(
+                                            coordinates = Coordinates(latitudeDegrees = sample.latitude, longitudeDegrees = sample.longitude),
+                                            zoneId = ZoneId.systemDefault(),
+                                        )
+                                    },
+                                )
                             }
                         }
-                    }
-                }
+                    },
+                )
             },
             criticalWork = {
-                runCatching { usageAccessDegradationMonitor.checkAndHandle() }
-                runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
-                runCatching { vpnDegradationMonitor.checkAndHandle() }
-                runCatching { cameraDegradationMonitor.checkAndHandle() }
-                runCatching { wallClockRollbackMonitor.checkAndHandle() }
+                runUsageLocationIngestionSteps(
+                    { usageAccessDegradationMonitor.checkAndHandle() },
+                    { devicePolicyDegradationMonitor.checkAndHandle() },
+                    { vpnDegradationMonitor.checkAndHandle() },
+                    { cameraDegradationMonitor.checkAndHandle() },
+                    { wallClockRollbackMonitor.checkAndHandle() },
+                )
             },
         )
+    }
+
+    /** Test seam and production step boundary for the usage/location cycle's independent work. */
+    internal suspend fun runUsageLocationIngestionSteps(vararg steps: suspend () -> Unit) {
+        runBestEffortCycleSteps(*steps)
+    }
+
+    /** One iteration of the process-local custody sync loop; ordinary failures remain retryable. */
+    internal suspend fun runRuntimeCustodySyncIteration(
+        synchronize: suspend () -> Unit,
+        pause: suspend () -> Unit,
+    ) {
+        runBestEffortCycleSteps(synchronize)
+        pause()
     }
 
     /**
@@ -1208,7 +1266,7 @@ class PcaAppGraph private constructor(
      *
      * The actual cycle logic (build one [org.pca.app.persistence.retention.DeviceRetentionContext],
      * call [RetentionEngine.runGeneralCycle]/[RetentionEngine.runAuditFloorCycle]/
-     * [RetentionEngine.pruneTombstones], each independently `runCatching`-guarded) lives in the
+     * [RetentionEngine.pruneTombstones], each independently isolated from ordinary exceptions) lives in the
      * standalone [executeRetentionMaintenanceCycle] function so it can be unit-tested directly
      * against a real, in-memory-Room-backed [RetentionEngine] (see `RetentionMaintenanceCycleTest`)
      * without needing this graph's `AndroidKeyStore`-backed production wiring -- see that
@@ -1263,6 +1321,51 @@ class PcaAppGraph private constructor(
         breakShieldTrigger.stop()
         coroutineScope.cancel()
         runBlocking { coroutineScope.coroutineContext[Job]?.join() }
+    }
+
+    private data class SchedulePolicyScopeContext(
+        val runtime: SchedulePolicyRuntimeScope,
+        val storage: SchedulePolicyStorageScope,
+    )
+
+    private fun currentSchedulePolicyRuntimeScope(): SchedulePolicyRuntimeScope? {
+        val context = currentSchedulePolicyScopeContext() ?: return null
+        if (!schedulePolicyStore.lastReadMatchesScope(context.storage)) return null
+        return context.runtime
+    }
+
+    private fun currentSchedulePolicyStorageScope(): SchedulePolicyStorageScope? =
+        currentSchedulePolicyScopeContext()?.storage
+
+    private fun currentSchedulePolicyScopeContext(): SchedulePolicyScopeContext? {
+        val local = try {
+            familyStateStore.currentState()
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        val profileId = local.childProfileId?.takeIf { it.isNotBlank() } ?: return null
+        val deviceId = local.deviceId.takeIf { it.isNotBlank() } ?: return null
+        val enrolledDeviceId = try {
+            (deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        if (local.pairingState != PairingState.ACTIVE || local.familyId.isBlank() || enrolledDeviceId != deviceId) {
+            return null
+        }
+        return SchedulePolicyScopeContext(
+            runtime = SchedulePolicyRuntimeScope(
+                familyId = local.familyId,
+                childProfileId = profileId,
+                trustSetEpoch = local.trustSetEpoch,
+                keyEpoch = local.keyEpoch,
+            ),
+            storage = SchedulePolicyStorageScope(
+                familyId = local.familyId,
+                childProfileId = profileId,
+                recipientDeviceId = enrolledDeviceId,
+            ),
+        )
     }
 
     companion object {
@@ -1338,6 +1441,18 @@ class PcaAppGraph private constructor(
             instance = null
         }
     }
+}
+
+/**
+ * Optional runtime construction keeps ordinary initialization failures retryable while allowing
+ * coroutine cancellation and fatal JVM errors to retain their control-flow meaning.
+ */
+internal inline fun <T> createOrdinaryTrustSetRuntimeOrNull(create: () -> T): T? = try {
+    create()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
 }
 
 /** Stable, collision-resistant id generator for locally-created records (child requests, etc.) --

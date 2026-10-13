@@ -1078,9 +1078,18 @@ public struct PCAEnrollmentAttempt: Codable, Equatable {
         attemptId = try values.decode(String.self, forKey: .attemptId)
         attemptRecoveryToken = try values.decode(String.self, forKey: .attemptRecoveryToken)
         // Older records predate the local submission marker and must remain
-        // on the conservative recovery path.
-        submissionState = try values.decodeIfPresent(PCAEnrollmentAttemptSubmissionState.self, forKey: .submissionState) ?? .submitted
-        invitationTokenSHA256 = try values.decodeIfPresent(String.self, forKey: .invitationTokenSHA256)
+        // on the conservative recovery path. Missing is the legacy shape;
+        // explicit null is malformed persisted state and must not be treated
+        // as that legacy shape.
+        submissionState = values.contains(.submissionState)
+            ? try values.decode(PCAEnrollmentAttemptSubmissionState.self, forKey: .submissionState)
+            : .submitted
+        // The encoder omits nil optional values. Accept an absent digest for
+        // legacy records, but reject explicit null instead of silently
+        // weakening the invitation binding of a retained attempt.
+        invitationTokenSHA256 = values.contains(.invitationTokenSHA256)
+            ? try values.decode(String.self, forKey: .invitationTokenSHA256)
+            : nil
     }
 
     public func markingSubmitted() -> PCAEnrollmentAttempt {
@@ -1115,6 +1124,16 @@ public protocol PCADeviceSessionStore {
     func loadSession() throws -> PCADeviceSession?
     func saveSession(_ session: PCADeviceSession) throws
     func clearSession() throws
+    /// Clears a rejected bearer only if the exact session is still current.
+    func clearSession(ifCurrent expected: PCADeviceSession) throws -> Bool
+}
+
+public extension PCADeviceSessionStore {
+    /// An adapter without conditional deletion must fail closed. A separate
+    /// load/clear pair could remove a replacement session after a stale 401.
+    func clearSession(ifCurrent expected: PCADeviceSession) throws -> Bool {
+        throw KeychainStoreError.unexpectedStatus(-1)
+    }
 }
 
 public protocol PCAEnrollmentAttemptStore {
@@ -1144,6 +1163,7 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
     /// section, so compare-and-clear cannot delete a replacement written by a
     /// second store instance between its read and delete.
     private static let attemptLock = NSRecursiveLock()
+    private static let sessionLock = NSRecursiveLock()
     private let keychain: KeychainStoreProtocol
     private let service: String
     private let sessionAccount: String
@@ -1159,15 +1179,32 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
     }
 
     public func loadSession() throws -> PCADeviceSession? {
-        try loadValue(PCADeviceSession.self, account: sessionAccount)
+        Self.sessionLock.lock()
+        defer { Self.sessionLock.unlock() }
+        return try loadValue(PCADeviceSession.self, account: sessionAccount)
     }
 
     public func saveSession(_ session: PCADeviceSession) throws {
+        Self.sessionLock.lock()
+        defer { Self.sessionLock.unlock() }
         try saveValue(session, account: sessionAccount)
     }
 
     public func clearSession() throws {
+        Self.sessionLock.lock()
+        defer { Self.sessionLock.unlock() }
         try keychain.delete(forAccount: sessionAccount, service: service)
+    }
+
+    public func clearSession(ifCurrent expected: PCADeviceSession) throws -> Bool {
+        Self.sessionLock.lock()
+        defer { Self.sessionLock.unlock() }
+        guard try loadValue(PCADeviceSession.self, account: sessionAccount) == expected else { return false }
+        // A recursive Keychain adapter may replace the row while servicing a
+        // read. Repeat the comparison before deletion, as with attempt state.
+        guard try loadValue(PCADeviceSession.self, account: sessionAccount) == expected else { return false }
+        try keychain.delete(forAccount: sessionAccount, service: service)
+        return true
     }
 
     public func loadAttempt() throws -> PCAEnrollmentAttempt? {
@@ -1225,11 +1262,27 @@ public final class PCAKeychainDeviceStateStore: PCADeviceSessionStore, PCAEnroll
 public final class InMemoryPCADeviceStateStore: PCADeviceSessionStore, PCAEnrollmentAttemptStore {
     private var session: PCADeviceSession?
     private var attempt: PCAEnrollmentAttempt?
+    private let sessionLock = NSRecursiveLock()
     private let attemptLock = NSRecursiveLock()
     public init() {}
-    public func loadSession() throws -> PCADeviceSession? { session }
-    public func saveSession(_ value: PCADeviceSession) throws { session = value }
-    public func clearSession() throws { session = nil }
+    public func loadSession() throws -> PCADeviceSession? {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        return session
+    }
+    public func saveSession(_ value: PCADeviceSession) throws {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        session = value
+    }
+    public func clearSession() throws {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        session = nil
+    }
+    public func clearSession(ifCurrent expected: PCADeviceSession) throws -> Bool {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        guard session == expected else { return false }
+        session = nil
+        return true
+    }
     public func loadAttempt() throws -> PCAEnrollmentAttempt? {
         attemptLock.lock()
         defer { attemptLock.unlock() }

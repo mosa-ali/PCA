@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import test, { after } from 'node:test';
-import { closePool } from '../../dist/db/pool.js';
+import mysql from 'mysql2/promise';
+import { closePool, getPool } from '../../dist/db/pool.js';
 import { MySqlSafeZoneRepository } from '../../dist/location/MySqlSafeZoneRepository.js';
-import { SafeZoneError } from '../../dist/location/SafeZoneRepository.js';
+import { SafeZoneAuthorityChangedError, SafeZoneError } from '../../dist/location/SafeZoneRepository.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -16,6 +17,50 @@ function newZone(familyId = randomUUID()) {
     ciphertextB64: 'AQID',
     nonceB64: 'AAECAwQFBgcICQoL',
     keyEpoch: 2,
+  };
+}
+
+async function seedMutationAuthority() {
+  const familyId = randomUUID();
+  const actorDeviceId = randomUUID();
+  const actorDskKeyId = randomUUID();
+  const recipientDeviceId = randomUUID();
+  const recipientDskKeyId = randomUUID();
+  const createdAt = new Date();
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`,
+    [familyId, randomBytes(32)],
+  );
+  for (const [deviceId, dskKeyId] of [[actorDeviceId, actorDskKeyId], [recipientDeviceId, recipientDskKeyId]]) {
+    await getPool().query(
+      `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
+       VALUES (?, ?, 'ANDROID', 'ACTIVE', ?, NULL)`,
+      [deviceId, familyId, createdAt],
+    );
+    await getPool().query(
+      `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+       VALUES (?, ?, 'DSK', ?, 'ACTIVE', ?, NULL)`,
+      [deviceId, dskKeyId, `safe-zone-test-key-${randomUUID()}`, createdAt],
+    );
+  }
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, 1, 1, NOW(3))`,
+    [familyId],
+  );
+  return {
+    familyId,
+    recipientDeviceId,
+    actorDskKeyId,
+    recipientDskKeyId,
+    snapshot: {
+      familyId,
+      trustSetEpoch: 1,
+      keyEpoch: 1,
+      actor: { deviceId: actorDeviceId, dskKeyId: actorDskKeyId },
+      recipient: { deviceId: recipientDeviceId, dskKeyId: recipientDskKeyId },
+    },
   };
 }
 
@@ -51,6 +96,108 @@ test('MySQL Safe Zone: key epoch may advance with a complete ciphertext/nonce pa
   assert.equal(afterRejectedRollback.revision, advanced.revision);
   assert.equal(afterRejectedRollback.ciphertextB64, advanced.ciphertextB64);
   assert.equal(afterRejectedRollback.nonceB64, advanced.nonceB64);
+});
+
+test('MySQL Safe Zone AUTHORITY RACE: committed head rotation and exact DSK revocation block mutations transactionally', async () => {
+  const fixture = await seedMutationAuthority();
+  const created = await repository.create({
+    ...newZone(fixture.familyId),
+    recipientEndpointId: fixture.recipientDeviceId,
+    keyEpoch: 1,
+  }, fixture.snapshot);
+
+  // Simulate a valid accepted epoch append completing after route resolution
+  // but before the Safe Zone repository opens its transaction.
+  await getPool().query(
+    `UPDATE family_epoch_floors
+        SET minimum_accepted_trust_set_epoch = 2, updated_at = NOW(3)
+      WHERE family_id = ?`,
+    [fixture.familyId],
+  );
+  await assert.rejects(
+    () => repository.create({ ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1 }, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  await assert.rejects(
+    () => repository.update(fixture.familyId, created.zoneId, {
+      ciphertextB64: 'BAUG', nonceB64: 'EBESExQVFhcYGRob', keyEpoch: 1,
+    }, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  await assert.rejects(
+    () => repository.remove(fixture.familyId, created.zoneId, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  const [afterRotation] = await repository.list(fixture.familyId);
+  assert.equal(afterRotation.zoneId, created.zoneId);
+  assert.equal(afterRotation.revision, created.revision);
+  assert.equal(afterRotation.ciphertextB64, created.ciphertextB64);
+
+  // With the expected floor still current, a revoked exact session DSK is
+  // independently rejected before delete can alter the retained row.
+  await getPool().query(
+    `UPDATE family_epoch_floors
+        SET minimum_accepted_trust_set_epoch = 1, updated_at = NOW(3)
+      WHERE family_id = ?`,
+    [fixture.familyId],
+  );
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [fixture.snapshot.actor.deviceId, fixture.actorDskKeyId],
+  );
+  await assert.rejects(
+    () => repository.remove(fixture.familyId, created.zoneId, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'ACTIVE', revoked_at = NULL
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [fixture.snapshot.actor.deviceId, fixture.actorDskKeyId],
+  );
+  await getPool().query(
+    `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [fixture.recipientDeviceId, fixture.recipientDskKeyId],
+  );
+  await assert.rejects(
+    () => repository.remove(fixture.familyId, created.zoneId, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  assert.equal((await repository.list(fixture.familyId)).length, 1);
+});
+
+test('MySQL Safe Zone snapshots nested authority before waiting for the transaction floor lock', async () => {
+  const fixture = await seedMutationAuthority();
+  const authority = {
+    ...fixture.snapshot,
+    actor: { ...fixture.snapshot.actor },
+    recipient: { ...fixture.snapshot.recipient },
+  };
+  const lock = await mysql.createConnection({ uri: process.env.PCA_DATABASE_URL, timezone: 'Z' });
+  await lock.beginTransaction();
+  try {
+    await lock.execute(
+      `SELECT family_id FROM family_epoch_floors WHERE family_id = ? FOR UPDATE`,
+      [fixture.familyId],
+    );
+    const pending = repository.create({
+      ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1,
+    }, authority);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    authority.trustSetEpoch = 2;
+    authority.actor.deviceId = 'mutated-actor';
+    authority.actor.dskKeyId = 'mutated-actor-key';
+    authority.recipient.dskKeyId = 'mutated-recipient-key';
+    await lock.commit();
+    const created = await pending;
+    assert.equal(created.familyId, fixture.familyId);
+    assert.equal(created.recipientEndpointId, fixture.recipientDeviceId);
+    assert.equal(created.keyEpoch, 1);
+  } finally {
+    try { await lock.rollback(); } catch { /* transaction already committed */ }
+    await lock.end();
+  }
 });
 
 test('MySQL Safe Zone: create snapshots the validated payload before asynchronous database work', async () => {
@@ -91,6 +238,43 @@ test('MySQL Safe Zone: update snapshots the validated ciphertext, nonce, and epo
   assert.equal(updated.keyEpoch, 4);
   assert.equal(updated.revision, created.revision + 1);
   assert.equal(updated.deliveryState, 'PENDING_OFFLINE');
+});
+
+test('MySQL Safe Zone: updated_at is sampled after a delayed row-lock acquisition', async () => {
+  const created = await repository.create(newZone());
+  const postLockTime = new Date('2030-04-05T06:07:08.000Z');
+  let clockCalls = 0;
+  const timedRepository = new MySqlSafeZoneRepository(() => {
+    clockCalls += 1;
+    return new Date(postLockTime);
+  });
+  const lock = await mysql.createConnection({ uri: process.env.PCA_DATABASE_URL, timezone: 'Z' });
+  await lock.beginTransaction();
+  let updateSettled = false;
+  try {
+    await lock.execute(
+      'SELECT zone_id FROM safe_zones WHERE family_id = ? AND zone_id = ? FOR UPDATE',
+      [created.familyId, created.zoneId],
+    );
+    const updatePromise = timedRepository.update(created.familyId, created.zoneId, {
+      ciphertextB64: 'BAUG',
+      nonceB64: 'EBESExQVFhcYGRob',
+      keyEpoch: 3,
+    }).finally(() => { updateSettled = true; });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(updateSettled, false, 'the edit must still be waiting behind the held row lock');
+    assert.equal(clockCalls, 0, 'updated_at must not be sampled before the row lock is acquired');
+
+    await lock.commit();
+    const updated = await updatePromise;
+    assert.equal(clockCalls, 1);
+    assert.equal(updated.updatedAtUtc, postLockTime.toISOString());
+    assert.equal(updated.revision, created.revision + 1);
+  } finally {
+    try { await lock.rollback(); } catch { /* already committed */ }
+    await lock.end();
+  }
 });
 
 test('MySQL Safe Zone: family-scoped update hides a zone owned by another family', async () => {

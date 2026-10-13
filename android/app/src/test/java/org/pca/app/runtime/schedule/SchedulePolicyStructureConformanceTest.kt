@@ -135,6 +135,88 @@ class SchedulePolicyStructureConformanceTest {
     }
 
     @Test
+    fun `schedule evaluator rejects an empty app token before emergency access override`() {
+        fun evaluate(appToken: String, emergencyTokens: Set<String> = emptySet()) = ScheduleEvaluator.evaluate(
+            ScheduleEvaluationInput(
+                nowUtc = now,
+                timezone = "UTC",
+                appToken = appToken,
+                windows = emptyList(),
+                bonusGrants = emptyList(),
+                exceptions = emptyList(),
+                enforcementCapability = EnforcementCapabilityState.ENFORCED,
+                connectivity = Connectivity.ONLINE,
+                communicationSurfaces = CommunicationSafetySurfaceTokens(
+                    emergencySurfaceTokens = emergencyTokens,
+                ),
+            ),
+        )
+
+        val invalid = evaluate("")
+        assertEquals(ScheduleDecisionKind.INVALID_CONFIG, invalid.decision)
+        assertTrue(invalid.configErrors.orEmpty().contains("app token must be a non-empty string"))
+
+        // The input identity check has precedence even if a malformed adapter marks that same
+        // empty value as protected. Backend token validation also requires length > 0.
+        assertEquals(ScheduleDecisionKind.INVALID_CONFIG, evaluate("", setOf("")).decision)
+
+        // Match backend validateAppToken's exact non-empty rule; whitespace is not silently
+        // normalized because app tokens are opaque and the backend accepts any non-empty string.
+        assertEquals(ScheduleDecisionKind.ALLOWED, evaluate(" ").decision)
+    }
+
+    @Test
+    fun `supplemental policy scopes and intervals fail closed at policy and evaluator boundaries`() {
+        val accepted = policy(emptyList())
+        val invalid = accepted.copy(
+            policyRevision = 2,
+            bonusGrants = listOf(BonusGrant("bad-bonus", AppScope.Apps(listOf("")), -1,
+                now.plusSeconds(60), now)),
+            parentExceptions = listOf(ParentException("bad-exception", AppScope.Apps(listOf("")),
+                now.plusSeconds(60), now, "test")),
+            dailyLimits = listOf(DailyAppLimit(AppScope.Apps(listOf("")), 10, 0, "2026-10-09")),
+        )
+
+        val acceptedResult = SchedulePolicyValidator.evaluate(input(invalid, accepted))
+        assertEquals(ScheduleRuntimeState.INVALID, acceptedResult.state)
+        assertEquals(accepted, acceptedResult.effectivePolicy)
+
+        val directResult = ScheduleEvaluator.evaluate(
+            ScheduleEvaluationInput(
+                nowUtc = now,
+                timezone = "UTC",
+                appToken = "app",
+                windows = emptyList(),
+                bonusGrants = invalid.bonusGrants,
+                exceptions = invalid.parentExceptions,
+                dailyLimit = invalid.dailyLimits.single(),
+                enforcementCapability = EnforcementCapabilityState.ENFORCED,
+                connectivity = Connectivity.ONLINE,
+            ),
+        )
+        assertEquals(ScheduleDecisionKind.INVALID_CONFIG, directResult.decision)
+        assertTrue(directResult.configErrors.orEmpty().any { it.contains("non-empty app tokens") })
+        assertTrue(directResult.configErrors.orEmpty().any { it.contains("end after start") })
+    }
+
+    @Test
+    fun `supplemental policy instants outside JavaScript Date range are rejected`() {
+        val maximum = Instant.ofEpochMilli(8_640_000_000_000_000L)
+        val oneNanosecondBeyondMaximum = maximum.plusNanos(1L)
+        val invalid = policy(emptyList()).copy(
+            bonusGrants = listOf(BonusGrant("out-of-range", AppScope.All, 5,
+                oneNanosecondBeyondMaximum, oneNanosecondBeyondMaximum.plusNanos(1L))),
+        )
+        assertEquals(ScheduleRuntimeState.INVALID, SchedulePolicyValidator.evaluate(input(invalid)).state)
+        assertTrue(validateBonusGrant(BonusGrant(
+            "upper-bound", AppScope.All, 1, maximum.minusMillis(1L), maximum,
+        )).isEmpty())
+        assertTrue(validateBonusGrant(BonusGrant(
+            "upper-overflow", AppScope.All, 1, maximum, oneNanosecondBeyondMaximum,
+        )).isNotEmpty())
+    }
+
+    @Test
     fun `repeated weekday entries retain the reference includes semantics`() {
         val one = ScheduleEvaluator.evaluate(
             ScheduleEvaluationInput(

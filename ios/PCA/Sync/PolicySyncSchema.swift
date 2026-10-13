@@ -26,6 +26,10 @@ public struct StoredDeviceActivityPolicySnapshot<Token: Hashable & Codable> {
 }
 
 public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
+    /// Stored FamilyControls token payloads use the same 1 MiB bound as the
+    /// decoded policy document. Check bytes before invoking PropertyListDecoder
+    /// so corrupted App Group state cannot trigger an unbounded decode.
+    private static let maximumTokenPayloadBytes = 1_048_576
     private let scheduleStore: OpaqueBlobStore
     private let tokenStore: OpaqueBlobStore
 
@@ -41,10 +45,12 @@ public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
               case .success(let schedule) = PolicySyncDecoder.decode(scheduleData),
               schedule.activityId.utf8.elementsEqual(activityId.utf8),
               let tokenData = tokenStore.read(forKey: "applicationTokens.\(activityId)\(suffix)"),
+              tokenData.count <= Self.maximumTokenPayloadBytes,
               let tokens = try? PropertyListDecoder().decode(Set<Token>.self, from: tokenData) else { return nil }
         let protectedTokens: Set<Token>
         if let data = tokenStore.read(forKey: "protectedApplicationTokens\(suffix)") {
-            guard let decoded = try? PropertyListDecoder().decode(Set<Token>.self, from: data) else { return nil }
+            guard data.count <= Self.maximumTokenPayloadBytes,
+                  let decoded = try? PropertyListDecoder().decode(Set<Token>.self, from: data) else { return nil }
             protectedTokens = decoded
         } else {
             guard storageGeneration == nil else { return nil }
@@ -76,8 +82,11 @@ public struct InstalledDeviceActivityPolicyLoader<Token: Hashable & Codable> {
                   scheduleStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == data else { return nil }
             return snapshot
         }
-        guard scheduleStore.read(forKey: "activeActivityId") == Data(monitorActivityId.utf8) else { return nil }
-        return loader.load(activityId: monitorActivityId)
+        let expectedActivity = Data(monitorActivityId.utf8)
+        guard scheduleStore.read(forKey: "activeActivityId") == expectedActivity,
+              let snapshot = loader.load(activityId: monitorActivityId),
+              scheduleStore.read(forKey: "activeActivityId") == expectedActivity else { return nil }
+        return snapshot
     }
 }
 
@@ -201,6 +210,7 @@ public enum PolicySyncDecodeError: Error, Equatable {
     case invalidExceptionConfig([String])
     case emptyActivityId
     case emptyAppToken
+    case invalidAppScope([String])
     case invalidUsageConfig
 }
 
@@ -316,12 +326,24 @@ public enum PolicySyncDecoder {
         guard !stored.appToken.isEmpty else { return .failure(.emptyAppToken) }
         guard stored.appToken.utf8.count <= 256, stored.activityId.utf8.count <= 256,
               stored.bonusGrants.count <= 64,
-              stored.bonusGrants.allSatisfy({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.extraMinutes) && $0.expiresAtUtc > $0.grantedAtUtc }),
+              stored.bonusGrants.allSatisfy({ grant in
+                  let start = grant.grantedAtUtc.timeIntervalSince1970
+                  let end = grant.expiresAtUtc.timeIntervalSince1970
+                  return (0...DeviceActivityUsagePlanner.maximumMinutes).contains(grant.extraMinutes) &&
+                      start.isFinite && end.isFinite &&
+                      abs(start) <= maximumPolicyDateSeconds && abs(end) <= maximumPolicyDateSeconds &&
+                      start < end
+              }),
               stored.dailyLimit.map({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.limitMinutes) &&
                   (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.usedMinutesToday) &&
                   isCanonicalGregorianLocalDate($0.anchorLocalDate) }) ?? true else {
             return .failure(.invalidUsageConfig)
         }
+        let scopeErrors = stored.windows.compactMap { validateAppScope($0.appScope, description: "window \($0.id)") }
+            + stored.bonusGrants.compactMap { validateAppScope($0.appScope, description: "bonus grant \($0.id)") }
+            + stored.exceptions.compactMap { validateAppScope($0.appScope, description: "parent exception \($0.id)") }
+            + (stored.dailyLimit.map { validateAppScope($0.appScope, description: "daily limit") } ?? [])
+        guard scopeErrors.isEmpty else { return .failure(.invalidAppScope(scopeErrors)) }
         let exceptionErrors = stored.exceptions.compactMap { exception -> String? in
             let start = exception.startAtUtc.timeIntervalSince1970
             let end = exception.endAtUtc.timeIntervalSince1970
@@ -352,7 +374,10 @@ public enum PolicySyncDecoder {
             windows.append(toDomainWindow(window, timeZone: windowZone,
                 calendarWeekdays: Set(window.daysOfWeek.map { $0 + 1 })))
         }
-        let configErrors = windows.flatMap(ScheduleEngine.validate)
+        // Validate the complete set before publishing it to the runtime. In
+        // addition to each window's shape, evaluation requires unique opaque
+        // window IDs so matched-window provenance cannot be ambiguous.
+        let configErrors = ScheduleEngine.validateWindows(windows)
         guard configErrors.isEmpty else {
             return .failure(.invalidWindowConfig(configErrors))
         }
@@ -385,6 +410,15 @@ public enum PolicySyncDecoder {
         case .all: return .all
         case .apps(let set): return .apps(set)
         }
+    }
+
+    /// Match the backend schedule validator: an app-list scope may not carry
+    /// an empty opaque token. A blank member silently matches no application
+    /// and can turn an intended exception/window/limit into a no-op.
+    private static func validateAppScope(_ scope: StoredAppScope, description: String) -> String? {
+        guard case .apps(let tokens) = scope,
+              tokens.contains(where: { $0.isEmpty }) else { return nil }
+        return "\(description) appScope must contain non-empty app tokens"
     }
 
     /// The schedule contract's local-date anchor is exactly `YYYY-MM-DD`.

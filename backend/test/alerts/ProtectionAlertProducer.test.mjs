@@ -128,6 +128,25 @@ test('out-of-range key epoch is rejected before encryption composition or ledger
   assert.deepEqual(await ledger.listForFamily('family-1'), []);
 });
 
+test('unpersistable generated timestamp is rejected before opaque composition', async () => {
+  let composerCalls = 0;
+  let ledgerCalls = 0;
+  const producer = createProducer(async () => {
+    composerCalls += 1;
+    return OPAQUE;
+  }, { ledger: { record: async () => { ledgerCalls += 1; return { outcome: 'RECORDED' }; } } });
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - 7 * 24 * 60 * 60 * 1000);
+
+  for (const generatedAtUtc of [
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date(latestPersistable.getTime() + 1),
+  ]) {
+    await assert.rejects(() => producer.produce(alertInput({ generatedAtUtc })), /invalid generatedAtUtc/);
+  }
+  assert.equal(composerCalls, 0);
+  assert.equal(ledgerCalls, 0);
+});
+
 function alertInput(overrides = {}) {
   return { familyId: 'family-1', deviceId: 'device-1', parentDeviceId: 'parent-1',
     trigger: 'TIME_TAMPERING', keyEpoch: 4, alertsEnabled: true,

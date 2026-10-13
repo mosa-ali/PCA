@@ -5,8 +5,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
+import org.pca.app.runtime.sync.envelope.ProtocolVersionBounds
 import org.pca.app.runtime.sync.envelope.RecipientBinding
 import org.pca.app.runtime.sync.envelope.envelopeFromRelayCiphertext
+import org.pca.app.runtime.sync.transport.MAX_INBOUND_CURSOR_LENGTH
 import org.pca.app.runtime.sync.transport.InboundNavigation
 import org.pca.app.runtime.sync.transport.InboundReceipt
 import org.pca.app.runtime.sync.transport.InboundReceiptOutcome
@@ -52,7 +54,7 @@ class PersistentCiphertextInbox(
 
     /** Reset only navigation after reauthentication; retained ciphertext and ACK state survive. */
     fun navigationFor(sessionIncarnation: String): InboundNavigation? = synchronized(coordinationLock) {
-        require(Regex("^[0-9a-f]{64}$").matches(sessionIncarnation))
+        require(SESSION_INCARNATION.matches(sessionIncarnation))
         val snapshot = readSnapshot() ?: return@synchronized null
         val navigation = snapshot.navigation ?: return@synchronized null
         if (navigation.sessionIncarnation == sessionIncarnation) {
@@ -94,12 +96,16 @@ class PersistentCiphertextInbox(
         expectedSessionIncarnation: String? = null, expectedCursor: String? = null,
     ): List<CiphertextInboxRecord> = synchronized(coordinationLock) {
         checkScope(scope)
+        if (expectedSessionIncarnation != null && !SESSION_INCARNATION.matches(expectedSessionIncarnation)) unavailable()
         val existing = readSnapshot()
         if (existing != null && existing.scope != scope) unavailable()
         if (envelopeWires.size > maxRecords) unavailable()
         if (receipts.size > 100 || receipts.map { it.messageId }.toSet().size != receipts.size) unavailable()
         if (navigation != null) {
-            if (navigation.sessionIncarnation != expectedSessionIncarnation) unavailable()
+            if (!SESSION_INCARNATION.matches(navigation.sessionIncarnation) ||
+                navigation.sessionIncarnation != expectedSessionIncarnation ||
+                navigation.hasMore != (navigation.nextCursor != null) || !validCursor(navigation.nextCursor)
+            ) unavailable()
             val prior = existing?.navigation
             val priorCursor = if (prior?.sessionIncarnation == expectedSessionIncarnation) prior.nextCursor else null
             if (priorCursor != expectedCursor || (navigation.hasMore && navigation.nextCursor == expectedCursor)) unavailable()
@@ -247,7 +253,10 @@ class PersistentCiphertextInbox(
                     if (item.get("nextCursor") !is String) unavailable()
                     item.getString("nextCursor")
                 }
-                InboundNavigation(cursor, item.getBoolean("hasMore"), item.getBoolean("hasUnresolved"), item.getString("sessionIncarnation"))
+                val hasMore = item.getBoolean("hasMore")
+                val session = item.getString("sessionIncarnation")
+                if (!SESSION_INCARNATION.matches(session) || hasMore != (cursor != null) || !validCursor(cursor)) unavailable()
+                InboundNavigation(cursor, hasMore, item.getBoolean("hasUnresolved"), session)
             }
             val receiptArray = json.getJSONArray("receipts")
             if (receiptArray.length() > 256) unavailable()
@@ -288,10 +297,13 @@ class PersistentCiphertextInbox(
 
     private fun unavailable(): Nothing = throw CiphertextInboxUnavailable()
 
+    private fun validCursor(cursor: String?): Boolean = cursor == null ||
+        (cursor.length in 1..MAX_INBOUND_CURSOR_LENGTH && INBOUND_CURSOR.matches(cursor))
+
     internal companion object {
         internal fun validateEnvelope(wire: String, scope: RuntimeInboxScope): FamilyEnvelope {
             try {
-                if (wire.toByteArray(Charsets.UTF_8).size > 256 * 1024) unavailable()
+                if (wire.toByteArray(Charsets.UTF_8).size > 64 * 1024) unavailable()
                 val json = JSONObject(wire)
                 for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId", "messageType", "sequenceOrNonce", "issuedAt", "expiresAt", "semanticVersion", "payload", "signature")) {
                     val value = json.get(key)
@@ -300,11 +312,9 @@ class PersistentCiphertextInbox(
                 for (key in listOf("messageId", "familyId", "senderDeviceId", "recipientDeviceId", "senderKeyId")) {
                     if (json.getString(key).length > 128) unavailable()
                 }
-                for (key in listOf("protocolMajor", "protocolMinor")) {
-                    val value = json.get(key)
-                    if (value !is Number || value.toDouble() != value.toLong().toDouble() || value.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable()
-                }
-                if (json.getInt("protocolMajor") != 1 || (json.has("recipientGroup") && !json.isNull("recipientGroup"))) unavailable()
+                val protocolMajor = ProtocolVersionBounds.decodeMajor(json)
+                ProtocolVersionBounds.decodeMinor(json)
+                if (protocolMajor != 1L || (json.has("recipientGroup") && !json.isNull("recipientGroup"))) unavailable()
                 if (json.getString("messageType") !in MESSAGE_TYPES) unavailable()
                 if (json.getString("sequenceOrNonce").length > 128 || json.getString("signature").length > 512) unavailable()
                 val version = json.getString("semanticVersion")
@@ -326,6 +336,8 @@ class PersistentCiphertextInbox(
         private fun unavailable(): Nothing = throw CiphertextInboxUnavailable()
 
         val SEMANTIC_VERSION = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
+        val SESSION_INCARNATION = Regex("^[0-9a-f]{64}$")
+        val INBOUND_CURSOR = Regex("^[A-Za-z0-9_-]+$")
         val MESSAGE_TYPES = setOf("POLICY_UPDATE", "POLICY_RECEIPT", "STATUS_SNAPSHOT", "ACTIVITY_SUMMARY",
             "LOCATION_RESPONSE", "CHILD_REQUEST", "PARENT_DECISION", "TAMPER_ALERT", "RETENTION_DELETION_INSTRUCTION",
             "RETENTION_RECEIPT", "FTS_UPDATE", "KEY_ROTATION", "DEVICE_REVOKE", "RECOVERY_TRANSACTION", "SIGNED_ROLLBACK")

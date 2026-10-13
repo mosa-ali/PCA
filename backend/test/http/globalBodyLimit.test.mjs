@@ -138,7 +138,7 @@ test('PCA-P2-13: every route either sits under the ceiling or deliberately overr
   );
   assert.ok(
     maximumOrdinaryRequestBytes <= GLOBAL_BODY_LIMIT_BYTES,
-    `maximum ordinary Trust Set request (${maximumOrdinaryRequestBytes}) must fit the global ceiling (${GLOBAL_BODY_LIMIT_BYTES})`,
+    `maximum ordinary Trust Set request (${maximumOrdinaryRequestBytes}) must fit the global body ceiling (${GLOBAL_BODY_LIMIT_BYTES})`,
   );
 
   const bounded = limits.size - overrides.length;

@@ -28,6 +28,7 @@ function buildHarness(overrides = {}) {
   const clock = {
     now: () => new Date(currentTime),
     advance: (ms) => { currentTime += ms; },
+    setTime: (ms) => { currentTime = ms; },
   };
   const directoryService = new DeviceDirectoryService(deviceRepository, clock.now);
   const authService = new DeviceAuthService(challengeRepository, deviceRepository, signatureVerifier, clock.now);
@@ -220,6 +221,86 @@ test('verifyChallenge after expiry is EXPIRED, even with a valid signature', asy
   const error = await authService.verifyChallenge(issued.challengeId, signature).catch((e) => e);
   assert.ok(error instanceof DeviceAuthError);
   assert.equal(error.code, 'EXPIRED');
+});
+
+test('verifyChallenge fails closed on an invalid server clock before signature verification or consumption', async () => {
+  let verifierCalls = 0;
+  const signatureVerifier = { async verify() { verifierCalls += 1; return true; } };
+  const { authService, directoryService, challengeRepository, clock } = buildHarness({ signatureVerifier });
+  const { device } = await registerDeviceWithDsk(directoryService);
+  const issued = await authService.issueChallenge(device.deviceId);
+  clock.setTime(Number.NaN);
+
+  const error = await authService.verifyChallenge(issued.challengeId, 'valid-signature').catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'EXPIRED');
+  assert.equal(verifierCalls, 0);
+  assert.equal((await challengeRepository.findById(issued.challengeId)).consumedAt, null);
+});
+
+test('verifyChallenge revalidates the consumption clock after signature work and leaves challenge intact if invalid', async () => {
+  let clock;
+  const signatureVerifier = {
+    async verify() {
+      clock.setTime(Number.NaN);
+      return true;
+    },
+  };
+  const harness = buildHarness({ signatureVerifier });
+  clock = harness.clock;
+  const { device } = await registerDeviceWithDsk(harness.directoryService);
+  const issued = await harness.authService.issueChallenge(device.deviceId);
+
+  const error = await harness.authService.verifyChallenge(issued.challengeId, 'valid-signature').catch((e) => e);
+  assert.ok(error instanceof DeviceAuthError);
+  assert.equal(error.code, 'EXPIRED');
+  assert.equal((await harness.challengeRepository.findById(issued.challengeId)).consumedAt, null);
+});
+
+test('in-memory challenge consumption snapshots its timestamp before an awaited signer check', async () => {
+  let releaseKeyCheck;
+  let signalKeyCheckStarted;
+  const keyCheckStarted = new Promise((resolve) => { signalKeyCheckStarted = resolve; });
+  const keyCheckGate = new Promise((resolve) => { releaseKeyCheck = resolve; });
+  const challengeRepository = createInMemoryDeviceChallengeRepository({
+    async isSignerKeyActive() {
+      signalKeyCheckStarted();
+      await keyCheckGate;
+      return true;
+    },
+  });
+  const expiresAt = new Date('2026-01-01T01:00:00.000Z');
+  const originalConsumedAt = new Date('2026-01-01T00:30:00.000Z');
+  const record = {
+    challengeId: 'challenge-one', deviceId: 'device-one', familyId: 'family-one', nonce: 'nonce-one',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'), expiresAt, consumedAt: null,
+  };
+  await challengeRepository.create(record);
+
+  const consuming = challengeRepository.consumeAtomically('challenge-one', originalConsumedAt, {
+    familyId: 'family-one', deviceId: 'device-one', keyId: 'key-one', publicKey: 'public-key-one',
+  });
+  await keyCheckStarted;
+  originalConsumedAt.setTime(Date.parse('2026-01-01T02:00:00.000Z'));
+  releaseKeyCheck();
+
+  const outcome = await consuming;
+  assert.equal(outcome.outcome, 'CONSUMED');
+  assert.equal(outcome.challenge.consumedAt.toISOString(), '2026-01-01T00:30:00.000Z');
+});
+
+test('in-memory challenge repository rejects invalid or out-of-range consume timestamps without consuming', async () => {
+  const challengeRepository = createInMemoryDeviceChallengeRepository();
+  await challengeRepository.create({
+    challengeId: 'challenge-one', deviceId: 'device-one', familyId: 'family-one', nonce: 'nonce-one',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    expiresAt: new Date('2026-01-01T01:00:00.000Z'), consumedAt: null,
+  });
+  const signer = { familyId: 'family-one', deviceId: 'device-one', keyId: 'key-one', publicKey: 'public-key-one' };
+
+  assert.equal((await challengeRepository.consumeAtomically('challenge-one', new Date(Number.NaN), signer)).outcome, 'EXPIRED');
+  assert.equal((await challengeRepository.consumeAtomically('challenge-one', new Date('0999-12-31T23:59:59.999Z'), signer)).outcome, 'EXPIRED');
+  assert.equal((await challengeRepository.findById('challenge-one')).consumedAt, null);
 });
 
 test('verifyChallenge for an unknown challengeId is NOT_FOUND', async () => {

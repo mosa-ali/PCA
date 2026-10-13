@@ -114,7 +114,7 @@ function buildApp() {
         if (!keys.some((key) => key.keyPurpose === 'DSK' && key.keyId === dskKeyId && key.status === 'ACTIVE')) {
           return 'DEVICE_NOT_ACTIVE';
         }
-        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+        return { familyId, deviceId, dskKeyId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
       },
     },
   });

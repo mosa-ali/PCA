@@ -1,5 +1,6 @@
 package org.pca.app.feature.installapproval
 
+import java.util.concurrent.CancellationException
 import org.pca.app.platform.ProtectionMode
 import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
 import org.pca.app.runtime.schedule.EmergencyAccessFloor
@@ -35,7 +36,8 @@ object InstallApprovalDecisionApplier {
      *    APPROVED, (re-)suspends it on DENIED, via the real [packageSuspensionExecutor] call. The
      *    returned state is ENFORCED only if that platform call itself reports success --
      *    otherwise [InstallApprovalCapabilityState.AUTHORIZATION_REQUIRED] (the platform operation
-     *    itself failed, so enforcement did not actually happen; never claim it did).
+     *    itself returned false or raised an ordinary exception, so enforcement did not actually
+     *    happen; never claim it did). Cancellation and fatal JVM Errors propagate.
      *  - Any other current capability: no suspend/unsuspend call is made at all (there is no
      *    authority to make one with) -- the returned state is exactly the current capability,
      *    never ENFORCED, regardless of what capability existed when the request was created or
@@ -65,7 +67,13 @@ object InstallApprovalDecisionApplier {
         if (shouldSuspend && EmergencyAccessFloor.isProtectedSurfaceToken(EmergencyAccessFloor.opaqueTokenForPackage(packageName), communicationSurfaces)) {
             return InstallApprovalCapabilityState.ENFORCED
         }
-        val applied = runCatching { packageSuspensionExecutor.setSuspended(packageName, shouldSuspend) }.getOrDefault(false)
+        val applied = try {
+            packageSuspensionExecutor.setSuspended(packageName, shouldSuspend)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
         return if (applied) InstallApprovalCapabilityState.ENFORCED else InstallApprovalCapabilityState.AUTHORIZATION_REQUIRED
     }
 }

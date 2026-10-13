@@ -491,6 +491,37 @@ test('CONCURRENCY (c) SAME_VALUE_RETRY: a concurrent identical-bytes retry pair 
   assert.ok(latest.signedEpochBytes.equals(record.signedEpochBytes));
 });
 
+test('CONCURRENCY (d) DIFFERENT_FAMILIES: simultaneous first accepted epochs commit independently with per-family floors', async () => {
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  const familyA = uniqueFamilyId();
+  const familyB = uniqueFamilyId();
+  const recordA = makeRecord(familyA, 1, 1);
+  const recordB = makeRecord(familyB, 1, 1);
+  await ensureActiveLifecycleFixture(recordA);
+  await ensureActiveLifecycleFixture(recordB);
+
+  const [outcomeA, outcomeB] = await recordConcurrentOutcomes('CONCURRENT_DIFFERENT_FAMILIES', [
+    () => store.appendAcceptedEpoch(recordA, null),
+    () => store.appendAcceptedEpoch(recordB, null),
+  ]);
+
+  assert.deepEqual(outcomeA, { outcome: 'APPENDED' });
+  assert.deepEqual(outcomeB, { outcome: 'APPENDED' });
+  assert.equal(await countEpochRows(familyA), 1);
+  assert.equal(await countEpochRows(familyB), 1);
+  assert.deepEqual(await floorStore.readFloors(familyA), {
+    minimumAcceptedTrustSetEpoch: 1,
+    minimumAcceptedKeyEpoch: 1,
+  });
+  assert.deepEqual(await floorStore.readFloors(familyB), {
+    minimumAcceptedTrustSetEpoch: 1,
+    minimumAcceptedKeyEpoch: 1,
+  });
+  assert.equal((await store.readLatestEpoch(familyA))?.familyId, familyA);
+  assert.equal((await store.readLatestEpoch(familyB))?.familyId, familyB);
+});
+
 test('DUPLICATE PRECEDENCE: exact replay and same-epoch conflict are resolved before a stale expected-head check', async () => {
   const store = new MySqlTrustSetEpochStore();
   const familyId = uniqueFamilyId();
@@ -635,6 +666,21 @@ test('EXPECTED_HEAD_SNAPSHOT: caller mutation after invocation cannot change the
   const latest = await store.readLatestEpoch(familyId);
   assert.equal(latest?.trustSetEpoch, 2);
   assert.ok(latest?.signedEpochBytes.equals(candidate.signedEpochBytes));
+});
+
+test('APPEND_RECORD_SNAPSHOT: caller mutation after invocation cannot retimestamp the accepted epoch', async () => {
+  const familyId = uniqueFamilyId();
+  const record = makeRecord(familyId, 1, 1);
+  const originalReceivedAt = record.receivedAt.getTime();
+  await ensureActiveLifecycleFixture(record);
+
+  const store = new MySqlTrustSetEpochStoreBase();
+  const appendPromise = store.appendAcceptedEpoch(record, null);
+  record.receivedAt.setTime(originalReceivedAt + 60_000);
+
+  assert.deepEqual(await appendPromise, { outcome: 'APPENDED' });
+  const latest = await store.readLatestEpoch(familyId);
+  assert.equal(latest?.receivedAt.getTime(), originalReceivedAt);
 });
 
 test('EXPECTED_HEAD_INVALID: malformed compare targets throw before creating epoch or floors rows', async () => {

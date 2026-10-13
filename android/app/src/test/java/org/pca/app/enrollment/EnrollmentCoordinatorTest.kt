@@ -1231,9 +1231,9 @@ class EnrollmentCoordinatorTest {
                 serverBaseUrl = "https://api.pca.app",
                 platform = "ANDROID",
                 signingPublicKeyBase64 = "dsk",
-                signingPrivateKeyAlias = "dsk-alias",
+                signingPrivateKeyAlias = "pca.dsk.attempt-restore-1",
                 encryptionPublicKeyBase64 = "dek",
-                encryptionPrivateKeyAlias = "dek-alias",
+                encryptionPrivateKeyAlias = "pca.dek.attempt-restore-1",
                 status = org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
             ),
         )
@@ -1260,9 +1260,9 @@ class EnrollmentCoordinatorTest {
                 serverBaseUrl = "https://api.pca.app",
                 platform = "ANDROID",
                 signingPublicKeyBase64 = "dsk",
-                signingPrivateKeyAlias = "dsk-alias",
+                signingPrivateKeyAlias = "pca.dsk.attempt-recover-1",
                 encryptionPublicKeyBase64 = "dek",
-                encryptionPrivateKeyAlias = "dek-alias",
+                encryptionPrivateKeyAlias = "pca.dek.attempt-recover-1",
                 status = org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
             ),
         )
@@ -1286,7 +1286,7 @@ class EnrollmentCoordinatorTest {
     fun `recoverAttempt 404 preserves unresolved attempt and key custody -- no false terminal answer or automatic retry`() = runTest {
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
         val unresolved = org.pca.app.storage.PendingEnrollmentAttempt(
-            "attempt-x", "secret-x", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias", "dek", "dek-alias",
+            "attempt-x", "secret-x", "https://api.pca.app", "ANDROID", "dsk", "pca.dsk.attempt-x", "dek", "pca.dek.attempt-x",
             org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
         )
         pendingAttemptStore.save(unresolved)
@@ -1701,7 +1701,7 @@ class EnrollmentCoordinatorTest {
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
         pendingAttemptStore.save(
             org.pca.app.storage.PendingEnrollmentAttempt(
-                "attempt-y", "secret-y", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias", "dek", "dek-alias",
+                "attempt-y", "secret-y", "https://api.pca.app", "ANDROID", "dsk", "pca.dsk.attempt-y", "dek", "pca.dek.attempt-y",
                 org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
             ),
         )
@@ -1725,7 +1725,7 @@ class EnrollmentCoordinatorTest {
     fun `malformed recovery HTTP profile response preserves exact attempt and key custody`() = runTest {
         val attempt = PendingEnrollmentAttempt(
             "attempt-malformed-recovery", "recovery-secret", "https://api.pca.app", "ANDROID",
-            "dsk-public", "dsk-alias", "dek-public", "dek-alias",
+            "dsk-public", "pca.dsk.attempt-malformed-recovery", "dek-public", "pca.dek.attempt-malformed-recovery",
             PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
         )
         val pending = InMemoryPendingEnrollmentAttemptStore().apply { save(attempt) }
@@ -1857,8 +1857,8 @@ class EnrollmentCoordinatorTest {
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     private fun retainedAttempt(invitationToken: String? = null) = org.pca.app.storage.PendingEnrollmentAttempt(
-        "retained", "secret", "https://api.pca.app", "ANDROID", "dsk", "dsk-alias",
-        "dek", "dek-alias", org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
+        "retained", "secret", "https://api.pca.app", "ANDROID", "dsk", "pca.dsk.retained",
+        "dek", "pca.dek.retained", org.pca.app.storage.PendingEnrollmentAttemptStatus.RESULT_UNKNOWN,
         invitationTokenSha256 = invitationToken?.let(::invitationDigest),
     )
 

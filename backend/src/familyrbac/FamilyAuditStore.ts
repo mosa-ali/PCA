@@ -36,6 +36,29 @@ export interface FamilyAuditRecord {
 
 export const MAX_AUDIT_NOTE_LENGTH = 280;
 
+function sanitizeAuditNote(note: string | null | undefined): string | null {
+  if (note == null || note.length === 0) return null;
+
+  // Keep ordinary Unicode (including Arabic joining controls), while removing
+  // C0/C1 controls, bidi overrides/isolates, and the BOM/zero-width no-break
+  // character that can make a note render differently from its stored text.
+  const sanitized = note
+    .normalize('NFC')
+    .replace(/[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (sanitized.length === 0) return null;
+
+  // String#slice counts UTF-16 code units; avoid leaving a dangling high
+  // surrogate when the length limit falls inside a supplementary character.
+  let bounded = sanitized.slice(0, MAX_AUDIT_NOTE_LENGTH);
+  const finalCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  if (finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff) {
+    bounded = bounded.slice(0, -1);
+  }
+  return bounded.length > 0 ? bounded : null;
+}
+
 function snapshotRecord(record: FamilyAuditRecord): FamilyAuditRecord {
   return {
     eventId: record.eventId,
@@ -117,10 +140,7 @@ export class FamilyAuditService {
     // Zero is retained as the existing unresolved-actor sentinel. Reject
     // values outside the SQL INT epoch range before append or delivery.
     if (!isFamilyEpochNumber(input.trustSetEpoch, 0)) throw new TypeError('invalid trust set epoch');
-    const freeTextNote =
-      input.freeTextNote != null && input.freeTextNote.length > 0
-        ? input.freeTextNote.slice(0, MAX_AUDIT_NOTE_LENGTH)
-        : null;
+    const freeTextNote = sanitizeAuditNote(input.freeTextNote);
     const record: FamilyAuditRecord = {
       familyId: input.familyId,
       actionType: input.actionType,

@@ -53,6 +53,8 @@ class ModeAAndroidUsageAdapterTest {
     fun `sums only YouTube-package usage sessions into an aggregate duration, labeled app usage only`() = runTest {
         usageSessions.record("s1", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 600_000L, 600_000L, SourceConfidence.PLATFORM_API)
         usageSessions.record("s2", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 600_000L, 900_000L, 300_000L, SourceConfidence.PLATFORM_API)
+        // Inferred duration must not be reported as Android UsageStats evidence.
+        usageSessions.record("heuristic", DEVICE, UsageAppToken.forPackageName(YOUTUBE_APP_PACKAGE_NAME), 0L, 7_200_000L, 7_200_000L, SourceConfidence.HEURISTIC)
         usageSessions.record("s3", DEVICE, "com.other.app", 0L, 5_000_000L, 5_000_000L, SourceConfidence.PLATFORM_API)
         // A raw package string is outside the recorder contract and must never alias the
         // opaque package token used by production capture.

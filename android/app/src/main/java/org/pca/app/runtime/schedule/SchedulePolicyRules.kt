@@ -1,6 +1,8 @@
 package org.pca.app.runtime.schedule
 
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -33,6 +35,58 @@ fun validateScheduleWindows(windows: List<ScheduleWindow>): List<String> {
         if (!seenIds.add(identity)) errors.add("duplicate window id")
     }
     return errors
+}
+
+fun validateAppScope(scope: AppScope, description: String): List<String> = when (scope) {
+    AppScope.All -> emptyList()
+    is AppScope.Apps -> if (scope.apps.any(String::isEmpty)) {
+        listOf("$description appScope must contain non-empty app tokens")
+    } else emptyList()
+}
+
+fun validateBonusGrant(grant: BonusGrant): List<String> = buildList {
+    addAll(validateAppScope(grant.appScope, "bonus grant ${grant.id}"))
+    if (grant.extraMinutes < 0) add("bonus grant ${grant.id}: extraMinutes must be a non-negative integer")
+    if (!isPolicyInstant(grant.grantedAtUtc) || !isPolicyInstant(grant.expiresAtUtc) ||
+        !grant.expiresAtUtc.isAfter(grant.grantedAtUtc)) {
+        add("bonus grant ${grant.id}: grant and expiry must be valid increasing instants")
+    }
+}
+
+fun validateParentException(exception: ParentException): List<String> = buildList {
+    addAll(validateAppScope(exception.appScope, "parent exception ${exception.id}"))
+    if (!isPolicyInstant(exception.startAtUtc) || !isPolicyInstant(exception.endAtUtc) ||
+        !exception.endAtUtc.isAfter(exception.startAtUtc)) {
+        add("parent exception ${exception.id} must have finite dates with end after start")
+    }
+}
+
+fun validateDailyAppLimit(limit: DailyAppLimit): List<String> = buildList {
+    addAll(validateAppScope(limit.appScope, "daily limit"))
+    if (limit.limitMinutes < 0) add("daily limit limitMinutes must be a non-negative integer")
+    if (limit.usedMinutesToday < 0) add("daily limit usedMinutesToday must be a non-negative integer")
+    if (!isCanonicalGregorianLocalDate(limit.anchorLocalDate)) {
+        add("daily limit anchorLocalDate must be a canonical Gregorian date")
+    }
+}
+
+private const val MAX_POLICY_INSTANT_MILLIS = 8_640_000_000_000_000L
+private val MIN_POLICY_INSTANT = Instant.ofEpochMilli(-MAX_POLICY_INSTANT_MILLIS)
+private val MAX_POLICY_INSTANT = Instant.ofEpochMilli(MAX_POLICY_INSTANT_MILLIS)
+
+// Compare at nanosecond precision. toEpochMilli() truncates a positive sub-millisecond tail,
+// which otherwise lets MAX_DATE + 1ns pass as the maximum valid JavaScript Date millisecond.
+private fun isPolicyInstant(value: Instant): Boolean =
+    !value.isBefore(MIN_POLICY_INSTANT) && !value.isAfter(MAX_POLICY_INSTANT)
+
+private fun isCanonicalGregorianLocalDate(value: String): Boolean {
+    if (!Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(value)) return false
+    return try {
+        val parsed = LocalDate.parse(value)
+        parsed.year in 1..9999 && parsed.toString() == value
+    } catch (_: DateTimeParseException) {
+        false
+    }
 }
 
 private fun exactUtf8Identity(value: String): String? = try {

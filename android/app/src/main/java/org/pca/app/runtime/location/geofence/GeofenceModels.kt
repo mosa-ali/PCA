@@ -25,11 +25,16 @@ data class GeofenceZone(
 ) {
     init {
         require(zoneId.isNotBlank()) { "zoneId must not be blank" }
-        require(radiusMeters > 0.0) { "radiusMeters must be positive" }
+        require(radiusMeters.isFinite() && radiusMeters > 0.0) { "radiusMeters must be finite and positive" }
         require(centerLatitude in -90.0..90.0) { "centerLatitude out of range" }
         require(centerLongitude in -180.0..180.0) { "centerLongitude out of range" }
         require(transitionTypes.isNotEmpty()) { "transitionTypes must not be empty" }
-        require(revision > 0L) { "revision must be positive" }
+        require(revision in 1L..MAX_REVISION) { "revision is outside the Safe Zone counter range" }
+    }
+
+    companion object {
+        /** Safe Zone revisions are stored as MySQL INT UNSIGNED across platforms. */
+        const val MAX_REVISION: Long = 4_294_967_295L
     }
 }
 

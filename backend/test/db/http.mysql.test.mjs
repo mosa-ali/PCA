@@ -55,7 +55,7 @@ const invitationService = new InvitationService(invitationRepository);
 const deviceRepository = new MySqlDeviceRepository();
 const pairingService = new PairingService(deviceRepository);
 const enrollmentCoordinator = new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository());
-const relayService = new RelayService(new MySqlRelayRepository());
+const relayService = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }));
 const deviceAuthService = new DeviceAuthService(
   new MySqlDeviceChallengeRepository(),
   deviceRepository,
@@ -976,7 +976,7 @@ test('MySQL E2E: lost bootstrap response recovers the same device while pairing 
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}/confirm`,
     headers: authHeader(parent.rawToken),
-    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
+    payload: await pairingConfirmationPayload(app, parent, deviceIdTheClientNeverSaw),
   });
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
@@ -1036,6 +1036,21 @@ async function bootstrapDevice(app, familyId) {
   return bootstrapResponse.json().deviceId;
 }
 
+async function pairingConfirmationPayload(app, parent, deviceId, { stepUp = true } = {}) {
+  const view = await app.inject({
+    method: 'GET',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}`,
+    headers: authHeader(parent.rawToken),
+  });
+  assert.equal(view.statusCode, 200);
+  const body = {
+    expectedDskFingerprint: view.json().dskFingerprint,
+    expectedDekFingerprint: view.json().dekFingerprint,
+  };
+  if (stepUp) body.stepUpToken = await parent.issueStepUp('family.security.settings.change');
+  return body;
+}
+
 test('MySQL HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
@@ -1055,7 +1070,7 @@ test('MySQL HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
-    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
+    payload: await pairingConfirmationPayload(app, parent, deviceId),
   });
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.json().status, 'PAIRED');
@@ -1083,7 +1098,10 @@ test('MySQL HTTP: wrong-family pairing view/confirm is 404 (family-scoped device
     method: 'POST',
     url: `/v1/families/${attacker.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(attacker.rawToken),
-    payload: { stepUpToken: await attacker.issueStepUp('family.security.settings.change') },
+    payload: {
+      ...(await pairingConfirmationPayload(app, owner, deviceId, { stepUp: false })),
+      stepUpToken: await attacker.issueStepUp('family.security.settings.change'),
+    },
   });
   assert.equal(confirm.statusCode, 404);
 });
@@ -1117,13 +1135,16 @@ test('MySQL HTTP: repeated confirmation is idempotent', async () => {
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
-    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
+    payload: await pairingConfirmationPayload(app, parent, deviceId),
   });
   const second = await app.inject({
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
-    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
+    payload: {
+      ...(await pairingConfirmationPayload(app, parent, deviceId, { stepUp: false })),
+      stepUpToken: await parent.issueStepUp('family.security.settings.change'),
+    },
   });
   assert.equal(first.statusCode, 200);
   assert.equal(second.statusCode, 200);
@@ -1134,12 +1155,13 @@ test('MySQL HTTP: confirming a REVOKED device is 409, not silently accepted', as
   const app = freshApp();
   const parent = await authorizedParent();
   const deviceId = await bootstrapDevice(app, parent.familyId);
+  const expectedFingerprints = await pairingConfirmationPayload(app, parent, deviceId, { stepUp: false });
   await deviceRepository.revokeDeviceAndKeysAtomically(parent.familyId, deviceId, new Date());
   const confirm = await app.inject({
     method: 'POST',
     url: `/v1/families/${parent.familyId}/pairing-requests/${deviceId}/confirm`,
     headers: authHeader(parent.rawToken),
-    payload: { stepUpToken: await parent.issueStepUp('family.security.settings.change') },
+    payload: { ...expectedFingerprints, stepUpToken: await parent.issueStepUp('family.security.settings.change') },
   });
   assert.equal(confirm.statusCode, 409);
 });

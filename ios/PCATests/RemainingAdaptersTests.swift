@@ -16,6 +16,19 @@ final class PrayerNotificationSchedulingTests: XCTestCase {
         let request = PrayerReminderRequest(id: "fajr", fireDate: now.addingTimeInterval(-1), title: "Fajr", body: "")
         XCTAssertEqual(PrayerNotificationScheduling.validate(request, nowUtc: now), .rejectedPastFireDate)
     }
+
+    func testNonFiniteFireOrCurrentDateIsRejected() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        for invalidTime in [Double.nan, .infinity, -.infinity] {
+            let invalidFireDate = PrayerReminderRequest(
+                id: "fajr", fireDate: Date(timeIntervalSince1970: invalidTime), title: "Fajr", body: "")
+            XCTAssertEqual(PrayerNotificationScheduling.validate(invalidFireDate, nowUtc: now), .rejectedInvalidDate)
+            let invalidNow = Date(timeIntervalSince1970: invalidTime)
+            let futureRequest = PrayerReminderRequest(
+                id: "fajr", fireDate: now.addingTimeInterval(3600), title: "Fajr", body: "")
+            XCTAssertEqual(PrayerNotificationScheduling.validate(futureRequest, nowUtc: invalidNow), .rejectedInvalidDate)
+        }
+    }
 }
 
 final class ChildStatusSnapshotTests: XCTestCase {
@@ -548,6 +561,18 @@ final class DeviceActivityBoundaryPlannerTests: XCTestCase {
         let bad = window("bad", .init(hour: 25, minute: 0), .init(hour: 2, minute: 0))
         XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(windows: [bad]), now: now))
         XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(for: policy(), now: Date(timeIntervalSince1970: .infinity)))
+    }
+    func testEvaluationClockMustUseScheduleEnginesSupportedDateRange() throws {
+        for timestamp in [-8_640_000_000_001.0, 8_640_000_000_001.0] {
+            XCTAssertThrowsError(try DeviceActivityScheduleMapper.boundaryTriggers(
+                for: policy(), now: Date(timeIntervalSince1970: timestamp))) {
+                XCTAssertEqual($0 as? DeviceActivityBoundaryPlanError, .malformedBoundary)
+            }
+        }
+        for timestamp in [-8_640_000_000_000.0, 8_640_000_000_000.0] {
+            XCTAssertNoThrow(try DeviceActivityScheduleMapper.boundaryTriggers(
+                for: policy(), now: Date(timeIntervalSince1970: timestamp)))
+        }
     }
     func testDSTEdgesRetainWallClockZoneRatherThanFixedUTCOffset() throws {
         for date in ["2025-03-08T12:00:00Z", "2025-11-01T12:00:00Z"] {

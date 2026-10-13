@@ -119,8 +119,15 @@ internal object SchedulePolicyJson {
     }
 
     private fun decodeAppScope(json: JSONObject): AppScope = when (json.getString("mode")) {
-        "ALL" -> AppScope.All
-        else -> AppScope.Apps(json.getJSONArray("apps").let { arr -> (0 until arr.length()).map { arr.getString(it) } })
+        "ALL" -> {
+            if (json.keys().asSequence().toSet() != setOf("mode")) throw JSONException("Invalid ALL app scope")
+            AppScope.All
+        }
+        "APPS" -> {
+            if (json.keys().asSequence().toSet() != setOf("mode", "apps")) throw JSONException("Invalid APPS app scope")
+            AppScope.Apps(json.getJSONArray("apps").let { arr -> (0 until arr.length()).map { arr.getString(it) } })
+        }
+        else -> throw JSONException("Unsupported app scope mode")
     }
 
     private fun encodeWindow(w: ScheduleWindow): JSONObject = JSONObject()

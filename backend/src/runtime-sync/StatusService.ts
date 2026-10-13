@@ -27,6 +27,7 @@ export class DeviceSyncStatusTracker {
   }
 
   markSyncSuccess(deviceId: string, atUtc: Date): void {
+    if (!(atUtc instanceof Date) || !Number.isFinite(atUtc.getTime())) return;
     const existing = this.byDevice.get(deviceId);
     this.byDevice.set(deviceId, {
       activeSyncCount: existing?.activeSyncCount ?? 0,

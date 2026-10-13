@@ -162,6 +162,11 @@ public final class ChildAuthorizationCenter {
         do {
             try await source.requestChildAuthorization()
             return refresh()
+        } catch is CancellationError {
+            // Cancellation is caller lifecycle control, not evidence that
+            // FamilyControls is unsupported. Re-read the live state and keep
+            // the nonthrowing API's result truthful.
+            return refresh()
         } catch {
             return .entitlementUnavailable
         }

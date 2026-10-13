@@ -31,6 +31,14 @@ async function pairedCandidateDevice(deviceService) {
   return { device, signingKey, encryptionKey };
 }
 
+async function confirmCurrent(pairingService, deviceId, accountId, familyId = FAMILY_A) {
+  const view = await pairingService.getPairingRequest(familyId, deviceId);
+  return pairingService.confirmPairing(familyId, deviceId, accountId, {
+    expectedDskFingerprint: view.dskFingerprint,
+    expectedDekFingerprint: view.dekFingerprint,
+  });
+}
+
 test('getPairingRequest exposes device id, platform, status, and both key fingerprints', async () => {
   const { deviceService, pairingService } = buildServices();
   const { device, signingKey, encryptionKey } = await pairedCandidateDevice(deviceService);
@@ -60,12 +68,57 @@ test('authorized parent confirmation: PAIRING_PENDING -> PAIRED', async () => {
   const { deviceService, pairingService, auditRepository } = buildServices();
   const { device } = await pairedCandidateDevice(deviceService);
   const confirmedBy = randomUUID();
-  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  const view = await confirmCurrent(pairingService, device.deviceId, confirmedBy);
   assert.equal(view.status, 'PAIRED');
   const events = await auditRepository.listForFamily(FAMILY_A);
   const transition = events.find((event) => event.actionType === 'DEVICE_LIFECYCLE_TRANSITION' && event.targetScope.id === device.deviceId);
   assert.equal(transition?.actorDeviceId, 'SERVICE_SESSION');
   assert.equal(transition?.actorMemberId, null);
+});
+
+test('confirmation rejects a stale fingerprint snapshot after key rotation and leaves the request pending', async () => {
+  const { deviceService, pairingService } = buildServices();
+  const { device } = await pairedCandidateDevice(deviceService);
+  const displayed = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
+  await deviceService.addDeviceKey(FAMILY_A, device.deviceId, key(), 'DEK');
+
+  await assert.rejects(
+    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), {
+      expectedDskFingerprint: displayed.dskFingerprint,
+      expectedDekFingerprint: displayed.dekFingerprint,
+    }),
+    { code: 'FINGERPRINT_MISMATCH' },
+  );
+  assert.equal((await pairingService.getPairingRequest(FAMILY_A, device.deviceId)).status, 'PAIRING_PENDING');
+});
+
+test('confirmation rejects a missing active DSK and a changed displayed DSK', async () => {
+  const { deviceService, pairingService, repository } = buildServices();
+  const { device } = await pairedCandidateDevice(deviceService);
+  const displayed = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
+  const keys = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+  const dsk = keys.find((candidate) => candidate.keyPurpose === 'DSK');
+  await deviceService.revokeKey(FAMILY_A, device.deviceId, dsk.keyId);
+  await assert.rejects(
+    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), {
+      expectedDskFingerprint: displayed.dskFingerprint,
+      expectedDekFingerprint: displayed.dekFingerprint,
+    }),
+    { code: 'FINGERPRINT_MISMATCH' },
+  );
+  assert.equal((await pairingService.getPairingRequest(FAMILY_A, device.deviceId)).status, 'PAIRING_PENDING');
+});
+
+test('a DSK-only pairing confirms with an explicit null DEK fingerprint', async () => {
+  const { deviceService, pairingService } = buildServices();
+  const { device } = await deviceService.registerDevice({ familyId: FAMILY_A, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  const displayed = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
+  assert.equal(displayed.dekFingerprint, null);
+  const paired = await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), {
+    expectedDskFingerprint: displayed.dskFingerprint,
+    expectedDekFingerprint: null,
+  });
+  assert.equal(paired.status, 'PAIRED');
 });
 
 test('committed pairing returns PAIRED when audit append fails and logs no private error text', async () => {
@@ -81,8 +134,8 @@ test('committed pairing returns PAIRED when audit append fails and logs no priva
   const originalWarn = console.warn;
   console.warn = (message) => warnings.push(message);
   try {
-    assert.equal((await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID())).status, 'PAIRED');
-    assert.equal((await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID())).status, 'PAIRED');
+    assert.equal((await confirmCurrent(pairingService, device.deviceId, randomUUID())).status, 'PAIRED');
+    assert.equal((await confirmCurrent(pairingService, device.deviceId, randomUUID())).status, 'PAIRED');
   } finally {
     console.warn = originalWarn;
   }
@@ -102,9 +155,9 @@ test('confirmation is idempotent', async () => {
   const { device } = await pairedCandidateDevice(deviceService);
   const confirmedBy = randomUUID();
 
-  const first = await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  const first = await confirmCurrent(pairingService, device.deviceId, confirmedBy);
   currentTime += 60_000;
-  const second = await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  const second = await confirmCurrent(pairingService, device.deviceId, confirmedBy);
   assert.equal(first.status, 'PAIRED');
   assert.equal(second.status, 'PAIRED');
   assert.equal((await auditRepository.listForFamily(FAMILY_A)).filter((event) =>
@@ -123,7 +176,7 @@ test('concurrent pairing confirmations share one transition and one lifecycle au
   const confirmedBy = randomUUID();
 
   const results = await Promise.all(Array.from({ length: 20 }, () =>
-    pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy)));
+    confirmCurrent(pairingService, device.deviceId, confirmedBy)));
   assert.ok(results.every((result) => result.status === 'PAIRED'));
   const paired = await repository.findDeviceForFamily(FAMILY_A, device.deviceId);
   assert.ok(paired?.pairedAt);
@@ -133,7 +186,7 @@ test('concurrent pairing confirmations share one transition and one lifecycle au
 
   const originalPairedAt = paired.pairedAt.getTime();
   currentTime += 60_000;
-  await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  await confirmCurrent(pairingService, device.deviceId, confirmedBy);
   const repeated = await repository.findDeviceForFamily(FAMILY_A, device.deviceId);
   assert.equal(repeated?.pairedAt?.getTime(), originalPairedAt, 'retries preserve the winning pairedAt');
   assert.equal((await auditRepository.listForFamily(FAMILY_A)).filter((event) =>
@@ -143,9 +196,13 @@ test('concurrent pairing confirmations share one transition and one lifecycle au
 test('REVOKED pairing request cannot become PAIRED', async () => {
   const { deviceService, pairingService } = buildServices();
   const { device } = await pairedCandidateDevice(deviceService);
+  const displayed = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
   await deviceService.revokeDevice(FAMILY_A, device.deviceId);
   await assert.rejects(
-    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID()),
+    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), {
+      expectedDskFingerprint: displayed.dskFingerprint,
+      expectedDekFingerprint: displayed.dekFingerprint,
+    }),
     { code: 'INVALID_STATE' },
   );
 });
@@ -153,7 +210,7 @@ test('REVOKED pairing request cannot become PAIRED', async () => {
 test('viewer/service authority alone does not create family cryptographic trust: confirmPairing never reaches ACTIVE', async () => {
   const { deviceService, pairingService } = buildServices();
   const { device } = await pairedCandidateDevice(deviceService);
-  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID());
+  const view = await confirmCurrent(pairingService, device.deviceId, randomUUID());
   assert.notEqual(view.status, 'ACTIVE');
   assert.equal(view.status, 'PAIRED');
 });
@@ -175,7 +232,7 @@ test('the SAME account that registered a browser endpoint cannot confirm its own
   const registeredBy = randomUUID();
   const device = await pendingBrowserDevice(repository, registeredBy);
   await assert.rejects(
-    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, registeredBy),
+    () => confirmCurrent(pairingService, device.deviceId, registeredBy),
     { code: 'SELF_APPROVAL_DENIED' },
   );
   const stillPending = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
@@ -187,7 +244,7 @@ test('a DIFFERENT account confirming a browser endpoint succeeds normally', asyn
   const registeredBy = randomUUID();
   const confirmedBy = randomUUID();
   const device = await pendingBrowserDevice(repository, registeredBy);
-  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  const view = await confirmCurrent(pairingService, device.deviceId, confirmedBy);
   assert.equal(view.status, 'PAIRED');
 });
 
@@ -197,6 +254,6 @@ test('a device with no registeredByAccountId (ordinary invitation-enrolled mobil
   // Confirming with an arbitrary account (which never "registered" this
   // device, since mobile enrollment has no service session at all) must
   // succeed exactly as before this change.
-  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID());
+  const view = await confirmCurrent(pairingService, device.deviceId, randomUUID());
   assert.equal(view.status, 'PAIRED');
 });

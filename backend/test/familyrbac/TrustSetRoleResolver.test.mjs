@@ -33,7 +33,7 @@ test('resolveActor resolves the role/epoch of an ACTIVE entry', () => {
   const resolver = new FamilyTrustSetRoleResolver(store);
   const result = resolver.resolveActor('fam-1', 'dev-owner');
   assert.equal(isActorResolutionFailure(result), false);
-  assert.deepEqual(result, { deviceId: 'dev-owner', role: 'OWNER', trustSetEpoch: 5, keyEpoch: 3 });
+  assert.deepEqual(result, { familyId: 'fam-1', deviceId: 'dev-owner', dskKeyId: 'k1', role: 'OWNER', trustSetEpoch: 5, keyEpoch: 3 });
 });
 
 test('resolveActor fails for a device not present in the current trust set (IDOR: no such device)', () => {

@@ -454,6 +454,34 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         }
     }
 
+    func testUsageAssociationRejectsDirectAndEscapedDuplicatePersistedMembers() throws {
+        let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
+        let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let authority = Data("accepted-authority".utf8)
+        try associations.installAcceptedAssociation(scope: scope,
+            binding: associationBinding(Token(value: "selected")), authorityBinding: authority,
+            revision: 1, revalidateAuthority: { _ in })
+
+        let key = "com.pca.app.deviceactivity.usage-associations.v1"
+        let accepted = try XCTUnwrap(backing.values[key])
+        let json = try XCTUnwrap(String(data: accepted, encoding: .utf8))
+        let duplicateVariants = [
+            json.replacingOccurrences(of: "\"revision\":1", with: "\"revision\":1,\"revision\":2"),
+            json.replacingOccurrences(of: "\"revision\":1", with: "\"revision\":1,\"revis\\u0069on\":2"),
+        ]
+        XCTAssertTrue(duplicateVariants.allSatisfy { $0 != json })
+
+        for duplicate in duplicateVariants {
+            backing.values[key] = Data(duplicate.utf8)
+            XCTAssertThrowsError(try associations.resolveAcceptedAssociation(scope: scope,
+                logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
+                currentAuthorityBinding: authority, revalidateAuthority: { _ in })) {
+                XCTAssertEqual($0 as? DeviceActivityUsageAssociationError, .unavailableState)
+            }
+        }
+    }
+
     func testUsageAssociationPrecheckRejectionDoesNotPersistState() throws {
         let backing = Store(), coordination = LocalDeviceActivityPolicyCoordination()
         let associations = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
@@ -825,6 +853,22 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertThrowsError(try plan(policy(minutes: -1)))
         XCTAssertThrowsError(try plan(policy(minutes: Int.max)))
     }
+    func testUsagePlanningRejectsPolicyInstantsOutsideScheduleEngineRange() throws {
+        let beyondMaximum = Date(timeIntervalSince1970:
+            DeviceActivityUsagePlanner.maximumPolicyDateSeconds + 1)
+        XCTAssertThrowsError(try DeviceActivityUsagePlanner.plan(policy: policy(), binding: binding(),
+            generation: UUID().uuidString, now: beyondMaximum,
+            deviceTimeZone: TimeZone(identifier: "UTC")!, historicalActivitySupported: true,
+            otherMonitorCount: 0)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .malformedPlan)
+        }
+
+        let outOfRangeBonus = BonusGrant(id: "out-of-range", appScope: .all, extraMinutes: 1,
+            grantedAt: beyondMaximum, expiresAt: beyondMaximum.addingTimeInterval(60))
+        XCTAssertThrowsError(try plan(policy(bonuses: [outOfRangeBonus]))) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .invalidNumericPolicy)
+        }
+    }
     func testFinitePlanExpiresAtPolicyMidnightWithoutClaimingRenewal() throws {
         let value = try plan(policy())
         let utc = TimeZone(identifier: "UTC")!
@@ -840,6 +884,45 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertEqual(input.dailyLimit?.usedMinutesToday, 60)
         XCTAssertEqual(original.dailyLimit?.usedMinutesToday, 0)
         XCTAssertEqual(input.enforcementCapability, .degraded)
+    }
+    func testUnavailableCoverageDoesNotAttributePossiblyStaleUsageAndFailsClosed() throws {
+        var lowerBoundReads = 0
+        var applied: Set<Token>?
+        var removals = 0
+        let applications: Set<Token> = [Token(value: "opaque")]
+
+        let reconciled = try DeviceActivityUsageEnforcement.reconcile(
+            policy: policy(), now: now, applications: applications, protectedApplications: [],
+            coverageAvailable: false,
+            loadLowerBound: {
+                lowerBoundReads += 1
+                return 60
+            },
+            apply: { applied = $0 },
+            remove: { removals += 1 })
+
+        XCTAssertTrue(reconciled)
+        XCTAssertEqual(lowerBoundReads, 0,
+            "a counter from a partial or timezone-stale monitor day must not be attributed to today's local date")
+        XCTAssertEqual(applied, applications,
+            "degraded daily-limit coverage remains restrictive instead of relaxing enforcement")
+        XCTAssertEqual(removals, 0)
+    }
+    func testExplicitParentExceptionRetainsPrecedenceWhenUsageCoverageIsUnavailable() throws {
+        var applied = false
+        var removals = 0
+        let exception = ParentException(id: "approved-override", appScope: .all,
+            startAt: now.addingTimeInterval(-60), endAt: now.addingTimeInterval(60))
+
+        let reconciled = try DeviceActivityUsageEnforcement.reconcile(
+            policy: policy(exceptions: [exception]), now: now,
+            applications: [Token(value: "opaque")], protectedApplications: [],
+            coverageAvailable: false, loadLowerBound: { nil },
+            apply: { _ in applied = true }, remove: { removals += 1 })
+
+        XCTAssertTrue(reconciled)
+        XCTAssertFalse(applied, "the existing highest-precedence Parent exception remains an explicit allow")
+        XCTAssertEqual(removals, 1)
     }
     private func install(_ plan: DeviceActivityUsageDayPlan, store: Store, active: Bool) throws {
         let manifest = DeviceActivityMonitorInstallation(policyActivityId: plan.policyActivityId,
@@ -904,8 +987,9 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
 
         var shieldApplications = 0
         var shieldRemovals = 0
+        let protectedFloor = Set([Token(value: "protected-floor")])
         XCTAssertFalse(try DeviceActivityUsageEnforcement.reconcile(policy: policy(), now: now,
-            applications: Set([Token(value: "opaque")]), protectedApplications: [],
+            applications: Set([Token(value: "opaque")]), protectedApplications: protectedFloor,
             coverageAvailable: true,
             loadLowerBound: { try relaunchedUsage.lowerBound(for: value) },
             apply: { _ in shieldApplications += 1 },

@@ -1,5 +1,6 @@
 package org.pca.app.runtime.schedule
 
+import java.util.concurrent.CancellationException
 import org.pca.app.platform.DevicePolicyCapabilitySource
 import org.pca.app.platform.ManagedDeviceAuthority
 import org.pca.app.runtime.port.ScheduleEnforcementOutcome
@@ -85,9 +86,13 @@ class DevicePolicyScheduleEnforcementConsumer(
             -> return ScheduleEnforcementOutcome.UNAVAILABLE
         }
 
-        val applied = runCatching {
+        val applied = try {
             packageSuspensionExecutor.setSuspended(packageName, shouldSuspend)
-        }.getOrDefault(false)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
         if (!applied) return ScheduleEnforcementOutcome.FAILED
         return if (shouldSuspend) ScheduleEnforcementOutcome.APPLIED else ScheduleEnforcementOutcome.RELEASED
     }

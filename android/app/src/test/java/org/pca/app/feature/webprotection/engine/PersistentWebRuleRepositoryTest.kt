@@ -682,6 +682,29 @@ class PersistentWebRuleRepositoryTest {
     }
 
     @Test
+    fun `accepted empty security feed cannot lose its version floor silently`() {
+        val backing = InMemoryPersistentStateStore()
+        val original = PersistentWebRuleRepository(backing)
+        assertEquals(WebRuleReplaceResult.Applied(0), original.replaceSecurityFeedRules(emptyList(), "2.0.0"))
+
+        val persisted = org.json.JSONObject(backing.getString(RULE_KEY)!!)
+        assertEquals(true, persisted.getBoolean("securityFeedAccepted"))
+        val reopened = PersistentWebRuleRepository(backing)
+        assertEquals(WebRulePolicyState.VALID, reopened.state)
+        assertEquals("2.0.0", reopened.securityFeedVersion)
+
+        // The accepted package intentionally contains no rules, so rule rows cannot reveal
+        // that its monotonic version floor was erased. The durable acceptance marker must.
+        persisted.put("securityFeedVersion", org.json.JSONObject.NULL)
+        backing.putString(RULE_KEY, persisted.toString())
+        val afterCorruption = PersistentWebRuleRepository(backing)
+
+        assertEquals(WebRulePolicyState.CORRUPT_USING_LKG, afterCorruption.state)
+        assertMutationFailure { afterCorruption.replaceSecurityFeedRules(emptyList(), "1.0.0") }
+        assertEquals(persisted.toString(), backing.getString(RULE_KEY))
+    }
+
+    @Test
     fun `direct security replacement rejects invalid version before writes`() {
         val backing = InMemoryPersistentStateStore()
         val repo = PersistentWebRuleRepository(backing)

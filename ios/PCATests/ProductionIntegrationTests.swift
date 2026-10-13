@@ -52,6 +52,30 @@ final class ProductionIntegrationTests: XCTestCase {
             return true
         }
     }
+    private final class RejectedPendingOrdinaryTrustSetRuntimeManager: OrdinaryTrustSetRuntimeManaging {
+        private(set) var events: [String] = []
+        func resumePending() async throws -> OrdinaryTrustSetSubmissionResult? {
+            events.append("resume")
+            return .rejected
+        }
+        func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult {
+            events.append("submit")
+            return .unknown
+        }
+        func catchUp(maximumRecords: Int) async throws -> Bool {
+            events.append("catchUp")
+            return true
+        }
+    }
+    private final class FailSecondCatchUpOrdinaryTrustSetRuntimeManager: OrdinaryTrustSetRuntimeManaging {
+        private(set) var catchUpCalls = 0
+        func resumePending() async throws -> OrdinaryTrustSetSubmissionResult? { nil }
+        func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult { .unknown }
+        func catchUp(maximumRecords: Int) async throws -> Bool {
+            catchUpCalls += 1
+            return catchUpCalls == 1
+        }
+    }
 
     private func replayEnvelope(id: String = "message-1", nonce: String = "1", sender: String = "key-1",
                                 trust: Int = 1, key: Int = 1) throws -> (PCAInboundEnvelope, PCAInboundScope) {
@@ -787,7 +811,7 @@ final class ProductionIntegrationTests: XCTestCase {
     }
     @MainActor func testHostRecoversRetainedIntentBeforeFailedNetworkAcknowledgement() async throws {
         let response = try inboundResponse(), state = InMemoryPCADeviceStateStore()
-        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600)))
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600)))
         let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "host-recovery")
         try inbox.capture(response, sessionDeviceId: "device-1")
         let journal = PCAInboundApplicationJournal(keychain: InMemoryKeychainStore(), serviceNamespace: "host-recovery")
@@ -812,8 +836,8 @@ final class ProductionIntegrationTests: XCTestCase {
     }
     @MainActor func testHostSessionReplacementDuringInboundRecoveryPreservesPendingIntentAndCustody() async throws {
         let state = InMemoryPCADeviceStateStore()
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(600))
-        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "B", count: 43), expiresAt: Date().addingTimeInterval(600))
         try state.saveSession(session)
         let response = try inboundResponse()
         let keychain = InMemoryKeychainStore()
@@ -875,7 +899,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
     }
     @MainActor func testRuntimeTrustSetForbiddenRetainsSessionButUnauthorizedClearsIt() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         for (failure, shouldClearSession) in [(PCAAPIError.rejected, false), (.unauthorized, true)] {
             let state = InMemoryPCADeviceStateStore()
             try state.saveSession(session)
@@ -901,7 +925,7 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
     @MainActor func testOrdinaryTrustSetSubmissionClearsOnlyUnauthorizedSession() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let candidate = UntrustedTrustSetEpoch(familyId: "family-1", trustSetEpoch: 2, keyEpoch: 1,
             entries: [], issuedAt: "2026-10-09T00:00:00Z", supersedesEpoch: 1)
 
@@ -927,14 +951,35 @@ final class ProductionIntegrationTests: XCTestCase {
             XCTAssertEqual(model.applicationState, shouldClearSession ? .recovering : .error(.authorization))
         }
     }
+    @MainActor func testRejectedPendingTrustSetIsReturnedAfterCatchUpWithoutSigningAnotherCandidate() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
+        let state = InMemoryPCADeviceStateStore()
+        try state.saveSession(session)
+        let manager = RejectedPendingOrdinaryTrustSetRuntimeManager()
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: state,
+            firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+            ordinaryTrustSetCoordinator: manager
+        )
+        let candidate = UntrustedTrustSetEpoch(familyId: "family-1", trustSetEpoch: 2, keyEpoch: 1,
+            entries: [], issuedAt: "2026-10-09T00:00:00Z", supersedesEpoch: 1)
+
+        let result = try await model.submitOrdinaryTrustSetEpoch(candidate)
+
+        guard case .rejected = result else { return XCTFail("the authoritative pending rejection must reach the product caller") }
+        XCTAssertEqual(manager.events, ["resume", "catchUp"],
+            "a rejected durable attempt must be reconciled but must not be hidden by a new candidate submission")
+    }
     @MainActor func testRuntimeSyncHTTPForbiddenRetainsSessionAndUnauthorizedClearsIt() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         for (statusCode, expectedOutcome) in [(403, PCARuntimeCustodyOutcome.blocked), (401, .retryableFailure)] {
             let state = InMemoryPCADeviceStateStore()
             try state.saveSession(session)
             let transport = InMemoryPCAHTTPTransport { request in
                 XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer device-session")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
                 return PCAHTTPResponse(statusCode: statusCode, data: Data())
             }
             let runtimeClient = try PCADeviceRuntimeSyncClient(
@@ -958,7 +1003,7 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
     @MainActor func testProtectionStatusUnauthorizedCannotCompleteRuntimeCampaign() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let inboundResponse = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
 
         for (statusCode, expectedOutcome) in [(401, PCARuntimeCustodyOutcome.retryableFailure), (403, .blocked)] {
@@ -995,8 +1040,67 @@ final class ProductionIntegrationTests: XCTestCase {
             XCTAssertEqual(model.applicationState, statusCode == 401 ? .recovering : .error(.authorization))
         }
     }
+    @MainActor func testProtectionStatusProjectionRetriesAfterRestartWithRotatedSession() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "B", count: 43), expiresAt: Date().addingTimeInterval(900))
+        let state = InMemoryPCADeviceStateStore()
+        try state.saveSession(session)
+        let inboundResponse = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
+        var statusBodies: [Data] = []
+        var statusAuthorizations: [String?] = []
+        var statusAttempts = 0
+        let transport = InMemoryPCAHTTPTransport { request in
+            switch request.url?.path {
+            case "/v1/runtime-sync/inbound":
+                return PCAHTTPResponse(statusCode: 200, data: inboundResponse)
+            case "/v1/runtime-sync/protection-status":
+                statusAttempts += 1
+                statusBodies.append(try XCTUnwrap(request.httpBody))
+                statusAuthorizations.append(request.value(forHTTPHeaderField: "Authorization"))
+                return PCAHTTPResponse(statusCode: statusAttempts == 1 ? 503 : 200, data: Data("{}".utf8))
+            default:
+                XCTFail("unexpected runtime endpoint: \(request.url?.path ?? "nil")")
+                return PCAHTTPResponse(statusCode: 500, data: Data())
+            }
+        }
+        let runtimeClient = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+        let inboxKeychain = InMemoryKeychainStore()
+
+        let firstProcess = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+            firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+            runtimeSyncClient: runtimeClient,
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: inboxKeychain, serviceNamespace: "status-projection-retry"))
+
+        let firstOutcome = try await firstProcess.synchronizeRuntimeCampaign()
+        XCTAssertEqual(firstOutcome, .morePending,
+            "a transient status projection failure must leave the runtime campaign pending")
+        XCTAssertEqual(firstProcess.syncConnectionState, .syncPending)
+
+        // Model a process restart after session renewal. The latest protection
+        // status is recomputed from the runtime and safely re-posted; no bearer
+        // or previously signed payload is retained as an outbox item.
+        try state.saveSession(replacement)
+        let restartedProcess = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+            firstDeviceRootStore: InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+                seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")),
+            runtimeSyncClient: runtimeClient,
+            inboundInbox: PCAKeychainInboundInboxStore(keychain: inboxKeychain, serviceNamespace: "status-projection-retry"))
+
+        let restartedOutcome = try await restartedProcess.synchronizeRuntimeCampaign()
+        XCTAssertEqual(restartedOutcome, .complete)
+        XCTAssertEqual(statusAttempts, 2)
+        XCTAssertEqual(statusBodies.count, 2)
+        XCTAssertEqual(statusBodies[0], statusBodies[1], "retry must project the same current protection state")
+        XCTAssertEqual(statusAuthorizations, [
+            "Bearer \(session.sessionToken)", "Bearer \(replacement.sessionToken)"
+        ], "the retry must use the current rotated session")
+        XCTAssertEqual(try state.loadSession(), replacement)
+    }
     @MainActor func testOptionalSafeZoneDeliveryFailuresKeepMainSyncPending() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let inboundResponse = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[]}"#.utf8)
         let cases: [(String, PCAHTTPResponse, () -> KeychainStoreProtocol)] = [
             ("503", PCAHTTPResponse(statusCode: 503, data: Data()), { InMemoryKeychainStore() }),
@@ -1040,7 +1144,7 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
     @MainActor func testOptionalSafeZoneDeliveryPreservesAuthenticationDenials() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         for (statusCode, expectedOutcome) in [(401, PCARuntimeCustodyOutcome.retryableFailure), (403, .blocked)] {
             let state = InMemoryPCADeviceStateStore()
             try state.saveSession(session)
@@ -1070,7 +1174,7 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
     @MainActor func testBoundedSafeZoneDeliveryKeepsOverallSyncPending() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let state = InMemoryPCADeviceStateStore()
         try state.saveSession(session)
         let scope = PCADeviceSafeZoneDeliveryScope(familyId: "family-1", deviceId: "device-1")
@@ -1117,7 +1221,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(try safeZoneInbox.nextCursor(scope: scope), "zone-128")
     }
     @MainActor func testOptionalSafeZoneDeliveryPropagatesScopeChangeAndCancellation() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let response = Data(#"{"safeZones":[],"nextCursor":null}"#.utf8)
         let expectedScope = PCADeviceSafeZoneDeliveryScope(familyId: "family-1", deviceId: "device-1")
         let changedScope = PCADeviceSafeZoneDeliveryScope(familyId: "family-2", deviceId: "device-1")
@@ -1213,7 +1317,7 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
     @MainActor func testRuntimeReconcilesTrustSetBeforePullingInboundPolicy() async throws {
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "device-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         let state = InMemoryPCADeviceStateStore()
         try state.saveSession(session)
         let events = NSMutableArray()
@@ -1455,6 +1559,94 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(model.dependencies.protectionRuntime.status, .notReady, "root acceptance does not activate device lifecycle or protection")
         XCTAssertEqual(keyMaterial.signCount, 2)
         XCTAssertEqual(evidence.callCount, 1)
+    }
+
+    @MainActor func testEnrollmentLinkEntryIsLimitedToFreshOrBoundUnresolvedSetup() async throws {
+        let fresh = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            authorizationStatus: .notDetermined
+        )
+        XCTAssertTrue(fresh.canEnterEnrollmentLink,
+            "fresh install must have a visible path to enter the Parent invitation before Family Controls authorization")
+
+        let unreadableRootStore = SwitchableFirstDeviceRootStore()
+        unreadableRootStore.failCurrent = true
+        let unreadableRoot = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            firstDeviceRootStore: unreadableRootStore
+        )
+        XCTAssertTrue(unreadableRoot.firstDeviceRootReadUnavailable,
+            "an initial nil root read is ambiguous until the store proves the item is absent")
+        XCTAssertFalse(unreadableRoot.canEnterEnrollmentLink,
+            "corrupt or unavailable retained root state must not open fresh enrollment")
+        XCTAssertFalse(unreadableRoot.receiveEnrollmentLink(
+            URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "U", count: 43))")!
+        ), "an unreadable root store must reject a new invitation")
+
+        let intermittentRootStore = SwitchableFirstDeviceRootStore()
+        let intermittentRoot = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            firstDeviceRootStore: intermittentRootStore
+        )
+        XCTAssertTrue(intermittentRoot.canEnterEnrollmentLink)
+        intermittentRootStore.failCurrent = true
+        XCTAssertFalse(intermittentRoot.firstDeviceRootReadUnavailable,
+            "this simulates a root read becoming unavailable after the last successful observation")
+        XCTAssertFalse(intermittentRoot.canEnterEnrollmentLink,
+            "link admission must re-prove store absence instead of relying on stale launch state")
+
+        let pairingIdentity = RecordingDeviceIdentityStore()
+        let pairing = try makeEnrollmentModel(
+            identityStore: pairingIdentity,
+            attemptStore: InMemoryPCADeviceStateStore(),
+            bootstrapStatus: "PAIRING_PENDING"
+        )
+        pairing.start()
+        XCTAssertTrue(pairing.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "P", count: 43))")!))
+        await waitForEnrollmentInProgress(pairing)
+        XCTAssertFalse(pairing.canEnterEnrollmentLink,
+            "a server pairing-pending result must not be presented as a fresh enrollment opportunity")
+        XCTAssertTrue(pairingIdentity.savedDeviceIds.isEmpty,
+            "PAIRING_PENDING does not commit a client-owned device identity")
+
+        let seed = trustRootSeed()
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveAttempt(PCAEnrollmentAttempt(
+            attemptId: seed.attemptId,
+            attemptRecoveryToken: seed.attemptRecoveryToken,
+            submissionState: .submitted,
+            invitationTokenSHA256: FirstDeviceCanonical.sha256Hex(String(repeating: "A", count: 43))
+        ))
+        let pendingRoot = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(seed: seed, state: .unknown))
+        let recovery = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: attempts,
+            firstDeviceRootStore: pendingRoot
+        )
+        XCTAssertTrue(recovery.canEnterEnrollmentLink,
+            "restart recovery may re-enter only through the attempt-bound invitation")
+
+        let committed = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: attempts,
+            firstDeviceRootStore: InMemoryFirstDeviceRootStore(
+                record: FirstDeviceRootRecord(seed: seed, state: .rootCommitted, familyId: "family-1")
+            )
+        )
+        XCTAssertFalse(committed.canEnterEnrollmentLink,
+            "a committed family root must not look like a fresh enrollment path")
+
+        let linkedIdentity = RecordingDeviceIdentityStore()
+        linkedIdentity.saveDeviceId(seed.deviceId)
+        let linked = try makeEnrollmentModel(
+            identityStore: linkedIdentity,
+            attemptStore: InMemoryPCADeviceStateStore()
+        )
+        XCTAssertFalse(linked.canEnterEnrollmentLink,
+            "a device with a locally bound identity must not be offered another enrollment path")
     }
 
     @MainActor func testFirstDeviceTrustRootRetryReplaysPersistedSubmissionExactly() async throws {
@@ -2483,6 +2675,67 @@ final class ProductionIntegrationTests: XCTestCase {
         ])
     }
 
+    func testBootstrapClientRejectsBodiesBeyondBackendFourKiBCeilingBeforeNetwork() async throws {
+        let transport = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            XCTFail("an oversized bootstrap request must be rejected before transport")
+            return PCAHTTPResponse(statusCode: 500, data: Data())
+        }
+        let client = try PCAEnrollmentBootstrapClient(
+            baseURL: URL(string: "https://api.example.test")!, transport: transport)
+        let request = PCAEnrollmentBootstrapRequest(
+            rawInvitationToken: String(repeating: "a", count: 43),
+            signingPublicKey: String(repeating: "x", count: 4_096),
+            encryptionPublicKey: "dek",
+            bootstrapAttemptId: String(repeating: "b", count: 16),
+            attemptRecoveryToken: String(repeating: "c", count: 32)
+        )
+
+        do {
+            _ = try await client.bootstrap(request)
+            XCTFail("oversized request must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .invalidRequest)
+        }
+        XCTAssertTrue(transport.requests.isEmpty)
+
+        do {
+            _ = try await client.recover(attemptId: String(repeating: "a", count: 4_096), attemptRecoveryToken: "recovery")
+            XCTFail("oversized recovery request must be rejected")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .invalidRequest)
+        }
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testBootstrapPreparationRejectsDuplicateStatusBeforeSubmission() async throws {
+        let transport = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { request in
+            switch request.url?.path {
+            case "/v1/enrollment/bootstrap/prepare":
+                return PCAHTTPResponse(statusCode: 200,
+                    data: Data(#"{"status":"READY","st\u0061tus":"REJECTED"}"#.utf8))
+            case "/v1/enrollment/bootstrap/recover":
+                return PCAHTTPResponse(statusCode: 404, data: Data(#"{"error":"invitation_unavailable"}"#.utf8))
+            default:
+                XCTFail("ambiguous preparation status must not submit bootstrap")
+                return PCAHTTPResponse(statusCode: 500, data: Data())
+            }
+        }
+        let client = try PCAEnrollmentBootstrapClient(
+            baseURL: URL(string: "https://api.example.test")!, transport: transport)
+
+        do {
+            _ = try await client.bootstrap(PCAEnrollmentBootstrapRequest(
+                rawInvitationToken: String(repeating: "a", count: 43), signingPublicKey: "dsk", encryptionPublicKey: "dek",
+                bootstrapAttemptId: String(repeating: "b", count: 16), attemptRecoveryToken: String(repeating: "c", count: 32)))
+            XCTFail("ambiguous preparation status must stay unresolved")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .enrollmentOutcomeUnknown)
+        }
+        XCTAssertEqual(transport.requests.map { $0.url?.path }, [
+            "/v1/enrollment/bootstrap/prepare", "/v1/enrollment/bootstrap/recover",
+        ])
+    }
+
     func testBootstrapAndRecoveryRequireNullableChildProfileProperty() async throws {
         let validFields = #""deviceId":"device-1","signingKeyId":"key-1","encryptionKeyId":"key-2","status":"PAIRING_PENDING","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED""#
         let invalidResponses = [
@@ -2602,6 +2855,12 @@ final class ProductionIntegrationTests: XCTestCase {
                 invalidResponses.append(("\(key) \(label)", try encode(malformed)))
             }
         }
+
+        // JSONSerialization and synthesized Decodable can collapse duplicate
+        // names. Enrollment recovery must reject them before interpreting the
+        // status (which can authorize attempt cleanup) or device/key identity.
+        invalidResponses.append(("duplicate escaped status member", Data(#"{"deviceId":"device-1","signingKeyId":"key-1","encryptionKeyId":"key-2","status":"PAIRING_PENDING","st\u0061tus":"ATTEMPT_ABANDONED","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.utf8)))
+        invalidResponses.append(("duplicate device identity member", Data(#"{"deviceId":"device-1","deviceId":"device-2","signingKeyId":"key-1","encryptionKeyId":"key-2","status":"PAIRING_PENDING","childProfileId":"child-1","ageUxTier":"TEEN","initialPolicyProfile":"BALANCED"}"#.utf8)))
 
         let request = PCAEnrollmentBootstrapRequest(
             rawInvitationToken: "token",
@@ -3403,6 +3662,74 @@ final class ProductionIntegrationTests: XCTestCase {
         return try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self, from: data)
     }
 
+    func testInboundProtocolMinorAcceptsJsonSafeIntegerMaximumAndRejectsUnsafeValues() throws {
+        let maximumSafe = 9_007_199_254_740_991
+        let atMaximum = try inboundResponse { $0["protocolMinor"] = maximumSafe }
+        let maximumEnvelope = try XCTUnwrap(atMaximum.applied.first)
+        XCTAssertNoThrow(try maximumEnvelope.validate(scope: atMaximum.scope))
+
+        let aboveMaximum = try inboundResponse { $0["protocolMinor"] = Int64(maximumSafe) + 1 }
+        let unsafeEnvelope = try XCTUnwrap(aboveMaximum.applied.first)
+        XCTAssertThrowsError(try unsafeEnvelope.validate(scope: aboveMaximum.scope))
+
+        let unsupportedMajor = try inboundResponse { $0["protocolMajor"] = 2 }
+        let unsupportedEnvelope = try XCTUnwrap(unsupportedMajor.applied.first)
+        XCTAssertThrowsError(try unsupportedEnvelope.validate(scope: unsupportedMajor.scope),
+            "the structural DTO remains pinned to the supported major protocol")
+    }
+
+    func testInboundEnvelopeEnforcesCompleteWireSizeAt64KiBBoundary() throws {
+        let response = try inboundResponse()
+        let original = try XCTUnwrap(response.applied.first)
+        let originalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        let maximumBytes = 64 * 1024
+        func completeWireSize(_ envelope: PCAInboundEnvelope) throws -> Int {
+            var wireObject = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope)) as? [String: Any])
+            if envelope.correlationId == nil { wireObject["correlationId"] = NSNull() }
+            return try JSONSerialization.data(withJSONObject: wireObject, options: [.withoutEscapingSlashes]).count
+        }
+        var exactEnvelope: PCAInboundEnvelope?
+
+        // The base64 payload grows in four-byte quanta. Vary a bounded opaque
+        // identifier length until the complete JSON wrapper lands exactly on
+        // the backend relay's 64 KiB byte ceiling.
+        for identifierLength in 1...128 where exactEnvelope == nil {
+            var candidate = originalJSON
+            candidate["messageId"] = String(repeating: "m", count: identifierLength)
+            candidate["payload"] = ""
+            let emptyPayload = try JSONDecoder().decode(PCAInboundEnvelope.self,
+                from: JSONSerialization.data(withJSONObject: candidate))
+            let emptyPayloadBytes = try completeWireSize(emptyPayload)
+            let base64ByteCount = maximumBytes - emptyPayloadBytes
+            guard base64ByteCount > 0, base64ByteCount.isMultiple(of: 4) else { continue }
+            candidate["payload"] = Data(repeating: 0, count: (base64ByteCount / 4) * 3).base64EncodedString()
+            let envelope = try JSONDecoder().decode(PCAInboundEnvelope.self,
+                from: JSONSerialization.data(withJSONObject: candidate))
+            if try completeWireSize(envelope) == maximumBytes { exactEnvelope = envelope }
+        }
+
+        let atBoundary = try XCTUnwrap(exactEnvelope, "fixture should construct a complete wrapper of exactly 65,536 bytes")
+        XCTAssertEqual(try completeWireSize(atBoundary), maximumBytes)
+        XCTAssertNoThrow(try atBoundary.validate(scope: response.scope))
+
+        var oversizedJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(atBoundary)) as? [String: Any])
+        let priorPayload = try XCTUnwrap(oversizedJSON["payload"] as? String)
+        let priorPayloadBytes = try XCTUnwrap(Data(base64Encoded: priorPayload))
+        oversizedJSON["payload"] = Data(priorPayloadBytes + Data(repeating: 0, count: 3)).base64EncodedString()
+        let oversized = try JSONDecoder().decode(PCAInboundEnvelope.self,
+            from: JSONSerialization.data(withJSONObject: oversizedJSON))
+        XCTAssertEqual(try completeWireSize(oversized), maximumBytes + 4)
+        XCTAssertThrowsError(try oversized.validate(scope: response.scope))
+
+        var slashHeavyJSON = originalJSON
+        slashHeavyJSON["payload"] = Data(repeating: 0xFF, count: 45_000).base64EncodedString()
+        let slashHeavy = try JSONDecoder().decode(PCAInboundEnvelope.self,
+            from: JSONSerialization.data(withJSONObject: slashHeavyJSON))
+        XCTAssertLessThan(try completeWireSize(slashHeavy), maximumBytes)
+        XCTAssertNoThrow(try slashHeavy.validate(scope: response.scope),
+            "backend JSON.stringify preserves slash characters rather than escaping them as \\/")
+    }
+
     func testBackgroundCompletionIsExactlyOnceAndExpirationWins() {
         var expiredResults: [Bool] = []
         let expired = PCARefreshCompletion(complete: { expiredResults.append($0) })
@@ -3437,7 +3764,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testRuntimeCampaignResumesModernCursorAfterFourPages() async throws {
         let state = InMemoryPCADeviceStateStore()
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         try state.saveSession(session)
         var cursors: [String?] = []
         let transport = InMemoryPCAHTTPTransport { request in
@@ -3470,8 +3797,8 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testRuntimeSessionReplacementDuringAckPreservesPendingMarker() async throws {
         let state = InMemoryPCADeviceStateStore()
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(600))
-        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(600))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
+        let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "B", count: 43), expiresAt: Date().addingTimeInterval(600))
         try state.saveSession(session)
         let response = try inboundResponse()
         let body: [String: Any] = ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
@@ -3494,7 +3821,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testBusyRuntimeCampaignDefersWithoutStartingAnotherPull() async throws {
         let state = InMemoryPCADeviceStateStore()
-        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600)))
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600)))
         var suspended: CheckedContinuation<PCAHTTPResponse, Never>?
         let began = expectation(description: "pull began")
         var pulls = 0
@@ -3518,7 +3845,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testExpiredRuntimeTaskDuringPullCannotCaptureOrAck() async throws {
         let state = InMemoryPCADeviceStateStore()
-        let retained = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600))
+        let retained = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         try state.saveSession(retained)
         let response = try inboundResponse()
         let body: [String: Any] = ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
@@ -3568,7 +3895,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testRuntimeWrongFamilyResponseCannotAdvanceCustodyOrAcknowledge() async throws {
         let state = InMemoryPCADeviceStateStore()
-        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(600)))
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600)))
         var requests = 0
         let transport = InMemoryPCAHTTPTransport { request in
             requests += 1
@@ -3591,7 +3918,7 @@ final class ProductionIntegrationTests: XCTestCase {
             identity.saveDeviceId("device-1")
             let root = FirstDeviceRootRecord(seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")
             let roots = InMemoryFirstDeviceRootStore(record: root)
-            let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: "replacement", expiresAt: Date().addingTimeInterval(600))
+            let replacement = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "C", count: 43), expiresAt: Date().addingTimeInterval(600))
             var exchanges = 0
             let transport = InMemoryPCAHTTPTransport { request in
                 if request.url?.path.hasSuffix("/challenge") == true {
@@ -3609,6 +3936,38 @@ final class ProductionIntegrationTests: XCTestCase {
             await model.establishSessionIfNeeded()
             XCTAssertEqual(exchanges, mode == "challenge-root" ? 0 : 1)
             XCTAssertEqual(try state.loadSession(), mode == "exchange-session" ? replacement : nil)
+        }
+    }
+
+    @MainActor func testDeviceSessionRejectsDuplicateChallengeAndSessionMembers() async throws {
+        let duplicateResponses: [(label: String, challenge: String, session: String, expectedRequests: Int)] = [
+            ("challenge", #"{"challengeId":"challenge-1","chall\u0065ngeId":"attacker-challenge","nonce":"nonce-1","expiresAt":"2099-01-01T00:00:00Z"}"#,
+             #"{"sessionToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2099-01-01T00:00:00Z"}"#, 1),
+            ("session", #"{"challengeId":"challenge-1","nonce":"nonce-1","expiresAt":"2099-01-01T00:00:00Z"}"#,
+             #"{"sessionToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","sessionToken":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","expiresAt":"2099-01-01T00:00:00Z"}"#, 2),
+        ]
+
+        for fixture in duplicateResponses {
+            let transport = InMemoryPCAHTTPTransport { request in
+                if request.url?.path.hasSuffix("/challenge") == true {
+                    return PCAHTTPResponse(statusCode: 200, data: Data(fixture.challenge.utf8))
+                }
+                return PCAHTTPResponse(statusCode: 200, data: Data(fixture.session.utf8))
+            }
+            let client = try PCADeviceSessionClient(
+                baseURL: URL(string: "https://api.example.test")!,
+                transport: transport,
+                proof: TestEnrollmentProofProvider()
+            )
+
+            do {
+                _ = try await client.establishSession(deviceId: "device-1")
+                XCTFail("duplicate " + fixture.label + " response members must be rejected")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .malformedResponse, fixture.label)
+            }
+            XCTAssertEqual(transport.requests.count, fixture.expectedRequests,
+                "ambiguous challenge data must be rejected before proof/session; ambiguous session tokens must not be returned")
         }
     }
 
@@ -3877,7 +4236,7 @@ final class ProductionIntegrationTests: XCTestCase {
             return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
         }
         let attempts = InMemoryPCADeviceStateStore()
-        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
         let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
             runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport), inboundInbox: inbox)
         await model.synchronizeRuntime()
@@ -3888,9 +4247,53 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
     }
 
+    @MainActor func testRuntimeCustodyAckDoesNotWaitForPolicyCatchUpOrApplication() async throws {
+        let keychain = InMemoryKeychainStore()
+        let inbox = PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "custody-ack-before-apply")
+        let response = try inboundResponse()
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "scope": ["familyId": response.scope.familyId, "recipientDeviceId": response.scope.recipientDeviceId],
+            "applied": [try JSONSerialization.jsonObject(with: JSONEncoder().encode(try XCTUnwrap(response.applied.first)))],
+            "unparseableMessageIds": [], "droppedForListBound": []
+        ])
+        var paths: [String] = []
+        let transport = InMemoryPCAHTTPTransport { request in
+            let path = request.url?.path ?? ""
+            paths.append(path)
+            if request.httpMethod == "GET" { return PCAHTTPResponse(statusCode: 200, data: responseData) }
+            if path.hasSuffix("/ack") {
+                let retained = try inbox.pendingCrypto(scope: response.scope)
+                XCTAssertEqual(retained.map(\.envelope), response.applied)
+                XCTAssertEqual(retained.map(\.processingState), ["PENDING_CRYPTO"])
+            }
+            return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
+        }
+        let state = InMemoryPCADeviceStateStore()
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600)))
+        let trustSet = FailSecondCatchUpOrdinaryTrustSetRuntimeManager()
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
+            runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
+            inboundInbox: inbox, ordinaryTrustSetCoordinator: trustSet
+        )
+
+        let outcome = try await model.synchronizeRuntimeCampaign()
+
+        XCTAssertEqual(outcome, .retryableFailure,
+            "application remains pending when the post-capture Trust Set catch-up cannot establish authority")
+        XCTAssertEqual(paths, ["/v1/runtime-sync/inbound", "/v1/runtime-sync/inbound/message-1/ack"])
+        XCTAssertEqual(trustSet.catchUpCalls, 2)
+        let retained = try inbox.pendingCrypto(scope: response.scope)
+        XCTAssertEqual(retained.map(\.envelope), response.applied)
+        XCTAssertEqual(retained.map(\.relayAcknowledged), [true],
+            "the relay ACK records durable local custody and does not imply policy application")
+        XCTAssertEqual(retained.map(\.processingState), ["PENDING_CRYPTO"])
+        XCTAssertNotEqual(model.dependencies.protectionRuntime.status, .active)
+    }
+
     @MainActor func testRuntimeHostKeepsEmptyContinuationPagePendingWithoutAckOrExtraPull() async throws {
         let attempts = InMemoryPCADeviceStateStore()
-        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+        try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
         let response = Data(#"{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[],"hasMore":true}"#.utf8)
         var pulls = 0
         var acks = 0
@@ -3961,7 +4364,7 @@ final class ProductionIntegrationTests: XCTestCase {
             return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
         }
         let state = InMemoryPCADeviceStateStore()
-        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "token", expiresAt: Date().addingTimeInterval(60)))
+        try state.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
         let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
             firstDeviceRootStore: roots, runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport), inboundInbox: inbox)
         await model.synchronizeRuntime()
@@ -3988,7 +4391,7 @@ final class ProductionIntegrationTests: XCTestCase {
             return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
         }
         let state = InMemoryPCADeviceStateStore()
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "token", expiresAt: Date().addingTimeInterval(60))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
         try state.saveSession(session)
         let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: state,
             firstDeviceRootStore: roots, runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport), inboundInbox: inbox)
@@ -4001,8 +4404,8 @@ final class ProductionIntegrationTests: XCTestCase {
     @MainActor func testRuntimeHostSessionReplacementDuringPullNeverAcksOrDeletesNewSession() async throws {
         for responseStatus in [200, 401] {
             let attempts = InMemoryPCADeviceStateStore()
-            let old = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(60))
-            let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(60))
+            let old = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
+            let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: String(repeating: "B", count: 43), expiresAt: Date().addingTimeInterval(60))
             try attempts.saveSession(old)
             var acks = 0
             let transport = InMemoryPCAHTTPTransport { request in
@@ -4038,7 +4441,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
             }
             let attempts = InMemoryPCADeviceStateStore()
-            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
             let model = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
                 runtimeSyncClient: PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport),
                 inboundInbox: mode == 2 ? nil : PCAKeychainInboundInboxStore(keychain: keychain, serviceNamespace: "failed-host"))
@@ -4072,7 +4475,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
             }
             let attempts = InMemoryPCADeviceStateStore()
-            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+            try attempts.saveSession(PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
             let first = try makeEnrollmentModel(identityStore: RecordingDeviceIdentityStore(), attemptStore: attempts,
                 runtimeSyncClient: client, inboundInbox: inbox)
@@ -4092,8 +4495,8 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testRuntimeHostSessionReplacementDuringAckPreservesReplacement() async throws {
         let attempts = InMemoryPCADeviceStateStore()
-        let old = PCADeviceSession(deviceId: "device-1", sessionToken: "old-session", expiresAt: Date().addingTimeInterval(60))
-        let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: "new-session", expiresAt: Date().addingTimeInterval(60))
+        let old = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
+        let replacement = PCADeviceSession(deviceId: "device-2", sessionToken: String(repeating: "B", count: 43), expiresAt: Date().addingTimeInterval(60))
         try attempts.saveSession(old)
         let response = try inboundResponse()
         let responseData = try JSONSerialization.data(withJSONObject: ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
@@ -4117,7 +4520,7 @@ final class ProductionIntegrationTests: XCTestCase {
 
     @MainActor func testRuntimeKeyLossStopsCachedSessionBeforePullWithoutDeletingSecrets() async throws {
         let attempts = InMemoryPCADeviceStateStore()
-        let retainedSession = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+        let retainedSession = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
         try attempts.saveSession(retainedSession)
         var requests = 0
         let transport = InMemoryPCAHTTPTransport { _ in
@@ -4142,7 +4545,37 @@ final class ProductionIntegrationTests: XCTestCase {
                 return PCAHTTPResponse(statusCode: 200, data: Data("{}".utf8))
             }
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-            try await client.acknowledge(messageId: id, session: PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60)))
+            try await client.acknowledge(messageId: id, session: PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60)))
+        }
+    }
+
+    func testRuntimeAckRetiresOnlyExactCanonicalNotFound() async throws {
+        let cases: [(Int, String, PCAAPIError?)] = [
+            (404, #"{"error":"not_found"}"#, nil),
+            (404, #"{"error":"route_not_found"}"#, .unavailable),
+            (404, #"{"error":"not_found","extra":true}"#, .unavailable),
+            (403, #"{"error":"not_found"}"#, .forbidden),
+            (401, #"{"error":"not_found"}"#, .unauthorized),
+        ]
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43),
+            expiresAt: Date().addingTimeInterval(60))
+        for (status, body, expectedError) in cases {
+            let transport = InMemoryPCAHTTPTransport { _ in
+                PCAHTTPResponse(statusCode: status, data: Data(body.utf8))
+            }
+            let client = try PCADeviceRuntimeSyncClient(
+                baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            if let expectedError {
+                do {
+                    try await client.acknowledge(messageId: "message-1", session: session)
+                    XCTFail("Only the exact canonical 404 may retire a pending acknowledgement")
+                } catch {
+                    XCTAssertEqual(error as? PCAAPIError, expectedError)
+                }
+            } else {
+                try await client.acknowledge(messageId: "message-1", session: session)
+            }
+            XCTAssertEqual(transport.requests.count, 1)
         }
     }
 
@@ -4292,13 +4725,48 @@ final class ProductionIntegrationTests: XCTestCase {
         let transport = InMemoryPCAHTTPTransport { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/v1/runtime-sync/protection-status")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(String(repeating: "A", count: 43))")
             XCTAssertEqual(request.httpBody, Data(#"{"protectionLevel":"PROTECTED"}"#.utf8))
             return PCAHTTPResponse(statusCode: 204, data: Data())
         }
         let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
         try await client.reportProtectionStatus(.active, session: session)
+    }
+
+    func testRuntimeSyncRejectsMalformedSessionTokenBeforeSendWithoutChangingInbox() async throws {
+        let response = try inboundResponse()
+        let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "invalid-runtime-session")
+        try inbox.capture(response, sessionDeviceId: "device-1")
+        let scope = response.scope
+        let originalCrypto = try inbox.pendingCrypto(scope: scope)
+        let originalAcknowledgements = try inbox.pendingAcknowledgements(scope: scope)
+
+        for malformedToken in ["short", String(repeating: "A", count: 42) + "+"] {
+            let transport = InMemoryPCAHTTPTransport { _ in
+                XCTFail("Malformed device-session token must be rejected before transport")
+                return PCAHTTPResponse(statusCode: 200, data: Data())
+            }
+            let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+            let session = PCADeviceSession(deviceId: "device-1", sessionToken: malformedToken, expiresAt: Date().addingTimeInterval(60))
+
+            do {
+                _ = try await client.pull(session: session)
+                XCTFail("Malformed pull credential must fail closed")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+            do {
+                try await client.acknowledge(messageId: "message-1", session: session)
+                XCTFail("Malformed acknowledgement credential must fail closed")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+            do {
+                try await client.reportProtectionStatus(.active, session: session)
+                XCTFail("Malformed status credential must fail closed")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+
+            XCTAssertTrue(transport.requests.isEmpty)
+            XCTAssertEqual(try inbox.pendingCrypto(scope: scope), originalCrypto)
+            XCTAssertEqual(try inbox.pendingAcknowledgements(scope: scope), originalAcknowledgements)
+        }
     }
 
     func testRuntimeModernNavigationRequiresCompleteBoundedMetadata() throws {
@@ -4334,6 +4802,22 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertThrowsError(try decode(duplicate))
     }
 
+    func testRuntimeResponseRejectsDuplicateAppliedEnvelopeIds() throws {
+        let source = try inboundResponse()
+        let envelope = try XCTUnwrap(source.applied.first)
+        let wireEnvelope = try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
+        let body: [String: Any] = [
+            "scope": ["familyId": source.scope.familyId, "recipientDeviceId": source.scope.recipientDeviceId],
+            "applied": [wireEnvelope, wireEnvelope],
+            "unparseableMessageIds": [],
+            "droppedForListBound": [],
+        ]
+
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self, from: JSONSerialization.data(withJSONObject: body)),
+            "duplicate applied message IDs must fail at the response boundary before inbox capture")
+    }
+
     func testPublishedLegacyReceiptsDoNotRequireNewNavigationFields() throws {
         for outcomes in [[], ["APPLIED"], ["HELD_PENDING"], ["REJECTED"]] as [[String]] {
             let receipts = outcomes.map { ["messageId": "message-1", "outcome": $0, "atUtc": "2026-10-07T00:00:00.000Z"] }
@@ -4358,7 +4842,7 @@ final class ProductionIntegrationTests: XCTestCase {
             return PCAHTTPResponse(statusCode: 400, data: Data(#"{"error":"invalid_cursor"}"#.utf8))
         }
         let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
         do {
             _ = try await client.pull(session: session, cursor: "cursor1")
             XCTFail("Expected navigation rejection")
@@ -4374,7 +4858,7 @@ final class ProductionIntegrationTests: XCTestCase {
     func testRuntimePullPropagatesCancellation() async throws {
         let transport = InMemoryPCAHTTPTransport { _ in throw CancellationError() }
         let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
         do {
             _ = try await client.pull(session: session)
             XCTFail("Cancellation must propagate")
@@ -4393,6 +4877,27 @@ final class ProductionIntegrationTests: XCTestCase {
         } catch is CancellationError { }
     }
 
+    func testProductionURLSessionTransportDoesNotForwardSecretRequestAcrossRedirect() async throws {
+        RedirectingRuntimeURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectingRuntimeURLProtocol.self]
+        let transport = PCAURLSessionTransport(configuration: configuration)
+        var request = URLRequest(url: URL(string: "https://api.example.test/v1/enrollment/bootstrap")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer opaque-session-secret", forHTTPHeaderField: "Authorization")
+        request.httpBody = Data(#"{"attemptRecoveryToken":"secret"}"#.utf8)
+
+        let response = try await transport.send(request)
+
+        XCTAssertEqual(response.statusCode, 302, "the original redirect response is returned without following it")
+        let requests = RedirectingRuntimeURLProtocol.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.url?.host, "api.example.test")
+        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session-secret")
+        XCTAssertEqual(requests.first?.httpBody, request.httpBody)
+    }
+
     func testRuntimePullDecodesContinuationAndUsesDeferredIdsForLegacyResponses() async throws {
         let cases: [(dropped: String, continuation: String?, expected: Bool)] = [
             ("[]", nil, false),
@@ -4405,11 +4910,11 @@ final class ProductionIntegrationTests: XCTestCase {
             let transport = InMemoryPCAHTTPTransport { request in
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.path, "/v1/runtime-sync/inbound")
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(String(repeating: "A", count: 43))")
                 return PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":\(value.dropped)\(continuationField)}".utf8))
             }
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-            let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+            let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
             let result = try await client.pull(session: session)
             XCTAssertEqual(result.droppedForListBound, value.dropped == "[]" ? [] : ["deferred-message"])
             XCTAssertEqual(result.hasMore, value.expected)
@@ -4420,7 +4925,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 PCAHTTPResponse(statusCode: 200, data: Data("{\"scope\":{\"familyId\":\"family-1\",\"recipientDeviceId\":\"device-1\"},\"applied\":[],\"unparseableMessageIds\":[],\"droppedForListBound\":[],\"hasMore\":\(malformed)}".utf8))
             }
             let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
-            let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+            let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(60))
             do {
                 _ = try await client.pull(session: session)
                 XCTFail("Expected malformed hasMore value \(malformed) to be rejected")
@@ -4573,6 +5078,20 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(attempt.invitationTokenSHA256)
     }
 
+    func testEnrollmentAttemptRejectsExplicitNullsForLegacyOptionalFields() {
+        let base = #"{"attemptId":"attempt-1","attemptRecoveryToken":"recovery-1"}"#
+        let corruptRecords = [
+            #"{"attemptId":"attempt-1","attemptRecoveryToken":"recovery-1","submissionState":null}"#,
+            #"{"attemptId":"attempt-1","attemptRecoveryToken":"recovery-1","invitationTokenSHA256":null}"#,
+        ]
+        XCTAssertNoThrow(try JSONDecoder().decode(PCAEnrollmentAttempt.self, from: Data(base.utf8)),
+            "omitted fields remain compatible with legacy records")
+        for value in corruptRecords {
+            XCTAssertThrowsError(try JSONDecoder().decode(PCAEnrollmentAttempt.self, from: Data(value.utf8)),
+                "explicit null must not be confused with a field omitted by an older writer")
+        }
+    }
+
     @MainActor func testLegacyAttemptWithoutInviteDigestRemainsUnresolvedAfterRecoveryNotFound() async throws {
         let attempts = InMemoryPCADeviceStateStore()
         let legacy = PCAEnrollmentAttempt(
@@ -4708,6 +5227,54 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertTrue(identity.savedDeviceIds.isEmpty)
     }
 
+    @MainActor func testRecoveryKeyPreparationFailureRetainsAttemptAndRetriesExactRecovery() async throws {
+        let attempt = PCAEnrollmentAttempt(
+            attemptId: "recovery-key-custody-attempt",
+            attemptRecoveryToken: "recovery-key-custody-token",
+            submissionState: .submitted
+        )
+        let attempts = InMemoryPCADeviceStateStore()
+        try attempts.saveAttempt(attempt)
+        let roots = InMemoryFirstDeviceRootStore()
+        let identity = RecordingDeviceIdentityStore()
+        let preparation = RecordingEnrollmentKeyPreparation(attemptStore: attempts)
+        preparation.failPreparation = true
+        let transport = InMemoryPCAHTTPTransport { request in
+            XCTAssertEqual(request.url?.path, "/v1/enrollment/bootstrap/recover")
+            return Self.validPairingPendingResponse()
+        }
+        let model = try makeEnrollmentModel(
+            identityStore: identity,
+            attemptStore: attempts,
+            firstDeviceRootStore: roots,
+            enrollmentKeys: preparation,
+            enrollmentTransport: transport
+        )
+
+        model.start()
+        await waitForEnrollmentSecurityGate(model)
+
+        XCTAssertEqual(try attempts.loadAttempt(), attempt, "failed key restoration must retain the exact submitted attempt")
+        XCTAssertNil(roots.current(), "recovery must not capture a root seed before attempt-bound keys are restored")
+        XCTAssertTrue(identity.savedDeviceIds.isEmpty)
+        XCTAssertNil(model.pendingDisclosure)
+        XCTAssertEqual(transport.requestPaths(), ["/v1/enrollment/bootstrap/recover"])
+
+        preparation.failPreparation = false
+        model.sceneBecameActive()
+        await waitForEnrollmentInProgress(model)
+
+        XCTAssertEqual(try attempts.loadAttempt(), attempt, "pending child confirmation remains bound to the same durable attempt")
+        XCTAssertEqual(roots.current()?.seed.attemptId, attempt.attemptId)
+        XCTAssertEqual(identity.savedDeviceIds, ["device-1"])
+        XCTAssertNotNil(model.pendingDisclosure)
+        XCTAssertEqual(transport.requestPaths(), [
+            "/v1/enrollment/bootstrap/recover",
+            "/v1/enrollment/bootstrap/recover",
+        ], "retry must resolve the existing attempt through recovery, never submit bootstrap again")
+        XCTAssertEqual(preparation.preparedAttemptIds, [attempt.attemptId, attempt.attemptId])
+    }
+
     func testCryptoActivationBoundaryFailsClosed() {
         let provider = PendingPCADeviceProofProvider()
         XCTAssertThrowsError(try provider.sign(challenge: "nonce")) { error in
@@ -4755,9 +5322,14 @@ private final class RecordingEnrollmentKeyPreparation: FirstDeviceEnrollmentKeyP
     private let attemptStore: PCAEnrollmentAttemptStore
     private(set) var abandonedAttemptIds: [String] = []
     private(set) var storeWasEmptyAtRelease: [Bool] = []
+    private(set) var preparedAttemptIds: [String] = []
+    var failPreparation = false
 
     init(attemptStore: PCAEnrollmentAttemptStore) { self.attemptStore = attemptStore }
-    func prepareEnrollmentKeys(attemptId: String) throws {}
+    func prepareEnrollmentKeys(attemptId: String) throws {
+        preparedAttemptIds.append(attemptId)
+        if failPreparation { throw PCADeviceProofError.secureKeyUnavailable }
+    }
     func abandonPreparedEnrollmentKeys(attemptId: String) {
         abandonedAttemptIds.append(attemptId)
         storeWasEmptyAtRelease.append((try? attemptStore.loadAttempt()) == nil)
@@ -5030,6 +5602,43 @@ private final class CancelledRuntimeURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
+    override func stopLoading() { }
+}
+
+private final class RedirectingRuntimeURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var requests: [URLRequest] = []
+
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        requests = []
+    }
+
+    static func recordedRequests() -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.requests.append(request)
+        Self.lock.unlock()
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
+                  headerFields: ["Location": "https://redirect-target.example/collect"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
     override func stopLoading() { }
 }
 

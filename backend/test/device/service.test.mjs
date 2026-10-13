@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService, DeviceDirectoryError } from '../../dist/device/DeviceDirectoryService.js';
+import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 
@@ -19,8 +20,18 @@ const FAMILY_A = 'family-opaque-A';
 const FAMILY_B = 'family-opaque-B';
 const baseInput = { familyId: FAMILY_A, platform: 'ANDROID', keyPurpose: 'DSK' };
 
+async function currentPairingFingerprints(repository, familyId, deviceId) {
+  const keys = (await repository.findKeysByDeviceForFamily(familyId, deviceId)).filter((item) => item.status === 'ACTIVE');
+  const dsk = keys.find((item) => item.keyPurpose === 'DSK');
+  const dek = keys.find((item) => item.keyPurpose === 'DEK');
+  return {
+    expectedDskFingerprint: dsk ? computeKeyFingerprint(dsk.publicKey) : computeKeyFingerprint(key()),
+    expectedDekFingerprint: dek ? computeKeyFingerprint(dek.publicKey) : null,
+  };
+}
+
 test('registerDevice creates a PAIRING_PENDING device with an ACTIVE key', async () => {
-  const { service } = buildService();
+  const { service, repository } = buildService();
   const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
   assert.equal(device.status, 'PAIRING_PENDING');
   assert.equal(registeredKey.status, 'ACTIVE');
@@ -34,6 +45,34 @@ test('registerDevice rejects a malformed public key', async () => {
     () => service.registerDevice({ ...baseInput, publicKey: 'not a real key' }),
     { code: 'INVALID_PUBLIC_KEY' },
   );
+});
+
+test('device mutations reject invalid or out-of-range persistence clock values before repository effects', async () => {
+  let repositoryCalls = 0;
+  const repository = {
+    async createDeviceWithKey() {
+      repositoryCalls += 1;
+      return { outcome: 'CREATED' };
+    },
+  };
+  for (const clockValue of [new Date(Number.NaN), new Date('0999-12-31T23:59:59.999Z'), new Date('10000-01-01T00:00:00.000Z'), '2026-01-01T00:00:00.000Z']) {
+    const service = new DeviceDirectoryService(repository, () => clockValue);
+    await assert.rejects(
+      () => service.registerDevice({ ...baseInput, publicKey: key() }),
+      (error) => error instanceof TypeError && error.message === 'Device directory clock must return a valid persistence timestamp.',
+    );
+  }
+  assert.equal(repositoryCalls, 0, 'invalid timestamps must be rejected before persistence is invoked');
+});
+
+test('device persistence clock accepts MySQL DATETIME year boundaries', async () => {
+  for (const timestamp of [new Date('1000-01-01T00:00:00.000Z'), new Date('9999-12-31T23:59:59.999Z')]) {
+    const repository = createInMemoryDeviceRepository();
+    const service = new DeviceDirectoryService(repository, () => timestamp);
+    const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
+    assert.equal(device.createdAt.getTime(), timestamp.getTime());
+    assert.equal(registeredKey.createdAt.getTime(), timestamp.getTime());
+  }
 });
 
 test('registerDevice rejects a public key already registered to another device', async () => {
@@ -137,6 +176,7 @@ test('revokeDevice emits one lifecycle audit only for the winning transition', a
   );
   assert.equal(deviceRevocations.length, 1);
   assert.equal(deviceRevocations[0].freeTextNote, 'DEVICE_REVOKED');
+  assert.equal(deviceRevocations[0].actorDeviceId, 'SERVICE_SESSION', 'server-side revocation must not be attributed to the device it targets');
 });
 
 test('revokeDevice returns committed state when the one-shot audit append fails; retry stays idempotent', async () => {
@@ -374,11 +414,12 @@ test('atomicity: device revocation and key revocation observe no partial state (
 // --- Pairing lifecycle ----------------------------------------------------
 
 test('confirmPairing: PAIRING_PENDING -> PAIRED for the owning family', async () => {
-  const { service } = buildService();
+  const { service, repository } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
   assert.equal(device.status, 'PAIRING_PENDING');
   const confirmingAccountId = randomUUID();
-  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, confirmingAccountId);
+  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, confirmingAccountId,
+    await currentPairingFingerprints(repository, FAMILY_A, device.deviceId));
   assert.equal(paired.status, 'PAIRED');
   assert.equal(paired.pairedByAccountId, confirmingAccountId);
   assert.notEqual(paired.pairedAt, null);
@@ -390,9 +431,11 @@ test('confirmPairing is idempotent: confirming twice preserves the first pairedA
   const service = new DeviceDirectoryService(repository, () => new Date(currentTime));
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
   const accountId = randomUUID();
-  const first = await service.confirmPairing(FAMILY_A, device.deviceId, accountId);
+  const first = await service.confirmPairing(FAMILY_A, device.deviceId, accountId,
+    await currentPairingFingerprints(repository, FAMILY_A, device.deviceId));
   currentTime += 60_000;
-  const second = await service.confirmPairing(FAMILY_A, device.deviceId, accountId);
+  const second = await service.confirmPairing(FAMILY_A, device.deviceId, accountId,
+    await currentPairingFingerprints(repository, FAMILY_A, device.deviceId));
   assert.equal(second.pairedAt.getTime(), first.pairedAt.getTime());
 });
 
@@ -401,28 +444,32 @@ test('confirmPairing rejects a device that is already REVOKED', async () => {
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
   await service.revokeDevice(FAMILY_A, device.deviceId);
   await assert.rejects(
-    () => service.confirmPairing(FAMILY_A, device.deviceId, randomUUID()),
+    () => service.confirmPairing(FAMILY_A, device.deviceId, randomUUID(),
+      { expectedDskFingerprint: computeKeyFingerprint(key()), expectedDekFingerprint: null }),
     { code: 'INVALID_STATE' },
   );
 });
 
 test('confirmPairing under the wrong family is rejected identically to an unknown device (IDOR)', async () => {
-  const { service } = buildService();
+  const { service, repository } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  const wrongFamilyError = await service.confirmPairing(FAMILY_B, device.deviceId, randomUUID()).catch((e) => e);
-  const unknownDeviceError = await service.confirmPairing(FAMILY_B, 'no-such-device', randomUUID()).catch((e) => e);
+  const expectation = { expectedDskFingerprint: computeKeyFingerprint(key()), expectedDekFingerprint: null };
+  const wrongFamilyError = await service.confirmPairing(FAMILY_B, device.deviceId, randomUUID(), expectation).catch((e) => e);
+  const unknownDeviceError = await service.confirmPairing(FAMILY_B, 'no-such-device', randomUUID(), expectation).catch((e) => e);
   assert.equal(wrongFamilyError.code, 'DEVICE_NOT_FOUND');
   assert.equal(unknownDeviceError.code, 'DEVICE_NOT_FOUND');
   assert.equal(wrongFamilyError.message, unknownDeviceError.message);
   // Device remains untouched and confirmable by its real family.
-  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, randomUUID());
+  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, randomUUID(),
+    await currentPairingFingerprints(repository, FAMILY_A, device.deviceId));
   assert.equal(paired.status, 'PAIRED');
 });
 
 test('PAIRING_PENDING cannot self-promote to ACTIVE: no service-layer path sets status ACTIVE', async () => {
-  const { service } = buildService();
+  const { service, repository } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, randomUUID());
+  const paired = await service.confirmPairing(FAMILY_A, device.deviceId, randomUUID(),
+    await currentPairingFingerprints(repository, FAMILY_A, device.deviceId));
   // Confirmation reaches PAIRED, never ACTIVE -- ACTIVE requires first-policy
   // delivery via the Family Trust Set, a separate, later workstream.
   assert.equal(paired.status, 'PAIRED');

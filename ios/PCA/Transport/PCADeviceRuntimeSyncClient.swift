@@ -47,7 +47,8 @@ public struct PCAInboundEnvelope: Codable, Equatable {
         let ids = [messageId, familyId, senderDeviceId, senderKeyId, sequenceOrNonce]
         guard ids.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
               pcaOpaqueEqual(familyId, scope.familyId), pcaOpaqueEqual(recipientDeviceId, scope.recipientDeviceId),
-              recipientGroup == nil, protocolMajor == 1, protocolMinor >= 0, protocolMinor <= Int(Int32.max),
+              recipientGroup == nil, protocolMajor == 1, protocolMinor >= 0,
+              protocolMinor <= Self.maximumSafeProtocolInteger,
               trustSetEpoch >= 0, trustSetEpoch <= Int(Int32.max), keyEpoch >= 0, keyEpoch <= Int(Int32.max),
               !signature.isEmpty, signature.utf16.count <= 512,
               semanticVersion.utf16.count <= 32,
@@ -55,6 +56,18 @@ public struct PCAInboundEnvelope: Codable, Equatable {
               Self.messageTypes.contains(messageType),
               let bytes = Data(base64Encoded: payload), bytes.count > 0, bytes.count <= 65536,
               bytes.base64EncodedString() == payload else { throw PCAInboundInboxError.unavailable }
+        guard let encodedEnvelope = try? JSONEncoder().encode(self),
+              var wireObject = try? JSONSerialization.jsonObject(with: encodedEnvelope) as? [String: Any] else {
+            throw PCAInboundInboxError.unavailable
+        }
+        // The backend's RawFamilyEnvelope serializer emits correlationId as
+        // explicit null when absent. Match that complete wire shape when
+        // enforcing the shared relay ciphertext ceiling.
+        if correlationId == nil { wireObject["correlationId"] = NSNull() }
+        guard let completeWireBytes = try? JSONSerialization.data(withJSONObject: wireObject, options: [.withoutEscapingSlashes]),
+              completeWireBytes.count <= Self.maximumWireEnvelopeBytes else {
+            throw PCAInboundInboxError.unavailable
+        }
         if let correlationId {
             guard !correlationId.isEmpty, correlationId.utf16.count <= 128 else { throw PCAInboundInboxError.unavailable }
         }
@@ -68,6 +81,8 @@ public struct PCAInboundEnvelope: Codable, Equatable {
     private static let messageTypes: Set<String> = ["POLICY_UPDATE", "POLICY_RECEIPT", "STATUS_SNAPSHOT", "ACTIVITY_SUMMARY",
         "LOCATION_RESPONSE", "CHILD_REQUEST", "PARENT_DECISION", "TAMPER_ALERT", "RETENTION_DELETION_INSTRUCTION",
         "RETENTION_RECEIPT", "FTS_UPDATE", "KEY_ROTATION", "DEVICE_REVOKE", "RECOVERY_TRANSACTION", "SIGNED_ROLLBACK"]
+    private static let maximumSafeProtocolInteger = 9_007_199_254_740_991
+    private static let maximumWireEnvelopeBytes = 64 * 1024
     public static func == (left: PCAInboundEnvelope, right: PCAInboundEnvelope) -> Bool {
         left.protocolMajor == right.protocolMajor &&
         left.protocolMinor == right.protocolMinor &&
@@ -217,6 +232,7 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
         guard !scope.familyId.isEmpty, scope.familyId.utf16.count <= 128,
               !scope.recipientDeviceId.isEmpty, scope.recipientDeviceId.utf16.count <= 128,
               applied.count <= 256, unparseableMessageIds.count <= 100, droppedForListBound.count <= 100,
+              Set(applied.map { Data($0.messageId.utf8) }).count == applied.count,
               (unparseableMessageIds + droppedForListBound).allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
               receipts.count <= 100, Set(receipts.map { Data($0.messageId.utf8) }).count == receipts.count else {
             throw PCAAPIError.malformedResponse
@@ -251,6 +267,7 @@ public final class PCADeviceRuntimeSyncClient {
     }
 
     public func pull(session: PCADeviceSession, cursor: String? = nil) async throws -> PCAInboundRuntimeSyncResponse {
+        try Self.validateSessionToken(session.sessionToken)
         var components = URLComponents(url: baseURL.appendingPathComponent("v1/runtime-sync/inbound"), resolvingAgainstBaseURL: false)
         if let cursor {
             try PCAInboundNavigation.validateCursor(cursor)
@@ -264,6 +281,7 @@ public final class PCADeviceRuntimeSyncClient {
     }
 
     public func acknowledge(messageId: String, session: PCADeviceSession) async throws {
+        try Self.validateSessionToken(session.sessionToken)
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%."))
         guard let component = messageId.addingPercentEncoding(withAllowedCharacters: allowed),
               let url = URL(string: baseURL.appendingPathComponent("v1/runtime-sync/inbound").absoluteString + "/" + component + "/ack") else {
@@ -272,7 +290,8 @@ public final class PCADeviceRuntimeSyncClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.sessionToken)", forHTTPHeaderField: "Authorization")
-        _ = try await send(request, decodeAs: EmptyPCAResponse.self)
+        _ = try await send(request, decodeAs: EmptyPCAResponse.self,
+            terminalMissingAcknowledgement: EmptyPCAResponse())
     }
 
     /// Reports the host's observed protection state to the existing backend
@@ -280,6 +299,7 @@ public final class PCADeviceRuntimeSyncClient {
     /// pulling inbound envelopes: transport receipt never becomes a claim of
     /// local enforcement.
     public func reportProtectionStatus(_ status: PCAProtectionStatus, session: PCADeviceSession) async throws {
+        try Self.validateSessionToken(session.sessionToken)
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/protection-status"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -309,7 +329,22 @@ public final class PCADeviceRuntimeSyncClient {
         }
     }
 
-    private func send<T: Decodable>(_ request: URLRequest, decodeAs type: T.Type) async throws -> T {
+    /// Device-session tokens use the backend's unpadded 32-byte base64url
+    /// representation. Reject malformed persisted/session input before any
+    /// authenticated runtime-sync request is sent.
+    private static func validateSessionToken(_ token: String) throws {
+        let bytes = Array(token.utf8)
+        guard bytes.count == 43,
+              bytes.allSatisfy({
+                  (0x41...0x5A).contains($0) || (0x61...0x7A).contains($0) ||
+                  (0x30...0x39).contains($0) || $0 == 0x2D || $0 == 0x5F
+              }) else {
+            throw PCAAPIError.unauthorized
+        }
+    }
+
+    private func send<T: Decodable>(_ request: URLRequest, decodeAs type: T.Type,
+                                    terminalMissingAcknowledgement: T? = nil) async throws -> T {
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
         catch is CancellationError { throw CancellationError() }
@@ -329,7 +364,16 @@ public final class PCADeviceRuntimeSyncClient {
                    body["error"] as? String == "invalid_cursor" { throw PCAInboundNavigationError.invalidCursor }
             }
             throw PCAAPIError.invalidRequest
-        case 404: throw PCAAPIError.unavailable
+        case 404:
+            // A retained ACK may outlive the server's encrypted envelope.
+            // Only this exact authenticated ACK response means there is no
+            // remaining relay copy to acknowledge; a missing route or any
+            // other 404 still leaves the local acknowledgement pending.
+            if let terminalMissingAcknowledgement,
+               response.data == Data(#"{"error":"not_found"}"#.utf8) {
+                return terminalMissingAcknowledgement
+            }
+            throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
         }

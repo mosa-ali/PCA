@@ -11,6 +11,8 @@ import type {
   Platform,
 } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
+import type { PairingFingerprintExpectation } from '../pairing/types.js';
+import { isKeyFingerprint } from '../pairing/fingerprint.js';
 
 export type DeviceDirectoryErrorCode =
   | 'INVALID_PUBLIC_KEY'
@@ -19,7 +21,9 @@ export type DeviceDirectoryErrorCode =
   | 'DEVICE_REVOKED'
   | 'KEY_NOT_FOUND'
   | 'INVALID_STATE'
-  | 'SELF_APPROVAL_DENIED';
+  | 'SELF_APPROVAL_DENIED'
+  | 'FINGERPRINT_MISMATCH'
+  | 'INVALID_FINGERPRINT';
 
 /** Fixed, generic messages per code -- never interpolates key material or family data. */
 export class DeviceDirectoryError extends Error {
@@ -41,7 +45,15 @@ const DEVICE_ERROR_MESSAGES: Record<DeviceDirectoryErrorCode, string> = {
   KEY_NOT_FOUND: 'Device key was not found.',
   INVALID_STATE: 'Device is not in a state that permits this operation.',
   SELF_APPROVAL_DENIED: 'This account registered this endpoint and cannot also confirm it.',
+  FINGERPRINT_MISMATCH: 'The device key fingerprints changed; refresh the pairing request.',
+  INVALID_FINGERPRINT: 'The displayed device key fingerprints are required.',
 };
+
+// Device timestamps are persisted in MySQL DATETIME(3), whose supported year
+// range is 1000..9999. Reject a broken injected/system clock before any
+// repository call so in-memory and production implementations fail alike.
+const MIN_DEVICE_TIMESTAMP_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MAX_DEVICE_TIMESTAMP_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
 
 export interface RegisterDeviceInput {
   familyId: OpaqueFamilyId;
@@ -61,6 +73,16 @@ export class DeviceDirectoryService {
   private readonly auditService: FamilyAuditService;
   private auditAppendFailureCount = 0;
 
+  private persistenceTimestamp(): Date {
+    const timestamp: unknown = this.now();
+    if (!(timestamp instanceof Date)) throw new TypeError('Device directory clock must return a valid persistence timestamp.');
+    const milliseconds = timestamp.getTime();
+    if (!Number.isFinite(milliseconds) || milliseconds < MIN_DEVICE_TIMESTAMP_MS || milliseconds > MAX_DEVICE_TIMESTAMP_MS) {
+      throw new TypeError('Device directory clock must return a valid persistence timestamp.');
+    }
+    return new Date(milliseconds);
+  }
+
   constructor(
     repository: DeviceRepository,
     now: () => Date = () => new Date(),
@@ -79,7 +101,7 @@ export class DeviceDirectoryService {
    */
   async registerDevice(input: RegisterDeviceInput): Promise<RegisteredDevice> {
     if (!isPlausiblePublicKey(input.publicKey)) throw new DeviceDirectoryError('INVALID_PUBLIC_KEY');
-    const createdAt = this.now();
+    const createdAt = this.persistenceTimestamp();
     const device: DeviceRecord = {
       deviceId: randomUUID(),
       familyId: input.familyId,
@@ -118,7 +140,7 @@ export class DeviceDirectoryService {
       keyPurpose,
       publicKey,
       status: 'ACTIVE',
-      createdAt: this.now(),
+      createdAt: this.persistenceTimestamp(),
       revokedAt: null,
     };
     const result: AddKeyResult = await this.repository.addKeyAtomically(authorizedFamilyId, record);
@@ -135,7 +157,7 @@ export class DeviceDirectoryService {
   }
 
   async revokeKey(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId, keyId: DeviceKeyId): Promise<DeviceKeyRecord> {
-    const result = await this.repository.revokeKeyForFamily(authorizedFamilyId, deviceId, keyId, this.now());
+    const result = await this.repository.revokeKeyForFamily(authorizedFamilyId, deviceId, keyId, this.persistenceTimestamp());
     switch (result.outcome) {
       case 'REVOKED':
         return result.key;
@@ -148,14 +170,17 @@ export class DeviceDirectoryService {
 
   /** Device revocation and cascading key revocation are ONE atomic repository operation -- never a service-level loop. */
   async revokeDevice(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord> {
-    const result = await this.repository.revokeDeviceAndKeysAtomically(authorizedFamilyId, deviceId, this.now());
+    const result = await this.repository.revokeDeviceAndKeysAtomically(authorizedFamilyId, deviceId, this.persistenceTimestamp());
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
     if (result.transitioned) {
       try {
         await this.auditService.record({
           familyId: authorizedFamilyId,
           actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-          actorDeviceId: deviceId,
+          // Removal authorization is recorded by the decision authority; this
+          // follow-up is a server-side lifecycle transition, not an action by
+          // the device being revoked.
+          actorDeviceId: 'SERVICE_SESSION',
           actorMemberId: null,
           targetScope: { kind: 'DEVICE', id: deviceId },
           authorizationRole: null,
@@ -196,8 +221,19 @@ export class DeviceDirectoryService {
   }
 
   /** PAIRING_PENDING -> PAIRED, per doc 08 PCA-FR-141 (parent fingerprint confirmation). Idempotent. */
-  async confirmPairing(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId, confirmedByAccountId: string): Promise<DeviceRecord> {
-    const result = await this.repository.confirmPairing(authorizedFamilyId, deviceId, confirmedByAccountId, this.now());
+  async confirmPairing(
+    authorizedFamilyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    confirmedByAccountId: string,
+    expectedFingerprints: PairingFingerprintExpectation,
+  ): Promise<DeviceRecord> {
+    if (!expectedFingerprints || !isKeyFingerprint(expectedFingerprints.expectedDskFingerprint) ||
+        !(expectedFingerprints.expectedDekFingerprint === null || isKeyFingerprint(expectedFingerprints.expectedDekFingerprint))) {
+      throw new DeviceDirectoryError('INVALID_FINGERPRINT');
+    }
+    const result = await this.repository.confirmPairing(
+      authorizedFamilyId, deviceId, confirmedByAccountId, this.persistenceTimestamp(), { ...expectedFingerprints },
+    );
     switch (result.outcome) {
       case 'CONFIRMED':
         return result.device;
@@ -205,6 +241,8 @@ export class DeviceDirectoryService {
         throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
       case 'SELF_APPROVAL_DENIED':
         throw new DeviceDirectoryError('SELF_APPROVAL_DENIED');
+      case 'FINGERPRINT_MISMATCH':
+        throw new DeviceDirectoryError('FINGERPRINT_MISMATCH');
       case 'INVALID_STATE':
         throw new DeviceDirectoryError('INVALID_STATE');
     }

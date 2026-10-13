@@ -26,7 +26,13 @@ class DurableEnrollmentStorageTest {
 
     private fun attempt() = PendingEnrollmentAttempt(
         "attempt", "recovery", "https://example.test", "ANDROID",
-        "dsk", "dsk-alias", "dek", "dek-alias", PendingEnrollmentAttemptStatus.BOOTSTRAPPING,
+        "dsk", "pca.dsk.attempt", "dek", "pca.dek.attempt", PendingEnrollmentAttemptStatus.BOOTSTRAPPING,
+    )
+
+    private fun replacementAttempt() = attempt().copy(
+        attemptId = "replacement",
+        signingPrivateKeyAlias = "pca.dsk.replacement",
+        encryptionPrivateKeyAlias = "pca.dek.replacement",
     )
 
     @Test fun `pending and family saves survive disk-only restart`() {
@@ -95,8 +101,8 @@ class DurableEnrollmentStorageTest {
 
     @Test fun `legacy pending record decodes without an invitation binding`() {
         val legacyRaw = listOf(
-            "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "dsk-alias",
-            "dek", "dek-alias", PendingEnrollmentAttemptStatus.BOOTSTRAPPING.name,
+            "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "pca.dsk.attempt",
+            "dek", "pca.dek.attempt", PendingEnrollmentAttemptStatus.BOOTSTRAPPING.name,
         ).joinToString("|")
         val store = PersistentPendingEnrollmentAttemptStore(DiskStore(mapOf("pending_enrollment_attempt_v1" to legacyRaw)))
 
@@ -105,17 +111,74 @@ class DurableEnrollmentStorageTest {
         assertNull(store.current())
     }
 
-    @Test fun `compare and set prevents stale pending owner from replacing or clearing a newer attempt`() {
+    @Test fun `pending attempt with foreign DSK or DEK alias is unreadable and cannot be persisted`() {
+        val badDsk = attempt().copy(signingPrivateKeyAlias = "pca.dsk.root-owned")
+        val store = PersistentPendingEnrollmentAttemptStore(DiskStore())
+        assertThrows(EnrollmentPersistenceException::class.java) {
+            store.save(badDsk)
+        }
+        assertThrows(EnrollmentPersistenceException::class.java) { store.compareAndSet(null, badDsk) }
+
+        val badDek = attempt().copy(encryptionPrivateKeyAlias = "pca.dek.root-owned")
+        assertThrows(EnrollmentPersistenceException::class.java) { store.save(badDek) }
+        assertThrows(EnrollmentPersistenceException::class.java) { store.compareAndSet(null, badDek) }
+
+        val badDskRaw = listOf(
+            "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "pca.dsk.root-owned",
+            "dek", "pca.dek.attempt", PendingEnrollmentAttemptStatus.BOOTSTRAPPING.name,
+        ).joinToString("|")
+        val badDekRaw = listOf(
+            "attempt", "recovery", "https://example.test", "ANDROID", "dsk", "pca.dsk.attempt",
+            "dek", "pca.dek.root-owned", PendingEnrollmentAttemptStatus.BOOTSTRAPPING.name,
+        ).joinToString("|")
+        for (raw in listOf(badDskRaw, badDekRaw)) {
+            val unreadable = PersistentPendingEnrollmentAttemptStore(DiskStore(mapOf("pending_enrollment_attempt_v1" to raw)))
+            assertThrows(EnrollmentPersistenceException::class.java) { unreadable.current() }
+        }
+    }
+
+    @Test fun `compare and set keeps unresolved attempt until cleared before a new ceremony`() {
         val backing = DiskStore()
         val firstWrapper = PersistentPendingEnrollmentAttemptStore(backing)
         val secondWrapper = PersistentPendingEnrollmentAttemptStore(backing)
         val original = attempt()
-        val replacement = original.copy(attemptId = "replacement")
+        val replacement = replacementAttempt()
 
-        assertTrue(firstWrapper.compareAndSet(null, original))
+        val prepared = original.copy(status = PendingEnrollmentAttemptStatus.PREPARED)
+        assertTrue(firstWrapper.compareAndSet(null, prepared))
         assertFalse(secondWrapper.compareAndSet(null, replacement))
-        assertTrue(secondWrapper.compareAndSet(original, replacement))
-        assertFalse(firstWrapper.compareAndSet(original, null))
+        assertFalse(
+            "even the exact current value cannot be replaced by a fresh attempt",
+            secondWrapper.compareAndSet(prepared, replacement),
+        )
+        assertFalse(
+            "the same id cannot be rebound to different generated key material",
+            secondWrapper.compareAndSet(prepared, prepared.copy(signingPublicKeyBase64 = "different-key")),
+        )
+        assertTrue("an exact same-status retry is idempotent", secondWrapper.compareAndSet(prepared, prepared))
+        assertFalse(
+            "the lifecycle cannot skip BOOTSTRAPPING",
+            secondWrapper.compareAndSet(prepared, prepared.copy(status = PendingEnrollmentAttemptStatus.RESULT_UNKNOWN)),
+        )
+        assertEquals(prepared, firstWrapper.current())
+
+        val bootstrapping = prepared.copy(status = PendingEnrollmentAttemptStatus.BOOTSTRAPPING)
+        assertTrue("PREPARED may advance to BOOTSTRAPPING", secondWrapper.compareAndSet(prepared, bootstrapping))
+        assertFalse(
+            "the lifecycle cannot regress to PREPARED",
+            firstWrapper.compareAndSet(bootstrapping, prepared),
+        )
+        val inFlight = bootstrapping.copy(status = PendingEnrollmentAttemptStatus.RESULT_UNKNOWN)
+        assertTrue("BOOTSTRAPPING may advance to RESULT_UNKNOWN", secondWrapper.compareAndSet(bootstrapping, inFlight))
+        assertFalse("RESULT_UNKNOWN cannot regress to BOOTSTRAPPING", firstWrapper.compareAndSet(inFlight, bootstrapping))
+        assertFalse(firstWrapper.compareAndSet(bootstrapping, null))
+        assertEquals(inFlight, firstWrapper.current())
+        assertTrue(
+            "a new ceremony can claim the slot after the unresolved one is explicitly cleared",
+            secondWrapper.compareAndSet(inFlight, null),
+        )
+        assertTrue(secondWrapper.compareAndSet(null, replacement))
+        assertFalse(firstWrapper.compareAndSet(inFlight, null))
         assertEquals(replacement, firstWrapper.current())
     }
 
@@ -125,7 +188,7 @@ class DurableEnrollmentStorageTest {
         pending.save(attempt())
         val oldDisk = backing.disk
         backing.failingFlushes = 1
-        assertThrows(EnrollmentPersistenceException::class.java) { pending.save(attempt().copy(attemptId = "replacement")) }
+        assertThrows(EnrollmentPersistenceException::class.java) { pending.save(replacementAttempt()) }
         assertEquals(oldDisk, backing.disk)
         assertEquals(attempt(), pending.current())
     }
@@ -144,7 +207,7 @@ class DurableEnrollmentStorageTest {
         val pending = PersistentPendingEnrollmentAttemptStore(backing)
         pending.save(attempt())
         backing.discardNextWrite = true
-        assertThrows(EnrollmentPersistenceException::class.java) { pending.save(attempt().copy(attemptId = "replacement")) }
+        assertThrows(EnrollmentPersistenceException::class.java) { pending.save(replacementAttempt()) }
         assertEquals(attempt(), pending.current())
     }
 

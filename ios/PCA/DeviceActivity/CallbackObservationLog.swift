@@ -1,5 +1,19 @@
 import Foundation
 
+/// Gregorian year 1...9999 is the canonical durable timestamp range shared
+/// by callback observations, their persisted manifest, and health planning.
+enum DeviceActivityTimestamp {
+    static let minimumUnixSeconds = -62_135_596_800.0
+    /// Exclusive upper bound: this includes the complete final millisecond
+    /// of 9999-12-31 (23:59:59.999Z).
+    static let maximumExclusiveUnixSeconds = 253_402_300_800.0
+
+    static func isValid(_ date: Date) -> Bool {
+        let seconds = date.timeIntervalSince1970
+        return seconds.isFinite && seconds >= minimumUnixSeconds && seconds < maximumExclusiveUnixSeconds
+    }
+}
+
 /// doc 07 Section 14 / PCA-15 correction F1: real, durable callback
 /// recording so `DeviceActivityCallbackReconciler` has something to read
 /// on next host-app foreground. Persists ONLY bounded operational
@@ -63,7 +77,7 @@ public enum DeviceActivityBoundaryTrigger: Codable, Equatable, Hashable {
         case let .recurring(zone, hour, minute):
             return TimeZone(identifier: zone) != nil && (0...23).contains(hour) && (0...59).contains(minute)
         case let .absolute(date):
-            return date.timeIntervalSince1970.isFinite && (-62135596800...253402257599).contains(date.timeIntervalSince1970)
+            return DeviceActivityTimestamp.isValid(date)
         }
     }
 }
@@ -146,7 +160,7 @@ public struct DeviceActivityMonitorInstallation: Codable, Equatable {
               value.monitorActivityId.hasPrefix("pca-monitor-"),
               UUID(uuidString: String(value.monitorActivityId.dropFirst("pca-monitor-".count))) != nil,
               UUID(uuidString: value.generation) != nil,
-              value.installedAtUtc.timeIntervalSince1970.isFinite,
+              DeviceActivityTimestamp.isValid(value.installedAtUtc),
               TimeZone(identifier: value.timeZoneIdentifier) != nil else { return nil }
         guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 else { return nil }
         if value.schemaVersion == 2 || value.schemaVersion == 3 {
@@ -242,6 +256,7 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
     }
 
     public func record(kind: DeviceActivityCallbackKind, activityId: String, at: Date) {
+        guard DeviceActivityTimestamp.isValid(at) else { return }
         let installationData: Data?
         if let reader = installationReader { installationData = reader() }
         else { installationData = defaults.data(forKey: installationStorageKey) }
@@ -313,7 +328,7 @@ public final class AppGroupCallbackObservationLog: CallbackObservationLog {
 
     private static func isValidPersistedObservation(_ observation: PersistedCallbackObservation) -> Bool {
         guard !observation.activityId.isEmpty, observation.activityId.utf8.count <= 128,
-              observation.observedAtUtc.timeIntervalSince1970.isFinite,
+              DeviceActivityTimestamp.isValid(observation.observedAtUtc),
               observation.sequence > 0, observation.sequence < Int.max else { return false }
         if let generation = observation.installationGeneration,
            UUID(uuidString: generation) == nil { return false }
@@ -337,6 +352,7 @@ public final class InMemoryCallbackObservationLog: CallbackObservationLog {
     }
 
     public func record(kind: DeviceActivityCallbackKind, activityId: String, at: Date) {
+        guard DeviceActivityTimestamp.isValid(at) else { return }
         let nextSequence = (observations.last?.sequence ?? 0) + 1
         observations.append(PersistedCallbackObservation(kind: kind, activityId: activityId, observedAtUtc: at, sequence: nextSequence))
         if observations.count > capacity {

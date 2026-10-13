@@ -10,6 +10,7 @@ import {
 } from '../../runtime-sync/OutboundRelayService.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { RelayError } from '../../relay/RelayService.js';
+import { RelayAuthorityChangedError, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot } from '../../relay/RelayRepository.js';
 import { hashSessionToken } from '../../auth/token.js';
 import { InvalidRelayCursorError, MAX_RELAY_CURSOR_BYTES } from '../../runtime-sync/relayContinuation.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
@@ -17,7 +18,9 @@ import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { MAX_RELAY_TTL_MS } from '../../relay/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
 import {
+  ProtectionStatusAuthorityChangedError,
   ProtectionStatusDeviceUnavailableError,
+  ProtectionStatusStaleReportError,
   type DeviceProtectionStatusRecord,
   type DeviceProtectionStatusRepository,
   type ProtectionLevel,
@@ -47,6 +50,9 @@ declare module 'fastify' {
   interface FastifyRequest {
     runtimeSyncDeviceId?: string;
     runtimeSyncFamilyId?: string;
+    runtimeSyncDskKeyId?: string;
+    runtimeSyncTrustSetEpoch?: number;
+    runtimeSyncKeyEpoch?: number;
     runtimeSyncSessionIncarnation?: string;
   }
 }
@@ -150,6 +156,13 @@ function isNonEmptyString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }
 
+async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // Device challenges, bearer credentials, family-scoped status, and opaque
+  // relay payloads must not be retained by browser or intermediary caches.
+  // Run this before rate limiting/auth so error responses receive it too.
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 function parseOutboundItem(raw: unknown): OutboundEnvelopeItem | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const candidate = raw as Record<string, unknown>;
@@ -219,7 +232,8 @@ function createRequireDeviceSession(
         return;
       }
       if (typeof actor !== 'object' || actor === null || Array.isArray(actor) ||
-          actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role) ||
+          actor.familyId !== identity.familyId || actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role) ||
+          !isNonEmptyString(actor.dskKeyId, 128) || actor.dskKeyId !== identity.dskKeyId ||
           !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
           !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
         await reply.code(503).send({ error: 'authority_unavailable' });
@@ -227,6 +241,9 @@ function createRequireDeviceSession(
       }
       request.runtimeSyncDeviceId = identity.deviceId;
       request.runtimeSyncFamilyId = identity.familyId;
+      request.runtimeSyncDskKeyId = identity.dskKeyId;
+      request.runtimeSyncTrustSetEpoch = actor.trustSetEpoch;
+      request.runtimeSyncKeyEpoch = actor.keyEpoch;
       request.runtimeSyncSessionIncarnation = hashSessionToken(header.slice('Bearer '.length));
     } catch (error) {
       if (error instanceof RuntimeSyncAuthError) {
@@ -250,7 +267,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
   // this never leaks device existence/family/revocation status.
   app.post(
     '/v1/runtime-sync/devices/:deviceId/challenge',
-    { preHandler: [deps.authAttemptLimiter, challengeLimiter] },
+    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, challengeLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { deviceId } = request.params as { deviceId: string };
       if (!isNonEmptyString(deviceId, 128)) return reply.code(400).send({ error: 'invalid_request' });
@@ -265,14 +282,15 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.post(
     '/v1/runtime-sync/devices/:deviceId/session',
-    { preHandler: [deps.authAttemptLimiter, sessionLimiter] },
+    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, sessionLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const { deviceId } = request.params as { deviceId: string };
       const body = request.body as { challengeId?: unknown; signature?: unknown };
-      if (!isNonEmptyString(body.challengeId, 128) || !isNonEmptyString(body.signature, 4096)) {
+      if (!isNonEmptyString(deviceId, 128) || !isNonEmptyString(body.challengeId, 128) || !isNonEmptyString(body.signature, 4096)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       try {
-        const session = await deps.deviceSessionService.completeChallenge(body.challengeId, body.signature);
+        const session = await deps.deviceSessionService.completeChallenge(deviceId, body.challengeId, body.signature);
         return reply.send({ sessionToken: session.rawToken, expiresAt: session.expiresAt.toISOString() });
       } catch (error) {
         if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
@@ -286,7 +304,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
     // Explicit, contract-sized bodyLimit -- see MAX_OUTBOUND_BODY_BYTES's own
     // comment: this route must NOT inherit the global ceiling, because a
     // legitimate batch of control/policy envelopes is larger than it.
-    { bodyLimit: MAX_OUTBOUND_BODY_BYTES, preHandler: [deps.authAttemptLimiter, requireDeviceSession, outboundLimiter] },
+    { bodyLimit: MAX_OUTBOUND_BODY_BYTES, onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, requireDeviceSession, outboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as { items?: unknown };
       if (!Array.isArray(body.items) || body.items.length === 0 || body.items.length > MAX_OUTBOUND_BATCH_SIZE * 4) {
@@ -299,32 +317,71 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       // same-family/revoked/browser checks and only for items in the bounded
       // priority slice. That preserves CROSS_FAMILY_RECIPIENT semantics and
       // avoids unbounded Trust Set reads for items this batch will not send.
-      const recipientAuthorization = new Map<string, boolean>();
-      const authorizeRecipient = async (recipientDeviceId: string): Promise<boolean> => {
-        const cached = recipientAuthorization.get(recipientDeviceId);
-        if (cached !== undefined) return cached;
+      const recipientAuthorization = new Map<string, RelayRecipientAuthoritySnapshot | false>();
+      const authorizeRecipient = async (recipientDeviceId: string): Promise<false | RelayEnvelopeAuthoritySnapshot> => {
+        let recipientSnapshot = recipientAuthorization.get(recipientDeviceId);
+        if (recipientSnapshot === false) return false;
         if (!deps.trustSetRoleResolver) throw new RecipientAuthorizationUnavailableError();
-        let recipientActor: ResolvedActor | ActorResolutionFailure;
+        if (recipientSnapshot === undefined) {
+          let recipientActor: ResolvedActor | ActorResolutionFailure;
+          try {
+            recipientActor = await deps.trustSetRoleResolver.resolveActor(
+              request.runtimeSyncFamilyId as string,
+              recipientDeviceId,
+            );
+          } catch {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (typeof recipientActor === 'string') {
+            recipientAuthorization.set(recipientDeviceId, false);
+            return false;
+          }
+          if (recipientActor === null || typeof recipientActor !== 'object' || Array.isArray(recipientActor) ||
+              recipientActor.familyId !== request.runtimeSyncFamilyId || recipientActor.deviceId !== recipientDeviceId || !FAMILY_ROLES.has(recipientActor.role) ||
+              !isNonEmptyString(recipientActor.dskKeyId, 128) ||
+              !Number.isSafeInteger(recipientActor.trustSetEpoch) || recipientActor.trustSetEpoch < 1 ||
+              !Number.isSafeInteger(recipientActor.keyEpoch) || recipientActor.keyEpoch < 1) {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          recipientSnapshot = {
+            familyId: request.runtimeSyncFamilyId as string,
+            dskKeyId: recipientActor.dskKeyId,
+            trustSetEpoch: recipientActor.trustSetEpoch,
+            keyEpoch: recipientActor.keyEpoch,
+          };
+          recipientAuthorization.set(recipientDeviceId, recipientSnapshot);
+        }
+
+        // The recipient lookup above may await durable epoch and device-key
+        // reads. Re-resolve the sender after it so both authority snapshots
+        // describe one accepted head; the MySQL floor lock below closes any
+        // final gap before relay insertion.
+        const senderDeviceId = request.runtimeSyncDeviceId as string;
+        const senderFamilyId = request.runtimeSyncFamilyId as string;
+        const senderDskKeyId = request.runtimeSyncDskKeyId as string;
+        let senderActor: ResolvedActor | ActorResolutionFailure;
         try {
-          recipientActor = await deps.trustSetRoleResolver.resolveActor(
-            request.runtimeSyncFamilyId as string,
-            recipientDeviceId,
-          );
+          senderActor = await deps.trustSetRoleResolver.resolveActor(senderFamilyId, senderDeviceId, senderDskKeyId);
         } catch {
           throw new RecipientAuthorizationUnavailableError();
         }
-        if (typeof recipientActor === 'string') {
-          recipientAuthorization.set(recipientDeviceId, false);
-          return false;
-        }
-        if (recipientActor === null || typeof recipientActor !== 'object' || Array.isArray(recipientActor) ||
-            recipientActor.deviceId !== recipientDeviceId || !FAMILY_ROLES.has(recipientActor.role) ||
-            !Number.isSafeInteger(recipientActor.trustSetEpoch) || recipientActor.trustSetEpoch < 1 ||
-            !Number.isSafeInteger(recipientActor.keyEpoch) || recipientActor.keyEpoch < 1) {
+        if (typeof senderActor === 'string') return false;
+        if (senderActor === null || typeof senderActor !== 'object' || Array.isArray(senderActor) ||
+            senderActor.familyId !== senderFamilyId || senderActor.deviceId !== senderDeviceId || senderActor.dskKeyId !== senderDskKeyId ||
+            !FAMILY_ROLES.has(senderActor.role) ||
+            !Number.isSafeInteger(senderActor.trustSetEpoch) || senderActor.trustSetEpoch < 1 ||
+            !Number.isSafeInteger(senderActor.keyEpoch) || senderActor.keyEpoch < 1) {
           throw new RecipientAuthorizationUnavailableError();
         }
-        recipientAuthorization.set(recipientDeviceId, true);
-        return true;
+        if (senderActor.trustSetEpoch !== recipientSnapshot.trustSetEpoch ||
+            senderActor.keyEpoch !== recipientSnapshot.keyEpoch) return false;
+        return {
+          familyId: senderFamilyId,
+          trustSetEpoch: senderActor.trustSetEpoch,
+          keyEpoch: senderActor.keyEpoch,
+          sender: { deviceId: senderDeviceId, dskKeyId: senderDskKeyId },
+          recipient: { deviceId: recipientDeviceId, dskKeyId: recipientSnapshot.dskKeyId },
+        };
       };
 
       let result: OutboundBatchResult;
@@ -350,12 +407,20 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.get(
     '/v1/runtime-sync/inbound',
-    { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
+    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const deviceId = request.runtimeSyncDeviceId as string;
+      const familyId = request.runtimeSyncFamilyId as string;
+      const dskKeyId = request.runtimeSyncDskKeyId as string;
+      const trustSetEpoch = request.runtimeSyncTrustSetEpoch as number;
+      const keyEpoch = request.runtimeSyncKeyEpoch as number;
       const query = request.query as { cursor?: unknown };
       if (query.cursor !== undefined && !isNonEmptyString(query.cursor, MAX_RELAY_CURSOR_BYTES)) {
         return reply.code(400).send({ error: 'invalid_cursor' });
+      }
+      if (typeof familyId !== 'string' || familyId.length === 0 || typeof dskKeyId !== 'string' || dskKeyId.length === 0 ||
+          !Number.isSafeInteger(trustSetEpoch) || trustSetEpoch < 1 || !Number.isSafeInteger(keyEpoch) || keyEpoch < 1) {
+        return reply.code(503).send({ error: 'authority_unavailable' });
       }
       deps.statusTracker.markSyncStart(deviceId);
       try {
@@ -365,7 +430,32 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           (senderKeyId, nowUtc) => deps.resolveEnvelopeContext(senderKeyId, request.runtimeSyncFamilyId as string, nowUtc),
           new Date(),
           { sessionIncarnation: request.runtimeSyncSessionIncarnation as string, cursor: query.cursor as string | undefined },
+          { familyId, dskKeyId, trustSetEpoch, keyEpoch },
         );
+        // Envelope verification and receipt construction may take time after
+        // the transactionally guarded relay reads. Recheck the exact session
+        // device/DSK and accepted head before returning any ciphertext: a
+        // membership/key rotation during that work must not receive a stale
+        // response even though the page read itself was authorized.
+        let currentRecipient: ResolvedActor | ActorResolutionFailure;
+        try {
+          currentRecipient = await deps.trustSetRoleResolver!.resolveActor(familyId, deviceId, dskKeyId);
+        } catch {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
+        if (typeof currentRecipient === 'string') {
+          return reply.code(403).send({ error: 'device_not_authorized' });
+        }
+        if (currentRecipient === null || typeof currentRecipient !== 'object' || Array.isArray(currentRecipient) ||
+            currentRecipient.familyId !== familyId || currentRecipient.deviceId !== deviceId || currentRecipient.dskKeyId !== dskKeyId ||
+            !FAMILY_ROLES.has(currentRecipient.role) ||
+            !Number.isSafeInteger(currentRecipient.trustSetEpoch) || currentRecipient.trustSetEpoch < 1 ||
+            !Number.isSafeInteger(currentRecipient.keyEpoch) || currentRecipient.keyEpoch < 1) {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
+        if (currentRecipient.trustSetEpoch !== trustSetEpoch || currentRecipient.keyEpoch !== keyEpoch) {
+          return reply.code(403).send({ error: 'device_not_authorized' });
+        }
         // A bounded page is not a completed sync while more queue work is
         // pending, and rejected/unresolved records do not count as
         // convergence. The client may continue with nextCursor; only its
@@ -391,6 +481,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         });
       } catch (error) {
         if (error instanceof InvalidRelayCursorError) return reply.code(400).send({ error: 'invalid_cursor' });
+        if (error instanceof RelayAuthorityChangedError) return reply.code(403).send({ error: 'device_not_authorized' });
         throw error;
       } finally {
         deps.statusTracker.markSyncEnd(deviceId);
@@ -400,14 +491,36 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.post(
     '/v1/runtime-sync/inbound/:messageId/ack',
-    { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
+    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { messageId } = request.params as { messageId: string };
       if (!isNonEmptyString(messageId, 128)) return reply.code(400).send({ error: 'invalid_request' });
+      const deviceId = request.runtimeSyncDeviceId as string;
+      const familyId = request.runtimeSyncFamilyId as string;
+      const dskKeyId = request.runtimeSyncDskKeyId as string;
+      let currentActor: ResolvedActor | ActorResolutionFailure;
       try {
-        await deps.outboundRelayService.acknowledgeAsRecipient(request.runtimeSyncDeviceId as string, messageId);
+        currentActor = await deps.trustSetRoleResolver!.resolveActor(familyId, deviceId, dskKeyId);
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (typeof currentActor === 'string') return reply.code(403).send({ error: 'device_not_authorized' });
+      if (typeof currentActor !== 'object' || currentActor === null || Array.isArray(currentActor) ||
+          currentActor.familyId !== familyId || currentActor.deviceId !== deviceId || currentActor.dskKeyId !== dskKeyId || !FAMILY_ROLES.has(currentActor.role) ||
+          !Number.isSafeInteger(currentActor.trustSetEpoch) || currentActor.trustSetEpoch < 1 ||
+          !Number.isSafeInteger(currentActor.keyEpoch) || currentActor.keyEpoch < 1) {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      try {
+        await deps.outboundRelayService.acknowledgeAsRecipient(deviceId, messageId, {
+          familyId,
+          dskKeyId,
+          trustSetEpoch: currentActor.trustSetEpoch,
+          keyEpoch: currentActor.keyEpoch,
+        });
         return reply.send({ acknowledged: true });
       } catch (error) {
+        if (error instanceof RelayAuthorityChangedError) return reply.code(403).send({ error: 'device_not_authorized' });
         // Only a domain-level RelayError (unknown/not-this-recipient's/already
         // resolved messageId -- indistinguishable by design, see
         // OutboundRelayService.acknowledgeAsRecipient's doc comment) collapses
@@ -423,7 +536,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.get(
     '/v1/runtime-sync/status',
-    { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
+    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const deviceId = request.runtimeSyncDeviceId as string;
       const state = deps.statusTracker.computeState(deviceId, false, new Date());
@@ -440,7 +553,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
     const protectionStatusRepository = deps.deviceProtectionStatusRepository;
     app.post(
       '/v1/runtime-sync/protection-status',
-      { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
+      { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const rawBody: unknown = request.body;
         if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) {
@@ -452,10 +565,32 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         }
         const deviceId = request.runtimeSyncDeviceId as string;
         const familyId = request.runtimeSyncFamilyId as string;
-        // requireDeviceSession has already bound this exact session DSK to a
-        // validated actor from the current accepted Trust Set before any
-        // runtime-sync route handler runs.
+        const dskKeyId = request.runtimeSyncDskKeyId as string;
+        // The pre-handler check prevents stale sessions from entering route
+        // work. Re-resolve after body validation at the final write boundary
+        // so a Trust Set removal/rotation during intervening work cannot
+        // authorize a durable status report under an old DSK.
+        let currentActor: ResolvedActor | ActorResolutionFailure;
+        try {
+          currentActor = await deps.trustSetRoleResolver!.resolveActor(familyId, deviceId, dskKeyId);
+        } catch {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
+        if (typeof currentActor === 'string') {
+          return reply.code(403).send({ error: 'device_not_authorized' });
+        }
+        if (typeof currentActor !== 'object' || currentActor === null || Array.isArray(currentActor) ||
+            currentActor.familyId !== familyId || currentActor.deviceId !== deviceId || currentActor.dskKeyId !== dskKeyId || !FAMILY_ROLES.has(currentActor.role) ||
+            !Number.isSafeInteger(currentActor.trustSetEpoch) || currentActor.trustSetEpoch < 1 ||
+            !Number.isSafeInteger(currentActor.keyEpoch) || currentActor.keyEpoch < 1) {
+          return reply.code(503).send({ error: 'authority_unavailable' });
+        }
         const nextLevel = body.protectionLevel as ProtectionLevel;
+        const authority = {
+          dskKeyId,
+          trustSetEpoch: currentActor.trustSetEpoch,
+          keyEpoch: currentActor.keyEpoch,
+        };
         // Capture the server receipt clock before any repository awaits. In
         // particular, alert-transition lookup latency must not change the
         // timestamp assigned to this report, and the client never supplies it.
@@ -468,10 +603,15 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         let previous: DeviceProtectionStatusRecord | null = null;
         try {
           previous = deps.protectionStatusAlerting
-            ? await protectionStatusRepository.recordAndReadPrevious(record)
-            : (await protectionStatusRepository.upsert(record), null);
+            ? await protectionStatusRepository.recordAndReadPrevious(record, authority)
+            : (await protectionStatusRepository.upsert(record, authority), null);
         } catch (error) {
-          if (error instanceof ProtectionStatusDeviceUnavailableError) {
+          if (error instanceof ProtectionStatusStaleReportError) {
+            // A delayed report must not roll back stored state or emit a
+            // transition alert. It is an accepted idempotent no-op.
+            return reply.code(204).send();
+          }
+          if (error instanceof ProtectionStatusDeviceUnavailableError || error instanceof ProtectionStatusAuthorityChangedError) {
             return reply.code(403).send({ error: 'device_not_authorized' });
           }
           throw error;

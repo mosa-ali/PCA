@@ -21,9 +21,10 @@ class SchedulePolicyMissingCandidateFallbackTest {
         keyEpoch: Int = 1,
         expiresAt: Instant? = null,
         windows: List<ScheduleWindow> = emptyList(),
+        revision: Int = 3,
     ) = SchedulePolicyV1(
         policyId = "policy-1",
-        policyRevision = 3,
+        policyRevision = revision,
         familyId = "family-1",
         childProfileId = "child-1",
         timezone = "UTC",
@@ -156,6 +157,48 @@ class SchedulePolicyMissingCandidateFallbackTest {
         assertEquals(ScheduleRuntimeStatus.EPOCH_STALE, stalePort.currentStatus())
         assertEquals(ScheduleEnforcementOutcome.UNAVAILABLE, stalePort.enforce("com.example.game"))
         assertEquals(0, staleEnforcementCalls)
+    }
+
+    @Test
+    fun `production port enforces retained candidate or eligible fallback when epoch is stale`() {
+        val staleCandidate = policy(
+            trustSetEpoch = 1,
+            keyEpoch = 2,
+            windows = listOf(window()),
+            revision = 4,
+        )
+        val currentFloorFallback = policy(
+            trustSetEpoch = 2,
+            keyEpoch = 2,
+            windows = listOf(window()),
+            revision = 3,
+        )
+        val cases = listOf(
+            SchedulePolicySnapshot(staleCandidate, null, now, 2, 2) to staleCandidate,
+            SchedulePolicySnapshot(staleCandidate, currentFloorFallback, now, 2, 2) to currentFloorFallback,
+        )
+
+        cases.forEach { (snapshot, expectedPolicy) ->
+            val store = InMemorySchedulePolicyStore().apply { save(snapshot) }
+            var appliedDecision: ScheduleDecision? = null
+            val port = port(ScheduleRuntime(store)) { decision ->
+                appliedDecision = decision
+                ScheduleEnforcementOutcome.APPLIED
+            }
+
+            assertEquals(ScheduleRuntimeStatus.EPOCH_STALE, port.currentStatus())
+            assertEquals(ScheduleEnforcementOutcome.APPLIED, port.enforce("com.example.game"))
+            assertEquals(ScheduleDecisionKind.BLOCKED_BEDTIME, appliedDecision?.decision)
+            assertEquals(
+                expectedPolicy,
+                ScheduleRuntime(store).evaluate(
+                    now,
+                    "com.example.game",
+                    EnforcementCapabilityState.ENFORCED,
+                    Connectivity.ONLINE,
+                ).effectivePolicy,
+            )
+        }
     }
 
     private fun port(

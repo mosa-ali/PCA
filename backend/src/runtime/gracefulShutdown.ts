@@ -63,7 +63,7 @@ export interface GracefulShutdownOptions {
   readonly timeoutMs?: number;
 }
 
-/** Console-backed logger; only bounded event names and `error.message`. */
+/** Console-backed logger; callers provide only bounded event names/categories. */
 export const CONSOLE_SHUTDOWN_LOGGER: ShutdownLogger = {
   info(event, detail) {
     console.log(JSON.stringify({ event, ...detail }));
@@ -72,16 +72,6 @@ export const CONSOLE_SHUTDOWN_LOGGER: ShutdownLogger = {
     console.warn(JSON.stringify({ event, ...detail }));
   },
 };
-
-/**
- * mysql2 interpolates parameters client-side and hangs the fully-bound
- * statement off `err.sql`, so a raw error object printed at shutdown would
- * emit real family rows into the operational log. Only ever log the
- * message, exactly like the commercial-maintenance logger in main.ts.
- */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export type ShutdownHandler = (signal: string) => Promise<void>;
 
@@ -100,18 +90,18 @@ export function createGracefulShutdownHandler(options: GracefulShutdownOptions):
     let clean = true;
     try {
       options.stopBackgroundWork();
-    } catch (error) {
+    } catch {
       clean = false;
-      options.log.warn('shutdown.background_work_stop_failed', { error: errorMessage(error) });
+      options.log.warn('shutdown.background_work_stop_failed', { failure: 'background_work_stop_failed' });
     }
 
     const drain = (async (): Promise<'DRAINED'> => {
       try {
         await options.closeServer();
         options.log.info('shutdown.server_closed');
-      } catch (error) {
+      } catch {
         clean = false;
-        options.log.warn('shutdown.server_close_failed', { error: errorMessage(error) });
+        options.log.warn('shutdown.server_close_failed', { failure: 'server_close_failed' });
       }
       // The pool is released AFTER the server drains: an in-flight request
       // still holds a connection, and tearing the pool out from under it
@@ -119,9 +109,9 @@ export function createGracefulShutdownHandler(options: GracefulShutdownOptions):
       try {
         await options.closeDatabasePool();
         options.log.info('shutdown.database_pool_closed');
-      } catch (error) {
+      } catch {
         clean = false;
-        options.log.warn('shutdown.database_pool_close_failed', { error: errorMessage(error) });
+        options.log.warn('shutdown.database_pool_close_failed', { failure: 'database_pool_close_failed' });
       }
       return 'DRAINED';
     })();

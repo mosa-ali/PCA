@@ -50,6 +50,19 @@ class PersistentEyeDistanceSnapshotStoreTest {
     }
 
     @Test
+    fun `negative advisory wall clock timestamp remains round trippable`() {
+        val snapshot = EyeDistanceSnapshot(
+            state = EyeDistanceState(phase = EyeDistancePhase.MONITORING),
+            snapshotWallClockMillis = -1L,
+            bootId = null,
+        )
+
+        store.save(snapshot)
+
+        assertEquals(snapshot, store.load())
+    }
+
+    @Test
     fun `corrupt persisted value fails safe to null rather than crashing`() {
         backing.putString("eye_distance_snapshot_v1", "not|a|valid|snapshot")
         assertNull(store.load())
@@ -62,6 +75,36 @@ class PersistentEyeDistanceSnapshotStoreTest {
         )
         val corrupted = validEncoded.replaceFirst("MONITORING", "SOME_FUTURE_PHASE")
         backing.putString("eye_distance_snapshot_v1", corrupted)
+        assertNull(store.load())
+    }
+
+    @Test
+    fun `malformed exception flag fails safe instead of being interpreted as false`() {
+        val validEncoded = store.encode(
+            EyeDistanceSnapshot(
+                EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE, exceptionActive = true, preExceptionPhase = EyeDistancePhase.REST_ACTIVE),
+                0L,
+                null,
+            ),
+        )
+        val fields = validEncoded.split("|").toMutableList()
+        fields[8] = "maybe"
+        backing.putString("eye_distance_snapshot_v1", fields.joinToString("|"))
+
+        assertNull(store.load())
+    }
+
+    @Test
+    fun `negative persisted duration fails safe to null`() {
+        val encoded = store.encode(
+            EyeDistanceSnapshot(
+                EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE, restElapsedNanos = -1L),
+                0L,
+                null,
+            ),
+        )
+        backing.putString("eye_distance_snapshot_v1", encoded)
+
         assertNull(store.load())
     }
 

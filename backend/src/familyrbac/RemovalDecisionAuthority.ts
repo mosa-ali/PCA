@@ -894,7 +894,7 @@ function validateAndCanonicalizeDecision(
     !isPlausibleIdempotencyKey(decision.idempotencyKey) ||
     !isStepUpAssertion(decision.stepUp) ||
     !isFamilyEpochNumber(decision.trustSetEpoch, 0) ||
-    (decision.policyRevision !== null && (!Number.isInteger(decision.policyRevision) || decision.policyRevision < 0)) ||
+    (decision.policyRevision !== null && (!Number.isSafeInteger(decision.policyRevision) || decision.policyRevision < 0)) ||
     !REMOVAL_DECISIONS.has(decision.decision) ||
     !REMOVAL_PROTECTION_LEVELS.has(decision.protectionLevel) ||
     (!REMOVAL_REASON_CATEGORIES.has(decision.reasonCategory as ReasonCategory) && decision.reasonCategory !== null) ||

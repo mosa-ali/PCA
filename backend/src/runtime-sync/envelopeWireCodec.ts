@@ -1,5 +1,6 @@
 import { parseFamilyEnvelope, type RawFamilyEnvelope } from '../familyenvelope/parse.js';
 import type { FamilyEnvelope } from '../familyenvelope/types.js';
+import { isPlausibleCiphertext, MAX_CIPHERTEXT_BYTES } from '../relay/policy.js';
 
 /**
  * Runtime adapter around the existing, accepted FamilyEnvelope wire shape
@@ -48,11 +49,16 @@ export function envelopeToRawFamilyEnvelope(envelope: FamilyEnvelope): RawFamily
 }
 
 export function envelopeToRelayCiphertext(envelope: FamilyEnvelope): Buffer {
-  return Buffer.from(JSON.stringify(envelopeToRawFamilyEnvelope(envelope)), 'utf8');
+  const ciphertext = Buffer.from(JSON.stringify(envelopeToRawFamilyEnvelope(envelope)), 'utf8');
+  if (!isPlausibleCiphertext(ciphertext)) {
+    throw new RangeError(`Serialized FamilyEnvelope exceeds the ${MAX_CIPHERTEXT_BYTES}-byte relay limit.`);
+  }
+  return ciphertext;
 }
 
 /** Returns null for anything structurally malformed -- same "no granular error" posture as parseFamilyEnvelope itself. */
 export function envelopeFromRelayCiphertext(ciphertext: Buffer): FamilyEnvelope | null {
+  if (!isPlausibleCiphertext(ciphertext)) return null;
   let raw: unknown;
   try {
     raw = JSON.parse(ciphertext.toString('utf8'));

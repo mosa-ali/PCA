@@ -1,6 +1,24 @@
 import XCTest
 @testable import PCA
 
+private final class CorruptibleEnrollmentProfileStore: PCAEnrollmentProfileStore {
+    var profile: PCAEnrollmentProfile?
+    var loadFails = false
+
+    func save(_ profile: PCAEnrollmentProfile, forDeviceId deviceId: String) throws {
+        self.profile = profile
+    }
+
+    func load(forDeviceId deviceId: String) throws -> PCAEnrollmentProfile? {
+        if loadFails { throw PCAEnrollmentProfileStoreError.invalidStoredProfile }
+        return profile
+    }
+
+    func remove(forDeviceId deviceId: String) throws {
+        profile = nil
+    }
+}
+
 final class EnrollmentProfileTests: XCTestCase {
     func testConfiguredAgeTierBreakDefaultsRemainSafeAndCanBeStricter() {
         let configuration = PCAEnrollmentDefaultsConfiguration(
@@ -84,6 +102,52 @@ final class EnrollmentProfileTests: XCTestCase {
         if case .ready = controller.state {
             XCTFail("an unapproved Family Controls state must not reach runtime-ready")
         }
+    }
+
+    func testRestoreWithoutPersistedProfileClearsPreviouslyConfirmedMemoryState() throws {
+        let deviceId = "opaque-device"
+        let store = InMemoryPCAEnrollmentProfileStore()
+        let controller = PCAEnrollmentProfileRuntimeController(
+            deviceId: deviceId,
+            store: store,
+            authorization: .notDetermined
+        )
+        controller.receiveParentAuthorizedProfile(PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .teen,
+            initialPolicyProfile: .balanced
+        ))
+        guard case .authorizationRequired = controller.confirmChildProfile() else {
+            return XCTFail("unapproved profile should be stored but remain gated")
+        }
+
+        try store.remove(forDeviceId: deviceId)
+        XCTAssertEqual(controller.restorePersistedProfile(), .awaitingProfile)
+        XCTAssertEqual(controller.updateAuthorization(.approved), .awaitingProfile,
+            "authorization callbacks must not resurrect a profile absent from durable storage")
+    }
+
+    func testRestoreFailureClearsPreviouslyConfirmedMemoryState() {
+        let deviceId = "opaque-device"
+        let store = CorruptibleEnrollmentProfileStore()
+        let controller = PCAEnrollmentProfileRuntimeController(
+            deviceId: deviceId,
+            store: store,
+            authorization: .notDetermined
+        )
+        controller.receiveParentAuthorizedProfile(PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .teen,
+            initialPolicyProfile: .balanced
+        ))
+        guard case .authorizationRequired = controller.confirmChildProfile() else {
+            return XCTFail("unapproved profile should be stored but remain gated")
+        }
+
+        store.loadFails = true
+        XCTAssertEqual(controller.restorePersistedProfile(), .profilePersistenceFailed)
+        XCTAssertEqual(controller.updateAuthorization(.approved), .profilePersistenceFailed,
+            "authorization callbacks must not revive a profile after corrupt/unavailable restoration")
     }
 
     func testEnrollmentProfileStoreRejectsInvalidPersistedIdentityAndReadBacksWrites() throws {

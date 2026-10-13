@@ -550,12 +550,19 @@ public final class PCAEnrollmentProfileRuntimeController {
     public func restorePersistedProfile() -> PCAEnrollmentProfileRuntimeState {
         do {
             guard let profile = try store.load(forDeviceId: deviceId) else {
+                // A missing durable record revokes any in-memory confirmation
+                // too. Otherwise a later authorization callback could revive
+                // a profile that restore just established is no longer stored.
+                confirmedProfile = nil
                 state = .awaitingProfile
                 return state
             }
             confirmedProfile = profile
             return applyAuthorizationState()
         } catch {
+            // A corrupt/unavailable record cannot leave a prior in-memory
+            // profile eligible for re-authorization after this failed restore.
+            confirmedProfile = nil
             state = .profilePersistenceFailed
             record(.profilePersistenceFailed, reason: "Stored profile could not be decoded safely.")
             return state

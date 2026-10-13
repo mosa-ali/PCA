@@ -106,6 +106,12 @@ function csrfOk(request: FastifyRequest): boolean {
   return cookieToken === headerToken;
 }
 
+async function markDeviceBootstrapResponsePrivate(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // Challenge nonces, bootstrap proofs, and receipt status must not survive in
+  // browser or intermediary caches, including parser/rate-limit denials.
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: FirstDeviceBootstrapRoutesDeps): void {
   const { parentAccountService, bootstrapService } = deps;
 
@@ -115,6 +121,7 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
     '/v1/first-device-bootstrap/challenge',
     {
       bodyLimit: MAX_BODY_BYTES,
+      onRequest: markDeviceBootstrapResponsePrivate,
       preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'first-device-bootstrap-challenge' })],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -148,6 +155,7 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
     '/v1/first-device-bootstrap/submit',
     {
       bodyLimit: MAX_SUBMIT_BODY_BYTES,
+      onRequest: markDeviceBootstrapResponsePrivate,
       preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'first-device-bootstrap-submit' })],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -190,6 +198,7 @@ export function registerFirstDeviceBootstrapRoutes(app: FastifyInstance, deps: F
     '/v1/first-device-bootstrap/status',
     {
       bodyLimit: MAX_BODY_BYTES,
+      onRequest: markDeviceBootstrapResponsePrivate,
       preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'first-device-bootstrap-status' })],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {

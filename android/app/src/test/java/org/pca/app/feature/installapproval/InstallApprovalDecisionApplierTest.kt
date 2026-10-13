@@ -2,6 +2,7 @@ package org.pca.app.feature.installapproval
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.platform.ProtectionMode
@@ -190,5 +191,39 @@ class InstallApprovalDecisionApplierTest {
             decision = InstallApprovalDecisionApplier.Decision.APPROVED,
         )
         assertEquals(InstallApprovalCapabilityState.AUTHORIZATION_REQUIRED, outcome)
+    }
+
+    @Test
+    fun `cancellation from the platform suspend call propagates`() {
+        val executor = object : PackageSuspensionExecutor {
+            override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                throw java.util.concurrent.CancellationException("cancelled")
+        }
+
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            InstallApprovalDecisionApplier.apply(
+                packageSuspensionExecutor = executor,
+                currentProtectionMode = ProtectionMode.PROTECTED,
+                packageName = "com.example.newgame",
+                decision = InstallApprovalDecisionApplier.Decision.APPROVED,
+            )
+        }
+    }
+
+    @Test
+    fun `fatal JVM error from the platform suspend call propagates`() {
+        val executor = object : PackageSuspensionExecutor {
+            override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                throw AssertionError("fatal platform failure")
+        }
+
+        assertThrows(AssertionError::class.java) {
+            InstallApprovalDecisionApplier.apply(
+                packageSuspensionExecutor = executor,
+                currentProtectionMode = ProtectionMode.PROTECTED,
+                packageName = "com.example.newgame",
+                decision = InstallApprovalDecisionApplier.Decision.APPROVED,
+            )
+        }
     }
 }

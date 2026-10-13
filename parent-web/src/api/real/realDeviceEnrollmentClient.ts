@@ -274,12 +274,22 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
   }
 
   /** Resolves to PAIRED only (idempotent) -- never ACTIVE. See file header and PairingService doc comment. */
-  async confirmPairing(familyId: string, deviceId: string, stepUpToken: string): Promise<PairingRequestDto> {
+  async confirmPairing(
+    familyId: string,
+    deviceId: string,
+    stepUpToken: string,
+    expectedDskFingerprint: string,
+    expectedDekFingerprint: string | null,
+  ): Promise<PairingRequestDto> {
     const operation = 'confirmPairing';
     const response = await this.request(
       operation,
       `/v1/families/${encodeURIComponent(familyId)}/pairing-requests/${encodeURIComponent(deviceId)}/confirm`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stepUpToken }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stepUpToken, expectedDskFingerprint, expectedDekFingerprint }),
+      },
     );
     if (!response.ok) return this.fail(operation, response);
     const body = await parseJsonSafe<PairingRequestDto>(response);

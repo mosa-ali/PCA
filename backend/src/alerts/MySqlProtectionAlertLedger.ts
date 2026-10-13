@@ -4,8 +4,10 @@ import type { ProtectionAlertEvent, ProtectionAlertTrigger } from './types.js';
 import type { ProtectionAlertLedger, ProtectionAlertListOptions, RecordProtectionAlertResult } from './ProtectionAlertLedger.js';
 import {
   computeServerCiphertextExpiry,
+  isPersistableServerCiphertextWindow,
   resolveServerCiphertextFeedLimit,
 } from '../retention/serverCiphertextTtl.js';
+import { InvalidProtectionAlertInputError } from './ProtectionAlertGenerator.js';
 
 interface ProtectionAlertRow {
   alert_id: string;
@@ -77,6 +79,9 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
     // event object while expiry housekeeping is in flight; the row and any
     // duplicate comparison must stay bound to the event accepted here.
     const captured = snapshotEvent(event);
+    if (!isPersistableServerCiphertextWindow(captured.generatedAtUtc)) {
+      throw new InvalidProtectionAlertInputError('invalid generatedAtUtc');
+    }
     if (!isFamilyEpochNumber(captured.keyEpoch)) {
       throw new Error('Protection alert key epoch is outside the supported family epoch range.');
     }

@@ -142,7 +142,7 @@ async function issueVerifiedSession(deviceSessionService, familyId, device) {
     key: device.privateKey,
     dsaEncoding: 'ieee-p1363',
   }));
-  const issued = await deviceSessionService.completeChallenge(challenge.challengeId, signature.toString('base64url'));
+  const issued = await deviceSessionService.completeChallenge(device.entry.deviceId, challenge.challengeId, signature.toString('base64url'));
   const identity = await deviceSessionService.validateSession(issued.rawToken);
   assert.deepEqual(identity, {
     familyId,

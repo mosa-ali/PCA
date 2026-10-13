@@ -157,6 +157,13 @@ public final class FirstDeviceTrustRootCoordinator {
         case .awaitingApproval, .approved:
             await refreshStatusLocked() // reuse the EXISTING ceremony; never mint a parallel one
             return
+        case .unknown where current.ceremonyId != nil:
+            // A status transport failure can leave an existing server
+            // ceremony in UNKNOWN without a submission payload. Its
+            // authority is still unresolved, so only status may recover it;
+            // issuing another challenge could create a parallel ceremony.
+            await refreshStatusLocked()
+            return
         default:
             // Once a submission round has begun (a persisted payload
             // exists), the server may already hold the COMMITTED root under
@@ -189,6 +196,15 @@ public final class FirstDeviceTrustRootCoordinator {
             return
         }
 
+        // The server derives this scope from the enrollment attempt, but bind
+        // its response back to the locally captured enrollment identity before
+        // persisting ceremony state. A misrouted or malformed response must
+        // never become the App Attest transcript's device context.
+        guard challenge.deviceId.utf8.elementsEqual(current.seed.deviceId.utf8) else {
+            transition(current, state: .unknown)
+            return
+        }
+
         var next = current
         next.state = .awaitingApproval
         next.ceremonyId = challenge.ceremonyId
@@ -206,12 +222,16 @@ public final class FirstDeviceTrustRootCoordinator {
         let payload: FirstDeviceSubmissionPayload
         if let persisted = current.submission {
             payload = persisted
-        } else if let built = await buildPayload(current) {
-            payload = built
         } else {
-            transition(current, state: .unknown)
-            return
+            guard let built = try await buildPayload(current) else {
+                transition(current, state: .unknown)
+                return
+            }
+            payload = built
         }
+        // A cancellation during App Attest must not be converted into an
+        // unknown ceremony or allowed to continue into local signing.
+        try Task.checkCancellation()
         // Persist BEFORE the first send: byte-identical replay after a lost
         // response is the only accepted retry shape.
         var submitting = current
@@ -224,6 +244,9 @@ public final class FirstDeviceTrustRootCoordinator {
               refreshed.submission == payload,
               rootStore.confirmDurable(refreshed),
               rootStore.current() == refreshed else { return }
+        // If cancellation arrived during the synchronous durability boundary,
+        // keep the exact payload for status-first recovery without sending it.
+        try Task.checkCancellation()
         await sendPayload(refreshed, payload: payload)
     }
 
@@ -334,7 +357,7 @@ public final class FirstDeviceTrustRootCoordinator {
     /// DSK, epoch-1 hash bound into the proof, evidence digest bound into
     /// both. Any missing server context or key material fails closed (nil
     /// -- never a fabricated success, never a regenerated key).
-    private func buildPayload(_ current: FirstDeviceRootRecord) async -> FirstDeviceSubmissionPayload? {
+    private func buildPayload(_ current: FirstDeviceRootRecord) async throws -> FirstDeviceSubmissionPayload? {
         guard let ceremonyId = current.ceremonyId,
               let challengeId = current.challengeId,
               let nonce = current.nonce,
@@ -356,6 +379,7 @@ public final class FirstDeviceTrustRootCoordinator {
                 dskKeyId: seed.signingKeyId,
                 dskPublicKeyBase64: seed.dskPublicKeyBase64
             )
+            try Task.checkCancellation()
             let issuedAt = FirstDeviceCanonical.isoUtcMillis(now())
             let epoch1Bytes = FirstDeviceCanonical.encodeEpoch1(
                 familyId: familyId,
@@ -391,6 +415,8 @@ public final class FirstDeviceTrustRootCoordinator {
                 epoch1Signature: epoch1Signature,
                 attestationEvidence: evidence.json
             )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return nil // fail closed; UNKNOWN, never regenerate, never fabricate
         }

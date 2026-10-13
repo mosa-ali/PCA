@@ -2,6 +2,9 @@ import SwiftUI
 
 @MainActor struct ContentView: View {
     @ObservedObject private var model: PCAApplicationModel
+    @State private var isInvitationEntryExpanded = false
+    @State private var invitationLink = ""
+    @State private var invitationEntryMessage: String?
 
     init() {
         self.model = PCAProductionCompositionRoot.make()
@@ -30,6 +33,50 @@ import SwiftUI
                 Text(PCALocalizedStrings.text(model.applicationState.userFacingMessage))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(PCALocalizedStrings.text(model.applicationState.userFacingMessage))
+
+                if model.canEnterEnrollmentLink {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button {
+                            if isInvitationEntryExpanded { invitationLink = "" }
+                            isInvitationEntryExpanded.toggle()
+                            invitationEntryMessage = nil
+                        } label: {
+                            Label(PCALocalizedStrings.text("Parent invitation"), systemImage: "link")
+                        }
+                        .accessibilityHint(PCALocalizedStrings.text("Use the link shared by your parent. Device setup and protection activation are separate steps."))
+
+                        if isInvitationEntryExpanded {
+                            SecureField(PCALocalizedStrings.text("Paste the parent invitation link"), text: $invitationLink)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                                .textContentType(.URL)
+                                .accessibilityLabel(PCALocalizedStrings.text("Paste the parent invitation link"))
+
+                            Button(PCALocalizedStrings.text("Continue with invitation")) {
+                                let value = invitationLink.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard let url = URL(string: value), model.receiveEnrollmentLink(url) else {
+                                    invitationEntryMessage = PCALocalizedStrings.text("This link could not be used here. Check that it is an active PCA invitation for this device.")
+                                    return
+                                }
+                                invitationLink = ""
+                                invitationEntryMessage = PCALocalizedStrings.text("Invitation received. Follow the setup steps; this does not activate protection.")
+                            }
+                            .disabled(invitationLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                            Text(PCALocalizedStrings.text("Use the link shared by your parent. Device setup and protection activation are separate steps."))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+
+                            if let invitationEntryMessage {
+                                Text(invitationEntryMessage)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityLabel(invitationEntryMessage)
+                            }
+                        }
+                    }
+                }
 
                 if let disclosure = model.pendingDisclosure {
                     PCAChildEnrollmentProfileView(disclosure: disclosure) {

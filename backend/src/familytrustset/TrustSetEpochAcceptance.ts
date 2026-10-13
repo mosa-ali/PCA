@@ -11,7 +11,7 @@ import {
 import type { EpochFloorStore } from './EpochFloorStore.js';
 import type { GenesisAnchorSource } from './GenesisAnchorSource.js';
 import type { KeyEpochStore } from './KeyEpochStore.js';
-import type { TrustSetEpochRecord, TrustSetEpochStore } from './TrustSetEpochStore.js';
+import { isPersistableTrustSetDate, type TrustSetEpochRecord, type TrustSetEpochStore } from './TrustSetEpochStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch, OpaqueFamilyId } from './types.js';
 
@@ -259,8 +259,8 @@ export class TrustSetEpochAcceptanceService {
     if (!isFamilyEpochNumber(epoch.trustSetEpoch, 1) || !isFamilyEpochNumber(epoch.keyEpoch, 1) ||
         record.familyId !== familyId || epoch.familyId !== familyId ||
         epoch.trustSetEpoch !== record.trustSetEpoch || epoch.keyEpoch !== record.keyEpoch ||
-        epoch.supersedesEpoch !== record.supersedesEpoch || !isValidDate(record.issuedAt) ||
-        epoch.issuedAt.getTime() !== record.issuedAt.getTime() || !isValidDate(record.receivedAt) ||
+        epoch.supersedesEpoch !== record.supersedesEpoch || !isPersistableTrustSetDate(record.issuedAt) ||
+        epoch.issuedAt.getTime() !== record.issuedAt.getTime() || !isPersistableTrustSetDate(record.receivedAt) ||
         activeOwnerCount(epoch.entries) !== 1 || findDuplicateIdentity(epoch.entries) ||
         owner === null || owner.deviceId !== record.signerDeviceId || owner.dskKeyId !== record.signerKeyId ||
         canonicalizeTrustSetEpoch(epoch) !== record.signedEpochBytes.toString('utf8')) {
@@ -277,7 +277,11 @@ export class TrustSetEpochAcceptanceService {
     // ---- 0. Candidate-envelope bounds (cheap, before decode/crypto) ----
     if (!isPlausibleOpaqueId(input.familyId)) return rejected('MALFORMED_CANDIDATE');
     if (!isPlausibleSignature(input.signature)) return rejected('MALFORMED_CANDIDATE');
-    if (!isValidDate(input.receivedAt)) return rejected('MALFORMED_CANDIDATE');
+    if (!isPersistableTrustSetDate(input.receivedAt)) return rejected('MALFORMED_CANDIDATE');
+    // Date is mutable even when the request object is not. Capture the
+    // acceptance receipt instant before any asynchronous store/verifier
+    // boundary so callers cannot retimestamp a valid request in flight.
+    const receivedAt = new Date(input.receivedAt.getTime());
     const signedByteLength = Buffer.byteLength(input.signedCanonicalBytes, 'utf8');
     if (signedByteLength < 1 || signedByteLength > MAX_SIGNED_EPOCH_BYTES) return rejected('MALFORMED_CANDIDATE');
 
@@ -301,7 +305,7 @@ export class TrustSetEpochAcceptanceService {
     if (!isFamilyEpochNumber(epoch.keyEpoch)) {
       return rejected('MALFORMED_CANDIDATE');
     }
-    if (!isValidDate(epoch.issuedAt)) return rejected('MALFORMED_CANDIDATE');
+    if (!isPersistableTrustSetDate(epoch.issuedAt)) return rejected('MALFORMED_CANDIDATE');
     const activeOwner = findActiveOwner(epoch);
     // `activeOwner` is guaranteed non-null by the exactly-one-ACTIVE-OWNER
     // check above; the guard stays so a future refactor cannot silently
@@ -338,7 +342,16 @@ export class TrustSetEpochAcceptanceService {
     // decisions must never be based on a view where the floors moved past
     // the epoch record they were derived from (that would let a candidate
     // be verified against a superseded signer set).
-    const { latest, canonicalKeyEpoch, floors } = await this.readConsistentState(input.familyId);
+    const durableState = await this.readConsistentState(input.familyId);
+    // A coherent head/floor tuple is not sufficient if the accepted row's
+    // side metadata or signature no longer agrees with its signed bytes.
+    // Validate the complete persisted record before using it as the signer
+    // authority for a successor. The append CAS still detects any head move
+    // after this snapshot.
+    const latest = durableState.latest === null
+      ? null
+      : await this.validateAcceptedRecord(input.familyId, durableState.latest);
+    const { canonicalKeyEpoch, floors } = durableState;
 
     let resolvedSigner: FamilyTrustSetEntry;
 
@@ -459,7 +472,7 @@ export class TrustSetEpochAcceptanceService {
       signerKeyId: resolvedSigner.dskKeyId,
       signerDeviceId: resolvedSigner.deviceId,
       issuedAt: epoch.issuedAt,
-      receivedAt: input.receivedAt,
+      receivedAt,
     };
     const expectedHead = latest === null
       ? null
@@ -489,10 +502,6 @@ export class TrustSetEpochAcceptanceService {
 
 function rejected(reason: TrustSetEpochAcceptanceRejectionReason): TrustSetEpochAcceptanceResult {
   return { outcome: 'REJECTED', reason };
-}
-
-function isValidDate(value: unknown): value is Date {
-  return value instanceof Date && !Number.isNaN(value.getTime());
 }
 
 function inconsistentState(detail: string): Error {

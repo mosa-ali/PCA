@@ -29,6 +29,15 @@ export interface SafeZonePatch {
   keyEpoch?: number;
 }
 
+/** The accepted device authority required to commit a Parent Safe Zone mutation. */
+export interface SafeZoneMutationAuthoritySnapshot {
+  readonly familyId: string;
+  readonly trustSetEpoch: number;
+  readonly keyEpoch: number;
+  readonly actor: { readonly deviceId: string; readonly dskKeyId: string };
+  readonly recipient: { readonly deviceId: string; readonly dskKeyId: string };
+}
+
 export interface SafeZoneRecipientPage {
   safeZones: SafeZone[];
   nextCursor: string | null;
@@ -38,6 +47,14 @@ export class SafeZoneError extends Error {
   constructor(readonly code: 'NOT_FOUND' | 'INVALID_INPUT') {
     super(code);
     this.name = 'SafeZoneError';
+  }
+}
+
+/** The accepted head, device, or exact DSK changed before a Safe Zone mutation could persist. */
+export class SafeZoneAuthorityChangedError extends Error {
+  constructor() {
+    super('Safe Zone device authority changed before persistence.');
+    this.name = 'SafeZoneAuthorityChangedError';
   }
 }
 
@@ -152,7 +169,7 @@ export interface SafeZoneRepository {
   list(familyId: string): Promise<SafeZone[]>;
   /** Encrypted envelopes addressed to one authenticated device and its current accepted family-key epoch. The caller must derive all three values from a verified device session and accepted Trust Set projection. */
   listForRecipient(familyId: string, recipientEndpointId: string, keyEpoch: number, cursor?: string): Promise<SafeZoneRecipientPage>;
-  create(input: NewSafeZone): Promise<SafeZone>;
-  update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone>;
-  remove(familyId: string, zoneId: string): Promise<boolean>;
+  create(input: NewSafeZone, authority?: SafeZoneMutationAuthoritySnapshot): Promise<SafeZone>;
+  update(familyId: string, zoneId: string, patch: SafeZonePatch, authority?: SafeZoneMutationAuthoritySnapshot): Promise<SafeZone>;
+  remove(familyId: string, zoneId: string, authority?: SafeZoneMutationAuthoritySnapshot): Promise<boolean>;
 }

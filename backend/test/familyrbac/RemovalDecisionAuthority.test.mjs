@@ -351,6 +351,25 @@ test('signed removal decisions reject oversized epochs before signature verifica
   assert.doesNotThrow(() => canonicalizeRemovalDecision({ ...invalid, trustSetEpoch: 0 }));
 });
 
+test('signed removal decisions reject unsafe policy revisions before signature verification', async () => {
+  let verifyCalls = 0;
+  const verifier = { async verify() { verifyCalls += 1; return true; } };
+  const { authority } = buildAuthority({ signatureVerifierOverride: verifier });
+  const request = await createPending(authority, { requestId: 'request-unsafe-policy-revision' });
+  const invalid = {
+    ...unsignedDecision(request, { actionId: 'action-unsafe-policy-revision' }),
+    policyRevision: Number.MAX_SAFE_INTEGER + 1,
+    signature: 'unused-because-range-validation-precedes-crypto',
+  };
+
+  await assert.rejects(
+    authority.decideWithSignedRemoteParent(invalid),
+    (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(verifyCalls, 0);
+  assert.equal((await authority.getRequest(FAMILY, request.requestId)).state, 'PARENT_APPROVAL_REQUIRED');
+});
+
 test('same signed action is idempotent, while replay on another request is rejected', async () => {
   const { authority } = buildAuthority();
   const request = await createPending(authority, { requestId: 'request-idempotent-a' });
@@ -612,7 +631,7 @@ function buildDecisionSigningKeyResolver({
       resolvedCalls.push([familyId, deviceId, dskKeyId]);
       if (resolveActor) return resolveActor(familyId, deviceId, dskKeyId);
       if (familyId !== FAMILY || deviceId !== ADMIN || dskKeyId !== actor.dskKeyId) return 'DEVICE_NOT_ACTIVE';
-      return { deviceId, role: actor.role, trustSetEpoch: 7, keyEpoch: 3 };
+      return { deviceId, dskKeyId: actor.dskKeyId, role: actor.role, trustSetEpoch: 7, keyEpoch: 3 };
     } },
     deviceRepository: {
       async isDeviceSessionActive() { return active; },
@@ -628,6 +647,15 @@ test('store-backed decision signing-key resolver returns only the active Parent 
     familyId: FAMILY, deviceId: ADMIN, publicKey: 'actor-public-84',
   });
   assert.deepEqual(resolvedCalls, [[FAMILY, ADMIN, 'actor-dsk-84']]);
+});
+
+test('store-backed decision signing-key resolver rejects a role projection bound to a different DSK', async () => {
+  const { resolver } = buildDecisionSigningKeyResolver({
+    resolveActor: async (_familyId, deviceId) => ({
+      deviceId, dskKeyId: 'rotated-actor-dsk', role: 'ADMINISTRATOR', trustSetEpoch: 7, keyEpoch: 3,
+    }),
+  });
+  assert.equal(await resolver.resolve(FAMILY, ADMIN), null);
 });
 
 test('store-backed decision signing-key resolver rejects non-parent, absent, and wrong-family members', async (t) => {

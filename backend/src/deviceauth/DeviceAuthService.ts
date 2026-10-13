@@ -33,6 +33,15 @@ const DEVICE_AUTH_ERROR_MESSAGES: Record<DeviceAuthErrorCode, string> = {
   INVALID_SIGNATURE: 'Signature verification failed.',
 };
 
+const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+function isSupportedChallengeTime(value: unknown): value is Date {
+  if (!(value instanceof Date)) return false;
+  const time = value.getTime();
+  return Number.isFinite(time) && time >= MYSQL_DATETIME_MIN_MS && time <= MYSQL_DATETIME_MAX_MS;
+}
+
 export interface IssuedChallenge {
   challengeId: string;
   nonce: string;
@@ -133,7 +142,11 @@ export class DeviceAuthService {
     const challenge = await this.challengeRepository.findById(challengeId);
     if (!challenge) throw new DeviceAuthError('NOT_FOUND');
     if (challenge.consumedAt) throw new DeviceAuthError('ALREADY_CONSUMED');
-    if (this.now().getTime() >= challenge.expiresAt.getTime()) throw new DeviceAuthError('EXPIRED');
+    const verificationTime = this.now();
+    if (!isSupportedChallengeTime(verificationTime) || !isSupportedChallengeTime(challenge.expiresAt) ||
+        verificationTime.getTime() >= challenge.expiresAt.getTime()) {
+      throw new DeviceAuthError('EXPIRED');
+    }
 
     const device = await this.deviceRepository.findDeviceUnscoped(challenge.deviceId);
     if (!device) throw new DeviceAuthError('DEVICE_NOT_FOUND');
@@ -164,7 +177,9 @@ export class DeviceAuthService {
     const [dsk] = matchingDsks;
     if (!dsk) throw new DeviceAuthError('INVALID_SIGNATURE');
 
-    const result: ConsumeChallengeResult = await this.challengeRepository.consumeAtomically(challengeId, this.now(), {
+    const consumedAt = this.now();
+    if (!isSupportedChallengeTime(consumedAt)) throw new DeviceAuthError('EXPIRED');
+    const result: ConsumeChallengeResult = await this.challengeRepository.consumeAtomically(challengeId, consumedAt, {
       familyId: device.familyId,
       deviceId: device.deviceId,
       keyId: dsk.keyId,

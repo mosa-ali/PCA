@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryActionIdempotencyLedger, PLATFORM_EMERGENCY_DIRECTIVE_SCOPE } from '../../dist/familyrbac/ActionIdempotencyLedger.js';
+import { MySqlActionIdempotencyLedger } from '../../dist/familyrbac/MySqlActionIdempotencyLedger.js';
 
 const FAMILY_A = 'family-a';
 const FAMILY_B = 'family-b';
@@ -39,6 +40,26 @@ test('the first writer wins: a later record for the same (scope, key) never repl
   await ledger.record(FAMILY_A, 'key-1', { actionId: 'act-2', outcome: '{"verdict":"DENY","reason":"ROLE_NOT_PERMITTED"}' });
   assert.deepEqual(first, { actionId: 'act-1', outcome: '{"verdict":"ALLOW"}' });
   assert.deepEqual(await ledger.getRecorded(FAMILY_A, 'key-1'), { actionId: 'act-1', outcome: '{"verdict":"ALLOW"}' });
+});
+
+test('MySQL trim-failure diagnostics are bounded, category-only, and sink-safe', () => {
+  const ledger = new MySqlActionIdempotencyLedger(1);
+  const warnings = [];
+  const originalWarn = console.warn;
+  try {
+    console.warn = (message) => warnings.push(String(message));
+    for (let index = 0; index < 101; index += 1) ledger['warnTrimFailure']();
+    assert.equal(warnings.length, 2);
+    assert.deepEqual(warnings.map(message => JSON.parse(message)), [
+      { event: 'action_idempotency_ledger_trim_failed', occurrences: 1 },
+      { event: 'action_idempotency_ledger_trim_failed', occurrences: 100 },
+    ]);
+    assert.equal(warnings.some(message => message.includes('SQL') || message.includes('family')), false);
+    console.warn = () => { throw new Error('stderr unavailable'); };
+    assert.doesNotThrow(() => new MySqlActionIdempotencyLedger(1)['warnTrimFailure']());
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test('record returns the entry that is durably present, not merely the one just offered', async () => {

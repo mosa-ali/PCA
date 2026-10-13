@@ -62,10 +62,14 @@ class ProductionScheduleRuntimePort(
             enforcementCapability = enforcementCapabilityProvider(),
             connectivity = connectivity,
         )
-        val hasEnforceablePolicy = result.runtimeState in setOf(
-            ScheduleRuntimeState.CURRENT,
-            ScheduleRuntimeState.STALE_REMOTE,
-        ) || (result.runtimeState == ScheduleRuntimeState.INVALID && result.effectivePolicy != null)
+        // EPOCH_STALE remains visible to status reporting, but the validator may still provide
+        // a structurally valid retained candidate or a floor-current last-known-good policy.
+        // Enforce that selected policy; refuse the state only when no eligible policy exists.
+        val hasEnforceablePolicy = when (result.runtimeState) {
+            ScheduleRuntimeState.CURRENT, ScheduleRuntimeState.STALE_REMOTE -> true
+            ScheduleRuntimeState.INVALID, ScheduleRuntimeState.EPOCH_STALE -> result.effectivePolicy != null
+            ScheduleRuntimeState.NO_ACCEPTED_POLICY, ScheduleRuntimeState.CORRUPT_LOCAL_STATE -> false
+        }
         if (!hasEnforceablePolicy) {
             return ScheduleEnforcementOutcome.UNAVAILABLE
         }

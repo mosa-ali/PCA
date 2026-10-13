@@ -1,6 +1,7 @@
 package org.pca.app.firstdevice
 
 import java.util.Date
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -301,6 +302,11 @@ class FirstDeviceTrustRootCoordinator(
                 epoch1Signature = epoch1Signature,
                 attestationEvidence = evidence,
             )
+        } catch (cancelled: CancellationException) {
+            // CancellationException is an IllegalStateException on the JVM.
+            // Preserve coroutine lifecycle signals before the bounded local
+            // malformed-evidence / size catches below.
+            throw cancelled
         } catch (e: KeyMaterialMissingException) {
             null // fail closed; caller transitions to UNKNOWN, never regenerates
         } catch (e: IllegalArgumentException) {

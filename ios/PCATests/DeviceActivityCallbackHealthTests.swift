@@ -113,6 +113,51 @@ final class DeviceActivityCallbackHealthTests: XCTestCase {
             installedAt: infiniteDate, now: base.addingTimeInterval(3600), calendar: calendar()
         ).isEmpty)
     }
+    func testFiniteButUnpersistableDatesCannotCertifyHealthOrCreateExpectations() {
+        let belowSupportedRange = Date(timeIntervalSince1970: -62_135_596_801)
+        let aboveSupportedRange = Date(timeIntervalSince1970: 253_402_300_800)
+
+        for invalidDate in [belowSupportedRange, aboveSupportedRange] {
+            XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+                expected: [ExpectedCallback(kind: .intervalDidStart, occurrenceAt: invalidDate,
+                    observationWindowEndsAt: invalidDate.addingTimeInterval(86_400), attributionIsUnambiguous: true)],
+                observed: [receipt(invalidDate)], activityId: monitor,
+                installationGeneration: generation, nowUtc: invalidDate.addingTimeInterval(3_600)
+            ), .unknown)
+            XCTAssertTrue(DeviceActivityCallbackPlanner.expectedCallbacks(
+                installedAt: invalidDate, now: invalidDate.addingTimeInterval(3_600), calendar: calendar()
+            ).isEmpty)
+            XCTAssertTrue(DeviceActivityCallbackPlanner.expectedCallbacks(
+                installedAt: base, now: invalidDate, calendar: calendar()
+            ).isEmpty)
+        }
+    }
+    func testCallbackHealthAndPersistedBoundaryShareYearOneThrough9999Limits() {
+        let legacyCap = Date(timeIntervalSince1970: 253_402_257_599)
+        let year9999End = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds - 0.001)
+        let belowMinimum = Date(timeIntervalSince1970: -62_135_596_801)
+        let atExclusiveMaximum = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds)
+
+        XCTAssertTrue(DeviceActivityTimestamp.isValid(legacyCap), "the existing cap remains inside the canonical range")
+        XCTAssertTrue(DeviceActivityTimestamp.isValid(year9999End), "the final millisecond of year 9999 is supported")
+        XCTAssertTrue(DeviceActivityBoundaryTrigger.absolute(utc: legacyCap).isValid)
+        XCTAssertTrue(DeviceActivityBoundaryTrigger.absolute(utc: year9999End).isValid)
+        XCTAssertFalse(DeviceActivityTimestamp.isValid(belowMinimum))
+        XCTAssertFalse(DeviceActivityTimestamp.isValid(atExclusiveMaximum))
+        XCTAssertFalse(DeviceActivityBoundaryTrigger.absolute(utc: belowMinimum).isValid)
+        XCTAssertFalse(DeviceActivityBoundaryTrigger.absolute(utc: atExclusiveMaximum).isValid)
+
+        for end in [legacyCap, year9999End] {
+            let occurrence = end.addingTimeInterval(-1_200)
+            let expected = [ExpectedCallback(kind: .intervalDidStart, occurrenceAt: occurrence,
+                observationWindowEndsAt: end, attributionIsUnambiguous: true)]
+            let observed = [receipt(occurrence.addingTimeInterval(1))]
+            XCTAssertEqual(DeviceActivityCallbackReconciler.reconcile(
+                expected: expected, observed: observed, activityId: monitor,
+                installationGeneration: generation, nowUtc: end
+            ), .healthy)
+        }
+    }
     func testReceiptAtNextSameKindBoundaryIsAmbiguous() {
         let nextBoundary = base.addingTimeInterval(86400)
         XCTAssertEqual(health([receipt(nextBoundary)], now: nextBoundary.addingTimeInterval(300)), .unknown)
@@ -314,6 +359,39 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         runtime.clearPolicy(activityId: "policy")
         XCTAssertEqual(shields.removeCount, count + 1)
     }
+
+    func testEveryAcceptedActivityIdLengthCanBeCleared() throws {
+        let activityIds = [
+            String(repeating: "p", count: 129),
+            String(repeating: "p", count: 256),
+            String(repeating: "é", count: 128), // 256 UTF-8 bytes
+        ]
+        for activityId in activityIds {
+            let store = CallbackRuntimeBlobStore()
+            let scheduler = CallbackRuntimeScheduler()
+            let shields = ShieldRecorder()
+            let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+                scheduler: scheduler, blobStore: store,
+                installationClock: { self.installedAt }, shieldEnforcer: shields)
+
+            _ = try runtime.applyVerifiedPolicy(scheduleData: policy(activityId),
+                applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+                protectedApplicationTokenData: nil, now: installedAt)
+            let active = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
+                try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+            XCTAssertEqual(active.policyActivityId.utf8.count, activityId.utf8.count)
+
+            runtime.clearPolicy(activityId: activityId)
+
+            XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey),
+                "clear recovery bounds must not be narrower than accepted policy identity bounds")
+            XCTAssertNil(store.read(forKey: "activeActivityId"))
+            XCTAssertNil(store.read(forKey: "schedule.\(activityId).\(active.generation)"))
+            XCTAssertTrue(Set(active.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)))
+            XCTAssertEqual(shields.removeCount, 1)
+        }
+    }
+
     func testInstalledPolicyRenewalFailureKeepsPreviousGenerationActive() throws {
         let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler(), shields = ShieldRecorder()
         let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
@@ -750,6 +828,38 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertEqual(store.read(forKey: payloadKey), storedPolicy)
     }
 
+    func testLifecycleReconciliationReappliesCommittedPolicyWithoutAdvancingGeneration() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(
+            scheduleData: policy("lifecycle-reconcile", capability: .enforced, restrictive: true),
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt), .applied)
+        let manifestBefore = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifestBefore))
+        let monitorCountBefore = scheduler.started.count
+        let applyCountBefore = shields.applyCount
+
+        // Simulate the OS clearing process-local enforcement while retaining
+        // the committed installation and its callback generation.
+        shields.removeAll()
+        let result = try runtime.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60))
+
+        XCTAssertEqual(result, .applied)
+        XCTAssertEqual(shields.applyCount, applyCountBefore + 1,
+            "foreground/background wake re-evaluates the persisted policy and reapplies its current decision")
+        XCTAssertEqual(scheduler.started.count, monitorCountBefore,
+            "an intact committed monitor set is not needlessly replaced")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestBefore,
+            "lifecycle recovery must not advance or relabel signed policy authority")
+        XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(
+            try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))), installation)
+    }
+
     func testAuthorizationRevocationInvalidatesRecentHealthAndRequiresReconciliationAfterRestore() throws {
         let store = CallbackRuntimeBlobStore()
         let scheduler = CallbackRuntimeScheduler()
@@ -838,6 +948,53 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             "restoring authorization replays enforcement from the committed generation")
         XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
         XCTAssertEqual(store.read(forKey: payloadKey), storedPolicy)
+    }
+
+    func testAuthorizationRevokedDuringMonitorRegistrationCannotReachManagedSettings() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        var authorized = true
+        scheduler.onStart = { _, _ in authorized = false }
+        let policyData = try policy("revoked-during-registration", capability: .unavailable, restrictive: true)
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { authorized },
+            scheduler: scheduler, blobStore: store, callbackLog: CallbackRuntimeLog(),
+            installationClock: { self.installedAt }, shieldEnforcer: shields)
+
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policyData,
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt)) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .authorizationRequired)
+        }
+
+        let manifestData = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifestData))
+        XCTAssertEqual(installation.state, .active,
+            "the committed generation remains the exact recovery source after mid-apply revocation")
+        XCTAssertEqual(store.read(forKey: "schedule.\(installation.policyActivityId).\(installation.generation)"), policyData)
+        XCTAssertEqual(shields.applyCount, 0,
+            "no ManagedSettings restriction write may occur after registration observes revocation")
+        XCTAssertEqual(shields.removeCount, 1,
+            "stale restrictions are cleared at the final authorization boundary")
+        XCTAssertTrue(Set(installation.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)),
+            "monitors staged under the old authorization state must stop until authorized recovery")
+
+        let appliesBeforeRecovery = shields.applyCount
+        authorized = true
+        scheduler.onStart = { _, _ in authorized = false }
+        XCTAssertEqual(runtime.callbackHealth(now: installedAt.addingTimeInterval(180)), .enforcementUnavailable,
+            "authorization lost during monitor restoration cannot reach the enforcement replay")
+        XCTAssertEqual(shields.applyCount, appliesBeforeRecovery)
+        XCTAssertEqual(shields.removeCount, 2,
+            "a second revocation during recovery also clears restrictions")
+        XCTAssertTrue(Set(installation.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)))
+
+        authorized = true
+        scheduler.onStart = nil
+        _ = runtime.callbackHealth(now: installedAt.addingTimeInterval(180))
+        XCTAssertGreaterThan(shields.applyCount, appliesBeforeRecovery,
+            "restored approval replays enforcement from the retained active generation")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
     }
 
     func testRuntimeRestartReappliesCommittedFirstInstallAfterSettingsFailure() throws {
@@ -1280,6 +1437,43 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertTrue(scheduler.started.isEmpty)
         XCTAssertTrue(scheduler.stopped.isEmpty,
             "without a valid manifest, applying another policy must not disturb the unknown existing installation")
+    }
+
+    func testOversizedTokenPayloadsAreRejectedBeforeReplacingCommittedPolicy() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        _ = try runtime.applyVerifiedPolicy(scheduleData: policy("existing", capability: .unavailable),
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: installedAt)
+        let committedManifest = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let committed = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(committedManifest))
+        let suffix = committed.payloadStorageGeneration.map { "." + $0 } ?? ""
+        let committedSchedule = try XCTUnwrap(store.read(forKey: "schedule.existing\(suffix)"))
+        let startsBefore = scheduler.started
+        let stopsBefore = scheduler.stopped
+        let appliesBefore = shields.applyCount
+        let oversized = Data(repeating: 0, count: 1_048_577)
+
+        for (applicationPayload, protectedPayload) in [(oversized, nil), (tokens, oversized)] {
+            XCTAssertThrowsError(try runtime.applyVerifiedPolicy(
+                scheduleData: policy("replacement", capability: .unavailable),
+                applicationTokenData: applicationPayload,
+                protectedApplicationTokenData: protectedPayload,
+                now: installedAt)) {
+                XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .malformedPolicy)
+            }
+        }
+
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), committedManifest)
+        XCTAssertEqual(store.read(forKey: "schedule.existing\(suffix)"), committedSchedule)
+        XCTAssertEqual(store.read(forKey: "activeActivityId"), Data("existing".utf8))
+        XCTAssertEqual(scheduler.started, startsBefore, "oversized token sets must fail before monitor registration")
+        XCTAssertEqual(scheduler.stopped, stopsBefore, "oversized token sets must preserve current monitors")
+        XCTAssertEqual(shields.applyCount, appliesBefore, "oversized token sets must not change enforcement")
     }
 
     private func boundaryPolicy(windowCount: Int = 1, daily: Bool = false) throws -> Data {

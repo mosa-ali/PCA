@@ -21,6 +21,7 @@ export interface FamilyAuditEventDeliveryOutcome {
  * once-per-instance flag was wrong.
  */
 const LOG_EVERY_NTH_FAILURE = 100;
+const MAX_TRACKED_DEVICE_FAILURES = 1024;
 function shouldLogFailure(occurrences: number): boolean {
   return occurrences === 1 || occurrences % LOG_EVERY_NTH_FAILURE === 0;
 }
@@ -67,7 +68,9 @@ function warnFamilyAuditDelivery(detail: Readonly<Record<string, unknown>>): voi
  * doc 18 Section 5 requires to stay E2EE-only and out of infrastructure logs).
  *
  * Both logs are BOUNDED but never one-shot: the first failure is logged and
- * then every Nth, with a running count, and the count RESETS on the next success.
+ * then every Nth, with a running count. Recipient-delivery counts are isolated
+ * per device and reset only when that same device succeeds, so a healthy
+ * recipient cannot hide another device's sustained failure.
  * An earlier version logged once per instance, which independent review showed
  * traded a log flood for something worse -- "once per instance" is "once per
  * PROCESS" here (main.ts constructs exactly one producer for the process
@@ -86,7 +89,10 @@ export class FamilyAuditEventProducer {
   /** Counted, rate-limited logging -- see this class's doc comment. */
   private scopeValidationFailureCount = 0;
   private recipientResolutionFailureCount = 0;
-  private deviceDeliveryFailureCount = 0;
+  /** Delivery failures are recipient-scoped: one healthy parent device must
+   * not reset another device's persistent failure throttle. The bounded map
+   * prevents stale/rotating recipient IDs from growing process memory. */
+  private readonly deviceDeliveryFailureCounts = new Map<string, number>();
 
   constructor(
     private readonly ledger: FamilyAuditEventLedger,
@@ -188,18 +194,25 @@ export class FamilyAuditEventProducer {
           throw new Error('family audit ledger returned an unsupported record outcome');
         }
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'QUEUED' });
-        this.deviceDeliveryFailureCount = 0;
+        this.deviceDeliveryFailureCounts.delete(parentDevice.deviceId);
       } catch {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });
         // The returned array is discarded by FamilyAuditService.record, so
         // without this the failure existed only in a value nobody reads.
-        this.deviceDeliveryFailureCount += 1;
-        if (shouldLogFailure(this.deviceDeliveryFailureCount)) {
+        const failureKey = isPlausibleOpaqueId(parentDevice.deviceId) ? parentDevice.deviceId : '[invalid-recipient]';
+        const occurrences = (this.deviceDeliveryFailureCounts.get(failureKey) ?? 0) + 1;
+        this.deviceDeliveryFailureCounts.delete(failureKey);
+        this.deviceDeliveryFailureCounts.set(failureKey, occurrences);
+        if (this.deviceDeliveryFailureCounts.size > MAX_TRACKED_DEVICE_FAILURES) {
+          const oldest = this.deviceDeliveryFailureCounts.keys().next().value;
+          if (oldest !== undefined) this.deviceDeliveryFailureCounts.delete(oldest);
+        }
+        if (shouldLogFailure(occurrences)) {
           warnFamilyAuditDelivery({
             event: 'family_audit_event_device_delivery_failed',
             familyId,
             parentDeviceId: parentDevice.deviceId,
-            occurrences: this.deviceDeliveryFailureCount,
+            occurrences,
             failureStage,
             note: 'this audit event was not queued for this parent device. Logged on the first failure and every Nth thereafter.',
           });

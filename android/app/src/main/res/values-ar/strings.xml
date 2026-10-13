@@ -329,6 +329,8 @@
     <string name="prayer_name_isha">العشاء</string>
 
     <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
+    <string name="child_home_enrollment_entry_title">إعداد هذا الجهاز</string>
+    <string name="child_home_enrollment_entry_body">افتح رابط الدعوة الذي أرسله أحد والديك لربط هذا الجهاز.</string>
     <string name="child_home_safe_browser">المتصفح الآمن</string>
     <!-- PCA-NFR-044: نسخة مبسّطة لمستوى قراءة الطفل الصغير؛ نفس الإجراء. -->
     <string name="child_home_safe_browser_simple">المتصفح الآمن</string>

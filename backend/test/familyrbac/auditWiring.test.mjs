@@ -109,7 +109,11 @@ test('pairing confirmation appends a DEVICE_LIFECYCLE_TRANSITION SUCCESS record'
   const pairingService = new PairingService(deviceRepository, now, service);
   const { device } = await deviceService.registerDevice({ familyId: 'fam-audit-4', platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await deviceService.addDeviceKey('fam-audit-4', device.deviceId, key(), 'DEK');
-  await pairingService.confirmPairing('fam-audit-4', device.deviceId, 'account-1');
+  const pairing = await pairingService.getPairingRequest('fam-audit-4', device.deviceId);
+  await pairingService.confirmPairing('fam-audit-4', device.deviceId, 'account-1', {
+    expectedDskFingerprint: pairing.dskFingerprint,
+    expectedDekFingerprint: pairing.dekFingerprint,
+  });
   const events = await repo.listForFamily('fam-audit-4');
   const pairEvent = events.find((e) => e.actionType === 'DEVICE_LIFECYCLE_TRANSITION');
   assert.ok(pairEvent);
@@ -252,7 +256,7 @@ test('device session revocation appends a DEVICE_LIFECYCLE_TRANSITION record onl
 
   const challenge = await deviceAuthService.issueChallenge(device.deviceId);
   const signature = signTestOnlyChallenge(dskPublicKey, challenge.nonce);
-  const { rawToken } = await sessionService.completeChallenge(challenge.challengeId, signature);
+  const { rawToken } = await sessionService.completeChallenge(device.deviceId, challenge.challengeId, signature);
   await sessionService.revokeSession(rawToken);
 
   const events = await repo.listForFamily('fam-audit-9');

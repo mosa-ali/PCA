@@ -259,12 +259,16 @@ describe('RealDeviceEnrollmentClient', () => {
           dekFingerprint: 'cc:dd',
         }),
       );
-      const result = await client().confirmPairing('fam-1', 'dev-1', 'step-up-token');
+      const result = await client().confirmPairing('fam-1', 'dev-1', 'step-up-token', 'aa:bb', 'cc:dd');
       expect(result.status).toBe('PAIRED');
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/pairing-requests/dev-1/confirm`);
       expect(init.method).toBe('POST');
-      expect(init.body).toBe(JSON.stringify({ stepUpToken: 'step-up-token' }));
+      expect(init.body).toBe(JSON.stringify({
+        stepUpToken: 'step-up-token',
+        expectedDskFingerprint: 'aa:bb',
+        expectedDekFingerprint: 'cc:dd',
+      }));
     });
 
     it('confirmPairing throws (defense-in-depth) if the server ever illegally returns ACTIVE', async () => {
@@ -277,7 +281,7 @@ describe('RealDeviceEnrollmentClient', () => {
           dekFingerprint: 'cc:dd',
         }),
       );
-      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token')).rejects.toThrow(/ACTIVE/);
+      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token', 'aa:bb', 'cc:dd')).rejects.toThrow(/ACTIVE/);
     });
   });
 
@@ -310,7 +314,7 @@ describe('RealDeviceEnrollmentClient', () => {
 
     it('maps 409 to CONFLICT', async () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 409 }));
-      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token')).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(client().confirmPairing('fam-1', 'dev-1', 'step-up-token', 'aa:bb', 'cc:dd')).rejects.toMatchObject({ code: 'CONFLICT' });
     });
 
     it('maps 429 to RATE_LIMITED', async () => {

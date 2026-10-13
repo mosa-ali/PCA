@@ -8,6 +8,8 @@ import type {
   RevokeKeyResult,
 } from './DeviceRepository.js';
 import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord, OpaqueFamilyId } from './types.js';
+import { computeKeyFingerprint } from '../pairing/fingerprint.js';
+import type { PairingFingerprintExpectation } from '../pairing/types.js';
 
 interface DeviceRow {
   device_id: string;
@@ -57,7 +59,7 @@ function mapKey(row: DeviceKeyRow): DeviceKeyRecord {
   };
 }
 
-type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED';
+type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED' | 'FINGERPRINT_MISMATCH';
 
 export class MySqlDeviceRepository implements DeviceRepository {
   async createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult> {
@@ -298,39 +300,54 @@ export class MySqlDeviceRepository implements DeviceRepository {
     deviceId: DeviceId,
     confirmedByAccountId: string,
     confirmedAt: Date,
+    expectedFingerprints: PairingFingerprintExpectation,
   ): Promise<ConfirmPairingResult> {
     try {
       return await runInTransaction(async (conn) => {
-        const updated = await execute(
-          conn,
-          `UPDATE devices SET status = 'PAIRED', paired_at = ?, paired_by_account_id = ?
-           WHERE device_id = ? AND family_id = ? AND status = 'PAIRING_PENDING'
-             AND (registered_by_account_id IS NULL OR registered_by_account_id != ?)`,
-          [confirmedAt, confirmedByAccountId, deviceId, familyId, confirmedByAccountId],
-        );
-        if (updated.rowCount > 0) {
-          const reread = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
-            deviceId,
-            familyId,
-          ]);
-          return { outcome: 'CONFIRMED', device: mapDevice(reread.rows[0]!), transitioned: true } as const;
-        }
-
-        const existing = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
-          deviceId,
-          familyId,
-        ]);
+        // Serialize confirmation against key additions, which take the same
+        // device-row lock before inserting a new key. Then lock every active
+        // key and compare the exact fingerprints shown in the Parent view.
+        const existing = await execute<DeviceRow>(conn,
+          `SELECT * FROM devices WHERE device_id = ? AND family_id = ? FOR UPDATE`, [deviceId, familyId]);
         const row = existing.rows[0];
         if (!row) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
-        // Already PAIRED -- idempotent success, original pairedAt untouched.
-        if (row.status === 'PAIRED') return { outcome: 'CONFIRMED', device: mapDevice(row), transitioned: false } as const;
         // Checked before the generic INVALID_STATE fallback so a
         // self-approval attempt is never miscategorized as a plain state
         // conflict -- see DeviceRecord/confirmPairing's own doc comments.
         if (row.status === 'PAIRING_PENDING' && row.registered_by_account_id === confirmedByAccountId) {
           throw new SoftFailure<DeviceSoftCode>('SELF_APPROVAL_DENIED');
         }
-        throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
+        if (row.status !== 'PAIRING_PENDING' && row.status !== 'PAIRED') {
+          throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
+        }
+
+        const activeKeys = await execute<DeviceKeyRow>(conn,
+          `SELECT * FROM device_public_keys
+            WHERE device_id = ? AND status = 'ACTIVE'
+            ORDER BY BINARY key_purpose, BINARY key_id
+            FOR UPDATE`, [deviceId]);
+        const dsks = activeKeys.rows.filter((key) => key.key_purpose === 'DSK');
+        const deks = activeKeys.rows.filter((key) => key.key_purpose === 'DEK');
+        const fingerprintsMatch = dsks.length === 1 && deks.length <= 1 &&
+          computeKeyFingerprint(dsks[0]!.public_key) === expectedFingerprints.expectedDskFingerprint &&
+          (deks.length === 0
+            ? expectedFingerprints.expectedDekFingerprint === null
+            : computeKeyFingerprint(deks[0]!.public_key) === expectedFingerprints.expectedDekFingerprint);
+        if (!fingerprintsMatch) throw new SoftFailure<DeviceSoftCode>('FINGERPRINT_MISMATCH');
+
+        // Already PAIRED -- matching current fingerprints make the retry
+        // idempotent while preserving the original pairedAt and actor.
+        if (row.status === 'PAIRED') return { outcome: 'CONFIRMED', device: mapDevice(row), transitioned: false } as const;
+
+        const updated = await execute(conn,
+          `UPDATE devices SET status = 'PAIRED', paired_at = ?, paired_by_account_id = ?
+            WHERE device_id = ? AND family_id = ? AND status = 'PAIRING_PENDING'`,
+          [confirmedAt, confirmedByAccountId, deviceId, familyId]);
+        if (updated.rowCount !== 1) throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
+        const reread = await execute<DeviceRow>(conn,
+          `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [deviceId, familyId]);
+        if (!reread.rows[0]) throw new Error('confirmed device disappeared inside its transaction');
+        return { outcome: 'CONFIRMED', device: mapDevice(reread.rows[0]), transitioned: true } as const;
       });
     } catch (error) {
       if (error instanceof SoftFailure) return { outcome: error.outcome } as ConfirmPairingResult;

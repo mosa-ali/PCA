@@ -15,6 +15,7 @@ import {
   applyServerCiphertextFeedWindow,
   computeServerCiphertextExpiry,
   isServerCiphertextExpired,
+  isPersistableServerCiphertextWindow,
   resolveServerCiphertextFeedLimit,
 } from '../../dist/retention/serverCiphertextTtl.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
@@ -55,6 +56,17 @@ test('the TTL is the relay ceiling itself, so the two can never drift apart', ()
   assert.equal(SERVER_CIPHERTEXT_TTL_MS, MAX_RELAY_TTL_MS);
   assert.equal(SERVER_CIPHERTEXT_TTL_MS, 7 * 24 * 60 * 60 * 1000);
   assert.equal(computeServerCiphertextExpiry(T0).getTime(), T0.getTime() + SERVER_CIPHERTEXT_TTL_MS);
+});
+
+test('persistable retained windows fit MySQL DATETIME(3) at both ends', () => {
+  const minimum = new Date('1000-01-01T00:00:00.000Z');
+  const latest = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - SERVER_CIPHERTEXT_TTL_MS);
+  assert.equal(isPersistableServerCiphertextWindow(minimum), true);
+  assert.equal(isPersistableServerCiphertextWindow(latest), true);
+  assert.equal(isPersistableServerCiphertextWindow(new Date(minimum.getTime() - 1)), false);
+  assert.equal(isPersistableServerCiphertextWindow(new Date(latest.getTime() + 1)), false);
+  assert.equal(isPersistableServerCiphertextWindow(new Date(Number.NaN)), false);
+  assert.equal(isPersistableServerCiphertextWindow('1000-01-01T00:00:00Z'), false);
 });
 
 test('expiry is inclusive at the boundary -- exactly at the TTL a row is already expired', () => {
@@ -105,6 +117,19 @@ test('protection alerts: an expired alert disappears from both feeds and is purg
   assert.equal(await ledger.purgeExpired(now), 1);
   assert.equal(await ledger.get(stale.alertId), null, 'purge must actually delete the expired ciphertext');
   assert.notEqual(await ledger.get(fresh.alertId), null, 'a live alert must survive the purge');
+});
+
+test('in-memory FamilyAudit ledger also rejects timestamps outside its MySQL retained-window contract', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => T0);
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - SERVER_CIPHERTEXT_TTL_MS);
+  for (const generatedAtUtc of [
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date(latestPersistable.getTime() + 1),
+  ]) {
+    const item = envelope({ envelopeId: `invalid-${generatedAtUtc.getTime()}`, generatedAtUtc });
+    await assert.rejects(ledger.record(item), RangeError);
+    assert.equal(await ledger.get(item.envelopeId), null);
+  }
 });
 
 test('protection alerts: recording purges expired ciphertext on the write path', async () => {

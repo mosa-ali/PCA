@@ -42,3 +42,20 @@ test('overlapping reconnects remain SYNCING until every active request ends', ()
   assert.equal(tracker.computeState(deviceId, false, now), 'LIVE');
   assert.equal(tracker.getLastSuccessfulSync(deviceId).toISOString(), acceptedAt.toISOString());
 });
+
+test('invalid sync-success timestamps cannot replace valid status or certify LIVE', () => {
+  const tracker = new DeviceSyncStatusTracker();
+  const deviceId = 'device-invalid-heartbeat';
+  const now = new Date('2026-10-09T00:00:00.000Z');
+
+  tracker.markSyncSuccess(deviceId, new Date(Number.NaN));
+  assert.equal(tracker.getLastSuccessfulSync(deviceId), null);
+  assert.equal(tracker.computeState(deviceId, false, now), 'STALE');
+  assert.equal(tracker.computeState(deviceId, true, now), 'SYNC_PENDING');
+
+  const valid = new Date('2026-10-08T23:00:00.000Z');
+  tracker.markSyncSuccess(deviceId, valid);
+  tracker.markSyncSuccess(deviceId, new Date(Number.NaN));
+  assert.equal(tracker.getLastSuccessfulSync(deviceId).toISOString(), valid.toISOString());
+  assert.equal(tracker.computeState(deviceId, false, now), 'LIVE');
+});

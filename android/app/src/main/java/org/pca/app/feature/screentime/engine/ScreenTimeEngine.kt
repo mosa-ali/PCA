@@ -221,7 +221,13 @@ object ScreenTimeEngine {
                 // must gain nothing: on resume, activeElapsedNanos picks back up exactly where it
                 // left off. This is driven purely by the monotonic delta, never by wall-clock time.
                 ScreenTimeMode.PAUSED -> {
-                    val newPauseElapsed = current.pauseElapsedNanos + remaining
+                    // Non-negative monotonic durations can still overflow when a very long
+                    // pause is restored. Wrapping negative would discard recovery progress.
+                    val newPauseElapsed = if (remaining > Long.MAX_VALUE - current.pauseElapsedNanos) {
+                        Long.MAX_VALUE
+                    } else {
+                        current.pauseElapsedNanos + remaining
+                    }
                     remaining = 0
                     if (newPauseElapsed >= config.recoveryThresholdNanos) {
                         current.copy(pauseElapsedNanos = newPauseElapsed, activeElapsedNanos = 0L)
@@ -243,6 +249,21 @@ object ScreenTimeEngine {
                     current
                 }
             }
+        }
+
+        // Do not advance the monotonic reference past elapsed time the bounded loop did not
+        // process. At this point only ACTIVE/BREAK_SHIELD can still have remaining time (PAUSED
+        // and exception modes consume it in one iteration), so fail closed by requiring a full
+        // break. Completed-cycle counters above remain intact; the unprocessed tail cannot grant
+        // fresh active time or count as earned break progress.
+        if (remaining > 0 && splits >= MAX_CYCLE_SPLITS) {
+            current = current.copy(
+                mode = ScreenTimeMode.BREAK_SHIELD,
+                activeElapsedNanos = config.activeThresholdNanos,
+                breakElapsedNanos = 0L,
+                pauseElapsedNanos = 0L,
+                dhikrInteractionCount = 0,
+            )
         }
 
         // The reference point never regresses: a stale/duplicate/out-of-order event (or a

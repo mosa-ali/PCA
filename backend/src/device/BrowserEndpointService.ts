@@ -96,7 +96,10 @@ export class BrowserEndpointService {
       await this.auditService.record({
         familyId,
         actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-        actorDeviceId: registeredByAccountId,
+        // This registration is authorized by a Parent account session, not a
+        // device proof. Keep the device-actor field truthful; the account id
+        // is deliberately not serialized into it as if it were a device id.
+        actorDeviceId: 'SERVICE_SESSION',
         actorMemberId: null,
         targetScope: { kind: 'DEVICE', id: deviceId },
         authorizationRole: null,

@@ -28,6 +28,17 @@ package org.pca.app.runtime.schedule
 object ScheduleEvaluator {
 
     fun evaluate(input: ScheduleEvaluationInput): ScheduleDecision {
+        // Keep parity with backend evaluateSchedule's validateAppToken: the empty string is an
+        // invalid evaluation input and must not gain the emergency-access override merely
+        // because a malformed platform adapter also supplied an empty protected token.
+        if (input.appToken.isEmpty()) {
+            return ScheduleDecision(
+                decision = ScheduleDecisionKind.INVALID_CONFIG,
+                reason = "One or more schedule windows failed validation.",
+                configErrors = listOf("app token must be a non-empty string"),
+            )
+        }
+
         // PCA-AND-003 non-overridable safety floor (see EmergencyAccessFloor doc comment): checked
         // first, before any window/config content is even read, so no policy shape -- malicious,
         // malformed, or validly-authored/signed -- can ever produce a blocking decision for a
@@ -41,6 +52,9 @@ object ScheduleEvaluator {
                 add("policy timezone is required and must be a recognized IANA timezone")
             }
             addAll(validateScheduleWindows(input.windows))
+            addAll(input.bonusGrants.flatMap(::validateBonusGrant))
+            addAll(input.exceptions.flatMap(::validateParentException))
+            input.dailyLimit?.let { addAll(validateDailyAppLimit(it)) }
         }
         if (configErrors.isNotEmpty()) {
             return ScheduleDecision(

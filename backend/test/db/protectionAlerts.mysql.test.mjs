@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { MySqlProtectionAlertLedger } from '../../dist/alerts/MySqlProtectionAlertLedger.js';
+import { InvalidProtectionAlertInputError } from '../../dist/alerts/ProtectionAlertGenerator.js';
 import { MySqlOwnerParentDeviceResolver } from '../../dist/alerts/MySqlOwnerParentDeviceResolver.js';
 import { MySqlFamilyAuthorityGenesisStore } from '../../dist/familycommercial/authority/MySqlGenesisAnchorStore.js';
 import { MySqlFamilyAuthorityAttestationChainStore } from '../../dist/familycommercial/authority/MySqlAttestationChainStore.js';
@@ -64,6 +65,19 @@ test('record persists a real row, readable back byte-identical', async () => {
   assert.deepEqual(result, { outcome: 'RECORDED' });
   const fetched = await ledger.get(event.alertId);
   assert.deepEqual(fetched, event);
+});
+
+test('record rejects timestamps whose generated or expiry DATETIME would be out of range before SQL effects', async () => {
+  const latestPersistable = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) - 7 * 24 * 60 * 60 * 1000);
+  const invalidEvents = [
+    alertEvent({ generatedAtUtc: new Date('0999-12-31T23:59:59.999Z') }),
+    alertEvent({ generatedAtUtc: new Date(latestPersistable.getTime() + 1) }),
+  ];
+  for (const event of invalidEvents) {
+    await assert.rejects(ledger.record(event), InvalidProtectionAlertInputError);
+    const fetched = await ledger.get(event.alertId);
+    assert.equal(fetched, null, 'invalid timestamp must not create a durable ciphertext row');
+  }
 });
 
 test('recording the identical event twice is IDEMPOTENT_MATCH, never a second row', async () => {

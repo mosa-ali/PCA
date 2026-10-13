@@ -5,12 +5,14 @@ import java.security.MessageDigest
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.CharacterCodingException
 import java.util.WeakHashMap
+import java.util.concurrent.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.FamilySyncRuntimePort
+import org.pca.app.runtime.sync.MAX_OUTBOUND_BATCH_SIZE
 
 /**
  * Task Section 12: allow eligible child request creation while fully offline. A queued request is
@@ -99,7 +101,7 @@ class ChildRequestOfflineQueue(
     }
 
     /**
-     * Attempts to flush every [ChildRequestLocalStatus.PENDING_SYNC_LOCAL] entry through [port].
+     * Attempts to flush up to [MAX_OUTBOUND_BATCH_SIZE] pending entries through [port].
      * A no-op (returns 0, touches nothing) unless [port] currently reports
      * [FamilySyncConnectionState.LIVE] -- Section 9's "a connected socket is not LIVE" invariant
      * means this must check the port's own state, never infer readiness from having been called.
@@ -110,7 +112,7 @@ class ChildRequestOfflineQueue(
         return flushMutex.withLock {
             if (port.currentConnectionState() != FamilySyncConnectionState.LIVE) return@withLock 0
             var submittedCount = 0
-            for (entry in pending()) {
+            for (entry in pending().take(MAX_OUTBOUND_BATCH_SIZE)) {
                 // submitChildRequest is suspending: the family channel may become stale or
                 // disconnect while a prior request is in flight. The port contract requires
                 // LIVE at each invocation, so the initial check alone is not sufficient.
@@ -170,20 +172,41 @@ class ChildRequestOfflineQueue(
             store.remove(pendingKey)
             store.flush()
             check(store.getString(pendingKey) == null)
+        } catch (cancelled: CancellationException) {
+            if (!rollbackWrite(candidateMayHaveChanged, previous, pendingKey)) {
+                ChildRequestQueueHealth.poison(lock, key)
+            }
+            throw cancelled
         } catch (_: Exception) {
-            val restored = runCatching {
-                if (candidateMayHaveChanged) {
-                    if (previous == null) store.remove(key) else store.putString(key, previous)
-                    store.flush()
-                    check(store.getString(key) == previous)
-                }
-                store.remove(pendingKey)
-                store.flush()
-                check(store.getString(pendingKey) == null)
-            }.isSuccess
-            if (!restored) ChildRequestQueueHealth.poison(lock, key)
+            if (!rollbackWrite(candidateMayHaveChanged, previous, pendingKey)) {
+                ChildRequestQueueHealth.poison(lock, key)
+            }
             throw ChildRequestQueueUnavailable()
         }
+    }
+
+    /** Restores the exact prior snapshot and removes the write descriptor after a failed commit.
+     * Ordinary rollback failures poison this queue key and let the caller report unavailable;
+     * cancellation and fatal JVM failures propagate after poisoning rather than being collapsed
+     * into a successful `runCatching` result. */
+    private fun rollbackWrite(candidateMayHaveChanged: Boolean, previous: String?, pendingKey: String): Boolean = try {
+        if (candidateMayHaveChanged) {
+            if (previous == null) store.remove(key) else store.putString(key, previous)
+            store.flush()
+            check(store.getString(key) == previous)
+        }
+        store.remove(pendingKey)
+        store.flush()
+        check(store.getString(pendingKey) == null)
+        true
+    } catch (cancelled: CancellationException) {
+        ChildRequestQueueHealth.poison(lock, key)
+        throw cancelled
+    } catch (_: Exception) {
+        false
+    } catch (fatal: Throwable) {
+        ChildRequestQueueHealth.poison(lock, key)
+        throw fatal
     }
 
     /** Clears a write marker only when storage is byte-for-byte one of the recorded transaction
@@ -282,7 +305,9 @@ class ChildRequestOfflineQueue(
         } catch (_: CharacterCodingException) {
             unavailable()
         }
-        val createdAt = parts[3].toLongOrNull() ?: unavailable()
+        val createdAtText = parts[3]
+        if (!CANONICAL_EPOCH_MILLIS.matches(createdAtText)) unavailable()
+        val createdAt = createdAtText.toLongOrNull() ?: unavailable()
         val status = ChildRequestLocalStatus.entries.firstOrNull { it.name == parts[4] } ?: unavailable()
         return ChildRequestQueueEntry(
             payload = ChildRequestPayload(requestId, kind, detail, createdAt),
@@ -295,6 +320,7 @@ class ChildRequestOfflineQueue(
     private fun requireValidPayload(payload: ChildRequestPayload) {
         require(payload.requestId.isNotBlank() && payload.requestId.none(::isRecordDelimiter)) { "invalid child request id" }
         require(payload.kind.isNotBlank() && payload.kind.none(::isRecordDelimiter)) { "invalid child request kind" }
+        require(payload.createdAtEpochMillis >= 0L) { "invalid child request timestamp" }
     }
 
     private fun unavailable(): Nothing = throw ChildRequestQueueUnavailable()
@@ -310,5 +336,6 @@ class ChildRequestOfflineQueue(
         const val PRESENT_SNAPSHOT_PREFIX = "sha256:"
         const val SHA256_HEX_LENGTH = 64
         const val HEX_DIGITS = "0123456789abcdef"
+        val CANONICAL_EPOCH_MILLIS = Regex("\\A(?:0|[1-9][0-9]*)\\z")
     }
 }

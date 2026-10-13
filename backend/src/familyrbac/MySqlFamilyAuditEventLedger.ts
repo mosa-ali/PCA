@@ -8,6 +8,8 @@ import type {
 } from './FamilyAuditEventLedger.js';
 import {
   computeServerCiphertextExpiry,
+  isServerCiphertextExpired,
+  isPersistableServerCiphertextWindow,
   resolveServerCiphertextFeedLimit,
 } from '../retention/serverCiphertextTtl.js';
 
@@ -73,14 +75,27 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
     // housekeeping yields. Callers may reuse or mutate their envelope while
     // cleanup is in flight; persistence and replay checks must use one value.
     const captured = snapshotEnvelope(envelope);
+    if (!isPersistableServerCiphertextWindow(captured.generatedAtUtc)) {
+      throw new RangeError('Family audit generatedAtUtc is outside the persistable MySQL DATETIME(3) retained-window range.');
+    }
     if (!isFamilyEpochNumber(captured.keyEpoch)) {
       throw new Error('Family audit key epoch is outside the supported family epoch range.');
+    }
+    const now = this.now();
+    if (isServerCiphertextExpired(captured.generatedAtUtc, now)) {
+      throw new RangeError('Family audit event is already outside the server ciphertext retention window.');
     }
     // Best-effort housekeeping, exactly as RelayService purges around each
     // relay operation. The expiry filter on the reads is what enforces the
     // TTL; this only stops expired ciphertext accumulating on disk, so a
     // failure here must never fail the audit write itself.
-    await this.purgeExpired(this.now()).catch(() => 0);
+    await this.purgeExpired(now).catch(() => 0);
+    // The purge yields to MySQL. Sample the clock again before INSERT so a
+    // row that crossed its retention boundary during cleanup is never
+    // reported as queued while already invisible to subsequent feed reads.
+    if (isServerCiphertextExpired(captured.generatedAtUtc, this.now())) {
+      throw new RangeError('Family audit event is already outside the server ciphertext retention window.');
+    }
     try {
       await runInTransaction((conn) =>
         execute(
@@ -149,17 +164,21 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
     }
     const now = options.now ?? this.now();
     const limit = resolveServerCiphertextFeedLimit(options.limit);
+    const cursorPredicate = options.cursor
+      ? 'AND (generated_at_utc > ? OR (generated_at_utc = ? AND envelope_id > ?))'
+      : '';
+    const parameters = options.cursor
+      ? [familyId, parentDeviceId, keyEpoch, now, options.cursor.generatedAtUtc, options.cursor.generatedAtUtc, options.cursor.envelopeId, limit]
+      : [familyId, parentDeviceId, keyEpoch, now, limit];
     const { rows } = await runInTransaction((conn) =>
       execute<FamilyAuditEventRow>(
         conn,
-        `SELECT * FROM (
-           SELECT * FROM family_audit_events
-            WHERE family_id = ? AND parent_device_id = ? AND key_epoch = ? AND expires_at > ?
-            ORDER BY generated_at_utc DESC, envelope_id DESC
-            LIMIT ?
-         ) AS recent
-         ORDER BY generated_at_utc ASC, envelope_id ASC`,
-        [familyId, parentDeviceId, keyEpoch, now, limit],
+        `SELECT * FROM family_audit_events
+          WHERE family_id = ? AND parent_device_id = ? AND key_epoch = ? AND expires_at > ?
+            ${cursorPredicate}
+          ORDER BY generated_at_utc ASC, envelope_id ASC
+          LIMIT ?`,
+        parameters,
       ),
     );
     return rows.map(toEnvelope);

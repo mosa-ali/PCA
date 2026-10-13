@@ -102,6 +102,8 @@ public struct PCAEnrollmentBootstrapResponse: Decodable, Equatable {
 }
 
 public struct PCAEnrollmentBootstrapClient {
+    /// Matches bootstrapRoutes.ts for prepare/bootstrap/recover requests.
+    private static let maximumRequestBodyBytes = 4 * 1024
     public let baseURL: URL
     private let transport: PCAHTTPTransport
     private let encoder = JSONEncoder()
@@ -147,7 +149,7 @@ public struct PCAEnrollmentBootstrapClient {
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/enrollment/bootstrap"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(value)
+        request.httpBody = try encodeBootstrapRequest(value)
         return try await decode(request, willSubmit: willSubmit)
     }
 
@@ -184,7 +186,7 @@ public struct PCAEnrollmentBootstrapClient {
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/enrollment/bootstrap/prepare"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(value)
+        request.httpBody = try encodeBootstrapRequest(value)
         try Task.checkCancellation()
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
@@ -200,7 +202,8 @@ public struct PCAEnrollmentBootstrapClient {
         try Task.checkCancellation()
         switch response.statusCode {
         case 200:
-            guard let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: String],
+            guard (try? StrictJSONDocument.validateNoDuplicateMembers(response.data)) != nil,
+                  let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: String],
                   let status = json["status"], status == "READY" || status == "COMPLETED" else {
                 throw PCAAPIError.enrollmentOutcomeUnknown
             }
@@ -220,8 +223,25 @@ public struct PCAEnrollmentBootstrapClient {
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/enrollment/bootstrap/recover"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard attemptId.utf8.count + attemptRecoveryToken.utf8.count <= Self.maximumRequestBodyBytes else {
+            throw PCAAPIError.invalidRequest
+        }
         request.httpBody = try encoder.encode(["bootstrapAttemptId": attemptId, "attemptRecoveryToken": attemptRecoveryToken])
+        guard let body = request.httpBody, body.count <= Self.maximumRequestBodyBytes else {
+            throw PCAAPIError.invalidRequest
+        }
+        request.httpBody = body
         return try await decode(request)
+    }
+
+    private func encodeBootstrapRequest(_ value: PCAEnrollmentBootstrapRequest) throws -> Data {
+        let inputBytes = value.rawInvitationToken.utf8.count + value.platform.utf8.count
+            + value.signingPublicKey.utf8.count + value.encryptionPublicKey.utf8.count
+            + value.bootstrapAttemptId.utf8.count + value.attemptRecoveryToken.utf8.count
+        guard inputBytes <= Self.maximumRequestBodyBytes else { throw PCAAPIError.invalidRequest }
+        let body = try encoder.encode(value)
+        guard body.count <= Self.maximumRequestBodyBytes else { throw PCAAPIError.invalidRequest }
+        return body
     }
 
     private func decode(
@@ -254,6 +274,13 @@ public struct PCAEnrollmentBootstrapClient {
                 : PCAAPIError.enrollmentOutcomeUnknown
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
+        }
+        // Enrollment recovery can authorize local attempt/key cleanup and the
+        // decoded identifiers become durable device identity. Reject duplicate
+        // members before Foundation's dictionary/Decodable handling can choose
+        // one of conflicting `status`, `deviceId`, or key-id values.
+        guard (try? StrictJSONDocument.validateNoDuplicateMembers(response.data)) != nil else {
+            throw PCAAPIError.enrollmentOutcomeUnknown
         }
         if request.url?.path.hasSuffix("/v1/enrollment/bootstrap/recover") == true,
            let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: String],
@@ -404,6 +431,12 @@ public struct PCADeviceSessionClient {
         case 404: throw PCAAPIError.unavailable
         case 408, 429, 500...599: throw PCAAPIError.rejected
         default: throw PCAAPIError.rejected
+        }
+        // These fields establish the DSK challenge and the resulting bearer
+        // session. Reject ambiguous JSON before Decodable chooses among
+        // duplicate names that may be interpreted differently by the server.
+        guard (try? StrictJSONDocument.validateNoDuplicateMembers(response.data)) != nil else {
+            throw PCAAPIError.malformedResponse
         }
         guard let value = try? decoder.decode(type, from: response.data) else { throw PCAAPIError.malformedResponse }
         let now = Date()

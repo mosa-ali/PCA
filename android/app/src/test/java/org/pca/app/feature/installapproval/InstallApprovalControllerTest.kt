@@ -2,6 +2,7 @@ package org.pca.app.feature.installapproval
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.platform.ProtectionMode
@@ -180,5 +181,56 @@ class InstallApprovalControllerTest {
         // platform call reported failure -- the request itself is not gated on suspend success.
         val result = controller.handleNewInstall("com.example.newgame", "New Game", 1_000L)
         assertEquals("INSTALL_APPROVAL", result.kind)
+    }
+
+    @Test
+    fun `an ordinary platform suspend exception preserves the detection result and enforced capability`() {
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw IllegalStateException("platform suspension unavailable")
+            },
+            requestIdFactory = { "req-platform-error" },
+        )
+
+        val result = controller.handleNewInstall("com.example.newgame", "New Game", 1_000L)
+
+        assertEquals("req-platform-error", result.requestId)
+        assertEquals("INSTALL_APPROVAL", result.kind)
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, result.capabilityState)
+        val detail = JSONObject(result.detail)
+        assertEquals("com.example.newgame", detail.getString("installTargetPackageName"))
+        assertEquals("ENFORCED", detail.getString("installCapabilityState"))
+    }
+
+    @Test
+    fun `cancellation from the platform suspend operation propagates`() {
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw java.util.concurrent.CancellationException("cancelled")
+            },
+        )
+
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            controller.handleNewInstall("com.example.newgame", "New Game", 1_000L)
+        }
+    }
+
+    @Test
+    fun `fatal JVM error from the platform suspend operation propagates`() {
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw AssertionError("fatal platform failure")
+            },
+        )
+
+        assertThrows(AssertionError::class.java) {
+            controller.handleNewInstall("com.example.newgame", "New Game", 1_000L)
+        }
     }
 }

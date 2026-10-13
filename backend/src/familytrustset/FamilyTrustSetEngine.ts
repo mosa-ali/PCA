@@ -179,12 +179,41 @@ export async function acceptEpoch(
   // was itself only ever stored after passing this same check, and the
   // genesis branch's candidate already passed the exactly-one-active-owner
   // check above.
-  const canonicalBytes = canonicalizeTrustSetEpoch(epoch);
+  let canonicalBytes: string;
+  let currentCanonicalBytes: string | null;
+  try {
+    canonicalBytes = canonicalizeTrustSetEpoch(epoch);
+    currentCanonicalBytes = currentEpoch === null ? null : canonicalizeTrustSetEpoch(currentEpoch);
+  } catch {
+    return { accepted: false, reason: 'MALFORMED_EPOCH' };
+  }
+  const candidateSignature = epoch.signature;
+  const currentSignature = currentEpoch?.signature ?? null;
   const validSignature = authorizedSigner
-    ? await verifier.verify(authorizedSigner.dskPublicKey, canonicalBytes, epoch.signature)
+    ? await verifier.verify(authorizedSigner.dskPublicKey, canonicalBytes, candidateSignature)
     : false;
   if (!validSignature) {
     return { accepted: false, reason: 'INVALID_SIGNATURE' };
+  }
+
+  // Verification may be asynchronous. Another accepted epoch (including a
+  // competing genesis) can replace the local head before this continuation
+  // resumes. Compare the exact head used to select the signer, then write
+  // synchronously so an older result cannot roll the local store backward.
+  // Also reject caller mutation of the candidate while its bytes were being
+  // verified: the persisted object must be the object those bytes described.
+  const latest = store.getCurrentEpoch();
+  try {
+    if (canonicalizeTrustSetEpoch(epoch) !== canonicalBytes || epoch.signature !== candidateSignature) {
+      return { accepted: false, reason: 'MALFORMED_EPOCH' };
+    }
+    if ((latest === null) !== (currentCanonicalBytes === null) ||
+        (latest !== null && (canonicalizeTrustSetEpoch(latest) !== currentCanonicalBytes ||
+          latest.signature !== currentSignature))) {
+      return { accepted: false, reason: 'STALE_EPOCH' };
+    }
+  } catch {
+    return { accepted: false, reason: 'MALFORMED_EPOCH' };
   }
 
   store.setCurrentEpoch(epoch);

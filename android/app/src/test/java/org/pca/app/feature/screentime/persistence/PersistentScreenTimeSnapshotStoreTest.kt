@@ -242,6 +242,42 @@ class PersistentScreenTimeSnapshotStoreTest {
     }
 
     @Test
+    fun `read distinguishes absent snapshot from preserved corrupt bytes`() {
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentScreenTimeSnapshotStore(backing)
+
+        assertEquals(ScreenTimeSnapshotRead.Absent, store.read())
+        backing.putString("screen_time_snapshot_v1", "corrupt-snapshot")
+
+        assertEquals(ScreenTimeSnapshotRead.Corrupt, store.read())
+        assertNull(store.load())
+        assertEquals("corrupt-snapshot", backing.getString("screen_time_snapshot_v1"))
+    }
+
+    @Test
+    fun `same boot process recovery cannot wrap an oversized paused duration`() {
+        val backing = InMemoryPersistentStateStore()
+        val initialState = ScreenTimeState.initial(nowNanos = 0L).copy(
+            mode = ScreenTimeMode.PAUSED,
+            activeElapsedNanos = ScreenTimeConfig().activeThresholdNanos - 1L,
+            pauseElapsedNanos = Long.MAX_VALUE - 5L,
+        )
+        PersistentScreenTimeSnapshotStore(backing).save(
+            ScreenTimeSnapshot(initialState, snapshotWallClockMillis = 100L, bootId = "boot-persisted"),
+        )
+
+        // Reopen the adapter to exercise the process-death serialization path, then continue on
+        // the confirmed same boot. A wrapped negative pause would preserve active-time debt.
+        val reopened = PersistentScreenTimeSnapshotStore(backing)
+        val snapshot = reopened.load()!!
+        val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 10L, currentBootId = "boot-persisted")
+
+        assertEquals(ScreenTimeMode.PAUSED, restored.mode)
+        assertEquals(Long.MAX_VALUE, restored.pauseElapsedNanos)
+        assertEquals(0L, restored.activeElapsedNanos)
+    }
+
+    @Test
     fun `decode fails safe to null on the wrong field count instead of throwing`() {
         val underlying = InMemoryPersistentStateStore()
         underlying.putString("screen_time_snapshot_v1", "not|even|close|to|a|valid|encoded|snapshot")

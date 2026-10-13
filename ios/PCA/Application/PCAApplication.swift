@@ -294,6 +294,28 @@ enum PCAFirstDeviceTrustRootComposition {
         }
     }
 
+    /// A parent invitation may be entered only before a device identity is
+    /// bound locally. If a durable first-device ceremony exists, expose the
+    /// link entry only for its exact unresolved enrollment attempt; a committed
+    /// root or an orphaned root record must never look like a fresh setup path.
+    public var canEnterEnrollmentLink: Bool {
+        guard pendingDeviceId == nil, !enrollmentOperationInProgress,
+              !firstDeviceRootReadUnavailable else { return false }
+        if let rootStore = dependencies.firstDeviceRootStore {
+            guard let root = rootStore.current() else {
+                // The root may become unreadable after launch (for example,
+                // while Keychain is temporarily unavailable). Do not let a
+                // stale "fresh install" view authorize a new invitation.
+                return rootStore.withConfirmedNoCurrentRecord({})
+            }
+            guard root.state != .rootCommitted,
+                  let attempt = try? dependencies.attemptStore.loadAttempt(),
+                  attempt.attemptId == root.seed.attemptId,
+                  attempt.invitationTokenSHA256 != nil else { return false }
+        }
+        return true
+    }
+
     /// Bootstrap, restart recovery and repeated foreground notifications share
     /// one admission slot. Main-actor isolation protects the slot between awaits.
     private func acquireEnrollmentAdmission() -> Bool {
@@ -327,6 +349,14 @@ enum PCAFirstDeviceTrustRootComposition {
         self.now = now
         self.pendingDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
         self.firstDeviceRootRecord = dependencies.firstDeviceRootStore?.current()
+        if self.firstDeviceRootRecord == nil,
+           let rootStore = dependencies.firstDeviceRootStore {
+            // `current()` uses nil for both a genuinely empty store and an
+            // unreadable/corrupt Keychain item. Fresh setup is allowed only
+            // after the store proves absence under its read lock; otherwise
+            // a damaged retained root could be mistaken for a fresh install.
+            self.firstDeviceRootReadUnavailable = !rootStore.withConfirmedNoCurrentRecord({})
+        }
         dependencies.firstDeviceTrustRootCoordinator?.onRecordChanged = { [weak self] _ in
             Task { @MainActor [weak self] in
                 // Coordinator callbacks are only a signal to re-read. The
@@ -396,7 +426,7 @@ enum PCAFirstDeviceTrustRootComposition {
         // Main-actor isolation and the operation flag make the durable check
         // plus router insertion one admission step relative to bootstrap and
         // recovery. An unresolved attempt accepts only its bound invitation.
-        guard !enrollmentOperationInProgress, pendingDeviceId == nil else { return false }
+        guard canEnterEnrollmentLink else { return false }
         guard let link = PCAEnrollmentLinkParser().parse(url) else { return false }
         let invitationTokenSHA256 = FirstDeviceCanonical.sha256Hex(link.rawInvitationToken)
         var existingAttempt: PCAEnrollmentAttempt?
@@ -542,7 +572,15 @@ enum PCAFirstDeviceTrustRootComposition {
         // as current or successful.
         guard let rootStore = dependencies.firstDeviceRootStore else { return }
         guard let durableRecord = rootStore.current() else {
-            if firstDeviceRootRecord != nil { firstDeviceRootReadUnavailable = true }
+            if firstDeviceRootRecord != nil {
+                firstDeviceRootReadUnavailable = true
+            } else {
+                // An initial nil is not proof that the Keychain item is
+                // absent: corrupt and temporarily unavailable reads also
+                // return nil. Only the store's atomic missing-state check
+                // can keep fresh enrollment enabled.
+                firstDeviceRootReadUnavailable = !rootStore.withConfirmedNoCurrentRecord({})
+            }
             return
         }
         firstDeviceRootReadUnavailable = false
@@ -575,7 +613,23 @@ enum PCAFirstDeviceTrustRootComposition {
             }
         case .unavailable, .planned: break
         }
+        reconcileInstalledProtectionPolicy(now: currentTime)
         if dependencies.policyRuntime.callbackHealth(now: now()).indicatesProtectionDegraded {
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = stateForCurrentData()
+        }
+    }
+
+    private func reconcileInstalledProtectionPolicy(now: Date) {
+        do {
+            guard let result = try dependencies.policyRuntime.reconcileInstalledPolicy(now: now) else { return }
+            switch result {
+            case .applied: dependencies.protectionRuntime.recordPolicyApplication(.active)
+            case .scheduledOnly: dependencies.protectionRuntime.recordPolicyApplication(.notReady)
+            case .degraded: dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            }
+            applicationState = stateForCurrentData()
+        } catch {
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = stateForCurrentData()
         }
@@ -981,7 +1035,18 @@ enum PCAFirstDeviceTrustRootComposition {
             // Wave 6D: the recovery path restores the SAME ceremony seed the
             // original bootstrap would have captured (idempotent capture).
             if let preparation = dependencies.enrollmentKeys {
-                try? preparation.prepareEnrollmentKeys(attemptId: attempt.attemptId)
+                do {
+                    try preparation.prepareEnrollmentKeys(attemptId: attempt.attemptId)
+                } catch {
+                    // A recovered server response is not usable local
+                    // enrollment authority until this exact attempt's keys
+                    // are readable again. Keep the submitted attempt for a
+                    // later recovery retry; do not capture the seed or show
+                    // the recovered profile without its key custody.
+                    lastError = .securityGate
+                    applicationState = .enrollmentBlockedBySecurityGate
+                    return
+                }
             }
             guard captureFirstDeviceSeed(attempt: attempt, response: response) else {
                 lastError = .recoverable
@@ -1140,26 +1205,33 @@ enum PCAFirstDeviceTrustRootComposition {
             throw PCADeviceProofError.secureKeyUnavailable
         }
         do {
-            _ = try await coordinator.resumePending()
+            let resumed = try await coordinator.resumePending()
+            // A server-authoritative rejection is terminal for this exact
+            // persisted request. Reconcile the current accepted head, but do
+            // not discard the rejection and continue as if no request existed.
+            // The caller must surface it and obtain a fresh candidate from the
+            // current accepted floor before another attempt can be signed.
             guard try await coordinator.catchUp(maximumRecords: 32) else { throw OrdinaryTrustSetError.staleCandidate }
             try dependencies.assertRuntimeKeyCustody(session.deviceId)
             guard rootStore.current() == root, rootStore.confirmDurable(root),
                   try dependencies.sessionStore.loadSession() == session else {
                 throw PCADeviceProofError.secureKeyUnavailable
             }
+            if case .rejected? = resumed { return .rejected }
             return try await coordinator.prepareAndSubmit(candidate)
         } catch let error as PCAAPIError {
-            if (try? dependencies.sessionStore.loadSession()) == session {
-                switch error {
-                case .unauthorized:
-                    try? dependencies.sessionStore.clearSession()
+            switch error {
+            case .unauthorized:
+                if (try? dependencies.sessionStore.clearSession(ifCurrent: session)) == true {
                     syncConnectionState = .stale
                     applicationState = .recovering
-                case .forbidden:
+                }
+            case .forbidden:
+                if (try? dependencies.sessionStore.loadSession()) == session {
                     syncConnectionState = .stale
                     applicationState = .error(.authorization)
-                default: break
                 }
+            default: break
             }
             throw error
         }
@@ -1196,6 +1268,11 @@ enum PCAFirstDeviceTrustRootComposition {
             syncConnectionState = .stale
             return .blocked
         }
+        // Background refreshes may run without a SwiftUI scene becoming
+        // active. Reconcile only the already committed local generation so a
+        // wake can restore a missed edge or OS-cleared ManagedSettings state;
+        // failure degrades reporting but does not discard durable inbox work.
+        reconcileInstalledProtectionPolicy(now: now())
         let incarnation: String
         #if canImport(CryptoKit)
         incarnation = SHA256.hash(data: Data(session.sessionToken.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -1245,6 +1322,23 @@ enum PCAFirstDeviceTrustRootComposition {
                 })
             try assertContinuity()
         }
+        func acknowledgeCustodyThenConsume(_ scope: PCAInboundScope) async throws -> Bool {
+            let acknowledgementComplete: Bool
+            do { acknowledgementComplete = try await acknowledgeStored(scope) }
+            catch {
+                let acknowledgementError = error
+                // Durable local work remains useful while the relay is
+                // unavailable. Preserve the prior recovery behavior, then
+                // surface the transport/authority failure for retry.
+                try await consumeStored(scope)
+                throw acknowledgementError
+            }
+            // Application readiness is independent of the transport custody
+            // ACK. The exact ciphertext was persisted and read back before
+            // acknowledgeStored can run.
+            try await consumeStored(scope)
+            return acknowledgementComplete
+        }
         syncConnectionState = .syncing
         do {
             try assertContinuity()
@@ -1275,10 +1369,11 @@ enum PCAFirstDeviceTrustRootComposition {
             }
             var cursor = try inbox.navigation(sessionIncarnation: incarnation)?.nextCursor
             var resetRejectedCursor = false
-            if let scope = try inbox.retainedScope() { try await consumeStored(scope) }
-            if let scope = try inbox.retainedScope(), !(try await acknowledgeStored(scope)) {
-                syncConnectionState = .syncPending
-                return .morePending
+            if let scope = try inbox.retainedScope() {
+                guard try await acknowledgeCustodyThenConsume(scope) else {
+                    syncConnectionState = .syncPending
+                    return .morePending
+                }
             }
             for _ in 0..<4 {
                 try assertContinuity()
@@ -1298,8 +1393,7 @@ enum PCAFirstDeviceTrustRootComposition {
                 try assertContinuity()
                 try validateScope(response.scope)
                 try inbox.capture(response, sessionDeviceId: session.deviceId, sessionIncarnation: incarnation, requestedCursor: cursor)
-                try await consumeStored(response.scope)
-                guard try await acknowledgeStored(response.scope) else {
+                guard try await acknowledgeCustodyThenConsume(response.scope) else {
                     syncConnectionState = .syncPending
                     return .morePending
                 }
@@ -1332,6 +1426,22 @@ enum PCAFirstDeviceTrustRootComposition {
                     if let statusError, statusError == .unauthorized || statusError == .forbidden {
                         throw statusError
                     }
+                    if let statusError {
+                        switch statusError {
+                        case .rejected, .unavailable, .transport(.network), .transport(.timeout):
+                            // This endpoint is an idempotent projection of the
+                            // current local protection state. A failed POST is
+                            // recoverable by reporting that current state on
+                            // the next sync, including after process restart.
+                            // Keep this campaign pending instead of presenting
+                            // a successful sync while the projection is stale.
+                            syncConnectionState = .syncPending
+                            return .morePending
+                        default:
+                            syncConnectionState = .stale
+                            return .blocked
+                        }
+                    }
                 }
                 if safeZoneDeliveryPending {
                     syncConnectionState = .syncPending
@@ -1345,17 +1455,21 @@ enum PCAFirstDeviceTrustRootComposition {
             syncConnectionState = .stale
             throw CancellationError()
         } catch let error as PCAAPIError {
-            syncConnectionState = (error == .unauthorized || error == .forbidden) ? .stale : .offline
-            if error == .unauthorized, (try? dependencies.sessionStore.loadSession()) == session {
-                try? dependencies.sessionStore.clearSession()
+            if error == .unauthorized {
+                if (try? dependencies.sessionStore.clearSession(ifCurrent: session)) == true {
+                    syncConnectionState = .stale
+                    applicationState = .recovering
+                }
+                return .retryableFailure
             }
+            syncConnectionState = error == .forbidden ? .stale : .offline
             if error == .forbidden {
                 applicationState = .error(.authorization)
                 return .blocked
             }
-            applicationState = error == .unauthorized ? .recovering : .offline
+            applicationState = .offline
             switch error {
-            case .unauthorized, .rejected, .unavailable, .transport(.network), .transport(.timeout): return .retryableFailure
+            case .rejected, .unavailable, .transport(.network), .transport(.timeout): return .retryableFailure
             default: return .blocked
             }
         } catch is PCADeviceProofError {
@@ -1377,17 +1491,18 @@ enum PCAFirstDeviceTrustRootComposition {
             try await runtimeSyncClient.reportProtectionStatus(dependencies.protectionRuntime.status, session: session)
             return nil
         } catch let error as PCAAPIError {
-            if (try? dependencies.sessionStore.loadSession()) == session {
-                switch error {
-                case .unauthorized:
-                    try? dependencies.sessionStore.clearSession()
+            switch error {
+            case .unauthorized:
+                if (try? dependencies.sessionStore.clearSession(ifCurrent: session)) == true {
                     syncConnectionState = .stale
                     applicationState = .recovering
-                case .forbidden:
+                }
+            case .forbidden:
+                if (try? dependencies.sessionStore.loadSession()) == session {
                     syncConnectionState = .stale
                     applicationState = .error(.authorization)
-                default: break
                 }
+            default: break
             }
             return error
         } catch {
@@ -1472,7 +1587,12 @@ public enum PCAProductionCompositionRoot {
         let secureEnclaveProvider = SecureEnclaveDskProvider()
         let deviceProofProvider = FirstDeviceDskDeviceProofProvider(
             provider: secureEnclaveProvider,
-            persistedAttemptId: { firstDeviceRootStore.current()?.seed.attemptId }
+            persistedAttemptId: { firstDeviceRootStore.current()?.seed.attemptId },
+            persistedAttemptMayBeReplaced: { attemptId in
+                guard let root = firstDeviceRootStore.current(),
+                      pcaOpaqueEqual(root.seed.attemptId, attemptId) else { return false }
+                return root.state == .expired || root.state == .rejected
+            }
         )
         let enrollmentKeyPreparation: FirstDeviceEnrollmentKeyPreparation? = deviceProofProvider
         let keyDeletion: FirstDeviceKeyPairDeletion? = secureEnclaveProvider

@@ -135,13 +135,25 @@ export interface EmailOutboxWorkerHandle {
  */
 export function startEmailOutboxWorker(deps: EmailOutboxProcessorDeps, intervalMs: number): EmailOutboxWorkerHandle {
   let running = false;
+  let processFailureCount = 0;
   const timer = setInterval(() => {
     if (running) return;
     running = true;
     processOutboxOnce(deps)
-      .catch((error) => {
-        // eslint-disable-next-line no-console -- last-resort visibility for a worker-loop crash; never includes message content (processOutboxOnce's own catches handle those).
-        console.error('[EmailOutboxWorker] processOutboxOnce failed', error);
+      .catch(() => {
+        // The failure may contain SQL/provider details or recipient data.
+        // Keep only bounded aggregate diagnostics; never inspect/log the
+        // thrown value and never let a failing console sink affect the loop.
+        processFailureCount++;
+        if (processFailureCount === 1 || processFailureCount % 100 === 0) {
+          try {
+            // eslint-disable-next-line no-console -- sanitized worker health signal only.
+            console.error('[EmailOutboxWorker] processOutboxOnce failed; details redacted', processFailureCount);
+          } catch {
+            // Diagnostic sinks must not turn a handled worker failure into
+            // an unhandled rejection.
+          }
+        }
       })
       .finally(() => {
         running = false;

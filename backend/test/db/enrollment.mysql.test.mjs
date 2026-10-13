@@ -292,17 +292,21 @@ test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts (distinct 
   // indistinguishable, for this property, from one queued on the row lock.
   const coordinator = buildCoordinator();
   const { rawToken, record } = await createInvitation();
+  const inputs = Array.from({ length: 30 }, () => deviceKeysInput());
 
   const attempts = await Promise.allSettled(
-    Array.from({ length: 30 }, () =>
-      coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() }),
-    ),
+    inputs.map((input) => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input })),
   );
   const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
   const rejected = attempts.filter((a) => a.status === 'rejected');
   assert.equal(fulfilled.length, 1, 'exactly one concurrent enrollment attempt must succeed');
   assert.equal(rejected.length, 29);
-  for (const failure of rejected) assert.equal(failure.reason.code, 'ATTEMPT_CONFLICT');
+  for (const failure of rejected) {
+    assert.ok(
+      failure.reason.code === 'ATTEMPT_CONFLICT' || failure.reason.code === 'ALREADY_REDEEMED',
+      `expected a competing request to fail at prepare (ATTEMPT_CONFLICT) or after another request redeemed the invitation (ALREADY_REDEEMED), received ${failure.reason.code}`,
+    );
+  }
 
   const [deviceRows] = await getPool().query(
     `SELECT COUNT(*) AS n, GROUP_CONCAT(DISTINCT status) AS statuses FROM devices WHERE family_id = ?`,

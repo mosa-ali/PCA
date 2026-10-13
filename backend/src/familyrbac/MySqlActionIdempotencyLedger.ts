@@ -108,6 +108,8 @@ function canonicalRecorded(recorded: RecordedAuthorization): RecordedAuthorizati
  * migration 0047's header and familyrbac/FamilyAuditStore.ts.
  */
 export class MySqlActionIdempotencyLedger implements ActionIdempotencyLedger {
+  private trimFailureCount = 0;
+
   constructor(private readonly capacity: number = ACTION_IDEMPOTENCY_LEDGER_CAPACITY) {
     // See ActionIdempotencyLedger's reference implementation for why a
     // non-positive budget is rejected rather than silently retaining nothing.
@@ -167,7 +169,7 @@ export class MySqlActionIdempotencyLedger implements ActionIdempotencyLedger {
         // outcome nothing holds -- see MAX_CONFLICT_READBACK_ATTEMPTS.
       }
     }
-    throw new Error(`ActionIdempotencyLedger could not record or read back (${scope}, ${idempotencyKey}) after ${MAX_CONFLICT_READBACK_ATTEMPTS} attempts.`);
+    throw new Error(`ActionIdempotencyLedger could not persist or confirm the replay record after ${MAX_CONFLICT_READBACK_ATTEMPTS} attempts.`);
   }
 
   /**
@@ -200,17 +202,28 @@ export class MySqlActionIdempotencyLedger implements ActionIdempotencyLedger {
           [this.capacity, justWrittenScope, justWrittenKey],
         ),
       );
-    } catch (error) {
+    } catch {
       // Best-effort by design (see this class's doc comment), but never SILENT:
       // a bare catch here hid a permanently failing trim behind a soft-ceiling
       // claim, which is how a stale table looks identical to a healthy one. The
       // caller's write has already committed, so this must not fail the write.
-      console.warn(
-        JSON.stringify({
-          event: 'action_idempotency_ledger_trim_failed',
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      this.warnTrimFailure();
+    }
+  }
+
+  private warnTrimFailure(): void {
+    // MySQL/driver exception text can carry SQL parameters. Record only a
+    // bounded event category and count; a broken log sink must remain
+    // best-effort because the authorization row is already committed.
+    this.trimFailureCount += 1;
+    if (this.trimFailureCount !== 1 && this.trimFailureCount % 100 !== 0) return;
+    try {
+      console.warn(JSON.stringify({
+        event: 'action_idempotency_ledger_trim_failed',
+        occurrences: this.trimFailureCount,
+      }));
+    } catch {
+      // Never let diagnostics change the committed ledger write result.
     }
   }
 }

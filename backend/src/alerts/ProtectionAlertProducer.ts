@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { isPersistableServerCiphertextWindow } from '../retention/serverCiphertextTtl.js';
 import { generateProtectionAlert, InvalidProtectionAlertInputError } from './ProtectionAlertGenerator.js';
 import {
   isPlausibleEncryptedPayload,
@@ -102,7 +103,7 @@ export class ProtectionAlertProducer {
       throw new InvalidProtectionAlertInputError(`trigger ${input.trigger} requires a deviceId`);
     }
     const suppliedTime = input.generatedAtUtc ?? this.now();
-    if (!(suppliedTime instanceof Date) || !Number.isFinite(suppliedTime.getTime())) {
+    if (!isPersistableServerCiphertextWindow(suppliedTime)) {
       throw new InvalidProtectionAlertInputError('invalid generatedAtUtc');
     }
     const generatedAtMillis = suppliedTime.getTime();

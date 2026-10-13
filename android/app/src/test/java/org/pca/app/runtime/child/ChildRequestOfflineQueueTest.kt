@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,7 @@ import org.pca.app.runtime.FakeFamilySyncRuntimePort
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.FamilySyncRuntimePort
+import org.pca.app.runtime.sync.MAX_OUTBOUND_BATCH_SIZE
 import org.robolectric.RobolectricTestRunner
 
 /** Robolectric is required because [ChildRequestOfflineQueue] encodes through `android.util.Base64`,
@@ -84,6 +87,73 @@ class ChildRequestOfflineQueueTest {
         val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
         assertEquals(0, reloaded.flush(port))
         assertTrue("a request whose durable enqueue failed must not reach the transport", port.submitted.isEmpty())
+    }
+
+    @Test
+    fun `cancellation during the original write rolls back and propagates`() {
+        val store = PlannedFlushFailureStore().apply {
+            failuresByFlush[2] = CancellationException("cancelled while committing candidate")
+        }
+        val queue = ChildRequestOfflineQueue(store, "queue-a")
+
+        assertThrows(CancellationException::class.java) {
+            queue.enqueue(payload("req-cancelled"))
+        }
+
+        assertTrue(queue.pending().isEmpty())
+        assertNull(store.getString("queue-a.pending_write"))
+    }
+
+    @Test
+    fun `cancellation during rollback propagates and poisons only its queue key`() {
+        val store = PlannedFlushFailureStore().apply {
+            failuresByFlush[2] = IllegalStateException("candidate commit failed")
+            failuresByFlush[3] = CancellationException("cancelled during rollback")
+        }
+        val queue = ChildRequestOfflineQueue(store, "queue-a")
+        val sibling = ChildRequestOfflineQueue(store, "queue-b")
+
+        assertThrows(CancellationException::class.java) {
+            queue.enqueue(payload("req-cancelled-rollback"))
+        }
+
+        assertQueueUnavailable { queue.pending() }
+        sibling.enqueue(payload("req-sibling"))
+        assertEquals(listOf("req-sibling"), sibling.pending().map { it.payload.requestId })
+    }
+
+    @Test
+    fun `fatal rollback error propagates and poisons only its queue key`() {
+        val store = PlannedFlushFailureStore().apply {
+            failuresByFlush[2] = IllegalStateException("candidate commit failed")
+            failuresByFlush[3] = AssertionError("fatal rollback failure")
+        }
+        val queue = ChildRequestOfflineQueue(store, "queue-a")
+        val sibling = ChildRequestOfflineQueue(store, "queue-b")
+
+        assertThrows(AssertionError::class.java) {
+            queue.enqueue(payload("req-fatal-rollback"))
+        }
+
+        assertQueueUnavailable { queue.pending() }
+        sibling.enqueue(payload("req-sibling"))
+        assertEquals(listOf("req-sibling"), sibling.pending().map { it.payload.requestId })
+    }
+
+    @Test
+    fun `ordinary rollback failure poisons only its queue key and leaves sibling queue usable`() {
+        val store = PlannedFlushFailureStore().apply {
+            failuresByFlush[2] = IllegalStateException("candidate commit failed")
+            failuresByFlush[3] = IllegalStateException("rollback flush failed")
+        }
+        val queue = ChildRequestOfflineQueue(store, "queue-a")
+        val sibling = ChildRequestOfflineQueue(store, "queue-b")
+
+        assertQueueUnavailable { queue.enqueue(payload("req-rollback-failed")) }
+
+        assertQueueUnavailable { queue.pending() }
+        sibling.enqueue(payload("req-sibling"))
+        assertEquals(listOf("req-sibling"), sibling.pending().map { it.payload.requestId })
     }
 
     @Test
@@ -245,6 +315,26 @@ class ChildRequestOfflineQueueTest {
     }
 
     @Test
+    fun `flush limits each attempt to the shared outbound batch size and leaves remainder for next flush`() = runTest {
+        val queue = ChildRequestOfflineQueue(InMemoryPersistentStateStore())
+        val requestIds = (0 until (MAX_OUTBOUND_BATCH_SIZE + 2)).map { "req-$it" }
+        requestIds.forEach { queue.enqueue(payload(it)) }
+        val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+
+        val firstFlush = queue.flush(port)
+
+        assertEquals(MAX_OUTBOUND_BATCH_SIZE, firstFlush)
+        assertEquals(requestIds.take(MAX_OUTBOUND_BATCH_SIZE), port.submitted.map { it.requestId })
+        assertEquals(requestIds.drop(MAX_OUTBOUND_BATCH_SIZE), queue.pending().map { it.payload.requestId })
+
+        val secondFlush = queue.flush(port)
+
+        assertEquals(2, secondFlush)
+        assertEquals(requestIds, port.submitted.map { it.requestId })
+        assertTrue(queue.pending().isEmpty())
+    }
+
+    @Test
     fun `flush stops submitting when the family channel becomes stale during a prior send`() = runTest {
         val queue = ChildRequestOfflineQueue(InMemoryPersistentStateStore())
         queue.enqueue(payload("req-1"))
@@ -370,6 +460,36 @@ class ChildRequestOfflineQueueTest {
     }
 
     @Test
+    fun `negative enqueue timestamp is rejected before durable queue mutation`() {
+        val store = InMemoryPersistentStateStore()
+        val queue = ChildRequestOfflineQueue(store, "child-requests")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            queue.enqueue(payload("req-negative-time").copy(createdAtEpochMillis = -1L))
+        }
+
+        assertNull(store.getString("child-requests"))
+    }
+
+    @Test
+    fun `negative and noncanonical persisted timestamps fail closed without rewriting or sending`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val key = "child-requests"
+        val queue = ChildRequestOfflineQueue(store, key)
+        val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+        for (timestamp in listOf("-1", "+1", "01")) {
+            val raw = "req-1|SKIP_BREAK|ZGV0YWls|$timestamp|PENDING_SYNC_LOCAL"
+            store.putString(key, raw)
+
+            assertQueueUnavailable { queue.pending() }
+            assertQueueUnavailableSuspend { queue.flush(port) }
+
+            assertEquals(raw, store.getString(key))
+            assertTrue(port.submitted.isEmpty())
+        }
+    }
+
+    @Test
     fun `valid queue survives reload and resumes submission after process death`() = runTest {
         val store = InMemoryPersistentStateStore()
         ChildRequestOfflineQueue(store).enqueue(payload("req-after-restart"))
@@ -453,6 +573,20 @@ class ChildRequestOfflineQueueTest {
     }
 
     private class SimulatedProcessDeath : Error("simulated process death after durable flush")
+
+    private class PlannedFlushFailureStore(
+        private val backing: InMemoryPersistentStateStore = InMemoryPersistentStateStore(),
+    ) : PersistentStateStore by backing {
+        var flushCount = 0
+            private set
+        val failuresByFlush: MutableMap<Int, Throwable> = mutableMapOf()
+
+        override fun flush() {
+            flushCount++
+            failuresByFlush.remove(flushCount)?.let { throw it }
+            backing.flush()
+        }
+    }
 
     private class BlockingFirstReadStore : PersistentStateStore {
         private val backing = InMemoryPersistentStateStore()

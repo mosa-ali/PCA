@@ -24,6 +24,11 @@ function family() {
   return `family-${randomUUID()}`;
 }
 
+async function currentPairingFingerprints(familyId, deviceId) {
+  const view = await pairingService.getPairingRequest(familyId, deviceId);
+  return { expectedDskFingerprint: view.dskFingerprint, expectedDekFingerprint: view.dekFingerprint };
+}
+
 // paired_by_account_id FK-references a real service_accounts row -- a
 // pairing confirmation always comes from an authenticated parent account,
 // never a synthetic id, so tests must create one for real.
@@ -63,19 +68,38 @@ test('MySQL: authorized parent confirmation transitions PAIRING_PENDING -> PAIRE
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   const confirmedBy = await realAccountId();
-  const view = await pairingService.confirmPairing(familyId, device.deviceId, confirmedBy);
+  const view = await pairingService.confirmPairing(familyId, device.deviceId, confirmedBy,
+    await currentPairingFingerprints(familyId, device.deviceId));
   assert.equal(view.status, 'PAIRED');
   const reread = await pairingService.getPairingRequest(familyId, device.deviceId);
   assert.equal(reread.status, 'PAIRED');
 });
 
+test('MySQL: key enrollment after the displayed pairing view rejects stale confirmation and leaves durable status pending', async () => {
+  const familyId = family();
+  const { device } = await pairedCandidateDevice(familyId);
+  const confirmedBy = await realAccountId();
+  const displayedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
+
+  // This is the interleaving window: another valid key mutation commits after
+  // the Parent reads the view but before the confirm transaction locks the
+  // device and current active keys.
+  await deviceService.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
+  await assert.rejects(
+    () => pairingService.confirmPairing(familyId, device.deviceId, confirmedBy, displayedFingerprints),
+    { code: 'FINGERPRINT_MISMATCH' },
+  );
+  assert.equal((await pairingService.getPairingRequest(familyId, device.deviceId)).status, 'PAIRING_PENDING');
+});
+
 test('MySQL: REVOKED pairing request cannot become PAIRED', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
+  const expectedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
   await deviceService.revokeDevice(familyId, device.deviceId);
   const confirmedBy = await realAccountId();
   await assert.rejects(
-    () => pairingService.confirmPairing(familyId, device.deviceId, confirmedBy),
+    () => pairingService.confirmPairing(familyId, device.deviceId, confirmedBy, expectedFingerprints),
     { code: 'INVALID_STATE' },
   );
 });
@@ -88,8 +112,9 @@ test('MySQL CONCURRENCY: many genuinely simultaneous confirmation attempts conve
   const now = () => new Date(currentTime++);
   const auditRepository = new InMemoryFamilyAuditRepository();
   const auditedPairingService = new PairingService(repository, now, new FamilyAuditService(auditRepository, now));
+  const expectedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
   const attempts = await Promise.allSettled(
-    Array.from({ length: 20 }, () => auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy)),
+    Array.from({ length: 20 }, () => auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy, expectedFingerprints)),
   );
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true, 'confirmation is idempotent, never a hard error under a race');
   const timestamps = new Set(attempts.map((a) => a.value.status));
@@ -104,7 +129,8 @@ test('MySQL CONCURRENCY: many genuinely simultaneous confirmation attempts conve
   assert.equal((await lifecycleAudits()).length, 1, 'only the database transition winner emits the lifecycle audit');
 
   currentTime += 60_000;
-  const replay = await auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy);
+  const replay = await auditedPairingService.confirmPairing(familyId, device.deviceId, confirmedBy,
+    await currentPairingFingerprints(familyId, device.deviceId));
   assert.equal(replay.status, 'PAIRED');
   const afterReplay = await repository.findDeviceForFamily(familyId, device.deviceId);
   assert.equal(afterReplay?.pairedAt?.getTime(), winningPairedAt, 'a later idempotent confirmation preserves the first pairedAt');

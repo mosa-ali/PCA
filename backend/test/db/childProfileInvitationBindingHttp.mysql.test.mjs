@@ -74,7 +74,7 @@ const invitationService = new InvitationService(
 const deviceRepository = new MySqlDeviceRepository();
 const pairingService = new PairingService(deviceRepository);
 const enrollmentCoordinator = new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository());
-const relayService = new RelayService(new MySqlRelayRepository());
+const relayService = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }));
 const deviceAuthService = new DeviceAuthService(
   new MySqlDeviceChallengeRepository(),
   deviceRepository,

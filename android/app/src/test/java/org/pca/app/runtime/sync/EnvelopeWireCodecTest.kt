@@ -1,5 +1,6 @@
 package org.pca.app.runtime.sync
 
+import java.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -56,6 +57,16 @@ class EnvelopeWireCodecTest {
     }
 
     @Test
+    fun `protocol version components round-trip through the JSON safe-integer maximum`() {
+        val envelope = buildEnvelope().copy(
+            protocolMajor = 9_007_199_254_740_991L,
+            protocolMinor = 9_007_199_254_740_991L,
+        )
+
+        assertEquals(envelope, envelopeFromRelayCiphertext(envelopeToRelayCiphertext(envelope)))
+    }
+
+    @Test
     fun `never mutates payload bytes, including 0x00 and 0xff`() {
         val payload = byteArrayOf(0, 1, 2, -1, -2, -3, 10, 13)
         val envelope = buildEnvelope(payload = payload)
@@ -104,6 +115,82 @@ class EnvelopeWireCodecTest {
     }
 
     @Test
+    fun `wire decoder rejects noncanonical malformed and oversized base64 payloads`() {
+        val encoded = String(
+            envelopeToRelayCiphertext(buildEnvelope(payload = byteArrayOf('a'.code.toByte()))),
+            Charsets.UTF_8,
+        )
+        for (payload in listOf("YQ\$=", "YR==", "YQ==junk")) {
+            val malformed = encoded.replace("\"payload\":\"YQ==\"", "\"payload\":\"$payload\"")
+            assertNull(payload, envelopeFromRelayCiphertext(malformed.toByteArray(Charsets.UTF_8)))
+        }
+
+        val oversizedPayload = Base64.getEncoder().encodeToString(ByteArray(65_537) { 1 })
+        val oversizedWire = encoded.replace("\"payload\":\"YQ==\"", "\"payload\":\"$oversizedPayload\"")
+        assertNull(envelopeFromRelayCiphertext(oversizedWire.toByteArray(Charsets.UTF_8)))
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(buildEnvelope(payload = ByteArray(65_537) { 1 }))
+        }
+    }
+
+    @Test
+    fun `wire decoder requires typed bounded metadata before constructing envelope`() {
+        val encoded = String(envelopeToRelayCiphertext(buildEnvelope()), Charsets.UTF_8)
+        val invalidFields = listOf(
+            encoded.replace("\"messageId\":\"msg-1\"", "\"messageId\":1"),
+            encoded.replace("\"protocolMinor\":0", "\"protocolMinor\":-1"),
+            encoded.replace("\"semanticVersion\":\"1.0.0\"", "\"semanticVersion\":\"01.0.0\""),
+            encoded.replace("\"messageType\":\"STATUS_SNAPSHOT\"", "\"messageType\":\"UNRECOGNIZED\""),
+        )
+        invalidFields.forEach { invalid ->
+            assertNull(envelopeFromRelayCiphertext(invalid.toByteArray(Charsets.UTF_8)))
+        }
+    }
+
+    @Test
+    fun `protocol version decoder rejects negative fractional unsafe and string values`() {
+        val encoded = String(envelopeToRelayCiphertext(buildEnvelope()), Charsets.UTF_8)
+        val invalidValues = listOf("-1", "1.5", "9007199254740992", "1e1000000000", "\"1\"")
+
+        for (field in listOf("protocolMajor", "protocolMinor")) {
+            for (value in invalidValues) {
+                val original = if (field == "protocolMajor") "\"protocolMajor\":1" else "\"protocolMinor\":0"
+                val invalid = encoded.replace(original, "\"$field\":$value")
+                assertNull("$field=$value", envelopeFromRelayCiphertext(invalid.toByteArray(Charsets.UTF_8)))
+            }
+        }
+        assertNull(
+            envelopeFromRelayCiphertext(encoded.replace("\"protocolMajor\":1", "\"protocolMajor\":0").toByteArray()),
+        )
+    }
+
+    @Test
+    fun `encoder and decoder enforce the complete 64 KiB relay wire boundary`() {
+        val exactEnvelope = envelopeAtWireSize(64 * 1024)
+        val exactWire = envelopeToRelayCiphertext(exactEnvelope)
+        assertEquals(64 * 1024, exactWire.size)
+        assertEquals(exactEnvelope, envelopeFromRelayCiphertext(exactWire))
+        assertNull(envelopeFromRelayCiphertext(exactWire + byteArrayOf(' '.code.toByte())))
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(exactEnvelope.copy(signature = exactEnvelope.signature + "x"))
+        }
+    }
+
+    @Test
+    fun `wire decoder rejects malformed UTF-8`() {
+        val encoded = envelopeToRelayCiphertext(buildEnvelope()) + byteArrayOf(0xC3.toByte())
+        assertNull(envelopeFromRelayCiphertext(encoded))
+    }
+
+    @Test
+    fun `wire decoder rejects duplicate JSON members and trailing data`() {
+        val encoded = String(envelopeToRelayCiphertext(buildEnvelope()), Charsets.UTF_8)
+        val duplicate = encoded.replace("{", "{\"messageId\":\"shadow\",")
+        assertNull(envelopeFromRelayCiphertext(duplicate.toByteArray(Charsets.UTF_8)))
+        assertNull(envelopeFromRelayCiphertext((encoded + " {} ").toByteArray(Charsets.UTF_8)))
+    }
+
+    @Test
     fun `encoder rejects invalid epoch fields`() {
         assertThrows(IllegalArgumentException::class.java) {
             envelopeToRelayCiphertext(buildEnvelope().copy(trustSetEpoch = Int.MAX_VALUE.toLong() + 1L))
@@ -111,5 +198,28 @@ class EnvelopeWireCodecTest {
         assertThrows(IllegalArgumentException::class.java) {
             envelopeToRelayCiphertext(buildEnvelope().copy(keyEpoch = -1L))
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(buildEnvelope().copy(protocolMajor = 0L))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            envelopeToRelayCiphertext(buildEnvelope().copy(protocolMinor = 9_007_199_254_740_992L))
+        }
+    }
+
+    private fun envelopeAtWireSize(targetBytes: Int): FamilyEnvelope {
+        val seed = buildEnvelope(payload = byteArrayOf(1), correlationId = null).copy(signature = "s")
+        val seedWireSize = envelopeToRelayCiphertext(seed).size
+        for (payloadSize in 1..(targetBytes * 3 / 4)) {
+            val payloadBase64Length = ((payloadSize + 2) / 3) * 4
+            val signatureLength = 1 + targetBytes - seedWireSize - (payloadBase64Length - 4)
+            if (signatureLength in 1..512) {
+                val candidate = seed.copy(
+                    payload = ByteArray(payloadSize) { 1 },
+                    signature = "s".repeat(signatureLength),
+                )
+                if (envelopeToRelayCiphertext(candidate).size == targetBytes) return candidate
+            }
+        }
+        throw AssertionError("Could not construct an envelope of exactly $targetBytes bytes.")
     }
 }

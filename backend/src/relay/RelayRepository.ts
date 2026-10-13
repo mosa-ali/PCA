@@ -11,6 +11,31 @@ export type AcknowledgeResult =
   | { outcome: 'EXPIRED' }
   | { outcome: 'NOT_FOUND' };
 
+/** Session authority resolved immediately before a device acknowledgement. */
+export interface RelayRecipientAuthoritySnapshot {
+  readonly familyId: string;
+  readonly dskKeyId: string;
+  readonly trustSetEpoch: number;
+  readonly keyEpoch: number;
+}
+
+/** Both accepted Trust Set members whose authority allows an outbound enqueue. */
+export interface RelayEnvelopeAuthoritySnapshot {
+  readonly familyId: string;
+  readonly trustSetEpoch: number;
+  readonly keyEpoch: number;
+  readonly sender: { readonly deviceId: string; readonly dskKeyId: string };
+  readonly recipient: { readonly deviceId: string; readonly dskKeyId: string };
+}
+
+/** The accepted head or exact session DSK changed before the ACK could persist. */
+export class RelayAuthorityChangedError extends Error {
+  constructor() {
+    super('Relay authority changed before persistence.');
+    this.name = 'RelayAuthorityChangedError';
+  }
+}
+
 /**
  * Persistence port for the opaque relay. A deterministic in-memory
  * implementation exists for tests; MySqlRelayRepository is the production
@@ -28,18 +53,19 @@ export type AcknowledgeResult =
  * never be able to read another recipient's envelope by guessing messageId.
  */
 export interface RelayRepository {
-  createOrMatchEnvelope(record: RelayEnvelopeRecord): Promise<CreateEnvelopeResult>;
+  createOrMatchEnvelope(record: RelayEnvelopeRecord, authority?: RelayEnvelopeAuthoritySnapshot): Promise<CreateEnvelopeResult>;
   findForRecipient(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord | null>;
   listQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, now: Date): Promise<RelayEnvelopeRecord[]>;
   /** Stable, bounded transport traversal; family and recipient are authenticated caller inputs. */
-  listQueuedPageForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, now: Date, input: RelayQueuePageInput): Promise<RelayQueuePage>;
+  listQueuedPageForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, now: Date, input: RelayQueuePageInput, authority?: RelayRecipientAuthoritySnapshot): Promise<RelayQueuePage>;
   /** Bounded exact correlation predecessor lookup. It must not move the base page position. */
-  findQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, messageIds: readonly MessageId[], now: Date): Promise<RelayQueuedRecord[]>;
+  findQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, familyId: string, messageIds: readonly MessageId[], now: Date, authority?: RelayRecipientAuthoritySnapshot): Promise<RelayQueuedRecord[]>;
   /** Best-effort operational cleanup; expired ciphertext must not accumulate in relay storage. */
   purgeExpired?(now: Date): Promise<number>;
   acknowledgeAtomically(
     recipientDeviceId: OpaqueDeviceId,
     messageId: MessageId,
     acknowledgedAt: Date,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<AcknowledgeResult>;
 }

@@ -20,6 +20,27 @@ final class ScheduleEngineTests: XCTestCase {
             windows: [window(kind: .bedtime)], dailyLimit: excluded)).kind, .blockedBedtime)
     }
 
+    func testEmptyAppTokenFailsClosedInsteadOfMissingAppScopedBlock() {
+        let scopedBlock = window(kind: .blockPeriod, appScope: .apps(["app-a"]))
+        let result = ScheduleEngine.evaluate(input(
+            now: date("2026-01-07T12:00:00Z"), appToken: "", windows: [scopedBlock]
+        ))
+
+        XCTAssertEqual(result.kind, .invalidConfig)
+        XCTAssertTrue(result.configErrors.contains("app token must be a non-empty string"))
+    }
+
+    func testDailyLimitAnchorUsesStableAsciiPolicyLocalDate() {
+        let afterMidnightRiyadh = date("2026-01-07T21:30:00Z")
+        XCTAssertEqual(ScheduleEngine.localDateString(afterMidnightRiyadh, timeZone: riyadh), "2026-01-08")
+
+        let anchoredToday = DailyAppLimit(appScope: .all, limitMinutes: 30,
+            usedMinutesToday: 30, anchorLocalDate: "2026-01-08")
+        XCTAssertEqual(ScheduleEngine.evaluate(input(now: afterMidnightRiyadh,
+            dailyLimit: anchoredToday)).kind, .blockedLimitReached,
+            "the canonical ASCII local-date anchor must match even when the device locale uses localized digits")
+    }
+
     private func window(
         id: String = "w1", kind: ScheduleWindowKind = .blockPeriod,
         days: Set<Int> = [1, 2, 3, 4, 5, 6, 7], start: TimeOfDay = TimeOfDay(hour: 0, minute: 0),
@@ -234,6 +255,27 @@ final class ScheduleEngineTests: XCTestCase {
         let result = ScheduleEngine.evaluate(input(now: date("2026-01-07T12:00:00Z"), windows: [malformed]))
         XCTAssertEqual(result.kind, .invalidConfig)
         XCTAssertFalse(result.configErrors.isEmpty)
+    }
+
+    func testDuplicateWindowIdsFailClosedButCanonicalUnicodeAliasesRemainDistinct() {
+        let now = date("2026-01-07T12:00:00Z")
+        let duplicate = ScheduleEngine.evaluate(input(now: now, windows: [
+            window(id: "school-a", kind: .schoolMode, appScope: .all),
+            window(id: "school-a", kind: .schoolMode, appScope: .all),
+        ]))
+        XCTAssertEqual(duplicate.kind, .invalidConfig)
+        XCTAssertTrue(duplicate.configErrors.contains("duplicate window id"))
+
+        let composed = "caf\u{00E9}"
+        let decomposed = "cafe\u{0301}"
+        XCTAssertEqual(composed, decomposed, "Swift String equality is canonically equivalent")
+        XCTAssertNotEqual(Data(composed.utf8), Data(decomposed.utf8))
+        let distinct = ScheduleEngine.evaluate(input(now: now, windows: [
+            window(id: composed, kind: .schoolMode, appScope: .all),
+            window(id: decomposed, kind: .schoolMode, appScope: .all),
+        ]))
+        XCTAssertNotEqual(distinct.kind, .invalidConfig)
+        XCTAssertFalse(distinct.configErrors.contains("duplicate window id"))
     }
 
     func testDSTTransitionShiftsWhichInstantMapsToAFixedLocalBedtimeHour() {

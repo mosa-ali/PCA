@@ -31,6 +31,12 @@ class OrdinaryTrustSetRuntime private constructor(
         advanced > 0 || (hadPending && store.read()?.pending == null)
     }
 
+    /** Reports whether exact-request custody still needs a later status/retry attempt. */
+    suspend fun hasPendingRequest(): Boolean = flight.withLock {
+        requireCurrentRoot()
+        store.read()?.pending != null
+    }
+
     /** Product actions may submit through this root-bound call point; unknown outcomes stay pending. */
     suspend fun prepareAndSubmit(candidate: UntrustedTrustSetEpoch): Boolean = flight.withLock {
         requireCurrentRoot()

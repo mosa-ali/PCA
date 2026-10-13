@@ -1,6 +1,7 @@
 package org.pca.app.runtime.trustset
 
 import java.util.Base64
+import java.util.WeakHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
@@ -37,10 +38,26 @@ data class OrdinaryEpochState(
     val acceptedBase: AcceptedEpochRecord? = null,
 )
 interface OrdinaryEpochStore {
+    /** Stable identity shared by every wrapper over the same persisted floor. */
+    val coordinationIdentity: Any get() = this
+
     /** Present corrupt state must throw; absence must never be inferred from decoding failure. */
     fun read(): OrdinaryEpochState?
     fun compareAndSetDurably(expected: OrdinaryEpochState?, next: OrdinaryEpochState): Boolean
     fun confirmDurable(expected: OrdinaryEpochState): Boolean
+}
+
+/**
+ * Coordinator instances for one durable store must serialize before signing, not only at the
+ * final CAS. A CAS alone can prevent two requests from being persisted while still allowing two
+ * concurrent DSK signature operations for the same floor.
+ */
+private object OrdinaryEpochCoordinatorLocks {
+    private val locks = WeakHashMap<Any, Mutex>()
+
+    fun forIdentity(identity: Any): Mutex = synchronized(locks) {
+        locks.getOrPut(identity) { Mutex() }
+    }
 }
 
 /** Enforce the ordinary-submit contract before DSK signing or durable pending custody. */
@@ -57,7 +74,7 @@ internal fun signOrdinaryEpochRequestBytes(
 class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private val api: OrdinaryTrustSetApi,
     private val signer: DskSignatureEngine, private val verifier: OrdinaryEpochSignatureVerifier,
     private val localDeviceId: String, private val localSigningKeyId: String, private val signingAlias: String) {
-    private val flight = Mutex()
+    private val flight = OrdinaryEpochCoordinatorLocks.forIdentity(store.coordinationIdentity)
 
     suspend fun prepare(candidate: UntrustedTrustSetEpoch): Boolean = flight.withLock {
         val current = store.read() ?: return@withLock false
@@ -348,6 +365,15 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
                 require(base.familyId == root.familyId && base.trustSetEpoch >= root.trustSetEpoch &&
                     base.trustSetEpoch < accepted.trustSetEpoch && base.keyEpoch >= root.keyEpoch &&
                     accepted.keyEpoch >= base.keyEpoch && accepted.supersedesEpoch == base.trustSetEpoch)
+                // Every ordinary epoch keeps the bootstrap Owner. Verify the retained base
+                // from that root key before allowing it to authenticate the current floor.
+                require(sameOwner(baseOwner, rootOwner))
+                require(baseRecord.signerDeviceId == rootOwner.deviceId &&
+                    baseRecord.signerKeyId == rootOwner.dskKeyId)
+                if (base.trustSetEpoch == root.trustSetEpoch) require(baseRecord == rootRecord)
+                require(verifier.verify(rootOwner.dskPublicKey, canonicalBytes(baseRecord.request),
+                    baseRecord.request.signatureBase64))
+                require(sameOwner(baseOwner, owner(accepted)))
                 require(state.accepted.signerDeviceId == baseOwner.deviceId && state.accepted.signerKeyId == baseOwner.dskKeyId)
                 require(verifier.verify(baseOwner.dskPublicKey, canonicalBytes(state.accepted.request),
                     state.accepted.request.signatureBase64))
@@ -433,14 +459,17 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
     private fun owner(epoch: UntrustedTrustSetEpoch): UntrustedTrustSetEntry =
         epoch.entries.single { it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE }
 
+    private fun sameOwner(first: UntrustedTrustSetEntry, second: UntrustedTrustSetEntry): Boolean =
+        first.deviceId == second.deviceId && first.dskKeyId == second.dskKeyId &&
+            first.dskPublicKey == second.dskPublicKey
+
     private fun validateTransition(prior: UntrustedTrustSetEpoch, next: UntrustedTrustSetEpoch) {
         require(next.familyId == prior.familyId && next.trustSetEpoch > prior.trustSetEpoch)
         require(prior.keyEpoch >= 1 && next.keyEpoch >= prior.keyEpoch &&
             next.supersedesEpoch == prior.trustSetEpoch)
-        // The previous accepted Owner signs this transition. That signature may transfer
-        // OWNER to a different device; the new Owner becomes the signer only on the next hop.
-        owner(prior)
-        owner(next)
+        // Ordinary transport is same-owner only. Owner transfer remains unavailable until a
+        // separate reviewed protocol is implemented and accepted by the server.
+        require(sameOwner(owner(prior), owner(next))) { "ordinary_trust_set_owner_transfer_unavailable" }
         require(next.entries.map { it.deviceId }.distinct().size == next.entries.size)
         require(next.entries.flatMap { listOf(it.dskKeyId, it.dekKeyId) }.distinct().size == next.entries.size * 2)
         require(next.entries.flatMap { listOf(it.dskPublicKey, it.dekPublicKey) }.distinct().size == next.entries.size * 2)

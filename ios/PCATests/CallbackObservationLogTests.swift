@@ -214,6 +214,46 @@ final class CallbackObservationLogTests: XCTestCase {
         XCTAssertEqual(recovered.map(\.activityId), [activeMonitor])
     }
 
+    func testPersistedCallbackLogAcceptsEndOfYear9999AndRejectsOutsideRange() throws {
+        let suite = "org.pca.tests.callback.date-boundary.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let activeMonitor = "pca-monitor-33333333-3333-4333-8333-333333333333"
+        try seedActiveInstallation(defaults, monitorActivityId: activeMonitor)
+        let log = try AppGroupCallbackObservationLog(appGroupIdentifier: suite,
+            installationReader: { defaults.data(forKey: deviceActivityMonitorInstallationStorageKey) })
+        let lastMillisecondOfYear9999 = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds - 0.001)
+        let outside = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds)
+
+        XCTAssertTrue(DeviceActivityBoundaryTrigger.absolute(utc: lastMillisecondOfYear9999).isValid)
+        log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: lastMillisecondOfYear9999)
+        XCTAssertEqual(log.readAll().map(\.observedAtUtc), [lastMillisecondOfYear9999])
+
+        log.record(kind: .intervalDidEnd, activityId: activeMonitor, at: outside)
+        XCTAssertEqual(log.readAll().map(\.observedAtUtc), [lastMillisecondOfYear9999],
+            "out-of-range callback timestamps must not enter durable health evidence")
+    }
+
+    func testPersistedInstallationUsesSameTimestampRangeAsCallbackEvidence() throws {
+        func encodedInstallation(installedAt: Date) throws -> Data {
+            try JSONEncoder().encode(DeviceActivityMonitorInstallation(
+                policyActivityId: "policy",
+                monitorActivityId: "pca-monitor-33333333-3333-4333-8333-333333333333",
+                generation: "22222222-2222-4222-8222-222222222222",
+                installedAtUtc: installedAt,
+                timeZoneIdentifier: "UTC",
+                state: .active
+            ))
+        }
+        let latestSupported = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds - 0.001)
+        let unsupported = Date(timeIntervalSince1970: DeviceActivityTimestamp.maximumExclusiveUnixSeconds)
+
+        XCTAssertNotNil(DeviceActivityMonitorInstallation.decodeValidated(
+            try encodedInstallation(installedAt: latestSupported)))
+        XCTAssertNil(DeviceActivityMonitorInstallation.decodeValidated(
+            try encodedInstallation(installedAt: unsupported)))
+    }
+
     private func seedActiveInstallation(_ defaults: UserDefaults, monitorActivityId: String) throws {
         let installation = DeviceActivityMonitorInstallation(
             policyActivityId: "callback-log-test-policy",

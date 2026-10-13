@@ -13,8 +13,8 @@ sealed class RecipientBinding {
 }
 
 data class FamilyEnvelope(
-    val protocolMajor: Int,
-    val protocolMinor: Int,
+    val protocolMajor: Long,
+    val protocolMinor: Long,
     val messageId: String,
     val familyId: String,
     val senderDeviceId: String,
@@ -58,8 +58,8 @@ data class FamilyEnvelope(
     }
 
     override fun hashCode(): Int {
-        var result = protocolMajor
-        result = 31 * result + protocolMinor
+        var result = protocolMajor.hashCode()
+        result = 31 * result + protocolMinor.hashCode()
         result = 31 * result + messageId.hashCode()
         result = 31 * result + familyId.hashCode()
         result = 31 * result + senderDeviceId.hashCode()

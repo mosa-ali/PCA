@@ -84,8 +84,8 @@ export class DeviceSessionService {
     }
   }
 
-  /** Verifies proof of possession via DeviceAuthService, then mints a session pinned to that exact DSK. Failures collapse to UNAUTHORIZED. */
-  async completeChallenge(challengeId: string, signature: string): Promise<IssuedDeviceSession> {
+  /** Verifies proof of possession, binds the verified challenge device to the request path, then mints a session pinned to that exact DSK. Failures collapse to UNAUTHORIZED. */
+  async completeChallenge(expectedDeviceId: string, challengeId: string, signature: string): Promise<IssuedDeviceSession> {
     let identity: VerifiedDeviceIdentity;
     try {
       identity = await this.deviceAuthService.verifyChallenge(challengeId, signature);
@@ -93,6 +93,10 @@ export class DeviceSessionService {
       if (error instanceof DeviceAuthError) throw new RuntimeSyncAuthError('UNAUTHORIZED');
       throw error;
     }
+    // The session route is device-scoped. Never let a challenge issued for
+    // one device mint a bearer through another device's URL, even though the
+    // token itself remains bound to the signer returned by DeviceAuthService.
+    if (identity.deviceId !== expectedDeviceId) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const familySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(identity);
     if (familySessionEpoch === null) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');

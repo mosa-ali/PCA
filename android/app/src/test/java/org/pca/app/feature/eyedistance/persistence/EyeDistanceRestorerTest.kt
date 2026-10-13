@@ -42,6 +42,62 @@ class EyeDistanceRestorerTest {
     }
 
     @Test
+    fun `over-duration persisted REST_ACTIVE counter cannot turn restart downtime into completed rest`() {
+        val snapshot = EyeDistanceSnapshot(
+            state = EyeDistanceState(
+                phase = EyeDistancePhase.REST_ACTIVE,
+                restElapsedNanos = config.restDurationNanos + 1L,
+                lastTickMonotonicNanos = 100L,
+            ),
+            snapshotWallClockMillis = 0L,
+            bootId = "boot-1",
+        )
+        val nowNanos = 100L + 2 * config.restDurationNanos
+
+        val restored = EyeDistanceRestorer.restoreAfterProcessRestart(snapshot, nowNanos, config)
+
+        assertEquals(EyeDistancePhase.REST_ACTIVE, restored.phase)
+        assertEquals(0L, restored.restElapsedNanos)
+        assertEquals(nowNanos, restored.lastTickMonotonicNanos)
+    }
+
+    @Test
+    fun `exact rest-duration boundary keeps engine completion behavior`() {
+        val snapshot = EyeDistanceSnapshot(
+            state = EyeDistanceState(
+                phase = EyeDistancePhase.REST_ACTIVE,
+                restElapsedNanos = config.restDurationNanos,
+                lastTickMonotonicNanos = 100L,
+            ),
+            snapshotWallClockMillis = 0L,
+            bootId = "boot-1",
+        )
+
+        val restored = EyeDistanceRestorer.restoreAfterProcessRestart(snapshot, 100L, config)
+
+        assertEquals(EyeDistancePhase.RECOVERY, restored.phase)
+    }
+
+    @Test
+    fun `over-duration persisted REST_ACTIVE counter on reboot starts a fresh rest`() {
+        val snapshot = EyeDistanceSnapshot(
+            state = EyeDistanceState(
+                phase = EyeDistancePhase.REST_ACTIVE,
+                restElapsedNanos = config.restDurationNanos + 1L,
+                lastTickMonotonicNanos = config.restDurationNanos,
+            ),
+            snapshotWallClockMillis = 0L,
+            bootId = "boot-1",
+        )
+
+        val restored = EyeDistanceRestorer.restoreAfterReboot(snapshot, 50L, config)
+
+        assertEquals(EyeDistancePhase.REST_ACTIVE, restored.phase)
+        assertEquals(0L, restored.restElapsedNanos)
+        assertEquals(50L, restored.lastTickMonotonicNanos)
+    }
+
+    @Test
     fun `process restart during speculative SUSPECTED_NEAR resets to a clean MONITORING baseline`() {
         val snapshot = EyeDistanceSnapshot(
             state = EyeDistanceState(phase = EyeDistancePhase.SUSPECTED_NEAR, nearElapsedNanos = 5.seconds.inWholeNanoseconds, lastTickMonotonicNanos = 100L),

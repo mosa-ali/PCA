@@ -59,6 +59,8 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'pairing.NOT_FOUND': 'Pairing request was not found.',
   'pairing.INVALID_STATE': 'Pairing request is not in a state that permits this operation.',
   'pairing.SELF_APPROVAL_DENIED': 'This account registered this endpoint and cannot also confirm it.',
+  'pairing.FINGERPRINT_MISMATCH': 'The device key fingerprints changed; refresh the pairing request.',
+  'pairing.INVALID_FINGERPRINT': 'The displayed device key fingerprints are required.',
 
   // deviceauth/DeviceAuthService.ts DEVICE_AUTH_ERROR_MESSAGES
   'deviceAuth.DEVICE_NOT_FOUND': 'Device was not found.',
@@ -76,6 +78,8 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'device.KEY_NOT_FOUND': 'Device key was not found.',
   'device.INVALID_STATE': 'Device is not in a state that permits this operation.',
   'device.SELF_APPROVAL_DENIED': 'This account registered this endpoint and cannot also confirm it.',
+  'device.FINGERPRINT_MISMATCH': 'The device key fingerprints changed; refresh the pairing request.',
+  'device.INVALID_FINGERPRINT': 'The displayed device key fingerprints are required.',
 
   // recovery/RecoveryService.ts RECOVERY_ERROR_MESSAGES
   'recovery.INVALID_INPUT': 'Recovery envelope input is malformed.',

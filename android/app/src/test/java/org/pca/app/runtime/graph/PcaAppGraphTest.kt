@@ -6,11 +6,16 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -25,6 +30,7 @@ import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.engine.ScreenTimeState
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
+import org.pca.app.feature.screentime.persistence.PersistentUsedAuthorizationStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
 import org.pca.app.feature.wellbeing.model.NudgeFeedbackType
 import org.pca.app.feature.wellbeing.ui.WellbeingCardActivity
@@ -55,6 +61,37 @@ class PcaAppGraphTest {
     @After
     fun tearDown() {
         PcaAppGraph.resetForTest()
+    }
+
+    @Test
+    fun `ordinary Trust Set runtime initialization exception stays optional and retryable`() {
+        assertNull(
+            createOrdinaryTrustSetRuntimeOrNull {
+                throw IllegalStateException("ordinary initialization failure")
+            },
+        )
+    }
+
+    @Test
+    fun `Trust Set runtime initialization cancellation propagates`() {
+        val cancelled = CancellationException("runtime initialization cancelled")
+        try {
+            createOrdinaryTrustSetRuntimeOrNull<Any> { throw cancelled }
+            fail("expected initialization cancellation to propagate")
+        } catch (actual: CancellationException) {
+            assertSame(cancelled, actual)
+        }
+    }
+
+    @Test
+    fun `fatal JVM error during Trust Set runtime initialization propagates`() {
+        val fatal = LinkageError("runtime initialization linkage failure")
+        try {
+            createOrdinaryTrustSetRuntimeOrNull<Any> { throw fatal }
+            fail("expected fatal initialization error to propagate")
+        } catch (actual: LinkageError) {
+            assertSame(fatal, actual)
+        }
     }
 
     @Test
@@ -118,6 +155,19 @@ class PcaAppGraphTest {
 
         assertNotSame(first, second)
         assertNotSame(first.runtime, second.runtime)
+    }
+
+    @Test
+    fun `graph binds durable authorization claims to the shared runtime state store`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val stateStore = InMemoryPersistentStateStore()
+
+        val first = PcaAppGraph.createForTest(context, stateStore = stateStore)
+        assertTrue(first.usedAuthorizationStore is PersistentUsedAuthorizationStore)
+        assertTrue(first.usedAuthorizationStore.claimAuthorization("graph-audit-replay"))
+
+        val reconstructedGraph = PcaAppGraph.createForTest(context, stateStore = stateStore)
+        assertFalse(reconstructedGraph.usedAuthorizationStore.claimAuthorization("graph-audit-replay"))
     }
 
     /** The production and test entry points share the same singleton holder; the test entry point
@@ -440,6 +490,95 @@ class PcaAppGraphTest {
         graph.runUsageLocationIngestionCycle()
         // Reaching this line without an uncaught exception, with Battery Saver active, is the
         // assertion -- see this test's own doc comment.
+    }
+
+    @Test
+    fun `usage ingestion cancellation propagates and skips later steps and critical work`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+        val cancelled = CancellationException("cycle stopped")
+        var laterNonCriticalStepRan = false
+        var criticalWorkRan = false
+
+        try {
+            org.pca.app.runtime.background.BatteryBudgetedCycleRunner.run(
+                shouldRunNonCritical = { true },
+                nonCriticalWork = {
+                    graph.runUsageLocationIngestionSteps(
+                        { throw cancelled },
+                        { laterNonCriticalStepRan = true },
+                    )
+                },
+                criticalWork = { criticalWorkRan = true },
+            )
+            throw AssertionError("expected usage-cycle cancellation to propagate")
+        } catch (actual: CancellationException) {
+            assertEquals("cycle stopped", actual.message)
+        }
+
+        assertFalse("later usage/location steps must not run after cancellation", laterNonCriticalStepRan)
+        assertFalse("critical stage must not resume work after cancellation", criticalWorkRan)
+    }
+
+    @Test
+    fun `usage ingestion isolates ordinary step failures but lets fatal errors propagate`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+        var afterOrdinaryFailureRan = false
+        graph.runUsageLocationIngestionSteps(
+            { throw IllegalStateException("ordinary monitor failure") },
+            { afterOrdinaryFailureRan = true },
+        )
+        assertTrue(afterOrdinaryFailureRan)
+
+        val fatal = LinkageError("fatal monitor failure")
+        var afterFatalRan = false
+        try {
+            graph.runUsageLocationIngestionSteps(
+                { throw fatal },
+                { afterFatalRan = true },
+            )
+            throw AssertionError("expected fatal error to propagate")
+        } catch (actual: LinkageError) {
+            assertEquals(fatal.message, actual.message)
+        }
+        assertFalse("later usage/location steps must not run after a fatal error", afterFatalRan)
+    }
+
+    @Test
+    fun `custody sync cancellation and fatal errors stop the retry delay while ordinary failures still retry`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+        var pauseCount = 0
+        val cancelled = CancellationException("custody loop cancelled")
+        try {
+            graph.runRuntimeCustodySyncIteration(
+                synchronize = { throw cancelled },
+                pause = { pauseCount++ },
+            )
+            throw AssertionError("expected custody loop cancellation to propagate")
+        } catch (actual: CancellationException) {
+            assertEquals("custody loop cancelled", actual.message)
+        }
+        assertEquals("cancellation must not enter the next polling delay", 0, pauseCount)
+
+        graph.runRuntimeCustodySyncIteration(
+            synchronize = { throw IllegalStateException("temporary custody sync failure") },
+            pause = { pauseCount++ },
+        )
+        assertEquals("ordinary failures retain the periodic retry behavior", 1, pauseCount)
+
+        val fatal = LinkageError("fatal custody sync error")
+        try {
+            graph.runRuntimeCustodySyncIteration(
+                synchronize = { throw fatal },
+                pause = { pauseCount++ },
+            )
+            throw AssertionError("expected fatal custody error to propagate")
+        } catch (actual: LinkageError) {
+            assertEquals(fatal.message, actual.message)
+        }
+        assertEquals("fatal errors must not enter the retry delay", 1, pauseCount)
     }
 
     private companion object {

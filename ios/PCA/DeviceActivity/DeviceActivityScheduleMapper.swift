@@ -16,12 +16,20 @@ public enum DeviceActivityBoundaryPlanError: Error, Equatable {
 }
 
 public enum DeviceActivityScheduleMapper {
+    /// Matches ScheduleEngine's inclusive JavaScript Date instant range so
+    /// the technical callback plan cannot accept a clock value that the
+    /// policy evaluator itself rejects.
+    private static let maximumPolicyDateSeconds = 8_640_000_000_000.0
+
     /// Apple supports twenty activities app-wide. Reserve one for the host
     /// monitor; reject the complete plan rather than silently dropping edges.
     public static let maximumMonitoredActivities = 20
 
     public static func boundaryTriggers(for policy: DecodedSchedulePolicy, now: Date) throws -> [DeviceActivityBoundaryTrigger] {
-        guard now.timeIntervalSince1970.isFinite else { throw DeviceActivityBoundaryPlanError.malformedBoundary }
+        let nowSeconds = now.timeIntervalSince1970
+        guard nowSeconds.isFinite, abs(nowSeconds) <= maximumPolicyDateSeconds else {
+            throw DeviceActivityBoundaryPlanError.malformedBoundary
+        }
         var triggers = Set<DeviceActivityBoundaryTrigger>()
         for window in policy.windows {
             guard ScheduleEngine.validate(window).isEmpty else { throw DeviceActivityBoundaryPlanError.malformedBoundary }

@@ -49,6 +49,31 @@ test('free text is truncated to MAX_AUDIT_NOTE_LENGTH', async () => {
   assert.equal(record.freeTextNote.length, MAX_AUDIT_NOTE_LENGTH);
 });
 
+test('free text sanitization removes control and bidi formatting characters while preserving ordinary Unicode', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo);
+  const note = '  alpha\u0000\n\tbeta\u202Egamma\u2069 مرحبا\u200D  ';
+  const record = await service.record(baseInput({ freeTextNote: note }));
+  assert.equal(record.freeTextNote, 'alpha beta gamma مرحبا\u200D');
+  assert.doesNotMatch(record.freeTextNote, /[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/u);
+});
+
+test('free text that contains only whitespace and removed formatting controls becomes null', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo);
+  const record = await service.record(baseInput({ freeTextNote: ' \u0000\n\u202E\u2069 ' }));
+  assert.equal(record.freeTextNote, null);
+});
+
+test('free text truncation does not split a supplementary Unicode character', async () => {
+  const repo = new InMemoryFamilyAuditRepository();
+  const service = new FamilyAuditService(repo);
+  const note = `${'x'.repeat(MAX_AUDIT_NOTE_LENGTH - 1)}😀`;
+  const record = await service.record(baseInput({ freeTextNote: note }));
+  assert.equal(record.freeTextNote, 'x'.repeat(MAX_AUDIT_NOTE_LENGTH - 1));
+  assert.equal(record.freeTextNote.length, MAX_AUDIT_NOTE_LENGTH - 1);
+});
+
 test('an absent free text note is stored as null, not an empty string', async () => {
   const repo = new InMemoryFamilyAuditRepository();
   const service = new FamilyAuditService(repo);

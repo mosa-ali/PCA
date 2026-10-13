@@ -186,6 +186,40 @@ test('invalid authorization clock fails closed before expiry or step-up comparis
   assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTION_EXPIRED' });
 });
 
+test('audit append failures log bounded metadata only and cannot change the authorization result', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch(epoch());
+  const resolver = new FamilyTrustSetRoleResolver(store);
+  const ledger = new InMemoryActionIdempotencyLedger();
+  const auditService = { async record() { throw new Error('private SQL parameters and request data'); } };
+  const service = new ParentActionAuthorizationService(
+    resolver, defaultFamilyRbacPolicyConfig, ledger, () => T0, undefined, auditService,
+  );
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    for (let index = 0; index < 101; index += 1) {
+      const decision = await service.authorize(baseRequest({
+        actorDeviceId: 'dev-viewer',
+        operation: 'EDIT_CHILD_POLICY',
+        idempotencyKey: `audit-failure-${index}`,
+        actionId: `private-action-${index}`,
+      }));
+      assert.deepEqual(decision, { verdict: 'DENY', reason: 'ROLE_NOT_PERMITTED' });
+    }
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(warnings.length, 2, 'only the first and every 100th repeated failure are logged');
+    assert.deepEqual(warnings.map(message => JSON.parse(message)), [
+      { event: 'parent_action_audit_append_failed', occurrences: 1 },
+      { event: 'parent_action_audit_append_failed', occurrences: 100 },
+    ]);
+    assert.equal(warnings.some(message => message.includes('private SQL') || message.includes('private-action')), false);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('replayed action succeeds idempotently with the SAME recorded outcome, not a fresh re-evaluation', async () => {
   const { store, service } = makeService();
   const request = baseRequest({ operation: 'EDIT_CHILD_POLICY', idempotencyKey: 'idem-12', actionId: 'act-12' });

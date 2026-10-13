@@ -2,6 +2,7 @@ package org.pca.app.firstdevice
 
 import java.util.Date
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -109,8 +110,13 @@ class FirstDeviceTrustRootCoordinatorTest {
     private class FakeEngine : DskSignatureEngine {
         var signCalls = 0
         var throwMissing = false
+        var throwCancellation = false
+        var throwCancellationOnSignCall: Int? = null
         override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
             signCalls++
+            if (throwCancellation || throwCancellationOnSignCall == signCalls) {
+                throw CancellationException("test: signing cancelled")
+            }
             if (throwMissing) throw KeyMaterialMissingException("test: no key")
             return ByteArray(64) { (alias.length + message.size + it).toByte() }
         }
@@ -119,9 +125,11 @@ class FirstDeviceTrustRootCoordinatorTest {
     private class FakeEvidenceSource : DeviceKeyAttestationEvidenceSource {
         var chainCalls = 0
         var throwMissing = false
+        var throwCancellation = false
         var emptyChain = false
         override fun certificateChainDer(alias: String): List<ByteArray> {
             chainCalls++
+            if (throwCancellation) throw CancellationException("test: evidence retrieval cancelled")
             if (throwMissing) throw KeyMaterialMissingException("test: no chain")
             if (emptyChain) return emptyList()
             return listOf(byteArrayOf(1, 2, 3), byteArrayOf(4, 5))
@@ -413,6 +421,127 @@ class FirstDeviceTrustRootCoordinatorTest {
         assertEquals(0, rig.api.submitCalls.size)
         assertEquals(0, rig.engine.signCalls)
         assertNull(rig.store.current()!!.submission)
+    }
+
+    @Test
+    fun `cancellation during evidence retrieval propagates and leaves the approved ceremony unchanged`() = runTest {
+        val rig = Rig().withApproved()
+        rig.evidence.throwCancellation = true
+
+        var propagated = false
+        try {
+            rig.coordinator.submit()
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+
+        assertTrue(propagated)
+        assertEquals(FirstDeviceRootState.APPROVED, rig.store.current()!!.state)
+        assertNull(rig.store.current()!!.submission)
+        assertEquals(0, rig.engine.signCalls)
+        assertTrue(rig.api.submitCalls.isEmpty())
+        assertEquals(1, rig.store.saves) // only the initial approved fixture write
+    }
+
+    @Test
+    fun `cancellation during DSK signing propagates and leaves no submission persisted`() = runTest {
+        val rig = Rig().withApproved()
+        rig.engine.throwCancellation = true
+
+        var propagated = false
+        try {
+            rig.coordinator.submit()
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+
+        assertTrue(propagated)
+        assertEquals(FirstDeviceRootState.APPROVED, rig.store.current()!!.state)
+        assertNull(rig.store.current()!!.submission)
+        assertEquals(1, rig.engine.signCalls)
+        assertTrue(rig.api.submitCalls.isEmpty())
+        assertEquals(1, rig.store.saves)
+    }
+
+    @Test
+    fun `cancellation during proof signing propagates after epoch signature without persisting or sending partial payload`() = runTest {
+        val rig = Rig().withApproved()
+        rig.engine.throwCancellationOnSignCall = 2
+
+        var propagated = false
+        try {
+            rig.coordinator.submit()
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+
+        assertTrue(propagated)
+        assertEquals(2, rig.engine.signCalls)
+        assertEquals(1, rig.evidence.chainCalls)
+        assertEquals(FirstDeviceRootState.APPROVED, rig.store.current()!!.state)
+        assertNull(rig.store.current()!!.submission)
+        assertTrue(rig.api.submitCalls.isEmpty())
+        assertEquals(1, rig.store.saves) // only the initial approved fixture write
+    }
+
+    @Test
+    fun `submit cancellation preserves durable signed bytes for exact restart-safe retry`() = runTest {
+        val rig = Rig()
+        val backing = org.pca.app.foundation.InMemoryPersistentStateStore()
+        val firstStore = PersistentFirstDeviceRootStore(backing)
+        val approved = FirstDeviceRootRecord(
+            seed = rig.seed,
+            state = FirstDeviceRootState.APPROVED,
+            ceremonyId = "ceremony-1",
+            challengeId = "challenge-1",
+            nonce = "n".repeat(43),
+            expiresAt = "2026-10-02T01:00:00.000Z",
+            familyId = "family-1",
+        )
+        assertTrue(firstStore.writeIfCurrent(expected = null, record = approved))
+        rig.api.submitOutcome = { throw CancellationException("test: request cancelled after send") }
+        val firstCoordinator = FirstDeviceTrustRootCoordinator(
+            rootStore = firstStore,
+            apiClient = rig.api,
+            signatureEngine = rig.engine,
+            evidenceSource = rig.evidence,
+            now = { Date(1790899200123L) },
+        )
+
+        var propagated = false
+        try {
+            firstCoordinator.submit()
+        } catch (_: CancellationException) {
+            propagated = true
+        }
+
+        assertTrue(propagated)
+        assertEquals(FirstDeviceRootState.SUBMITTING, firstStore.current()!!.state)
+        val persisted = firstStore.current()!!.submission
+        assertNotNull(persisted)
+        assertEquals(2, rig.engine.signCalls)
+        assertEquals(1, rig.api.submitCalls.size)
+
+        // Simulate app/process recreation: reconstruct both wrappers from the
+        // same durable backing and retry only the bytes written before send.
+        val restartedStore = PersistentFirstDeviceRootStore(backing)
+        val restartedCoordinator = FirstDeviceTrustRootCoordinator(
+            rootStore = restartedStore,
+            apiClient = rig.api,
+            signatureEngine = rig.engine,
+            evidenceSource = rig.evidence,
+            now = { Date(1790899200123L) },
+        )
+        assertEquals(persisted, restartedStore.current()!!.submission)
+        rig.api.submitOutcome = { FirstDeviceSubmitOutcome("ACCEPTED") }
+        restartedCoordinator.resubmitExact()
+
+        assertEquals(FirstDeviceRootState.ROOT_COMMITTED, restartedStore.current()!!.state)
+        assertEquals(2, rig.api.submitCalls.size)
+        for (field in listOf("proofBytes", "proofSignature", "epoch1Bytes", "epoch1Signature", "attestationEvidence")) {
+            assertEquals(rig.api.submitCalls[0][field], rig.api.submitCalls[1][field])
+        }
+        assertEquals(2, rig.engine.signCalls)
     }
 
     @Test

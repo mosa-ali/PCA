@@ -16,6 +16,12 @@ final class IosAppAttestAdapterTests: XCTestCase {
     private struct EnvelopeDecodingError: Error {}
 
     private final class FakeAppAttestService: IosAppAttestServing {
+        enum Stage: Equatable {
+            case generateKey
+            case attestKey
+            case generateAssertion
+        }
+
         var isSupported = true
         var appleKeyId: String = {
             let keyBytes = Data([0xFB, 0xFF]) + Data(repeating: 0x11, count: 30)
@@ -29,9 +35,26 @@ final class IosAppAttestAdapterTests: XCTestCase {
         private(set) var attestationClientDataHashes: [Data] = []
         private(set) var assertionClientDataHashes: [Data] = []
         private(set) var requestedKeyIds: [String] = []
+        var suspendedStage: Stage?
+        var onStageEntered: ((Stage) -> Void)?
+        private var stageContinuation: CheckedContinuation<Void, Never>?
+
+        func releaseSuspendedStage() {
+            stageContinuation?.resume()
+            stageContinuation = nil
+        }
+
+        private func suspendIfNeeded(_ stage: Stage) async {
+            guard suspendedStage == stage else { return }
+            await withCheckedContinuation { continuation in
+                stageContinuation = continuation
+                onStageEntered?(stage)
+            }
+        }
 
         func generateKey() async throws -> String {
             if let generateKeyError { throw generateKeyError }
+            await suspendIfNeeded(.generateKey)
             return appleKeyId
         }
 
@@ -39,6 +62,7 @@ final class IosAppAttestAdapterTests: XCTestCase {
             requestedKeyIds.append(keyId)
             attestationClientDataHashes.append(clientDataHash)
             if let attestationError { throw attestationError }
+            await suspendIfNeeded(.attestKey)
             return attestationData
         }
 
@@ -46,6 +70,7 @@ final class IosAppAttestAdapterTests: XCTestCase {
             requestedKeyIds.append(keyId)
             assertionClientDataHashes.append(clientDataHash)
             if let assertionError { throw assertionError }
+            await suspendIfNeeded(.generateAssertion)
             return assertionData
         }
     }
@@ -120,6 +145,111 @@ final class IosAppAttestAdapterTests: XCTestCase {
             XCTFail("expected assertionFailed")
         } catch {
             XCTAssertEqual(error as? IosAppAttestError, .assertionFailed)
+        }
+    }
+
+    func testEmptyPlatformArtifactsFailClosedWithoutBuildingEvidenceEnvelope() async {
+        let attestationService = FakeAppAttestService()
+        attestationService.attestationData = Data()
+        let attestationAdapter = IosAppAttestAdapter(service: attestationService)
+        do {
+            _ = try await attestationAdapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            XCTFail("an empty attestation artifact must not be packaged or submitted")
+        } catch {
+            XCTAssertEqual(error as? IosAppAttestError, .attestationFailed)
+        }
+        XCTAssertTrue(attestationService.assertionClientDataHashes.isEmpty,
+            "assertion generation must not continue after an empty attestation")
+
+        let assertionService = FakeAppAttestService()
+        assertionService.assertionData = Data()
+        let assertionAdapter = IosAppAttestAdapter(service: assertionService)
+        do {
+            _ = try await assertionAdapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            XCTFail("an empty assertion artifact must not be packaged or submitted")
+        } catch {
+            XCTAssertEqual(error as? IosAppAttestError, .assertionFailed)
+        }
+    }
+
+    func testCancellationPropagatesFromEveryAppAttestStage() async {
+        let keyService = FakeAppAttestService()
+        keyService.generateKeyError = CancellationError()
+        let keyAdapter = IosAppAttestAdapter(service: keyService)
+        do {
+            _ = try await keyAdapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            XCTFail("key-generation cancellation must propagate")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        XCTAssertTrue(keyService.requestedKeyIds.isEmpty, "later App Attest stages must not run after key-generation cancellation")
+
+        let attestationService = FakeAppAttestService()
+        attestationService.attestationError = CancellationError()
+        let attestationAdapter = IosAppAttestAdapter(service: attestationService)
+        do {
+            _ = try await attestationAdapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            XCTFail("attestation cancellation must propagate")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        XCTAssertEqual(attestationService.attestationClientDataHashes.count, 1)
+        XCTAssertTrue(attestationService.assertionClientDataHashes.isEmpty, "assertion must not run after attestation cancellation")
+
+        let assertionService = FakeAppAttestService()
+        assertionService.assertionError = CancellationError()
+        let assertionAdapter = IosAppAttestAdapter(service: assertionService)
+        do {
+            _ = try await assertionAdapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            XCTFail("assertion cancellation must propagate")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        XCTAssertEqual(assertionService.attestationClientDataHashes.count, 1)
+        XCTAssertEqual(assertionService.assertionClientDataHashes.count, 1)
+    }
+
+    func testCancellationDuringSuccessfulAppAttestStageStopsLaterWork() async {
+        for stage in [FakeAppAttestService.Stage.generateKey, .attestKey, .generateAssertion] {
+            let service = FakeAppAttestService()
+            service.suspendedStage = stage
+            let entered = expectation(description: "entered \(stage)")
+            service.onStageEntered = { observed in
+                if observed == stage { entered.fulfill() }
+            }
+            let adapter = IosAppAttestAdapter(service: service)
+            let operation = Task {
+                try await adapter.buildEvidence(transcript: "t", dskKeyId: "d", dskPublicKeyBase64: "p")
+            }
+
+            await fulfillment(of: [entered], timeout: 2)
+            operation.cancel()
+            service.releaseSuspendedStage()
+
+            do {
+                _ = try await operation.value
+                XCTFail("cancellation during successful \(stage) must stop evidence construction")
+            } catch is CancellationError {
+            } catch {
+                XCTFail("expected CancellationError for \(stage), got \(error)")
+            }
+
+            switch stage {
+            case .generateKey:
+                XCTAssertTrue(service.attestationClientDataHashes.isEmpty,
+                    "attestation must not start after cancellation during key generation")
+                XCTAssertTrue(service.assertionClientDataHashes.isEmpty)
+            case .attestKey:
+                XCTAssertEqual(service.attestationClientDataHashes.count, 1)
+                XCTAssertTrue(service.assertionClientDataHashes.isEmpty,
+                    "assertion must not start after cancellation during attestation")
+            case .generateAssertion:
+                XCTAssertEqual(service.attestationClientDataHashes.count, 1)
+                XCTAssertEqual(service.assertionClientDataHashes.count, 1)
+            }
         }
     }
 

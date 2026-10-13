@@ -4,6 +4,7 @@ import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/boun
 import { isPlausibleOpaqueId, isPlausibleSignature, MIN_TRUST_SET_EPOCH } from './policy.js';
 import {
   TrustSetEpochStoreError,
+  isPersistableTrustSetDate,
   type AppendTrustSetEpochOutcome,
   type ExpectedTrustSetEpochHead,
   type TrustSetEpochRecord,
@@ -49,10 +50,6 @@ class AppendWithoutCommitError extends Error {
   }
 }
 
-function isValidDate(value: unknown): value is Date {
-  return value instanceof Date && !Number.isNaN(value.getTime());
-}
-
 function isBoundedNonEmptyString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }
@@ -93,12 +90,21 @@ function assertValidAppendRecord(record: TrustSetEpochRecord): void {
   if (!isBoundedNonEmptyString(record.signerDeviceId, MAX_SIGNER_ID_LENGTH)) {
     throw invalidInput(`signerDeviceId must be a non-empty string of at most ${MAX_SIGNER_ID_LENGTH} characters.`);
   }
-  if (!isValidDate(record.issuedAt)) {
-    throw invalidInput('issuedAt must be a valid Date.');
+  if (!isPersistableTrustSetDate(record.issuedAt)) {
+    throw invalidInput('issuedAt must be a valid MySQL DATETIME(3) Date (year 1000..9999).');
   }
-  if (!isValidDate(record.receivedAt)) {
-    throw invalidInput('receivedAt must be a valid Date.');
+  if (!isPersistableTrustSetDate(record.receivedAt)) {
+    throw invalidInput('receivedAt must be a valid MySQL DATETIME(3) Date (year 1000..9999).');
   }
+}
+
+function snapshotAppendRecord(record: TrustSetEpochRecord): TrustSetEpochRecord {
+  return {
+    ...record,
+    signedEpochBytes: Buffer.from(record.signedEpochBytes),
+    issuedAt: new Date(record.issuedAt.getTime()),
+    receivedAt: new Date(record.receivedAt.getTime()),
+  };
 }
 
 function snapshotExpectedHead(
@@ -259,6 +265,7 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     expectedHead: ExpectedTrustSetEpochHead | null,
   ): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
+    const recordSnapshot = snapshotAppendRecord(record);
     if (expectedHead === undefined) {
       throw new TrustSetEpochStoreError('expected head is required for an accepted epoch append');
     }
@@ -266,7 +273,7 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     const now = new Date();
     try {
       return await runInTransaction<AppendTrustSetEpochOutcome>((conn) =>
-        this.appendAcceptedEpochOnConnection(conn, record, now, headSnapshot, true, true),
+        this.appendAcceptedEpochOnConnection(conn, recordSnapshot, now, headSnapshot, true, true),
       );
     } catch (error) {
       if (error instanceof AppendWithoutCommitError) return error.appendOutcome;
@@ -288,10 +295,11 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
     now: Date = new Date(),
   ): Promise<AppendTrustSetEpochOutcome> {
     assertValidAppendRecord(record);
-    if (record.trustSetEpoch !== 1 || record.keyEpoch !== 1 || record.supersedesEpoch !== null) {
+    const recordSnapshot = snapshotAppendRecord(record);
+    if (recordSnapshot.trustSetEpoch !== 1 || recordSnapshot.keyEpoch !== 1 || recordSnapshot.supersedesEpoch !== null) {
       throw new TrustSetEpochStoreError('genesis append must be epoch 1/key epoch 1 with no predecessor');
     }
-    return this.appendAcceptedEpochOnConnection(conn, record, now, null, false, false);
+    return this.appendAcceptedEpochOnConnection(conn, recordSnapshot, new Date(now.getTime()), null, false, false);
   }
 
   private async appendAcceptedEpochOnConnection(

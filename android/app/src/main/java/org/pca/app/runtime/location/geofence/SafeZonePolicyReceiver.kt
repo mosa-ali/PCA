@@ -1,11 +1,14 @@
 package org.pca.app.runtime.location.geofence
 
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.runtime.EpochBounds
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /**
  * Opaque Safe Zone envelope as received from the family relay/storage path.
@@ -102,7 +105,7 @@ object SafeZonePolicyPayloadCodec {
         require(isValidToken(payload.familyId))
         require(isValidToken(payload.recipientEndpointId))
         require(isValidToken(payload.zoneId))
-        require(payload.revision > 0L)
+        require(payload.revision in 1L..MAX_REVISION)
         require(payload.keyEpoch > 0L && EpochBounds.isValid(payload.keyEpoch))
         val json = JSONObject()
             .put("familyId", payload.familyId)
@@ -122,7 +125,13 @@ object SafeZonePolicyPayloadCodec {
     /** Returns null for every malformed, over-broad, mismatched, or unsafe payload. */
     fun decode(plaintext: ByteArray, envelope: SafeZonePolicyEnvelope): SafeZonePolicyPayload? {
         val json = try {
-            JSONObject(String(plaintext, Charsets.UTF_8))
+            val source = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(plaintext))
+                .toString()
+            StrictJsonMemberNames.requireUnique(source)
+            JSONObject(source)
         } catch (_: Exception) {
             return null
         }
@@ -133,12 +142,12 @@ object SafeZonePolicyPayloadCodec {
         val recipientEndpointId = json.opt("recipientEndpointId") as? String ?: return null
         val zoneId = json.opt("zoneId") as? String ?: return null
         val revisionNumber = json.opt("revision") as? Number ?: return null
+        val revision = revisionNumber.toLong()
         val keyEpoch = try {
             EpochBounds.decodeJson(json, "keyEpoch").toLong()
         } catch (_: Exception) {
             return null
         }
-        val revision = revisionNumber.toLong()
         if (
             !isValidToken(familyId) ||
             !isValidToken(recipientEndpointId) ||
@@ -148,6 +157,7 @@ object SafeZonePolicyPayloadCodec {
             zoneId != envelope.zoneId ||
             revision != envelope.revision ||
             keyEpoch != envelope.keyEpoch ||
+            revision !in 1L..MAX_REVISION ||
             revisionNumber.toDouble() != revision.toDouble() ||
             keyEpoch <= 0L
         ) return null
@@ -192,6 +202,9 @@ object SafeZonePolicyPayloadCodec {
     }
 
     private fun isValidToken(value: String): Boolean = opaqueToken.matches(value)
+    // The repository stores this revision as MySQL INT UNSIGNED and the cross-platform delivery
+    // record exposes UInt32; preserve that shared bound at the local payload boundary.
+    private const val MAX_REVISION: Long = 4_294_967_295L
 }
 
 enum class SafeZoneFamilyRole { OWNER, ADMINISTRATOR, VIEWER, CHILD }
@@ -341,15 +354,18 @@ class SafeZonePolicyReceiver(
                     return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
                 }
                 if (!zoneStore.isCurrentScope(receiverScope)) return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
-                val current = zoneStore.loadZones(receiverScope).firstOrNull { it.zoneId == payload.zoneId }
-                if (current != null && payload.revision <= current.revision) {
+                // Keep monotonic policy metadata after deletion and process death. A zone row
+                // alone is not a sufficient replay guard because remove() intentionally drops it.
+                val revisionFloor = zoneStore.revisionFloor(receiverScope, payload.zoneId)
+                if (payload.revision <= revisionFloor) return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
+                if (candidate.keyEpoch < zoneStore.acceptedKeyEpochFloor(receiverScope)) {
                     return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
                 }
                 // A revision changes the meaning of the zone id. Clear the old
                 // baseline durably before replacing geometry, while a monitor
                 // tick cannot save state derived from the prior zone snapshot.
                 zoneStateStore.clear(receiverScope, payload.zoneId)
-                if (!zoneStore.addOrReplaceIfNewer(receiverScope, payload.zone)) {
+                if (!zoneStore.addOrReplaceIfNewer(receiverScope, payload.zone, candidate.keyEpoch)) {
                     return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
                 }
                 SafeZonePolicyReceiveResult.APPLIED
@@ -387,11 +403,19 @@ class SafeZonePolicyReceiver(
             token.matches(envelope.zoneId) &&
             envelope.trustSetEpoch > 0L && EpochBounds.isValid(envelope.trustSetEpoch) &&
             envelope.keyEpoch > 0L && EpochBounds.isValid(envelope.keyEpoch) &&
-            envelope.revision > 0L &&
-            envelope.ciphertext.isNotEmpty() &&
-            envelope.nonce.isNotEmpty() &&
+            envelope.revision in 1L..GeofenceZone.MAX_REVISION &&
+            envelope.ciphertext.size in 1..MAX_CIPHERTEXT_BYTES &&
+            envelope.nonce.size in MIN_NONCE_BYTES..MAX_NONCE_BYTES &&
             envelope.signature.isNotBlank() &&
             envelope.issuedAtEpochMillis >= 0L &&
             envelope.expiresAtEpochMillis > envelope.issuedAtEpochMillis
+    }
+
+    private companion object {
+        // Match the opaque Safe Zone storage and relay admission bounds. The receiver can also be
+        // invoked without the HTTP decoder, so it must enforce these before crypto work.
+        const val MAX_CIPHERTEXT_BYTES = 65_535
+        const val MIN_NONCE_BYTES = 12
+        const val MAX_NONCE_BYTES = 64
     }
 }

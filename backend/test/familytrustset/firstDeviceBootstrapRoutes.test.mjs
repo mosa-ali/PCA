@@ -174,10 +174,12 @@ test('challenge: bounded invalid bodies get 400; UNAVAILABLE collapses to one 40
       payload: { ...challengeBody(), attemptId: 'short' },
     });
     assert.equal(invalid.statusCode, 400);
+    assert.equal(invalid.headers['cache-control'], 'private, no-store');
     assert.equal(invalid.json().error, 'invalid_request');
 
     const notFound = await unavailable.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/challenge', payload: challengeBody() });
     assert.equal(notFound.statusCode, 404);
+    assert.equal(notFound.headers['cache-control'], 'private, no-store');
     assert.deepEqual(notFound.json(), { error: 'ceremony_unavailable' });
   } finally {
     await unavailable.app.close();
@@ -187,6 +189,7 @@ test('challenge: bounded invalid bodies get 400; UNAVAILABLE collapses to one 40
   try {
     const response = await success.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/challenge', payload: challengeBody() });
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     const body = response.json();
     assert.equal(body.status, 'PENDING');
     assert.equal(body.familyId, FAMILY);
@@ -208,6 +211,7 @@ test('every device route owns a rate-limit bucket: the 31st challenge request in
     }
     const throttled = await app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/challenge', payload: { ...challengeBody(), attemptId: 'short' } });
     assert.equal(throttled.statusCode, 429);
+    assert.equal(throttled.headers['cache-control'], 'private, no-store');
   } finally {
     await app.close();
   }
@@ -218,6 +222,7 @@ test('submit: ACCEPTED → 200, REJECTED → 409 bootstrap_rejected, UNAVAILABLE
   try {
     const response = await accepted.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/submit', payload: submitBody() });
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     assert.deepEqual(response.json(), { status: 'ACCEPTED' });
     assert.equal(accepted.serviceCalls.submit[0].attestationEvidence, null, 'JSON omission must pass an explicit null to the service');
   } finally {
@@ -228,6 +233,7 @@ test('submit: ACCEPTED → 200, REJECTED → 409 bootstrap_rejected, UNAVAILABLE
   try {
     const response = await rejected.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/submit', payload: submitBody() });
     assert.equal(response.statusCode, 409);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     assert.deepEqual(response.json(), { error: 'bootstrap_rejected' });
   } finally {
     await rejected.app.close();
@@ -237,10 +243,12 @@ test('submit: ACCEPTED → 200, REJECTED → 409 bootstrap_rejected, UNAVAILABLE
   try {
     const response = await unavailable.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/submit', payload: submitBody() });
     assert.equal(response.statusCode, 404);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     assert.deepEqual(response.json(), { error: 'ceremony_unavailable' });
 
     const invalid = await unavailable.app.inject({ method: 'POST', url: '/v1/first-device-bootstrap/submit', payload: { ...submitBody(), proofBytes: '' } });
     assert.equal(invalid.statusCode, 400);
+    assert.equal(invalid.headers['cache-control'], 'private, no-store');
   } finally {
     await unavailable.app.close();
   }
@@ -364,6 +372,7 @@ test('submit accepts the valid maximum-shaped request at the exact 320 KiB route
       payload: `${exactLimitBody} `,
     });
     assert.equal(overLimit.statusCode, 413, 'the route must reject the first byte beyond its 320 KiB body limit');
+    assert.equal(overLimit.headers['cache-control'], 'private, no-store');
     assert.equal(store.commitCalls.length, 1, 'an over-limit body must be rejected before reaching the bootstrap service');
   } finally {
     await app.close();
@@ -379,6 +388,7 @@ test('status: exposes the stable state/outcome pair or the same one 404 vocabula
       payload: { attemptId: ATTEMPT_ID, attemptRecoveryToken: RECOVERY_TOKEN, ceremonyId: CEREMONY_ID },
     });
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     assert.deepEqual(response.json(), { status: 'COMMITTED', outcome: 'ACCEPTED' });
   } finally {
     await committed.app.close();
@@ -392,6 +402,7 @@ test('status: exposes the stable state/outcome pair or the same one 404 vocabula
       payload: { attemptId: ATTEMPT_ID, attemptRecoveryToken: RECOVERY_TOKEN, ceremonyId: CEREMONY_ID },
     });
     assert.equal(response.statusCode, 404);
+    assert.equal(response.headers['cache-control'], 'private, no-store');
     assert.deepEqual(response.json(), { error: 'ceremony_unavailable' });
   } finally {
     await unavailable.app.close();

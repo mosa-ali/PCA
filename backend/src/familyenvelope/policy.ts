@@ -99,11 +99,11 @@ export function isPlausibleMessageType(candidate: unknown): candidate is FamilyE
 }
 
 export function isPlausibleProtocolMajor(candidate: unknown): candidate is number {
-  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= MIN_PROTOCOL_MAJOR;
+  return typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= MIN_PROTOCOL_MAJOR;
 }
 
 export function isPlausibleProtocolMinor(candidate: unknown): candidate is number {
-  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= MIN_PROTOCOL_MINOR;
+  return typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= MIN_PROTOCOL_MINOR;
 }
 
 export function isPlausibleEpoch(candidate: unknown): candidate is number {
@@ -120,13 +120,14 @@ export function isPlausibleSemanticVersion(candidate: unknown): candidate is str
   );
 }
 
-/** Numeric (never lexicographic) dotted-triple comparison, mirroring src/release/version.ts's established convention for this codebase. */
+/** Exact numeric (never lexicographic or floating-point) dotted-triple comparison. */
 export function compareSemanticVersions(a: string, b: string): number {
-  const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
-  const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
-  if (aMajor !== bMajor) return aMajor - bMajor;
-  if (aMinor !== bMinor) return aMinor - bMinor;
-  return aPatch - bPatch;
+  const [aMajor, aMinor, aPatch] = a.split('.').map(BigInt);
+  const [bMajor, bMinor, bPatch] = b.split('.').map(BigInt);
+  if (aMajor !== bMajor) return aMajor < bMajor ? -1 : 1;
+  if (aMinor !== bMinor) return aMinor < bMinor ? -1 : 1;
+  if (aPatch !== bPatch) return aPatch < bPatch ? -1 : 1;
+  return 0;
 }
 
 export function isPlausibleRecipientGroup(candidate: unknown): candidate is string {

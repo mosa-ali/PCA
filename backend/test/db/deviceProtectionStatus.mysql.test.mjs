@@ -3,7 +3,7 @@
 // RealProtectiveAuthorityResolver correctly interprets it against a real
 // database (not just the in-memory reference repository).
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID, sign as cryptoSign } from 'node:crypto';
 import test from 'node:test';
 import Fastify from 'fastify';
 import { closePool, getPool } from '../../dist/db/pool.js';
@@ -11,6 +11,7 @@ import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.j
 import {
   MySqlDeviceProtectionStatusRepository,
   ProtectionStatusDeviceUnavailableError,
+  ProtectionStatusStaleReportError,
 } from '../../dist/device/DeviceProtectionStatusRepository.js';
 import { MySqlDeviceChallengeRepository } from '../../dist/deviceauth/MySqlDeviceChallengeRepository.js';
 import { DeviceAuthService } from '../../dist/deviceauth/DeviceAuthService.js';
@@ -20,6 +21,15 @@ import { DeviceSyncStatusTracker } from '../../dist/runtime-sync/StatusService.j
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../support/testOnlyDeviceSignatureVerifier.mjs';
 import { registerRuntimeSyncRoutes } from '../../dist/http/routes/runtimeSyncRoutes.js';
 import { RealProtectiveAuthorityResolver } from '../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
+import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
+import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
+import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
+import { MySqlKeyEpochStore } from '../../dist/familytrustset/MySqlKeyEpochStore.js';
+import { MySqlEpochFloorStore } from '../../dist/familytrustset/MySqlEpochFloorStore.js';
+import { MySqlGenesisAnchorSource } from '../../dist/familytrustset/GenesisAnchorSource.js';
+import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
+import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
+import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -45,10 +55,7 @@ async function seedDevice(familyId) {
   return deviceId;
 }
 
-async function registerStatusTestDevice(familyId) {
-  const deviceId = randomUUID();
-  const keyId = randomUUID();
-  const publicKey = `test-dsk-${randomUUID()}`;
+async function registerStatusTestDevice(familyId, { deviceId = randomUUID(), keyId = randomUUID(), publicKey = `test-dsk-${randomUUID()}` } = {}) {
   const createdAt = new Date();
   const created = await deviceRepository.createDeviceWithKey(
     {
@@ -74,6 +81,75 @@ async function registerStatusTestDevice(familyId) {
   );
   assert.equal(created.outcome, 'CREATED');
   return { deviceId, keyId, publicKey };
+}
+
+function makeTrustSetDevice() {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  const publicPoint = Buffer.concat([
+    Buffer.from([0x04]),
+    Buffer.from(jwk.x, 'base64url'),
+    Buffer.from(jwk.y, 'base64url'),
+  ]).toString('base64url');
+  return {
+    deviceId: randomUUID(),
+    keyId: randomUUID(),
+    publicKey: publicPoint,
+    privateKey: pair.privateKey,
+    dekKeyId: `dek-${randomUUID()}`,
+    dekPublicKey: randomBytes(32).toString('base64url'),
+  };
+}
+
+function trustSetEntry(device, role = 'OWNER') {
+  return {
+    deviceId: device.deviceId,
+    role,
+    dskKeyId: device.keyId,
+    dskPublicKey: device.publicKey,
+    dekKeyId: device.dekKeyId,
+    dekPublicKey: device.dekPublicKey,
+    status: 'ACTIVE',
+  };
+}
+
+function trustSetFields(familyId, trustSetEpoch, entries) {
+  return {
+    familyId,
+    trustSetEpoch,
+    keyEpoch: 1,
+    entries,
+    issuedAt: new Date(Math.floor(Date.now() / 1000) * 1000),
+    supersedesEpoch: trustSetEpoch === 1 ? null : trustSetEpoch - 1,
+  };
+}
+
+function signedTrustSetCandidate(fields, privateKey) {
+  const bytes = canonicalizeTrustSetEpoch(fields);
+  const rawSignature = cryptoSign('sha256', Buffer.from(bytes, 'utf8'), {
+    key: privateKey,
+    dsaEncoding: 'ieee-p1363',
+  });
+  return { bytes, signature: canonicalizeP256Signature(rawSignature).toString('base64url') };
+}
+
+function createTrustSetAcceptanceService() {
+  return new TrustSetEpochAcceptanceService({
+    epochStore: new MySqlTrustSetEpochStore(),
+    keyEpochStore: new MySqlKeyEpochStore(),
+    floorStore: new MySqlEpochFloorStore(),
+    genesisAnchorSource: new MySqlGenesisAnchorSource(),
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
+}
+
+async function insertGenesisAnchor(familyId, device) {
+  await getPool().query(
+    `INSERT INTO family_authority_genesis_anchors
+       (family_id, genesis_device_id, genesis_dsk_key_id, genesis_dsk_public_key, protocol_version, created_at, signature)
+     VALUES (?, ?, ?, ?, 1, NOW(3), ?)`,
+    [familyId, device.deviceId, device.keyId, device.publicKey, `test-anchor-${randomUUID()}`],
+  );
 }
 
 function buildRuntimeSyncStatusApp({ deviceProtectionStatusRepository, trustSetRoleResolver }) {
@@ -138,6 +214,22 @@ test('upsert is a true upsert -- reporting a new level overwrites the old one, n
   assert.equal(rows[0].n, 1);
   const record = await repository.findForDevice(familyId, deviceId);
   assert.equal(record.protectionLevel, 'DEGRADED');
+});
+
+test('a delayed MySQL status report cannot replace a newer server receipt', async () => {
+  const familyId = await seedFamily();
+  const deviceId = await seedDevice(familyId);
+  await repository.upsert({
+    deviceId, familyId, protectionLevel: 'PROTECTED', updatedAt: new Date('2026-10-09T12:00:01.000Z'),
+  });
+
+  await assert.rejects(repository.recordAndReadPrevious({
+    deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date('2026-10-09T12:00:00.000Z'),
+  }), ProtectionStatusStaleReportError);
+
+  const current = await repository.findForDevice(familyId, deviceId);
+  assert.equal(current?.protectionLevel, 'PROTECTED');
+  assert.equal(current?.updatedAt.toISOString(), '2026-10-09T12:00:01.000Z');
 });
 
 test('concurrent MySQL status transitions serialize on the device row and expose exactly one DEGRADED transition', async () => {
@@ -270,7 +362,12 @@ test('protective authority immediately fails closed after device revocation desp
 test('MySQL HTTP: authenticated runtime-sync protection-status writes only the session device with server receipt time and current authority', async () => {
   const familyId = await seedFamily();
   const foreignFamilyId = await seedFamily();
-  const device = await registerStatusTestDevice(familyId);
+  const owner = makeTrustSetDevice();
+  const device = await registerStatusTestDevice(familyId, {
+    deviceId: owner.deviceId,
+    keyId: owner.keyId,
+    publicKey: owner.publicKey,
+  });
   const foreignDeviceId = await seedDevice(foreignFamilyId);
   const foreignBefore = new Date(Date.now() - 60_000);
   await repository.upsert({
@@ -280,13 +377,28 @@ test('MySQL HTTP: authenticated runtime-sync protection-status writes only the s
     updatedAt: foreignBefore,
   });
 
+  await insertGenesisAnchor(familyId, owner);
+  const acceptance = createTrustSetAcceptanceService();
+  const genesis = signedTrustSetCandidate(trustSetFields(familyId, 1, [trustSetEntry(owner)]), owner.privateKey);
+  assert.deepEqual(await acceptance.acceptCandidate({
+    familyId,
+    signedCanonicalBytes: genesis.bytes,
+    signature: genesis.signature,
+    receivedAt: new Date(),
+  }), { outcome: 'ACCEPTED' });
+
   let authorityAvailable = true;
+  const actualResolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: new MySqlTrustSetEpochStore(),
+    deviceRepository,
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
   const trustSetRoleResolver = {
     async resolveActor(requestFamilyId, requestDeviceId, requestKeyId) {
       if (!authorityAvailable || requestFamilyId !== familyId || requestDeviceId !== device.deviceId || requestKeyId !== device.keyId) {
         return 'DEVICE_NOT_ACTIVE';
       }
-      return { deviceId: device.deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      return actualResolver.resolveActor(requestFamilyId, requestDeviceId, requestKeyId);
     },
   };
   const { app } = buildRuntimeSyncStatusApp({
@@ -363,7 +475,7 @@ test('MySQL HTTP: authenticated runtime-sync protection-status writes only the s
   }
 });
 
-test('MySQL HTTP: device revoked after session/Trust Set checks but before persistence cannot write protection status', async () => {
+test('MySQL HTTP: Trust Set authority removed after preHandler but before persistence cannot write protection status', async () => {
   const familyId = await seedFamily();
   const device = await registerStatusTestDevice(familyId);
   let resolverCalls = 0;
@@ -373,9 +485,10 @@ test('MySQL HTTP: device revoked after session/Trust Set checks but before persi
       assert.equal(requestDeviceId, device.deviceId);
       assert.equal(requestKeyId, device.keyId);
       resolverCalls += 1;
-      const revoked = await deviceRepository.revokeDeviceAndKeysAtomically(familyId, device.deviceId, new Date());
-      assert.equal(revoked.outcome, 'REVOKED');
-      return { deviceId: device.deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      if (resolverCalls === 1) {
+        return { familyId, deviceId: device.deviceId, dskKeyId: device.keyId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      }
+      return 'DEVICE_NOT_ACTIVE';
     },
   };
   const { app } = buildRuntimeSyncStatusApp({
@@ -391,7 +504,7 @@ test('MySQL HTTP: device revoked after session/Trust Set checks but before persi
       payload: { protectionLevel: 'DEGRADED' },
     });
 
-    assert.equal(resolverCalls, 1);
+    assert.equal(resolverCalls, 2, 'the route must recheck the accepted membership after the preHandler check');
     assert.equal(response.statusCode, 403, response.body);
     assert.deepEqual(response.json(), { error: 'device_not_authorized' });
     assert.equal(await repository.findForDevice(familyId, device.deviceId), null);
@@ -400,6 +513,186 @@ test('MySQL HTTP: device revoked after session/Trust Set checks but before persi
       [device.deviceId],
     );
     assert.equal(Number(rows.count), 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('MySQL HTTP: accepted-head rotation after final resolver snapshot serializes before status write and rejects removed member', async () => {
+  const familyId = await seedFamily();
+  const owner = makeTrustSetDevice();
+  const reporter = makeTrustSetDevice();
+  await registerStatusTestDevice(familyId, {
+    deviceId: owner.deviceId,
+    keyId: owner.keyId,
+    publicKey: owner.publicKey,
+  });
+  const reportingDevice = await registerStatusTestDevice(familyId, {
+    deviceId: reporter.deviceId,
+    keyId: reporter.keyId,
+    publicKey: reporter.publicKey,
+  });
+  await insertGenesisAnchor(familyId, owner);
+
+  const acceptance = createTrustSetAcceptanceService();
+  const genesis = signedTrustSetCandidate(
+    trustSetFields(familyId, 1, [trustSetEntry(owner), trustSetEntry(reporter, 'CHILD')]),
+    owner.privateKey,
+  );
+  assert.deepEqual(await acceptance.acceptCandidate({
+    familyId,
+    signedCanonicalBytes: genesis.bytes,
+    signature: genesis.signature,
+    receivedAt: new Date(),
+  }), { outcome: 'ACCEPTED' });
+
+  const actualResolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: new MySqlTrustSetEpochStore(),
+    deviceRepository,
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
+  let resolverCalls = 0;
+  let rotationResult;
+  const trustSetRoleResolver = {
+    async resolveActor(requestFamilyId, requestDeviceId, requestKeyId) {
+      const resolvedOldHead = await actualResolver.resolveActor(requestFamilyId, requestDeviceId, requestKeyId);
+      resolverCalls += 1;
+      if (resolverCalls === 2) {
+        assert.deepEqual(resolvedOldHead, {
+          familyId,
+          deviceId: reporter.deviceId,
+          dskKeyId: reporter.keyId,
+          role: 'CHILD',
+          trustSetEpoch: 1,
+          keyEpoch: 1,
+        });
+        const removal = signedTrustSetCandidate(
+          trustSetFields(familyId, 2, [trustSetEntry(owner)]),
+          owner.privateKey,
+        );
+        rotationResult = await acceptance.acceptCandidate({
+          familyId,
+          signedCanonicalBytes: removal.bytes,
+          signature: removal.signature,
+          receivedAt: new Date(),
+        });
+      }
+      return resolvedOldHead;
+    },
+  };
+  const { app } = buildRuntimeSyncStatusApp({
+    deviceProtectionStatusRepository: repository,
+    trustSetRoleResolver,
+  });
+  try {
+    const sessionToken = await authenticateRuntimeSyncDevice(app, reportingDevice.deviceId, reporter.publicKey);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { protectionLevel: 'DEGRADED' },
+    });
+
+    assert.equal(resolverCalls, 2);
+    assert.deepEqual(rotationResult, { outcome: 'ACCEPTED' }, 'higher epoch removing the reporting member must commit before the status transaction');
+    assert.deepEqual(await new MySqlEpochFloorStore().readFloors(familyId), {
+      minimumAcceptedTrustSetEpoch: 2,
+      minimumAcceptedKeyEpoch: 1,
+    });
+    assert.equal(response.statusCode, 403, response.body);
+    assert.deepEqual(response.json(), { error: 'device_not_authorized' });
+    assert.equal(await repository.findForDevice(familyId, reportingDevice.deviceId), null);
+    const [[rows]] = await getPool().query(
+      `SELECT COUNT(*) AS count FROM device_protection_status WHERE device_id = ?`,
+      [reportingDevice.deviceId],
+    );
+    assert.equal(Number(rows.count), 0, 'the stale resolved snapshot must not produce a durable status row');
+  } finally {
+    await app.close();
+  }
+});
+
+test('MySQL HTTP: exact session DSK revocation after resolver snapshot is rejected under the key-row lock', async () => {
+  const familyId = await seedFamily();
+  const owner = makeTrustSetDevice();
+  const reporter = makeTrustSetDevice();
+  await registerStatusTestDevice(familyId, {
+    deviceId: owner.deviceId,
+    keyId: owner.keyId,
+    publicKey: owner.publicKey,
+  });
+  const reportingDevice = await registerStatusTestDevice(familyId, {
+    deviceId: reporter.deviceId,
+    keyId: reporter.keyId,
+    publicKey: reporter.publicKey,
+  });
+  await insertGenesisAnchor(familyId, owner);
+
+  const acceptance = createTrustSetAcceptanceService();
+  const genesis = signedTrustSetCandidate(
+    trustSetFields(familyId, 1, [trustSetEntry(owner), trustSetEntry(reporter, 'CHILD')]),
+    owner.privateKey,
+  );
+  assert.deepEqual(await acceptance.acceptCandidate({
+    familyId,
+    signedCanonicalBytes: genesis.bytes,
+    signature: genesis.signature,
+    receivedAt: new Date(),
+  }), { outcome: 'ACCEPTED' });
+
+  const actualResolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: new MySqlTrustSetEpochStore(),
+    deviceRepository,
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
+  let resolverCalls = 0;
+  let revocationResult;
+  const trustSetRoleResolver = {
+    async resolveActor(requestFamilyId, requestDeviceId, requestKeyId) {
+      const resolved = await actualResolver.resolveActor(requestFamilyId, requestDeviceId, requestKeyId);
+      resolverCalls += 1;
+      if (resolverCalls === 2) {
+        assert.deepEqual(resolved, {
+          familyId,
+          deviceId: reporter.deviceId,
+          dskKeyId: reporter.keyId,
+          role: 'CHILD',
+          trustSetEpoch: 1,
+          keyEpoch: 1,
+        });
+        revocationResult = await deviceRepository.revokeKeyForFamily(
+          familyId,
+          reporter.deviceId,
+          reporter.keyId,
+          new Date(),
+        );
+      }
+      return resolved;
+    },
+  };
+  const { app } = buildRuntimeSyncStatusApp({
+    deviceProtectionStatusRepository: repository,
+    trustSetRoleResolver,
+  });
+  try {
+    const sessionToken = await authenticateRuntimeSyncDevice(app, reportingDevice.deviceId, reporter.publicKey);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { protectionLevel: 'DEGRADED' },
+    });
+
+    assert.equal(resolverCalls, 2);
+    assert.equal(revocationResult.outcome, 'REVOKED', 'the exact active DSK is revoked after final resolution but before persistence');
+    assert.equal(response.statusCode, 403, response.body);
+    assert.deepEqual(response.json(), { error: 'device_not_authorized' });
+    assert.equal(await repository.findForDevice(familyId, reportingDevice.deviceId), null);
+    const [[rows]] = await getPool().query(
+      `SELECT COUNT(*) AS count FROM device_protection_status WHERE device_id = ?`,
+      [reportingDevice.deviceId],
+    );
+    assert.equal(Number(rows.count), 0, 'a revoked session key cannot produce a durable status row');
   } finally {
     await app.close();
   }

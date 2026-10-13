@@ -25,6 +25,71 @@ function buildHarness(now = () => new Date(), auditService = undefined) {
   return { deviceRepository, deviceAuthService, sessionRepository, sessionService };
 }
 
+function sessionRecord(tokenHash, sessionId, issuedAt, expiresAt) {
+  return {
+    sessionId,
+    tokenHash,
+    deviceId: `device-${sessionId}`,
+    familyId: `family-${sessionId}`,
+    dskKeyId: `dsk-${sessionId}`,
+    dskPublicKey: `public-${sessionId}`,
+    familySessionEpoch: 1,
+    issuedAt,
+    expiresAt,
+    revokedAt: null,
+  };
+}
+
+test('process-local session repository prunes expired records by expiry order and snapshots timestamps', async () => {
+  const repository = new InMemoryDeviceSessionRepository();
+  const base = new Date('2026-01-01T00:00:00.000Z');
+  const laterExpiry = sessionRecord('hash-later', 'session-later', new Date(base), new Date(base.getTime() + 500));
+  const earlierExpiry = sessionRecord('hash-earlier', 'session-earlier', new Date(base), new Date(base.getTime() + 100));
+  const surviving = sessionRecord('hash-surviving', 'session-surviving', new Date(base), new Date(base.getTime() + 300));
+  await repository.create(laterExpiry);
+  await repository.create(earlierExpiry);
+  await repository.create(surviving);
+  // Caller-owned Date mutation cannot extend the stored bearer lifetime.
+  earlierExpiry.expiresAt.setTime(base.getTime() + 60_000);
+
+  assert.equal((await repository.validate('hash-earlier', new Date(base.getTime() + 100))).outcome, 'INVALID');
+  assert.equal(repository.byTokenHash.size, 2);
+  assert.equal((await repository.validate('hash-surviving', new Date(base.getTime() + 200))).outcome, 'VALID');
+  assert.equal((await repository.validate('hash-later', new Date(base.getTime() + 600))).outcome, 'INVALID');
+  assert.equal(repository.byTokenHash.size, 0, 'expired records are removed from process memory, including when never presented again');
+
+  await repository.create(sessionRecord('hash-new', 'session-new', new Date(base.getTime() + 700), new Date(base.getTime() + 800)));
+  assert.equal(repository.byTokenHash.size, 1);
+});
+
+test('device-session repository fails closed on invalid clocks and immediately removes a revoked bearer', async () => {
+  const repository = new InMemoryDeviceSessionRepository();
+  const issuedAt = new Date('2026-01-01T00:00:00.000Z');
+  await repository.create(sessionRecord('hash-revoke', 'session-revoke', issuedAt,
+    new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS)));
+  const invalidNow = new Date(Number.NaN);
+
+  assert.deepEqual(await repository.validate('hash-revoke', invalidNow), { outcome: 'INVALID' });
+  assert.equal(await repository.revoke('hash-revoke', invalidNow), false);
+  assert.equal(repository.byTokenHash.size, 1, 'invalid time input cannot mutate live session state');
+
+  assert.equal(await repository.revoke('hash-revoke', new Date(issuedAt.getTime() + 1)), true);
+  assert.equal(repository.byTokenHash.size, 0, 'revocation drops the bearer record immediately');
+  assert.deepEqual(await repository.validate('hash-revoke', new Date(issuedAt.getTime() + 2)), { outcome: 'INVALID' });
+});
+
+test('an old expiry-heap tombstone cannot evict a later sessionId/expiry reusing a token hash', async () => {
+  const repository = new InMemoryDeviceSessionRepository();
+  const start = new Date('2026-01-01T00:00:00.000Z');
+  await repository.create(sessionRecord('hash-reused', 'session-reused', new Date(start), new Date(start.getTime() + 100)));
+  assert.equal(await repository.revoke('hash-reused', new Date(start.getTime() + 10)), true);
+  await repository.create(sessionRecord('hash-reused', 'session-replacement', new Date(start.getTime() + 20), new Date(start.getTime() + 200)));
+
+  const beforeNewExpiry = await repository.validate('hash-reused', new Date(start.getTime() + 100));
+  assert.equal(beforeNewExpiry.outcome, 'VALID');
+  if (beforeNewExpiry.outcome === 'VALID') assert.equal(beforeNewExpiry.session.expiresAt.getTime(), start.getTime() + 200);
+});
+
 async function registerDevice(deviceRepository, familyId = `family-${randomUUID()}`, status = 'ACTIVE') {
   const deviceId = `device-${randomUUID()}`;
   const publicKey = `pubkey-${randomUUID()}`;
@@ -60,10 +125,24 @@ test('completeChallenge with a valid signature issues a working device session',
 
   const challenge = await sessionService.issueChallengeSafely(deviceId);
   const signature = signTestOnlyChallenge(publicKey, challenge.nonce);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signature);
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signature);
 
   const identity = await sessionService.validateSession(session.rawToken);
   assert.deepEqual(identity, { deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId });
+});
+
+test('completeChallenge rejects a valid signer when its device differs from the route-bound expected device', async () => {
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness();
+  const signer = await registerDevice(deviceRepository);
+  const other = await registerDevice(deviceRepository, `family-${randomUUID()}`);
+  const challenge = await sessionService.issueChallengeSafely(signer.deviceId);
+  const signature = signTestOnlyChallenge(signer.publicKey, challenge.nonce);
+
+  await assert.rejects(
+    () => sessionService.completeChallenge(other.deviceId, challenge.challengeId, signature),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
+  assert.equal(sessionRepository.byTokenHash.size, 0, 'mismatched challenge scope must not create a bearer session');
 });
 
 test('a PAIRED device cannot receive or validate an ordinary device session, even with valid proof', async () => {
@@ -77,7 +156,7 @@ test('a PAIRED device cannot receive or validate an ordinary device session, eve
   const challenge = await sessionService.issueChallengeSafely(deviceId);
   const signature = signTestOnlyChallenge(publicKey, challenge.nonce);
   await assert.rejects(
-    () => sessionService.completeChallenge(challenge.challengeId, signature),
+    () => sessionService.completeChallenge(deviceId, challenge.challengeId, signature),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 
@@ -107,7 +186,7 @@ test('an issued device session is rejected immediately after device revocation',
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   await deviceRepository.revokeDeviceAndKeysAtomically(familyId, deviceId, new Date());
 
@@ -121,7 +200,7 @@ test('a bearer remains bound to its verified DSK when a second active DSK exists
   const { deviceRepository, sessionRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey, dskKeyId } = await registerDevice(deviceRepository);
   const firstChallenge = await sessionService.issueChallengeSafely(deviceId);
-  const oldSession = await sessionService.completeChallenge(firstChallenge.challengeId,
+  const oldSession = await sessionService.completeChallenge(deviceId, firstChallenge.challengeId,
     signTestOnlyChallenge(publicKey, firstChallenge.nonce));
 
   const replacementKey = { deviceId, keyId: `key-${randomUUID()}`, keyPurpose: 'DSK',
@@ -136,7 +215,7 @@ test('a bearer remains bound to its verified DSK when a second active DSK exists
     error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
 
   const replacementChallenge = await sessionService.issueChallengeSafely(deviceId);
-  const replacementSession = await sessionService.completeChallenge(replacementChallenge.challengeId,
+  const replacementSession = await sessionService.completeChallenge(deviceId, replacementChallenge.challengeId,
     signTestOnlyChallenge(replacementKey.publicKey, replacementChallenge.nonce));
   assert.deepEqual(await sessionService.validateSession(replacementSession.rawToken),
     { deviceId, familyId, dskKeyId: replacementKey.keyId });
@@ -156,7 +235,7 @@ test('an issued device session is rejected immediately after family suspension',
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   deviceRepository.setFamilyStatusForTest(familyId, 'SUSPENDED');
 
@@ -170,7 +249,7 @@ test('a device session stays invalid after family reactivation', async () => {
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   deviceRepository.setFamilyStatusForTest(familyId, 'SUSPENDED');
   deviceRepository.setFamilyStatusForTest(familyId, 'ACTIVE');
@@ -188,7 +267,7 @@ test('issueChallengeSafely for a nonexistent device returns a well-formed challe
   assert.ok(challenge.nonce);
 
   await assert.rejects(
-    () => sessionService.completeChallenge(challenge.challengeId, 'any-signature'),
+    () => sessionService.completeChallenge('nonexistent-device', challenge.challengeId, 'any-signature'),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 });
@@ -200,7 +279,7 @@ test('issueChallengeSafely for a revoked device is indistinguishable at the API 
 
   const challenge = await sessionService.issueChallengeSafely(deviceId);
   await assert.rejects(
-    () => sessionService.completeChallenge(challenge.challengeId, 'any-signature'),
+    () => sessionService.completeChallenge(deviceId, challenge.challengeId, 'any-signature'),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 });
@@ -210,7 +289,7 @@ test('wrong signature is rejected with the single generic UNAUTHORIZED error', a
   const { deviceId } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
   await assert.rejects(
-    () => sessionService.completeChallenge(challenge.challengeId, 'forged-signature'),
+    () => sessionService.completeChallenge(deviceId, challenge.challengeId, 'forged-signature'),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 });
@@ -221,9 +300,9 @@ test('a replayed (already-consumed) challenge is rejected on the second attempt 
   const challenge = await sessionService.issueChallengeSafely(deviceId);
   const signature = signTestOnlyChallenge(publicKey, challenge.nonce);
 
-  await sessionService.completeChallenge(challenge.challengeId, signature);
+  await sessionService.completeChallenge(deviceId, challenge.challengeId, signature);
   await assert.rejects(
-    () => sessionService.completeChallenge(challenge.challengeId, signature),
+    () => sessionService.completeChallenge(deviceId, challenge.challengeId, signature),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 });
@@ -241,7 +320,7 @@ test('concurrent completeChallenge replay creates exactly one session', async ()
   };
 
   const attempts = await Promise.allSettled(
-    Array.from({ length: 20 }, () => sessionService.completeChallenge(challenge.challengeId, signature)),
+    Array.from({ length: 20 }, () => sessionService.completeChallenge(deviceId, challenge.challengeId, signature)),
   );
 
   const succeeded = attempts.filter((attempt) => attempt.status === 'fulfilled');
@@ -265,14 +344,14 @@ test('a lost session response requires a fresh challenge and can recover without
   const firstSignature = signTestOnlyChallenge(publicKey, firstChallenge.nonce);
 
   // Simulate the server committing the session while the HTTP response is lost.
-  await sessionService.completeChallenge(firstChallenge.challengeId, firstSignature);
+  await sessionService.completeChallenge(deviceId, firstChallenge.challengeId, firstSignature);
   await assert.rejects(
-    () => sessionService.completeChallenge(firstChallenge.challengeId, firstSignature),
+    () => sessionService.completeChallenge(deviceId, firstChallenge.challengeId, firstSignature),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
 
   const retryChallenge = await sessionService.issueChallengeSafely(deviceId);
-  const recovered = await sessionService.completeChallenge(
+  const recovered = await sessionService.completeChallenge(deviceId,
     retryChallenge.challengeId,
     signTestOnlyChallenge(publicKey, retryChallenge.nonce),
   );
@@ -293,7 +372,7 @@ test('revokeSession makes a previously valid token unusable, and is idempotent',
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   await sessionService.revokeSession(session.rawToken);
   await sessionService.revokeSession(session.rawToken); // idempotent, no throw
@@ -306,7 +385,7 @@ test('concurrent revocations emit exactly one lifecycle transition audit', async
   const { deviceRepository, sessionRepository, sessionService } = buildHarness(() => new Date(), auditService);
   const { deviceId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   const originalValidate = sessionRepository.validate.bind(sessionRepository);
   let priorReads = 0;
@@ -344,7 +423,7 @@ test('validateSession rejects a session once its TTL has elapsed, even though th
   const { deviceRepository, sessionService } = buildHarness(() => currentTime);
   const { deviceId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   // Sanity check: immediately after issuance, well within the TTL, the session is still valid.
   await sessionService.validateSession(session.rawToken);
@@ -364,7 +443,7 @@ test('requireActorDeviceInFamily binds the caller to the verified device\'s OWN 
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
   const challenge = await sessionService.issueChallengeSafely(deviceId);
-  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
 
   // The device's own, correct family is satisfied and returns the verified identity.
   const identity = await sessionService.requireActorDeviceInFamily(session.rawToken, familyId);

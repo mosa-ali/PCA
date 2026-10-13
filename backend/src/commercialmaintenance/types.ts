@@ -28,10 +28,10 @@ export interface CommercialMaintenanceRunner {
 }
 
 /** Narrow, privacy-safe structured-warning seam: implementations must never
- * receive notification message content (messageKey/params) through this --
- * only bounded identifiers/error text, matching this lane's privacy
- * requirement (pruned/retained notification content is never logged in
- * plaintext beyond what already exists elsewhere in the codebase). */
+ * receive notification message content (messageKey/params) or thrown error
+ * text through this. Only bounded identifiers and fixed failure categories
+ * are appropriate, because provider/database error messages may contain
+ * recipient or bound-query details. */
 export interface CommercialMaintenanceLogger {
   warn(event: string, detail: Readonly<Record<string, unknown>>): void;
 }

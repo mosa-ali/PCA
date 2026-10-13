@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.core.app.NotificationManagerCompat
 import org.pca.app.accessibility.PcaAccessibilityContent
+import org.pca.app.enrollment.EnrollmentActivity
 import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
 import org.pca.app.feature.youtube.ui.YouTubeModeActivity
 import org.pca.app.platform.UsageAccessState
@@ -45,13 +46,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val runtime = (application as PcaApplication).graph.runtime
+        val graph = (application as PcaApplication).graph
+        val runtime = graph.runtime
         setContent {
             PcaAccessibilityContent {
                 val status by runtime.status.collectAsState()
+                val enrollmentState by graph.enrollmentCoordinator.state.collectAsState()
                 MaterialTheme {
                     ChildHomeScreen(
                     status = status,
+                    enrollmentState = enrollmentState,
+                    onOpenEnrollment = {
+                        startActivity(Intent(this@MainActivity, EnrollmentActivity::class.java))
+                    },
                     onEmergencyAccess = {
                         if (status.isEmergencyExceptionActive) {
                             runtime.deactivateEmergencyException()

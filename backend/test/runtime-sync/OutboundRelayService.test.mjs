@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { RelayService } from '../../dist/relay/RelayService.js';
+import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
 import { OutboundRelayService } from '../../dist/runtime-sync/index.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../dist/runtime-sync/policy.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
@@ -58,7 +59,7 @@ test('a slow recipient lookup cannot queue ciphertext past the signed validUntil
   };
   const outboundService = new OutboundRelayService(relayService, deviceRepository);
   const validUntil = new Date(currentTime + 5_000);
-  const submission = outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, validUntil })]);
+  const submission = outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, validUntil })], async () => authoritySnapshot(familyId, senderDeviceId, recipientDeviceId));
   await lookupEntered;
   currentTime = validUntil.getTime();
   releaseLookup();
@@ -79,14 +80,54 @@ function item(overrides = {}) {
   };
 }
 
+function authoritySnapshot(familyId, senderDeviceId, recipientDeviceId) {
+  return {
+    familyId,
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+    sender: { deviceId: senderDeviceId, dskKeyId: 'test-sender-dsk' },
+    recipient: { deviceId: recipientDeviceId, dskKeyId: 'test-recipient-dsk' },
+  };
+}
+
+function authorize(familyId, senderDeviceId, recipientDeviceId) {
+  return async () => authoritySnapshot(familyId, senderDeviceId, recipientDeviceId);
+}
+
 test('a recipient in the caller\'s own family is queued', async () => {
   const { deviceRepository, outboundService } = buildHarness();
   const familyId = `family-${randomUUID()}`;
   const senderDeviceId = await registerDevice(deviceRepository, familyId);
   const recipientDeviceId = await registerDevice(deviceRepository, familyId);
 
-  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId })], async (candidate) => candidate === recipientDeviceId);
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId })], authorize(familyId, senderDeviceId, recipientDeviceId));
   assert.equal(result.results[0].outcome, 'QUEUED');
+});
+
+test('same-family outbound enqueue fails closed without an exact sender+recipient authority snapshot', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const messageId = `missing-authority-${randomUUID()}`;
+
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, messageId })]);
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'INVALID' }]);
+  assert.deepEqual(await relayService.listQueuedForRecipient(recipientDeviceId), []);
+});
+
+test('outbound enqueue rejects a legacy boolean allow instead of treating it as authority', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const messageId = `boolean-authority-${randomUUID()}`;
+
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, messageId })], async () => true);
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'INVALID' }]);
+  assert.deepEqual(await relayService.listQueuedForRecipient(recipientDeviceId), []);
 });
 
 test('a same-family directory device absent from accepted Trust Set is not queued', async () => {
@@ -115,7 +156,7 @@ test('IDOR: a recipient device that belongs to a DIFFERENT family is rejected, n
 
   const result = await outboundService.submitBatch(senderDeviceId, familyA, [
     item({ recipientDeviceId: victimDeviceInOtherFamily }),
-  ], async () => { membershipCheckCalled = true; return true; });
+  ], async () => { membershipCheckCalled = true; return authoritySnapshot(familyA, senderDeviceId, victimDeviceInOtherFamily); });
   assert.equal(result.results[0].outcome, 'CROSS_FAMILY_RECIPIENT');
   assert.equal(membershipCheckCalled, false, 'directory family scope must reject before accepted-membership lookup');
 
@@ -175,9 +216,9 @@ test('a batch larger than MAX_OUTBOUND_BATCH_SIZE only attempts the bound, repor
     item({ recipientDeviceId, messageType: 'ACTIVITY_SUMMARY', enqueuedAtEpochMillis: i }),
   );
   let recipientAuthorizationCalls = 0;
-  const result = await outboundService.submitBatch(senderDeviceId, familyId, items, async () => {
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, items, async (candidate) => {
     recipientAuthorizationCalls += 1;
-    return true;
+    return authoritySnapshot(familyId, senderDeviceId, candidate);
   });
   assert.equal(result.results.length, MAX_OUTBOUND_BATCH_SIZE);
   assert.equal(result.droppedForBatchBound.length, 5);
@@ -195,7 +236,7 @@ test('high-priority items win the bounded batch\'s slots over low-priority ones'
   );
   const highPriority = item({ recipientDeviceId, messageType: 'KEY_ROTATION', enqueuedAtEpochMillis: 99999, messageId: 'high-1' });
 
-  const result = await outboundService.submitBatch(senderDeviceId, familyId, [...lowPriority, highPriority]);
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [...lowPriority, highPriority], authorize(familyId, senderDeviceId, recipientDeviceId));
   assert.equal(result.results.length, MAX_OUTBOUND_BATCH_SIZE);
   assert.ok(result.results.some((r) => r.messageId === 'high-1' && r.outcome === 'QUEUED'));
   assert.equal(result.droppedForBatchBound.length, 1);
@@ -209,8 +250,8 @@ test('idempotent resubmission of the same messageId+content reports QUEUED again
   const recipientDeviceId = await registerDevice(deviceRepository, familyId);
   const dup = item({ recipientDeviceId, messageId: 'dup-1' });
 
-  const first = await outboundService.submitBatch(senderDeviceId, familyId, [dup]);
-  const second = await outboundService.submitBatch(senderDeviceId, familyId, [dup]);
+  const first = await outboundService.submitBatch(senderDeviceId, familyId, [dup], authorize(familyId, senderDeviceId, recipientDeviceId));
+  const second = await outboundService.submitBatch(senderDeviceId, familyId, [dup], authorize(familyId, senderDeviceId, recipientDeviceId));
   assert.equal(first.results[0].outcome, 'QUEUED');
   assert.equal(second.results[0].outcome, 'QUEUED');
 });
@@ -223,9 +264,33 @@ test('resubmitting the same messageId with DIFFERENT content is a CONFLICT', asy
 
   await outboundService.submitBatch(senderDeviceId, familyId, [
     item({ recipientDeviceId, messageId: 'conflict-1', ciphertext: Buffer.from('version-a') }),
-  ]);
+  ], authorize(familyId, senderDeviceId, recipientDeviceId));
   const second = await outboundService.submitBatch(senderDeviceId, familyId, [
     item({ recipientDeviceId, messageId: 'conflict-1', ciphertext: Buffer.from('version-b') }),
-  ]);
+  ], authorize(familyId, senderDeviceId, recipientDeviceId));
   assert.equal(second.results[0].outcome, 'CONFLICT');
+});
+
+test('a final transactional authority race is surfaced as AUTHORITY_CHANGED, not a recipient error', async () => {
+  const deviceRepository = createInMemoryDeviceRepository();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const relayService = {
+    async queueEnvelope() {
+      throw new RelayAuthorityChangedError();
+    },
+  };
+  const outboundService = new OutboundRelayService(relayService, deviceRepository);
+  const messageId = `authority-race-${randomUUID()}`;
+
+  const result = await outboundService.submitBatch(senderDeviceId, familyId, [item({ recipientDeviceId, messageId })], async () => ({
+    familyId,
+    trustSetEpoch: 4,
+    keyEpoch: 2,
+    sender: { deviceId: senderDeviceId, dskKeyId: 'sender-dsk' },
+    recipient: { deviceId: recipientDeviceId, dskKeyId: 'recipient-dsk' },
+  }));
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }]);
 });

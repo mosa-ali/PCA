@@ -104,6 +104,9 @@ sealed interface FirstDeviceRootReadResult {
     data class Present(val record: FirstDeviceRootRecord) : FirstDeviceRootReadResult
 }
 
+/** An unconditional maintenance operation encountered root bytes it cannot safely replace. */
+class FirstDeviceRootStateUnavailable : IllegalStateException("First-device root state unavailable")
+
 interface FirstDeviceRootStore {
     fun current(): FirstDeviceRootRecord?
     /** Typed health read for operations, such as key cleanup, that must fail closed on corruption. */
@@ -212,10 +215,19 @@ class PersistentFirstDeviceRootStore(
     }
 
     override fun save(record: FirstDeviceRootRecord) = synchronized(store.coordinationLock) {
+        // `current()` intentionally preserves its nullable compatibility API, but a missing slot
+        // and an unreadable slot are not interchangeable for a write. Never let this legacy
+        // unconditional method turn a corrupt or temporarily unreadable ceremony into a fresh one.
+        if (readStoredRecord() == StoredRecord.Invalid) throw FirstDeviceRootStateUnavailable()
         store.putString(key, encode(record))
     }
 
     override fun clear() = synchronized(store.coordinationLock) {
+        when (readStoredRecord()) {
+            StoredRecord.Invalid -> throw FirstDeviceRootStateUnavailable()
+            StoredRecord.Missing -> return@synchronized
+            is StoredRecord.Valid -> Unit
+        }
         store.remove(key)
     }
 
@@ -321,6 +333,12 @@ class PersistentFirstDeviceRootStore(
             require(isCanonicalSignatureBase64Url(it.signatureBase64Url))
         }
         val submission = record.submission
+        // EXPIRED is written only after authoritative server status proves
+        // the ceremony cannot commit; that transition also trims the exact
+        // signed submission. A persisted EXPIRED record that still carries
+        // bytes is contradictory and must not be treated as replaceable by
+        // a later enrollment.
+        require(record.state != FirstDeviceRootState.EXPIRED || submission == null)
         val fields = listOf(
             record.seed.attemptId,
             record.seed.attemptRecoveryToken,
@@ -386,6 +404,7 @@ class PersistentFirstDeviceRootStore(
                 FirstDeviceAcceptedEpochAnchor(canonicalText, parts[23])
             }
             val state = FirstDeviceRootState.valueOf(parts[10])
+            require(state != FirstDeviceRootState.EXPIRED || submission == null)
             require(acceptedEpoch1 == null || state == FirstDeviceRootState.ROOT_COMMITTED)
             FirstDeviceRootRecord(
                 seed = FirstDeviceCeremonySeed(

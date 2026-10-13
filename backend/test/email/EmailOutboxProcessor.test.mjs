@@ -162,3 +162,34 @@ test('startEmailOutboxWorker runs processOutboxOnce on an interval and stop() ha
   assert.equal(repo.getRowForTest(outboxId).status, 'SENT');
   assert.equal(provider.calls.length, 1, 'exactly one send -- the row was SENT after the first tick that found it due, so later ticks find nothing due');
 });
+
+test('worker-loop failures log only bounded redacted diagnostics and continue processing', async (t) => {
+  let attempts = 0;
+  const sensitive = 'recipient=parent@example.com sql=SELECT secret_token';
+  const repo = {
+    async claimDueRows() {
+      attempts++;
+      throw new Error(sensitive);
+    },
+  };
+  const calls = [];
+  t.mock.method(console, 'error', (...args) => calls.push(args));
+  const handle = startEmailOutboxWorker({ repository: repo, providerAdapter: new ScriptedProviderAdapter([]) }, 1);
+  try {
+    const deadline = Date.now() + 3000;
+    while (attempts < 101 && Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop -- wait for deterministic worker retry count.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  } finally {
+    handle.stop();
+  }
+
+  assert.ok(attempts >= 101, 'worker should keep retrying after an isolated claim failure');
+  assert.equal(calls.length, 2, 'diagnostics are emitted at the first and 100th failures only');
+  assert.deepEqual(calls, [
+    ['[EmailOutboxWorker] processOutboxOnce failed; details redacted', 1],
+    ['[EmailOutboxWorker] processOutboxOnce failed; details redacted', 100],
+  ]);
+  assert.equal(JSON.stringify(calls).includes(sensitive), false);
+});

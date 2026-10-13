@@ -49,6 +49,8 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'pairing.NOT_FOUND': 'لم يتم العثور على طلب الإقران.',
   'pairing.INVALID_STATE': 'طلب الإقران ليس في حالة تسمح بهذا الإجراء.',
   'pairing.SELF_APPROVAL_DENIED': 'هذا الحساب هو من سجّل هذا الجهاز ولا يمكنه تأكيده أيضًا.',
+  'pairing.FINGERPRINT_MISMATCH': 'تغيّرت بصمات مفاتيح الجهاز؛ حدّث طلب الإقران.',
+  'pairing.INVALID_FINGERPRINT': 'بصمات مفاتيح الجهاز المعروضة مطلوبة.',
 
   'deviceAuth.DEVICE_NOT_FOUND': 'لم يتم العثور على الجهاز.',
   'deviceAuth.DEVICE_REVOKED': 'تم إلغاء تفويض هذا الجهاز.',
@@ -64,6 +66,8 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'device.KEY_NOT_FOUND': 'لم يتم العثور على مفتاح الجهاز.',
   'device.INVALID_STATE': 'الجهاز ليس في حالة تسمح بهذا الإجراء.',
   'device.SELF_APPROVAL_DENIED': 'هذا الحساب هو من سجّل هذا الجهاز ولا يمكنه تأكيده أيضًا.',
+  'device.FINGERPRINT_MISMATCH': 'تغيّرت بصمات مفاتيح الجهاز؛ حدّث طلب الإقران.',
+  'device.INVALID_FINGERPRINT': 'بصمات مفاتيح الجهاز المعروضة مطلوبة.',
 
   'recovery.INVALID_INPUT': 'بيانات مغلف الاسترداد غير صالحة.',
   'recovery.VERSION_MISMATCH': 'تم تغيير مغلف الاسترداد من جهاز آخر؛ يرجى إعادة القراءة قبل المحاولة مرة أخرى.',

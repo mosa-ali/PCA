@@ -126,11 +126,18 @@ test('flapping outbound: resubmitting the same batch after a reconnect never dou
 
   // Attempt 1 "succeeds" server-side but the device never sees the response
   // (connection drops mid-flight) -- its outbox still has both items PENDING.
-  const attempt1 = await outboundService.submitBatch(senderDeviceId, familyId, batch);
+  const authorizeRecipient = async (candidate) => ({
+    familyId,
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+    sender: { deviceId: senderDeviceId, dskKeyId: 'sender-dsk' },
+    recipient: { deviceId: candidate, dskKeyId: 'recipient-dsk' },
+  });
+  const attempt1 = await outboundService.submitBatch(senderDeviceId, familyId, batch, authorizeRecipient);
   assert.ok(attempt1.results.every((r) => r.outcome === 'QUEUED'));
 
   // Reconnect -- device resubmits the identical, still-PENDING batch.
-  const attempt2 = await outboundService.submitBatch(senderDeviceId, familyId, batch);
+  const attempt2 = await outboundService.submitBatch(senderDeviceId, familyId, batch, authorizeRecipient);
   assert.ok(attempt2.results.every((r) => r.outcome === 'QUEUED'));
 
   const queued = await relayService.listQueuedForRecipient(recipientDeviceId);

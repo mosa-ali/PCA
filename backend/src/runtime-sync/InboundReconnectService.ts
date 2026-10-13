@@ -5,6 +5,7 @@ import type { SyncCoordinator } from '../familysync/SyncCoordinator.js';
 import type { SyncReceipt, SyncDecision } from '../familysync/types.js';
 import { requiresCorrelationPredecessor } from '../familysync/policy.js';
 import { RelayService } from '../relay/RelayService.js';
+import type { RelayRecipientAuthoritySnapshot } from '../relay/RelayRepository.js';
 import { envelopeFromRelayCiphertext, envelopeToRawFamilyEnvelope } from './envelopeWireCodec.js';
 import { MAX_INBOUND_LIST_SIZE } from './policy.js';
 import { MAX_RELAY_SUPPLEMENT_RECORDS, relayQueuePosition, type RelayQueuedRecord } from '../relay/queuePage.js';
@@ -53,6 +54,7 @@ export class InboundReconnectService {
     resolveContext: (senderKeyId: string, nowUtc: Date) => EnvelopeAcceptanceContext,
     nowUtc: Date,
     navigation?: { sessionIncarnation: string; cursor?: string },
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<ReconnectDrainOutcome> {
     // Non-HTTP callers can inspect one fresh bounded page. The production
     // route always supplies the validated session incarnation for continuation.
@@ -62,9 +64,10 @@ export class InboundReconnectService {
     if (scope) validateRelayNavigationScope(scope);
     const continuation = navigation?.cursor !== undefined && scope
       ? decodeRelayContinuation(navigation.cursor, scope, nowUtc) : null;
+    const authoritySnapshot = authority === undefined ? undefined : { ...authority };
     const page = await this.relayService.listQueuedPageForRecipient(recipientDeviceId, recipientFamilyId, nowUtc, {
       after: continuation?.after ?? null, highWater: continuation?.highWater ?? null, limit: MAX_INBOUND_LIST_SIZE,
-    });
+    }, authoritySnapshot);
     const queued = page.records;
     if (page.hasMore && (queued.length === 0 || page.highWater === null)) throw new Error('Invalid relay page progress.');
     const decodeBoundRecord = (record: RelayQueuedRecord): FamilyEnvelope | null => {
@@ -86,7 +89,7 @@ export class InboundReconnectService {
     }
     const baseIds = new Set(queued.map((record) => record.messageId));
     const supplements = await this.relayService.findQueuedForRecipient(recipientDeviceId, recipientFamilyId,
-      [...priorityMessageIds].filter((id) => !baseIds.has(id)), nowUtc);
+      [...priorityMessageIds].filter((id) => !baseIds.has(id)), nowUtc, authoritySnapshot);
     for (const record of supplements) {
       const envelope = decodeBoundRecord(record);
       if (envelope) decoded.set(record.messageId, envelope);

@@ -1,5 +1,5 @@
 import { isPlausibleCiphertext, isPlausibleOpaqueId, resolveRelayTtlMs, computeExpiryInstant } from './policy.js';
-import type { AcknowledgeResult, CreateEnvelopeResult, RelayRepository } from './RelayRepository.js';
+import type { AcknowledgeResult, CreateEnvelopeResult, RelayEnvelopeAuthoritySnapshot, RelayRecipientAuthoritySnapshot, RelayRepository } from './RelayRepository.js';
 import { buildRelayDiagnosticEvent, type RelayDiagnosticEvent, type RelayDiagnosticOutcome } from './diagnostics.js';
 import type { MessageId, OpaqueDeviceId, OpaqueFamilyId, RelayEnvelopeRecord } from './types.js';
 import { MAX_RELAY_SUPPLEMENT_RECORDS, validateRelayQueuePageInput, type RelayQueuePage, type RelayQueuePageInput, type RelayQueuedRecord } from './queuePage.js';
@@ -36,6 +36,8 @@ export interface QueueEnvelopeInput {
   ttlMs?: number;
   /** Optional absolute upper bound supplied by the signed envelope. Relay retention can never extend past it. */
   validUntil?: Date;
+  /** Accepted sender/recipient member snapshots checked atomically by MySQL at insertion. */
+  authority?: RelayEnvelopeAuthoritySnapshot;
 }
 
 export class RelayService {
@@ -87,6 +89,7 @@ export class RelayService {
     const sourceCiphertext = input.ciphertext;
     const requestedTtlMs = input.ttlMs;
     const requestedValidUntil = input.validUntil;
+    const requestedAuthority = input.authority;
     if (
       !isPlausibleOpaqueId(messageId) ||
       !isPlausibleOpaqueId(familyId) ||
@@ -96,12 +99,31 @@ export class RelayService {
       throw new RelayError('INVALID_INPUT');
     }
     if (!isPlausibleCiphertext(sourceCiphertext)) throw new RelayError('INVALID_INPUT');
+    if (requestedAuthority !== undefined && (
+      typeof requestedAuthority !== 'object' || requestedAuthority === null || Array.isArray(requestedAuthority) ||
+      requestedAuthority.familyId !== familyId ||
+      !isPlausibleOpaqueId(requestedAuthority.sender?.deviceId) ||
+      requestedAuthority.sender.deviceId !== senderDeviceId ||
+      !isPlausibleOpaqueId(requestedAuthority.sender?.dskKeyId) ||
+      !isPlausibleOpaqueId(requestedAuthority.recipient?.deviceId) ||
+      requestedAuthority.recipient.deviceId !== recipientDeviceId ||
+      !isPlausibleOpaqueId(requestedAuthority.recipient?.dskKeyId) ||
+      !Number.isSafeInteger(requestedAuthority.trustSetEpoch) || requestedAuthority.trustSetEpoch < 1 ||
+      !Number.isSafeInteger(requestedAuthority.keyEpoch) || requestedAuthority.keyEpoch < 1
+    )) throw new RelayError('INVALID_INPUT');
     if (requestedValidUntil !== undefined &&
         (!(requestedValidUntil instanceof Date) || !Number.isSafeInteger(requestedValidUntil.getTime()))) {
       throw new RelayError('INVALID_INPUT');
     }
 
     const ciphertext = Buffer.from(sourceCiphertext);
+    const authority = requestedAuthority === undefined ? undefined : {
+      familyId: requestedAuthority.familyId,
+      trustSetEpoch: requestedAuthority.trustSetEpoch,
+      keyEpoch: requestedAuthority.keyEpoch,
+      sender: { deviceId: requestedAuthority.sender.deviceId, dskKeyId: requestedAuthority.sender.dskKeyId },
+      recipient: { deviceId: requestedAuthority.recipient.deviceId, dskKeyId: requestedAuthority.recipient.dskKeyId },
+    };
     const ttlMs = resolveRelayTtlMs(requestedTtlMs);
     const createdAt = new Date(this.now().getTime());
     const ttlExpiresAt = computeExpiryInstant(createdAt, ttlMs);
@@ -130,7 +152,7 @@ export class RelayService {
       acknowledgedAt: null,
     };
 
-    const result: CreateEnvelopeResult = await this.repository.createOrMatchEnvelope(record);
+    const result: CreateEnvelopeResult = await this.repository.createOrMatchEnvelope(record, authority);
     switch (result.outcome) {
       case 'CREATED':
       case 'IDEMPOTENT_MATCH':
@@ -169,26 +191,32 @@ export class RelayService {
 
   async listQueuedPageForRecipient(
     recipientDeviceId: OpaqueDeviceId, familyId: OpaqueFamilyId, now: Date, input: RelayQueuePageInput,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<RelayQueuePage> {
     if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(familyId)) throw new RelayError('INVALID_INPUT');
     validateRelayQueuePageInput(input);
     // Expiry is filtered by the query; global housekeeping is not required
     // for bounded navigation and must not turn each page into a purge pass.
-    return this.repository.listQueuedPageForRecipient(recipientDeviceId, familyId, now, input);
+    return this.repository.listQueuedPageForRecipient(recipientDeviceId, familyId, now, input, authority);
   }
 
   async findQueuedForRecipient(
     recipientDeviceId: OpaqueDeviceId, familyId: OpaqueFamilyId, messageIds: readonly MessageId[], now: Date,
+    authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<RelayQueuedRecord[]> {
     if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(familyId)
         || messageIds.length > MAX_RELAY_SUPPLEMENT_RECORDS || messageIds.some((id) => !isPlausibleOpaqueId(id))) {
       throw new RelayError('INVALID_INPUT');
     }
-    return this.repository.findQueuedForRecipient(recipientDeviceId, familyId, [...new Set(messageIds)], now);
+    return this.repository.findQueuedForRecipient(recipientDeviceId, familyId, [...new Set(messageIds)], now, authority);
   }
 
   /** Acknowledgement is idempotent, but an already-expired envelope can never become ACKNOWLEDGED by a late ack. */
-  async acknowledgeEnvelope(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord> {
+  async acknowledgeEnvelope(
+    recipientDeviceId: OpaqueDeviceId,
+    messageId: MessageId,
+    authority?: RelayRecipientAuthoritySnapshot,
+  ): Promise<RelayEnvelopeRecord> {
     if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(messageId)) {
       throw new RelayError('INVALID_INPUT');
     }
@@ -197,6 +225,7 @@ export class RelayService {
       recipientDeviceId,
       messageId,
       now,
+      authority,
     );
     await this.purgeExpired(now);
     switch (result.outcome) {

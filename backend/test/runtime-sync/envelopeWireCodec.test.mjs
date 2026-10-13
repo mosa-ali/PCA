@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { envelopeToRelayCiphertext, envelopeFromRelayCiphertext } from '../../dist/runtime-sync/envelopeWireCodec.js';
+import { envelopeToRelayCiphertext, envelopeFromRelayCiphertext, envelopeToRawFamilyEnvelope } from '../../dist/runtime-sync/envelopeWireCodec.js';
+import { MAX_CIPHERTEXT_BYTES } from '../../dist/relay/policy.js';
 
 function buildEnvelope(overrides = {}) {
   return {
@@ -23,6 +24,21 @@ function buildEnvelope(overrides = {}) {
     signature: 'sig-1',
     ...overrides,
   };
+}
+
+function envelopeAtWireSize(targetBytes) {
+  const emptySize = Buffer.byteLength(JSON.stringify(envelopeToRawFamilyEnvelope(buildEnvelope({
+    payload: Buffer.alloc(0), signature: '',
+  }))));
+  for (let payloadLength = 1; payloadLength < MAX_CIPHERTEXT_BYTES; payloadLength += 1) {
+    const encodedPayloadLength = 4 * Math.ceil(payloadLength / 3);
+    const signatureLength = targetBytes - emptySize - encodedPayloadLength;
+    if (signatureLength < 1 || signatureLength > 512) continue;
+    const envelope = buildEnvelope({ payload: Buffer.alloc(payloadLength), signature: 's'.repeat(signatureLength) });
+    const wireLength = Buffer.byteLength(JSON.stringify(envelopeToRawFamilyEnvelope(envelope)));
+    if (wireLength === targetBytes) return envelope;
+  }
+  throw new Error(`Could not construct a serialized envelope of exactly ${targetBytes} bytes.`);
 }
 
 test('round-trips a DEVICE-recipient envelope through the relay wire codec unchanged', () => {
@@ -66,4 +82,15 @@ test('malformed JSON is rejected as null, not thrown', () => {
 
 test('structurally invalid (but valid JSON) input is rejected as null', () => {
   assert.equal(envelopeFromRelayCiphertext(Buffer.from(JSON.stringify({ foo: 'bar' }))), null);
+});
+
+test('serialized relay envelope accepts exactly 64 KiB and rejects one byte over on encode and parse', () => {
+  const atLimit = envelopeAtWireSize(MAX_CIPHERTEXT_BYTES);
+  const exactWire = envelopeToRelayCiphertext(atLimit);
+  assert.equal(exactWire.length, MAX_CIPHERTEXT_BYTES);
+  assert.deepEqual(envelopeFromRelayCiphertext(exactWire), atLimit);
+
+  const overLimit = { ...atLimit, signature: `${atLimit.signature}s` };
+  assert.throws(() => envelopeToRelayCiphertext(overLimit), RangeError);
+  assert.equal(envelopeFromRelayCiphertext(Buffer.concat([exactWire, Buffer.from(' ')])), null);
 });

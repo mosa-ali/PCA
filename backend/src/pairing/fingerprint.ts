@@ -13,3 +13,8 @@ export function computeKeyFingerprint(publicKey: string): string {
   const digest = createHash('sha256').update(publicKey, 'utf8').digest('hex');
   return digest.match(/.{1,4}/g)!.join('-');
 }
+
+/** Exact lowercase format produced by computeKeyFingerprint; input is never normalized. */
+export function isKeyFingerprint(candidate: unknown): candidate is string {
+  return typeof candidate === 'string' && /^(?:[0-9a-f]{4}-){15}[0-9a-f]{4}$/.test(candidate);
+}

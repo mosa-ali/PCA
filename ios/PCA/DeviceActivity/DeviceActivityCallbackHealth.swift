@@ -96,7 +96,9 @@ private func isValidCallbackTolerance(_ seconds: TimeInterval) -> Bool {
 }
 
 private func isValidCallbackDate(_ date: Date) -> Bool {
-    date.timeIntervalSince1970.isFinite
+    // A timestamp outside the callback log's durable range cannot serve as
+    // delivery evidence or as a trustworthy calendar-planning boundary.
+    DeviceActivityTimestamp.isValid(date)
 }
 
 public enum DeviceActivityCallbackReconciler {

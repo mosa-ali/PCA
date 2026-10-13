@@ -182,15 +182,19 @@ export interface MySqlFirstDeviceBootstrapStoreDeps {
   epochStore: Pick<MySqlTrustSetEpochStore, 'appendGenesisEpochOnConnection'>;
   /** Test-only seam; never wired in production. */
   commitHooks?: FirstDeviceBootstrapCommitHooks;
+  /** Test-only clock seam for deterministic transaction-boundary expiry tests; never wired in production. */
+  now?: () => Date;
 }
 
 export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore {
   private readonly epochStore: Pick<MySqlTrustSetEpochStore, 'appendGenesisEpochOnConnection'>;
   private readonly commitHooks: FirstDeviceBootstrapCommitHooks | undefined;
+  private readonly now: () => Date;
 
   constructor(deps: MySqlFirstDeviceBootstrapStoreDeps) {
     this.epochStore = deps.epochStore;
     this.commitHooks = deps.commitHooks;
+    this.now = deps.now ?? (() => new Date());
   }
 
   async readAttemptContext(attemptId: string): Promise<FirstDeviceAttemptContext | null> {
@@ -359,7 +363,12 @@ export class MySqlFirstDeviceBootstrapStore implements FirstDeviceBootstrapStore
 
         // ---- 3. State gates: approval must be durable, unexpired, by a still-eligible owner ----
         if (row.status !== 'APPROVED') return { outcome: 'NOT_APPROVED' };
-        if (toDate(row.expires_at).getTime() <= input.now.getTime()) return { outcome: 'EXPIRED' };
+        // `input.now` was sampled before this transaction began. Acquiring
+        // the ceremony row lock can wait past expiry, so make the decision
+        // against a fresh trusted instant only after this transaction owns
+        // the one-time serialization row.
+        const commitBoundaryNow = this.now();
+        if (toDate(row.expires_at).getTime() <= commitBoundaryNow.getTime()) return { outcome: 'EXPIRED' };
         if (row.approved_by_account_id === null) return { outcome: 'NOT_ELIGIBLE' };
         if (!(await this.isOwnerEligibleOn(conn, row.family_id, row.approved_by_account_id))) {
           return { outcome: 'NOT_ELIGIBLE' };

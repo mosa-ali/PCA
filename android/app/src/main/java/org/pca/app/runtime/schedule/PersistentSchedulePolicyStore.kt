@@ -19,6 +19,7 @@ class PersistentSchedulePolicyStore(
     private val coordinationLock: Any = store.coordinationLock
 
     override fun save(snapshot: SchedulePolicySnapshot) {
+        validateSnapshotRevisionState(snapshot)
         val raw = SchedulePolicyJson.encodeSnapshot(snapshot).toString()
         synchronized(coordinationLock) {
             val previous = readUnlocked()
@@ -47,17 +48,38 @@ class PersistentSchedulePolicyStore(
 
             // Stage and durably verify the snapshot before changing the committed-format marker
             // or active pointer. Interrupted staging is ignored; the existing pointer remains live.
-            store.putString(nextSlotKey, raw)
-            store.putString(nextGenerationKey, nextGeneration.toString())
-            store.flush()
-            check(store.getString(nextSlotKey) == raw) {
-                "Schedule policy snapshot readback did not match the staged bytes"
-            }
-            check(store.getString(nextGenerationKey) == nextGeneration.toString()) {
-                "Schedule policy generation readback did not match the staged value"
-            }
-            check(decode(raw) == SchedulePolicyStoreRead.Present(snapshot)) {
-                "Schedule policy snapshot did not round-trip"
+            try {
+                store.putString(nextSlotKey, raw)
+                store.putString(nextGenerationKey, nextGeneration.toString())
+                store.flush()
+                check(store.getString(nextSlotKey) == raw) {
+                    "Schedule policy snapshot readback did not match the staged bytes"
+                }
+                check(store.getString(nextGenerationKey) == nextGeneration.toString()) {
+                    "Schedule policy generation readback did not match the staged value"
+                }
+                check(decode(raw) == SchedulePolicyStoreRead.Present(snapshot)) {
+                    "Schedule policy snapshot did not round-trip"
+                }
+            } catch (failure: Exception) {
+                // The committed pointer/format have not changed yet. Remove the staged pair so
+                // a failed first write (or legacy upgrade) cannot leave orphan slot evidence that
+                // makes the still-committed Absent/legacy state look corrupt to this process.
+                try {
+                    store.remove(nextSlotKey)
+                    store.remove(nextGenerationKey)
+                    store.flush()
+                    check(!store.contains(nextSlotKey) && !store.contains(nextGenerationKey)) {
+                        "Schedule policy failed-stage cleanup readback did not match"
+                    }
+                    check(readUnlocked() == previous) {
+                        "Schedule policy failed-stage cleanup did not preserve prior state"
+                    }
+                } catch (rollbackFailure: Exception) {
+                    writeStateUncertain = true
+                    failure.addSuppressed(rollbackFailure)
+                }
+                throw IllegalStateException("Schedule policy snapshot staging failed", failure)
             }
 
             try {
@@ -147,7 +169,9 @@ class PersistentSchedulePolicyStore(
     }
 
     private fun decode(raw: String): SchedulePolicyStoreRead = try {
-        SchedulePolicyStoreRead.Present(SchedulePolicyJson.decodeSnapshot(JSONObject(raw)))
+        val snapshot = SchedulePolicyJson.decodeSnapshot(JSONObject(raw))
+        validateSnapshotRevisionState(snapshot)
+        SchedulePolicyStoreRead.Present(snapshot)
     } catch (_: Exception) {
         // Do not remove or rewrite raw bytes. Keep them for diagnosis and recovery.
         SchedulePolicyStoreRead.Corrupt
@@ -155,9 +179,26 @@ class PersistentSchedulePolicyStore(
 
     /** Defense in depth for the envelope's authoritative POLICY_UPDATE version ledger. */
     private fun enforcePolicyRevision(current: SchedulePolicySnapshot, next: SchedulePolicySnapshot) {
-        val priorPolicy = current.candidatePolicy ?: current.lastKnownGoodPolicy ?: return
+        val priorPolicy = listOfNotNull(current.candidatePolicy, current.lastKnownGoodPolicy)
+            .maxByOrNull { it.policyRevision } ?: return
         val nextPolicy = next.candidatePolicy
             ?: error("Cannot erase a persisted schedule policy without an authorized replacement")
+        current.lastKnownGoodPolicy?.let { priorLastKnownGood ->
+            val nextLastKnownGood = next.lastKnownGoodPolicy
+                ?: error("Cannot erase a persisted last-known-good schedule policy")
+            check(nextLastKnownGood.policyId == priorLastKnownGood.policyId) {
+                "Cannot change the last-known-good schedule policy identity"
+            }
+            check(nextLastKnownGood.policyRevision >= priorLastKnownGood.policyRevision) {
+                "Cannot roll back the last-known-good schedule policy revision"
+            }
+            if (nextLastKnownGood.policyRevision == priorLastKnownGood.policyRevision) {
+                check(SchedulePolicyEnvelopePayload.encode(nextLastKnownGood) ==
+                    SchedulePolicyEnvelopePayload.encode(priorLastKnownGood)) {
+                    "Conflicting last-known-good schedule policy bytes at the same revision"
+                }
+            }
+        }
         // SchedulePolicyV1 defines policyId as the stable identifier for this child's schedule,
         // not a per-revision identifier. Do not permit a local snapshot write to reset that
         // identity or its strictly increasing revision stream.
@@ -176,6 +217,24 @@ class PersistentSchedulePolicyStore(
             check(samePolicyIdentityAndBytes && current.lastKnownGoodPolicy == next.lastKnownGoodPolicy &&
                 current.lastPolicySyncAtUtc == next.lastPolicySyncAtUtc) {
                 "Conflicting schedule policy replay or freshness update at the same revision"
+            }
+        }
+    }
+
+    /** Candidate and fallback must be revisions from one stable schedule identity. An older
+     * candidate must never outrank a newer LKG merely because the candidate happens to validate. */
+    private fun validateSnapshotRevisionState(snapshot: SchedulePolicySnapshot) {
+        val candidate = snapshot.candidatePolicy ?: return
+        val lastKnownGood = snapshot.lastKnownGoodPolicy ?: return
+        check(candidate.policyId == lastKnownGood.policyId) {
+            "Candidate and last-known-good schedule policies must share one stable identity"
+        }
+        check(candidate.policyRevision >= lastKnownGood.policyRevision) {
+            "Candidate schedule revision cannot be older than last-known-good"
+        }
+        if (candidate.policyRevision == lastKnownGood.policyRevision) {
+            check(SchedulePolicyEnvelopePayload.encode(candidate) == SchedulePolicyEnvelopePayload.encode(lastKnownGood)) {
+                "Conflicting schedule policy bytes at the same revision"
             }
         }
     }

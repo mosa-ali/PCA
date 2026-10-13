@@ -17,6 +17,10 @@ object TrustSetEpochCodec {
 
     fun parseWire(json: String): UntrustedTrustSetEpoch = checked {
         require(json.length <= MAX_WIRE_UTF16_UNITS)
+        // JSONObject silently keeps the last value for duplicate names. Reject ambiguous input
+        // before parsing so this wire boundary has the same unambiguous-member rule as persisted
+        // Trust Set state and authenticated HTTP responses.
+        StrictJsonMemberNames.requireUnique(json)
         val raw = JSONObject(json)
         fun text(key: String): String = (raw.get(key) as? String) ?: malformed()
         require(raw.has("supersedesEpoch"))

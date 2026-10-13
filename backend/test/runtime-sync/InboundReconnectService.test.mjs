@@ -82,6 +82,29 @@ test('a campaign traverses empty malformed pages and reaches later eligible ciph
   assert.equal((await relayService.listQueuedForRecipient(RECIPIENT_DEVICE_ID)).length, 206);
 });
 
+test('inbound page and predecessor supplement reads receive the same recipient authority snapshot', async () => {
+  const now = new Date('2026-01-01T01:00:00.000Z');
+  const { relayService, relayRepository, inboundService } = buildHarness({ relayNow: () => now });
+  const authority = { familyId: 'family-1', dskKeyId: 'recipient-dsk-1', trustSetEpoch: 4, keyEpoch: 7 };
+  let pageAuthority;
+  let supplementAuthority;
+  const listPage = relayRepository.listQueuedPageForRecipient.bind(relayRepository);
+  const findQueued = relayRepository.findQueuedForRecipient.bind(relayRepository);
+  relayRepository.listQueuedPageForRecipient = async (...args) => {
+    pageAuthority = args[4];
+    return listPage(...args);
+  };
+  relayRepository.findQueuedForRecipient = async (...args) => {
+    supplementAuthority = args[4];
+    return findQueued(...args);
+  };
+
+  await inboundService.reconnectDrainForRecipient(RECIPIENT_DEVICE_ID, 'family-1', resolveContext(now), now,
+    { sessionIncarnation: 'a'.repeat(64) }, authority);
+  assert.deepEqual(pageAuthority, authority);
+  assert.deepEqual(supplementAuthority, authority);
+});
+
 test('promotion of a prior-page pending envelope keeps the later page unresolved until a fresh delivery sweep', async () => {
   const now = new Date('2026-01-01T01:00:00.000Z');
   const { relayService, inboundService } = buildHarness({ relayNow: () => now });

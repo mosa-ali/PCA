@@ -165,6 +165,25 @@ test('child request submission fails closed for stale/mismatched DSK authority a
     await mismatch.app.close();
   }
 
+  for (const [label, projectActor] of [
+    ['family', (familyId, deviceId, dskKeyId) => ({ familyId: `${familyId}-other`, deviceId, dskKeyId, role: 'CHILD', trustSetEpoch: 5, keyEpoch: 3 })],
+    ['DSK', (familyId, deviceId) => ({ familyId, deviceId, dskKeyId: 'another-device-key', role: 'CHILD', trustSetEpoch: 5, keyEpoch: 3 })],
+  ]) {
+    const projectedMismatch = buildApp({ trustSetRoleResolverOverride: {
+      resolveActor: async (familyId, deviceId, dskKeyId) => projectActor(familyId, deviceId, dskKeyId),
+    } });
+    try {
+      const response = await projectedMismatch.app.inject({
+        method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+        headers: { authorization: 'Bearer dev-token-child' }, payload,
+      });
+      assert.equal(response.statusCode, 503, `${label} projection mismatch must fail closed`);
+      assert.equal((await projectedMismatch.childRequestService.listForFamily(FAMILY)).length, 0);
+    } finally {
+      await projectedMismatch.app.close();
+    }
+  }
+
   const unavailable = buildApp({ trustSetRoleResolverOverride: null });
   try {
     const response = await unavailable.app.inject({
@@ -180,7 +199,7 @@ test('child request submission fails closed for stale/mismatched DSK authority a
 
 test('child request submit and applied receipt require accepted CHILD role, not just active DSK membership', async () => {
   const submitDenied = buildApp({ trustSetRoleResolverOverride: {
-    resolveActor: async (_familyId, deviceId) => ({ deviceId, role: 'VIEWER', trustSetEpoch: 5, keyEpoch: 3 }),
+    resolveActor: async (familyId, deviceId, dskKeyId) => ({ familyId, deviceId, dskKeyId, role: 'VIEWER', trustSetEpoch: 5, keyEpoch: 3 }),
   } });
   try {
     const response = await submitDenied.app.inject({
@@ -196,7 +215,7 @@ test('child request submit and applied receipt require accepted CHILD role, not 
 
   let acceptedRole = 'CHILD';
   const roleResolver = {
-    resolveActor: async (_familyId, deviceId) => ({ deviceId, role: acceptedRole, trustSetEpoch: 5, keyEpoch: 3 }),
+    resolveActor: async (familyId, deviceId, dskKeyId) => ({ familyId, deviceId, dskKeyId, role: acceptedRole, trustSetEpoch: 5, keyEpoch: 3 }),
   };
   const appliedDenied = buildApp({ trustSetRoleResolverOverride: roleResolver });
   try {
@@ -209,6 +228,7 @@ test('child request submit and applied receipt require accepted CHILD role, not 
       },
     });
     assert.equal(submit.statusCode, 201);
+    assert.equal(submit.headers['cache-control'], 'private, no-store');
     const requestId = submit.json().request.requestId;
     const decision = await appliedDenied.app.inject({
       method: 'POST', url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
@@ -256,6 +276,7 @@ test('a child device can submit a BONUS_TIME request, and a same-family Parent A
       response: list,
     });
     assert.equal(list.statusCode, 200);
+    assert.equal(list.headers['cache-control'], 'private, no-store');
     assert.equal(list.json().requests.length, 1);
 
     const decide = await app.inject({
@@ -273,6 +294,7 @@ test('a child device can submit a BONUS_TIME request, and a same-family Parent A
       response: decide,
     });
     assert.equal(decide.statusCode, 200);
+    assert.equal(decide.headers['cache-control'], 'private, no-store');
     assert.equal(decide.json().request.state, 'APPROVED');
     assert.equal(decide.json().request.grantedExtraMinutes, 30);
     assert.equal(decide.json().request.decidedByAccountId, 'acct-owner');
@@ -627,6 +649,44 @@ test('submitting an INSTALL_APPROVAL request with a missing package name, or an 
     assert.equal(badCapability.statusCode, 400);
   } finally {
     await app.close();
+  }
+});
+
+test('applied receipt denies a family or DSK projection mismatch before mutating the request', async (t) => {
+  for (const [label, projectActor] of [
+    ['family', (familyId, deviceId, dskKeyId) => ({ familyId: `${familyId}-other`, deviceId, dskKeyId })],
+    ['DSK', (familyId, deviceId) => ({ familyId, deviceId, dskKeyId: 'rotated-dsk' })],
+  ]) {
+    await t.test(label, async () => {
+      let projectionMismatch = false;
+      const { app, childRequestService } = buildApp({ trustSetRoleResolverOverride: {
+        resolveActor: async (familyId, deviceId, dskKeyId) => ({
+          ...(projectionMismatch ? projectActor(familyId, deviceId, dskKeyId) : { familyId, deviceId, dskKeyId }),
+          role: 'CHILD', trustSetEpoch: 5, keyEpoch: 3,
+        }),
+      } });
+      try {
+        const submit = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+          headers: { authorization: 'Bearer dev-token-child' },
+          payload: { requestType: 'INSTALL_APPROVAL', childProfileId: 'child-1',
+            installTargetPackageName: 'com.example.scopecheck', installCapabilityState: 'ENFORCED' } });
+        assert.equal(submit.statusCode, 201);
+        const requestId = submit.json().request.requestId;
+        const decision = await app.inject({ method: 'POST', url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
+          headers: parentAuthHeaders, payload: { decision: 'APPROVED' } });
+        assert.equal(decision.statusCode, 200);
+
+        projectionMismatch = true;
+        const receipt = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+          headers: { authorization: 'Bearer dev-token-child' }, payload: { capabilityOutcome: 'ENFORCED' } });
+        assert.equal(receipt.statusCode, 503);
+        const stored = (await childRequestService.listForFamily(FAMILY)).find((request) => request.requestId === requestId);
+        assert.equal(stored.state, 'APPROVED');
+        assert.equal(stored.installEnforcementOutcome, null);
+      } finally {
+        await app.close();
+      }
+    });
   }
 });
 

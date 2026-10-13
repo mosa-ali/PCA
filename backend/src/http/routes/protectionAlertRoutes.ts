@@ -114,7 +114,7 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
       return reply.code(503).send({ error: 'authority_unavailable' });
     }
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' || Array.isArray(actor) ||
-        actor.deviceId !== actorDeviceId ||
+        actor.familyId !== familyId || actor.deviceId !== actorDeviceId || actor.dskKeyId !== actorDskKeyId ||
         !['OWNER', 'ADMINISTRATOR', 'VIEWER'].includes(actor.role) ||
         !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
         !isFamilyEpochNumber(actor.keyEpoch, 1)) {
@@ -125,6 +125,42 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
     // bounded feed window is selected. Stale ciphertext must not occupy page
     // slots or be sent to a device whose current Trust Set key cannot open it.
     const alerts = await protectionAlertLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
+
+    // The ledger read is asynchronous. Recheck Parent membership and the
+    // exact session DSK's accepted Trust Set projection after it completes;
+    // otherwise a role/key revocation or rotation during the read could
+    // still return a stale ciphertext batch with 200.
+    let currentRole;
+    try {
+      currentRole = await parentAccountService.activeFamilyRole(accountId, familyId);
+    } catch {
+      return reply.code(503).send({ error: 'authority_unavailable' });
+    }
+    if (currentRole !== 'ADMINISTRATOR' && currentRole !== 'VIEWER') {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+
+    let currentActor;
+    try {
+      currentActor = await trustSetRoleResolver.resolveActor(familyId, actorDeviceId, actorDskKeyId);
+    } catch {
+      return reply.code(503).send({ error: 'authority_unavailable' });
+    }
+    if (isActorResolutionFailure(currentActor) || !currentActor || typeof currentActor !== 'object' ||
+        Array.isArray(currentActor) || currentActor.familyId !== familyId || currentActor.deviceId !== actorDeviceId ||
+        currentActor.dskKeyId !== actorDskKeyId ||
+        !['OWNER', 'ADMINISTRATOR', 'VIEWER'].includes(currentActor.role) ||
+        !isFamilyEpochNumber(currentActor.trustSetEpoch, 1) ||
+        !isFamilyEpochNumber(currentActor.keyEpoch, 1)) {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+    if (currentActor.trustSetEpoch !== actor.trustSetEpoch) {
+      return reply.code(409).send({ error: 'authority_changed' });
+    }
+    if (currentActor.keyEpoch !== actor.keyEpoch) {
+      return reply.code(409).send({ error: 'key_epoch_mismatch' });
+    }
+
     return reply.code(200).send({ alerts: alerts.map(toAlertDto) });
   });
 }

@@ -6,8 +6,33 @@ import org.junit.Test
 import org.json.JSONException
 import org.json.JSONObject
 import java.time.Instant
+import org.pca.app.runtime.sync.envelope.FamilyEnvelope
+import org.pca.app.runtime.sync.envelope.RecipientBinding
+import org.pca.app.runtime.sync.inbox.RuntimeInboxScope
 
 class SchedulePolicyEnvelopePayloadTest {
+
+    private val inboxScope = RuntimeInboxScope("family-1", "device-1")
+
+    private fun envelope(policy: SchedulePolicyV1 = samplePolicy()) = FamilyEnvelope(
+        protocolMajor = 1,
+        protocolMinor = 0,
+        messageId = "message-1",
+        familyId = policy.familyId,
+        senderDeviceId = "parent-device",
+        recipient = RecipientBinding.Device("device-1"),
+        senderKeyId = "parent-dsk",
+        messageType = "POLICY_UPDATE",
+        trustSetEpoch = policy.trustSetEpoch.toLong(),
+        keyEpoch = policy.keyEpoch.toLong(),
+        sequenceOrNonce = "nonce-1",
+        issuedAtEpochMillis = policy.issuedAt.toEpochMilli(),
+        expiresAtEpochMillis = policy.expiresAt!!.toEpochMilli(),
+        semanticVersion = "1.0.0",
+        correlationId = null,
+        payload = byteArrayOf(1),
+        signature = "opaque-signature",
+    )
 
     private fun samplePolicy() = SchedulePolicyV1(
         policyId = "policy-1",
@@ -59,21 +84,78 @@ class SchedulePolicyEnvelopePayloadTest {
     }
 
     @Test
-    fun `authenticated envelope epochs bind exactly to decoded schedule policy`() {
+    fun `unknown schedule policy version cannot enter receiving or runtime paths`() {
+        val unknownVersion = samplePolicy().copy(version = "2")
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.encode(unknownVersion)
+        }
+
+        val wire = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        wire.getJSONObject("policy").put("version", "2")
+        assertThrows(JSONException::class.java) { SchedulePolicyEnvelopePayload.decode(wire.toString()) }
+
+        val acceptance = SchedulePolicyValidator.evaluate(PolicyAcceptanceInput(
+            candidatePolicy = unknownVersion,
+            lastKnownGoodPolicy = null,
+            nowUtc = Instant.parse("2026-01-08T00:00:00Z"),
+            deviceTrustSetEpoch = 2,
+            deviceKeyEpoch = 1,
+            connectivity = Connectivity.ONLINE,
+            lastPolicySyncAtUtc = Instant.parse("2026-01-08T00:00:00Z"),
+        ))
+        assertEquals(ScheduleRuntimeState.INVALID, acceptance.state)
+        assertEquals(null, acceptance.effectivePolicy)
+    }
+
+    @Test
+    fun `authenticated envelope binds family profile and epochs to the local receive scope`() {
         val policy = samplePolicy()
         val plaintext = SchedulePolicyEnvelopePayload.encode(policy)
+        val signedEnvelope = envelope(policy)
 
         assertEquals(policy, SchedulePolicyEnvelopePayload.decodeForEnvelope(
             plaintext,
-            envelopeTrustSetEpoch = policy.trustSetEpoch.toLong(),
-            envelopeKeyEpoch = policy.keyEpoch.toLong(),
+            envelope = signedEnvelope,
+            expectedInboxScope = inboxScope,
+            expectedChildProfileId = policy.childProfileId,
         ))
 
         assertThrows(IllegalArgumentException::class.java) {
-            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, policy.trustSetEpoch + 1L, policy.keyEpoch.toLong())
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope.copy(trustSetEpoch = policy.trustSetEpoch + 1L), inboxScope, policy.childProfileId,
+            )
         }
         assertThrows(IllegalArgumentException::class.java) {
-            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, policy.trustSetEpoch.toLong(), policy.keyEpoch + 1L)
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope.copy(keyEpoch = policy.keyEpoch + 1L), inboxScope, policy.childProfileId,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                SchedulePolicyEnvelopePayload.encode(policy.copy(familyId = "other-family")),
+                signedEnvelope, inboxScope, policy.childProfileId,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope.copy(familyId = "other-family"), inboxScope, policy.childProfileId,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope.copy(recipient = RecipientBinding.Device("other-device")),
+                inboxScope, policy.childProfileId,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope, inboxScope, expectedChildProfileId = "other-child",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, signedEnvelope.copy(messageType = "CHILD_REQUEST"), inboxScope, policy.childProfileId,
+            )
         }
     }
 
@@ -81,12 +163,17 @@ class SchedulePolicyEnvelopePayloadTest {
     fun `out of range envelope epoch metadata is rejected before payload binding`() {
         val plaintext = SchedulePolicyEnvelopePayload.encode(samplePolicy())
         val aboveInt32 = Int.MAX_VALUE.toLong() + 1L
+        val envelope = envelope(samplePolicy())
 
         assertThrows(IllegalArgumentException::class.java) {
-            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, aboveInt32, 1L)
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, envelope.copy(trustSetEpoch = aboveInt32), inboxScope, "child-1",
+            )
         }
         assertThrows(IllegalArgumentException::class.java) {
-            SchedulePolicyEnvelopePayload.decodeForEnvelope(plaintext, 1L, -1L)
+            SchedulePolicyEnvelopePayload.decodeForEnvelope(
+                plaintext, envelope.copy(keyEpoch = -1L), inboxScope, "child-1",
+            )
         }
     }
 
@@ -275,6 +362,23 @@ class SchedulePolicyEnvelopePayloadTest {
         fractional.getJSONObject("candidatePolicy").getJSONArray("windows").getJSONObject(0)
             .getJSONObject("end").put("minute", 0.25)
         assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(fractional) }
+    }
+
+    @Test
+    fun `persisted schedule decoder rejects unknown or ambiguous app scopes`() {
+        val unknown = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(samplePolicy(), null, null, 0, 0),
+        )
+        unknown.getJSONObject("candidatePolicy").getJSONArray("windows").getJSONObject(0)
+            .getJSONObject("appScope").put("mode", "FUTURE")
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(unknown) }
+
+        val ambiguous = SchedulePolicyJson.encodeSnapshot(
+            SchedulePolicySnapshot(samplePolicy(), null, null, 0, 0),
+        )
+        ambiguous.getJSONObject("candidatePolicy").getJSONArray("windows").getJSONObject(0)
+            .getJSONObject("appScope").put("apps", org.json.JSONArray().put("unexpected"))
+        assertThrows(JSONException::class.java) { SchedulePolicyJson.decodeSnapshot(ambiguous) }
     }
 
     @Test

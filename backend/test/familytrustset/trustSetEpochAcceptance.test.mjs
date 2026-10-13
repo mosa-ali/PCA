@@ -20,6 +20,8 @@ import test from 'node:test';
 import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
 import { StoreBackedTrustSetRoleResolver } from '../../dist/familytrustset/StoreBackedTrustSetRoleResolver.js';
 import { TrustSetEpochAcceptanceService } from '../../dist/familytrustset/TrustSetEpochAcceptance.js';
+import { MySqlTrustSetEpochStore } from '../../dist/familytrustset/MySqlTrustSetEpochStore.js';
+import { isPersistableTrustSetDate, TrustSetEpochStoreError } from '../../dist/familytrustset/TrustSetEpochStore.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { P256TrustSetSignatureVerifier } from '../../dist/familytrustset/P256TrustSetSignatureVerifier.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
@@ -447,6 +449,22 @@ test('CORRUPT_ZERO_DURABLE_EPOCH: persisted zero Trust Set/key epochs fail close
   assert.equal(harness.state.appendCalls.length, 0);
 });
 
+test('CORRUPT_ACCEPTED_HEAD_METADATA: successor acceptance fails closed when persisted signer metadata disagrees with signed head bytes', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const stored = seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+  stored.signerDeviceId = 'different-device';
+  const candidate = signedCandidate(
+    epochFields({ trustSetEpoch: 2, supersedesEpoch: 1, entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  await assert.rejects(harness.service.acceptCandidate(inputFor(candidate)), /inconsistent durable state/);
+
+  assert.equal(harness.state.verifyCalls.length, 0, 'corrupt accepted-head metadata is rejected before candidate signature verification');
+  assert.equal(harness.state.appendCalls.length, 0, 'a corrupt accepted head cannot authorize a successor append');
+});
+
 test('INVALID_GENESIS_SIGNER: a candidate whose ACTIVE OWNER is not the anchored genesis device is rejected before signature verification', async () => {
   const anchorOwner = makeDevice('anchor-owner');
   const impostor = makeDevice('impostor');
@@ -515,6 +533,59 @@ test('MALFORMED_CANDIDATE_STRUCTURAL_RULES: engine-invalid epochs are rejected b
     duplicateIdentity.state,
   );
   assert.equal(duplicateIdentity.state.verifyCalls.length, 0);
+});
+
+test('MALFORMED_CANDIDATE_MYSQL_DATETIME_RANGE: year 0001 signed epoch is rejected before verification or persistence', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(
+    epochFields({ issuedAt: new Date('0001-01-01T00:00:00.000Z'), entries: [entryFor(owner)] }),
+    owner.dskPrivateKey,
+  );
+
+  const result = await harness.service.acceptCandidate(inputFor(candidate));
+
+  assertRejectedClean(result, 'MALFORMED_CANDIDATE', harness.state);
+  assert.equal(harness.state.verifyCalls.length, 0, 'unpersistable canonical timestamps must fail before signature verification');
+  assert.equal(harness.state.reads.latest, 0, 'unpersistable candidates must not enter accepted-head/idempotency evaluation');
+});
+
+test('MALFORMED_CANDIDATE_MYSQL_RECEIVED_AT_RANGE: out-of-range receipt time is rejected before decode or persistence', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(epochFields({ entries: [entryFor(owner)] }), owner.dskPrivateKey);
+
+  const result = await harness.service.acceptCandidate(inputFor(candidate, {
+    receivedAt: new Date('0001-01-01T00:00:00.000Z'),
+  }));
+
+  assertRejectedClean(result, 'MALFORMED_CANDIDATE', harness.state);
+  assert.equal(harness.state.verifyCalls.length, 0);
+  assert.equal(harness.state.reads.latest, 0);
+});
+
+test('MYSQL_STORE_DATETIME_RANGE: direct append rejects years below 1000 before database access', async () => {
+  const store = new MySqlTrustSetEpochStore();
+  const record = {
+    familyId: FAMILY_ID,
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+    supersedesEpoch: null,
+    signedEpochBytes: Buffer.from('canonical-epoch'),
+    signature: 'signature',
+    signerKeyId: 'owner-dsk',
+    signerDeviceId: 'owner-device',
+    issuedAt: new Date('0001-01-01T00:00:00.000Z'),
+    receivedAt: RECEIVED_AT,
+  };
+
+  await assert.rejects(
+    () => store.appendAcceptedEpoch(record, null),
+    (error) => error instanceof TrustSetEpochStoreError && error.code === 'INVALID_INPUT',
+  );
+  assert.equal(isPersistableTrustSetDate(new Date('1000-01-01T00:00:00.000Z')), true);
+  assert.equal(isPersistableTrustSetDate(new Date('9999-12-31T23:59:59.999Z')), true);
+  assert.equal(isPersistableTrustSetDate(new Date('0001-01-01T00:00:00.000Z')), false);
 });
 
 // --- Chain --------------------------------------------------------------
@@ -658,7 +729,7 @@ test('BAD_SIGNATURE_REJECTED: a signature over different bytes fails verificatio
   );
 
   assertRejectedClean(result, 'SIGNATURE_INVALID', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 1, 'the signature WAS attempted');
+  assert.equal(harness.state.verifyCalls.length, 2, 'the accepted head and candidate signatures were both attempted');
 });
 
 test('WRONG_KEY_REJECTED: a well-formed signature produced by a different DSK fails verification', async () => {
@@ -674,8 +745,8 @@ test('WRONG_KEY_REJECTED: a well-formed signature produced by a different DSK fa
   const result = await harness.service.acceptCandidate(inputFor(candidate));
 
   assertRejectedClean(result, 'SIGNATURE_INVALID', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 1);
-  assert.equal(harness.state.verifyCalls[0].publicKey, owner.dskPublicKey);
+  assert.equal(harness.state.verifyCalls.length, 2);
+  assert.equal(harness.state.verifyCalls[1].publicKey, owner.dskPublicKey);
 });
 
 test('WRONG_SIGNER_REJECTED: a candidate claiming a different ACTIVE OWNER than the authorized signer is SIGNER_NOT_AUTHORIZED', async () => {
@@ -691,7 +762,7 @@ test('WRONG_SIGNER_REJECTED: a candidate claiming a different ACTIVE OWNER than 
   const result = await harness.service.acceptCandidate(inputFor(candidate));
 
   assertRejectedClean(result, 'SIGNER_NOT_AUTHORIZED', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 0, 'authorization is checked before any cryptographic work');
+  assert.equal(harness.state.verifyCalls.length, 1, 'the accepted head is checked, but the unauthorized candidate is never verified');
 });
 
 test('REVOKED_SIGNER_REJECTED: a candidate whose previous-signer entry is no longer ACTIVE is SIGNER_NOT_AUTHORIZED', async () => {
@@ -725,7 +796,7 @@ test('REVOKED_SIGNER_REJECTED: a candidate whose previous-signer entry is no lon
     harness.state,
   );
 
-  assert.equal(harness.state.verifyCalls.length, 0);
+  assert.equal(harness.state.verifyCalls.length, 2, 'each accepted head is verified, while unauthorized candidate signatures are not');
 });
 
 test('STALE_TRUST_SET_REJECTED: a trustSetEpoch below the latest accepted epoch is rejected before signer resolution', async () => {
@@ -745,7 +816,7 @@ test('STALE_TRUST_SET_REJECTED: a trustSetEpoch below the latest accepted epoch 
   const result = await harness.service.acceptCandidate(inputFor(candidate));
 
   assertRejectedClean(result, 'STALE_TRUST_SET_EPOCH', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 0);
+  assert.equal(harness.state.verifyCalls.length, 1, 'the current accepted head is verified before rejecting the stale candidate');
 });
 
 test('STALE_KEY_EPOCH_REJECTED: a lower keyEpoch than the floor is rejected even with a higher trustSetEpoch', async () => {
@@ -760,7 +831,7 @@ test('STALE_KEY_EPOCH_REJECTED: a lower keyEpoch than the floor is rejected even
   const result = await harness.service.acceptCandidate(inputFor(candidate));
 
   assertRejectedClean(result, 'STALE_KEY_EPOCH', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 1, 'signature is verified before the durable floors check');
+  assert.equal(harness.state.verifyCalls.length, 2, 'the accepted head and candidate signatures are verified before the durable floors check');
 });
 
 test('WRONG_PREDECESSOR_REJECTED: a supersedesEpoch referencing a never-accepted epoch is UNKNOWN_PREDECESSOR', async () => {
@@ -838,6 +909,32 @@ test('CANONICAL_PAYLOAD_MUTATION_REJECTED: non-canonical bytes are rejected by t
   assert.deepEqual(await control.service.acceptCandidate(inputFor(candidate)), { outcome: 'ACCEPTED' });
 });
 
+test('receivedAt is snapshotted before asynchronous signature verification', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(epochFields({ entries: [entryFor(owner)] }), owner.dskPrivateKey);
+  const receivedAt = new Date(RECEIVED_AT);
+  const originalReceiptMillis = receivedAt.getTime();
+  let verificationStarted;
+  let releaseVerification;
+  const started = new Promise((resolve) => { verificationStarted = resolve; });
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  const realVerifier = new P256TrustSetSignatureVerifier();
+  harness.deps.verifier.verify = async (...args) => {
+    verificationStarted();
+    await verificationGate;
+    return realVerifier.verify(...args);
+  };
+
+  const pending = harness.service.acceptCandidate(inputFor(candidate, { receivedAt }));
+  await started;
+  receivedAt.setTime(originalReceiptMillis + 60_000);
+  releaseVerification();
+
+  assert.deepEqual(await pending, { outcome: 'ACCEPTED' });
+  assert.equal(harness.state.epochs[0].receivedAt.getTime(), originalReceiptMillis);
+});
+
 // --- Side metadata (Section 12) -----------------------------------------
 
 function chainedCandidateWithMetadata(metadata) {
@@ -855,7 +952,7 @@ test('SIDE_METADATA_CONTRADICTION_REJECTED: a conflicting signerDeviceId claim i
   const { harness, input } = chainedCandidateWithMetadata({ signerDeviceId: 'some-other-device' });
   const result = await harness.service.acceptCandidate(input);
   assertRejectedClean(result, 'SIDE_METADATA_CONFLICT', harness.state);
-  assert.equal(harness.state.verifyCalls.length, 1, 'metadata is checked only after full verification');
+  assert.equal(harness.state.verifyCalls.length, 2, 'the accepted head and candidate signatures are checked before claimed metadata');
 });
 
 test('SIDE_METADATA_CONTRADICTION_REJECTED: a conflicting signerKeyId claim is rejected', async () => {
@@ -1114,26 +1211,34 @@ test('RESOLVER_ACCEPTED_EPOCH: the latest accepted epoch maps entries exactly li
   const resolver = createStoreBackedResolver(harness, [owner, admin, viewer, offline, removed]);
 
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, owner.deviceId), {
+    familyId: FAMILY_ID,
     deviceId: owner.deviceId,
+    dskKeyId: owner.dskKeyId,
     role: 'OWNER',
     trustSetEpoch: 2,
     keyEpoch: 1,
   });
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, owner.deviceId, owner.dskKeyId), {
+    familyId: FAMILY_ID,
     deviceId: owner.deviceId,
+    dskKeyId: owner.dskKeyId,
     role: 'OWNER',
     trustSetEpoch: 2,
     keyEpoch: 1,
   });
   assert.equal(await resolver.resolveActor(FAMILY_ID, owner.deviceId, 'stale-session-dsk'), 'DEVICE_NOT_ACTIVE');
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, admin.deviceId), {
+    familyId: FAMILY_ID,
     deviceId: admin.deviceId,
+    dskKeyId: admin.dskKeyId,
     role: 'ADMINISTRATOR',
     trustSetEpoch: 2,
     keyEpoch: 1,
   });
   assert.deepEqual(await resolver.resolveActor(FAMILY_ID, viewer.deviceId), {
+    familyId: FAMILY_ID,
     deviceId: viewer.deviceId,
+    dskKeyId: viewer.dskKeyId,
     role: 'VIEWER',
     trustSetEpoch: 2,
     keyEpoch: 1,
@@ -1145,6 +1250,44 @@ test('RESOLVER_ACCEPTED_EPOCH: the latest accepted epoch maps entries exactly li
     'epoch 1 only: the latest epoch is the resolution source',
   );
   assert.equal(await resolver.resolveActor('some-other-family', owner.deviceId), 'NO_TRUST_SET');
+});
+
+test('RESOLVER_HEAD_ADVANCE_DURING_ASYNC_CHECK: a newer accepted head prevents returning a stale actor', async () => {
+  const owner = makeDevice('owner');
+  const admin = makeDevice('admin');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state,
+    epochFields({ entries: [entryFor(owner), entryFor(admin, { role: 'ADMINISTRATOR' })] }), owner);
+  let advanced = false;
+  const verifier = new P256TrustSetSignatureVerifier();
+  const resolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: harness.deps.epochStore,
+    deviceRepository: {
+      async isDeviceSessionActive(familyId, deviceId) {
+        return familyId === FAMILY_ID && [owner.deviceId, admin.deviceId].includes(deviceId);
+      },
+      async findKeysByDeviceForFamily(familyId, deviceId) {
+        if (familyId !== FAMILY_ID) return [];
+        const device = [owner, admin].find((candidate) => candidate.deviceId === deviceId);
+        return device ? [{ deviceId, keyId: device.dskKeyId, keyPurpose: 'DSK',
+          publicKey: device.dskPublicKey, status: 'ACTIVE' }] : [];
+      },
+    },
+    verifier: {
+      async verify(publicKey, canonicalBytes, signature) {
+        const valid = await verifier.verify(publicKey, canonicalBytes, signature);
+        if (valid && !advanced) {
+          advanced = true;
+          seedAcceptedEpoch(harness.state, epochFields({ trustSetEpoch: 2, supersedesEpoch: 1,
+            entries: [entryFor(owner)], issuedAt: ISSUED_AT_2 }), owner);
+        }
+        return valid;
+      },
+    },
+  });
+
+  assert.equal(await resolver.resolveActor(FAMILY_ID, admin.deviceId), 'NO_TRUST_SET');
+  assert.equal(advanced, true);
 });
 
 test('RESOLVER_READ_ERROR: a store read failure resolves fail-closed as NO_TRUST_SET', async () => {

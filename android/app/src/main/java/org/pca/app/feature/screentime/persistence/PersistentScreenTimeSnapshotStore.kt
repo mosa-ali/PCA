@@ -3,6 +3,7 @@ package org.pca.app.feature.screentime.persistence
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.engine.ScreenTimeState
 import org.pca.app.foundation.PersistentStateStore
+import java.util.concurrent.CancellationException
 
 /**
  * Coordinator integration adapter: backs PCA-3's [ScreenTimeSnapshotStore] port with PCA-2's
@@ -24,9 +25,22 @@ class PersistentScreenTimeSnapshotStore(
         store.putString(key, encode(snapshot))
     }
 
-    override fun load(): ScreenTimeSnapshot? {
-        val raw = store.getString(key) ?: return null
-        return decode(raw)
+    override fun load(): ScreenTimeSnapshot? = when (val result = read()) {
+        ScreenTimeSnapshotRead.Absent, ScreenTimeSnapshotRead.Corrupt -> null
+        is ScreenTimeSnapshotRead.Present -> result.snapshot
+    }
+
+    override fun read(): ScreenTimeSnapshotRead {
+        val raw = try {
+            store.getString(key)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ScreenTimeSnapshotRead.Corrupt
+        } ?: return ScreenTimeSnapshotRead.Absent
+
+        val snapshot = decode(raw) ?: return ScreenTimeSnapshotRead.Corrupt
+        return ScreenTimeSnapshotRead.Present(snapshot)
     }
 
     internal fun encode(snapshot: ScreenTimeSnapshot): String {

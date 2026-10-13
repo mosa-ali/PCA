@@ -192,3 +192,48 @@ final class FirstDeviceCanonicalTests: XCTestCase {
         XCTAssertEqual(FirstDeviceCanonical.sha256(Data("abc".utf8)).count, 32)
     }
 }
+
+final class FirstDeviceBootstrapApiClientStrictResponseTests: XCTestCase {
+    private func client(_ responseBody: String) throws -> FirstDeviceBootstrapApiClient {
+        let transport = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            PCAHTTPResponse(statusCode: 200, data: Data(responseBody.utf8))
+        }
+        return try FirstDeviceBootstrapApiClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            transport: transport
+        )
+    }
+
+    func testChallengeRejectsUnknownResponseMembers() async throws {
+        let api = try client(#"{"status":"PENDING","ceremonyId":"c","challengeId":"q","nonce":"n","expiresAt":"2030-01-01T00:00:00.000Z","familyId":"f","deviceId":"d","extra":"unexpected"}"#)
+        do {
+            _ = try await api.challenge(attemptId: "attempt-0000000000000000", attemptRecoveryToken: "token",
+                dskKeyId: "dsk", dskPublicKeyBase64: "public")
+            XCTFail("unknown response members must not be silently ignored")
+        } catch let error as FirstDeviceBootstrapError {
+            XCTAssertEqual(error, .ambiguousOutcome)
+        }
+    }
+
+    func testStatusRejectsDuplicateAndContradictoryResponseMembers() async throws {
+        for body in [
+            #"{"status":"PENDING","outcome":null,"status":"COMMITTED"}"#,
+            #"{"status":"PENDING","outcome":"ACCEPTED"}"#,
+            #"{"status":"FUTURE_STATE","outcome":null}"#,
+        ] {
+            let api = try client(body)
+            do {
+                _ = try await api.status(attemptId: "attempt-0000000000000000", attemptRecoveryToken: "token", ceremonyId: "c")
+                XCTFail("malformed status DTO must stay ambiguous")
+            } catch let error as FirstDeviceBootstrapError {
+                XCTAssertEqual(error, .ambiguousOutcome)
+            }
+        }
+    }
+
+    func testStatusAcceptsExactBackendCommittedSuccessShape() async throws {
+        let api = try client(#"{"status":"COMMITTED","outcome":"ACCEPTED"}"#)
+        let response = try await api.status(attemptId: "attempt-0000000000000000", attemptRecoveryToken: "token", ceremonyId: "c")
+        XCTAssertEqual(response, FirstDeviceStatusResponse(status: "COMMITTED", outcome: "ACCEPTED"))
+    }
+}

@@ -29,6 +29,24 @@ import { MAX_RELAY_TTL_MS, computeExpiryInstant } from '../relay/policy.js';
  */
 export const SERVER_CIPHERTEXT_TTL_MS = MAX_RELAY_TTL_MS;
 
+// Every durable server-ciphertext ledger stores both generated and expiry
+// timestamps in MySQL DATETIME(3), whose supported calendar range is
+// 1000-01-01 through 9999-12-31. Validate the whole retained window, not only
+// the event timestamp, so DATE_ADD/expiry writes cannot fall outside schema
+// range at either edge.
+const MIN_MYSQL_DATETIME_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MAX_MYSQL_DATETIME_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+export function isPersistableServerCiphertextWindow(generatedAt: unknown): generatedAt is Date {
+  if (!(generatedAt instanceof Date)) return false;
+  const generatedAtMs = generatedAt.getTime();
+  if (!Number.isFinite(generatedAtMs) || generatedAtMs < MIN_MYSQL_DATETIME_MS || generatedAtMs > MAX_MYSQL_DATETIME_MS) {
+    return false;
+  }
+  const expiresAtMs = generatedAtMs + SERVER_CIPHERTEXT_TTL_MS;
+  return Number.isSafeInteger(expiresAtMs) && expiresAtMs >= MIN_MYSQL_DATETIME_MS && expiresAtMs <= MAX_MYSQL_DATETIME_MS;
+}
+
 /**
  * Upper bound on rows any single feed request may return. An unbounded
  * `SELECT *` over a per-family ledger lets one family's event volume decide

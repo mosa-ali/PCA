@@ -64,9 +64,12 @@ test('a future-dated PROTECTED report fails closed instead of refreshing authori
   assert.equal(await resolver.resolve(FAMILY, DEVICE), false);
 });
 
-test('an invalid stored receipt timestamp fails closed', async () => {
+test('repository rejects an invalid receipt timestamp before it can become stored authority', async () => {
   const repository = new InMemoryDeviceProtectionStatusRepository();
-  await repository.upsert({ deviceId: DEVICE, familyId: FAMILY, protectionLevel: 'PROTECTED', updatedAt: new Date(Number.NaN) });
+  await assert.rejects(
+    repository.upsert({ deviceId: DEVICE, familyId: FAMILY, protectionLevel: 'PROTECTED', updatedAt: new Date(Number.NaN) }),
+    /outside the supported database range/,
+  );
   const resolver = new RealProtectiveAuthorityResolver(repository, { now: () => NOW });
   assert.equal(await resolver.resolve(FAMILY, DEVICE), false);
 });

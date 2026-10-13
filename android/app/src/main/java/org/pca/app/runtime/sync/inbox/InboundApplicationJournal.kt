@@ -152,7 +152,7 @@ class PersistentInboundApplicationJournal(
         try {
             if (UUID.fromString(intent.operationId).toString() != intent.operationId) unavailable()
             identity(intent.scope, intent.messageId)
-            if (intent.preparedAtEpochMillis < 0 || intent.envelopeWire.toByteArray(Charsets.UTF_8).size > 256 * 1024) unavailable()
+            if (intent.preparedAtEpochMillis < 0 || intent.envelopeWire.toByteArray(Charsets.UTF_8).size > 64 * 1024) unavailable()
             for (binding in listOf(intent.authorityBinding, intent.commandBinding)) {
                 val decoded = Base64.getDecoder().decode(binding)
                 if (decoded.size !in 1..8192 || Base64.getEncoder().encodeToString(decoded) != binding) unavailable()

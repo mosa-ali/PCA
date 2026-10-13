@@ -151,7 +151,7 @@ class EnrollmentLifecycleAuditTest {
     fun `blank non-null familyId is rejected fail-closed at construction, distinct from null`() {
         val sink = InMemoryEnrollmentLifecycleAuditSink()
 
-        for (blank in listOf("", "   ")) {
+        for (blank in listOf("", "   ", "\u00A0", "\u0085", "\u2003")) {
             val error = try {
                 EnrollmentLifecycleAuditor(
                     familyId = blank,
@@ -165,5 +165,124 @@ class EnrollmentLifecycleAuditTest {
             assertTrue(error is EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier)
         }
         assertTrue(sink.records.isEmpty())
+    }
+
+    @Test
+    fun `Unicode White_Space vectors are blank for identifiers actors and reasons`() {
+        val whitespace = listOf(
+            "\u0009", "\u000A", "\u000B", "\u000C", "\u000D", "\u0020", "\u0085", "\u00A0",
+            "\u1680", "\u2000", "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006",
+            "\u2007", "\u2008", "\u2009", "\u200A", "\u2028", "\u2029", "\u202F", "\u205F", "\u3000",
+        )
+        val sink = InMemoryEnrollmentLifecycleAuditSink()
+        val auditor = EnrollmentLifecycleAuditor(
+            familyId = "family-1",
+            deviceId = "device-1",
+            auditSink = sink,
+            now = { now },
+        )
+
+        for (blank in whitespace) {
+            val familyError = try {
+                EnrollmentLifecycleAuditor(blank, "device-1", sink)
+                null
+            } catch (error: EnrollmentLifecycleTransitionError) {
+                error
+            }
+            assertTrue("U+${blank[0].code.toString(16)} should be blank as family id", familyError is EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier)
+
+            val deviceError = try {
+                EnrollmentLifecycleAuditor("family-1", blank, sink)
+                null
+            } catch (error: EnrollmentLifecycleTransitionError) {
+                error
+            }
+            assertTrue("whitespace scalar should be blank as device id", deviceError is EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier)
+
+            val actorError = try {
+                auditor.recordTransition(null, PairingState.PAIRING_PENDING, blank, "reason")
+                null
+            } catch (error: EnrollmentLifecycleTransitionError) {
+                error
+            }
+            assertTrue("whitespace scalar should be blank as actor", actorError is EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier)
+
+            val reasonError = try {
+                auditor.recordTransition(null, PairingState.PAIRING_PENDING, "actor-1", blank)
+                null
+            } catch (error: EnrollmentLifecycleTransitionError) {
+                error
+            }
+            assertTrue("whitespace scalar should be blank as reason", reasonError is EnrollmentLifecycleTransitionError.InvalidReason)
+        }
+        assertTrue(sink.records.isEmpty())
+    }
+
+    @Test
+    fun `Unicode control separators U+001C through U+001F are not in the blank set`() {
+        val sink = InMemoryEnrollmentLifecycleAuditSink()
+        val auditor = EnrollmentLifecycleAuditor(
+            familyId = "\u001C",
+            deviceId = "\u001D",
+            auditSink = sink,
+            now = { now },
+        )
+
+        val record = auditor.recordTransition(
+            from = null,
+            to = PairingState.PAIRING_PENDING,
+            actorId = "\u001E",
+            reason = "\u001F",
+        )
+
+        assertEquals("\u001C", record.familyId)
+        assertEquals("\u001D", record.deviceId)
+        assertEquals("\u001E", record.actorId)
+        assertEquals("\u001F", record.reason)
+        assertEquals(1, sink.records.size)
+    }
+
+    @Test
+    fun `U+FEFF is not in the shared Unicode White_Space blank set`() {
+        val sink = InMemoryEnrollmentLifecycleAuditSink()
+        val bom = "\uFEFF"
+        val auditor = EnrollmentLifecycleAuditor(
+            familyId = bom,
+            deviceId = "device-1",
+            auditSink = sink,
+            now = { now },
+        )
+
+        val record = auditor.recordTransition(
+            from = null,
+            to = PairingState.PAIRING_PENDING,
+            actorId = bom,
+            reason = bom,
+        )
+
+        assertEquals(bom, record.familyId)
+        assertEquals(bom, record.actorId)
+        assertEquals(bom, record.reason)
+    }
+
+    @Test
+    fun `reason limit counts UTF-16 units at the 280-unit boundary`() {
+        val sink = InMemoryEnrollmentLifecycleAuditSink()
+        val auditor = EnrollmentLifecycleAuditor("family-1", "device-1", sink, now = { now })
+        val exactly280Units = "\uD83D\uDE00".repeat(140)
+        val overLimit = "\uD83D\uDE00".repeat(141)
+
+        assertEquals(280, exactly280Units.length)
+        auditor.recordTransition(null, PairingState.PAIRING_PENDING, "actor-1", exactly280Units)
+        assertEquals(1, sink.records.size)
+
+        val error = try {
+            auditor.recordTransition(null, PairingState.PAIRING_PENDING, "actor-1", overLimit)
+            null
+        } catch (failure: EnrollmentLifecycleTransitionError) {
+            failure
+        }
+        assertTrue(error is EnrollmentLifecycleTransitionError.InvalidReason)
+        assertEquals(1, sink.records.size)
     }
 }

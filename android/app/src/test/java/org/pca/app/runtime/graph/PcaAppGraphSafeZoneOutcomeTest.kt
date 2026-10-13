@@ -104,6 +104,93 @@ class PcaAppGraphSafeZoneOutcomeTest {
         )
     }
 
+    @Test fun `unresolved ordinary Trust Set request retries without skipping independent custody sync`() = runBlocking {
+        var custodyAttempted = false
+        val result = synchronizeWithSafeZoneDelivery(
+            fetchAndStage = { },
+            ordinaryTrustSetOutcome = RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            custodySync = { custodyAttempted = true; RuntimeCustodyOutcome.COMPLETE },
+        )
+        assertTrue("opaque custody sync still runs", custodyAttempted)
+        assertEquals(RuntimeCustodyOutcome.RETRYABLE_FAILURE, result)
+    }
+
+    @Test fun `blocked custody remains blocked when Trust Set has pending custody`() = runBlocking {
+        val result = synchronizeWithSafeZoneDelivery(
+            fetchAndStage = { },
+            ordinaryTrustSetOutcome = RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            custodySync = { RuntimeCustodyOutcome.BLOCKED },
+        )
+        assertEquals(RuntimeCustodyOutcome.BLOCKED, result)
+    }
+
+    @Test fun `Trust Set reconciliation classifies pending and I O as retryable while integrity failures block`() = runBlocking {
+        assertEquals(
+            RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            ordinaryTrustSetReconciliationOutcome(reconcile = { }, hasPendingRequest = { true }),
+        )
+        assertEquals(
+            RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            ordinaryTrustSetReconciliationOutcome(
+                reconcile = { throw IOException("transient I/O") },
+                hasPendingRequest = { throw AssertionError("pending read must not follow failed reconciliation") },
+            ),
+        )
+        assertEquals(
+            RuntimeCustodyOutcome.RETRYABLE_FAILURE,
+            ordinaryTrustSetReconciliationOutcome(
+                reconcile = { throw PersistentStateStoreDurabilityFailure() },
+                hasPendingRequest = { throw AssertionError("pending read must not follow failed reconciliation") },
+            ),
+        )
+        var custodyAttempted = false
+        val blocked = ordinaryTrustSetReconciliationOutcome(
+            reconcile = { throw IllegalStateException("root changed") },
+            hasPendingRequest = { throw AssertionError("pending read must not follow failed reconciliation") },
+        )
+        assertEquals(RuntimeCustodyOutcome.BLOCKED, blocked)
+        val aggregate = synchronizeWithSafeZoneDelivery(
+            fetchAndStage = { },
+            ordinaryTrustSetOutcome = blocked,
+            custodySync = { custodyAttempted = true; RuntimeCustodyOutcome.COMPLETE },
+        )
+        assertTrue("independent custody still runs after a Trust Set block", custodyAttempted)
+        assertEquals(RuntimeCustodyOutcome.BLOCKED, aggregate)
+        assertEquals(
+            RuntimeCustodyOutcome.BLOCKED,
+            ordinaryTrustSetReconciliationOutcome(
+                reconcile = { throw IllegalArgumentException("invalid signed chain") },
+                hasPendingRequest = { false },
+            ),
+        )
+    }
+
+    @Test fun `Trust Set reconciliation propagates cancellation instead of retrying it`() = runBlocking {
+        val cancelled = CancellationException("owner cancelled reconciliation")
+        try {
+            ordinaryTrustSetReconciliationOutcome(
+                reconcile = { throw cancelled },
+                hasPendingRequest = { false },
+            )
+            throw AssertionError("cancellation must propagate")
+        } catch (actual: CancellationException) {
+            assertTrue(actual === cancelled)
+        }
+    }
+
+    @Test fun `Trust Set reconciliation does not catch fatal JVM errors`() = runBlocking {
+        val fatal = LinkageError("fatal Trust Set reconciliation failure")
+        try {
+            ordinaryTrustSetReconciliationOutcome(
+                reconcile = { throw fatal },
+                hasPendingRequest = { false },
+            )
+            throw AssertionError("fatal JVM errors must propagate")
+        } catch (actual: LinkageError) {
+            assertTrue(actual === fatal)
+        }
+    }
+
     @Test fun `cancellation is propagated and skips custody sync`() = runBlocking {
         var custodyAttempted = false
         val cancelled = runCatching {

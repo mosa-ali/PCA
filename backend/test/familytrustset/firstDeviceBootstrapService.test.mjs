@@ -186,6 +186,34 @@ test('submit accepts a perfect dual-signed payload and hands the store one commi
   assert.equal(rig.verifier.calls.length, 1);
 });
 
+test('submit rechecks ceremony expiry after attestation before consuming the challenge', async () => {
+  let currentTime = Date.now();
+  let ceremony;
+  const verifier = {
+    async verifyFirstDeviceAttestation(input) {
+      currentTime = ceremony.expiresAt.getTime();
+      return verifiedVerdict(input);
+    },
+  };
+  const rig = makeRig({ verifier });
+  ceremony = { ...rig.ceremony, expiresAt: new Date(currentTime + 5_000) };
+  rig.store.ceremony = ceremony;
+  rig.service = new FirstDeviceBootstrapService({
+    store: rig.store,
+    attestationVerifier: verifier,
+    now: () => new Date(currentTime),
+  });
+  const perfect = buildPerfectSubmission({ attempt: rig.attempt, ceremony, device: rig.device });
+
+  const result = await rig.service.submit(
+    submissionInput(rig.attempt, rig.rawRecoveryToken, ceremony, perfect),
+  );
+
+  assert.deepEqual(result, { status: 'UNAVAILABLE' });
+  assert.equal(rig.store.commitCalls.length, 0, 'expired one-time challenges must not reach atomic commit');
+  assert.equal(rig.store.ceremony.status, 'APPROVED', 'expiry rejection must leave challenge state reusable only as expired, not consumed');
+});
+
 test('submit replays a committed ceremony by payload digest WITHOUT re-running attestation (M3)', async () => {
   let calls = 0;
   const verifier = {

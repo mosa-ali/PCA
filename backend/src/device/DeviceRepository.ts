@@ -1,4 +1,5 @@
 import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord, OpaqueFamilyId } from './types.js';
+import type { PairingFingerprintExpectation } from '../pairing/types.js';
 
 export type CreateDeviceResult =
   | { outcome: 'CREATED'; device: DeviceRecord; key: DeviceKeyRecord }
@@ -24,7 +25,8 @@ export type ConfirmPairingResult =
   | { outcome: 'DEVICE_NOT_FOUND' }
   | { outcome: 'INVALID_STATE' }
   /** The confirming account is the SAME account that registered this device (devices.registered_by_account_id) -- see DeviceRecord's own doc comment. */
-  | { outcome: 'SELF_APPROVAL_DENIED' };
+  | { outcome: 'SELF_APPROVAL_DENIED' }
+  | { outcome: 'FINGERPRINT_MISMATCH' };
 
 /**
  * Persistence port for the device identity/key directory. A deterministic
@@ -120,11 +122,14 @@ export interface DeviceRepository {
    * registeredByAccountId (see DeviceRecord's own doc comment) -- checked
    * BEFORE INVALID_STATE, so a self-approval attempt is never miscategorized
    * as a generic state conflict.
+   * FINGERPRINT_MISMATCH when the currently locked active DSK/DEK fingerprints
+   * differ from the exact snapshot the parent saw and confirmed.
    */
   confirmPairing(
     familyId: OpaqueFamilyId,
     deviceId: DeviceId,
     confirmedByAccountId: string,
     confirmedAt: Date,
+    expectedFingerprints: PairingFingerprintExpectation,
   ): Promise<ConfirmPairingResult>;
 }

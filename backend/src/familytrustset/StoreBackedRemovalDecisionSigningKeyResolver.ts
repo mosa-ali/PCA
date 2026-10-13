@@ -45,7 +45,8 @@ export class StoreBackedRemovalDecisionSigningKeyResolver implements RemovalDeci
       // key id binds this lookup to the key in the accepted membership entry.
       const actor = await this.deps.trustSetRoleResolver.resolveActor(familyId, actorDeviceId, member.dskKeyId);
       if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' ||
-          actor.deviceId !== actorDeviceId || actor.role !== member.role ||
+          actor.deviceId !== actorDeviceId || actor.dskKeyId !== member.dskKeyId ||
+          actor.role !== member.role ||
           actor.trustSetEpoch !== acceptedHead.trustSetEpoch || actor.keyEpoch !== acceptedHead.keyEpoch) return null;
 
       if (!await this.deps.deviceRepository.isDeviceSessionActive(familyId, actorDeviceId)) return null;

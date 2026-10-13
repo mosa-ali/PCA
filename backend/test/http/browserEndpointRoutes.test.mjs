@@ -19,6 +19,10 @@ const FAMILY = 'family-browser-http-1';
 const ACCOUNT_A = 'account-a';
 const ACCOUNT_B = 'account-b';
 
+function assertPrivateNoStore(response) {
+  assert.equal(response.headers['cache-control'], 'private, no-store');
+}
+
 function buildAuthService(validAccountsByToken) {
   return {
     async validateSession(rawToken) {
@@ -64,6 +68,19 @@ function buildApp({ withService = true, roles = { [ACCOUNT_A]: 'ADMINISTRATOR', 
   return { app, deviceRepository };
 }
 
+async function pairingConfirmBody(app, deviceId, token, stepUpToken) {
+  const view = await app.inject({
+    method: 'GET', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(view.statusCode, 200);
+  return {
+    expectedDskFingerprint: view.json().dskFingerprint,
+    expectedDekFingerprint: view.json().dekFingerprint,
+    ...(stepUpToken === undefined ? {} : { stepUpToken }),
+  };
+}
+
 test('the route is not registered at all when no browserEndpointService is configured (404, not merely 401)', async () => {
   const { app } = buildApp({ withService: false });
   try {
@@ -85,6 +102,7 @@ test('registration without a service session is rejected with 401, never recorde
       payload: { dskPublicKey: key() },
     });
     assert.equal(response.statusCode, 401);
+    assertPrivateNoStore(response);
   } finally {
     await app.close();
   }
@@ -99,6 +117,21 @@ test('a malformed public key is rejected with 400', async () => {
       payload: { dskPublicKey: 'not a real key' },
     });
     assert.equal(response.statusCode, 400);
+    assertPrivateNoStore(response);
+  } finally {
+    await app.close();
+  }
+});
+
+test('pairing status for an unknown device is not cached', async () => {
+  const { app } = buildApp();
+  try {
+    const response = await app.inject({
+      method: 'GET', url: `/v1/families/${FAMILY}/pairing-requests/missing-device`,
+      headers: { authorization: 'Bearer token-a' },
+    });
+    assert.equal(response.statusCode, 404);
+    assertPrivateNoStore(response);
   } finally {
     await app.close();
   }
@@ -113,6 +146,7 @@ test('a real service-authenticated registration succeeds, records the registerin
       payload: { dskPublicKey: key() },
     });
     assert.equal(response.statusCode, 201);
+    assertPrivateNoStore(response);
     const body = response.json();
     assert.equal(body.status, 'PAIRING_PENDING');
 
@@ -137,17 +171,19 @@ test('end-to-end via real HTTP: the registering account cannot confirm its own e
     const selfConfirm = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-a' },
-      payload: { stepUpToken: 'valid-step-up-a' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-a', 'valid-step-up-a'),
     });
     assert.equal(selfConfirm.statusCode, 403);
+    assertPrivateNoStore(selfConfirm);
     assert.equal(selfConfirm.json().error, 'self_approval_denied');
 
     const otherConfirm = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-b' },
-      payload: { stepUpToken: 'valid-step-up-b' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-b', 'valid-step-up-b'),
     });
     assert.equal(otherConfirm.statusCode, 200);
+    assertPrivateNoStore(otherConfirm);
     assert.equal(otherConfirm.json().status, 'PAIRED');
   } finally {
     await app.close();
@@ -167,8 +203,10 @@ test('pairing confirmation requires a fresh sensitive-action TOTP grant before s
     const missingStepUp = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-b' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-b'),
     });
     assert.equal(missingStepUp.statusCode, 403);
+    assertPrivateNoStore(missingStepUp);
     assert.deepEqual(missingStepUp.json(), { error: 'step_up_required' });
 
     const stillPending = await app.inject({
@@ -176,6 +214,34 @@ test('pairing confirmation requires a fresh sensitive-action TOTP grant before s
       headers: { authorization: 'Bearer token-b' },
     });
     assert.equal(stillPending.json().status, 'PAIRING_PENDING');
+    assertPrivateNoStore(stillPending);
+  } finally {
+    await app.close();
+  }
+});
+
+test('pairing confirmation rejects absent fingerprint expectations without changing lifecycle state', async () => {
+  const { app } = buildApp();
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+    const rejected = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: { stepUpToken: 'valid-step-up-b' },
+    });
+    assert.equal(rejected.statusCode, 400);
+    assertPrivateNoStore(rejected);
+    assert.deepEqual(rejected.json(), { error: 'invalid_request' });
+    const view = await app.inject({
+      method: 'GET', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}`,
+      headers: { authorization: 'Bearer token-b' },
+    });
+    assert.equal(view.json().status, 'PAIRING_PENDING');
   } finally {
     await app.close();
   }
@@ -190,6 +256,7 @@ test('family membership roles: VIEWER can read pairing status but cannot registe
       payload: { dskPublicKey: key() },
     });
     assert.equal(deniedRegistration.statusCode, 403);
+    assertPrivateNoStore(deniedRegistration);
 
     const registered = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
@@ -204,12 +271,14 @@ test('family membership roles: VIEWER can read pairing status but cannot registe
       headers: { authorization: 'Bearer token-a' },
     });
     assert.equal(readable.statusCode, 200);
+    assertPrivateNoStore(readable);
 
     const deniedConfirmation = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
       headers: { authorization: 'Bearer token-a' },
     });
     assert.equal(deniedConfirmation.statusCode, 403);
+    assertPrivateNoStore(deniedConfirmation);
     assert.equal(deniedConfirmation.json().error, 'forbidden');
   } finally {
     await app.close();
@@ -232,6 +301,7 @@ test('registering the same public key twice is rejected with 409, never a duplic
       payload: { dskPublicKey: sharedKey },
     });
     assert.equal(second.statusCode, 409);
+    assertPrivateNoStore(second);
   } finally {
     await app.close();
   }

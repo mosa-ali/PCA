@@ -201,17 +201,31 @@ public final class PCAKeychainSafeZoneDeliveryInbox {
         try Self.validatePage(page, requestedCursor: requestedCursor)
         let current = try readUnlocked(scope)
         guard current.manifest.nextCursor == requestedCursor else { throw PCADeviceSafeZoneDeliveryError.staleCursor }
+        // The server lists rows for one accepted family key epoch per page.
+        // Keep a durable high-water mark across zones so a replay cannot add
+        // a previously unseen row from an older key generation after a newer
+        // generation has already been staged.
+        let stagedKeyEpochFloor = current.records.map(\.keyEpoch).max() ?? 0
 
         var byId = Dictionary(uniqueKeysWithValues: current.records.map { ($0.zoneId, $0) })
         var replacements: [PCAOpaqueSafeZoneDelivery] = []
         var newlyAddedZoneIds = Set<String>()
         for incoming in page.safeZones {
             try incoming.validate()
+            guard incoming.keyEpoch >= stagedKeyEpochFloor else {
+                throw PCADeviceSafeZoneDeliveryError.staleRevision
+            }
             guard let existing = byId[incoming.zoneId] else {
                 byId[incoming.zoneId] = incoming
                 replacements.append(incoming)
                 newlyAddedZoneIds.insert(incoming.zoneId)
                 continue
+            }
+            // Safe Zone updates are bound to the family key generation. A
+            // higher row revision cannot authorize replaying an envelope from
+            // an older key epoch over a newer one already staged locally.
+            if incoming.keyEpoch < existing.keyEpoch {
+                throw PCADeviceSafeZoneDeliveryError.staleRevision
             }
             // The server's epoch-bound paging cursor may restart at a higher
             // key epoch, but that does not make an older revision safe to
@@ -504,6 +518,13 @@ public final class PCADeviceSafeZoneDeliveryClient {
     private let now: () -> Date
     private let monotonicNow: () -> TimeInterval
 
+    private static func isCanonicalSessionToken(_ token: String) -> Bool {
+        token.utf8.count == 43 && token.utf8.allSatisfy { byte in
+            (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+                || (byte >= 48 && byte <= 57) || byte == 45 || byte == 95
+        }
+    }
+
     public init(baseURL: URL, currentSession: @escaping () throws -> PCADeviceSession?,
                 transport: PCAHTTPTransport? = nil, now: @escaping () -> Date = Date.init,
                 monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {
@@ -529,8 +550,7 @@ public final class PCADeviceSafeZoneDeliveryClient {
         guard (1...8).contains(maximumPages) else { throw PCADeviceSafeZoneDeliveryError.malformedResponse }
         guard let session = try currentSession(), session.expiresAt > now(),
               Data(session.deviceId.utf8) == Data(scope.deviceId.utf8),
-              (1...4096).contains(session.sessionToken.utf8.count),
-              session.sessionToken.utf8.allSatisfy({ $0 > 32 && $0 != 127 }) else { throw PCAAPIError.unauthorized }
+              Self.isCanonicalSessionToken(session.sessionToken) else { throw PCAAPIError.unauthorized }
         let startedAt = monotonicNow()
         let localDeadline = startedAt + Self.maximumSynchronizationDuration
         guard startedAt.isFinite, localDeadline.isFinite,

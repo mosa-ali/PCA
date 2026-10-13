@@ -1,6 +1,8 @@
 // Deterministic in-memory RelayRepository for tests only.
 // Never used as a production substitute for the MySQL implementation.
-export function createInMemoryRelayRepository() {
+import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
+
+export function createInMemoryRelayRepository({ isAuthorityCurrent = async () => true } = {}) {
   const byMessageId = new Map();
   const messageIdsByRecipient = new Map(); // recipientDeviceId -> Set<messageId>
 
@@ -80,9 +82,13 @@ export function createInMemoryRelayRepository() {
         .sort((a, b) => comparePosition(position(a), position(b))).map(queuedClone);
     },
 
-    async acknowledgeAtomically(recipientDeviceId, messageId, acknowledgedAt) {
+    async acknowledgeAtomically(recipientDeviceId, messageId, acknowledgedAt, authority) {
       const record = byMessageId.get(messageId);
       if (!record || record.recipientDeviceId !== recipientDeviceId) return { outcome: 'NOT_FOUND' };
+      if (authority !== undefined && (authority.familyId !== record.familyId ||
+          !(await isAuthorityCurrent({ recipientDeviceId, messageId, authority, record: clone(record) })))) {
+        throw new RelayAuthorityChangedError();
+      }
       if (record.state === 'ACKNOWLEDGED') return { outcome: 'ACKNOWLEDGED', record: clone(record) };
       if (acknowledgedAt.getTime() >= record.expiresAt.getTime()) return { outcome: 'EXPIRED' };
       record.state = 'ACKNOWLEDGED';

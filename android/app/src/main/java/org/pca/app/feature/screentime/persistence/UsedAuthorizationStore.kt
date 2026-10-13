@@ -1,5 +1,6 @@
 package org.pca.app.feature.screentime.persistence
 
+import org.pca.app.foundation.PersistentStateStore
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -17,10 +18,10 @@ import java.util.concurrent.ConcurrentHashMap
  * eventual backing store) must preserve that same atomicity — first successful claimant wins,
  * every other claimant for the same id, concurrent or not, gets `false` forever after.
  *
- * The in-memory implementation below is a reference/default suitable for tests and for local
- * development before a durable backing store exists; the coordinator is expected to bind a
- * durable implementation (e.g. backed by the same local persistence used for
- * [ScreenTimeSnapshotStore], or a server-verified receipt) during integration.
+ * Production composition binds [PersistentUsedAuthorizationStore] over the existing encrypted
+ * runtime [PersistentStateStore]. That adapter only provides durable replay bookkeeping; it does
+ * not verify authorization signatures or establish Parent authority. The in-memory implementation
+ * below is for isolated tests only and must not be used for production replay protection.
  */
 interface UsedAuthorizationStore {
     /**

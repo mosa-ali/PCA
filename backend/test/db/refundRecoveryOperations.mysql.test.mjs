@@ -161,6 +161,7 @@ test('MySQL: refund recovery -- provider confirms, RefundService.issueRefund is 
     roles,
   );
   assert.equal(first.outcome, 'PENDING_FINALIZATION', 'issueRefund must fail AFTER the provider already confirmed');
+  assert.equal(first.finalizeError, 'REFUND_FINALIZATION_FAILED', 'service results must not expose raw dependency exception details');
   assert.equal(first.operation.state, 'PROVIDER_CONFIRMED');
   assert.ok(first.operation.providerRefundRef, 'the provider refund ref must already be durably recorded');
 
@@ -199,6 +200,33 @@ test('MySQL: refund recovery -- provider confirms, RefundService.issueRefund is 
   assert.equal(rowsAfterRetry[0].refund_id, second.refund.refundId);
   const finalizedPage = await refundOrchestrationService.listRecoverableRefundOperations(roles, { limit: 100, offset: 0 });
   assert.equal(finalizedPage.items.some((item) => item.refundOperationId === first.operation.refundOperationId), false, 'FINALIZED operations must leave the recoverable queue');
+});
+
+test('MySQL PRIVACY: provider-call exceptions return a fixed error category and leave the durable operation retryable', async () => {
+  const { transaction, financeAdminId, actor, roles } = await createConfirmedTransaction(5000n, 'USD');
+  const stepUpId = await createConsumedStepUp(financeAdminId, 'REFUND');
+  const idempotencyKey = `refund:${randomUUID()}`;
+  const sensitiveProviderError = 'provider response Bearer secret-token parent@example.test';
+  const provider = {
+    refund: async () => { throw new Error(sensitiveProviderError); },
+  };
+  const registry = { resolve: (name) => {
+    assert.equal(name, 'THROWING_TEST_PROVIDER');
+    return provider;
+  } };
+  const service = new RefundOrchestrationService(refundOperationRepository, refundService, paymentRepository, registry);
+
+  const result = await service.initiateRefund(
+    { paymentTransactionId: transaction.paymentTransactionId, amountMinor: 1000n, currencyCode: 'USD', reasonCode: 'REQUESTED_BY_CUSTOMER', reasonNote: null, stepUpSessionId: stepUpId, idempotencyKey, provider: 'THROWING_TEST_PROVIDER' },
+    actor,
+    roles,
+  );
+
+  assert.equal(result.outcome, 'PROVIDER_CALL_ERROR');
+  assert.equal(result.error, 'PROVIDER_CALL_FAILED');
+  assert.equal(JSON.stringify(result).includes(sensitiveProviderError), false);
+  const [rows] = await getPool().query(`SELECT state FROM billing_refund_operations WHERE refund_operation_id = ?`, [result.operation.refundOperationId]);
+  assert.equal(rows[0].state, 'CREATED', 'provider transport failure must preserve the durable retry intent');
 });
 
 test('MySQL: refund orchestration idempotency -- a duplicate idempotencyKey after FINALIZED returns the same result, never a second billing_refunds row', async () => {

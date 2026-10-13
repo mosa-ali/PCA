@@ -2,6 +2,7 @@ package org.pca.app.runtime.background
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import org.pca.app.runtime.graph.PcaAppGraph
@@ -24,31 +25,44 @@ import org.pca.app.runtime.sync.RuntimeCustodyOutcome
  * degradation), with two independent CALLERS for two independent reasons (freshness while the
  * process is alive vs. resilience across process death), never two logic paths that could drift.
  *
- * Uses [Result.retry] (which respects [PcaBackgroundWorkConstraints]'s exponential backoff) on any
- * uncaught throwable from the cycle itself -- note [PcaAppGraph.runUsageLocationIngestionCycle]
- * already `runCatching`-guards each of its own three steps internally, so this Worker's own
- * try/catch is a second, outer safety net (e.g. against [PcaAppGraph.getInstance] itself throwing
- * during a pathological early-process-start race), not the primary error-handling layer.
+ * Uses [Result.retry] (which respects [PcaBackgroundWorkConstraints]'s exponential backoff) on an
+ * ordinary exception from the cycle itself. Coroutine cancellation and fatal JVM errors propagate;
+ * [PcaAppGraph.runUsageLocationIngestionCycle] isolates ordinary failures per suspend step while
+ * allowing cancellation and fatal errors to reach this Worker's outer retry boundary (e.g. a
+ * graph-construction exception during an early-process-start race).
  */
 class UsageIngestionWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        val startNanos = System.nanoTime()
-        return try {
-            val graph = PcaAppGraph.getInstance(applicationContext)
-            graph.runUsageLocationIngestionCycle()
-            // Reuse this persisted OS schedule after process death/reboot.
-            // Only an eligible committed identity may pull; custody never applies a policy.
-            val outcome = graph.synchronizeRuntimeCustody()
-            val retry = outcome == RuntimeCustodyOutcome.MORE_PENDING || outcome == RuntimeCustodyOutcome.RETRYABLE_FAILURE
-            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos,
-                success = !retry && outcome != RuntimeCustodyOutcome.BLOCKED)
-            if (retry) Result.retry() else Result.success()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (t: Throwable) {
-            BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = false)
-            Result.retry()
-        }
+    override suspend fun doWork(): Result = runUsageIngestionWork {
+        val graph = PcaAppGraph.getInstance(applicationContext)
+        graph.runUsageLocationIngestionCycle()
+        // Reuse this persisted OS schedule after process death/reboot.
+        // Only an eligible committed identity may pull; custody never applies a policy.
+        val outcome = graph.synchronizeRuntimeCustody()
+        val retry = outcome == RuntimeCustodyOutcome.MORE_PENDING || outcome == RuntimeCustodyOutcome.RETRYABLE_FAILURE
+        UsageIngestionWorkerOutcome(
+            shouldRetry = retry,
+            metricsSuccess = !retry && outcome != RuntimeCustodyOutcome.BLOCKED,
+        )
+    }
+}
+
+internal data class UsageIngestionWorkerOutcome(val shouldRetry: Boolean, val metricsSuccess: Boolean)
+
+/** Testable boundary for WorkManager outcomes. Only ordinary exceptions become retries; lifecycle
+ * cancellation and fatal JVM errors must propagate to WorkManager/the runtime. */
+internal suspend fun runUsageIngestionWork(
+    cycle: suspend () -> UsageIngestionWorkerOutcome,
+): ListenableWorker.Result {
+    val startNanos = System.nanoTime()
+    return try {
+        val outcome = cycle()
+        BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = outcome.metricsSuccess)
+        if (outcome.shouldRetry) ListenableWorker.Result.retry() else ListenableWorker.Result.success()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        BackgroundWorkMetrics.recordRun(System.nanoTime() - startNanos, success = false)
+        ListenableWorker.Result.retry()
     }
 }

@@ -104,11 +104,11 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
       }
       if (dskKeyId !== undefined) {
         return deviceId === 'device-a' && dskKeyId === 'device-a-key'
-          ? { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }
+          ? { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }
           : 'DEVICE_NOT_ACTIVE';
       }
-      if (deviceId === 'child-device') return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
-      if (deviceId === 'device-a') return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+      if (deviceId === 'child-device') return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      if (deviceId === 'device-a') return { familyId, deviceId, dskKeyId: 'device-a-key', role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
       return 'DEVICE_NOT_ACTIVE';
     },
   };
@@ -269,12 +269,14 @@ test('Safe Zone writes reject non-CHILD or unbound recipients before persistence
   const cases = [
     {
       name: 'active Parent recipient',
-      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }) },
+      resolver: { resolveActor: (familyId, deviceId, dskKeyId) => ({ familyId, deviceId,
+        dskKeyId: dskKeyId ?? 'device-a-key', role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }) },
       binding: { async resolveBinding() { return { outcome: 'BOUND', childProfileId: 'child-profile-a' }; } },
     },
     {
       name: 'active Viewer recipient',
-      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'VIEWER', trustSetEpoch: 1, keyEpoch: 1 }) },
+      resolver: { resolveActor: (familyId, deviceId, dskKeyId) => ({ familyId, deviceId,
+        dskKeyId: dskKeyId ?? 'device-a-key', role: dskKeyId ? 'OWNER' : 'VIEWER', trustSetEpoch: 1, keyEpoch: 1 }) },
       binding: { async resolveBinding() { return { outcome: 'BOUND', childProfileId: 'child-profile-a' }; } },
     },
     {
@@ -285,12 +287,14 @@ test('Safe Zone writes reject non-CHILD or unbound recipients before persistence
     },
     {
       name: 'unbound legacy recipient',
-      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
+      resolver: { resolveActor: (familyId, deviceId, dskKeyId) => ({ familyId, deviceId,
+        dskKeyId: dskKeyId ?? 'child-device-key', role: dskKeyId ? 'OWNER' : 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
       binding: { async resolveBinding() { return { outcome: 'UNBOUND' }; } },
     },
     {
       name: 'ambiguous enrollment recipient',
-      resolver: { resolveActor: (_familyId, deviceId) => ({ deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
+      resolver: { resolveActor: (familyId, deviceId, dskKeyId) => ({ familyId, deviceId,
+        dskKeyId: dskKeyId ?? 'child-device-key', role: dskKeyId ? 'OWNER' : 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }) },
       binding: { async resolveBinding() { return { outcome: 'AMBIGUOUS' }; } },
     },
   ];
@@ -333,6 +337,61 @@ test('Safe Zone writes reject non-CHILD or unbound recipients before persistence
   } finally {
     await unavailable.close();
   }
+});
+
+test('Safe Zone enqueue rejects sender family or DSK projection mismatch before persistence', async (t) => {
+  for (const [label, projectActor] of [
+    ['family', (familyId, deviceId, dskKeyId) => ({ familyId: `${familyId}-other`, deviceId, dskKeyId })],
+    ['DSK', (familyId, deviceId) => ({ familyId, deviceId, dskKeyId: 'rotated-device-key' })],
+  ]) {
+    await t.test(label, async () => {
+      let writes = 0;
+      const app = buildApp('OWNER', 'ALLOW', {
+        async create() { writes += 1; return { zoneId: 'unexpected' }; },
+      }, {
+        trustSetRoleResolverOverride: {
+          resolveActor(familyId, deviceId, dskKeyId) {
+            if (dskKeyId !== undefined) return { ...projectActor(familyId, deviceId, dskKeyId), role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+            return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+          },
+        },
+      });
+      try {
+        const response = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones',
+          headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+          payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+        assert.equal(response.statusCode, 503);
+        assert.deepEqual(response.json(), { error: 'family_authority_unavailable' });
+        assert.equal(writes, 0);
+      } finally { await app.close(); }
+    });
+  }
+});
+
+test('Safe Zone enqueue rejects a recipient family projection change at the final pre-write recheck', async () => {
+  let recipientResolutions = 0;
+  let writes = 0;
+  const app = buildApp('OWNER', 'ALLOW', {
+    async create() { writes += 1; return { zoneId: 'unexpected' }; },
+  }, {
+    trustSetRoleResolverOverride: {
+      resolveActor(familyId, deviceId, dskKeyId) {
+        if (dskKeyId !== undefined) return { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+        recipientResolutions += 1;
+        return { familyId: recipientResolutions === 1 ? familyId : `${familyId}-other`, deviceId,
+          dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      },
+    },
+  });
+  try {
+    const response = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones',
+      headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'family_authority_unavailable' });
+    assert.equal(recipientResolutions, 2);
+    assert.equal(writes, 0);
+  } finally { await app.close(); }
 });
 
 test('Safe Zone mutations require the bound child profile to be a current family registry member', async () => {
@@ -402,13 +461,13 @@ test('Safe Zone authorization rechecks the exact session DSK after a Trust Set k
   const trustSetRoleResolver = {
     resolveActor(familyId, deviceId, dskKeyId) {
       if (familyId !== 'family-a') return 'DEVICE_NOT_IN_TRUST_SET';
-      if (deviceId === 'child-device') return { deviceId, role: 'CHILD', trustSetEpoch: 2, keyEpoch: 1 };
+      if (deviceId === 'child-device') return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 2, keyEpoch: 1 };
       if (deviceId !== 'device-a') return 'DEVICE_NOT_IN_TRUST_SET';
       if (dskKeyId !== undefined) resolverCalls.push(dskKeyId);
       // The legacy unbound lookup resolves the current member, while a
       // session-bound lookup must match its exact accepted key.
       if (dskKeyId !== undefined && dskKeyId !== acceptedKeyId) return 'DEVICE_NOT_ACTIVE';
-      return { deviceId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
+      return { familyId, deviceId, dskKeyId: acceptedKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
     },
   };
   const authorizationRequests = [];
@@ -596,8 +655,8 @@ test('safe-zone HTTP validation enforces canonical bytes, repository epoch bound
 test('Safe Zone ciphertext keyEpoch must match the actor current accepted Trust Set key epoch', async () => {
   const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
   const actorResolver = (keyEpoch) => ({
-    resolveActor(_familyId, deviceId) {
-      return { deviceId, role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: 1, keyEpoch };
+    resolveActor(familyId, deviceId) {
+      return { familyId, deviceId, dskKeyId: deviceId === 'child-device' ? 'child-device-key' : 'device-a-key', role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: 1, keyEpoch };
     },
   });
   const payloadFor = (keyEpoch) => ({
@@ -637,9 +696,9 @@ test('Safe Zone ciphertext keyEpoch must match the actor current accepted Trust 
   let resolverCalls = 0;
   let rotationRaceWrites = 0;
   const rotatingResolver = {
-    resolveActor(_familyId, deviceId) {
+    resolveActor(familyId, deviceId) {
       resolverCalls += 1;
-      return { deviceId, role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: resolverCalls, keyEpoch: acceptedKeyEpoch };
+      return { familyId, deviceId, dskKeyId: deviceId === 'child-device' ? 'child-device-key' : 'device-a-key', role: deviceId === 'child-device' ? 'CHILD' : 'OWNER', trustSetEpoch: resolverCalls, keyEpoch: acceptedKeyEpoch };
     },
   };
   const rotationRace = buildApp('OWNER', 'ALLOW', {
@@ -945,9 +1004,9 @@ test('Safe Zone POST and PATCH recheck actor and recipient binding after the fin
           resolveActor(familyId, deviceId, dskKeyId) {
             if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
             if (dskKeyId !== undefined) {
-              return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
+              return { familyId, deviceId, dskKeyId: dskKeyId ?? 'device-a-key', role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
             }
-            return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+            return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
           },
         },
         deviceChildBindingRepositoryOverride: {
@@ -1018,15 +1077,17 @@ test('Safe Zone DELETE rechecks actor DSK and accepted epochs after child-bindin
         if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
         if (dskKeyId !== undefined) {
           return {
+            familyId,
             deviceId,
             role: 'OWNER',
+            dskKeyId: dskKeyId ?? 'device-a-key',
             trustSetEpoch: 1,
             // Simulate accepted-head key rotation while the earlier recipient
             // binding lookup is in flight. The final actor read must see it.
             keyEpoch: bindingResolved ? 2 : 1,
           };
         }
-        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+        return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
       },
     },
     deviceChildBindingRepositoryOverride: {
@@ -1056,7 +1117,7 @@ test('Safe Zone DELETE rechecks actor DSK and accepted epochs after child-bindin
       headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
     });
     assert.equal(response.statusCode, 409);
-    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.deepEqual(response.json(), { error: 'authority_changed' });
     assert.equal(bindingResolved, true);
     assert.equal(removeCalls, 0);
     assert.equal(app.safeZoneZones.has('zone-a'), true);
@@ -1081,9 +1142,9 @@ test('Safe Zone DELETE re-resolves actor authority after the final Parent-role a
       resolveActor(familyId, deviceId, dskKeyId) {
         if (familyId !== 'family-a') return 'DEVICE_NOT_ACTIVE';
         if (dskKeyId !== undefined) {
-          return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
+          return { familyId, deviceId, dskKeyId: dskKeyId ?? 'device-a-key', role: 'OWNER', trustSetEpoch: 1, keyEpoch: actorRotated ? 2 : 1 };
         }
-        return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+        return { familyId, deviceId, dskKeyId: 'child-device-key', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
       },
     },
   });
@@ -1105,7 +1166,7 @@ test('Safe Zone DELETE re-resolves actor authority after the final Parent-role a
       headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' },
     });
     assert.equal(response.statusCode, 409);
-    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.deepEqual(response.json(), { error: 'authority_changed' });
     assert.equal(actorRotated, true);
     assert.equal(removeCalls, 0);
     assert.equal(app.safeZoneZones.has('zone-a'), true);

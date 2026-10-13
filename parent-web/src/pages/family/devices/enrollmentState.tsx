@@ -249,12 +249,18 @@ export function usePairing(familyId: string): PairingState {
   // INVARIANT 2: never automatic. This is only ever reached from an explicit
   // button click in PairingConfirmation.
   const confirm = useCallback(async (stepUpToken: string) => {
-    if (!pairing) return;
+    if (!pairing || !pairing.dskFingerprint || !pairing.dekFingerprint) return;
     setPairingError(null);
     setConfirming(true);
     try {
       // INVARIANT 4: the rendered result is the server's own `status`.
-      setPairing(await clients.deviceEnrollment.confirmPairing(familyId, pairing.deviceId, stepUpToken));
+      setPairing(await clients.deviceEnrollment.confirmPairing(
+        familyId,
+        pairing.deviceId,
+        stepUpToken,
+        pairing.dskFingerprint,
+        pairing.dekFingerprint,
+      ));
     } catch (e) {
       setPairingError(t(errorMessageKey(e)));
     } finally {

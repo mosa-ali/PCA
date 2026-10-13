@@ -86,6 +86,53 @@ class HttpUrlConnectionRelayHttpClientTest {
         } finally { server.close(); thread.join(1000) }
     }
 
+    @Test
+    fun `ack retires an expired relay row only for the exact authenticated not found response`() = kotlinx.coroutines.test.runTest {
+        val responses = listOf(
+            404 to """{"error":"not_found"}""",
+            404 to """{"error":"route_not_found"}""",
+            404 to """{"error":"not_found","extra":true}""",
+            403 to """{"error":"not_found"}""",
+            401 to """{"error":"not_found"}""",
+        )
+        val server = java.net.ServerSocket(0, responses.size, java.net.InetAddress.getByName("127.0.0.1"))
+        val thread = Thread {
+            for ((status, body) in responses) {
+                server.accept().use { socket ->
+                    socket.soTimeout = 5000
+                    val reader = socket.getInputStream().bufferedReader()
+                    reader.readLine()
+                    while (!reader.readLine().isNullOrEmpty()) { }
+                    val payload = body.toByteArray(Charsets.UTF_8)
+                    socket.getOutputStream().write(
+                        "HTTP/1.1 $status Response\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray(),
+                    )
+                    socket.getOutputStream().write(payload)
+                    socket.getOutputStream().flush()
+                }
+            }
+        }
+        thread.isDaemon = true
+        thread.start()
+        try {
+            val client = HttpUrlConnectionRelayHttpClient("http://127.0.0.1:${server.localPort}", allowInsecureHttp = true)
+            for (index in responses.indices) {
+                if (index == 0) {
+                    client.acknowledgeInbound("session-token", "message-1")
+                    continue
+                }
+                try {
+                    client.acknowledgeInbound("session-token", "message-1")
+                    fail("Only the exact canonical 404 may retire a pending acknowledgement")
+                } catch (error: RelayHttpException) {
+                    val expected = if (responses[index].first == 401) RelayHttpErrorCode.Unauthorized
+                        else RelayHttpErrorCode.InvalidRequest
+                    org.junit.Assert.assertEquals(expected, error.errorCode)
+                }
+            }
+        } finally { server.close(); thread.join(1000) }
+    }
+
     private suspend fun readInboundResponse(body: String): InboundListResult {
         val server = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
         val thread = Thread {

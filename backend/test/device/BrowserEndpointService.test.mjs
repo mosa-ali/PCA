@@ -11,6 +11,14 @@ function key() {
 
 const FAMILY = 'family-browser-1';
 
+async function confirmCurrent(pairingService, deviceId, accountId) {
+  const view = await pairingService.getPairingRequest(FAMILY, deviceId);
+  return pairingService.confirmPairing(FAMILY, deviceId, accountId, {
+    expectedDskFingerprint: view.dskFingerprint,
+    expectedDekFingerprint: view.dekFingerprint,
+  });
+}
+
 function buildService() {
   const repository = createInMemoryDeviceRepository();
   const now = () => new Date('2026-01-01T00:00:00.000Z');
@@ -55,6 +63,22 @@ test('registerEndpoint rejects a public key already registered to another device
     () => service.registerEndpoint(FAMILY, randomUUID(), sharedKey),
     { code: 'DUPLICATE_KEY' },
   );
+});
+
+test('Parent-session browser registration does not misattribute the account id as a device actor', async () => {
+  const repository = createInMemoryDeviceRepository();
+  let recordedEvent = null;
+  const service = new BrowserEndpointService(repository, () => new Date('2026-01-01T00:00:00.000Z'), {
+    async record(event) { recordedEvent = event; },
+  });
+  const registeredByAccountId = randomUUID();
+
+  const result = await service.registerEndpoint(FAMILY, registeredByAccountId, key());
+
+  assert.equal(result.status, 'PAIRING_PENDING');
+  assert.equal(recordedEvent.actorDeviceId, 'SERVICE_SESSION');
+  assert.notEqual(recordedEvent.actorDeviceId, registeredByAccountId);
+  assert.equal(recordedEvent.targetScope.id, result.deviceId);
 });
 
 test('committed browser registration returns its device id when the one-shot audit append fails', async () => {
@@ -104,10 +128,10 @@ test('end-to-end: registration -> confirm by a DIFFERENT account reaches PAIRED;
   const { deviceId } = await service.registerEndpoint(FAMILY, registeredBy, key());
 
   await assert.rejects(
-    () => pairingService.confirmPairing(FAMILY, deviceId, registeredBy),
+    () => confirmCurrent(pairingService, deviceId, registeredBy),
     { code: 'SELF_APPROVAL_DENIED' },
   );
 
-  const view = await pairingService.confirmPairing(FAMILY, deviceId, randomUUID());
+  const view = await confirmCurrent(pairingService, deviceId, randomUUID());
   assert.equal(view.status, 'PAIRED');
 });

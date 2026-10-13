@@ -5,6 +5,7 @@ import org.pca.app.feature.youtube.policy.OpaqueFamilyId
 import org.pca.app.feature.youtube.policy.OpaqueProfileId
 import org.pca.app.feature.youtube.policy.UsageCapabilityStatus
 import org.pca.app.feature.youtube.policy.UsageSource
+import org.pca.app.persistence.entity.SourceConfidence
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.platform.UsageAccessState
 import org.pca.app.runtime.usage.UsageAppToken
@@ -44,7 +45,10 @@ class ModeAAndroidUsageAdapter(
 
         val durationMs: Long? = if (capabilityStatus == UsageCapabilityStatus.GRANTED) {
             usageSessions.getForDevice(deviceId)
-                .filter { it.appOrCategoryToken == UsageAppToken.forPackageName(packageName) }
+                .filter {
+                    it.sourceConfidence == SourceConfidence.PLATFORM_API &&
+                        it.appOrCategoryToken == UsageAppToken.forPackageName(packageName)
+                }
                 .sumOf { it.durationMillis }
         } else {
             null // doc 5: missing evidence must never be displayed as zero use -- not even 0L when the capability isn't GRANTED

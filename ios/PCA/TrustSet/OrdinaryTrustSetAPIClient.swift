@@ -115,10 +115,14 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
                 .replacingOccurrences(of: "=", with: "")
             let value = OrdinaryTrustSetHead(familyId: familyId, canonicalBytes: bytes, signature: signature)
             let epoch = try value.epoch()
-            // The accepted record signer is the Owner of the predecessor epoch.
-            // During a valid transfer that signer deliberately differs from the
-            // resulting epoch's incoming Owner. The coordinator verifies the
-            // signature against its persisted acceptedBase before adoption.
+            guard let owner = epoch.entries.first(where: { $0.role == .owner && $0.status == .active }),
+                  Data(signerDeviceId.utf8) == Data(owner.deviceId.utf8),
+                  Data(signerKeyId.utf8) == Data(owner.dskKeyId.utf8) else {
+                throw PCAAPIError.malformedResponse
+            }
+            // The DTO's signer projection must name the signed active Owner;
+            // the coordinator still verifies the signature and predecessor
+            // linkage against its persisted accepted floor before adoption.
             guard epoch.trustSetEpoch == trustSetEpoch, epoch.keyEpoch == keyEpoch else {
                 throw PCAAPIError.malformedResponse
             }
@@ -143,9 +147,15 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
     }
     private struct HeadResult: Decodable { let acceptedHead: Record }
     private struct RecordResult: Decodable { let acceptedEpoch: Record }
+    private static func isCanonicalSessionToken(_ token: String) -> Bool {
+        token.utf8.count == 43 && token.utf8.allSatisfy { byte in
+            (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+                || (byte >= 48 && byte <= 57) || byte == 45 || byte == 95
+        }
+    }
     private func call(suffix: String, pending: OrdinaryTrustSetPending?) async throws -> PCAHTTPResponse {
         let token = try sessionToken()
-        guard !token.isEmpty, token.utf8.count <= 4096, !token.contains("\r"), !token.contains("\n") else { throw PCAAPIError.unauthorized }
+        guard Self.isCanonicalSessionToken(token) else { throw PCAAPIError.unauthorized }
         let path = "api/device/families/\(familyId)/trust-set/epochs" + suffix
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = pending == nil ? "GET" : "POST"
@@ -162,7 +172,10 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
                 "signatureBase64": bytes.base64EncodedString()], options: [.sortedKeys])
         }
         let response = try await http.send(request)
-        guard Data(try sessionToken().utf8) == Data(token.utf8) else { throw PCAAPIError.unauthorized }
+        let currentToken = try sessionToken()
+        guard Self.isCanonicalSessionToken(currentToken), Data(currentToken.utf8) == Data(token.utf8) else {
+            throw PCAAPIError.unauthorized
+        }
         guard response.data.count <= 1_048_576 else { throw PCAAPIError.malformedResponse }
         return response
     }
@@ -180,6 +193,7 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
         // outcome, and NOT_ACCEPTED/CONFLICT require its value to be null.
         guard result.acceptedEpochPresent else { throw PCAAPIError.malformedResponse }
         let head = try result.acceptedHead.head(familyId: familyId)
+        let headEpoch = try head.epoch()
         if result.outcome == "ACCEPTED" || (!status && result.outcome == "IDEMPOTENT_MATCH") {
             guard let record = result.acceptedEpoch,
                   Data(record.signerDeviceId.utf8) == Data(request.signerDeviceId.utf8),
@@ -196,8 +210,27 @@ public final class OrdinaryTrustSetAPIClient: OrdinaryTrustSetTransport {
             return .accepted(accepted)
         }
         guard status, result.acceptedEpoch == nil else { throw PCAAPIError.malformedResponse }
-        if result.outcome == "NOT_ACCEPTED" { return .unknown }
-        if result.outcome == "CONFLICT" { return .rejected }
+        let requestEpoch = try request.candidate.epoch()
+        if result.outcome == "NOT_ACCEPTED" {
+            // The backend only reports NOT_ACCEPTED when the indexed request
+            // epoch is absent and differs from the consistent current head.
+            guard requestEpoch.trustSetEpoch != headEpoch.trustSetEpoch else {
+                throw PCAAPIError.malformedResponse
+            }
+            return .unknown
+        }
+        if result.outcome == "CONFLICT" {
+            // A conflict means different immutable content exists at the
+            // requested epoch. That epoch cannot be ahead of the accepted
+            // head, and an exact head match cannot be called a conflict.
+            guard requestEpoch.trustSetEpoch <= headEpoch.trustSetEpoch,
+                  requestEpoch.trustSetEpoch != headEpoch.trustSetEpoch ||
+                    head.canonicalBytes != request.candidate.canonicalBytes ||
+                    Data(head.signature.utf8) != Data(request.candidate.signature.utf8) else {
+                throw PCAAPIError.malformedResponse
+            }
+            return .rejected
+        }
         throw PCAAPIError.malformedResponse
     }
     public func submit(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult {

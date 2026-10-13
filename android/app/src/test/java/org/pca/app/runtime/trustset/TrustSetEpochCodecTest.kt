@@ -48,6 +48,21 @@ class TrustSetEpochCodecTest {
         for (i in 0 until wire.length()) rejected { TrustSetEpochCodec.parseWire(wire.getJSONObject(i).getString("wireJson")) }
     }
 
+    @Test fun `wire parser rejects duplicate names including escaped aliases at every object depth`() {
+        val wire = fixtures().getJSONArray("vectors").getJSONObject(0).getString("wireJson")
+        val duplicateRoot = wire.replaceFirst("{", "{\"familyId\":\"shadow\",")
+        val escapedRootAlias = wire.replaceFirst("{", "{\"family\\u0049d\":\"shadow\",")
+        val deviceMember = wire.indexOf("\"deviceId\"")
+        assertTrue(deviceMember >= 0)
+        val duplicateEntry = wire.substring(0, deviceMember) +
+            "\"deviceId\":\"shadow\"," + wire.substring(deviceMember)
+
+        rejected { TrustSetEpochCodec.parseWire(duplicateRoot) }
+        rejected { TrustSetEpochCodec.parseWire(escapedRootAlias) }
+        rejected { TrustSetEpochCodec.parseWire(duplicateEntry) }
+        assertEquals(candidate(), TrustSetEpochCodec.parseWire(wire))
+    }
+
     @Test fun `signature excluded and order preserved without granting semantic authority`() {
         val epoch = candidate()
         val base = TrustSetEpochCodec.canonicalize(epoch)

@@ -1,5 +1,17 @@
 # PCA Platform Web — Codex Master TODO
 
+## Parent dependency checkpoint — 2026-10-13
+
+Before publication, local/fetched/server `pca-dev` matched at `598394c490ff36d630fab7c7f7aaf460cc236ede`. Parent-owned identity projection was audited against provisioned-family precedence, legacy single-Administrator selection, ambiguity, nullable PII and account-bound email repair; no new Platform product source or schema change was justified. Parent backend 3414/3414 passed before the final focused FamilyAudit follow-up, and its rebuilt focused and disposable MySQL regressions passed afterward. Parent TODO-12/14/15/19 remain open, TODO-20 remains PASS, and owner localhost acceptance is not claimed. Platform stays `HOLD_PARENT_DEPENDENCY`; Azure and production remain HOLD. This source checkpoint is unpublished and has no exact-head CI yet.
+
+## Parent multi-writer source integration wave — 2026-10-09
+
+Parent's owner-authorized Android/iOS/backend/policy work uses isolated writable lanes and coordinator integration; see PCA_MOBILE_SWARM_WORK_MATRIX.md. At last fresh fetch and direct server comparison, published `pca-dev` is `2ec69f83`, while the coordinator's local integration head is `ce3c9717` with further reviewed changes dirty. Exact-head CI 37870175983 failed backend unit and one iOS recovery test; all other listed jobs passed. Backend route and suite-registration corrections pass focused local gates; the iOS test failure is a bounded 30-second retirement timeout under active fix. The full disposable MySQL run had one TLS control-connection timeout, which the isolated wrapper-owned TLS suite did not reproduce (12/12 passed); no full local DB PASS is claimed. Parent TODO-19 remains IN_PROGRESS pending integrated validation, publication and new exact-head CI. No Platform product source changed. Parent projection, owner localhost acceptance, Platform dependency and deployment gates remain open. TODO-20 remains PASS through 0065; no new schema or live DB mutation occurred.
+
+## Parent Android emulator migration campaign — 2026-10-09
+
+Parent Mobile device UAT run `37861311614` completed FAILED at `73c08a2ee26d12a0d8333cd539b905d6a42bfd84`: 11/12 instrumentation tests passed, including Room 6→7 preservation; only the real-hardware custody test failed on the emulator. The coordinator prepared emulator/physical test separation without weakening hardware requirements. Corrected emulator execution remains pending publication. Owner's multi-writer implementation wave is active in isolated lanes; see PCA_MOBILE_SWARM_WORK_MATRIX.md. Physical-device, crypto review, owner acceptance and Platform dependency/deployment gates remain open. No Platform product source changed.
+
 ## Live Child App route predeployment check — 2026-10-09
 
 Read-only public GET/HEAD of the owner-selected `https://www.pcasafe.com/child-app/` returned HTTP 404 (`Server: nginx`, `Content-Type: text/html`) in two requests. Repository source at verified 0f598dcd includes the bilingual static `/child-app/` route, routing tests and `public-web/deploy/verify-container.mjs` check. The deploy README documents the first Release A publish as a manually authorized operation and identifies the current public target as placeholder; no deploy was attempted. Therefore Download App source is ready, but the owner-selected live destination is unavailable until a release is authorized/deployed and the verifier passes. Preserve Parent app installer destination/signing, Android association and Add Device readiness as separate gates. Parent TODO-21 and Platform-15 remain TODO.

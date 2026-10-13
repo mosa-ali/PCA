@@ -5,6 +5,7 @@ import { MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES, MAX_ORDINARY_TRUST_SET_REQUEST_
   type OrdinaryTrustSetSubmitResult, type OrdinaryTrustSetStatusResult } from '../../familytrustset/OrdinaryTrustSetService.js';
 import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
+import { isAcceptedEpochInScope, requestedTrustSetEpochInFamily } from '../../familytrustset/acceptedEpochScope.js';
 import type { createRateLimiter } from '../rateLimit.js';
 
 export interface OrdinaryTrustSetRouteService {
@@ -35,7 +36,7 @@ function isCanonicalBase64(value: unknown, maxBytes: number): value is string {
 }
 
 /** Explicit projection prevents internal acceptance/store metadata leaking through a future service DTO extension. */
-function projectAcceptedEpoch(value: unknown): AcceptedTrustSetEpochDto | null {
+function projectAcceptedEpoch(value: unknown, expectedFamilyId: string): AcceptedTrustSetEpochDto | null {
   if (!isPlainObject(value)) return null;
   const { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch } = value;
   if (!isCanonicalBase64(canonicalEpochBase64, MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES) ||
@@ -44,6 +45,8 @@ function projectAcceptedEpoch(value: unknown): AcceptedTrustSetEpochDto | null {
       !isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
     return null;
   }
+  if (!isAcceptedEpochInScope(Buffer.from(canonicalEpochBase64, 'base64'), expectedFamilyId, trustSetEpoch,
+    keyEpoch, signerDeviceId, signerKeyId)) return null;
   return { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch };
 }
 
@@ -59,27 +62,40 @@ function acceptedRequestMatches(epoch: AcceptedTrustSetEpochDto, body: unknown):
     epoch.signatureBase64 === body.signatureBase64;
 }
 
+async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // These device-session responses contain family membership, key IDs, and
+  // signed Trust Set history. Keep both successful projections and denials
+  // out of browser and intermediary caches, including rate-limit responses.
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 function doesNotExceedHead(epoch: AcceptedTrustSetEpochDto, head: AcceptedTrustSetEpochDto): boolean {
   return epoch.trustSetEpoch <= head.trustSetEpoch && epoch.keyEpoch <= head.keyEpoch &&
     (epoch.trustSetEpoch !== head.trustSetEpoch || sameAcceptedEpoch(epoch, head));
 }
 
-function projectSubmitResult(value: unknown, requestBody: unknown): OrdinaryTrustSetSubmitResult | null {
+function projectSubmitResult(value: unknown, requestBody: unknown, scope: OrdinaryTrustSetScope): OrdinaryTrustSetSubmitResult | null {
   if (!isPlainObject(value) || (value.outcome !== 'ACCEPTED' && value.outcome !== 'IDEMPOTENT_MATCH')) return null;
-  const acceptedEpoch = projectAcceptedEpoch(value.acceptedEpoch);
-  const acceptedHead = projectAcceptedEpoch(value.acceptedHead);
+  const acceptedEpoch = projectAcceptedEpoch(value.acceptedEpoch, scope.familyId);
+  const acceptedHead = projectAcceptedEpoch(value.acceptedHead, scope.familyId);
   if (acceptedEpoch === null || acceptedHead === null || !acceptedRequestMatches(acceptedEpoch, requestBody) ||
       !doesNotExceedHead(acceptedEpoch, acceptedHead)) return null;
   return { outcome: value.outcome, acceptedEpoch, acceptedHead };
 }
 
-function projectStatusResult(value: unknown, requestBody: unknown): OrdinaryTrustSetStatusResult | null {
+function projectStatusResult(value: unknown, requestBody: unknown, scope: OrdinaryTrustSetScope): OrdinaryTrustSetStatusResult | null {
   if (!isPlainObject(value) || typeof value.outcome !== 'string' ||
       !['ACCEPTED', 'NOT_ACCEPTED', 'CONFLICT'].includes(value.outcome)) return null;
-  const acceptedHead = projectAcceptedEpoch(value.acceptedHead);
-  const acceptedEpoch = value.acceptedEpoch === null ? null : projectAcceptedEpoch(value.acceptedEpoch);
+  const acceptedHead = projectAcceptedEpoch(value.acceptedHead, scope.familyId);
+  const acceptedEpoch = value.acceptedEpoch === null ? null : projectAcceptedEpoch(value.acceptedEpoch, scope.familyId);
+  const requestEpoch = isPlainObject(requestBody) && typeof requestBody.canonicalEpochBase64 === 'string' ?
+    requestedTrustSetEpochInFamily(Buffer.from(requestBody.canonicalEpochBase64, 'base64'), scope.familyId) : null;
   if (acceptedHead === null || (value.outcome === 'ACCEPTED') !== (acceptedEpoch !== null) ||
       (value.outcome !== 'ACCEPTED' && value.acceptedEpoch !== null) ||
+      requestEpoch === null ||
+      (value.outcome === 'NOT_ACCEPTED' && requestEpoch === acceptedHead.trustSetEpoch) ||
+      (value.outcome === 'CONFLICT' && (requestEpoch > acceptedHead.trustSetEpoch ||
+        (requestEpoch === acceptedHead.trustSetEpoch && acceptedRequestMatches(acceptedHead, requestBody)))) ||
       (acceptedEpoch !== null && (!acceptedRequestMatches(acceptedEpoch, requestBody) ||
         !doesNotExceedHead(acceptedEpoch, acceptedHead)))) return null;
   return { outcome: value.outcome as OrdinaryTrustSetStatusResult['outcome'], acceptedEpoch, acceptedHead };
@@ -132,6 +148,7 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
   for (const operation of ['submit', 'status'] as const) {
     app.post(operation === 'submit' ? BASE : `${BASE}/status`, {
       bodyLimit: MAX_BODY_BYTES,
+      onRequest: markPrivateResponseNoStore,
       preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: `ordinary-trust-set-${operation}` })],
     }, async (request, reply) => {
       const scope = await authorize(request, reply); if (!scope) return;
@@ -139,8 +156,8 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
       if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
       try {
         const result = await deps.ordinaryTrustSetService[operation](scope, request.body);
-        const projected = operation === 'submit' ? projectSubmitResult(result, request.body) :
-          projectStatusResult(result, request.body);
+        const projected = operation === 'submit' ? projectSubmitResult(result, request.body, scope) :
+          projectStatusResult(result, request.body, scope);
         return projected === null ? reply.code(503).send({ error: 'trust_set_unavailable' }) :
           reply.code(200).send(projected);
       }
@@ -148,18 +165,20 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
     });
   }
   app.get(`${BASE}/head`, {
+    onRequest: markPrivateResponseNoStore,
     preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'ordinary-trust-set-head' })],
   }, async (request, reply) => {
     const scope = await authorize(request, reply); if (!scope) return;
     if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
     try {
-      const acceptedHead = projectAcceptedEpoch(await deps.ordinaryTrustSetService.head(scope));
+      const acceptedHead = projectAcceptedEpoch(await deps.ordinaryTrustSetService.head(scope), scope.familyId);
       return acceptedHead === null ? reply.code(503).send({ error: 'trust_set_unavailable' }) :
         reply.code(200).send({ acceptedHead });
     }
     catch (error) { return failed(error, reply); }
   });
   app.get(`${BASE}/records/:trustSetEpoch`, {
+    onRequest: markPrivateResponseNoStore,
     preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'ordinary-trust-set-record' })],
   }, async (request, reply) => {
     const scope = await authorize(request, reply); if (!scope) return;
@@ -172,7 +191,7 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
     try {
       const acceptedEpoch = await deps.ordinaryTrustSetService.epoch(scope, epoch);
       if (acceptedEpoch === null) return reply.code(404).send({ error: 'trust_set_record_unavailable' });
-      const projected = projectAcceptedEpoch(acceptedEpoch);
+      const projected = projectAcceptedEpoch(acceptedEpoch, scope.familyId);
       if (projected === null || projected.trustSetEpoch !== epoch) {
         return reply.code(503).send({ error: 'trust_set_unavailable' });
       }

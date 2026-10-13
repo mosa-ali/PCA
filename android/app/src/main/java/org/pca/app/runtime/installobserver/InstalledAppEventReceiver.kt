@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -72,20 +73,29 @@ class InstalledAppEventReceiver : BroadcastReceiver() {
         val app = context.applicationContext as? PcaApplication ?: return
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            // Resolved once and shared by both independent steps below -- avoids a second
-            // PackageManager round-trip for the exact same package within the same broadcast.
-            val (appLabel, firstInstallTimeMillis) = resolveAppMetadata(context, packageName)
-            runCatching { recordInstall(app, packageName, appLabel, firstInstallTimeMillis) }
-            runCatching { handleInstallApproval(app, packageName, appLabel) }
-            pendingResult.finish()
+            runInstallBroadcastSteps(
+                resolveMetadata = {
+                    // Resolved once and shared by both independent steps below -- avoids a second
+                    // PackageManager round-trip for the exact same package within the same broadcast.
+                    resolveAppMetadata(context, packageName)
+                },
+                recordInstall = { appLabel, firstInstallTimeMillis ->
+                    recordInstall(app, packageName, appLabel, firstInstallTimeMillis)
+                },
+                handleApproval = { appLabel, _ ->
+                    handleInstallApproval(app, packageName, appLabel)
+                },
+                finish = pendingResult::finish,
+            )
         }
     }
 
     /**
      * PCA-FR-131: the capability-honest approval half (see this class's own doc comment). Runs
-     * independently of [recordInstall] (each wrapped in its own `runCatching` in [onReceive]) so a
-     * failure in one never silently suppresses the other -- local visibility and the parent-facing
-     * approval request are two separately-valuable outcomes of the same broadcast.
+     * independently of [recordInstall] (each step has its own ordinary-exception boundary in
+     * [runInstallBroadcastSteps]) so a failure in one never silently suppresses the other -- local
+     * visibility and the parent-facing approval request are two separately-valuable outcomes of
+     * the same broadcast.
      */
     private fun handleInstallApproval(app: PcaApplication, packageName: String, appLabel: String?) {
         val graph = app.graph
@@ -136,10 +146,61 @@ class InstalledAppEventReceiver : BroadcastReceiver() {
         return try {
             val info = pm.getApplicationInfo(packageName, 0)
             val label = pm.getApplicationLabel(info)?.toString()
-            val installTime = runCatching { pm.getPackageInfo(packageName, 0).firstInstallTime }.getOrNull()
+            val installTime = bestEffortInstallMetadata {
+                pm.getPackageInfo(packageName, 0).firstInstallTime
+            }
             label to installTime
         } catch (e: PackageManager.NameNotFoundException) {
             null to null
         }
     }
+}
+
+/**
+ * Runs the independent best-effort work for one package-install broadcast. Metadata lookup can
+ * fail after the package has already disappeared or when the platform denies access; in that case
+ * both downstream steps still receive the honest null metadata fallback. Ordinary persistence or
+ * request exceptions do not suppress the other step. Cancellation and fatal JVM Errors propagate,
+ * while [finish] always releases the asynchronous broadcast result.
+ */
+internal suspend fun runInstallBroadcastSteps(
+    resolveMetadata: suspend () -> Pair<String?, Long?>,
+    recordInstall: suspend (String?, Long?) -> Unit,
+    handleApproval: suspend (String?, Long?) -> Unit,
+    finish: () -> Unit,
+) {
+    try {
+        val (appLabel, firstInstallTimeMillis) = try {
+            resolveMetadata()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null to null
+        }
+
+        runInstallBroadcastStep { recordInstall(appLabel, firstInstallTimeMillis) }
+        runInstallBroadcastStep { handleApproval(appLabel, firstInstallTimeMillis) }
+    } finally {
+        finish()
+    }
+}
+
+private suspend fun runInstallBroadcastStep(action: suspend () -> Unit) {
+    try {
+        action()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        // Keep the sibling install-observation or approval-request outcome available.
+    }
+}
+
+/** Optional PackageManager fields may be unavailable, but cancellation and fatal JVM Errors must
+ * still escape to the broadcast coroutine's cancellation/fatal-safe boundary. */
+internal inline fun <T> bestEffortInstallMetadata(lookup: () -> T): T? = try {
+    lookup()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
 }

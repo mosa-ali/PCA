@@ -119,14 +119,14 @@ test('MySQL inbound: lost GET response survives fresh service instances until ex
   const now = new Date('2026-01-01T00:30:00.000Z');
   const recipient = envelope.recipient.recipientDeviceId;
   const context = () => baseContext({ familyId: envelope.familyId, now });
-  const processA = new RelayService(new MySqlRelayRepository(), () => now);
+  const processA = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }), () => now);
   await processA.queueEnvelope({ messageId: envelope.messageId, familyId: envelope.familyId, senderDeviceId: envelope.senderDeviceId,
     recipientDeviceId: recipient, ciphertext: envelopeToRelayCiphertext(envelope) });
   const first = await new InboundReconnectService(processA, buildCoordinator(newDurableLedgers()))
     .reconnectDrainForRecipient(recipient, envelope.familyId, context, now);
   assert.deepEqual(first.applied.map((item) => item.messageId), [envelope.messageId]);
   // Discard the response and every service/repository instance, then rebuild from MySQL.
-  const processB = new RelayService(new MySqlRelayRepository(), () => now);
+  const processB = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }), () => now);
   const retry = await new InboundReconnectService(processB, buildCoordinator(newDurableLedgers()))
     .reconnectDrainForRecipient(recipient, envelope.familyId, context, now);
   assert.deepEqual(retry.applied.map((item) => item.messageId), [envelope.messageId]);
@@ -134,7 +134,7 @@ test('MySQL inbound: lost GET response survives fresh service instances until ex
   assert.equal(envelopeToRelayCiphertext(retry.applied[0]).equals(envelopeToRelayCiphertext(envelope)), true);
   await processB.acknowledgeEnvelope(recipient, envelope.messageId);
   // ACK committed but its response was lost: a fresh process retries exactly.
-  const processC = new RelayService(new MySqlRelayRepository(), () => now);
+  const processC = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }), () => now);
   await processC.acknowledgeEnvelope(recipient, envelope.messageId);
   assert.deepEqual(await processC.listQueuedForRecipient(recipient), []);
 });
@@ -143,13 +143,13 @@ test('MySQL inbound: accepted ciphertext is withheld after durable-service resta
   const envelope = makeEnvelope({ familyId: `family-${randomUUID()}`, recipient: { kind: 'DEVICE', recipientDeviceId: `recipient-${randomUUID()}` } });
   const now = new Date('2026-01-01T00:30:00.000Z');
   const recipient = envelope.recipient.recipientDeviceId;
-  const relay = new RelayService(new MySqlRelayRepository(), () => now);
+  const relay = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }), () => now);
   await relay.queueEnvelope({ messageId: envelope.messageId, familyId: envelope.familyId, senderDeviceId: envelope.senderDeviceId,
     recipientDeviceId: recipient, ciphertext: envelopeToRelayCiphertext(envelope) });
   const first = await new InboundReconnectService(relay, buildCoordinator(newDurableLedgers()))
     .reconnectDrainForRecipient(recipient, envelope.familyId, () => baseContext({ familyId: envelope.familyId, now }), now);
   assert.equal(first.applied.length, 1);
-  const restartedRelay = new RelayService(new MySqlRelayRepository(), () => now);
+  const restartedRelay = new RelayService(new MySqlRelayRepository({ allowMissingAuthorityForTests: true }), () => now);
   const retry = await new InboundReconnectService(restartedRelay, buildCoordinator(newDurableLedgers()))
     .reconnectDrainForRecipient(recipient, envelope.familyId,
       () => baseContext({ familyId: envelope.familyId, minimumAcceptedTrustSetEpoch: 2, now }), now);

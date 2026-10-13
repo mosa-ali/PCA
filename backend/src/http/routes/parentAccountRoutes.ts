@@ -61,7 +61,9 @@ import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess
 import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage } from '../../parentaccount/ParentPreferenceRepository.js';
 import {
   SafeZoneError,
+  SafeZoneAuthorityChangedError,
   type NewSafeZone,
+  type SafeZoneMutationAuthoritySnapshot,
   type SafeZonePatch,
   type SafeZoneRepository,
   validateNewSafeZone,
@@ -862,6 +864,10 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         authorizationHeader.slice('Bearer '.length),
         session.familyId,
       );
+      if (identity.familyId !== session.familyId || typeof identity.deviceId !== 'string' || identity.deviceId.length === 0) {
+        await reply.code(401).send({ error: 'actor_device_session_invalid' });
+        return null;
+      }
       actorDeviceId = identity.deviceId;
       if (typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
         await reply.code(503).send({ error: 'family_authority_unavailable' });
@@ -891,7 +897,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return null;
     }
     if (!acceptedActor || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
-        acceptedActor.deviceId !== actorDeviceId ||
+        acceptedActor.familyId !== session.familyId || acceptedActor.deviceId !== actorDeviceId ||
+        acceptedActor.dskKeyId !== actorDskKeyId ||
         !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
         !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
         !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1) {
@@ -910,6 +917,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
 
   type SafeZoneRecipientAuthority = {
     deviceId: string;
+    dskKeyId: string;
     childProfileId: string;
     trustSetEpoch: number;
     keyEpoch: number;
@@ -938,7 +946,8 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return null;
     }
     if (!recipient || typeof recipient !== 'object' || Array.isArray(recipient) ||
-        recipient.deviceId !== recipientDeviceId || recipient.role !== 'CHILD' ||
+        recipient.familyId !== familyId || recipient.deviceId !== recipientDeviceId || recipient.role !== 'CHILD' ||
+        typeof recipient.dskKeyId !== 'string' || recipient.dskKeyId.length === 0 ||
         !Number.isSafeInteger(recipient.trustSetEpoch) || recipient.trustSetEpoch < 1 ||
         !Number.isSafeInteger(recipient.keyEpoch) || recipient.keyEpoch < 1) {
       if (recipient && typeof recipient === 'object' && recipient.role !== 'CHILD') {
@@ -987,6 +996,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     return {
       deviceId: recipientDeviceId,
+      dskKeyId: recipient.dskKeyId,
       childProfileId: binding.childProfileId,
       trustSetEpoch: recipient.trustSetEpoch,
       keyEpoch: recipient.keyEpoch,
@@ -1004,6 +1014,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const currentRecipient = await resolveSafeZoneRecipient(reply, session.familyId, expectedRecipient.deviceId);
     if (!currentRecipient) return false;
     if (currentRecipient.childProfileId !== expectedRecipient.childProfileId ||
+        currentRecipient.dskKeyId !== expectedRecipient.dskKeyId ||
         currentRecipient.trustSetEpoch !== expectedRecipient.trustSetEpoch) {
       await reply.code(409).send({ error: 'authority_changed' });
       return false;
@@ -1032,27 +1043,34 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     return true;
   }
 
-  async function reauthorizeSafeZoneActor(
+  async function reauthorizeSafeZoneRemoval(
     request: FastifyRequest,
     reply: FastifyReply,
     session: { accountId: string; familyId: string },
     expectedActor: { deviceId: string; dskKeyId: string; trustSetEpoch: number; keyEpoch: number },
+    expectedRecipient: SafeZoneRecipientAuthority,
   ): Promise<boolean> {
-    // DELETE has no replacement ciphertext epoch to compare. It still needs
-    // an actor re-resolution after recipient/authority reads so a DSK or
-    // accepted-head rotation during those awaits cannot authorize removal.
+    const currentRecipient = await resolveSafeZoneRecipient(reply, session.familyId, expectedRecipient.deviceId);
+    if (!currentRecipient) return false;
+    if (currentRecipient.dskKeyId !== expectedRecipient.dskKeyId ||
+        currentRecipient.childProfileId !== expectedRecipient.childProfileId ||
+        currentRecipient.trustSetEpoch !== expectedRecipient.trustSetEpoch ||
+        currentRecipient.keyEpoch !== expectedRecipient.keyEpoch ||
+        expectedRecipient.trustSetEpoch !== expectedActor.trustSetEpoch ||
+        expectedRecipient.keyEpoch !== expectedActor.keyEpoch) {
+      await reply.code(409).send({ error: 'authority_changed' });
+      return false;
+    }
+
     const currentActor = await requireSafeZoneActorDevice(request, reply, session);
     if (!currentActor) return false;
     if (currentActor.deviceId !== expectedActor.deviceId || currentActor.dskKeyId !== expectedActor.dskKeyId) {
       await reply.code(401).send({ error: 'actor_device_session_invalid' });
       return false;
     }
-    if (currentActor.trustSetEpoch !== expectedActor.trustSetEpoch) {
+    if (currentActor.trustSetEpoch !== expectedActor.trustSetEpoch || currentActor.keyEpoch !== expectedActor.keyEpoch ||
+        currentActor.trustSetEpoch !== currentRecipient.trustSetEpoch) {
       await reply.code(409).send({ error: 'authority_changed' });
-      return false;
-    }
-    if (currentActor.keyEpoch !== expectedActor.keyEpoch) {
-      await reply.code(409).send({ error: 'key_epoch_mismatch' });
       return false;
     }
     return true;
@@ -1211,9 +1229,17 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!actorCapture.value || !recipientCapture.value ||
         !(await reauthorizeSafeZoneEnqueue(request, reply, session, actorCapture.value, recipientCapture.value, body.keyEpoch))) return;
     try {
-      const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId });
+      const authority: SafeZoneMutationAuthoritySnapshot = {
+        familyId: session.familyId,
+        trustSetEpoch: actorCapture.value.trustSetEpoch,
+        keyEpoch: actorCapture.value.keyEpoch,
+        actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },
+        recipient: { deviceId: recipientCapture.value.deviceId, dskKeyId: recipientCapture.value.dskKeyId },
+      };
+      const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId }, authority);
       return reply.code(201).send({ safeZone: zone });
     } catch (error) {
+      if (error instanceof SafeZoneAuthorityChangedError) return reply.code(409).send({ error: 'authority_changed' });
       if (error instanceof SafeZoneError && error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
       throw error;
     }
@@ -1268,9 +1294,17 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
           value.keyEpoch ?? existing.keyEpoch ?? Number.NaN,
         ))) return;
     try {
-      const zone = await deps.safeZoneRepository.update(session.familyId, zoneId, value as SafeZonePatch);
+      const authority: SafeZoneMutationAuthoritySnapshot = {
+        familyId: session.familyId,
+        trustSetEpoch: actorCapture.value.trustSetEpoch,
+        keyEpoch: actorCapture.value.keyEpoch,
+        actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },
+        recipient: { deviceId: recipientCapture.value.deviceId, dskKeyId: recipientCapture.value.dskKeyId },
+      };
+      const zone = await deps.safeZoneRepository.update(session.familyId, zoneId, value as SafeZonePatch, authority);
       return reply.code(200).send({ safeZone: zone });
     } catch (error) {
+      if (error instanceof SafeZoneAuthorityChangedError) return reply.code(409).send({ error: 'authority_changed' });
       if (error instanceof SafeZoneError && error.code === 'NOT_FOUND') return reply.code(404).send({ error: 'not_found' });
       if (error instanceof SafeZoneError && error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
       throw error;
@@ -1297,6 +1331,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return reply.code(404).send({ error: 'not_found' });
     }
     const actorCapture: { value?: { deviceId: string; dskKeyId: string; trustSetEpoch: number; keyEpoch: number } } = {};
+    const recipientCapture: { value?: SafeZoneRecipientAuthority } = {};
     if (!(await authorizeSafeZoneRequest(
       request,
       reply,
@@ -1304,7 +1339,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       'EDIT_CHILD_POLICY',
       { kind: 'DEVICE', id: existing.recipientEndpointId },
       undefined,
-      undefined,
+      recipientCapture,
       actorCapture,
     ))) return;
     // DELETE has no ciphertext epoch to compare, but it still must not use an
@@ -1312,8 +1347,22 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!(await authorizeSafeZoneRole(reply, session, 'EDIT_CHILD_POLICY'))) return;
     // Keep the actor epoch/DSK resolution after the final Parent-role await so
     // it is the last authority read immediately before repository removal.
-    if (!actorCapture.value || !(await reauthorizeSafeZoneActor(request, reply, session, actorCapture.value))) return;
-    const removed = await deps.safeZoneRepository.remove(session.familyId, zoneId);
+    if (!actorCapture.value || !recipientCapture.value ||
+        !(await reauthorizeSafeZoneRemoval(request, reply, session, actorCapture.value, recipientCapture.value))) return;
+    const authority: SafeZoneMutationAuthoritySnapshot = {
+      familyId: session.familyId,
+      trustSetEpoch: actorCapture.value.trustSetEpoch,
+      keyEpoch: actorCapture.value.keyEpoch,
+      actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },
+      recipient: { deviceId: recipientCapture.value.deviceId, dskKeyId: recipientCapture.value.dskKeyId },
+    };
+    let removed: boolean;
+    try {
+      removed = await deps.safeZoneRepository.remove(session.familyId, zoneId, authority);
+    } catch (error) {
+      if (error instanceof SafeZoneAuthorityChangedError) return reply.code(409).send({ error: 'authority_changed' });
+      throw error;
+    }
     return removed ? reply.code(204).send() : reply.code(404).send({ error: 'not_found' });
   });
 }

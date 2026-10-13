@@ -110,7 +110,7 @@ class OrdinaryTrustSetBootstrapAnchorTest {
     }
 
     @Test
-    fun `ordinary store accepts owner transfer only from the exact previous owner and stores its predecessor`() {
+    fun `ordinary store rejects owner transfer but accepts same-owner progress with exact predecessor`() {
         val rootStore = rootStore()
         val backing = InMemoryPersistentStateStore()
         val ordinaryStore = PersistentOrdinaryEpochStore(backing)
@@ -146,15 +146,27 @@ class OrdinaryTrustSetBootstrapAnchorTest {
             current,
             current.copy(accepted = selfSignedReplacement, acceptedBase = current.accepted),
         ))
-        assertEquals(root, ordinaryStore.read()!!.accepted)
-
         val transferSignedByPreviousOwner = selfSignedReplacement.copy(signerDeviceId = "device-1", signerKeyId = "dsk-id")
-        assertTrue(ordinaryStore.compareAndSetDurably(
+        assertFalse(ordinaryStore.compareAndSetDurably(
             current,
             current.copy(accepted = transferSignedByPreviousOwner, acceptedBase = current.accepted),
         ))
+
+        assertEquals(root, ordinaryStore.read()!!.accepted)
+        assertNull(ordinaryStore.read()!!.acceptedBase)
+
+        val sameOwnerEpoch = epoch(2)
+        val sameOwnerRequest = OrdinaryEpochRequest(
+            Base64.getEncoder().encodeToString(TrustSetEpochCodec.canonicalize(sameOwnerEpoch).toByteArray()),
+            Base64.getEncoder().encodeToString(ByteArray(64) { 10 }),
+        )
+        val sameOwnerAccepted = AcceptedEpochRecord(sameOwnerRequest, "device-1", "dsk-id", 2, 1)
+        assertTrue(ordinaryStore.compareAndSetDurably(
+            current,
+            current.copy(accepted = sameOwnerAccepted, acceptedBase = current.accepted),
+        ))
         val reopened = PersistentOrdinaryEpochStore(backing).read()!!
-        assertEquals(transferSignedByPreviousOwner, reopened.accepted)
+        assertEquals(sameOwnerAccepted, reopened.accepted)
         assertEquals(root, reopened.acceptedBase)
         assertEquals(root, reopened.rootAnchor)
         assertFalse("an older accepted snapshot cannot replace the current floor",
@@ -178,6 +190,54 @@ class OrdinaryTrustSetBootstrapAnchorTest {
         try {
             PersistentOrdinaryEpochStore(backing).read()
             fail("acceptedBase must remain the exact previously accepted record")
+        } catch (failure: IllegalStateException) {
+            assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+        }
+    }
+
+    @Test
+    fun `persisted accepted floor cannot replace the bootstrap Owner with another signer`() {
+        val backing = InMemoryPersistentStateStore()
+        val ordinaryStore = PersistentOrdinaryEpochStore(backing)
+        OrdinaryTrustSetBootstrapAnchor.seed(
+            rootStore(), ordinaryStore, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+        )
+
+        val replacementOwner = UntrustedTrustSetEntry(
+            "device-2", TrustSetRole.OWNER, "dsk-2", "public-dsk-2", "dek-2", "public-dek-2",
+            TrustSetMembershipStatus.ACTIVE,
+        )
+        fun replacementEpoch(number: Int) = UntrustedTrustSetEpoch(
+            "family", number, 1, listOf(replacementOwner), "2026-10-09T00:00:00.000Z", number - 1,
+        )
+        fun replacementRecord(number: Int) = replacementEpoch(number).let { epoch ->
+            AcceptedEpochRecord(
+                OrdinaryEpochRequest(
+                    Base64.getEncoder().encodeToString(TrustSetEpochCodec.canonicalize(epoch).toByteArray()),
+                    Base64.getEncoder().encodeToString(ByteArray(64) { 7 }),
+                ),
+                replacementOwner.deviceId, replacementOwner.dskKeyId, epoch.trustSetEpoch, epoch.keyEpoch,
+            )
+        }
+        fun acceptedJson(value: AcceptedEpochRecord) = JSONObject()
+            .put("canonicalEpochBase64", value.request.canonicalEpochBase64)
+            .put("signatureBase64", value.request.signatureBase64)
+            .put("signerDeviceId", value.signerDeviceId)
+            .put("signerKeyId", value.signerKeyId)
+            .put("trustSetEpoch", value.trustSetEpoch)
+            .put("keyEpoch", value.keyEpoch)
+
+        // Simulate a restored/altered v4 snapshot. The shapes and epoch pointers are
+        // internally consistent, but this owner is not the immutable epoch-1 Owner.
+        val raw = JSONObject(requireNotNull(backing.getString("ordinary_trust_set_v1")))
+            .put("accepted", acceptedJson(replacementRecord(3)))
+            .put("acceptedBase", acceptedJson(replacementRecord(2)))
+        backing.putString("ordinary_trust_set_v1", raw.toString())
+        backing.flush()
+
+        try {
+            PersistentOrdinaryEpochStore(backing).read()
+            fail("ordinary persisted floors must remain bound to the bootstrap Owner")
         } catch (failure: IllegalStateException) {
             assertEquals("corrupt_ordinary_trust_set_state", failure.message)
         }

@@ -71,6 +71,7 @@ export class ParentActionAuthorizationService {
   private readonly now: () => Date;
   private readonly childProfileMembership: ChildProfileMembershipResolver;
   private readonly auditService: FamilyAuditService;
+  private auditAppendFailureCount = 0;
 
   constructor(
     roleResolver: TrustSetRoleResolver,
@@ -204,13 +205,20 @@ export class ParentActionAuthorizationService {
     // --unhandled-rejections=throw terminates the process; logging is the honest
     // middle between that and swallowing a lost audit event in silence.
     void this.recordAudit(request, returnedDecision, resolvedActor).catch((error: unknown) => {
-      console.warn(
-        JSON.stringify({
+      // Exception messages from SQL/driver adapters may contain parameters or
+      // other request data. Keep the warning bounded and category-only; the
+      // audit event itself and action identifiers never cross this boundary.
+      this.auditAppendFailureCount += 1;
+      if (this.auditAppendFailureCount !== 1 && this.auditAppendFailureCount % 100 !== 0) return;
+      try {
+        console.warn(JSON.stringify({
           event: 'parent_action_audit_append_failed',
-          actionId: request.actionId,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
+          occurrences: this.auditAppendFailureCount,
+        }));
+      } catch {
+        // Best-effort diagnostics cannot turn an already-decided authorization
+        // response into an unhandled rejection or process failure.
+      }
     });
     return returnedDecision;
   }

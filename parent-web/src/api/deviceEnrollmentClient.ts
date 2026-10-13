@@ -135,7 +135,13 @@ export interface DeviceEnrollmentClient {
    * target surfaces DeviceEnrollmentError('CONFLICT'). The resolved status
    * must be rendered as PAIRED, never as ACTIVE.
    */
-  confirmPairing(familyId: string, deviceId: string, stepUpToken: string): Promise<PairingRequestDto>;
+  confirmPairing(
+    familyId: string,
+    deviceId: string,
+    stepUpToken: string,
+    expectedDskFingerprint: string,
+    expectedDekFingerprint: string | null,
+  ): Promise<PairingRequestDto>;
   /** Lists only live first-device ceremonies for the current family; the server additionally restricts this to its provisioned owner. */
   listFirstDeviceBootstrapCeremonies(familyId: string): Promise<FirstDeviceBootstrapCeremonyDto[]>;
   /** Approves one ceremony with a fresh, operation-scoped Parent TOTP grant. This never activates the device. */

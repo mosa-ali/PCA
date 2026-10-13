@@ -1,10 +1,11 @@
 import { computeKeyFingerprint } from './fingerprint.js';
 import type { DeviceRepository } from '../device/DeviceRepository.js';
 import type { DeviceId, OpaqueFamilyId } from '../device/types.js';
-import type { PairingRequestView } from './types.js';
+import type { PairingFingerprintExpectation, PairingRequestView } from './types.js';
+import { isKeyFingerprint } from './fingerprint.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
-export type PairingErrorCode = 'NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED';
+export type PairingErrorCode = 'NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED' | 'INVALID_FINGERPRINT' | 'FINGERPRINT_MISMATCH';
 
 /** Fixed, generic messages -- identical for "no such device" and "device belongs to a different family" (IDOR defense, matching the device domain's own pattern). */
 export class PairingError extends Error {
@@ -20,6 +21,8 @@ const PAIRING_ERROR_MESSAGES: Record<PairingErrorCode, string> = {
   NOT_FOUND: 'Pairing request was not found.',
   INVALID_STATE: 'Pairing request is not in a state that permits this operation.',
   SELF_APPROVAL_DENIED: 'This account registered this endpoint and cannot also confirm it.',
+  INVALID_FINGERPRINT: 'The displayed device key fingerprints are required.',
+  FINGERPRINT_MISMATCH: 'The device key fingerprints changed; refresh the pairing request.',
 };
 
 /**
@@ -67,10 +70,18 @@ export class PairingService {
     authorizedFamilyId: OpaqueFamilyId,
     deviceId: DeviceId,
     confirmedByAccountId: string,
+    expectedFingerprints: PairingFingerprintExpectation,
   ): Promise<PairingRequestView> {
-    const result = await this.deviceRepository.confirmPairing(authorizedFamilyId, deviceId, confirmedByAccountId, this.now());
+    if (!expectedFingerprints || !isKeyFingerprint(expectedFingerprints.expectedDskFingerprint) ||
+        !(expectedFingerprints.expectedDekFingerprint === null || isKeyFingerprint(expectedFingerprints.expectedDekFingerprint))) {
+      throw new PairingError('INVALID_FINGERPRINT');
+    }
+    const result = await this.deviceRepository.confirmPairing(
+      authorizedFamilyId, deviceId, confirmedByAccountId, this.now(), { ...expectedFingerprints },
+    );
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new PairingError('NOT_FOUND');
     if (result.outcome === 'SELF_APPROVAL_DENIED') throw new PairingError('SELF_APPROVAL_DENIED');
+    if (result.outcome === 'FINGERPRINT_MISMATCH') throw new PairingError('FINGERPRINT_MISMATCH');
     if (result.outcome === 'INVALID_STATE') throw new PairingError('INVALID_STATE');
     if (result.transitioned) {
       try {

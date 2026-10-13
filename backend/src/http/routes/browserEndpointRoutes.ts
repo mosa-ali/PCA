@@ -25,6 +25,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+async function markBrowserEndpointResponsePrivate(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 /**
  * PCA-FR-063 / doc 08 Section 8-style trusted-browser registration step.
  * Registration alone is never trust: the resulting device is
@@ -43,6 +47,7 @@ export function registerBrowserEndpointRoutes(app: FastifyInstance, deps: Browse
     '/v1/families/:familyId/browser-endpoints',
     {
       bodyLimit: MAX_BODY_BYTES,
+      onRequest: markBrowserEndpointResponsePrivate,
       preHandler: [
         deps.authAttemptLimiter,
         requireServiceSession,

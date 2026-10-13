@@ -36,9 +36,18 @@ import {
 } from '../../runtime-sync/OutboundRelayService.js';
 import { parseFamilyEnvelope } from '../../familyenvelope/parse.js';
 import { envelopeToRelayCiphertext } from '../../runtime-sync/envelopeWireCodec.js';
+import type { RelayEnvelopeAuthoritySnapshot } from '../../relay/RelayRepository.js';
 
 const MAX_BODY_BYTES = 96 * 1024; // matches parentAccountRoutes.ts's MAX_SAFE_ZONE_BODY_BYTES order of magnitude
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** The sender's accepted authority changed after Parent authorization but before relay persistence. */
+class SenderAuthorityChangedError extends Error {
+  constructor() {
+    super('The policy sender authority changed before enqueue.');
+    this.name = 'SenderAuthorityChangedError';
+  }
+}
 
 export interface ChildPolicyRoutesDeps {
   parentAccountService: ParentAccountService;
@@ -155,6 +164,7 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
     '/api/parent/families/:familyId/children/:childProfileId/schedule-policy',
     { bodyLimit: MAX_BODY_BYTES },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      reply.header('Cache-Control', 'private, no-store');
       const session = await familySession(request, reply);
       if (!session) return;
       if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
@@ -203,7 +213,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(403).send({ error: 'forbidden' });
       }
       if (acceptedActor === null || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
+          acceptedActor.familyId !== session.familyId ||
           acceptedActor.deviceId !== actorDeviceId.deviceId ||
+          acceptedActor.dskKeyId !== actorDeviceId.dskKeyId ||
           !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
           !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
           !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1) {
@@ -266,7 +278,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(400).send({ error: 'invalid_recipient' });
       }
       if (acceptedRecipient === null || typeof acceptedRecipient !== 'object' || Array.isArray(acceptedRecipient) ||
+          acceptedRecipient.familyId !== session.familyId ||
           acceptedRecipient.deviceId !== envelope.recipient.recipientDeviceId ||
+          typeof acceptedRecipient.dskKeyId !== 'string' || acceptedRecipient.dskKeyId.length === 0 ||
           !Number.isSafeInteger(acceptedRecipient.trustSetEpoch) || acceptedRecipient.trustSetEpoch < 1 ||
           !Number.isSafeInteger(acceptedRecipient.keyEpoch) || acceptedRecipient.keyEpoch < 1) {
         return reply.code(503).send({ error: 'authority_unavailable' });
@@ -329,7 +343,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
           }
           if (typeof currentRecipient === 'string') return false;
           if (currentRecipient === null || typeof currentRecipient !== 'object' || Array.isArray(currentRecipient) ||
+              currentRecipient.familyId !== session.familyId ||
               currentRecipient.deviceId !== recipientDeviceId ||
+              typeof currentRecipient.dskKeyId !== 'string' || currentRecipient.dskKeyId.length === 0 ||
               !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(currentRecipient.role) ||
               !Number.isSafeInteger(currentRecipient.trustSetEpoch) || currentRecipient.trustSetEpoch < 1 ||
               !Number.isSafeInteger(currentRecipient.keyEpoch) || currentRecipient.keyEpoch < 1) {
@@ -352,9 +368,51 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
               typeof currentBinding.outcome !== 'string') {
             throw new RecipientAuthorizationUnavailableError();
           }
-          return currentBinding.outcome === 'BOUND' && currentBinding.childProfileId === childProfileId;
+          if (currentBinding.outcome !== 'BOUND' || currentBinding.childProfileId !== childProfileId) return false;
+
+          // Parent authorization and the recipient/profile reads above may
+          // yield to storage. Recheck the exact sender DSK/role/epoch after
+          // those reads and immediately before submitOne persists the envelope;
+          // a demoted or rotated sender must not receive a successful PENDING
+          // receipt for an envelope authored under the older snapshot.
+          let currentSender: ResolvedActor | ActorResolutionFailure;
+          try {
+            currentSender = await deps.trustSetRoleResolver!.resolveActor(
+              session.familyId,
+              actorDeviceId.deviceId,
+              actorDeviceId.dskKeyId,
+            );
+          } catch {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (typeof currentSender === 'string') throw new SenderAuthorityChangedError();
+          if (currentSender === null || typeof currentSender !== 'object' || Array.isArray(currentSender) ||
+              currentSender.familyId !== session.familyId ||
+              currentSender.deviceId !== actorDeviceId.deviceId ||
+              currentSender.dskKeyId !== actorDeviceId.dskKeyId ||
+              !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(currentSender.role) ||
+              !Number.isSafeInteger(currentSender.trustSetEpoch) || currentSender.trustSetEpoch < 1 ||
+              !Number.isSafeInteger(currentSender.keyEpoch) || currentSender.keyEpoch < 1) {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (currentSender.role !== acceptedActor.role ||
+              currentSender.trustSetEpoch !== envelope.trustSetEpoch ||
+              currentSender.keyEpoch !== envelope.keyEpoch) {
+            throw new SenderAuthorityChangedError();
+          }
+          const authority: RelayEnvelopeAuthoritySnapshot = {
+            familyId: session.familyId,
+            trustSetEpoch: envelope.trustSetEpoch,
+            keyEpoch: envelope.keyEpoch,
+            sender: { deviceId: currentSender.deviceId, dskKeyId: currentSender.dskKeyId },
+            recipient: { deviceId: currentRecipient.deviceId, dskKeyId: currentRecipient.dskKeyId },
+          };
+          return authority;
         });
       } catch (error) {
+        if (error instanceof SenderAuthorityChangedError) {
+          return reply.code(409).send({ error: 'authority_changed' });
+        }
         if (error instanceof RecipientAuthorizationUnavailableError) {
           return reply.code(503).send({ error: 'authority_unavailable' });
         }
@@ -363,6 +421,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
         return reply.code(503).send({ error: 'relay_unavailable' });
       }
       const outcome = result.results.find((item) => item.messageId === envelope.messageId)?.outcome;
+      if (outcome === 'AUTHORITY_CHANGED') {
+        return reply.code(409).send({ error: 'authority_changed' });
+      }
       if (outcome === 'CROSS_FAMILY_RECIPIENT' || outcome === 'INVALID') {
         return reply.code(400).send({ error: 'invalid_recipient' });
       }

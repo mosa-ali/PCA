@@ -27,6 +27,20 @@ export interface TrustSetEpochRecord {
   receivedAt: Date;
 }
 
+// MySQL DATETIME(3) stores years 1000 through 9999. Keep this boundary at
+// the shared persistence contract so callers reject signed timestamps that
+// JavaScript can represent but the durable epoch store cannot.
+const MIN_PERSISTABLE_TRUST_SET_DATE = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MAX_PERSISTABLE_TRUST_SET_DATE = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+export function isPersistableTrustSetDate(value: unknown): value is Date {
+  if (!(value instanceof Date)) return false;
+  const time = value.getTime();
+  return Number.isFinite(time) &&
+    time >= MIN_PERSISTABLE_TRUST_SET_DATE &&
+    time <= MAX_PERSISTABLE_TRUST_SET_DATE;
+}
+
 /**
  * Immutable identity of the head against which an acceptance candidate was
  * validated. The exact signed bytes and signature bind the comparison to

@@ -109,6 +109,29 @@ test('MySQL: MULTI_INSTANCE -- two independent instances share one durable recor
   assert.equal(await rowCountForScope(scope), 1);
 });
 
+test('MySQL PRIVACY: exhausted duplicate readback does not expose caller scope or idempotency key', async () => {
+  const scope = `sentinel_scope_${randomUUID()}`;
+  const key = `sentinel_key_${randomUUID()}`;
+  const durable = new MySqlActionIdempotencyLedger();
+  await durable.record(scope, key, recorded('act-first', '{"verdict":"ALLOW"}'));
+
+  // Simulate the bounded TOCTOU case where each duplicate INSERT is followed
+  // by a readback that cannot observe the row. The final operational error
+  // must not echo caller-controlled identity values.
+  const readbackMiss = new (class extends MySqlActionIdempotencyLedger {
+    async getRecorded() { return null; }
+  })();
+  await assert.rejects(
+    () => readbackMiss.record(scope, key, recorded('act-loser', '{"verdict":"DENY"}')),
+    (error) => {
+      assert.match(error.message, /could not persist or confirm the replay record/);
+      assert.equal(error.message.includes(scope), false);
+      assert.equal(error.message.includes(key), false);
+      return true;
+    },
+  );
+});
+
 test('MySQL: CROSS-FAMILY / CROSS-ACCOUNT ISOLATION -- one owner can neither read nor displace another owner\'s key', async () => {
   const ledger = new MySqlActionIdempotencyLedger();
   const familyA = uniqueScope();

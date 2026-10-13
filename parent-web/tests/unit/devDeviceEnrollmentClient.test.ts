@@ -55,20 +55,31 @@ describe('DevDeviceEnrollmentClient (DEVELOPMENT_ONLY fixture)', () => {
   it('confirmPairing only ever resolves to PAIRED, never ACTIVE, and is idempotent', async () => {
     await client.createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'step-up-token');
     const [deviceId] = __devKnownPairingDeviceIds();
+    client.__devResolveFingerprints(deviceId);
+    const view = await client.getPairingRequest('fam-1', deviceId);
 
-    const confirmed = await client.confirmPairing('fam-1', deviceId, 'step-up-token');
+    const confirmed = await client.confirmPairing('fam-1', deviceId, 'step-up-token', view.dskFingerprint!, view.dekFingerprint);
     expect(confirmed.status).toBe('PAIRED');
     expect(confirmed.status).not.toBe('ACTIVE');
     expect(confirmed.dskFingerprint).toBeTruthy();
     expect(confirmed.dekFingerprint).toBeTruthy();
 
     // Idempotent: confirming again returns the same PAIRED state, not an error.
-    const confirmedAgain = await client.confirmPairing('fam-1', deviceId, 'step-up-token');
+    const confirmedAgain = await client.confirmPairing('fam-1', deviceId, 'step-up-token', view.dskFingerprint!, view.dekFingerprint);
     expect(confirmedAgain.status).toBe('PAIRED');
   });
 
   it('confirmPairing rejects a device id that was never paired-requested', async () => {
-    await expect(client.confirmPairing('fam-1', 'never-existed', 'step-up-token')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(client.confirmPairing('fam-1', 'never-existed', 'step-up-token', 'missing', null)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('confirmPairing rejects fingerprints that differ from the displayed request', async () => {
+    await client.createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }, 'step-up-token');
+    const [deviceId] = __devKnownPairingDeviceIds();
+    client.__devResolveFingerprints(deviceId);
+    await expect(client.confirmPairing('fam-1', deviceId, 'step-up-token', 'stale-dsk', 'dev:dek:ee55-ff66-0077-8899'))
+      .rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(client.getPairingRequest('fam-1', deviceId)).resolves.toMatchObject({ status: 'PAIRING_PENDING' });
   });
 
   it('pairing requests remain scoped to the family that created the invitation', async () => {
@@ -76,7 +87,7 @@ describe('DevDeviceEnrollmentClient (DEVELOPMENT_ONLY fixture)', () => {
     const [deviceId] = __devKnownPairingDeviceIds();
 
     await expect(client.getPairingRequest('fam-2', deviceId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(client.confirmPairing('fam-2', deviceId, 'step-up-token')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(client.confirmPairing('fam-2', deviceId, 'step-up-token', 'missing', null)).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(client.getPairingRequest('fam-1', deviceId)).resolves.toMatchObject({ status: 'PAIRING_PENDING' });
   });
 

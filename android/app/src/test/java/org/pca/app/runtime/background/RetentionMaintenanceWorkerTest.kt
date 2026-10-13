@@ -2,9 +2,12 @@ package org.pca.app.runtime.background
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,6 +32,62 @@ class RetentionMaintenanceWorkerTest {
     @After
     fun tearDown() {
         BackgroundWorkMetrics.resetForTest()
+    }
+
+    @Test
+    fun `successful maintenance records success and returns success`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+        var calls = 0
+
+        val result = runRetentionMaintenanceWork { calls += 1 }
+
+        assertEquals(1, calls)
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `ordinary maintenance failure records failure and returns retry`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+
+        val result = runRetentionMaintenanceWork { throw IllegalStateException("temporary storage failure") }
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Retry)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `worker cancellation propagates without recording a retryable failure`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+        val expected = CancellationException("WorkManager stopped this worker")
+
+        try {
+            runRetentionMaintenanceWork { throw expected }
+            throw AssertionError("cancellation must propagate")
+        } catch (actual: CancellationException) {
+            assertSame(expected, actual)
+        }
+
+        assertEquals(0, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `fatal JVM errors propagate without recording a retryable failure`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+        val expected = LinkageError("simulated fatal runtime failure")
+
+        try {
+            runRetentionMaintenanceWork { throw expected }
+            throw AssertionError("fatal errors must propagate")
+        } catch (actual: LinkageError) {
+            assertSame(expected, actual)
+        }
+
+        assertEquals(0, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
     }
 
     @Test

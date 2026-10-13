@@ -4,7 +4,11 @@ import type { FamilyRole } from './types.js';
 
 /** The actor identity/role/epoch this module authorizes against -- ALWAYS derived from a verified trust-set entry, never from a caller-asserted role string (closes role-forgery/IDOR). */
 export interface ResolvedActor {
+  /** Exact family whose accepted epoch supplied this projection. */
+  familyId: OpaqueFamilyId;
   deviceId: OpaqueDeviceId;
+  /** Exact DSK admitted by this accepted epoch entry. */
+  dskKeyId: string;
   role: FamilyRole;
   trustSetEpoch: number;
   keyEpoch: number;
@@ -63,7 +67,7 @@ export class FamilyTrustSetRoleResolver implements TrustSetRoleResolver {
     if (entry.status !== 'ACTIVE') return 'DEVICE_NOT_ACTIVE';
     if (dskKeyId !== undefined && entry.dskKeyId !== dskKeyId) return 'DEVICE_NOT_ACTIVE';
 
-    return { deviceId, role: entry.role, trustSetEpoch: epoch.trustSetEpoch, keyEpoch: epoch.keyEpoch };
+    return { familyId: epoch.familyId, deviceId, dskKeyId: entry.dskKeyId, role: entry.role, trustSetEpoch: epoch.trustSetEpoch, keyEpoch: epoch.keyEpoch };
   }
 }
 

@@ -97,6 +97,52 @@ class DurableCiphertextInboxTest {
         assertEquals(before, store.values)
     }
 
+    @Test fun `malformed cursor state is rejected without replacing retained cursor or ciphertext`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val before = store.values.toMap()
+
+        // The transport model rejects malformed navigation at construction;
+        // the persistence boundary independently rejects a malformed caller session.
+        unavailable { inbox.capture(scope, emptyList(), navigation = navigation("cursor2"),
+            expectedSessionIncarnation = "invalid", expectedCursor = "cursor1") }
+        assertEquals(before, store.values)
+
+        val invalidSessionStore = InboxBacking()
+        unavailable {
+            PersistentCiphertextInbox(invalidSessionStore, "device-1").capture(
+                scope, emptyList(), navigation = navigation("cursor1"),
+                expectedSessionIncarnation = "invalid",
+            )
+        }
+        assertTrue(invalidSessionStore.values.isEmpty())
+    }
+
+    @Test fun `persisted malformed cursor state remains unavailable instead of being reset`() {
+        val corruptions: List<(JSONObject) -> Unit> = listOf(
+            { it.put("hasMore", false) },
+            { it.put("nextCursor", JSONObject.NULL) },
+            { it.put("nextCursor", "cursor/with/slash") },
+            { it.put("nextCursor", "x".repeat(org.pca.app.runtime.sync.transport.MAX_INBOUND_CURSOR_LENGTH + 1)) },
+            { it.put("sessionIncarnation", "invalid") },
+        )
+        corruptions.forEach { corruptNavigation ->
+            val store = InboxBacking()
+            PersistentCiphertextInbox(store, "device-1").capture(scope, listOf(wire()),
+                navigation = navigation("cursor1"), expectedSessionIncarnation = incarnation)
+            val key = store.values.keys.single()
+            val corrupted = JSONObject(store.values.getValue(key))
+            corruptNavigation(corrupted.getJSONObject("navigation"))
+            store.values[key] = corrupted.toString()
+
+            unavailable { PersistentCiphertextInbox(store, "device-1").navigationFor(incarnation) }
+
+            assertEquals(corrupted.toString(), store.values[key])
+        }
+    }
+
     private val scope = RuntimeInboxScope("family-1", "device-1")
     @Test fun `legacy response to resumed modern cursor retains entire snapshot`() {
         val store = InboxBacking()
@@ -118,6 +164,17 @@ class DurableCiphertextInboxTest {
         "STATUS_SNAPSHOT", 1, 1, "nonce-1", 1_700_000_000_000L, 1_700_000_060_000L,
         "1.0.0", null, byteArrayOf(1, 2, 3), "signature-1",
     )), Charsets.UTF_8)
+
+    @Test fun `inbox accepts an understood protocol minor at the JSON safe-integer maximum`() {
+        val futureMinorWire = JSONObject(wire())
+            .put("protocolMinor", 9_007_199_254_740_991L)
+            .toString()
+        val inbox = PersistentCiphertextInbox(InboxBacking(), "device-1")
+
+        inbox.capture(scope, listOf(futureMinorWire))
+
+        assertEquals(futureMinorWire, inbox.pendingAcknowledgements(scope).single().envelopeWire)
+    }
     private fun unavailable(block: () -> Unit) {
         try { block(); fail("Expected fail-closed custody") } catch (_: CiphertextInboxUnavailable) { }
     }
@@ -168,7 +225,7 @@ class DurableCiphertextInboxTest {
 
     @Test fun `malformed wire rejected before any durable write`() {
         for ((key, value) in listOf<Pair<String, Any>>("trustSetEpoch" to 2147483648L,
-            "keyEpoch" to -1, "protocolMajor" to 1.5, "payload" to "A!QID",
+            "keyEpoch" to -1, "protocolMajor" to 1.5, "protocolMinor" to java.math.BigInteger("9007199254740992"), "payload" to "A!QID",
             "familyId" to "other-family", "recipientDeviceId" to "other-device", "correlationId" to 42,
             "semanticVersion" to "01.0.0", "messageType" to "UNKNOWN", "signature" to "s".repeat(513),
             "sequenceOrNonce" to "n".repeat(129))) {

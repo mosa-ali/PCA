@@ -2,9 +2,12 @@ package org.pca.app.runtime.background
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,9 +25,10 @@ import org.robolectric.RobolectricTestRunner
  * `androidTest`/`connectedDebugAndroidTest`, not `testDebugUnitTest`, is where a real device-backed
  * KeyStore would be available). This test therefore honestly documents and asserts the worker's
  * OWN failure-handling contract instead of faking a happy path that this test environment cannot
- * actually exercise: `doWork()` never throws/crashes even when the graph it depends on fails to
- * construct, always returns a valid [androidx.work.ListenableWorker.Result], and records the
- * failure via [BackgroundWorkMetrics] rather than swallowing it silently.
+ * actually exercise: the direct worker test checks that this Robolectric graph path returns a
+ * valid [androidx.work.ListenableWorker.Result] and records its outcome. Cancellation and fatal
+ * JVM errors are intentionally allowed to propagate and are covered at the worker boundary below;
+ * only ordinary exceptions become WorkManager retries.
  */
 @RunWith(RobolectricTestRunner::class)
 class UsageIngestionWorkerTest {
@@ -35,7 +39,83 @@ class UsageIngestionWorkerTest {
     }
 
     @Test
-    fun `doWork never throws and always returns a valid Result, recording the outcome in BackgroundWorkMetrics`() = runTest {
+    fun `complete ingestion returns success and records success`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+
+        val result = runUsageIngestionWork { UsageIngestionWorkerOutcome(shouldRetry = false, metricsSuccess = true) }
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `blocked ingestion returns success while recording its unsuccessful outcome`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+
+        val result = runUsageIngestionWork { UsageIngestionWorkerOutcome(shouldRetry = false, metricsSuccess = false) }
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `pending ingestion work returns retry`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+
+        val result = runUsageIngestionWork { UsageIngestionWorkerOutcome(shouldRetry = true, metricsSuccess = false) }
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Retry)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `ordinary ingestion exception records failure and returns retry`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+
+        val result = runUsageIngestionWork { throw IllegalStateException("temporary storage failure") }
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Retry)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(1, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `worker cancellation propagates without recording a retryable failure`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+        val expected = CancellationException("WorkManager stopped this worker")
+
+        try {
+            runUsageIngestionWork { throw expected }
+            throw AssertionError("cancellation must propagate")
+        } catch (actual: CancellationException) {
+            assertSame(expected, actual)
+        }
+
+        assertEquals(0, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `fatal JVM errors propagate without recording a retryable failure`() = runTest {
+        BackgroundWorkMetrics.resetForTest()
+        val expected = LinkageError("simulated fatal runtime failure")
+
+        try {
+            runUsageIngestionWork { throw expected }
+            throw AssertionError("fatal errors must propagate")
+        } catch (actual: LinkageError) {
+            assertSame(expected, actual)
+        }
+
+        assertEquals(0, BackgroundWorkMetrics.snapshot().runCount)
+        assertEquals(0, BackgroundWorkMetrics.snapshot().failureCount)
+    }
+
+    @Test
+    fun `doWork returns a valid Result in the Robolectric environment and records the outcome`() = runTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val worker = TestListenableWorkerBuilder<UsageIngestionWorker>(context).build()
 

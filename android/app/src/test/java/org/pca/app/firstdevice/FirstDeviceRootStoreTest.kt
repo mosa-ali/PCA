@@ -8,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.pca.app.foundation.PersistentStateStore
 
@@ -335,6 +336,63 @@ class FirstDeviceRootStoreTest {
         assertFalse(store.captureSeed(candidate, setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED)))
         assertEquals("not-a-root-record", backing.values["first_device_root_v1"])
         assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+    }
+
+    @Test
+    fun `unconditional save and clear preserve corrupt or unavailable root bytes across restart`() {
+        val backing = RecordingStore()
+        val key = "first_device_root_v1"
+        val corrupt = "corrupt-root-record"
+        backing.values[key] = corrupt
+        val store = PersistentFirstDeviceRootStore(backing)
+
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) {
+            store.save(FirstDeviceRootRecord(seed = seed()))
+        }
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) { store.clear() }
+        assertEquals(corrupt, backing.values[key])
+        assertEquals(FirstDeviceRootReadResult.Unreadable, PersistentFirstDeviceRootStore(backing).readState())
+
+        backing.failReads = true
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) {
+            store.save(FirstDeviceRootRecord(seed = seed()))
+        }
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) { store.clear() }
+        backing.failReads = false
+
+        assertEquals(corrupt, backing.values[key])
+        assertEquals(FirstDeviceRootReadResult.Unreadable, PersistentFirstDeviceRootStore(backing).readState())
+    }
+
+    @Test
+    fun `expired record retaining signed submission is unreadable and cannot be replaced`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        val inFlight = FirstDeviceRootRecord(
+            seed = seed(),
+            state = FirstDeviceRootState.SUBMITTING,
+            ceremonyId = "ceremony-1",
+            submission = FirstDeviceSubmissionPayload("proof", "proof-sig", "epoch", "epoch-sig", "evidence"),
+        )
+        store.save(inFlight)
+        // Simulate persisted-state corruption that contradicts the expired
+        // transition contract while leaving its retry payload behind.
+        val corrupt = backing.values.getValue("first_device_root_v1")
+            .replace("|SUBMITTING|", "|EXPIRED|")
+        backing.values["first_device_root_v1"] = corrupt
+
+        val replacementAttemptId = "b".repeat(32)
+        val replacement = FirstDeviceRootRecord(
+            seed = seed().copy(
+                attemptId = replacementAttemptId,
+                dskAlias = "pca.dsk.$replacementAttemptId",
+                dekAlias = "pca.dek.$replacementAttemptId",
+            ),
+        )
+
+        assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+        assertFalse(store.captureSeed(replacement, setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED)))
+        assertEquals(corrupt, backing.values.getValue("first_device_root_v1"))
     }
 
     @Test

@@ -55,6 +55,8 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:database-tls:inner'
     : requestedTarget === 'parent-auth'
       ? 'test:db:parent-auth:inner'
+    : requestedTarget === 'parent-preferences'
+      ? 'test:db:parent-preferences:inner'
     : isFamilyIdentityTarget
       ? 'test:db:family-identity:inner'
     : requestedTarget === 'platform-admin-auth'
@@ -76,7 +78,7 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'trust-set-device-lifecycle', 'device-auth', 'safe-zone', 'protection-alerts', 'family-audit', 'database-tls', 'family-identity', 'parent-auth', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-route-focused', 'relay-status', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, trust-set-device-lifecycle, device-auth, safe-zone, protection-alerts, family-audit, database-tls, family-identity, parent-auth, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-route-focused, relay-status, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'trust-set-device-lifecycle', 'device-auth', 'safe-zone', 'protection-alerts', 'family-audit', 'database-tls', 'family-identity', 'parent-auth', 'parent-preferences', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-route-focused', 'relay-status', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, trust-set-device-lifecycle, device-auth, safe-zone, protection-alerts, family-audit, database-tls, family-identity, parent-auth, parent-preferences, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-route-focused, relay-status, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
 if (['parent-route-audit', 'parent-route-focused'].includes(requestedTarget) && !process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) {
   throw new Error('parent-route-audit requires PCA_PARENT_ROUTE_SCENARIO_OUT so the campaign always produces its evidence report.');
 }

@@ -22,6 +22,9 @@ public struct PrayerReminderRequest: Equatable {
 
 public enum PrayerSchedulingOutcome: Equatable {
     case scheduled
+    /// Either timestamp is non-finite and cannot be represented as a valid
+    /// calendar notification trigger.
+    case rejectedInvalidDate
     /// The fire date is already in the past -- never silently scheduled
     /// (which would either never fire or fire immediately/incorrectly).
     case rejectedPastFireDate
@@ -29,6 +32,10 @@ public enum PrayerSchedulingOutcome: Equatable {
 
 public enum PrayerNotificationScheduling {
     public static func validate(_ request: PrayerReminderRequest, nowUtc: Date) -> PrayerSchedulingOutcome {
+        guard request.fireDate.timeIntervalSince1970.isFinite,
+              nowUtc.timeIntervalSince1970.isFinite else {
+            return .rejectedInvalidDate
+        }
         request.fireDate > nowUtc ? .scheduled : .rejectedPastFireDate
     }
 

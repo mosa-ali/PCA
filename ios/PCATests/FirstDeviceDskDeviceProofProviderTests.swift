@@ -108,6 +108,67 @@ final class FirstDeviceDskDeviceProofProviderTests: XCTestCase {
         XCTAssertTrue(fake.generatedRoles.isEmpty, "the second-root path must never generate key material")
     }
 
+    func testTerminalPersistedRootCanBeReplacedWithoutExposingItsOldKeys() throws {
+        let fake = FakeDskKeyMaterial()
+        fake.publicKeys["pca.dsk.existing"] = "old-dsk"
+        fake.publicKeys["pca.dek.existing"] = "old-dek"
+        var terminal = false
+        let provider = FirstDeviceDskDeviceProofProvider(provider: fake,
+            persistedAttemptId: { "existing" },
+            persistedAttemptMayBeReplaced: { attemptId in attemptId == "existing" && terminal })
+
+        XCTAssertEqual(provider.signingPublicKey, "",
+            "a terminal root cannot remain the active signing identity before a replacement is prepared")
+        XCTAssertThrowsError(try provider.prepareEnrollmentKeys(attemptId: "replacement")) { error in
+            XCTAssertEqual(error as? SecureEnclaveDskError, .keyAliasConflict,
+                "nonterminal root state must preserve the existing second-root guard")
+        }
+        XCTAssertTrue(fake.generatedRoles.isEmpty)
+
+        terminal = true
+        fake.failEncryptionGeneration = true
+        XCTAssertThrowsError(try provider.prepareEnrollmentKeys(attemptId: "replacement"),
+            "a transient second-key failure must preserve the first replacement key for recovery")
+        XCTAssertEqual(fake.generatedRoles, ["dsk:replacement"])
+
+        fake.failEncryptionGeneration = false
+        let restartedProvider = FirstDeviceDskDeviceProofProvider(provider: fake,
+            persistedAttemptId: { "existing" },
+            persistedAttemptMayBeReplaced: { attemptId in attemptId == "existing" && terminal })
+        try restartedProvider.prepareEnrollmentKeys(attemptId: "replacement")
+        XCTAssertEqual(fake.generatedRoles, ["dsk:replacement", "dek:replacement"])
+        XCTAssertEqual(restartedProvider.signingPublicKey, "dsk-public-replacement")
+        XCTAssertEqual(restartedProvider.encryptionPublicKey, "dek-public-replacement")
+    }
+
+    func testSameProcessRetiresTerminalPreparedIdentityBeforeReplacementWithoutDeletingItsKeys() throws {
+        let fake = FakeDskKeyMaterial()
+        fake.publicKeys["pca.dsk.existing"] = "old-dsk"
+        fake.publicKeys["pca.dek.existing"] = "old-dek"
+        var terminal = false
+        let provider = FirstDeviceDskDeviceProofProvider(provider: fake,
+            persistedAttemptId: { "existing" },
+            persistedAttemptMayBeReplaced: { attemptId in attemptId == "existing" && terminal })
+
+        try provider.prepareEnrollmentKeys(attemptId: "existing")
+        XCTAssertEqual(provider.signingPublicKey, "old-dsk")
+
+        terminal = true
+        XCTAssertEqual(provider.signingPublicKey, "",
+            "the long-lived transient selection must not keep signing with a terminal root")
+        XCTAssertThrowsError(try provider.sign(challenge: "nonce")) { error in
+            XCTAssertEqual(error as? PCADeviceProofError, .secureKeyUnavailable)
+        }
+
+        try provider.prepareEnrollmentKeys(attemptId: "replacement")
+        XCTAssertEqual(provider.signingPublicKey, "dsk-public-replacement")
+        XCTAssertEqual(provider.encryptionPublicKey, "dek-public-replacement")
+        XCTAssertEqual(fake.publicKeys["pca.dsk.existing"], "old-dsk",
+            "root-owned keys remain until a durable replacement root permits the app keep-set sweep")
+        XCTAssertEqual(fake.publicKeys["pca.dek.existing"], "old-dek")
+        XCTAssertEqual(fake.generatedRoles, ["dsk:replacement", "dek:replacement"])
+    }
+
     func testPersistedAttemptActivatesIdentityWithoutPreparation() throws {
         let fake = FakeDskKeyMaterial()
         fake.publicKeys["pca.dsk.committed"] = "dsk-public-committed"

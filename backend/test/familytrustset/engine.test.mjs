@@ -40,6 +40,21 @@ function buildHarness() {
   return { store: new InMemoryFamilyTrustSetStore(), verifier: createTestOnlyTrustSetSignatureVerifier() };
 }
 
+function heldVerifier() {
+  const actual = createTestOnlyTrustSetSignatureVerifier();
+  const release = new Map();
+  return {
+    release,
+    verifier: {
+      verify(publicKey, bytes, signature) {
+        return new Promise((resolve) => {
+          release.set(bytes, () => resolve(actual.verify(publicKey, bytes, signature)));
+        });
+      },
+    },
+  };
+}
+
 test('out-of-range direct candidate is rejected before store, canonicalization, or signature effects', async () => {
   let reads = 0;
   let writes = 0;
@@ -93,6 +108,73 @@ test('a valid genesis epoch (no prior store state) is accepted when self-signed 
   const verdict = await acceptEpoch(genesis, store, verifier);
   assert.deepEqual(verdict, { accepted: true });
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
+});
+
+test('accepted local epoch is isolated from caller and returned-object mutations', async () => {
+  const { store, verifier } = buildHarness();
+  const genesis = buildEpoch('owner-dsk-pub');
+  assert.deepEqual(await acceptEpoch(genesis, store, verifier), { accepted: true });
+  const expected = buildEpoch('owner-dsk-pub');
+
+  genesis.entries[0].dskPublicKey = 'attacker-key';
+  genesis.entries[0].role = 'VIEWER';
+  genesis.issuedAt.setUTCFullYear(2030);
+  genesis.signature = 'attacker-signature';
+  assert.deepEqual(store.getCurrentEpoch(), expected, 'accepted state must not alias the submitted epoch');
+
+  const returned = store.getCurrentEpoch();
+  returned.entries[0].deviceId = 'attacker-device';
+  returned.entries[0].status = 'REVOKED';
+  returned.issuedAt.setUTCFullYear(2040);
+  returned.keyEpoch = 100;
+  assert.deepEqual(store.getCurrentEpoch(), expected, 'accepted state must not alias a returned epoch');
+
+  const next = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1 });
+  assert.deepEqual(await acceptEpoch(next, store, verifier), { accepted: true });
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 2);
+});
+
+test('competing asynchronous genesis verifications cannot both establish the local root', async () => {
+  const { store, verifier: immediate } = buildHarness();
+  const { verifier, release } = heldVerifier();
+  const first = buildEpoch('owner-dsk-pub');
+  const secondOwner = entry({ dskKeyId: 'other-owner-key', dskPublicKey: 'other-owner-public' });
+  const second = buildEpoch('other-owner-public', { entries: [secondOwner] });
+  const firstResult = acceptEpoch(first, store, verifier);
+  const secondResult = acceptEpoch(second, store, verifier);
+  release.get(canonicalizeTrustSetEpoch(first))();
+  assert.deepEqual(await firstResult, { accepted: true });
+  release.get(canonicalizeTrustSetEpoch(second))();
+  assert.deepEqual(await secondResult, { accepted: false, reason: 'STALE_EPOCH' });
+  assert.deepEqual(store.getCurrentEpoch(), first);
+  assert.equal(await immediate.verify(secondOwner.dskPublicKey, canonicalizeTrustSetEpoch(second), second.signature), true);
+});
+
+test('older asynchronous verification cannot roll back a newer accepted local epoch', async () => {
+  const { store, verifier: immediate } = buildHarness();
+  assert.deepEqual(await acceptEpoch(buildEpoch('owner-dsk-pub'), store, immediate), { accepted: true });
+  const { verifier, release } = heldVerifier();
+  const older = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1 });
+  const newer = buildEpoch('owner-dsk-pub', { trustSetEpoch: 3, supersedesEpoch: 1 });
+  const olderResult = acceptEpoch(older, store, verifier);
+  const newerResult = acceptEpoch(newer, store, verifier);
+  release.get(canonicalizeTrustSetEpoch(newer))();
+  assert.deepEqual(await newerResult, { accepted: true });
+  release.get(canonicalizeTrustSetEpoch(older))();
+  assert.deepEqual(await olderResult, { accepted: false, reason: 'STALE_EPOCH' });
+  assert.deepEqual(store.getCurrentEpoch(), newer);
+});
+
+test('candidate mutation during asynchronous signature verification cannot persist unverified bytes', async () => {
+  const { store } = buildHarness();
+  const { verifier, release } = heldVerifier();
+  const candidate = buildEpoch('owner-dsk-pub');
+  const originalBytes = canonicalizeTrustSetEpoch(candidate);
+  const result = acceptEpoch(candidate, store, verifier);
+  candidate.entries[0].deviceId = 'mutated-owner-device';
+  release.get(originalBytes)();
+  assert.deepEqual(await result, { accepted: false, reason: 'MALFORMED_EPOCH' });
+  assert.equal(store.getCurrentEpoch(), null);
 });
 
 test('a genesis epoch signed by a key OTHER than its own claimed owner is INVALID_SIGNATURE', async () => {

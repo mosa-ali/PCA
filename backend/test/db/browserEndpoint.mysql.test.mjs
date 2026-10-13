@@ -85,13 +85,21 @@ test('MySQL end-to-end: the registering account is denied confirming its own end
   const { deviceId } = await browserEndpointService.registerEndpoint(familyId, registeredBy, key());
 
   await assert.rejects(
-    () => pairingService.confirmPairing(familyId, deviceId, registeredBy),
+    async () => {
+      const current = await pairingService.getPairingRequest(familyId, deviceId);
+      return pairingService.confirmPairing(familyId, deviceId, registeredBy, {
+        expectedDskFingerprint: current.dskFingerprint, expectedDekFingerprint: current.dekFingerprint,
+      });
+    },
     { code: 'SELF_APPROVAL_DENIED' },
   );
   const [stillPending] = await getPool().query(`SELECT status FROM devices WHERE device_id = ?`, [deviceId]);
   assert.equal(stillPending[0].status, 'PAIRING_PENDING');
 
-  const view = await pairingService.confirmPairing(familyId, deviceId, confirmedBy);
+  const current = await pairingService.getPairingRequest(familyId, deviceId);
+  const view = await pairingService.confirmPairing(familyId, deviceId, confirmedBy, {
+    expectedDskFingerprint: current.dskFingerprint, expectedDekFingerprint: current.dekFingerprint,
+  });
   assert.equal(view.status, 'PAIRED');
 });
 

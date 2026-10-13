@@ -2,6 +2,7 @@ package org.pca.app.persistence.retention
 
 import java.time.Instant
 import java.time.ZoneId
+import org.pca.app.foundation.runBestEffortCycleSteps
 import org.pca.app.persistence.entity.RetentionPolicy
 
 /**
@@ -48,11 +49,11 @@ import org.pca.app.persistence.entity.RetentionPolicy
  * and the only way to avoid a record landing on different sides of the retention cutoff in
  * different steps purely because of clock drift between calls.
  *
- * Each of the three [RetentionEngine] calls is independently [runCatching]-guarded: a failure in
- * one (e.g. [RetentionEngine.runGeneralCycle]'s own scope validation rejecting a device that is
- * not yet a recognized family member) must never skip the other two, and this function itself
- * must never throw back to its caller -- the same "never crash the caller" tick discipline
- * [PcaAppGraph.runUsageLocationIngestionCycle] documents for its own steps.
+ * Each of the three [RetentionEngine] calls is independently isolated from ordinary exceptions:
+ * a failure in one (e.g. [RetentionEngine.runGeneralCycle]'s own scope validation rejecting a
+ * device that is not yet a recognized family member) must never skip the other two. Coroutine
+ * cancellation propagates to stop maintenance when its worker is stopped, and fatal JVM errors
+ * propagate instead of being disguised as successful maintenance.
  *
  * [generalRetentionPolicy]/[locationRetentionPolicy] both default to the conservative
  * [RetentionPolicy.FOURTEEN_DAYS]. There is no signed, parent-authored retention policy delivery
@@ -86,14 +87,23 @@ suspend fun executeRetentionMaintenanceCycle(
         zoneId = zoneId,
     )
     if (familyId.isNullOrBlank()) {
-        runCatching { engine.runLocalDeviceCycle(effectiveNow, ctx) }
-        runCatching { engine.runAuditFloorCycle(RetentionEngine.LOCAL_DEVICE_SCOPE, effectiveNow, generalRetentionPolicy, zoneId) }
-        runCatching { engine.pruneTombstones(effectiveNow, zoneId) }
+        runRetentionMaintenanceSteps(
+            { engine.runLocalDeviceCycle(effectiveNow, ctx) },
+            { engine.runAuditFloorCycle(RetentionEngine.LOCAL_DEVICE_SCOPE, effectiveNow, generalRetentionPolicy, zoneId) },
+            { engine.pruneTombstones(effectiveNow, zoneId) },
+        )
         return
     }
-    runCatching { engine.runGeneralCycle(familyId, effectiveNow, listOf(ctx)) }
-    runCatching { engine.runAuditFloorCycle(familyId, effectiveNow, generalRetentionPolicy, zoneId) }
-    runCatching { engine.pruneTombstones(effectiveNow, zoneId) }
+    runRetentionMaintenanceSteps(
+        { engine.runGeneralCycle(familyId, effectiveNow, listOf(ctx)) },
+        { engine.runAuditFloorCycle(familyId, effectiveNow, generalRetentionPolicy, zoneId) },
+        { engine.pruneTombstones(effectiveNow, zoneId) },
+    )
+}
+
+/** Shared cycle boundary used by both family and unpaired-device retention paths. */
+internal suspend fun runRetentionMaintenanceSteps(vararg steps: suspend () -> Unit) {
+    runBestEffortCycleSteps(*steps)
 }
 
 /**

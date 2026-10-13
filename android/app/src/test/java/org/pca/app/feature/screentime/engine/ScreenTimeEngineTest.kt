@@ -95,6 +95,38 @@ class ScreenTimeEngineTest {
         assertEquals(5, state.completedBreakCount)
     }
 
+    @Test
+    fun `exact cycle split cap with no unprocessed remainder retains the normal state`() {
+        val start = ScreenTimeState.initial(0L)
+        // Each 90-minute cycle takes two engine splits; this lands exactly on split 100,000.
+        val nowNanos = 50_000L * 90.minutes.inWholeNanoseconds
+
+        val state = tick(start, nowNanos)
+
+        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
+        assertEquals(0L, state.activeElapsedNanos)
+        assertEquals(0L, state.breakElapsedNanos)
+        assertEquals(50_000, state.completedBreakCount)
+        assertEquals(nowNanos, state.lastTickMonotonicNanos)
+    }
+
+    @Test
+    fun `elapsed time beyond the split cap fails closed into a full break`() {
+        val start = ScreenTimeState.initial(0L)
+        // After 50,000 complete cycles (100,000 splits), another active threshold remains.
+        // The bounded loop cannot process it, so it must not silently reset to ACTIVE.
+        val nowNanos = 50_000L * 90.minutes.inWholeNanoseconds + config.activeThresholdNanos
+
+        val state = tick(start, nowNanos)
+
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
+        assertEquals(config.activeThresholdNanos, state.activeElapsedNanos)
+        assertEquals(0L, state.breakElapsedNanos)
+        assertEquals(0, state.dhikrInteractionCount)
+        assertEquals(50_000, state.completedBreakCount)
+        assertEquals(nowNanos, state.lastTickMonotonicNanos)
+    }
+
     // ---- offline behaviour / process restart is the same code path ------
 
     @Test
@@ -130,6 +162,22 @@ class ScreenTimeEngineTest {
 
     // ---- pause / resume / meaningful pause ----------------------------------
     // See MeaningfulPauseTest for the dedicated boundary tests (FINDING-001).
+
+    @Test
+    fun `paused recovery duration saturates instead of wrapping and clears active debt`() {
+        val state = ScreenTimeState.initial(nowNanos = 0L).copy(
+            mode = ScreenTimeMode.PAUSED,
+            activeElapsedNanos = config.activeThresholdNanos - 1L,
+            pauseElapsedNanos = Long.MAX_VALUE - 5L,
+        )
+
+        val advanced = tick(state, 10L)
+
+        assertEquals(ScreenTimeMode.PAUSED, advanced.mode)
+        assertEquals(Long.MAX_VALUE, advanced.pauseElapsedNanos)
+        assertEquals(0L, advanced.activeElapsedNanos)
+        assertEquals(10L, advanced.lastTickMonotonicNanos)
+    }
 
     @Test
     fun `a short pause preserves accumulated streak on resume`() {

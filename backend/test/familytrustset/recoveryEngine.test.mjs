@@ -103,6 +103,45 @@ test('malformed Unicode recovery candidate is rejected before store, verifier or
   }
 });
 
+test('sparse recovery candidate entries are rejected before verifier or transaction claim', async () => {
+  const candidate = buildRecoveryEpoch();
+  const sparseEntries = new Array(2);
+  sparseEntries[1] = candidate.entries[1];
+  candidate.entries = sparseEntries;
+  let verifies = 0, claims = 0;
+  const store = { getCurrentEpoch() { return buildEpoch('owner-dsk-pub'); }, setCurrentEpoch() {} };
+  const verifier = { async verify() { verifies++; return true; } };
+  const ledger = { async claimTransaction() { claims++; return true; } };
+
+  assert.deepEqual(await acceptRecoveryEpoch(candidate, opened(), store, verifier, ledger),
+    { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' });
+  assert.deepEqual({ verifies, claims }, { verifies: 0, claims: 0 });
+});
+
+test('sparse stored Trust Set entries are rejected before verifier or transaction claim', async () => {
+  const current = buildEpoch('owner-dsk-pub');
+  current.entries = new Array(1);
+  let verifies = 0, claims = 0;
+  const store = { getCurrentEpoch() { return current; }, setCurrentEpoch() {} };
+  const verifier = { async verify() { verifies++; return true; } };
+  const ledger = { async claimTransaction() { claims++; return true; } };
+
+  assert.deepEqual(await acceptRecoveryEpoch(buildRecoveryEpoch(), opened(), store, verifier, ledger),
+    { accepted: false, reason: 'MALFORMED_CURRENT_EPOCH' });
+  assert.deepEqual({ verifies, claims }, { verifies: 0, claims: 0 });
+});
+
+test('missing opened recovery proof is rejected without throwing or consulting authority', async () => {
+  let reads = 0, verifies = 0, claims = 0;
+  const store = { getCurrentEpoch() { reads++; return null; }, setCurrentEpoch() {} };
+  const verifier = { async verify() { verifies++; return true; } };
+  const ledger = { async claimTransaction() { claims++; return true; } };
+
+  assert.deepEqual(await acceptRecoveryEpoch(buildRecoveryEpoch(), null, store, verifier, ledger),
+    { accepted: false, reason: 'MALFORMED_RECOVERY_PROOF' });
+  assert.deepEqual({ reads, verifies, claims }, { reads: 0, verifies: 0, claims: 0 });
+});
+
 test('malformed Unicode stored Trust Set cannot participate in recovery authority', async () => {
   const genesis = buildEpoch('owner-dsk-pub');
   const current = { ...genesis, entries: [{ ...genesis.entries[0], dekPublicKey: '\uD800' }] };
@@ -391,6 +430,67 @@ test('two concurrent recovery attempts with the SAME transaction id: exactly one
   assert.equal(accepted.length, 1);
   assert.equal(rejected.length, 1);
   assert.equal(store.getCurrentEpoch().trustSetEpoch, 2);
+});
+
+test('caller mutation during async verification cannot redirect the transaction claim or alter the accepted epoch', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  await acceptEpoch(buildEpoch('owner-dsk-pub'), store, createTestOnlyTrustSetSignatureVerifier());
+  const epoch = buildRecoveryEpoch();
+  const proof = opened();
+  let signalVerificationStarted;
+  let releaseVerification;
+  const verificationStarted = new Promise((resolve) => { signalVerificationStarted = resolve; });
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  const verifier = {
+    async verify(publicKey, canonicalBytes, signature) {
+      signalVerificationStarted();
+      await verificationGate;
+      return signature === signTestOnlyEpoch(publicKey, canonicalBytes);
+    },
+  };
+  const claimedIds = [];
+  const ledger = { async claimTransaction(id) { claimedIds.push(id); return true; } };
+
+  const pending = acceptRecoveryEpoch(epoch, proof, store, verifier, ledger);
+  await verificationStarted;
+  proof.recoveryTransactionId = 'txn-redirected';
+  epoch.trustSetEpoch = 77;
+  epoch.entries[1].deviceId = 'mutated-after-verification-start';
+  releaseVerification();
+
+  assert.deepEqual(await pending, { accepted: true });
+  assert.deepEqual(claimedIds, ['txn-1'], 'the claim remains bound to the opened envelope value captured on entry');
+  const accepted = store.getCurrentEpoch();
+  assert.equal(accepted.trustSetEpoch, 2);
+  assert.equal(accepted.entries[1].deviceId, 'replacement-parent-device');
+});
+
+test('concurrent current-epoch rewrite during async verification fails the recovery compare-and-set', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  await acceptEpoch(buildEpoch('owner-dsk-pub'), store, createTestOnlyTrustSetSignatureVerifier());
+  const epoch = buildRecoveryEpoch();
+  let signalVerificationStarted;
+  let releaseVerification;
+  const verificationStarted = new Promise((resolve) => { signalVerificationStarted = resolve; });
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  const verifier = {
+    async verify(publicKey, canonicalBytes, signature) {
+      signalVerificationStarted();
+      await verificationGate;
+      return signature === signTestOnlyEpoch(publicKey, canonicalBytes);
+    },
+  };
+  const ledger = { async claimTransaction() { return true; } };
+
+  const pending = acceptRecoveryEpoch(epoch, opened(), store, verifier, ledger);
+  await verificationStarted;
+  const mutableCurrentEpoch = store.getCurrentEpoch();
+  mutableCurrentEpoch.entries[0].role = 'VIEWER';
+  store.setCurrentEpoch(mutableCurrentEpoch);
+  releaseVerification();
+
+  assert.deepEqual(await pending, { accepted: false, reason: 'CONCURRENT_EPOCH_CHANGED' });
+  assert.equal(store.getCurrentEpoch().entries[0].role, 'VIEWER', 'the concurrent store mutation is not overwritten');
 });
 
 test('two concurrent recovery attempts with DIFFERENT transaction ids racing the same family: exactly one succeeds, the other sees CONCURRENT_EPOCH_CHANGED', async () => {

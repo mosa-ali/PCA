@@ -83,6 +83,13 @@ test('STATIC: no billing/settlement/settings source file logs (console.* or a `.
   assert.ok(scannedFiles > 10, `expected to scan more than 10 files, scanned ${scannedFiles}`);
 });
 
+test('STATIC PRIVACY: refund orchestration returns fixed failure categories rather than dependency exception text', () => {
+  const source = readFileSync(new URL('../../src/billing/refundOrchestration/RefundOrchestrationService.ts', import.meta.url), 'utf8');
+  assert.match(source, /error: 'PROVIDER_CALL_FAILED'/);
+  assert.match(source, /finalizeError: 'REFUND_FINALIZATION_FAILED'/);
+  assert.doesNotMatch(source, /error\.message|String\(error\)/);
+});
+
 // ---------------------------------------------------------------------------
 // 2. RUNTIME: monkey-patch console.* and run a representative flow carrying
 //    a known secret-shaped value; assert it never appears in captured output.

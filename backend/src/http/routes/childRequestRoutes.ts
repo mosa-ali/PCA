@@ -35,6 +35,10 @@ const MAX_BODY_BYTES = 8 * 1024;
 const PARENT_READ_ROLES = new Set(['ADMINISTRATOR', 'VIEWER']);
 const PARENT_ADMIN_ROLES = new Set(['ADMINISTRATOR']);
 
+async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 export interface ChildRequestRoutesDeps {
   parentAccountService: ParentAccountService;
   childRequestService: ChildRequestService;
@@ -140,8 +144,13 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   const now = deps.now ?? (() => new Date());
 
   /** A bearer session is not sufficient after its DSK is rotated or revoked. */
-  async function requireAcceptedDeviceKey(identity: DeviceSessionIdentity, reply: FastifyReply): Promise<boolean> {
-    if (!identity.dskKeyId || !deps.trustSetRoleResolver) {
+  async function requireAcceptedDeviceKey(identity: DeviceSessionIdentity, expectedFamilyId: string, reply: FastifyReply): Promise<boolean> {
+    if (identity.familyId !== expectedFamilyId || typeof identity.deviceId !== 'string' || identity.deviceId.length === 0 ||
+        typeof identity.dskKeyId !== 'string' || identity.dskKeyId.length === 0) {
+      await reply.code(401).send({ error: 'unauthorized' });
+      return false;
+    }
+    if (!deps.trustSetRoleResolver) {
       await reply.code(503).send({ error: 'authority_unavailable' });
       return false;
     }
@@ -158,7 +167,8 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     }
     if (
       acceptedActor === null || typeof acceptedActor !== 'object' || Array.isArray(acceptedActor) ||
-      acceptedActor.deviceId !== identity.deviceId ||
+      acceptedActor.familyId !== expectedFamilyId || acceptedActor.deviceId !== identity.deviceId ||
+      acceptedActor.dskKeyId !== identity.dskKeyId ||
       !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
       !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
       !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1
@@ -229,7 +239,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // ---- Child device: submit a request (BONUS_TIME or any of the other three existing kinds) ----
   app.post(
     '/api/families/:familyId/child-requests',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [markPrivateResponseNoStore] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { familyId } = request.params as { familyId: string };
       const authorizationHeader = request.headers.authorization;
@@ -243,7 +253,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
         if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
         throw error;
       }
-      if (!(await requireAcceptedDeviceKey(childIdentity, reply))) return;
+      if (!(await requireAcceptedDeviceKey(childIdentity, familyId, reply))) return;
 
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
@@ -307,7 +317,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // (ChildRequestService.acknowledgeApplied's own requester check, which reports a foreign device as NOT_FOUND -- indistinguishable from an unknown requestId).
   app.post(
     '/api/families/:familyId/child-requests/:requestId/applied',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [markPrivateResponseNoStore] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { familyId, requestId } = request.params as { familyId: string; requestId: string };
       const authorizationHeader = request.headers.authorization;
@@ -321,7 +331,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
         if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
         throw error;
       }
-      if (!(await requireAcceptedDeviceKey(childIdentity, reply))) return;
+      if (!(await requireAcceptedDeviceKey(childIdentity, familyId, reply))) return;
 
       const body = request.body;
       const capabilityOutcome = isPlainObject(body) ? body.capabilityOutcome : undefined;
@@ -343,7 +353,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   );
 
   // ---- Parent: list requests for the family ----
-  app.get('/api/parent/families/:familyId/child-requests', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/parent/families/:familyId/child-requests', { preHandler: [markPrivateResponseNoStore] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
     if (!(await requireParentRole(session, reply, PARENT_READ_ROLES))) return;
@@ -354,7 +364,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // ---- Parent: approve / deny / counter-offer a pending request ----
   app.post(
     '/api/parent/families/:familyId/child-requests/:requestId/decide',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [markPrivateResponseNoStore] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -394,7 +404,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // ---- Parent: grant bonus time directly (proactive, no pending child request) ----
   app.post(
     '/api/parent/families/:familyId/bonus-time/grant',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [markPrivateResponseNoStore] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -432,7 +442,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // ---- Parent: revoke an active bonus grant before it expires ----
   app.post(
     '/api/parent/families/:familyId/bonus-time/grants/:grantId/revoke',
-    { bodyLimit: MAX_BODY_BYTES },
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [markPrivateResponseNoStore] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await familySession(request, reply);
       if (!session) return;
@@ -453,7 +463,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   );
 
   // ---- Parent: currently-active bonus grants for one child ----
-  app.get('/api/parent/families/:familyId/bonus-time/active-grants', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/parent/families/:familyId/bonus-time/active-grants', { preHandler: [markPrivateResponseNoStore] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const session = await familySession(request, reply);
     if (!session) return;
     if (!(await requireParentRole(session, reply, PARENT_READ_ROLES))) return;

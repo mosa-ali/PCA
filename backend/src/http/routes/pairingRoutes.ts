@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { PairingError, type PairingService } from '../../pairing/PairingService.js';
+import { isKeyFingerprint } from '../../pairing/fingerprint.js';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import { createRequireFamilyAuthorization, createRequireFamilyMembershipRole } from '../requireFamilyAuthorization.js';
 import { createRateLimiter } from '../rateLimit.js';
@@ -11,6 +12,10 @@ import type { ParentAccountService } from '../../parentaccount/ParentAccountServ
 
 const PAIRING_READ_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR', 'VIEWER']);
 const PAIRING_CONFIRM_ROLES: ReadonlySet<FamilyMembershipRole> = new Set(['ADMINISTRATOR']);
+
+async function markPairingResponsePrivate(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  reply.header('Cache-Control', 'private, no-store');
+}
 
 export interface PairingRoutesDeps {
   pairingService: PairingService;
@@ -40,6 +45,7 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
   app.get(
     '/v1/families/:familyId/pairing-requests/:deviceId',
     {
+      onRequest: markPairingResponsePrivate,
       preHandler: [
         deps.authAttemptLimiter,
         requireServiceSession,
@@ -63,6 +69,7 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
   app.post(
     '/v1/families/:familyId/pairing-requests/:deviceId/confirm',
     {
+      onRequest: markPairingResponsePrivate,
       preHandler: [
         deps.authAttemptLimiter,
         requireServiceSession,
@@ -77,6 +84,12 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
         ? request.body as Record<string, unknown>
         : {};
       const stepUpToken = body.stepUpToken;
+      const expectedDskFingerprint = body.expectedDskFingerprint;
+      const expectedDekFingerprint = body.expectedDekFingerprint;
+      if (!isKeyFingerprint(expectedDskFingerprint) ||
+          !(expectedDekFingerprint === null || isKeyFingerprint(expectedDekFingerprint))) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       if (
         typeof stepUpToken !== 'string' ||
         !(await deps.parentAccountService.consumeSensitiveStepUp(
@@ -89,12 +102,16 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
         return reply.code(403).send({ error: 'step_up_required' });
       }
       try {
-        const view = await deps.pairingService.confirmPairing(familyId, deviceId, request.accountId as string);
+        const view = await deps.pairingService.confirmPairing(familyId, deviceId, request.accountId as string, {
+          expectedDskFingerprint,
+          expectedDekFingerprint,
+        });
         return reply.send(toPairingRequestDto(view));
       } catch (error) {
         if (error instanceof PairingError) {
           if (error.code === 'NOT_FOUND') return reply.code(404).send({ error: 'not_found' });
           if (error.code === 'SELF_APPROVAL_DENIED') return reply.code(403).send({ error: 'self_approval_denied' });
+          if (error.code === 'INVALID_FINGERPRINT') return reply.code(400).send({ error: 'invalid_request' });
           return reply.code(409).send({ error: 'conflict' });
         }
         throw error;

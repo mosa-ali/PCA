@@ -36,6 +36,7 @@ function appFor(identity, resolvedScopes, { role = 'CHILD', safeZoneRepository =
         return {
           familyId,
           deviceId,
+          dskKeyId,
           role,
           trustSetEpoch: 4,
           keyEpoch: 3,

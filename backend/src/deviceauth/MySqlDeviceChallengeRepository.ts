@@ -20,6 +20,16 @@ interface DeviceSigningKeyRow {
   status: 'ACTIVE' | 'REVOKED';
 }
 
+const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+function snapshotConsumedAt(value: Date): Date | null {
+  if (!(value instanceof Date)) return null;
+  const time = value.getTime();
+  if (!Number.isFinite(time) || time < MYSQL_DATETIME_MIN_MS || time > MYSQL_DATETIME_MAX_MS) return null;
+  return new Date(time);
+}
+
 function mapRow(row: DeviceChallengeRow): DeviceChallengeRecord {
   return {
     challengeId: row.challenge_id,
@@ -62,6 +72,11 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
     consumedAt: Date,
     verifiedSigner: VerifiedChallengeSigner,
   ): Promise<ConsumeChallengeResult> {
+    // Detach the caller's mutable Date before any database await. Invalid or
+    // out-of-DATETIME-range server clocks fail closed without touching rows.
+    const safeConsumedAt = snapshotConsumedAt(consumedAt);
+    if (safeConsumedAt === null) return { outcome: 'EXPIRED' } as const;
+    const safeSigner = { ...verifiedSigner };
     return runInTransaction(async (conn) => {
       // Lock challenge first, then the exact key. Key revocation never locks
       // a challenge row, so this order cannot form a cycle with revocation.
@@ -73,8 +88,8 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
       const row = current.rows[0];
       if (!row) return { outcome: 'NOT_FOUND' } as const;
       if (row.consumed_at) return { outcome: 'ALREADY_CONSUMED' } as const;
-      if (consumedAt.getTime() >= row.expires_at.getTime()) return { outcome: 'EXPIRED' } as const;
-      if (row.device_id !== verifiedSigner.deviceId || row.family_id !== verifiedSigner.familyId) {
+      if (safeConsumedAt.getTime() >= row.expires_at.getTime()) return { outcome: 'EXPIRED' } as const;
+      if (row.device_id !== safeSigner.deviceId || row.family_id !== safeSigner.familyId) {
         return { outcome: 'SIGNER_KEY_INACTIVE' } as const;
       }
 
@@ -82,11 +97,11 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
         conn,
         `SELECT device_id, key_id, key_purpose, public_key, status
            FROM device_public_keys WHERE device_id = ? AND key_id = ? FOR UPDATE`,
-        [verifiedSigner.deviceId, verifiedSigner.keyId],
+        [safeSigner.deviceId, safeSigner.keyId],
       );
       const key = keyResult.rows[0];
-      if (!key || key.device_id !== verifiedSigner.deviceId || key.key_id !== verifiedSigner.keyId
-          || key.key_purpose !== 'DSK' || key.public_key !== verifiedSigner.publicKey || key.status !== 'ACTIVE') {
+      if (!key || key.device_id !== safeSigner.deviceId || key.key_id !== safeSigner.keyId
+          || key.key_purpose !== 'DSK' || key.public_key !== safeSigner.publicKey || key.status !== 'ACTIVE') {
         return { outcome: 'SIGNER_KEY_INACTIVE' } as const;
       }
 
@@ -95,7 +110,7 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
         `UPDATE device_challenges
          SET consumed_at = ?
          WHERE challenge_id = ? AND consumed_at IS NULL AND expires_at > ?`,
-        [consumedAt, challengeId, consumedAt],
+        [safeConsumedAt, challengeId, safeConsumedAt],
       );
       if (updated.rowCount > 0) {
         const reread = await execute<DeviceChallengeRow>(conn, `SELECT * FROM device_challenges WHERE challenge_id = ?`, [

@@ -4,6 +4,7 @@ import { buildServer } from '../../dist/http/buildServer.js';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 import { RemovalDecisionError } from '../../dist/familyrbac/RemovalDecisionAuthority.js';
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
+import { SafeZoneAuthorityChangedError } from '../../dist/location/SafeZoneRepository.js';
 
 // Coordinator wiring regression coverage (this task):
 //   1. registerRemovalDecisionRoutes is now actually called from
@@ -140,7 +141,7 @@ function buildStubDeps({ withDeviceSessionService }) {
     parentAccountService,
     parentPreferenceRepository: undefined,
     safeZoneRepository,
-    trustSetRoleResolver: { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }; } },
+    trustSetRoleResolver: { async resolveActor(familyId, deviceId) { return { familyId, deviceId, dskKeyId: deviceId === 'device-a' ? 'dsk-a' : 'dsk-child', role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 }; } },
     deviceChildBindingRepository: {
       async resolveBinding(familyId, deviceId) {
         return familyId === 'family-a' && ['child-device', 'device-a'].includes(deviceId)
@@ -222,6 +223,7 @@ test('buildServer wires Parent Safe Zone writes to the durable child-profile bin
   const deps = buildStubDeps({ withDeviceSessionService: true });
   const bindingCalls = [];
   const creates = [];
+  const authoritySnapshots = [];
   deps.deviceRepository = {
     async findDeviceForFamily(familyId, deviceId) {
       return familyId === 'family-a' && deviceId === 'child-device' ? { familyId, deviceId } : null;
@@ -237,8 +239,9 @@ test('buildServer wires Parent Safe Zone writes to the durable child-profile bin
   };
   deps.safeZoneRepository = {
     ...deps.safeZoneRepository,
-    async create(input) {
+    async create(input, authority) {
       creates.push(input);
+      authoritySnapshots.push(authority);
       return { zoneId: 'zone-a', ...input, revision: 1, deliveryState: 'PENDING_OFFLINE' };
     },
   };
@@ -262,6 +265,88 @@ test('buildServer wires Parent Safe Zone writes to the durable child-profile bin
     ]);
     assert.equal(creates.length, 1);
     assert.equal(creates[0].recipientEndpointId, 'child-device');
+    assert.deepEqual(authoritySnapshots[0], {
+      familyId: 'family-a',
+      trustSetEpoch: 1,
+      keyEpoch: 1,
+      actor: { deviceId: 'device-a', dskKeyId: 'dsk-a' },
+      recipient: { deviceId: 'child-device', dskKeyId: 'dsk-child' },
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('buildServer maps a transaction-bound Safe Zone authority race to 409 without claiming success', async () => {
+  const deps = buildStubDeps({ withDeviceSessionService: true });
+  let mutations = 0;
+  deps.deviceRepository = { async findDeviceForFamily(_familyId, deviceId) { return { deviceId }; } };
+  deps.safeZoneRepository = {
+    ...deps.safeZoneRepository,
+    async create() { mutations += 1; throw new SafeZoneAuthorityChangedError(); },
+  };
+  const app = buildServer(deps);
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/parent/families/family-a/safe-zones',
+      headers: {
+        cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a',
+        authorization: 'Bearer devtoken-a',
+        'x-pca-csrf-token': 'csrf-a',
+      },
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 },
+    });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'authority_changed' });
+    assert.equal(mutations, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('buildServer binds PATCH and DELETE Safe Zone mutations to exact accepted actor and child DSK snapshots', async () => {
+  const deps = buildStubDeps({ withDeviceSessionService: true });
+  const snapshots = [];
+  const existing = {
+    zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'child-device',
+    ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1,
+    revision: 1, deliveryState: 'PENDING_OFFLINE', createdAtUtc: new Date().toISOString(), updatedAtUtc: new Date().toISOString(),
+  };
+  deps.deviceRepository = { async findDeviceForFamily(_familyId, deviceId) { return { deviceId }; } };
+  deps.safeZoneRepository = {
+    async list() { return [existing]; },
+    async listForRecipient() { return { safeZones: [], nextCursor: null }; },
+    async create() { throw new Error('not used'); },
+    async update(_familyId, _zoneId, _patch, authority) { snapshots.push(authority); return existing; },
+    async remove(_familyId, _zoneId, authority) { snapshots.push(authority); return true; },
+  };
+  const app = buildServer(deps);
+  const headers = {
+    cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a',
+    authorization: 'Bearer devtoken-a',
+    'x-pca-csrf-token': 'csrf-a',
+  };
+  try {
+    const patchResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/parent/families/family-a/safe-zones/zone-a',
+      headers,
+      payload: { ciphertextB64: 'BAUG', nonceB64: 'EBESExQVFhcYGRob', keyEpoch: 1 },
+    });
+    assert.equal(patchResponse.statusCode, 200, JSON.stringify(patchResponse.json()));
+    const deleteResponse = await app.inject({
+      method: 'DELETE',
+      url: '/api/parent/families/family-a/safe-zones/zone-a',
+      headers,
+    });
+    assert.equal(deleteResponse.statusCode, 204);
+    const expected = {
+      familyId: 'family-a', trustSetEpoch: 1, keyEpoch: 1,
+      actor: { deviceId: 'device-a', dskKeyId: 'dsk-a' },
+      recipient: { deviceId: 'child-device', dskKeyId: 'dsk-child' },
+    };
+    assert.deepEqual(snapshots, [expected, expected]);
   } finally {
     await app.close();
   }
@@ -274,7 +359,7 @@ test('buildServer wires accepted Trust Set authority into protection-status writ
   deps.trustSetRoleResolver = {
     async resolveActor(familyId, deviceId, dskKeyId) {
       resolverCalls.push([familyId, deviceId, dskKeyId]);
-      return { deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+      return { familyId, deviceId, dskKeyId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
     },
   };
   deps.deviceProtectionStatusRepository = {
@@ -289,7 +374,10 @@ test('buildServer wires accepted Trust Set authority into protection-status writ
       payload: { protectionLevel: 'PROTECTED' },
     });
     assert.equal(response.statusCode, 204);
-    assert.deepEqual(resolverCalls, [['family-a', 'device-a', 'dsk-a']]);
+    assert.deepEqual(resolverCalls, [
+      ['family-a', 'device-a', 'dsk-a'],
+      ['family-a', 'device-a', 'dsk-a'],
+    ]);
     assert.equal(writes.length, 1);
     assert.deepEqual({
       deviceId: writes[0].deviceId,
@@ -308,7 +396,7 @@ test('buildServer wires accepted Trust Set DSK authority before protection-alert
   deps.trustSetRoleResolver = {
     async resolveActor(familyId, deviceId, dskKeyId) {
       resolverCalls.push([familyId, deviceId, dskKeyId]);
-      return { deviceId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
+      return { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
     },
   };
   deps.protectionAlertLedger = {
@@ -325,7 +413,10 @@ test('buildServer wires accepted Trust Set DSK authority before protection-alert
       },
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(resolverCalls, [['family-a', 'device-a', 'dsk-a']]);
+    assert.deepEqual(resolverCalls, [
+      ['family-a', 'device-a', 'dsk-a'],
+      ['family-a', 'device-a', 'dsk-a'],
+    ]);
     assert.equal(ledgerReads, 1);
   } finally {
     await app.close();
@@ -343,7 +434,7 @@ test('buildServer wires accepted Trust Set authority into Web Rules reads', asyn
   deps.trustSetRoleResolver = {
     async resolveActor(familyId, deviceId, dskKeyId) {
       resolverCalls.push([familyId, deviceId, dskKeyId]);
-      return { deviceId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
+      return { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 };
     },
   };
   deps.webRuleAuthorization = { async authorize() { return { verdict: 'ALLOW' }; } };
@@ -382,7 +473,7 @@ test('buildServer wires accepted Trust Set authority into FamilyAudit delivery',
   deps.trustSetRoleResolver = {
     async resolveActor(familyId, deviceId, dskKeyId) {
       resolverCalls.push([familyId, deviceId, dskKeyId]);
-      return { deviceId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
+      return { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 };
     },
   };
   const app = buildServer(deps);
@@ -393,7 +484,7 @@ test('buildServer wires accepted Trust Set authority into FamilyAudit delivery',
       headers: { cookie: 'pca_family_session=session-a', authorization: 'Bearer devtoken-a' },
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json(), { envelopes: [] });
+    assert.deepEqual(response.json(), { envelopes: [], complete: true, nextCursor: null });
     assert.deepEqual(resolverCalls, [
       ['family-a', 'device-a', 'dsk-a'],
       ['family-a', 'device-a', 'dsk-a'],

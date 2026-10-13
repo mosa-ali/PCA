@@ -116,7 +116,7 @@ function removalRequestPayload(requestId, operation = 'REMOVE_REVOKE_DEVICE', st
   };
 }
 
-async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEVICE', familyId = app.__familyId) {
+async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEVICE', familyId = app.__familyId, reasonCategory = 'ROUTINE_POLICY_CHANGE') {
   const now = new Date();
   return app.__removalDecisionAuthority.createRequest({
     requestId,
@@ -128,7 +128,7 @@ async function seedPendingRequest(app, requestId, operation = 'REMOVE_REVOKE_DEV
     protectionLevel: 'PROTECTED',
     requestedAt: now,
     expiresAt: new Date(now.getTime() + 5 * 60 * 1000),
-    reasonCategory: 'ROUTINE_POLICY_CHANGE',
+    reasonCategory,
     protectiveAuthorityApplies: true,
   });
 }
@@ -146,6 +146,29 @@ test('removal-decision routes are registered and reachable (not 404) without a s
   });
   assert.equal(response.statusCode, 401);
   assert.notEqual(response.statusCode, 404);
+});
+
+test('removal-decision and administration-PIN endpoints are never cacheable, including denied requests', async () => {
+  const app = buildApp();
+  const routes = [
+    ['GET', '/api/parent/families/family-a/removal-decisions'],
+    ['GET', '/api/parent/families/family-a/removal-decisions/req-cache'],
+    ['POST', '/api/parent/families/family-a/removal-decisions'],
+    ['POST', '/api/parent/families/family-a/removal-decisions/req-cache/decide/local-pin'],
+    ['POST', '/api/parent/families/family-a/removal-decisions/req-cache/decide/authorized-recovery'],
+    ['POST', '/api/parent/families/family-a/removal-decisions/req-cache/decide/signed'],
+    ['GET', '/api/parent/families/family-a/administration-pin'],
+    ['POST', '/api/parent/families/family-a/administration-pin'],
+  ];
+  try {
+    for (const [method, url] of routes) {
+      const response = await app.inject({ method, url });
+      assert.equal(response.headers['cache-control'], 'private, no-store', `${method} ${url}`);
+      assert.notEqual(response.statusCode, 404, `${method} ${url}`);
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 test('removal and PIN reads require current active Parent membership', async () => {
@@ -452,6 +475,59 @@ test('signed remote-parent decisions fail closed NOT_AUTHORIZED (no real signing
   });
   assert.equal(response.statusCode, 403);
   assert.deepEqual(response.json(), { error: 'not_authorized' });
+});
+
+test('signed decision route rejects malformed optional wire fields before authority evaluation', async () => {
+  const app = buildApp();
+  await seedPendingRequest(app, 'req-signed-malformed-reason', 'REMOVE_REVOKE_DEVICE', app.__familyId, null);
+  await seedPendingRequest(app, 'req-signed-malformed-deadline');
+  await seedPendingRequest(app, 'req-signed-malformed-revision');
+  await seedPendingRequest(app, 'req-signed-unsafe-revision');
+
+  let authorityCalls = 0;
+  const decide = app.__removalDecisionAuthority.decideWithSignedRemoteParent.bind(app.__removalDecisionAuthority);
+  app.__removalDecisionAuthority.decideWithSignedRemoteParent = async (...args) => {
+    authorityCalls += 1;
+    return decide(...args);
+  };
+
+  const common = {
+    childId: 'child-a',
+    deviceId: 'device-a',
+    operation: 'REMOVE_REVOKE_DEVICE',
+    protectionLevel: 'PROTECTED',
+    decision: 'KEEP_ACTIVE',
+    actorDeviceId: 'parent-device-a',
+    actionId: 'action-malformed',
+    idempotencyKey: 'idem-malformed',
+    trustSetEpoch: 1,
+    issuedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
+    stepUp: { state: 'FRESH', assertedAt: new Date().toISOString(), freshUntil: new Date(Date.now() + 60_000).toISOString() },
+    signature: 'unused-before-route-validation',
+  };
+  const requests = [
+    ['req-signed-malformed-reason', { ...common, reasonCategory: 'UNKNOWN_CATEGORY' }],
+    ['req-signed-malformed-deadline', { ...common, reasonCategory: 'ROUTINE_POLICY_CHANGE', temporaryDisableUntil: 'not-a-date' }],
+    ['req-signed-malformed-revision', { ...common, reasonCategory: 'ROUTINE_POLICY_CHANGE', policyRevision: '4' }],
+    ['req-signed-unsafe-revision', { ...common, reasonCategory: 'ROUTINE_POLICY_CHANGE', policyRevision: Number.MAX_SAFE_INTEGER + 1 }],
+  ];
+
+  try {
+    for (const [requestId, payload] of requests) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/family-a/removal-decisions/${requestId}/decide/signed`,
+        headers: authHeaders,
+        payload,
+      });
+      assert.equal(response.statusCode, 400, requestId);
+      assert.deepEqual(response.json(), { error: 'invalid_request' }, requestId);
+    }
+    assert.equal(authorityCalls, 0, 'malformed body fields must not reach signature/authority evaluation');
+  } finally {
+    await app.close();
+  }
 });
 
 test('authorized-recovery decisions fail closed NOT_AUTHORIZED (no real recovery-protocol binding yet)', async () => {

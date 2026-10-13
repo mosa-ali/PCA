@@ -178,6 +178,37 @@ test('indexed history does not expose a record when membership is revoked during
   await assert.rejects(read, rejectsCode('DEVICE_NOT_ACTIVE'));
 });
 
+test('indexed history rejects a row ahead of the currently authorized accepted head', async () => {
+  const f = fixture(); await f.bootstrap();
+  const future = f.request(2);
+  const bytes = Buffer.from(future.canonicalEpochBase64, 'base64');
+  const epoch = (await import('../../dist/familytrustset/decode.js')).decodeCanonicalTrustSetEpochBytes(bytes);
+  const indexedRecord = {
+    familyId: FAMILY,
+    trustSetEpoch: epoch.trustSetEpoch,
+    keyEpoch: epoch.keyEpoch,
+    supersedesEpoch: epoch.supersedesEpoch,
+    signedEpochBytes: bytes,
+    signature: Buffer.from(future.signatureBase64, 'base64').toString('base64url'),
+    signerKeyId: 'owner-dsk',
+    signerDeviceId: OWNER,
+    issuedAt: epoch.issuedAt,
+    receivedAt: new Date(),
+  };
+  f.acceptance.readAcceptedEpoch = async () => indexedRecord;
+
+  await assert.rejects(f.service.epoch(scope, 2), rejectsCode('CONFLICT'));
+});
+
+test('indexed history rejects a different signed record at the current head epoch', async () => {
+  const f = fixture(); await f.bootstrap();
+  const current = f.rows.get(`${FAMILY}/1`);
+  const conflicting = { ...current, signature: Buffer.from(f.request(2).signatureBase64, 'base64').toString('base64url') };
+  f.acceptance.readAcceptedEpoch = async () => conflicting;
+
+  await assert.rejects(f.service.epoch(scope, 1), rejectsCode('CONFLICT'));
+});
+
 test('head is available to active child but submit and exact status require current owner', async () => {
   const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
   assert.equal((await f.service.head(child)).trustSetEpoch, 1);
@@ -314,6 +345,28 @@ test('accepted-head resolver dependency is mandatory and mixed-head projections 
   }) };
   const mixed = new OrdinaryTrustSetService(f.acceptance, movedHeadResolver);
   await assert.rejects(mixed.head(scope), rejectsCode('CONFLICT'));
+});
+
+test('head, status, and submit bind resolver authority to the exact session DSK', async () => {
+  const f = fixture(); await f.bootstrap();
+  const acceptedHead = f.rows.get(`${FAMILY}/1`);
+  const resolverCalls = [];
+  const mismatchedDsk = new OrdinaryTrustSetService(f.acceptance, {
+    resolveActor: async (...args) => {
+      resolverCalls.push(args);
+      return { familyId: FAMILY, deviceId: OWNER, dskKeyId: 'rotated-or-unbound-dsk', role: 'OWNER',
+        trustSetEpoch: acceptedHead.trustSetEpoch, keyEpoch: acceptedHead.keyEpoch };
+    },
+  });
+  const request = f.request(2);
+
+  await assert.rejects(mismatchedDsk.head(scope), rejectsCode('DEVICE_NOT_ACTIVE'));
+  await assert.rejects(mismatchedDsk.status(scope, request), rejectsCode('DEVICE_NOT_ACTIVE'));
+  await assert.rejects(mismatchedDsk.submit(scope, request), rejectsCode('DEVICE_NOT_ACTIVE'));
+
+  assert.deepEqual(resolverCalls, Array.from({ length: 3 }, () => [FAMILY, OWNER, 'owner-dsk']));
+  assert.equal(f.appends, 1, 'a resolver DSK mismatch must not authorize or persist the candidate');
+  assert.equal((await f.acceptance.readAcceptedEpoch(FAMILY, 2)), null);
 });
 
 test('resolver infrastructure failure is propagated and never treated as accepted authority', async () => {

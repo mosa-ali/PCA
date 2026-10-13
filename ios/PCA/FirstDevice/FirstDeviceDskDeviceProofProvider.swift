@@ -48,10 +48,10 @@ public protocol FirstDeviceEnrollmentKeyPreparation {
 /// IDENTITY MODEL
 ///  - The active attempt is either the transient PREPARED attempt (set by
 ///    `prepareEnrollmentKeys` between key generation and durable seed
-///    capture) or the PERSISTED attempt of the committed first-device root
-///    (resolved through the injected `persistedAttemptId` seam, which the
-///    composition root wires to the durable root store in the same Wave 6D
-///    checkpoint).
+///    capture) or a persisted nonterminal first-device root. The composition
+///    root supplies a terminal-state predicate so expired/rejected roots stop
+///    exposing their old keys and can be replaced under the root store's
+///    explicit terminal replacement policy.
 ///  - `signingPublicKey` / `encryptionPublicKey` are canonical SEC1
 ///    (unpadded base64url) Secure Enclave public keys loaded from the
 ///    active attempt's aliases. FAIL CLOSED: any missing material yields the
@@ -66,15 +66,18 @@ public protocol FirstDeviceEnrollmentKeyPreparation {
 public final class FirstDeviceDskDeviceProofProvider: PCADeviceProofProvider, FirstDeviceEnrollmentKeyPreparation {
     private let provider: FirstDeviceDskKeyMaterial
     private let persistedAttemptId: () -> String?
+    private let persistedAttemptMayBeReplaced: (String) -> Bool
     private let lock = NSLock()
     private var preparedAttemptId: String?
 
     public init(
         provider: FirstDeviceDskKeyMaterial,
-        persistedAttemptId: @escaping () -> String? = { nil }
+        persistedAttemptId: @escaping () -> String? = { nil },
+        persistedAttemptMayBeReplaced: @escaping (String) -> Bool = { _ in false }
     ) {
         self.provider = provider
         self.persistedAttemptId = persistedAttemptId
+        self.persistedAttemptMayBeReplaced = persistedAttemptMayBeReplaced
     }
 
     // MARK: - FirstDeviceEnrollmentKeyPreparation
@@ -91,11 +94,23 @@ public final class FirstDeviceDskDeviceProofProvider: PCADeviceProofProvider, Fi
                 preparedAttemptId = attemptId
                 return
             }
-            // A committed first-device root exists for a DIFFERENT attempt:
-            // generating a second root's keys here would be the forbidden
-            // second-root path. Refuse; lifecycle decisions belong to the
-            // ceremony coordinator.
-            throw SecureEnclaveDskError.keyAliasConflict
+            // An active/ambiguous/committed first-device ceremony owns its
+            // key identity. Only an explicitly terminal expired/rejected
+            // root may be replaced by a new enrollment attempt.
+            guard persistedAttemptMayBeReplaced(persisted) else {
+                throw SecureEnclaveDskError.keyAliasConflict
+            }
+            if let preparedAttemptId {
+                // The transient selection survives root state changes for the
+                // lifetime of this provider. When it still points at the
+                // terminal root being replaced, retire only that selection;
+                // the old aliases remain until the new root is durably
+                // captured and the application performs its keep-set sweep.
+                guard preparedAttemptId.utf8.elementsEqual(persisted.utf8) else {
+                    throw SecureEnclaveDskError.keyAliasConflict
+                }
+                self.preparedAttemptId = nil
+            }
         }
         guard preparedAttemptId == nil else {
             // Create-once per attempt: a second, DIFFERENT attempt while one
@@ -178,7 +193,16 @@ public final class FirstDeviceDskDeviceProofProvider: PCADeviceProofProvider, Fi
     private func activeAttemptId() -> String? {
         lock.lock()
         defer { lock.unlock() }
-        return preparedAttemptId ?? persistedAttemptId()
+        if let preparedAttemptId {
+            if let persisted = persistedAttemptId(),
+               preparedAttemptId.utf8.elementsEqual(persisted.utf8),
+               persistedAttemptMayBeReplaced(persisted) {
+                return nil
+            }
+            return preparedAttemptId
+        }
+        guard let persisted = persistedAttemptId(), !persistedAttemptMayBeReplaced(persisted) else { return nil }
+        return persisted
     }
 }
 

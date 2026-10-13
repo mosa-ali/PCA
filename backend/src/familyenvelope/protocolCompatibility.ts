@@ -17,9 +17,9 @@ import { SUPPORTED_PROTOCOL_MAJOR } from './policy.js';
  * needs this receiver to understand a NEW REQUIRED field or altered
  * security semantics, that is by this doc's own definition a major-
  * version-worthy change, not a minor one, so it is already caught by the
- * major check below. Consequently, any protocolMinor value (0 or
- * higher, per policy.ts's isPlausibleProtocolMinor) is compatible once
- * protocolMajor matches.
+ * major check below. Consequently, any JSON safe-integer protocolMinor
+ * value (0 through Number.MAX_SAFE_INTEGER, per policy.ts's
+ * isPlausibleProtocolMinor) is compatible once protocolMajor matches.
  */
 export function isProtocolCompatible(protocolMajor: number): boolean {
   return protocolMajor === SUPPORTED_PROTOCOL_MAJOR;

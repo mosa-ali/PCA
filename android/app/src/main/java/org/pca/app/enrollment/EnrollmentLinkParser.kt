@@ -1,6 +1,10 @@
 package org.pca.app.enrollment
 
 import java.net.URI
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 
 /**
  * Parses a scanned QR payload or deep-link URI into the opaque invitation
@@ -21,9 +25,10 @@ interface EnrollmentLinkParser {
 }
 
 /**
- * Only the `token` query parameter (custom-scheme form) or a canonical 43-character token directly
- * below the configured App Link path prefix is extracted -- any other parameter/segment present
- * in the URI is silently ignored, never interpreted as an authority claim.
+ * Exactly one `token` query parameter (custom-scheme form) or a canonical 43-character token
+ * directly below the configured App Link path prefix is extracted -- duplicate `token` parameters
+ * are rejected as ambiguous, and any other parameter/segment present in the URI is silently
+ * ignored, never interpreted as an authority claim.
  *
  * Accepts TWO link shapes, both leading to the exact same [ParsedEnrollmentLink] outcome:
  *  - `pca://enroll?token=<token>` (custom scheme; always supported, works even on a device where
@@ -72,14 +77,63 @@ class UriEnrollmentLinkParser(
     }
 
     private fun parseQueryParamToken(parsed: URI, scheme: String, host: String): ParsedEnrollmentLink? {
-        val token = parsed.rawQuery
-            ?.split("&")
-            ?.asSequence()
-            ?.map { it.split("=", limit = 2) }
-            ?.firstOrNull { it.size == 2 && it[0] == "token" }
-            ?.get(1)
-        if (token == null || !CANONICAL_INVITATION_TOKEN.matches(token)) return null
+        val query = parsed.rawQuery ?: return null
+        val tokenParameters = mutableListOf<List<String>>()
+        for (parameter in query.split("&")) {
+            val parts = parameter.split("=", limit = 2)
+            val rawKey = parts.firstOrNull() ?: ""
+            val key = decodeQueryKey(rawKey) ?: return null
+            if (key == "token") tokenParameters += parts
+        }
+        if (tokenParameters.size != 1) return null
+        val parameter = tokenParameters.single()
+        if (parameter.size != 2) return null
+        val token = parameter[1]
+        if (!CANONICAL_INVITATION_TOKEN.matches(token)) return null
         return ParsedEnrollmentLink(serverBaseUrl = "$scheme://$host", rawInvitationToken = token)
+    }
+
+    /**
+     * Decode one raw query key using the same `+`-as-space convention as form-style URL query
+     * parsers. Decode percent-encoded bytes as strict UTF-8: malformed escapes or byte sequences
+     * make the link invalid instead of allowing this parser to overlook an alias for `token`.
+     */
+    private fun decodeQueryKey(rawKey: String): String? {
+        val decoded = StringBuilder(rawKey.length)
+        var index = 0
+        while (index < rawKey.length) {
+            when (val character = rawKey[index]) {
+                '+' -> {
+                    decoded.append(' ')
+                    index++
+                }
+                '%' -> {
+                    val bytes = ByteArrayOutputStream()
+                    while (index < rawKey.length && rawKey[index] == '%') {
+                        if (index + 2 >= rawKey.length) return null
+                        val high = rawKey[index + 1].digitToIntOrNull(16) ?: return null
+                        val low = rawKey[index + 2].digitToIntOrNull(16) ?: return null
+                        bytes.write((high shl 4) or low)
+                        index += 3
+                    }
+                    val chars = try {
+                        StandardCharsets.UTF_8.newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                            .decode(ByteBuffer.wrap(bytes.toByteArray()))
+                            .toString()
+                    } catch (_: Exception) {
+                        return null
+                    }
+                    decoded.append(chars)
+                }
+                else -> {
+                    decoded.append(character)
+                    index++
+                }
+            }
+        }
+        return decoded.toString()
     }
 
     private fun parsePathSegmentToken(

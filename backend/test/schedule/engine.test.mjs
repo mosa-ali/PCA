@@ -139,6 +139,24 @@ test('invalid runtime evaluation instants fail closed as INVALID_CONFIG', () => 
   }
 });
 
+test('missing or malformed app identity fails closed before app-scoped policy can fall through to ALLOWED', () => {
+  const scopedBlock = window({ kind: 'BLOCK_PERIOD', appScope: { apps: ['app-a'] } });
+  for (const appToken of ['', null, undefined, 7]) {
+    const result = evaluateSchedule(baseInput({ appToken, windows: [scopedBlock] }));
+    assert.equal(result.decision, 'INVALID_CONFIG', String(appToken));
+    assert.ok(result.configErrors?.some((error) => error.includes('app token')));
+  }
+});
+
+test('invalid evaluation timezone with a daily limit returns INVALID_CONFIG instead of throwing', () => {
+  const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 0, anchorLocalDate: '2026-01-07' };
+  for (const timezone of ['Not/A_Zone', '', null]) {
+    const result = evaluateSchedule(baseInput({ timezone, dailyLimit }));
+    assert.equal(result.decision, 'INVALID_CONFIG', String(timezone));
+    assert.ok(result.configErrors?.some((error) => error.includes('evaluation timezone')));
+  }
+});
+
 test('bonus grant extends the limit only while active, then reverts on expiry', () => {
   const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
   const grant = {
@@ -178,6 +196,93 @@ test('malformed active bonus grants cannot turn an invalid allowance into ALLOWE
     const result = evaluateSchedule(baseInput({ dailyLimit, bonusGrants: [bonusGrant] }));
     assert.equal(result.decision, 'INVALID_CONFIG', bonusGrant.id);
     assert.ok(result.configErrors?.length);
+  }
+});
+
+test('malformed parent exception intervals fail closed before they can authorize', () => {
+  const malformedExceptions = [
+    { id: 'equal', appScope: 'ALL', startAtUtc: new Date('2026-01-07T11:00:00.000Z'), endAtUtc: new Date('2026-01-07T11:00:00.000Z') },
+    { id: 'reversed', appScope: 'ALL', startAtUtc: new Date('2026-01-07T12:00:00.000Z'), endAtUtc: new Date('2026-01-07T11:00:00.000Z') },
+    { id: 'non-finite-start', appScope: 'ALL', startAtUtc: new Date(Number.NaN), endAtUtc: new Date('2026-01-07T13:00:00.000Z') },
+    { id: 'non-finite-end', appScope: 'ALL', startAtUtc: new Date('2026-01-07T11:00:00.000Z'), endAtUtc: new Date(Number.NaN) },
+    { id: 'missing-start', appScope: 'ALL', startAtUtc: null, endAtUtc: new Date('2026-01-07T13:00:00.000Z') },
+  ];
+
+  for (const exception of malformedExceptions) {
+    const result = evaluateSchedule(baseInput({ exceptions: [exception] }));
+    assert.equal(result.decision, 'INVALID_CONFIG', exception.id);
+    assert.ok(result.configErrors?.some((error) => error.includes('parent exception') && error.includes('finite dates')));
+  }
+});
+
+test('malformed app scopes in every schedule policy dimension fail closed', () => {
+  const validException = {
+    id: 'exception', appScope: 'ALL',
+    startAtUtc: new Date('2026-01-07T11:00:00.000Z'), endAtUtc: new Date('2026-01-07T13:00:00.000Z'),
+  };
+  const validGrant = {
+    id: 'bonus', appScope: 'ALL', extraMinutes: 5,
+    grantedAtUtc: new Date('2026-01-07T11:00:00.000Z'), expiresAtUtc: new Date('2026-01-07T13:00:00.000Z'),
+  };
+  const cases = [
+    { label: 'window', input: { windows: [window({ appScope: null })] } },
+    { label: 'exception', input: { exceptions: [{ ...validException, appScope: null }] } },
+    { label: 'bonus grant', input: { bonusGrants: [{ ...validGrant, appScope: null }] } },
+    { label: 'daily limit', input: { dailyLimit: { appScope: null, limitMinutes: 30, usedMinutesToday: 0, anchorLocalDate: '2026-01-07' } } },
+  ];
+
+  for (const { label, input } of cases) {
+    const result = evaluateSchedule(baseInput(input));
+    assert.equal(result.decision, 'INVALID_CONFIG', label);
+    assert.ok(result.configErrors?.some((error) => error.includes('appScope')), label);
+  }
+});
+
+test('null policy entries and null daily limits return INVALID_CONFIG without throwing', () => {
+  const malformedCases = [
+    { label: 'null window', input: { windows: [null] } },
+    { label: 'null window time', input: { windows: [window({ start: null })] } },
+    { label: 'null bonus grant', input: { bonusGrants: [null] } },
+    { label: 'null daily limit', input: { dailyLimit: null } },
+  ];
+
+  for (const { label, input } of malformedCases) {
+    const result = evaluateSchedule(baseInput(input));
+    assert.equal(result.decision, 'INVALID_CONFIG', label);
+    assert.ok(result.configErrors?.length, label);
+  }
+});
+
+test('unknown runtime schedule window kinds fail closed instead of falling through to ALLOWED', () => {
+  const result = evaluateSchedule(baseInput({
+    windows: [window({
+      id: 'unknown-kind',
+      kind: 'UNKNOWN',
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      start: { hour: 0, minute: 0 },
+      end: { hour: 0, minute: 0 },
+      appScope: 'ALL',
+    })],
+  }));
+
+  assert.equal(result.decision, 'INVALID_CONFIG');
+  assert.ok(result.configErrors?.some((error) => error.includes('invalid kind')));
+});
+
+test('missing or null policy arrays return INVALID_CONFIG without throwing', () => {
+  const malformedCases = [
+    { label: 'null windows', input: { windows: null } },
+    { label: 'missing windows', input: { windows: undefined } },
+    { label: 'null bonus grants', input: { bonusGrants: null } },
+    { label: 'missing bonus grants', input: { bonusGrants: undefined } },
+    { label: 'null exceptions', input: { exceptions: null } },
+    { label: 'missing exceptions', input: { exceptions: undefined } },
+  ];
+
+  for (const { label, input } of malformedCases) {
+    const result = evaluateSchedule(baseInput(input));
+    assert.equal(result.decision, 'INVALID_CONFIG', label);
+    assert.ok(result.configErrors?.length, label);
   }
 });
 

@@ -4,6 +4,7 @@ import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -50,18 +51,18 @@ class BootInstanceSourceTest {
     }
 
     @Test
-    fun `reading boot state never throws -- always resolves to one of the two well-defined outcomes`() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        // BOOT_COUNT is not written in this test; on this JVM/Robolectric environment the read
-        // may or may not succeed with a default -- the contract under test is that
-        // currentBootInstance() never lets an exception escape and never fabricates a value it
-        // cannot back up, only ever returning Known(realValue) or Unknown.
-        val result = AndroidBootInstanceSource(context).currentBootInstance()
+    fun `ordinary platform read failures resolve to Unknown`() {
+        val source = AndroidBootInstanceSource { throw SecurityException("settings unavailable") }
 
-        when (result) {
-            is BootInstanceResult.Known -> assert(result.bootInstanceId.isNotBlank())
-            BootInstanceResult.Unknown -> Unit
-        }
+        assertEquals(BootInstanceResult.Unknown, source.currentBootInstance())
+    }
+
+    @Test
+    fun `fatal JVM errors propagate instead of being converted to Unknown`() {
+        val fatal = AssertionError("fatal reader failure")
+        val source = AndroidBootInstanceSource { throw fatal }
+
+        assertEquals(fatal, assertThrows(AssertionError::class.java) { source.currentBootInstance() })
     }
 
     @Test

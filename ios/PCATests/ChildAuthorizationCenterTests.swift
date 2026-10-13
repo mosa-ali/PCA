@@ -4,10 +4,12 @@ import XCTest
 final class FakeAuthorizationStatusSource: AuthorizationStatusSource {
     var status: RawAuthorizationStatus = .notDetermined
     var requestShouldThrow = false
+    var requestShouldCancel = false
 
     func currentRawStatus() -> RawAuthorizationStatus { status }
 
     func requestChildAuthorization() async throws {
+        if requestShouldCancel { throw CancellationError() }
         if requestShouldThrow {
             struct EntitlementUnavailable: Error {}
             throw EntitlementUnavailable()
@@ -112,6 +114,18 @@ final class ChildAuthorizationCenterTests: XCTestCase {
         let center = makeCenter(source: source)
         let result = await center.requestAuthorization()
         XCTAssertEqual(result, .entitlementUnavailable)
+    }
+
+    func testCancelledAuthorizationRequestReflectsLiveStatusInsteadOfUnsupported() async {
+        let source = FakeAuthorizationStatusSource()
+        source.requestShouldCancel = true
+        let center = makeCenter(source: source)
+
+        let result = await center.requestAuthorization()
+
+        XCTAssertEqual(result, .notDetermined,
+            "task cancellation is not evidence that the FamilyControls entitlement is unavailable")
+        XCTAssertEqual(center.refresh(), .notDetermined)
     }
 
     func testSuccessfulRequestReflectsApprovedState() async {

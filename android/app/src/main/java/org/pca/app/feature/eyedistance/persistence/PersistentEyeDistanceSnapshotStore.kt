@@ -52,21 +52,39 @@ class PersistentEyeDistanceSnapshotStore(
                 ?.split(EPISODE_SEPARATOR)
                 ?.map { it.toLong() }
                 ?: emptyList()
+            val nearElapsedNanos = parts[1].toLong()
+            val farElapsedNanos = parts[2].toLong()
+            val unknownElapsedNanos = parts[3].toLong()
+            val restElapsedNanos = parts[4].toLong()
+            val lastTickMonotonicNanos = parts[6].toLong()
+            val exceptionActive = when (parts[8]) {
+                "true" -> true
+                "false" -> false
+                else -> return null
+            }
+            val snapshotWallClockMillis = parts[10].toLong()
+            if (
+                nearElapsedNanos < 0L || farElapsedNanos < 0L || unknownElapsedNanos < 0L ||
+                restElapsedNanos < 0L || lastTickMonotonicNanos < 0L ||
+                episodes.any { it < 0L }
+            ) {
+                return null
+            }
             val state = EyeDistanceState(
                 phase = EyeDistancePhase.valueOf(parts[0]),
-                nearElapsedNanos = parts[1].toLong(),
-                farElapsedNanos = parts[2].toLong(),
-                unknownElapsedNanos = parts[3].toLong(),
-                restElapsedNanos = parts[4].toLong(),
+                nearElapsedNanos = nearElapsedNanos,
+                farElapsedNanos = farElapsedNanos,
+                unknownElapsedNanos = unknownElapsedNanos,
+                restElapsedNanos = restElapsedNanos,
                 warningEpisodeTimestampsNanos = episodes,
-                lastTickMonotonicNanos = parts[6].toLong(),
+                lastTickMonotonicNanos = lastTickMonotonicNanos,
                 preSuspendPhase = parts[7].takeIf { it != NULL_SENTINEL }?.let { EyeDistancePhase.valueOf(it) },
-                exceptionActive = parts[8].toBoolean(),
+                exceptionActive = exceptionActive,
                 preExceptionPhase = parts[9].takeIf { it != NULL_SENTINEL }?.let { EyeDistancePhase.valueOf(it) },
             )
             EyeDistanceSnapshot(
                 state = state,
-                snapshotWallClockMillis = parts[10].toLong(),
+                snapshotWallClockMillis = snapshotWallClockMillis,
                 bootId = parts[11].takeIf { it != NULL_SENTINEL },
             )
         } catch (_: IllegalArgumentException) {

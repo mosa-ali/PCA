@@ -10,6 +10,8 @@ class PersistentOrdinaryEpochStore(
     private val store: PersistentStateStore,
     private val key: String = "ordinary_trust_set_v1",
 ) : OrdinaryEpochStore {
+    override val coordinationIdentity: Any get() = store.coordinationLock
+
     override fun read(): OrdinaryEpochState? = synchronized(store.coordinationLock) {
         val raw = store.getString(key) ?: return@synchronized null
         try {
@@ -69,6 +71,12 @@ class PersistentOrdinaryEpochStore(
                 val old = TrustSetEpochCodec.decodeCanonical(decodeCanonicalRequest(current.accepted.request))
                 val new = TrustSetEpochCodec.decodeCanonical(decodeCanonicalRequest(next.accepted.request))
                 require(old.familyId == new.familyId && new.keyEpoch >= old.keyEpoch)
+                // Once a signed request is in durable custody, a later request cannot
+                // replace it in-place. Clear the exact pending record first, then let a
+                // separate prepare transaction create a new ceremony.
+                if (current.pending != null && next.pending != null && next.pending != current.pending) {
+                    return@synchronized false
+                }
                 if (next.accepted == current.accepted) {
                     if (next.acceptedBase != current.acceptedBase) return@synchronized false
                 } else {
@@ -77,6 +85,8 @@ class PersistentOrdinaryEpochStore(
                     val previousOwner = old.entries.single {
                         it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE
                     }
+                    val nextOwner = activeOwner(new)
+                    require(sameOwner(previousOwner, nextOwner))
                     require(next.accepted.signerDeviceId == previousOwner.deviceId &&
                         next.accepted.signerKeyId == previousOwner.dskKeyId)
                 }
@@ -146,21 +156,38 @@ class PersistentOrdinaryEpochStore(
                 val baseOwner = baseEpoch.entries.single {
                     it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE
                 }
+                // Ordinary epochs cannot transfer Owner authority. Bind the persisted
+                // predecessor to the immutable epoch-1 Owner as well as to the current
+                // accepted Owner; otherwise a restored/tampered snapshot could make a
+                // different signer's record appear to be the trusted floor.
+                require(sameOwner(rootOwner, baseOwner))
+                require(baseRecord.signerDeviceId == rootOwner.deviceId &&
+                    baseRecord.signerKeyId == rootOwner.dskKeyId)
+                require(sameOwner(baseOwner, activeOwner(acceptedEpoch)))
                 require(state.accepted.signerDeviceId == baseOwner.deviceId && state.accepted.signerKeyId == baseOwner.dskKeyId)
             }
         }
         if (state.pending == null) {
             require(state.pendingBase == null)
         } else {
+            // Persisted request bytes and signature shape are part of the durable retry
+            // contract even for legacy states without a pendingBase. Reject malformed custody
+            // as corrupt on read instead of treating it as a valid request that only fails
+            // later when reconciliation tries to decode or verify it.
+            val pendingBytes = decodeCanonicalRequest(state.pending)
+            val pendingEpoch = TrustSetEpochCodec.decodeCanonical(pendingBytes)
+            require(TrustSetEpochCodec.canonicalize(pendingEpoch).toByteArray(Charsets.UTF_8).contentEquals(pendingBytes))
+            decodeSignature(state.pending.signatureBase64)
             state.pendingBase?.let { baseRecord ->
                 val base = validateAccepted(baseRecord)
                 require(base.familyId == acceptedEpoch.familyId && base.trustSetEpoch <= acceptedEpoch.trustSetEpoch &&
                     base.keyEpoch <= acceptedEpoch.keyEpoch)
                 if (base.trustSetEpoch == acceptedEpoch.trustSetEpoch) require(baseRecord == state.accepted)
-                val candidate = TrustSetEpochCodec.decodeCanonical(decodeCanonicalRequest(state.pending))
-                require(candidate.familyId == base.familyId && candidate.trustSetEpoch > base.trustSetEpoch &&
-                    candidate.supersedesEpoch == base.trustSetEpoch && candidate.keyEpoch >= base.keyEpoch)
+                require(pendingEpoch.familyId == base.familyId && pendingEpoch.trustSetEpoch > base.trustSetEpoch &&
+                    pendingEpoch.supersedesEpoch == base.trustSetEpoch && pendingEpoch.keyEpoch >= base.keyEpoch)
             }
+            val pendingBaseEpoch = state.pendingBase?.let(::validateAccepted) ?: acceptedEpoch
+            require(sameOwner(activeOwner(pendingBaseEpoch), activeOwner(pendingEpoch)))
         }
     }
 
@@ -174,6 +201,14 @@ class PersistentOrdinaryEpochStore(
         decodeSignature(record.request.signatureBase64)
         return epoch
     }
+
+    private fun activeOwner(epoch: UntrustedTrustSetEpoch): UntrustedTrustSetEntry = epoch.entries.single {
+        it.role == TrustSetRole.OWNER && it.status == TrustSetMembershipStatus.ACTIVE
+    }
+
+    private fun sameOwner(first: UntrustedTrustSetEntry, second: UntrustedTrustSetEntry): Boolean =
+        first.deviceId == second.deviceId && first.dskKeyId == second.dskKeyId &&
+            first.dskPublicKey == second.dskPublicKey
 
     private fun decodeCanonicalRequest(request: OrdinaryEpochRequest): ByteArray {
         require(request.canonicalEpochBase64.length <= TrustSetEpochCodec.MAX_CANONICAL_UTF16_UNITS * 4)

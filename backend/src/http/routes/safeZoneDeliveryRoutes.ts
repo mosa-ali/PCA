@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { Buffer } from 'node:buffer';
 import { RuntimeSyncAuthError, type DeviceSessionIdentity, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
-import { validateSafeZoneDeliveryCursor, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
+import { safeZoneCursorAfterZoneId, validateSafeZoneDeliveryCursor, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import { isActorResolutionFailure, type ActorResolutionFailure, type ResolvedActor, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
 import type { DeviceChildBindingRepository } from '../../device/DeviceChildBindingRepository.js';
@@ -17,6 +18,40 @@ export interface SafeZoneDeliveryRoutesDeps {
 }
 
 const DELIVERY_RATE_LIMIT = { windowMs: 60_000, max: 30, bucket: 'safe-zone-delivery' } as const;
+const MAX_SAFE_ZONE_DELIVERY_PAGE_ROWS = 16;
+const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
+
+function isCanonicalBase64Url(value: unknown, minimumBytes: number, maximumBytes: number): value is string {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+  const decoded = Buffer.from(value, 'base64url');
+  return decoded.length >= minimumBytes && decoded.length <= maximumBytes && decoded.toString('base64url') === value;
+}
+
+function isSafeZoneRecipientPage(page: unknown, familyId: string, deviceId: string, keyEpoch: number): boolean {
+  if (!page || typeof page !== 'object' || Array.isArray(page)) return false;
+  const candidate = page as { safeZones?: unknown; nextCursor?: unknown };
+  if (!Array.isArray(candidate.safeZones) || candidate.safeZones.length > MAX_SAFE_ZONE_DELIVERY_PAGE_ROWS ||
+      !(candidate.nextCursor === null || typeof candidate.nextCursor === 'string')) return false;
+  return candidate.safeZones.every((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const zone = value as Record<string, unknown>;
+    const updatedAtUtc = zone.updatedAtUtc;
+    const parsedUpdatedAt = typeof updatedAtUtc === 'string' ? new Date(updatedAtUtc) : null;
+    return zone.familyId === familyId && zone.recipientEndpointId === deviceId && zone.keyEpoch === keyEpoch &&
+      typeof zone.zoneId === 'string' && OPAQUE_TOKEN.test(zone.zoneId) &&
+      isCanonicalBase64Url(zone.ciphertextB64, 1, 65_535) && isCanonicalBase64Url(zone.nonceB64, 12, 64) &&
+      Number.isSafeInteger(zone.revision) && (zone.revision as number) >= 1 &&
+      (zone.deliveryState === 'PENDING_OFFLINE' || zone.deliveryState === 'READY') &&
+      parsedUpdatedAt !== null && Number.isFinite(parsedUpdatedAt.getTime()) && parsedUpdatedAt.toISOString() === updatedAtUtc;
+  });
+}
+
+async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // Run before the limiter and route handler so even throttling and auth
+  // denials for recipient ciphertext cannot be retained by shared caches.
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 /**
  * Delivers only opaque, recipient-addressed Safe Zone envelopes. Family and
  * device scope come exclusively from the verified device-session token; no
@@ -26,8 +61,7 @@ const DELIVERY_RATE_LIMIT = { windowMs: 60_000, max: 30, bucket: 'safe-zone-deli
  */
 export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZoneDeliveryRoutesDeps): void {
   const deliveryLimiter = deps.rateLimiter(DELIVERY_RATE_LIMIT);
-  app.get('/v1/runtime-sync/safe-zones', { preHandler: deliveryLimiter }, async (request: FastifyRequest, reply: FastifyReply) => {
-    reply.header('Cache-Control', 'private, no-store');
+  app.get('/v1/runtime-sync/safe-zones', { preHandler: [markPrivateResponseNoStore, deliveryLimiter] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const header = request.headers.authorization;
     if (typeof header !== 'string' || !header.startsWith('Bearer ') || header.length > 4096) {
       return reply.code(401).send({ error: 'unauthorized' });
@@ -52,7 +86,8 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
       return reply.code(503).send({ error: 'family_authority_unavailable' });
     }
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' ||
-      actor.deviceId !== identity.deviceId || actor.role !== 'CHILD' ||
+      actor.familyId !== identity.familyId || actor.deviceId !== identity.deviceId ||
+      actor.dskKeyId !== identity.dskKeyId || actor.role !== 'CHILD' ||
       !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
       !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
       return reply.code(403).send({ error: 'forbidden' });
@@ -107,7 +142,8 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
         return false;
       }
       if (isActorResolutionFailure(current) || !current || typeof current !== 'object' ||
-          current.deviceId !== identity.deviceId || current.role !== 'CHILD' ||
+          current.familyId !== identity.familyId || current.deviceId !== identity.deviceId ||
+          current.dskKeyId !== identity.dskKeyId || current.role !== 'CHILD' ||
           !Number.isSafeInteger(current.trustSetEpoch) || current.trustSetEpoch < 1 ||
           !Number.isSafeInteger(current.keyEpoch) || current.keyEpoch < 1) {
         await reply.code(403).send({ error: 'forbidden' });
@@ -137,6 +173,24 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
       if (!currentChildProfileId) return;
       if (currentChildProfileId !== boundChildProfileId) return reply.code(403).send({ error: 'forbidden' });
       if (!(await profileIsCurrentMember(currentChildProfileId)) || !(await recheckAcceptedChildActor())) return;
+      // The repository query is scoped by family, recipient, and accepted
+      // key epoch. Recheck that contract at the HTTP boundary before any
+      // ciphertext is serialized, so a future repository regression cannot
+      // turn a scoped device session into cross-recipient delivery.
+      if (!isSafeZoneRecipientPage(page, identity.familyId, identity.deviceId, capturedActor.keyEpoch)) {
+        return reply.code(503).send({ error: 'safe_zone_unavailable' });
+      }
+      if (page.nextCursor !== null) {
+        if (typeof page.nextCursor !== 'string' || page.safeZones.length === 0) {
+          return reply.code(503).send({ error: 'safe_zone_unavailable' });
+        }
+        let cursorAfterZoneId: string | undefined;
+        try { cursorAfterZoneId = safeZoneCursorAfterZoneId(page.nextCursor, capturedActor.keyEpoch); }
+        catch { return reply.code(503).send({ error: 'safe_zone_unavailable' }); }
+        if (cursorAfterZoneId === undefined || cursorAfterZoneId !== page.safeZones[page.safeZones.length - 1]!.zoneId) {
+          return reply.code(503).send({ error: 'safe_zone_unavailable' });
+        }
+      }
       return reply.code(200).send({ safeZones: page.safeZones.map((zone) => ({
         zoneId: zone.zoneId,
         ciphertextB64: zone.ciphertextB64,

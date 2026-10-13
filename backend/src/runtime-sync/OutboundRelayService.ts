@@ -2,6 +2,7 @@ import { RelayError, RelayService } from '../relay/RelayService.js';
 import type { DeviceRepository } from '../device/DeviceRepository.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from './policy.js';
 import { sortByPriority } from './priority.js';
+import { RelayAuthorityChangedError, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot } from '../relay/RelayRepository.js';
 
 export interface OutboundEnvelopeItem {
   messageId: string;
@@ -20,6 +21,7 @@ export type OutboundItemOutcome =
   | { messageId: string; outcome: 'CROSS_FAMILY_RECIPIENT' }
   | { messageId: string; outcome: 'CONFLICT' }
   | { messageId: string; outcome: 'EXPIRED' }
+  | { messageId: string; outcome: 'AUTHORITY_CHANGED' }
   | { messageId: string; outcome: 'INVALID' };
 
 export interface OutboundBatchResult {
@@ -76,7 +78,7 @@ export class OutboundRelayService {
     senderDeviceId: string,
     familyId: string,
     items: readonly OutboundEnvelopeItem[],
-    authorizeRecipient?: (recipientDeviceId: string) => Promise<boolean>,
+    authorizeRecipient: (recipientDeviceId: string) => Promise<false | RelayEnvelopeAuthoritySnapshot>,
   ): Promise<OutboundBatchResult> {
     // Copy absolute expiry dates before the first async recipient lookup, so
     // mutation of an input Date cannot lengthen retention during a slow read.
@@ -96,15 +98,19 @@ export class OutboundRelayService {
   }
 
   /** Manual ack path (a caller that fetched via /inbound but wants to ack one item explicitly, e.g. after a decrypt failure it still wants to stop redelivering). Relay's own recipient-scoping already makes another device's messageId indistinguishable from NOT_FOUND. */
-  async acknowledgeAsRecipient(recipientDeviceId: string, messageId: string): Promise<void> {
-    await this.relayService.acknowledgeEnvelope(recipientDeviceId, messageId);
+  async acknowledgeAsRecipient(
+    recipientDeviceId: string,
+    messageId: string,
+    authority?: RelayRecipientAuthoritySnapshot,
+  ): Promise<void> {
+    await this.relayService.acknowledgeEnvelope(recipientDeviceId, messageId, authority);
   }
 
   private async submitOne(
     senderDeviceId: string,
     familyId: string,
     item: OutboundEnvelopeItem,
-    authorizeRecipient?: (recipientDeviceId: string) => Promise<boolean>,
+    authorizeRecipient: (recipientDeviceId: string) => Promise<false | RelayEnvelopeAuthoritySnapshot>,
   ): Promise<OutboundItemOutcome> {
     const recipient = await this.deviceRepository.findDeviceForFamily(familyId, item.recipientDeviceId);
     if (!recipient) {
@@ -121,12 +127,35 @@ export class OutboundRelayService {
     if (recipient.platform === 'BROWSER') {
       return { messageId: item.messageId, outcome: 'INVALID' };
     }
-    // Directory family scope is checked first to preserve the existing
-    // non-enumerating CROSS_FAMILY_RECIPIENT result. A live same-family row
-    // still needs accepted Trust Set membership before ciphertext is queued.
-    if (authorizeRecipient && !(await authorizeRecipient(item.recipientDeviceId))) {
+    if (typeof authorizeRecipient !== 'function') {
       return { messageId: item.messageId, outcome: 'INVALID' };
     }
+    // Directory family scope is checked first to preserve the existing
+    // non-enumerating CROSS_FAMILY_RECIPIENT result. A live same-family row
+    // still needs an exact accepted Trust Set sender+recipient snapshot before
+    // ciphertext is queued. Missing/malformed authority fails closed.
+    let authority: RelayEnvelopeAuthoritySnapshot;
+    const authorization: unknown = await authorizeRecipient(item.recipientDeviceId);
+    if (authorization === false || authorization === null || typeof authorization !== 'object' || Array.isArray(authorization)) {
+      return { messageId: item.messageId, outcome: 'INVALID' };
+    }
+    const snapshot = authorization as RelayEnvelopeAuthoritySnapshot;
+    if (snapshot.familyId !== familyId ||
+        snapshot.sender?.deviceId !== senderDeviceId ||
+        typeof snapshot.sender?.dskKeyId !== 'string' || snapshot.sender.dskKeyId.length === 0 ||
+        snapshot.recipient?.deviceId !== item.recipientDeviceId ||
+        typeof snapshot.recipient?.dskKeyId !== 'string' || snapshot.recipient.dskKeyId.length === 0 ||
+        !Number.isSafeInteger(snapshot.trustSetEpoch) || snapshot.trustSetEpoch < 1 ||
+        !Number.isSafeInteger(snapshot.keyEpoch) || snapshot.keyEpoch < 1) {
+      return { messageId: item.messageId, outcome: 'INVALID' };
+    }
+    authority = {
+      familyId: snapshot.familyId,
+      trustSetEpoch: snapshot.trustSetEpoch,
+      keyEpoch: snapshot.keyEpoch,
+      sender: { deviceId: snapshot.sender.deviceId, dskKeyId: snapshot.sender.dskKeyId },
+      recipient: { deviceId: snapshot.recipient.deviceId, dskKeyId: snapshot.recipient.dskKeyId },
+    };
 
     try {
       await this.relayService.queueEnvelope({
@@ -137,6 +166,7 @@ export class OutboundRelayService {
         ciphertext: item.ciphertext,
         ttlMs: item.ttlMs,
         validUntil: item.validUntil,
+        authority,
       });
       return { messageId: item.messageId, outcome: 'QUEUED' };
     } catch (error) {
@@ -145,6 +175,7 @@ export class OutboundRelayService {
         if (error.code === 'EXPIRED') return { messageId: item.messageId, outcome: 'EXPIRED' };
         return { messageId: item.messageId, outcome: 'INVALID' };
       }
+      if (error instanceof RelayAuthorityChangedError) return { messageId: item.messageId, outcome: 'AUTHORITY_CHANGED' };
       throw error;
     }
   }

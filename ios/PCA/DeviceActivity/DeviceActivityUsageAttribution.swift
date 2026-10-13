@@ -60,8 +60,9 @@ public struct DeviceActivityUsageDayPlan: Codable, Equatable {
               UUID(uuidString: String(monitorActivityId.dropFirst("pca-monitor-".count))) != nil,
               let zone = TimeZone(identifier: policyTimeZoneIdentifier),
               let deviceZone = TimeZone(identifier: deviceTimeZoneIdentifier),
-              dayStartUtc.timeIntervalSince1970.isFinite, dayEndUtc.timeIntervalSince1970.isFinite,
-              accountingStartUtc.timeIntervalSince1970.isFinite,
+              DeviceActivityUsagePlanner.isValidPolicyInstant(dayStartUtc.timeIntervalSince1970),
+              DeviceActivityUsagePlanner.isValidPolicyInstant(dayEndUtc.timeIntervalSince1970),
+              DeviceActivityUsagePlanner.isValidPolicyInstant(accountingStartUtc.timeIntervalSince1970),
               accountingStartUtc >= dayStartUtc, accountingStartUtc < dayEndUtc,
               dayEndUtc.timeIntervalSince(accountingStartUtc) >= 900,
               thresholds.count <= 64 else { return false }
@@ -120,6 +121,11 @@ public struct DeviceActivityUsageDayPlan: Codable, Equatable {
 
 public enum DeviceActivityUsagePlanner {
     public static let maximumMinutes = 1_000_000
+    /// Matches ScheduleEngine and DeviceActivityScheduleMapper policy date bounds.
+    static let maximumPolicyDateSeconds = 8_640_000_000_000.0
+    static func isValidPolicyInstant(_ seconds: TimeInterval) -> Bool {
+        seconds.isFinite && abs(seconds) <= maximumPolicyDateSeconds
+    }
     public static func plan(policy: DecodedSchedulePolicy, binding: DeviceActivityUsageSelectionBinding,
                             generation: String, now: Date, deviceTimeZone: TimeZone,
                             historicalActivitySupported: Bool, otherMonitorCount: Int) throws -> DeviceActivityUsageDayPlan {
@@ -133,15 +139,18 @@ public enum DeviceActivityUsagePlanner {
                 throw DeviceActivityUsageError.unsupportedBinding
             }
         }
-        guard now.timeIntervalSince1970.isFinite, UUID(uuidString: generation) != nil,
-              otherMonitorCount >= 0,
+        guard isValidPolicyInstant(now.timeIntervalSince1970) else {
+            throw DeviceActivityUsageError.malformedPlan
+        }
+        guard UUID(uuidString: generation) != nil, otherMonitorCount >= 0,
               otherMonitorCount < DeviceActivityScheduleMapper.maximumMonitoredActivities else {
             throw DeviceActivityUsageError.excessiveMonitors
         }
         guard (0...maximumMinutes).contains(limit.limitMinutes), (0...maximumMinutes).contains(limit.usedMinutesToday),
               policy.bonusGrants.count <= 64, policy.bonusGrants.allSatisfy({
-                  (0...maximumMinutes).contains($0.extraMinutes) && $0.grantedAt.timeIntervalSince1970.isFinite &&
-                      $0.expiresAt.timeIntervalSince1970.isFinite && $0.expiresAt > $0.grantedAt
+                  (0...maximumMinutes).contains($0.extraMinutes) &&
+                      isValidPolicyInstant($0.grantedAt.timeIntervalSince1970) &&
+                      isValidPolicyInstant($0.expiresAt.timeIntervalSince1970) && $0.expiresAt > $0.grantedAt
               }) else { throw DeviceActivityUsageError.invalidNumericPolicy }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = policy.timeZone
         guard let day = calendar.dateInterval(of: .day, for: now) else { throw DeviceActivityUsageError.malformedPlan }
@@ -491,6 +500,7 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
         let data = store.read(forKey: Self.stateKey)
         if owner == nil && data == nil { return State(schemaVersion: 1, records: []) }
         guard owner == Self.ownershipValue, let data, data.count <= Self.maximumStateBytes,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: Self.maximumStateBytes)) != nil,
               store.read(forKey: Self.ownershipKey) == Self.ownershipValue,
               store.read(forKey: Self.stateKey) == data,
               let state = try? JSONDecoder().decode(State.self, from: data),
@@ -706,7 +716,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
         for record in state.records {
             guard record.binding.isValid, let zone = TimeZone(identifier: record.zone),
                   (1...DeviceActivityUsagePlanner.maximumMinutes).contains(record.minutes),
-                  record.dayStart.timeIntervalSince1970.isFinite, record.dayEnd.timeIntervalSince1970.isFinite,
+                  DeviceActivityUsagePlanner.isValidPolicyInstant(record.dayStart.timeIntervalSince1970),
+                  DeviceActivityUsagePlanner.isValidPolicyInstant(record.dayEnd.timeIntervalSince1970),
                   record.dayEnd > record.dayStart,
                   ScheduleEngine.localDateString(record.dayStart, timeZone: zone) == record.localDate,
                   (try? PropertyListDecoder().decode(Token.self, from: record.binding.applicationTokenData)) != nil else {
@@ -811,15 +822,24 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
 /// Compose an evaluation copy only; authenticated policy bytes remain immutable.
 public enum DeviceActivityUsageEvaluation {
     public static func input(policy: DecodedSchedulePolicy, now: Date, lowerBoundMinutes: Int?,
+                             deviceTimeZone: TimeZone? = nil,
                              coverageAvailable: Bool) -> ScheduleEvaluationInput {
-        let day = ScheduleEngine.localDateString(now, timeZone: policy.timeZone)
+        // The authenticated policy's timezone is the default. Production may
+        // override it with the evaluating device's current zone for local-day
+        // usage accounting; authored ScheduleWindow.timeZone values remain
+        // unchanged and continue to govern each window independently.
+        let evaluationTimeZone = deviceTimeZone ?? policy.timeZone
+        let day = ScheduleEngine.localDateString(now, timeZone: evaluationTimeZone)
         let daily: DailyAppLimit?
-        if let limit = policy.dailyLimit, let observed = lowerBoundMinutes,
-           (0...DeviceActivityUsagePlanner.maximumMinutes).contains(observed) {
+        if let limit = policy.dailyLimit {
+            let policyUsage = limit.anchorLocalDate == day ? limit.usedMinutesToday : 0
+            let observed = lowerBoundMinutes.flatMap {
+                (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0) ? $0 : nil
+            } ?? 0
             daily = DailyAppLimit(appScope: limit.appScope, limitMinutes: limit.limitMinutes,
-                usedMinutesToday: max(limit.anchorLocalDate == day ? limit.usedMinutesToday : 0, observed), anchorLocalDate: day)
+                usedMinutesToday: max(policyUsage, observed), anchorLocalDate: day)
         } else { daily = policy.dailyLimit }
-        return ScheduleEvaluationInput(nowUtc: now, timeZone: policy.timeZone, appToken: policy.appToken,
+        return ScheduleEvaluationInput(nowUtc: now, timeZone: evaluationTimeZone, appToken: policy.appToken,
             windows: policy.windows, bonusGrants: policy.bonusGrants, exceptions: policy.exceptions,
             dailyLimit: daily, enforcementCapability: policy.enforcementCapability == .enforced && policy.dailyLimit != nil && !coverageAvailable
                 ? .degraded : policy.enforcementCapability)
@@ -831,16 +851,35 @@ public enum DeviceActivityUsageEvaluation {
 public enum DeviceActivityUsageEnforcement {
     @discardableResult public static func reconcile<Token: Hashable>(
         policy: DecodedSchedulePolicy, now: Date, applications: Set<Token>, protectedApplications: Set<Token>,
-        coverageAvailable: Bool, loadLowerBound: () throws -> Int?,
+        deviceTimeZone: TimeZone? = nil, coverageAvailable: Bool, loadLowerBound: () throws -> Int?,
         apply: (Set<Token>) throws -> Void, remove: () -> Void
     ) throws -> Bool {
         guard case .accepted = ShieldPolicyValidator<Token>(protectedApplicationTokens: protectedApplications,
             protectedCategoryTokens: []).validate(applications: applications, categories: [], domains: []) else { return false }
+        // A persisted counter is attributable only while the monitor plan
+        // covers the current policy day in the current device timezone. If
+        // coverage is partial, stale, or invalidated by travel, fail closed
+        // through the degraded policy path instead of carrying a counter from
+        // a different local day into this evaluation.
         let observed: Int?
-        do { observed = try loadLowerBound() } catch { return false }
+        if coverageAvailable {
+            do { observed = try loadLowerBound() } catch { return false }
+        } else {
+            observed = nil
+        }
         let decision = ScheduleEngine.evaluate(DeviceActivityUsageEvaluation.input(policy: policy,
-            now: now, lowerBoundMinutes: observed, coverageAvailable: coverageAvailable))
-        if decision.isRestrictive || decision.kind == .enforcementUnavailable { try apply(applications) }
+            now: now, lowerBoundMinutes: observed, deviceTimeZone: deviceTimeZone,
+            coverageAvailable: coverageAvailable))
+        let coveredDailyLimit = policy.dailyLimit?.appScope.includes(policy.appToken) == true
+        let unknownUsageMustBlock = coveredDailyLimit && !coverageAvailable && decision.kind != .allowedException
+        if decision.isRestrictive || decision.kind == .enforcementUnavailable || unknownUsageMustBlock {
+            // A missing/partial/stale usage day cannot prove that the daily
+            // limit remains available. Keep the target shielded even when
+            // the counter reset makes the ordinary schedule decision look
+            // allowed. An explicit Parent exception retains ScheduleEngine's
+            // higher precedence and remains an intentional allow.
+            try apply(applications)
+        }
         else { remove() }
         return true
     }

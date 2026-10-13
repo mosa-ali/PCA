@@ -334,6 +334,8 @@
     <string name="prayer_name_isha">Isha</string>
 
     <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
+    <string name="child_home_enrollment_entry_title">Set up this device</string>
+    <string name="child_home_enrollment_entry_body">Open an invitation link from your parent to connect this device.</string>
     <string name="child_home_safe_browser">Safe Browser</string>
     <!-- PCA-NFR-044: young-child reading-level variant; same action (open Safe Browser), simpler wording. -->
     <string name="child_home_safe_browser_simple">Safe Browser</string>

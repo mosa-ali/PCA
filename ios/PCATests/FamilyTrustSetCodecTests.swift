@@ -80,6 +80,49 @@ final class FamilyTrustSetCodecTests: XCTestCase {
         XCTAssertEqual(candidateOnly.signature, "")
     }
 
+    func testSharedOrdinaryVectorUsesBackendP256LowSAcceptanceSurface() throws {
+        let vector = try XCTUnwrap(try corpus().vectors.first { $0.name == "ordinary-unicode" })
+        let canonicalBytes = Data(vector.canonical.utf8)
+        let publicKey = "BEfIaXgQNC5TooTU-F8_s7tYxEBSnq3dWU2GNbUPnToPEg1pa9otat0ktE2fIuZyV5gbbNCkCgq4ASgYjGbjQRY"
+        let signature = "uQhIUB_OfYlSzJda4ZesMVQ7mPJ4F_9BHNkAf-vzmrdEjD7nLMqzdtnK_dk46eGCyHU114iujqmZVVqapf4I7A"
+        let verifier = P256OrdinaryTrustSetSignatureVerifier()
+
+        XCTAssertTrue(try verifier.verify(signature: signature, canonicalBytes: canonicalBytes, publicKey: publicKey))
+        XCTAssertFalse(try verifier.verify(signature: signature + "=", canonicalBytes: canonicalBytes, publicKey: publicKey),
+                       "Backend requires unpadded canonical base64url")
+        XCTAssertFalse(try verifier.verify(signature: signature + "!", canonicalBytes: canonicalBytes, publicKey: publicKey))
+
+        let encoded = signature.replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let padded = encoded + String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        var signatureBytes = try XCTUnwrap(Data(base64Encoded: padded))
+        XCTAssertEqual(signatureBytes.count, 64)
+        let order = [UInt8](P256DerSignature.order)
+        let lowS = [UInt8](signatureBytes[32..<64])
+        var highS = [UInt8](repeating: 0, count: 32)
+        var borrow = 0
+        for index in stride(from: 31, through: 0, by: -1) {
+            let difference = Int(order[index]) - Int(lowS[index]) - borrow
+            highS[index] = UInt8(difference < 0 ? difference + 256 : difference)
+            borrow = difference < 0 ? 1 : 0
+        }
+        XCTAssertEqual(borrow, 0)
+        signatureBytes.replaceSubrange(32..<64, with: highS)
+        let highSBase64Url = signatureBytes.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        XCTAssertFalse(P256DerSignature.isLowS(signatureBytes))
+        XCTAssertFalse(try verifier.verify(signature: highSBase64Url, canonicalBytes: canonicalBytes, publicKey: publicKey),
+                       "Backend rejects otherwise valid high-S P-256 signatures")
+
+        XCTAssertFalse(try verifier.verify(signature: signature,
+            canonicalBytes: Data("PCA_ORDINARY_TRUST_SET_V1:".utf8) + canonicalBytes, publicKey: publicKey))
+        var alteredBytes = canonicalBytes
+        alteredBytes[alteredBytes.startIndex] ^= 1
+        XCTAssertFalse(try verifier.verify(signature: signature, canonicalBytes: alteredBytes, publicKey: publicKey))
+    }
+
     func testExactUnicodeIdentityDoesNotUseSwiftsNormalizedEquality() throws {
         let value = try candidate()
         let keys = UntrustedTrustSetEntry(deviceId: "😀", role: .owner, dskKeyId: "dsk", dskPublicKey: "\u{00E9}",

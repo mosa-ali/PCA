@@ -763,6 +763,42 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry parent approval request" } }
       }
     },
+    "Parent invitation" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "دعوة وليّ الأمر" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parent invitation" } }
+      }
+    },
+    "Paste the parent invitation link" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "ألصق رابط دعوة وليّ الأمر" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Paste the parent invitation link" } }
+      }
+    },
+    "Continue with invitation" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "المتابعة باستخدام الدعوة" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue with invitation" } }
+      }
+    },
+    "Use the link shared by your parent. Device setup and protection activation are separate steps." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "استخدم الرابط الذي أرسله وليّ أمرك. إعداد الجهاز وتفعيل الحماية خطوتان منفصلتان." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use the link shared by your parent. Device setup and protection activation are separate steps." } }
+      }
+    },
+    "This link could not be used here. Check that it is an active PCA invitation for this device." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تعذّر استخدام هذا الرابط هنا. تحقّق من أنه رابط دعوة PCA صالح لهذا الجهاز." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This link could not be used here. Check that it is an active PCA invitation for this device." } }
+      }
+    },
+    "Invitation received. Follow the setup steps; this does not activate protection." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تم استلام الدعوة. اتبع خطوات الإعداد؛ فهذا لا يفعّل الحماية." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invitation received. Follow the setup steps; this does not activate protection." } }
+      }
+    },
     "Parent approval has not been requested." : {
       "localizations" : {
         "ar" : { "stringUnit" : { "state" : "translated", "value" : "لم يُطلب بعد الحصول على موافقة ولي الأمر." } },

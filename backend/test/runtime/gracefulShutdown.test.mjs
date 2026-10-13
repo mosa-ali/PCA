@@ -134,7 +134,7 @@ test('a failing server close still releases the pool and reports a non-zero exit
   const handler = createGracefulShutdownHandler({
     stopBackgroundWork: () => calls.push('stopBackgroundWork'),
     closeServer: async () => {
-      throw new Error('close boom');
+      throw new Error('close boom accountRef=family-private sql=SELECT secret');
     },
     closeDatabasePool: async () => calls.push('closeDatabasePool'),
     exit: (code) => exits.push(code),
@@ -148,9 +148,9 @@ test('a failing server close still releases the pool and reports a non-zero exit
   assert.deepEqual(exits, [1]);
   const failure = events.find((entry) => entry.event === 'shutdown.server_close_failed');
   assert.ok(failure);
-  // Only `error.message` is ever logged: mysql2 hangs the fully-bound SQL
-  // off the error object, so logging the object itself would leak real rows.
-  assert.deepEqual(failure.detail, { error: 'close boom' });
+  assert.deepEqual(failure.detail, { failure: 'server_close_failed' });
+  assert.equal(JSON.stringify(failure).includes('family-private'), false);
+  assert.equal(JSON.stringify(failure).includes('SELECT secret'), false);
 });
 
 test('a failing pool close is reported and still exits non-zero', async () => {
@@ -160,7 +160,7 @@ test('a failing pool close is reported and still exits non-zero', async () => {
     stopBackgroundWork: () => {},
     closeServer: async () => {},
     closeDatabasePool: async () => {
-      throw new Error('pool boom');
+      throw new Error('pool boom sql=SELECT private-family-row');
     },
     exit: (code) => exits.push(code),
     log,
@@ -170,7 +170,9 @@ test('a failing pool close is reported and still exits non-zero', async () => {
   await handler('SIGTERM');
 
   assert.deepEqual(exits, [1]);
-  assert.ok(events.some((entry) => entry.event === 'shutdown.database_pool_close_failed'));
+  const failure = events.find((entry) => entry.event === 'shutdown.database_pool_close_failed');
+  assert.deepEqual(failure.detail, { failure: 'database_pool_close_failed' });
+  assert.equal(JSON.stringify(failure).includes('private-family-row'), false);
 });
 
 test('a throwing stopBackgroundWork does not abort the drain', async () => {
@@ -179,7 +181,7 @@ test('a throwing stopBackgroundWork does not abort the drain', async () => {
   const { events, log } = recorder();
   const handler = createGracefulShutdownHandler({
     stopBackgroundWork: () => {
-      throw new Error('timer boom');
+      throw new Error('timer boom accountRef=family-private');
     },
     closeServer: async () => calls.push('closeServer'),
     closeDatabasePool: async () => calls.push('closeDatabasePool'),
@@ -192,7 +194,9 @@ test('a throwing stopBackgroundWork does not abort the drain', async () => {
 
   assert.deepEqual(calls, ['closeServer', 'closeDatabasePool']);
   assert.deepEqual(exits, [1]);
-  assert.ok(events.some((entry) => entry.event === 'shutdown.background_work_stop_failed'));
+  const failure = events.find((entry) => entry.event === 'shutdown.background_work_stop_failed');
+  assert.deepEqual(failure.detail, { failure: 'background_work_stop_failed' });
+  assert.equal(JSON.stringify(failure).includes('family-private'), false);
 });
 
 test('registerGracefulShutdown subscribes SIGTERM and SIGINT with `on`, so a repeat signal cannot fall through to Node default-kill', () => {

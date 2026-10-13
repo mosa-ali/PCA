@@ -1102,23 +1102,18 @@ async function start(): Promise<void> {
     commercialMaintenanceConfig,
   );
   const commercialMaintenanceTimer = setInterval(() => {
-    commercialMaintenanceRunner.runOnce().catch((error) => {
+    commercialMaintenanceRunner.runOnce().catch(() => {
       // A single failed maintenance pass must never crash the whole
       // process -- the next interval tick retries. Every underlying
       // transition (quote expiry, notification publish, retention prune)
       // is independently idempotent/DB-conditional, so a partial pass is
       // always safe to repeat.
       //
-      // Routed through the lane's own CommercialMaintenanceLogger (a
-      // "bounded identifiers/error text" seam -- see types.ts) with only
-      // `error.message`, NEVER the raw error object. mysql2 interpolates
-      // client-side and hangs the fully-bound statement off `err.sql`, so
-      // printing the error itself would emit real quote/subscription rows
-      // and account refs into the operational log. Exactly the shape
-      // CommercialMaintenanceRunner's own publishOne/publishRenewalUpcoming
-      // catch blocks already use.
+      // Routed through the lane's CommercialMaintenanceLogger (see types.ts)
+      // without inspecting the thrown value. Provider/DB errors may contain
+      // recipient or bound-query details in their message as well as fields.
       CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER.warn('commercial_maintenance.run_once_failed', {
-        error: error instanceof Error ? error.message : String(error),
+        failure: 'run_once_failed',
       });
     });
   }, commercialMaintenanceConfig.intervalMs);

@@ -20,6 +20,16 @@ data class ScreenTimeSnapshot(
 interface ScreenTimeSnapshotStore {
     fun save(snapshot: ScreenTimeSnapshot)
     fun load(): ScreenTimeSnapshot?
+
+    /** Distinguishes first-run absence from present-but-unreadable persisted state. */
+    fun read(): ScreenTimeSnapshotRead = load()?.let { ScreenTimeSnapshotRead.Present(it) }
+        ?: ScreenTimeSnapshotRead.Absent
+}
+
+sealed interface ScreenTimeSnapshotRead {
+    data object Absent : ScreenTimeSnapshotRead
+    data object Corrupt : ScreenTimeSnapshotRead
+    data class Present(val snapshot: ScreenTimeSnapshot) : ScreenTimeSnapshotRead
 }
 
 /** In-memory reference implementation, useful for tests and as a default before a durable

@@ -17,6 +17,21 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         }
     }
 
+    private final class RootWriteResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: Bool] = [:]
+        func set(_ value: Bool, for key: String) {
+            lock.lock()
+            values[key] = value
+            lock.unlock()
+        }
+        func value(for key: String) -> Bool? {
+            lock.lock()
+            defer { lock.unlock() }
+            return values[key]
+        }
+    }
+
     func testConfirmedCleanupSerializesConcurrentRootReplacement() throws {
         let retained = approvedRecord()
         var replacement = retained
@@ -147,11 +162,36 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         var lastTranscript: String?
         var evidence = #"{"v":1,"platform":"IOS"}"#
         var error: Error?
+        var holdBuild = false
+        var onBuildEntered: (() -> Void)?
+        private var releaseRequested = false
+        private var buildBarrier: CheckedContinuation<Void, Never>?
+
+        func releaseBuild() {
+            guard let buildBarrier else {
+                releaseRequested = true
+                return
+            }
+            buildBarrier.resume()
+            buildBarrier = nil
+        }
 
         func buildEvidence(transcript: String, dskKeyId: String, dskPublicKeyBase64: String) async throws -> IosAppAttestEvidence {
             if let error { throw error }
             callCount += 1
             lastTranscript = transcript
+            if holdBuild {
+                await withCheckedContinuation { continuation in
+                    if releaseRequested {
+                        continuation.resume()
+                    } else {
+                        buildBarrier = continuation
+                    }
+                    onBuildEntered?()
+                }
+            } else {
+                onBuildEntered?()
+            }
             return IosAppAttestEvidence(json: evidence, keyIdBase64Url: "keyid")
         }
     }
@@ -195,6 +235,53 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
 
         func delete(forAccount account: String, service: String) throws {
             storedData = nil
+        }
+    }
+
+    private final class BlockingRootKeychainStore: KeychainStoreProtocol {
+        private let stateLock = NSLock()
+        private var storedData: Data?
+        private var readCount = 0
+        private var writeCount = 0
+        let firstWriteEntered = DispatchSemaphore(value: 0)
+        let releaseFirstWrite = DispatchSemaphore(value: 0)
+        let secondReadEntered = DispatchSemaphore(value: 0)
+
+        init(storedData: Data) { self.storedData = storedData }
+
+        func store(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+            try storeReplacingAtomically(data, forAccount: account, service: service, accessibility: accessibility)
+        }
+
+        func storeReplacingAtomically(_ data: Data, forAccount account: String, service: String, accessibility: KeychainAccessibility) throws {
+            stateLock.lock()
+            writeCount += 1
+            let shouldBlock = writeCount == 1
+            stateLock.unlock()
+            if shouldBlock {
+                firstWriteEntered.signal()
+                _ = releaseFirstWrite.wait(timeout: .now() + 5)
+            }
+            stateLock.lock()
+            storedData = data
+            stateLock.unlock()
+        }
+
+        func retrieve(forAccount account: String, service: String) throws -> Data {
+            stateLock.lock()
+            readCount += 1
+            let currentRead = readCount
+            let value = storedData
+            stateLock.unlock()
+            if currentRead == 2 { secondReadEntered.signal() }
+            guard let value else { throw KeychainStoreError.itemNotFound }
+            return value
+        }
+
+        func delete(forAccount account: String, service: String) throws {
+            stateLock.lock()
+            storedData = nil
+            stateLock.unlock()
         }
     }
 
@@ -264,6 +351,24 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(api.challengeCalls, 1)
     }
 
+    func testBeginCeremonyRejectsChallengeBoundToDifferentEnrollmentDevice() async {
+        let initial = FirstDeviceRootRecord(seed: makeSeed())
+        let (coordinator, store, api, _, evidence) = makeCoordinator(record: initial)
+        api.challengeResult = .success(FirstDeviceChallengeResponse(
+            ceremonyId: "c-1", challengeId: "ch-1", nonce: "n-1",
+            expiresAt: "2026-10-02T00:00:00.000Z", familyId: "f-1", deviceId: "device-2"
+        ))
+
+        await coordinator.beginCeremony()
+
+        let record = try! XCTUnwrap(store.current())
+        XCTAssertEqual(record.state, .unknown)
+        XCTAssertNil(record.ceremonyId, "a foreign device challenge must not be persisted as this enrollment's ceremony")
+        XCTAssertNil(record.familyId)
+        XCTAssertEqual(evidence.callCount, 0, "App Attest must not be generated for a challenge with mismatched device scope")
+        XCTAssertEqual(api.challengeCalls, 1)
+    }
+
     func testBeginCeremonyWithPersistedSubmissionNeverReChallenges() async {
         let payload = FirstDeviceSubmissionPayload(proofBytes: "p", proofSignature: "ps", epoch1Bytes: "e", epoch1Signature: "es", attestationEvidence: "{}")
         var record = approvedRecord(withSubmission: payload)
@@ -273,6 +378,32 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         await coordinator.beginCeremony()
         XCTAssertEqual(api.challengeCalls, 0, "a persisted submission must resolve via status only")
         XCTAssertEqual(api.statusCalls, 1)
+    }
+
+    func testUnknownExistingCeremonyUsesStatusOnlyAfterUnavailableStatus() async {
+        var record = approvedRecord()
+        record.state = .awaitingApproval
+        let (coordinator, store, api, _, _) = makeCoordinator(record: record)
+        api.statusResult = .failure(.unavailable)
+        api.challengeResult = .success(FirstDeviceChallengeResponse(
+            ceremonyId: "parallel-ceremony", challengeId: "parallel-challenge", nonce: "new-nonce",
+            expiresAt: "2026-10-02T00:00:00.000Z", familyId: "f-2", deviceId: "device-1"
+        ))
+
+        // First call reaches the existing ceremony but cannot read its state.
+        await coordinator.beginCeremony()
+        XCTAssertEqual(store.current()?.state, .unknown)
+        XCTAssertEqual(api.statusCalls, 1)
+
+        // Restart/re-entry must preserve that unresolved server context and
+        // retry status; it must not create a second ceremony.
+        await coordinator.beginCeremony()
+
+        XCTAssertEqual(api.statusCalls, 2)
+        XCTAssertEqual(api.challengeCalls, 0)
+        XCTAssertEqual(store.current()?.ceremonyId, record.ceremonyId)
+        XCTAssertEqual(store.current()?.challengeId, record.challengeId)
+        XCTAssertNil(store.current()?.submission)
     }
 
     func testSubmitBuildsPersistsAndSendsByteStablePayload() async {
@@ -432,6 +563,25 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.current()?.state, .awaitingApproval)
     }
 
+    func testCancellationDuringEvidenceBuildPreservesApprovedCeremonyWithoutSigningOrSending() async {
+        let initial = approvedRecord()
+        let evidence = FakeEvidenceBuilder()
+        evidence.holdBuild = true
+        let entered = expectation(description: "evidence builder is suspended")
+        evidence.onBuildEntered = { entered.fulfill() }
+        let (coordinator, store, api, keyMaterial, _) = makeCoordinator(record: initial, evidence: evidence)
+
+        let operation = Task { await coordinator.submit() }
+        await fulfillment(of: [entered], timeout: 2)
+        operation.cancel()
+        evidence.releaseBuild()
+        await operation.value
+
+        XCTAssertEqual(store.current(), initial, "pre-persistence cancellation must preserve the approved ceremony exactly")
+        XCTAssertEqual(keyMaterial.signCount, 0, "cancellation after evidence must be checked before DSK signing")
+        XCTAssertTrue(api.submitCalls.isEmpty, "cancelled evidence construction must never send a payload")
+    }
+
     func testCancelledWaitingOperationDoesNotRunAndReleasesGate() async throws {
         let gate = FirstDeviceSingleFlightGate()
         await gate.lock()
@@ -535,6 +685,100 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertFalse(store.save(submitting))
         XCTAssertEqual(store.current(), previous)
         XCTAssertEqual(keychain.atomicReplaceCalls, 1)
+    }
+
+    func testDistinctKeychainRootStoresSerializeCompareAndWriteForSameItem() throws {
+        let original = approvedRecord()
+        let keychain = BlockingRootKeychainStore(storedData: try JSONEncoder().encode(original))
+        let firstStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.concurrent")
+        let secondStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.concurrent")
+        defer { keychain.releaseFirstWrite.signal() }
+        var firstReplacement = original
+        firstReplacement.state = .unknown
+        firstReplacement.ceremonyId = "first-writer"
+        var secondReplacement = original
+        secondReplacement.state = .rejected
+        secondReplacement.ceremonyId = "second-writer"
+
+        let firstDone = DispatchSemaphore(value: 0)
+        let secondStarted = DispatchSemaphore(value: 0)
+        let secondDone = DispatchSemaphore(value: 0)
+        let results = RootWriteResultBox()
+        DispatchQueue.global().async {
+            results.set(firstStore.writeIfCurrent(expected: original, record: firstReplacement), for: "first")
+            firstDone.signal()
+        }
+        XCTAssertEqual(keychain.firstWriteEntered.wait(timeout: .now() + 2), .success)
+        DispatchQueue.global().async {
+            secondStarted.signal()
+            results.set(secondStore.writeIfCurrent(expected: original, record: secondReplacement), for: "second")
+            secondDone.signal()
+        }
+        XCTAssertEqual(secondStarted.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(keychain.secondReadEntered.wait(timeout: .now() + 0.25), .timedOut,
+            "the second instance must not read the item while the first compare-and-write is between read and durable write")
+
+        keychain.releaseFirstWrite.signal()
+        XCTAssertEqual(firstDone.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(secondDone.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(results.value(for: "first"), true)
+        XCTAssertEqual(results.value(for: "second"), false,
+            "the stale expected record must lose after the first write commits")
+        XCTAssertEqual(firstStore.current(), firstReplacement)
+    }
+
+    func testDistinctKeychainRootStoresShareSeedCaptureItemAndPreserveExistingCeremony() throws {
+        let original = approvedRecord(withSubmission: FirstDeviceSubmissionPayload(
+            proofBytes: "proof-bytes", proofSignature: "proof-signature",
+            epoch1Bytes: "epoch-bytes", epoch1Signature: "epoch-signature",
+            attestationEvidence: "evidence"
+        ))
+        let keychain = BlockingRootKeychainStore(storedData: try JSONEncoder().encode(original))
+        let firstStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.capture")
+        let secondStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.capture")
+
+        XCTAssertTrue(firstStore.captureSeed(FirstDeviceRootRecord(seed: original.seed), replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertTrue(secondStore.captureSeed(FirstDeviceRootRecord(seed: original.seed), replacingTerminalStates: [.expired, .rejected]))
+        XCTAssertEqual(firstStore.current(), original,
+            "same-attempt capture through another store instance must preserve the full durable ceremony")
+    }
+
+    func testDistinctKeychainRootStoresSerializeCompetingTerminalSeedCaptures() throws {
+        var expired = approvedRecord()
+        expired.state = .expired
+        expired.submission = nil
+        let keychain = BlockingRootKeychainStore(storedData: try JSONEncoder().encode(expired))
+        let firstStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.capture-race")
+        let secondStore = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.capture-race")
+        defer { keychain.releaseFirstWrite.signal() }
+        let firstCandidate = FirstDeviceRootRecord(seed: makeSeed().replacingAttemptId("capture-first"))
+        let secondCandidate = FirstDeviceRootRecord(seed: makeSeed().replacingAttemptId("capture-second"))
+        let firstDone = DispatchSemaphore(value: 0)
+        let secondStarted = DispatchSemaphore(value: 0)
+        let secondDone = DispatchSemaphore(value: 0)
+        let results = RootWriteResultBox()
+
+        DispatchQueue.global().async {
+            results.set(firstStore.captureSeed(firstCandidate, replacingTerminalStates: [.expired, .rejected]), for: "first")
+            firstDone.signal()
+        }
+        XCTAssertEqual(keychain.firstWriteEntered.wait(timeout: .now() + 2), .success)
+        DispatchQueue.global().async {
+            secondStarted.signal()
+            results.set(secondStore.captureSeed(secondCandidate, replacingTerminalStates: [.expired, .rejected]), for: "second")
+            secondDone.signal()
+        }
+        XCTAssertEqual(secondStarted.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(keychain.secondReadEntered.wait(timeout: .now() + 0.25), .timedOut,
+            "a competing capture must not inspect the terminal record while another instance is replacing it")
+
+        keychain.releaseFirstWrite.signal()
+        XCTAssertEqual(firstDone.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(secondDone.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(results.value(for: "first"), true)
+        XCTAssertEqual(results.value(for: "second"), true,
+            "the competing capture succeeds only after confirming the first new ceremony was retained")
+        XCTAssertEqual(firstStore.current(), firstCandidate)
     }
 
     func testRootCleanupRequiresReadableAndConfirmedRetainedRecord() throws {

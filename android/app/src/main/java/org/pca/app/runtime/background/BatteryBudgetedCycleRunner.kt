@@ -18,12 +18,8 @@ object BatteryBudgetedCycleRunner {
     /**
      * Runs [nonCriticalWork] only when [shouldRunNonCritical] returns true, then runs
      * [criticalWork]. This runner adds no exception-suppression of its own -- an uncaught throw
-     * from [nonCriticalWork] propagates and skips [criticalWork], so callers whose critical work
-     * must run even if their non-critical work fails MUST internally `runCatching` their own
-     * non-critical steps, exactly as
-     * [org.pca.app.runtime.graph.PcaAppGraph.runUsageLocationIngestionCycle] already does for
-     * every step it passes in here (see that function's own doc comment for its existing
-     * per-step `runCatching` discipline, unchanged by this runner).
+     * from [nonCriticalWork] propagates and skips [criticalWork]. The production usage cycle
+     * isolates ordinary failures per step, while cancellation and fatal JVM errors still propagate.
      */
     suspend fun run(
         shouldRunNonCritical: () -> Boolean,

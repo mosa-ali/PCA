@@ -319,14 +319,14 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
       // working rather than accumulating dead state.
       await this.clearAttributionRetry(row.quote_id);
       return outcome.outcome === 'PUBLISHED' ? 1 : 0;
-    } catch (error) {
+    } catch {
       // A transient failure here (e.g. a dropped connection) must not crash
       // the whole maintenance pass -- log (no message content) and let the
       // NEXT runOnce() pick this row back up via the same missing-notification
       // scan (it never gains a notification until publish genuinely succeeds).
       this.logger.warn('commercial_maintenance.quote_expired_publish_failed', {
         quoteId: row.quote_id,
-        error: error instanceof Error ? error.message : String(error),
+        failure: 'notification_publish_failed',
       });
       return 0;
     }
@@ -392,13 +392,13 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
         this.now(),
       );
       return outcome.outcome === 'PUBLISHED' ? 1 : 0;
-    } catch (error) {
+    } catch {
       // Same never-crash-the-batch discipline as publishOne above: log (no
       // message content) and let the next runOnce()'s scan pick this row
       // back up -- it never gains a notification until publish genuinely succeeds.
       this.logger.warn('commercial_maintenance.renewal_upcoming_publish_failed', {
         subscriptionId: row.subscription_id,
-        error: error instanceof Error ? error.message : String(error),
+        failure: 'notification_publish_failed',
       });
       return 0;
     }

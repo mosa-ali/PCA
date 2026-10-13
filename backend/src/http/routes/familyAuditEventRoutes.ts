@@ -16,13 +16,20 @@
  * docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { Buffer } from 'node:buffer';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
-import type { FamilyAuditEventEnvelope, FamilyAuditEventLedger } from '../../familyrbac/FamilyAuditEventLedger.js';
+import {
+  decodeFamilyAuditEventCursor,
+  encodeFamilyAuditEventCursor,
+  type FamilyAuditEventEnvelope,
+  type FamilyAuditEventLedger,
+} from '../../familyrbac/FamilyAuditEventLedger.js';
 import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { isActorResolutionFailure, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { FamilyRole } from '../../familyrbac/types.js';
+import { MAX_SERVER_CIPHERTEXT_FEED_ROWS } from '../../retention/serverCiphertextTtl.js';
 
 const PARENT_DEVICE_ROLES: ReadonlySet<FamilyRole> = new Set(['OWNER', 'ADMINISTRATOR', 'VIEWER']);
 
@@ -60,6 +67,40 @@ function toEnvelopeDto(envelope: { envelopeId: string; keyEpoch: number; generat
     encryptedPayloadB64: envelope.encryptedPayloadB64,
     nonceB64: envelope.nonceB64,
   };
+}
+
+function compareEnvelopePosition(
+  left: Pick<FamilyAuditEventEnvelope, 'generatedAtUtc' | 'envelopeId'>,
+  right: Pick<FamilyAuditEventEnvelope, 'generatedAtUtc' | 'envelopeId'>,
+): number {
+  const byTime = left.generatedAtUtc.getTime() - right.generatedAtUtc.getTime();
+  return byTime !== 0 ? byTime : Buffer.compare(Buffer.from(left.envelopeId, 'utf8'), Buffer.from(right.envelopeId, 'utf8'));
+}
+
+function isScopedOrderedPage(
+  envelopes: unknown,
+  familyId: string,
+  parentDeviceId: string,
+  keyEpoch: number,
+  cursor: { generatedAtUtc: Date; envelopeId: string } | undefined,
+): envelopes is FamilyAuditEventEnvelope[] {
+  if (!Array.isArray(envelopes) || envelopes.length > MAX_SERVER_CIPHERTEXT_FEED_ROWS) return false;
+  let previous = cursor;
+  for (const value of envelopes) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const envelope = value as FamilyAuditEventEnvelope;
+    if (envelope.familyId !== familyId || envelope.parentDeviceId !== parentDeviceId || envelope.keyEpoch !== keyEpoch ||
+        typeof envelope.envelopeId !== 'string' || envelope.envelopeId.length < 1 ||
+        Array.from(envelope.envelopeId).length > 200 || /[\uD800-\uDFFF]/u.test(envelope.envelopeId) ||
+        !(envelope.generatedAtUtc instanceof Date) || !Number.isFinite(envelope.generatedAtUtc.getTime()) ||
+        typeof envelope.encryptedPayloadB64 !== 'string' || envelope.encryptedPayloadB64.length < 1 ||
+        typeof envelope.nonceB64 !== 'string' || envelope.nonceB64.length < 1) {
+      return false;
+    }
+    if (previous && compareEnvelopePosition(envelope, previous) <= 0) return false;
+    previous = envelope;
+  }
+  return true;
 }
 
 export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: FamilyAuditEventRoutesDeps): void {
@@ -122,9 +163,16 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
       return reply.code(503).send({ error: 'family_authority_unavailable' });
     }
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' || Array.isArray(actor) ||
-      actor.deviceId !== actorDeviceId || !PARENT_DEVICE_ROLES.has(actor.role) ||
+      actor.familyId !== familyId || actor.deviceId !== actorDeviceId || actor.dskKeyId !== actorDskKeyId || !PARENT_DEVICE_ROLES.has(actor.role) ||
       !isFamilyEpochNumber(actor.trustSetEpoch, 1) || !isFamilyEpochNumber(actor.keyEpoch, 1)) {
       return reply.code(403).send({ error: 'forbidden' });
+    }
+
+    const query = request.query as { cursor?: unknown };
+    let cursor;
+    if (query.cursor !== undefined) {
+      cursor = decodeFamilyAuditEventCursor(query.cursor);
+      if (!cursor) return reply.code(400).send({ error: 'invalid_cursor' });
     }
 
     // Each encrypted envelope is recipient-keyed. A family role grants the
@@ -136,7 +184,9 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     // during the ledger lookup must not receive a successful stale-scope read.
     let envelopes: FamilyAuditEventEnvelope[];
     try {
-      envelopes = await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
+      envelopes = cursor
+        ? await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch, { cursor })
+        : await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
     } catch {
       return reply.code(503).send({ error: 'family_audit_unavailable' });
     }
@@ -156,7 +206,7 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
       return reply.code(503).send({ error: 'family_authority_unavailable' });
     }
     if (isActorResolutionFailure(currentActor) || !currentActor || typeof currentActor !== 'object' ||
-        Array.isArray(currentActor) || currentActor.deviceId !== actorDeviceId ||
+        Array.isArray(currentActor) || currentActor.familyId !== familyId || currentActor.deviceId !== actorDeviceId || currentActor.dskKeyId !== actorDskKeyId ||
         !PARENT_DEVICE_ROLES.has(currentActor.role) ||
         !isFamilyEpochNumber(currentActor.trustSetEpoch, 1) || !isFamilyEpochNumber(currentActor.keyEpoch, 1)) {
       return reply.code(403).send({ error: 'forbidden' });
@@ -167,8 +217,25 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     if (currentActor.keyEpoch !== actor.keyEpoch) {
       return reply.code(409).send({ error: 'key_epoch_mismatch' });
     }
+    // Treat the ledger adapter as a persistence boundary, not as a second
+    // authorization decision. Verify its entire page still matches the live
+    // recipient and accepted epoch, and that keyset ordering is strict before
+    // any opaque payload or continuation cursor is serialized.
+    if (!isScopedOrderedPage(envelopes, familyId, actorDeviceId, actor.keyEpoch, cursor)) {
+      return reply.code(503).send({ error: 'family_audit_unavailable' });
+    }
     try {
-      return reply.code(200).send({ envelopes: envelopes.map(toEnvelopeDto) });
+      // A full page always carries a continuation cursor. The follow-up may
+      // be empty when the feed contains exactly one page; only a short page
+      // establishes that no continuation request remains.
+      const nextCursor = envelopes.length === MAX_SERVER_CIPHERTEXT_FEED_ROWS
+        ? encodeFamilyAuditEventCursor(envelopes[envelopes.length - 1]!)
+        : null;
+      return reply.code(200).send({
+        envelopes: envelopes.map(toEnvelopeDto),
+        complete: nextCursor === null,
+        nextCursor,
+      });
     } catch {
       return reply.code(503).send({ error: 'family_audit_unavailable' });
     }

@@ -325,8 +325,11 @@ class PersistentWebRuleRepository(
         }
         val envelope = JSONObject().apply {
             put("rules", array)
-            put("parentRulesRevision", parentRulesRevision)
-            put("securityFeedVersion", securityFeedVersion)
+            put("parentRulesRevision", parentRulesRevision ?: JSONObject.NULL)
+            put("securityFeedVersion", securityFeedVersion ?: JSONObject.NULL)
+            // Distinguish "no package has ever been accepted" from an accepted empty feed whose
+            // high-water value was later lost or corrupted.
+            put("securityFeedAccepted", securityFeedVersion != null)
         }
         return envelope.toString()
     }
@@ -386,6 +389,9 @@ class PersistentWebRuleRepository(
         }
         try {
             val envelope = JSONObject(raw)
+            val rootFields = envelope.keys().asSequence().toSet()
+            require("rules" in rootFields && rootFields.all { it in ENVELOPE_FIELDS })
+            if ("securityFeedAccepted" in rootFields) require(rootFields == ENVELOPE_FIELDS)
             val array = envelope.getJSONArray("rules")
             val loaded = (0 until array.length()).map { i ->
                 val obj = array.getJSONObject(i)
@@ -412,11 +418,21 @@ class PersistentWebRuleRepository(
                     ?: error("Invalid security feed version")
                 else -> error("Invalid security feed version type")
             }
+            val securityFeedAccepted = if ("securityFeedAccepted" in rootFields) {
+                envelope.get("securityFeedAccepted") as? Boolean ?: error("Invalid security feed acceptance marker")
+            } else {
+                // Older snapshots predate the explicit marker. A version proves acceptance,
+                // including for an intentionally empty package; legacy populated feed rows
+                // without a version are ambiguous and therefore corrupt.
+                securityFeedVersion != null || loaded.any { it.source == WebRuleSource.SECURITY_DENYLIST }
+            }
+            require(securityFeedAccepted == (securityFeedVersion != null))
+            require(securityFeedAccepted || loaded.none { it.source == WebRuleSource.SECURITY_DENYLIST })
             delegate.replaceAll(loaded)
             parentRulesRevisionValue = parentRulesRevision
             securityFeedVersionValue = securityFeedVersion
             stateValue = WebRulePolicyState.VALID
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
             // Keep this repository's last-known-good memory and revision fields intact. On first
             // load that memory is empty, which remains explicitly distinguishable from VALID.
             // A later mutation refuses to replace a corrupt persisted envelope.
@@ -505,6 +521,8 @@ class PersistentWebRuleRepository(
         const val KEY = "webprotection_rules_v1"
         const val WRITE_MARKER_VERSION = "web-rules-write-v2"
         val WRITE_MARKER_FIELDS = setOf("version", "previousPresent", "previousSha256", "candidateSha256")
+        val LEGACY_ENVELOPE_FIELDS = setOf("rules", "parentRulesRevision", "securityFeedVersion")
+        val ENVELOPE_FIELDS = LEGACY_ENVELOPE_FIELDS + "securityFeedAccepted"
         const val HEX = "0123456789abcdef"
         val uncertainStores: MutableSet<Any> = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
     }

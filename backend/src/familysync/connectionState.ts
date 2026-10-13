@@ -24,8 +24,18 @@ export function computeSyncConnectionState(input: ComputeConnectionStateInput): 
   if (input.isSyncing) return 'SYNCING';
 
   const staleThresholdMs = input.staleThresholdMs ?? DEFAULT_STALE_THRESHOLD_MS;
+  const pendingOrStale = input.hasPendingLocalWork ? 'SYNC_PENDING' : 'STALE';
+  if (!(input.nowUtc instanceof Date) || !Number.isFinite(input.nowUtc.getTime()) ||
+      !Number.isFinite(staleThresholdMs) || staleThresholdMs < 0) {
+    return pendingOrStale;
+  }
   if (input.lastSuccessfulSyncAtUtc === null) {
-    return input.hasPendingLocalWork ? 'SYNC_PENDING' : 'STALE';
+    return pendingOrStale;
+  }
+  if (!(input.lastSuccessfulSyncAtUtc instanceof Date) || !Number.isFinite(input.lastSuccessfulSyncAtUtc.getTime())) {
+    // Invalid timestamps cannot prove a recent completed sync. Preserve the
+    // existing pending-work signal, but never treat NaN age as fresh.
+    return pendingOrStale;
   }
   const ageMs = input.nowUtc.getTime() - input.lastSuccessfulSyncAtUtc.getTime();
   if (ageMs < 0 || ageMs > staleThresholdMs) return 'STALE';

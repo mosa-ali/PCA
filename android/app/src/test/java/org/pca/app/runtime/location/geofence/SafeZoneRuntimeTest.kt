@@ -28,7 +28,7 @@ class SafeZoneRuntimeTest {
         revision = 1L,
         zoneId = zone.zoneId,
         ciphertext = byteArrayOf(1, 2, 3),
-        nonce = byteArrayOf(4, 5, 6),
+        nonce = ByteArray(12) { (it + 4).toByte() },
         signature = "signature",
         issuedAtEpochMillis = 1_000L,
         expiresAtEpochMillis = 10_000L,

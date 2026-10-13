@@ -81,6 +81,7 @@ class OrdinaryTrustSetRuntimeTest {
         assertFalse(runtime().prepareAndSubmit(epoch(2)))
         val pending = store.read()!!.pending
         assertNotNull(pending)
+        assertTrue("unresolved exact request remains visible to the graph retry decision", runtime().hasPendingRequest())
         assertEquals(1, signs)
         assertEquals(1, api.submitCalls)
 
@@ -98,6 +99,7 @@ class OrdinaryTrustSetRuntimeTest {
         assertEquals(1, signs)
         assertEquals(newerHead, store.read()!!.accepted)
         assertNull(store.read()!!.pending)
+        assertFalse(runtime().hasPendingRequest())
         assertEquals(FirstDeviceRootState.ROOT_COMMITTED, roots.current()!!.state)
     }
 

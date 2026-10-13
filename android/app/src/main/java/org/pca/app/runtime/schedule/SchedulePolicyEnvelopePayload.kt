@@ -4,6 +4,9 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.pca.app.runtime.EpochBounds
+import org.pca.app.runtime.sync.envelope.FamilyEnvelope
+import org.pca.app.runtime.sync.envelope.RecipientBinding
+import org.pca.app.runtime.sync.inbox.RuntimeInboxScope
 import org.pca.app.runtime.trustset.StrictJsonMemberNames
 import java.time.Instant
 
@@ -23,6 +26,7 @@ object SchedulePolicyEnvelopePayload {
     const val KIND = "SCHEDULE_POLICY_V1"
 
     fun encode(policy: SchedulePolicyV1): String {
+        require(policy.version == "1") { "Unsupported schedule policy version" }
         EpochBounds.requireValid(policy.trustSetEpoch, "trustSetEpoch")
         EpochBounds.requireValid(policy.keyEpoch, "keyEpoch")
         val root = JSONObject()
@@ -52,20 +56,30 @@ object SchedulePolicyEnvelopePayload {
     }
 
     /**
-     * Decode only after the caller has verified and decrypted the signed family envelope.
-     * The payload's epochs must exactly match that envelope's authenticated metadata; this
-     * helper performs no sender, signature, membership, or freshness authorization itself.
+     * Decode only after the caller has verified and decrypted this exact signed family envelope.
+     * Bind plaintext family/profile and epoch identity to the authenticated envelope and the
+     * current device-local receive scope. This helper performs no sender signature, membership,
+     * replay, semantic-version, or freshness authorization itself.
      */
     fun decodeForEnvelope(
         plaintext: String,
-        envelopeTrustSetEpoch: Long,
-        envelopeKeyEpoch: Long,
+        envelope: FamilyEnvelope,
+        expectedInboxScope: RuntimeInboxScope,
+        expectedChildProfileId: String,
     ): SchedulePolicyV1 {
-        EpochBounds.requireValid(envelopeTrustSetEpoch, "trustSetEpoch")
-        EpochBounds.requireValid(envelopeKeyEpoch, "keyEpoch")
+        require(expectedChildProfileId.isNotBlank()) { "schedule_policy_expected_profile_missing" }
+        require(envelope.messageType == "POLICY_UPDATE") { "schedule_policy_envelope_type_mismatch" }
+        require(envelope.familyId == expectedInboxScope.familyId) { "schedule_policy_envelope_family_scope_mismatch" }
+        require(envelope.recipient == RecipientBinding.Device(expectedInboxScope.recipientDeviceId)) {
+            "schedule_policy_envelope_recipient_mismatch"
+        }
+        EpochBounds.requireValid(envelope.trustSetEpoch, "trustSetEpoch")
+        EpochBounds.requireValid(envelope.keyEpoch, "keyEpoch")
         val policy = decode(plaintext)
-        require(policy.trustSetEpoch.toLong() == envelopeTrustSetEpoch &&
-            policy.keyEpoch.toLong() == envelopeKeyEpoch) {
+        require(policy.familyId == envelope.familyId) { "schedule_policy_envelope_family_mismatch" }
+        require(policy.childProfileId == expectedChildProfileId) { "schedule_policy_profile_scope_mismatch" }
+        require(policy.trustSetEpoch.toLong() == envelope.trustSetEpoch &&
+            policy.keyEpoch.toLong() == envelope.keyEpoch) {
             "schedule_policy_envelope_epoch_mismatch"
         }
         return policy
@@ -98,6 +112,7 @@ object SchedulePolicyEnvelopePayload {
                 "issuedAt", "effectiveFrom"),
             optional = setOf("expiresAt", "continuousUseLimitMinutes", "breakDurationMinutes"),
         )
+        if (json.getString("version") != "1") throw JSONException("Unsupported schedule policy version")
         return SchedulePolicyV1(
             version = json.getString("version"),
             policyId = json.getString("policyId"),

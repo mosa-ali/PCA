@@ -73,7 +73,7 @@ final class SafeZoneDeliveryTests: XCTestCase {
 
     private let scope = PCADeviceSafeZoneDeliveryScope(familyId: "family-a", deviceId: "device-a")
     private let otherScope = PCADeviceSafeZoneDeliveryScope(familyId: "family-b", deviceId: "device-a")
-    private lazy var session = PCADeviceSession(deviceId: "device-a", sessionToken: "device-bearer", expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
+    private lazy var session = PCADeviceSession(deviceId: "device-a", sessionToken: String(repeating: "a", count: 43), expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
 
     private func inbox(_ keychain: KeychainStoreProtocol, scope: PCADeviceSafeZoneDeliveryScope? = nil) -> PCAKeychainSafeZoneDeliveryInbox {
         PCAKeychainSafeZoneDeliveryInbox(keychain: keychain, serviceNamespace: "test.pca") { scope ?? self.scope }
@@ -112,7 +112,7 @@ final class SafeZoneDeliveryTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url?.path, "/v1/runtime-sync/safe-zones")
             XCTAssertNil(request.url?.query)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer device-bearer")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(String(repeating: "a", count: 43))")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
             return PCAHTTPResponse(statusCode: 200, data: response)
         }
@@ -127,6 +127,26 @@ final class SafeZoneDeliveryTests: XCTestCase {
         XCTAssertTrue(String(decoding: manifest, as: UTF8.self).contains("zone-001"))
         XCTAssertEqual(keychain.storedAccessibility(forAccount: "safe-zone-delivery.v1.\(scope.storageKey).zone.zone-001", service: "test.pca.safe-zone-delivery.v1"), .whenUnlockedThisDeviceOnly)
         XCTAssertFalse(String(decoding: manifest, as: UTF8.self).contains("family-a"))
+    }
+
+    func testNonCanonicalSessionTokensAreRejectedBeforeSafeZoneRequest() async throws {
+        for token in ["short-token", String(repeating: "a", count: 42) + "!"] {
+            let http = InMemoryPCAHTTPTransport { _ in PCAHTTPResponse(statusCode: 200, data: Data()) }
+            let invalidSession = PCADeviceSession(deviceId: scope.deviceId, sessionToken: token,
+                expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
+            let deliveryClient = try PCADeviceSafeZoneDeliveryClient(
+                baseURL: URL(string: "https://api.example.test")!, currentSession: { invalidSession }, transport: http)
+            let keychain = InMemoryKeychainStore()
+            do {
+                _ = try await deliveryClient.synchronize(scope: scope, inbox: inbox(keychain))
+                XCTFail("non-canonical backend session token must be rejected")
+            } catch let error as PCAAPIError {
+                XCTAssertEqual(error, .unauthorized)
+            }
+            XCTAssertTrue(http.requests.isEmpty)
+            XCTAssertTrue(try inbox(keychain).read(scope: scope).isEmpty)
+            XCTAssertNil(try inbox(keychain).nextCursor(scope: scope))
+        }
     }
 
     func testPaginationPersistsCursorBeforeFollowingAndResumesAfterRelaunch() async throws {
@@ -244,6 +264,44 @@ final class SafeZoneDeliveryTests: XCTestCase {
         }
         XCTAssertEqual(try store.nextCursor(scope: scope), oldCursor)
         XCTAssertEqual(try store.read(scope: scope), currentRows)
+    }
+
+    func testHigherRowRevisionCannotRollBackStagedKeyEpoch() throws {
+        let store = inbox(InMemoryKeychainStore())
+        let currentRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 4, keyEpoch: 3)
+        }
+        let currentCursor = currentRows.last!.zoneId // legacy cursor does not encode key epoch
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: currentRows, nextCursor: currentCursor),
+            for: scope, requestedCursor: nil)
+
+        let rolledBackRows = [row("zone-001", revision: 5, keyEpoch: 2)]
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: rolledBackRows, nextCursor: nil),
+            for: scope, requestedCursor: currentCursor)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleRevision)
+        }
+        XCTAssertEqual(try store.nextCursor(scope: scope), currentCursor)
+        XCTAssertEqual(try store.read(scope: scope), currentRows,
+            "a newer revision cannot replace an envelope with a lower key epoch")
+    }
+
+    func testNewZoneCannotBeAddedFromKeyEpochBelowStagedFamilyFloor() throws {
+        let store = inbox(InMemoryKeychainStore())
+        let currentRows = (1...PCAKeychainSafeZoneDeliveryInbox.pageSize).map { index in
+            row(String(format: "zone-%03d", index), revision: 4, keyEpoch: 3)
+        }
+        try store.stage(PCAOpaqueSafeZoneDeliveryPage(safeZones: currentRows, nextCursor: nil),
+            for: scope, requestedCursor: nil)
+
+        XCTAssertThrowsError(try store.stage(PCAOpaqueSafeZoneDeliveryPage(
+            safeZones: [row("zone-999", revision: 1, keyEpoch: 2)], nextCursor: nil),
+            for: scope, requestedCursor: nil)) {
+            XCTAssertEqual($0 as? PCADeviceSafeZoneDeliveryError, .staleRevision,
+                "a new zone ID cannot bypass the durable family key-epoch floor")
+        }
+        XCTAssertEqual(try store.read(scope: scope), currentRows)
+        XCTAssertNil(try store.nextCursor(scope: scope))
     }
 
     func testSameEpochPageCannotMoveRequestedCursorBackward() throws {

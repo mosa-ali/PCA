@@ -25,6 +25,12 @@ test('compareSemanticVersions compares numerically, not lexicographically', () =
   assert.equal(compareSemanticVersions('1.2.3', '1.2.3'), 0);
 });
 
+test('compareSemanticVersions preserves exact ordering beyond JavaScript safe integers', () => {
+  assert.ok(compareSemanticVersions('9007199254740993.0.0', '9007199254740992.0.0') > 0);
+  assert.ok(compareSemanticVersions('1.9007199254740993.0', '1.9007199254740992.0') > 0);
+  assert.ok(compareSemanticVersions('1.0.9007199254740993', '1.0.9007199254740992') > 0);
+});
+
 test('requiresStrictVersionIncrease is true only for POLICY_UPDATE', () => {
   assert.equal(requiresStrictVersionIncrease('POLICY_UPDATE'), true);
   const others = [

@@ -309,6 +309,39 @@ test('MySQL PRIVACY: warning-log detail objects never carry notification message
   void orphan;
 });
 
+test('MySQL PRIVACY: publish failures log only a fixed category, never provider/DB error text', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const familyId = `family_${randomUUID()}`;
+  const requestId = await createChangeRequestForFamily(changeRequestRepository, familyId);
+  const now = new Date();
+  const { quoteId } = await insertQuoteAt(quoteRepository, {
+    increaseRequestRef: requestId,
+    expiresAt: new Date(now.getTime() - 1),
+    adminId,
+  });
+  const sensitiveFailure = 'SMTP recipient parent@example.test token=secret-sql-account-ref';
+  const warnings = [];
+  const runner = buildRunner({
+    quoteService: { quoteRepository },
+    changeRequestRepository,
+    notificationPublisher: { publish: async () => { throw new Error(sensitiveFailure); } },
+    now: () => now,
+    logger: { warn: (event, detail) => warnings.push({ event, detail }) },
+  });
+
+  const result = await runner.runOnce();
+  const warning = warnings.find((item) => item.event === 'commercial_maintenance.quote_expired_publish_failed');
+  assert.ok(warning, 'the failed publish must remain observable through the operational warning channel');
+  assert.equal(warning.detail.quoteId, quoteId);
+  assert.equal(warning.detail.failure, 'notification_publish_failed');
+  assert.equal(Object.hasOwn(warning.detail, 'error'), false);
+  assert.equal(JSON.stringify(warning).includes(sensitiveFailure), false);
+  assert.equal(result.notificationsPublished, 0);
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0, 'a failed publish must not create a notification row');
+});
+
 test('MySQL: quote-expiry-notification catch-up drains a backlog larger than one batch across multiple passes within a single runOnce()', async () => {
   const adminId = await createAdmin();
   const { quoteRepository } = buildQuoteService();

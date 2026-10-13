@@ -8,10 +8,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
-    // A larger worker pool oversubscribes this suite's React/jsdom and axe-core
-    // workloads on Windows and turns otherwise passing UI assertions into
-    // five-second timeout failures. Keep the same tests, with bounded CPU use.
-    maxWorkers: 4,
+    // Match the CI shards' worker bound. Four concurrent React/jsdom and axe-core
+    // workers timed out a dashboard route assertion locally; the same full suite
+    // passed with two workers and unchanged assertions.
+    maxWorkers: 2,
     // *.crossclient.test.ts files verify browser output against the COMPILED
     // backend (../backend/dist) and so run only where the backend is built:
     // the CI real-backend E2E job sets PCA_CROSS_CLIENT_VERIFY=1. Everywhere

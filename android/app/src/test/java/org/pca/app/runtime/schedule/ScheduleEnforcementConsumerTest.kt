@@ -1,6 +1,7 @@
 package org.pca.app.runtime.schedule
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.platform.DevicePolicyCapabilitySource
@@ -33,6 +34,52 @@ class ScheduleEnforcementConsumerTest {
             consumer.apply("com.example.game", gameToken, ScheduleDecision(ScheduleDecisionKind.ALLOWED, "outside window"), CommunicationSafetySurfaceTokens()),
         )
         assertEquals(listOf("com.example.game" to true, "com.example.game" to false), executor.calls)
+    }
+
+    @Test
+    fun `ordinary platform exception reports failed enforcement`() {
+        val consumer = DevicePolicyScheduleEnforcementConsumer(
+            authoritySource = authority(ManagedDeviceAuthority.DEVICE_OWNER),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw IllegalStateException("platform operation failed")
+            },
+        )
+
+        assertEquals(
+            ScheduleEnforcementOutcome.FAILED,
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens()),
+        )
+    }
+
+    @Test
+    fun `cancellation from platform enforcement propagates`() {
+        val consumer = DevicePolicyScheduleEnforcementConsumer(
+            authoritySource = authority(ManagedDeviceAuthority.DEVICE_OWNER),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw java.util.concurrent.CancellationException("cancelled")
+            },
+        )
+
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens())
+        }
+    }
+
+    @Test
+    fun `fatal platform error propagates rather than becoming a failed outcome`() {
+        val consumer = DevicePolicyScheduleEnforcementConsumer(
+            authoritySource = authority(ManagedDeviceAuthority.DEVICE_OWNER),
+            packageSuspensionExecutor = object : PackageSuspensionExecutor {
+                override fun setSuspended(packageName: String, suspended: Boolean): Boolean =
+                    throw AssertionError("fatal platform failure")
+            },
+        )
+
+        assertThrows(AssertionError::class.java) {
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens())
+        }
     }
 
     @Test
@@ -102,6 +149,10 @@ class ScheduleEnforcementConsumerTest {
             },
             packageSuspensionExecutor = executor,
         )
+
+    private fun authority(authority: ManagedDeviceAuthority) = object : DevicePolicyCapabilitySource {
+        override fun currentAuthority(): ManagedDeviceAuthority = authority
+    }
 
     private fun blocked() = ScheduleDecision(ScheduleDecisionKind.BLOCKED_BEDTIME, "night")
 

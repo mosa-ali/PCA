@@ -33,7 +33,7 @@ function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW)
       if (!session) throw new Error('unauthorized');
       return session;
     },
-    async activeFamilyRole() { return role; },
+    async activeFamilyRole() { return typeof role === 'function' ? role() : role; },
   };
   const deviceSessions = new Map([
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY, dskKeyId: 'dsk-dev-owner' }],
@@ -57,7 +57,7 @@ function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW)
     async resolveActor(familyId, deviceId, dskKeyId) {
       const identity = [...deviceSessions.values()].find((candidate) => candidate.deviceId === deviceId);
       if (!identity || identity.familyId !== familyId || identity.dskKeyId !== dskKeyId) return 'DEVICE_NOT_ACTIVE';
-      return { deviceId, role: resolvedRoles.get(deviceId), trustSetEpoch: 2, keyEpoch };
+      return { familyId, deviceId, dskKeyId, role: resolvedRoles.get(deviceId), trustSetEpoch: 2, keyEpoch };
     },
   };
 
@@ -245,7 +245,7 @@ test('protection-alert read rejects a zero accepted key epoch before ledger acce
   const trustSetRoleResolver = {
     async resolveActor(...args) {
       resolverCalls.push(args);
-      return { deviceId: 'dev-owner', role: 'OWNER', trustSetEpoch: 3, keyEpoch: 0 };
+      return { familyId: args[0], deviceId: 'dev-owner', dskKeyId: args[2], role: 'OWNER', trustSetEpoch: 3, keyEpoch: 0 };
     },
   };
   const { app } = buildApp({ ledger, trustSetRoleResolver });
@@ -274,7 +274,7 @@ test('Parent alert reads accept only Parent-capable Trust Set device roles and r
       trustSetRoleResolver: {
         async resolveActor(familyId, deviceId, dskKeyId) {
           assert.deepEqual([familyId, deviceId, dskKeyId], [FAMILY, 'dev-owner', 'dsk-dev-owner']);
-          return { deviceId, role, trustSetEpoch: 2, keyEpoch: 1 };
+          return { familyId, deviceId, dskKeyId, role, trustSetEpoch: 2, keyEpoch: 1 };
         },
       },
     });
@@ -296,7 +296,7 @@ test('Parent alert reads accept only Parent-capable Trust Set device roles and r
     trustSetRoleResolver: {
       async resolveActor(familyId, deviceId, dskKeyId) {
         assert.deepEqual([familyId, deviceId, dskKeyId], [FAMILY, 'dev-owner', 'dsk-dev-owner']);
-        return { deviceId, role: 'CHILD', trustSetEpoch: 2, keyEpoch: 1 };
+        return { familyId, deviceId, dskKeyId, role: 'CHILD', trustSetEpoch: 2, keyEpoch: 1 };
       },
     },
   });
@@ -310,9 +310,158 @@ test('Parent alert reads accept only Parent-capable Trust Set device roles and r
   }
 });
 
+test('protection-alert read rejects a Trust Set epoch change during the ledger read without returning ciphertext', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  await ledger.record({ alertId: 'alert-stale-trust-epoch', familyId: FAMILY, deviceId: null,
+    parentDeviceId: 'dev-owner', trigger: 'PROTECTION_DEGRADED', keyEpoch: 4,
+    generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'stale-trust-secret', nonceB64: 'bm9uY2U' });
+  let currentActor = { familyId: FAMILY, deviceId: 'dev-owner', dskKeyId: 'dsk-dev-owner', role: 'OWNER', trustSetEpoch: 2, keyEpoch: 4 };
+  let signalLedgerRead;
+  let releaseLedgerRead;
+  const ledgerReadStarted = new Promise((resolve) => { signalLedgerRead = resolve; });
+  const ledgerReadGate = new Promise((resolve) => { releaseLedgerRead = resolve; });
+  const list = ledger.listForParentDevice.bind(ledger);
+  ledger.listForParentDevice = async (...args) => {
+    signalLedgerRead();
+    await ledgerReadGate;
+    const result = await list(...args);
+    return result;
+  };
+  const { app } = buildApp({ ledger, trustSetRoleResolver: {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      assert.deepEqual([familyId, deviceId, dskKeyId], [FAMILY, 'dev-owner', 'dsk-dev-owner']);
+      return currentActor;
+    },
+  } });
+  try {
+    const pendingResponse = app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+    await ledgerReadStarted;
+    currentActor = { ...currentActor, trustSetEpoch: 3 };
+    releaseLedgerRead();
+    const response = await pendingResponse;
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'authority_changed' });
+    assert.equal(response.body.includes('stale-trust-secret'), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('protection-alert read rejects a key epoch change during the ledger read without returning ciphertext', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  await ledger.record({ alertId: 'alert-stale-key-epoch', familyId: FAMILY, deviceId: null,
+    parentDeviceId: 'dev-owner', trigger: 'PROTECTION_DEGRADED', keyEpoch: 4,
+    generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'stale-key-secret', nonceB64: 'bm9uY2U' });
+  let currentActor = { familyId: FAMILY, deviceId: 'dev-owner', dskKeyId: 'dsk-dev-owner', role: 'OWNER', trustSetEpoch: 2, keyEpoch: 4 };
+  const list = ledger.listForParentDevice.bind(ledger);
+  ledger.listForParentDevice = async (...args) => {
+    const result = await list(...args);
+    currentActor = { ...currentActor, keyEpoch: 5 };
+    return result;
+  };
+  const { app } = buildApp({ ledger, trustSetRoleResolver: {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      assert.deepEqual([familyId, deviceId, dskKeyId], [FAMILY, 'dev-owner', 'dsk-dev-owner']);
+      return currentActor;
+    },
+  } });
+  try {
+    const response = await app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), { error: 'key_epoch_mismatch' });
+    assert.equal(response.body.includes('stale-key-secret'), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('protection-alert read rejects a family or DSK projection change during the ledger read', async (t) => {
+  for (const [label, change] of [
+    ['family', (actor) => ({ ...actor, familyId: `${actor.familyId}-other` })],
+    ['DSK', (actor) => ({ ...actor, dskKeyId: 'dsk-owner-rotated' })],
+  ]) {
+    await t.test(label, async () => {
+      const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+      await ledger.record({ alertId: `alert-${label}-projection-race`, familyId: FAMILY, deviceId: null,
+        parentDeviceId: 'dev-owner', trigger: 'PROTECTION_DEGRADED', keyEpoch: 4,
+        generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'stale-projection-secret', nonceB64: 'bm9uY2U' });
+      let resolverCalls = 0;
+      const { app } = buildApp({ ledger, trustSetRoleResolver: {
+        async resolveActor(familyId, deviceId, dskKeyId) {
+          resolverCalls += 1;
+          const actor = { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 4 };
+          return resolverCalls === 1 ? actor : change(actor);
+        },
+      } });
+      try {
+        const response = await app.inject({ method: 'GET',
+          url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+        assert.equal(response.statusCode, 403);
+        assert.deepEqual(response.json(), { error: 'forbidden' });
+        assert.equal(response.body.includes('stale-projection-secret'), false);
+        assert.equal(resolverCalls, 2);
+      } finally {
+        await app.close();
+      }
+    });
+  }
+});
+
+test('protection-alert read rejects Parent membership or exact-DSK loss during the ledger read without returning ciphertext', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  await ledger.record({ alertId: 'alert-revoked-mid-read', familyId: FAMILY, deviceId: null,
+    parentDeviceId: 'dev-owner', trigger: 'PROTECTION_DEGRADED', keyEpoch: 4,
+    generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'revoked-member-secret', nonceB64: 'bm9uY2U' });
+
+  let currentParentRole = 'ADMINISTRATOR';
+  const list = ledger.listForParentDevice.bind(ledger);
+  ledger.listForParentDevice = async (...args) => {
+    const result = await list(...args);
+    currentParentRole = 'MEMBER';
+    return result;
+  };
+  const parentRoleRevoked = buildApp({ ledger, role: () => currentParentRole });
+  try {
+    const response = await parentRoleRevoked.app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(response.body.includes('revoked-member-secret'), false);
+  } finally {
+    await parentRoleRevoked.app.close();
+  }
+
+  const dskLedger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  await dskLedger.record({ alertId: 'alert-revoked-mid-read', familyId: FAMILY, deviceId: null,
+    parentDeviceId: 'dev-owner', trigger: 'PROTECTION_DEGRADED', keyEpoch: 4,
+    generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'revoked-member-secret', nonceB64: 'bm9uY2U' });
+  let exactDskStillActive = true;
+  const listAfterDskRevocation = dskLedger.listForParentDevice.bind(dskLedger);
+  dskLedger.listForParentDevice = async (...args) => {
+    const result = await listAfterDskRevocation(...args);
+    exactDskStillActive = false;
+    return result;
+  };
+  const dskRevoked = buildApp({ ledger: dskLedger, trustSetRoleResolver: {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      assert.deepEqual([familyId, deviceId, dskKeyId], [FAMILY, 'dev-owner', 'dsk-dev-owner']);
+      return exactDskStillActive ? { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 4 } : 'DEVICE_NOT_ACTIVE';
+    },
+  } });
+  try {
+    const response = await dskRevoked.app.inject({ method: 'GET', url: `/api/parent/families/${FAMILY}/protection-alerts`, headers: ownerHeaders });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(response.body.includes('revoked-member-secret'), false);
+  } finally {
+    await dskRevoked.app.close();
+  }
+});
+
 test('stale/mismatched DSK authority fails closed before reading the protection-alert ledger', async () => {
   const failures = [
     ['old DSK', async () => 'DEVICE_NOT_ACTIVE'],
+    ['wrong-family projection', async (familyId, deviceId, dskKeyId) => ({ familyId: `${familyId}-other`, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 })],
+    ['wrong-DSK projection', async (familyId, deviceId) => ({ familyId, deviceId, dskKeyId: 'another-device-key', role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 })],
     ['mismatched device projection', async () => ({ deviceId: 'dev-other-parent-device', role: 'OWNER', trustSetEpoch: 2, keyEpoch: 1 })],
     ['malformed projection', async () => ({ deviceId: 'dev-owner', role: 'OWNER', trustSetEpoch: 0, keyEpoch: 1 })],
     ['zero key epoch projection', async () => ({ deviceId: 'dev-owner', role: 'OWNER', trustSetEpoch: 2, keyEpoch: 0 })],

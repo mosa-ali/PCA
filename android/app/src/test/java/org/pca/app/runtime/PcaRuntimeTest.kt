@@ -15,6 +15,7 @@ import org.pca.app.feature.eyedistance.persistence.InMemoryEyeDistanceSnapshotSt
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.persistence.InMemoryScreenTimeSnapshotStore
+import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotRead
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
@@ -59,6 +60,7 @@ class PcaRuntimeTest {
         screenStateObserver: FakeScreenStateObserver = FakeScreenStateObserver(initiallyActive = true),
         wellbeingCoordinator: WellbeingRuntimeCoordinator = buildTestWellbeingCoordinator(),
         tickIntervalMillis: Long = Long.MAX_VALUE / 2,
+        screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
     ): PcaRuntime = PcaRuntime(
         monotonicTimeSource = monotonic,
         wallClockTimeSource = wallClock,
@@ -78,7 +80,7 @@ class PcaRuntimeTest {
         screenStateObserver = screenStateObserver,
         childRequestQueue = childRequestQueue,
         externalScope = scope,
-        screenTimeConfig = ScreenTimeConfig(),
+        screenTimeConfig = screenTimeConfig,
         eyeDistanceConfig = EyeDistanceConfig(),
         tickIntervalMillis = tickIntervalMillis,
     )
@@ -119,6 +121,26 @@ class PcaRuntimeTest {
         assertEquals(ScreenTimeMode.ACTIVE, runtime.screenTimeState.value.mode)
         assertFalse(runtime.status.value.isDeviceOnline)
         assertTrue(runtime.status.value.isLocalProtectionActive)
+    }
+
+    @Test
+    fun `corrupt persisted screen time starts at a full configured break instead of fresh active time`() = runTest {
+        val config = ScreenTimeConfig(activeThreshold = 15.minutes)
+        val corruptStore = object : ScreenTimeSnapshotStore {
+            override fun save(snapshot: org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot) = Unit
+            override fun load(): org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot? = null
+            override fun read(): ScreenTimeSnapshotRead = ScreenTimeSnapshotRead.Corrupt
+        }
+
+        val runtime = buildRuntime(
+            backgroundScope,
+            screenTimeSnapshotStore = corruptStore,
+            screenTimeConfig = config,
+        )
+
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, runtime.screenTimeState.value.mode)
+        assertEquals(config.activeThresholdNanos, runtime.screenTimeState.value.activeElapsedNanos)
+        assertEquals(0L, runtime.screenTimeState.value.breakElapsedNanos)
     }
 
     @Test
