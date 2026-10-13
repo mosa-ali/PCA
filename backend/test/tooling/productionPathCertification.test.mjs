@@ -165,7 +165,7 @@ const REGISTER = new Map([
   ['MySqlAdministrationPinRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'in-memory double only; no DB suite drives the service that writes it.' }],
   ['MySqlRemovalDecisionRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'in-memory double plus a source-text read; no DB suite drives RemovalDecisionAuthority into it.' }],
   ['MySqlParentPreferenceRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'hand-built fake in the route suite.' }],
-  ['MySqlSafeZoneRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'hand-built fake in the route suite.' }],
+  ['MySqlSafeZoneRepository', { status: 'GAP', category: 'VERIFIED_DEVICE_SESSION_GATED', note: 'The production root constructs MySqlSafeZoneRepository and wires it into Parent routes; disposable MySQL suites exercise repository persistence and Safe Zone delivery. The full production mutation path is not certified because its actor requires a verified device session and accepted Trust Set, while production device-signature verification remains fail-closed; current HTTP tests inject session/role fixtures or test the authority-denial path.' }],
   ['MySqlDeviceProtectionStatusRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes; the real service is not driven.' }],
   ['MySqlDeviceChildBindingRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'MySQL cases query the repository directly; they do not drive RemovalTargetResolver through the production removal-decision route and verify the resolved target against MySQL.' }],
   ['MySqlProfileModeRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes in profileProtectionMode.mysql.test.mjs; the real service that owns the transition is not driven.' }],
@@ -701,6 +701,18 @@ test('PCA_PRODUCTION_PATH_CERTIFICATION 8/11: every GAP row carries a category f
     `${problems.join('\n')}\n\nA gap must carry a category from the fixed set (a free-text category cannot be audited\n` +
       'or counted) and a note stating WHY with evidence -- an unexplained gap is indistinguishable from an oversight.',
   );
+});
+
+test('MySqlSafeZoneRepository is gated on production device-session authority, not synthetic-only coverage', () => {
+  const entry = REGISTER.get('MySqlSafeZoneRepository');
+  assert.equal(entry.status, 'GAP');
+  assert.equal(entry.category, 'VERIFIED_DEVICE_SESSION_GATED');
+  assert.match(entry.note, /production root constructs MySqlSafeZoneRepository/);
+  assert.match(entry.note, /verified device session and accepted Trust Set/);
+  assert.match(mainSource, /new MySqlSafeZoneRepository\(/);
+  assert.match(mainSource, /new RejectingDeviceSignatureVerifier\(/);
+  assert.match(readRealFile('test/db/safeZoneRepository.mysql.test.mjs'), /MySQL Safe Zone/);
+  assert.match(readRealFile('test/db/safeZoneDeliveryRoutes.mysql.test.mjs'), /MySQL HTTP Safe Zone delivery/);
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 4: the certified file list in the runner matches this register exactly', () => {
