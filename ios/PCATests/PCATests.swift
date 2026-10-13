@@ -1,6 +1,8 @@
 import XCTest
 import Foundation
-import FamilyControls
+#if canImport(ManagedSettings)
+import ManagedSettings
+#endif
 @testable import PCA
 
 private final class DeviceSessionTestProof: PCADeviceProofProvider {
@@ -68,7 +70,7 @@ final class PCATests: XCTestCase {
     }
 }
 
-#if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
+#if canImport(DeviceActivity) && canImport(ManagedSettings)
 final class PCAProtectionPolicyClearIntentTests: XCTestCase {
     func testExplicitClearConsumesIntentAfterRemovingPersistedPolicy() throws {
         let store = ClearIntentTestBlobStore()
