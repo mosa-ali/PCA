@@ -140,6 +140,40 @@ test('replacing with a stale version is rejected', async () => {
   );
 });
 
+test('a lost successful write response is reconciled by retry conflict and a fresh read', async () => {
+  const durableRepository = createInMemoryRecoveryRepository();
+  let loseNextResponse = false;
+  const repository = {
+    getEnvelope: (familyId) => durableRepository.getEnvelope(familyId),
+    async storeEnvelope(familyId, ciphertext, expectedVersion, now) {
+      const result = await durableRepository.storeEnvelope(familyId, ciphertext, expectedVersion, now);
+      if (loseNextResponse && result.outcome === 'STORED') {
+        loseNextResponse = false;
+        throw new Error('simulated response loss after durable commit');
+      }
+      return result;
+    },
+    deleteEnvelope: (familyId) => durableRepository.deleteEnvelope(familyId),
+  };
+  const service = new RecoveryService(repository, () => new Date(BASE_TIME));
+  const initial = await service.storeEnvelope(FAMILY_A, Buffer.from('before'), 0);
+  const replacement = Buffer.from('replacement-after-lost-response');
+  loseNextResponse = true;
+
+  await assert.rejects(
+    () => service.storeEnvelope(FAMILY_A, replacement, initial.version),
+    /simulated response loss/,
+  );
+
+  await assert.rejects(
+    () => service.storeEnvelope(FAMILY_A, replacement, initial.version),
+    { code: 'VERSION_MISMATCH', currentVersion: initial.version + 1 },
+  );
+  const reconciled = await service.fetchEnvelope(FAMILY_A);
+  assert.equal(reconciled.version, initial.version + 1);
+  assert.deepEqual(reconciled.ciphertext, replacement);
+});
+
 test('createdAt is preserved across replacement while updatedAt advances', async () => {
   const { service, clock } = buildService();
   const first = await service.storeEnvelope(FAMILY_A, Buffer.from('first'), 0);
