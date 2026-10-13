@@ -31,7 +31,10 @@ class VpnDnsRequestHandler(
     private val decisionChannel: VpnDnsDecisionChannel,
     private val resolveUpstream: (name: String, qtype: Int) -> UpstreamDnsResponse?,
 ) {
-    fun handle(query: DnsMessage): ByteArray? {
+    fun handle(query: DnsMessage): ByteArray? = handle(query, decisionChannel.captureLifecycleEpoch())
+
+    /** [lifecycleEpoch] is captured when the packet enters the service, before worker-queue delay. */
+    fun handle(query: DnsMessage, lifecycleEpoch: Long): ByteArray? {
         val question = query.question ?: return null // nothing to classify -- caller drops/ignores rather than guessing at a malformed query
 
         if (question.qtype != DNS_TYPE_A && question.qtype != DNS_TYPE_AAAA) {
@@ -45,9 +48,13 @@ class VpnDnsRequestHandler(
         val domain = canonicalizeDomain(question.name)
             ?: return DnsMessageCodec.buildNxDomainResponse(query) // not a plausible hostname at all -- never resolved
 
+        // A previous query's verdict must not survive a new attempt that fails upstream. The
+        // generation also prevents a slower, older same-domain request from overwriting the
+        // result of a newer request when the VPN worker pool resolves queries concurrently.
+        val decisionAttempt = decisionChannel.clearDecision(domain, lifecycleEpoch) ?: return null
         val decision = domainDecider(domain)
         if (decision == VpnDnsDomainDecision.BLOCK) {
-            decisionChannel.recordDecision(domain, VpnDecisionOutcome.BLOCKED)
+            decisionChannel.recordDecision(domain, VpnDecisionOutcome.BLOCKED, decisionAttempt)
             return DnsMessageCodec.buildNxDomainResponse(query)
         }
 
@@ -61,18 +68,18 @@ class VpnDnsRequestHandler(
                     safeSearchHost,
                     safeSearchUpstream.message.answers,
                 )
-                decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED)
+                decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED, decisionAttempt)
                 return response
             }
-            // Upstream resolution of the SafeSearch-enforcing host itself failed -- fall through to
-            // an ordinary resolution of the original domain below, rather than returning nothing:
-            // a SafeSearch-host lookup failure must never present as an unexplained navigation
-            // failure for an otherwise-allowed, ordinary domain.
+            // The selected override is the enforcement mechanism. Resolving the original host
+            // here would silently bypass the requested mode, so preserve the network failure and
+            // leave the domain decision unavailable rather than returning an unfiltered answer.
+            return null
         }
 
         val upstream = resolveUpstream(question.name, question.qtype) ?: return null
         val response = DnsMessageCodec.rewriteResponseId(upstream.rawBytes, query.id)
-        decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED)
+        decisionChannel.recordDecision(domain, VpnDecisionOutcome.ALLOWED, decisionAttempt)
         return response
     }
 }

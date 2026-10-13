@@ -994,6 +994,94 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertEqual(store.read(forKey: payloadKey), storedPolicy)
     }
 
+    func testAuthorizationRevokedAtFinalShieldMutationBoundaryCannotApplyPolicy() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        var authorized = true
+        var revokedOnce = false
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { authorized },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            deviceTimeZone: {
+                if !revokedOnce {
+                    revokedOnce = true
+                    authorized = false
+                }
+                return TimeZone(identifier: "UTC")!
+            }, shieldEnforcer: shields)
+
+        let policyData = try policy("revoked-at-final-boundary", capability: .unavailable, restrictive: true)
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policyData,
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt)) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .authorizationRequired)
+        }
+
+        let manifestData = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifestData))
+        XCTAssertEqual(installation.state, .active,
+            "the committed generation remains available for exact recovery")
+        XCTAssertEqual(store.read(forKey: "schedule.\(installation.policyActivityId).\(installation.generation)"), policyData)
+        XCTAssertEqual(shields.applyCount, 0,
+            "authorization is rechecked after policy evaluation and before the settings write")
+        XCTAssertEqual(shields.removeCount, 1,
+            "stale settings are cleared after authorization is revoked")
+        XCTAssertTrue(Set(installation.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)),
+            "the committed monitors stop until authorization returns")
+
+        authorized = true
+        XCTAssertEqual(try runtime.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60)), .applied)
+        XCTAssertEqual(shields.applyCount, 1,
+            "restored authorization reapplies the exact committed generation")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
+    }
+
+    func testAuthorizationRevokedAtFinalRecoveryMutationBoundaryCannotApplyPolicy() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        let policyData = try policy("recovery-revoked-at-final-boundary", capability: .unavailable, restrictive: true)
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        let writer = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        _ = try writer.applyVerifiedPolicy(scheduleData: policyData, applicationTokenData: tokens,
+            protectedApplicationTokenData: nil, now: installedAt)
+        let manifestData = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifestData))
+
+        var authorized = true
+        var revokeAtNextEvaluation = false
+        let recovering = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { authorized },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            deviceTimeZone: {
+                if revokeAtNextEvaluation {
+                    revokeAtNextEvaluation = false
+                    authorized = false
+                }
+                return TimeZone(identifier: "UTC")!
+            }, shieldEnforcer: shields)
+        revokeAtNextEvaluation = true
+        let applyCountBeforeRevocation = shields.applyCount
+        let removeCountBeforeRevocation = shields.removeCount
+
+        XCTAssertThrowsError(try recovering.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60))) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .authorizationRequired)
+        }
+        XCTAssertEqual(shields.applyCount, applyCountBeforeRevocation,
+            "recovery must recheck authorization after evaluation before writing shields")
+        XCTAssertEqual(shields.removeCount, removeCountBeforeRevocation + 1,
+            "recovery clears stale settings when authorization changes")
+        XCTAssertTrue(Set(installation.allMonitorActivityIds).isSubset(of: Set(scheduler.stopped)))
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
+
+        authorized = true
+        XCTAssertEqual(try recovering.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(120)), .applied)
+        XCTAssertEqual(shields.applyCount, applyCountBeforeRevocation + 1,
+            "restored authorization reapplies the exact committed generation")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
+    }
+
     func testAuthorizationRevokedDuringMonitorRegistrationCannotReachManagedSettings() throws {
         let store = CallbackRuntimeBlobStore()
         let scheduler = CallbackRuntimeScheduler()

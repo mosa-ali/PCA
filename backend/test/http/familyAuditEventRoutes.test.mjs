@@ -223,6 +223,53 @@ test('an exactly full final FamilyAudit page requires an empty follow-up before 
   }
 });
 
+test('FamilyAudit restarts pagination when a cursor anchor belongs to an old key epoch or another recipient', async (t) => {
+  const scenarios = [
+    {
+      name: 'old key epoch',
+      anchor: { envelopeId: 'env-old-epoch-cursor-z', familyId: FAMILY, parentDeviceId: OWNER_DEVICE,
+        keyEpoch: 3, generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'b2xkLWVwb2No', nonceB64: 'bm9uY2U=' },
+      current: { envelopeId: 'env-new-epoch-cursor-a', familyId: FAMILY, parentDeviceId: OWNER_DEVICE,
+        keyEpoch: 4, generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'bmV3LWVwb2No', nonceB64: 'bm9uY2U=' },
+    },
+    {
+      name: 'another recipient',
+      anchor: { envelopeId: 'env-other-recipient-cursor-z', familyId: FAMILY, parentDeviceId: OTHER_DEVICE,
+        keyEpoch: 4, generatedAtUtc: new Date(LEDGER_NOW.getTime() + 1000), encryptedPayloadB64: 'b3RoZXItcmVjaXBpZW50', nonceB64: 'bm9uY2U=' },
+      current: { envelopeId: 'env-current-recipient-cursor-a', familyId: FAMILY, parentDeviceId: OWNER_DEVICE,
+        keyEpoch: 4, generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'Y3VycmVudC1yZWNpcGllbnQ=', nonceB64: 'bm9uY2U=' },
+    },
+    {
+      name: 'unknown or expired anchor',
+      anchor: { envelopeId: 'env-expired-cursor-z', familyId: FAMILY, parentDeviceId: OWNER_DEVICE,
+        keyEpoch: 4, generatedAtUtc: new Date(LEDGER_NOW.getTime() + 1000), encryptedPayloadB64: 'ZXhwaXJlZC1jdXJzb3I=', nonceB64: 'bm9uY2U=' },
+      anchorPresent: false,
+      current: { envelopeId: 'env-before-expired-cursor-a', familyId: FAMILY, parentDeviceId: OWNER_DEVICE,
+        keyEpoch: 4, generatedAtUtc: LEDGER_NOW, encryptedPayloadB64: 'Y3VycmVudC1iZWZvcmUtY3Vyc29y', nonceB64: 'bm9uY2U=' },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+    if (scenario.anchorPresent !== false) await ledger.record(scenario.anchor);
+    await ledger.record(scenario.current);
+    const cursor = encodeFamilyAuditEventCursor({
+      generatedAtUtc: scenario.anchor.generatedAtUtc,
+      envelopeId: scenario.anchor.envelopeId,
+    });
+    const { app } = buildApp({ ledger });
+    t.after(() => app.close());
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/audit-events?cursor=${encodeURIComponent(cursor)}`,
+      headers: ownerDeviceHeaders,
+    });
+    assert.equal(response.statusCode, 200, scenario.name);
+    assert.deepEqual(response.json().envelopes.map((envelope) => envelope.envelopeId), [scenario.current.envelopeId], scenario.name);
+    assert.equal(response.body.includes(scenario.anchor.encryptedPayloadB64), false, `${scenario.name} cursor must not expose another scope`);
+  }
+});
+
 test('malformed, noncanonical, and unsupported-version cursors are rejected before ledger reads', async () => {
   const nonCanonical = Buffer.from('{"v":1, "generatedAtUtc":"2026-01-01T00:00:00.000Z","envelopeId":"env"}', 'utf8').toString('base64url');
   for (const cursor of ['!', 'bm90LWpzb24', nonCanonical,
@@ -435,11 +482,14 @@ test('FamilyAudit delivery rejects ledger pages that escape recipient scope or v
       { ...validEnvelope, envelopeId: 'env-b', generatedAtUtc: new Date(LEDGER_NOW.getTime() + 1) },
       { ...validEnvelope, envelopeId: 'env-a', generatedAtUtc: LEDGER_NOW },
     ] },
-    { name: 'row before cursor', rows: [validEnvelope], cursor: staleCursor },
+    { name: 'row before cursor', rows: [validEnvelope], cursor: staleCursor,
+      anchor: { envelopeId: 'env-cursor-after', familyId: FAMILY, parentDeviceId: OWNER_DEVICE, keyEpoch: 4,
+        generatedAtUtc: new Date(LEDGER_NOW.getTime() + 1000), encryptedPayloadB64: 'Y3Vyc29yLWFuY2hvcg==', nonceB64: 'bm9uY2U=' } },
   ];
 
   for (const scenario of cases) {
     const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+    if (scenario.anchor) await ledger.record(scenario.anchor);
     ledger.listForParentDevice = async () => scenario.rows;
     const { app } = buildApp({ ledger });
     t.after(() => app.close());

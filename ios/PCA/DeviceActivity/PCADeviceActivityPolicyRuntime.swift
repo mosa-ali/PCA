@@ -594,7 +594,13 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     }
                     return try usageStore.lowerBound(for: observationPlan)
                 },
-                apply: { try self.shieldEnforcer.apply(applications: $0, protectedApplications: protectedTokens) },
+                apply: {
+                    // Authorization may change after registration and policy
+                    // evaluation. Recheck at the actual ManagedSettings
+                    // mutation boundary before applying.
+                    try self.requireEnforcementAuthorization(for: installation.confirmingActive())
+                    try self.shieldEnforcer.apply(applications: $0, protectedApplications: protectedTokens)
+                },
                 remove: { self.shieldEnforcer.removeAll() })
         } catch {
             if usageActivationFailed { startupUsageFailureGeneration = installation.generation }
@@ -1180,8 +1186,13 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 return try DeviceActivityUsageLowerBoundStore<ApplicationToken>(store: self.blobStore)
                     .lowerBound(for: observationPlan)
             },
-            apply: { try self.shieldEnforcer.apply(applications: $0,
-                protectedApplications: snapshot.protectedApplicationTokens) },
+            apply: {
+                // Foreground/startup reconciliation also has a final
+                // ManagedSettings boundary after policy and usage evaluation.
+                try self.requireEnforcementAuthorization(for: installation)
+                try self.shieldEnforcer.apply(applications: $0,
+                    protectedApplications: snapshot.protectedApplicationTokens)
+            },
             remove: { self.shieldEnforcer.removeAll() })
         guard reconciled,
               blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == manifestData else {

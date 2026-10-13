@@ -106,11 +106,15 @@ class VpnDnsRequestHandlerTest {
     }
 
     @Test
-    fun `SafeSearch host resolution failure falls back to an ordinary resolution of the original domain rather than failing the whole request`() {
+    fun `failed SafeSearch lookup clears a prior ALLOWED verdict and does not query the original host`() {
         val requestedNames = mutableListOf<String>()
+        val channel = VpnDnsDecisionChannel().apply {
+            recordDecision("google.com", VpnDecisionOutcome.ALLOWED)
+        }
         val h = handler(
             decider = { VpnDnsDomainDecision.ALLOW },
             safeSearchMode = SafeSearchMode.STRICT,
+            channel = channel,
             resolveUpstream = { name, _ ->
                 requestedNames.add(name)
                 if (name == "forcesafesearch.google.com") null else fakeUpstreamAnswer(name)
@@ -119,8 +123,10 @@ class VpnDnsRequestHandlerTest {
 
         val response = h.handle(query("google.com"))
 
-        requireNotNull(response)
-        assertEquals(listOf("forcesafesearch.google.com", "google.com"), requestedNames)
+        assertNull(response)
+        assertEquals(listOf("forcesafesearch.google.com"), requestedNames)
+        assertNull("a failed enforcement lookup clears any stale domain verdict",
+            channel.decisionFor("google.com"))
     }
 
     @Test
@@ -156,7 +162,9 @@ class VpnDnsRequestHandlerTest {
 
     @Test
     fun `upstream resolution failure on the ordinary path returns null -- never a fabricated answer`() {
-        val channel = VpnDnsDecisionChannel()
+        val channel = VpnDnsDecisionChannel().apply {
+            recordDecision("offline-upstream.example", VpnDecisionOutcome.ALLOWED)
+        }
         val h = handler(
             decider = { VpnDnsDomainDecision.ALLOW },
             channel = channel,
@@ -164,6 +172,6 @@ class VpnDnsRequestHandlerTest {
         )
         val response = h.handle(query("offline-upstream.example"))
         assertNull(response)
-        assertNull("failed lookup is not an applied ALLOWED network verdict", channel.decisionFor("offline-upstream.example"))
+        assertNull("failed lookup clears any stale ALLOWED network verdict", channel.decisionFor("offline-upstream.example"))
     }
 }

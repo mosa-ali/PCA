@@ -313,6 +313,55 @@ test('MySQL Safe Zone delivery: list is restricted to the authenticated family a
   assert.deepEqual(await repository.listForRecipient(randomUUID(), recipientDeviceId, 2), { safeZones: [], nextCursor: null });
 });
 
+test('MySQL Safe Zone family, recipient, and zone scopes remain case-sensitive under the database collation', async () => {
+  const familyId = 'CaseSensitive_Family';
+  const caseVariantFamilyId = familyId.toLowerCase();
+  const recipientDeviceId = 'ChildDevice_One';
+  const caseVariantRecipientDeviceId = recipientDeviceId.toLowerCase();
+  const familyZone = await repository.create({ ...newZone(familyId), recipientEndpointId: recipientDeviceId });
+  const caseVariantRecipientZone = await repository.create({ ...newZone(familyId), recipientEndpointId: caseVariantRecipientDeviceId });
+  const caseVariantZone = await repository.create({ ...newZone(caseVariantFamilyId), recipientEndpointId: caseVariantRecipientDeviceId });
+
+  assert.deepEqual(
+    (await repository.list(familyId)).map((zone) => zone.zoneId).sort(),
+    [familyZone.zoneId, caseVariantRecipientZone.zoneId].sort(),
+  );
+  assert.deepEqual((await repository.list(caseVariantFamilyId)).map((zone) => zone.zoneId), [caseVariantZone.zoneId]);
+  assert.deepEqual(
+    (await repository.listForRecipient(familyId, recipientDeviceId, 2)).safeZones.map((zone) => zone.zoneId),
+    [familyZone.zoneId],
+  );
+  assert.deepEqual(
+    (await repository.listForRecipient(familyId, caseVariantRecipientDeviceId, 2)).safeZones.map((zone) => zone.zoneId),
+    [caseVariantRecipientZone.zoneId],
+  );
+  assert.deepEqual(
+    (await repository.listForRecipient(caseVariantFamilyId, caseVariantRecipientDeviceId, 2)).safeZones.map((zone) => zone.zoneId),
+    [caseVariantZone.zoneId],
+  );
+
+  const zoneIdCaseVariant = familyZone.zoneId.replace(/[a-f]/, (letter) => letter.toUpperCase());
+  assert.notEqual(zoneIdCaseVariant, familyZone.zoneId);
+  await assert.rejects(
+    () => repository.update(caseVariantFamilyId, familyZone.zoneId, {
+      ciphertextB64: 'BAUG',
+      nonceB64: 'EBESExQVFhcYGRob',
+      keyEpoch: 2,
+    }),
+    (error) => error instanceof SafeZoneError && error.code === 'NOT_FOUND',
+  );
+  await assert.rejects(
+    () => repository.update(familyId, zoneIdCaseVariant, {
+      ciphertextB64: 'BAUG',
+      nonceB64: 'EBESExQVFhcYGRob',
+      keyEpoch: 2,
+    }),
+    (error) => error instanceof SafeZoneError && error.code === 'NOT_FOUND',
+  );
+  assert.equal(await repository.remove(caseVariantFamilyId, familyZone.zoneId), false);
+  assert.ok((await repository.list(familyId)).some((zone) => zone.zoneId === familyZone.zoneId));
+});
+
 test('MySQL Safe Zone delivery: pages are bounded and advance without crossing recipient scope', async () => {
   const familyId = randomUUID();
   const recipientDeviceId = randomUUID();

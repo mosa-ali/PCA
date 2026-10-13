@@ -140,7 +140,11 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
   }
 
   async list(familyId: string): Promise<SafeZone[]> {
-    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? ORDER BY zone_id`, [familyId]));
+    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(
+      conn,
+      `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE BINARY family_id = BINARY ? ORDER BY BINARY zone_id`,
+      [familyId],
+    ));
     return rows.map(toSafeZone);
   }
 
@@ -150,12 +154,17 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     const { rows } = await runInTransaction((conn) => afterZoneId === undefined
       ? execute<SafeZoneRow>(
         conn,
-        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND key_epoch = ? ORDER BY zone_id LIMIT ?`,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones
+          WHERE BINARY family_id = BINARY ? AND BINARY recipient_endpoint_id = BINARY ? AND key_epoch = ?
+          ORDER BY BINARY zone_id LIMIT ?`,
         [familyId, recipientEndpointId, keyEpoch, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
       )
       : execute<SafeZoneRow>(
         conn,
-        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE family_id = ? AND recipient_endpoint_id = ? AND key_epoch = ? AND zone_id > ? ORDER BY zone_id LIMIT ?`,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones
+          WHERE BINARY family_id = BINARY ? AND BINARY recipient_endpoint_id = BINARY ? AND key_epoch = ?
+            AND BINARY zone_id > BINARY ?
+          ORDER BY BINARY zone_id LIMIT ?`,
         [familyId, recipientEndpointId, keyEpoch, afterZoneId, SAFE_ZONE_DELIVERY_PAGE_SIZE + 1],
       ));
     const pageRows = rows.slice(0, SAFE_ZONE_DELIVERY_PAGE_SIZE);
@@ -186,7 +195,11 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       await this.assertMutationAuthority(conn, safeInput.familyId, safeInput.recipientEndpointId, safeAuthority);
       await execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, safeInput.familyId, safeInput.recipientEndpointId, Buffer.from(safeInput.ciphertextB64, 'base64url'), Buffer.from(safeInput.nonceB64, 'base64url'), safeInput.keyEpoch, now, now]);
     });
-    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, safeInput.familyId]));
+    const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(
+      conn,
+      `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ?`,
+      [zoneId, safeInput.familyId],
+    ));
     if (!rows[0]) throw new SafeZoneError('NOT_FOUND');
     return toSafeZone(rows[0]);
   }
@@ -201,7 +214,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     const row = await runInTransaction(async (conn) => {
       const { rows: targetRows } = await execute<Pick<SafeZoneRow, 'recipient_endpoint_id'>>(
         conn,
-        `SELECT recipient_endpoint_id FROM safe_zones WHERE zone_id = ? AND family_id = ?`,
+        `SELECT recipient_endpoint_id FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ?`,
         [zoneId, familyId],
       );
       if (!targetRows[0]) throw new SafeZoneError('NOT_FOUND');
@@ -210,7 +223,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       // can never move backwards, even when two callers race.
       const current = await execute<Pick<SafeZoneRow, 'key_epoch'>>(
         conn,
-        `SELECT key_epoch FROM safe_zones WHERE zone_id = ? AND family_id = ? FOR UPDATE`,
+        `SELECT key_epoch FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ? FOR UPDATE`,
         [zoneId, familyId],
       );
       if (!current.rows[0]) throw new SafeZoneError('NOT_FOUND');
@@ -239,7 +252,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
         `UPDATE safe_zones
             SET ciphertext = ?, nonce = ?, key_epoch = ?, revision = revision + 1,
                 delivery_state = 'PENDING_OFFLINE', updated_at = ?
-          WHERE zone_id = ? AND family_id = ? AND key_epoch = ?`,
+          WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ? AND key_epoch = ?`,
         [
           Buffer.from(safePatch.ciphertextB64!, 'base64url'),
           Buffer.from(safePatch.nonceB64!, 'base64url'),
@@ -254,7 +267,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
 
       const persisted = await execute<SafeZoneRow>(
         conn,
-        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`,
+        `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ?`,
         [zoneId, familyId],
       );
       if (!persisted.rows[0]) throw new SafeZoneError('NOT_FOUND');
@@ -268,12 +281,16 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     return runInTransaction(async (conn) => {
       const { rows: targetRows } = await execute<Pick<SafeZoneRow, 'recipient_endpoint_id'>>(
         conn,
-        `SELECT recipient_endpoint_id FROM safe_zones WHERE zone_id = ? AND family_id = ?`,
+        `SELECT recipient_endpoint_id FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ?`,
         [zoneId, familyId],
       );
       if (!targetRows[0]) return false;
       await this.assertMutationAuthority(conn, familyId, targetRows[0].recipient_endpoint_id, safeAuthority);
-      const { rowCount } = await execute(conn, `DELETE FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, familyId]);
+      const { rowCount } = await execute(
+        conn,
+        `DELETE FROM safe_zones WHERE BINARY zone_id = BINARY ? AND BINARY family_id = BINARY ?`,
+        [zoneId, familyId],
+      );
       return rowCount > 0;
     });
   }

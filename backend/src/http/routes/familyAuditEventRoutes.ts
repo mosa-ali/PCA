@@ -182,10 +182,31 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     // Recheck both Parent membership and the device's accepted Trust Set
     // snapshot after the asynchronous read: a role revocation or key rotation
     // during the ledger lookup must not receive a successful stale-scope read.
+    // The opaque v1 cursor itself predates key-epoch binding. Resolve its
+    // anchor against the existing append-only ledger before applying it to
+    // the current epoch feed; otherwise an old cursor can skip same-time
+    // envelopes newly queued under a rotated key epoch. Missing/pruned or
+    // cross-recipient anchors restart at page one, which may repeat data but
+    // cannot omit current-recipient events or expose another recipient's.
+    let effectiveCursor = cursor;
+    if (cursor) {
+      let anchor: FamilyAuditEventEnvelope | null;
+      try {
+        anchor = await familyAuditEventLedger.get(cursor.envelopeId);
+      } catch {
+        return reply.code(503).send({ error: 'family_audit_unavailable' });
+      }
+      if (!anchor || anchor.envelopeId !== cursor.envelopeId || anchor.familyId !== familyId || anchor.parentDeviceId !== actorDeviceId ||
+          anchor.keyEpoch !== actor.keyEpoch || !(anchor.generatedAtUtc instanceof Date) ||
+          !Number.isFinite(anchor.generatedAtUtc.getTime()) ||
+          anchor.generatedAtUtc.getTime() !== cursor.generatedAtUtc.getTime()) {
+        effectiveCursor = undefined;
+      }
+    }
     let envelopes: FamilyAuditEventEnvelope[];
     try {
-      envelopes = cursor
-        ? await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch, { cursor })
+      envelopes = effectiveCursor
+        ? await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch, { cursor: effectiveCursor })
         : await familyAuditEventLedger.listForParentDevice(familyId, actorDeviceId, actor.keyEpoch);
     } catch {
       return reply.code(503).send({ error: 'family_audit_unavailable' });
@@ -221,7 +242,7 @@ export function registerFamilyAuditEventRoutes(app: FastifyInstance, deps: Famil
     // authorization decision. Verify its entire page still matches the live
     // recipient and accepted epoch, and that keyset ordering is strict before
     // any opaque payload or continuation cursor is serialized.
-    if (!isScopedOrderedPage(envelopes, familyId, actorDeviceId, actor.keyEpoch, cursor)) {
+    if (!isScopedOrderedPage(envelopes, familyId, actorDeviceId, actor.keyEpoch, effectiveCursor)) {
       return reply.code(503).send({ error: 'family_audit_unavailable' });
     }
     try {

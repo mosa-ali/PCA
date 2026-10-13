@@ -29,6 +29,37 @@ class VpnDnsDecisionChannelTest {
     }
 
     @Test
+    fun `a newer same-domain attempt prevents an older concurrent result from restoring a cleared verdict`() {
+        val channel = VpnDnsDecisionChannel()
+        channel.recordDecision("example.com", VpnDecisionOutcome.ALLOWED)
+
+        val olderAttempt = channel.clearDecision("example.com")!!
+        val newerAttempt = channel.clearDecision("example.com")!!
+        channel.recordDecision("example.com", VpnDecisionOutcome.BLOCKED, olderAttempt)
+        assertNull(channel.decisionFor("example.com"))
+
+        channel.recordDecision("example.com", VpnDecisionOutcome.ALLOWED, newerAttempt)
+        assertEquals(VpnDecisionOutcome.ALLOWED, channel.decisionFor("example.com"))
+    }
+
+    @Test
+    fun `an attempt captured before stop cannot clear or publish a verdict after restart`() {
+        val channel = VpnDnsDecisionChannel()
+        channel.setEnforcing(true)
+        val oldLifecycle = channel.captureLifecycleEpoch()
+        val oldAttempt = channel.clearDecision("example.com", oldLifecycle)!!
+        channel.recordDecision("example.com", VpnDecisionOutcome.ALLOWED, oldAttempt)
+
+        channel.setEnforcing(false)
+        channel.setEnforcing(true)
+
+        assertNull(channel.clearDecision("example.com", oldLifecycle))
+        assertNull(channel.decisionFor("example.com"))
+        channel.recordDecision("example.com", VpnDecisionOutcome.BLOCKED, oldAttempt)
+        assertNull(channel.decisionFor("example.com"))
+    }
+
+    @Test
     fun `setEnforcing false clears every recorded decision -- a stale tunnel can never leak a decision to a later session`() {
         val channel = VpnDnsDecisionChannel()
         channel.setEnforcing(true)

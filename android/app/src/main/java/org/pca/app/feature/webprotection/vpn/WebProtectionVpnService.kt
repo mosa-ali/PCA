@@ -216,11 +216,12 @@ class WebProtectionVpnService : VpnService() {
             val packet = Ipv4UdpPacketCodec.parse(buffer, length) ?: continue
             if (packet.destPort != DNS_PORT) continue
             val query = DnsMessageCodec.parse(packet.payload) ?: continue
+            val decisionLifecycleEpoch = g.vpnDnsDecisionChannel.captureLifecycleEpoch()
 
             try {
                 pool.submit {
                     try {
-                        val responsePayload = handler.handle(query) ?: return@submit
+                        val responsePayload = handler.handle(query, decisionLifecycleEpoch) ?: return@submit
                         val responseIpPacket = Ipv4UdpPacketCodec.build(
                             sourceAddress = packet.destAddress,
                             destAddress = packet.sourceAddress,
