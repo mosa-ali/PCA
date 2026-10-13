@@ -324,19 +324,7 @@ public enum PolicySyncDecoder {
         }
         guard !stored.activityId.isEmpty else { return .failure(.emptyActivityId) }
         guard !stored.appToken.isEmpty else { return .failure(.emptyAppToken) }
-        guard stored.appToken.utf8.count <= 256, stored.activityId.utf8.count <= 256,
-              stored.bonusGrants.count <= 64,
-              stored.bonusGrants.allSatisfy({ grant in
-                  let start = grant.grantedAtUtc.timeIntervalSince1970
-                  let end = grant.expiresAtUtc.timeIntervalSince1970
-                  return (0...DeviceActivityUsagePlanner.maximumMinutes).contains(grant.extraMinutes) &&
-                      start.isFinite && end.isFinite &&
-                      abs(start) <= maximumPolicyDateSeconds && abs(end) <= maximumPolicyDateSeconds &&
-                      start < end
-              }),
-              stored.dailyLimit.map({ (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.limitMinutes) &&
-                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains($0.usedMinutesToday) &&
-                  isCanonicalGregorianLocalDate($0.anchorLocalDate) }) ?? true else {
+        guard hasValidUsageConfiguration(stored) else {
             return .failure(.invalidUsageConfig)
         }
         let scopeErrors = stored.windows.compactMap { validateAppScope($0.appScope, description: "window \($0.id)") }
@@ -410,6 +398,30 @@ public enum PolicySyncDecoder {
         case .all: return .all
         case .apps(let set): return .apps(set)
         }
+    }
+
+    private static func hasValidUsageConfiguration(_ stored: StoredDeviceActivityPolicy) -> Bool {
+        guard stored.appToken.utf8.count <= 256,
+              stored.activityId.utf8.count <= 256,
+              stored.bonusGrants.count <= 64 else { return false }
+
+        for grant in stored.bonusGrants {
+            let start = grant.grantedAtUtc.timeIntervalSince1970
+            let end = grant.expiresAtUtc.timeIntervalSince1970
+            guard (0...DeviceActivityUsagePlanner.maximumMinutes).contains(grant.extraMinutes),
+                  start.isFinite,
+                  end.isFinite,
+                  abs(start) <= maximumPolicyDateSeconds,
+                  abs(end) <= maximumPolicyDateSeconds,
+                  start < end else { return false }
+        }
+
+        if let dailyLimit = stored.dailyLimit {
+            guard (0...DeviceActivityUsagePlanner.maximumMinutes).contains(dailyLimit.limitMinutes),
+                  (0...DeviceActivityUsagePlanner.maximumMinutes).contains(dailyLimit.usedMinutesToday),
+                  isCanonicalGregorianLocalDate(dailyLimit.anchorLocalDate) else { return false }
+        }
+        return true
     }
 
     /// Match the backend schedule validator: an app-list scope may not carry
