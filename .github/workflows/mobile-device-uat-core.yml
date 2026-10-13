@@ -95,9 +95,17 @@ jobs:
             xcrun simctl diagnose > artifacts/ios/simulator-diagnostics/simctl-diagnose.txt 2>&1 || true
           fi
           if [[ -d artifacts/ios/PCA-Test.xcresult ]]; then
-            xcrun xcresulttool get test-results summary \
+            if ! xcrun xcresulttool get test-results summary \
               --path artifacts/ios/PCA-Test.xcresult \
-              --format json > artifacts/ios/test-summary.json 2>&1 || true
+              --format json > artifacts/ios/test-summary.json 2> artifacts/ios/test-summary-modern.err; then
+              # Xcode 15.x predates `get test-results summary`; retain a
+              # result-bundle JSON fallback so failed XCTest startup still
+              # includes structured test/runner diagnostics in the artifact.
+              xcrun xcresulttool get \
+                --format json \
+                --path artifacts/ios/PCA-Test.xcresult > artifacts/ios/test-summary.json \
+                2> artifacts/ios/test-summary-legacy.err || true
+            fi
           fi
 
       - name: Upload iOS simulator evidence

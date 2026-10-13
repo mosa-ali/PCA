@@ -36,7 +36,13 @@ test('creating a family-member invitation through the real service delivers a de
     return { encryptedPayloadB64: 'b3BhcXVl', nonceB64: 'bm9uY2UtdmFsdWU' };
   };
   const resolveParentDevices = async (familyId) => [{ deviceId: `owner-device-of-${familyId}`, keyEpoch: 7 }];
-  familyAuditService.configureDelivery(new FamilyAuditEventProducer(eventLedger, composer, resolveParentDevices));
+  familyAuditService.configureDelivery(new FamilyAuditEventProducer(
+    eventLedger,
+    composer,
+    resolveParentDevices,
+    () => 'audit-envelope-test',
+    () => LEDGER_NOW,
+  ));
 
   const invitationService = new FamilyMemberInvitationService(
     createInMemoryFamilyMemberInvitationRepository(),
@@ -98,13 +104,17 @@ test('a delivery failure (composer throws) never blocks or reverses the mutation
   const auditRepository = new InMemoryFamilyAuditRepository();
   const familyAuditService = new FamilyAuditService(auditRepository, () => new Date('2026-01-01T00:00:00.000Z'));
   const eventLedger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  let composeCalls = 0;
   familyAuditService.configureDelivery(
     new FamilyAuditEventProducer(
       eventLedger,
       async () => {
+        composeCalls += 1;
         throw new Error('crypto suite not reviewed');
       },
       async () => [{ deviceId: 'owner-device', keyEpoch: 1 }],
+      () => 'audit-envelope-test',
+      () => LEDGER_NOW,
     ),
   );
 
@@ -125,5 +135,6 @@ test('a delivery failure (composer throws) never blocks or reverses the mutation
 
   assert.equal(created.status, 'PENDING');
   assert.equal((await auditRepository.listForFamily('fam-delivery-fails')).length, 1);
+  assert.equal(composeCalls, 1);
   assert.equal((await eventLedger.listForFamily('fam-delivery-fails')).length, 0);
 });

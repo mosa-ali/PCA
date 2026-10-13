@@ -17,6 +17,8 @@ class ScheduleRuntime(
     private val store: SchedulePolicyStore,
     /** Production supplies the current ACTIVE local enrollment scope. Null means no such scope. */
     private val currentPolicyScopeProvider: (() -> SchedulePolicyRuntimeScope?)? = null,
+    /** Persisted high-water mark from the rollback monitor; a read failure disables policy use. */
+    private val trustedTimeFloorProvider: () -> Instant? = { null },
     private val communicationSurfacesProvider: () -> CommunicationSafetySurfaceTokens = { CommunicationSafetySurfaceTokens() },
 ) {
 
@@ -35,6 +37,7 @@ class ScheduleRuntime(
         enforcementCapability: EnforcementCapabilityState,
         connectivity: Connectivity,
     ): Result {
+        val trustedNow = trustedNowOrNull(nowUtc) ?: return untrustedTimeResult()
         val stored = store.read()
         if (stored == SchedulePolicyStoreRead.Corrupt) {
             return Result(
@@ -47,16 +50,16 @@ class ScheduleRuntime(
             )
         }
         val snapshot = (stored as? SchedulePolicyStoreRead.Present)?.snapshot
-        val acceptance = acceptanceFor(snapshot, nowUtc, connectivity)
+        val acceptance = acceptanceFor(snapshot, trustedNow, connectivity)
 
         val evaluationInput = acceptance.effectivePolicy?.toEvaluationInput(
-            nowUtc = nowUtc,
+            nowUtc = trustedNow,
             appToken = appToken,
             enforcementCapability = enforcementCapability,
             connectivity = connectivity,
             lastPolicySyncAtUtc = snapshot?.lastPolicySyncAtUtc,
             communicationSurfaces = communicationSurfacesProvider(),
-        ) ?: emptyEvaluationInput(nowUtc, appToken, enforcementCapability, connectivity, snapshot?.lastPolicySyncAtUtc)
+        ) ?: emptyEvaluationInput(trustedNow, appToken, enforcementCapability, connectivity, snapshot?.lastPolicySyncAtUtc)
 
         return Result(acceptance.state, ScheduleEvaluator.evaluate(evaluationInput), acceptance.effectivePolicy)
     }
@@ -67,12 +70,13 @@ class ScheduleRuntime(
      * separate from Break Shield, which is a different feature entirely
      * (`feature/screentime/engine/ScreenTimeEngine.kt`'s `BREAK_SHIELD` mode). */
     fun isPcaBedtimeActive(nowUtc: Instant): Boolean {
+        val trustedNow = trustedNowOrNull(nowUtc) ?: return true
         val read = store.read()
         if (read == SchedulePolicyStoreRead.Corrupt) return true
         val snapshot = (read as? SchedulePolicyStoreRead.Present)?.snapshot ?: return false
-        val policy = currentEffectivePolicy(snapshot, nowUtc) ?: return false
+        val policy = currentEffectivePolicy(snapshot, trustedNow) ?: return false
         return policy.effectiveWindows().any {
-            it.kind == ScheduleWindowKind.BEDTIME && it.appScope is AppScope.All && isWindowActive(it, nowUtc)
+            it.kind == ScheduleWindowKind.BEDTIME && it.appScope is AppScope.All && isWindowActive(it, trustedNow)
         }
     }
 
@@ -80,16 +84,33 @@ class ScheduleRuntime(
      * context -- bedtime or school mode active for all apps -- for a future
      * `WellbeingScheduleContextSource.isScheduledQuietContext`. */
     fun isScheduledQuietContext(nowUtc: Instant): Boolean {
+        val trustedNow = trustedNowOrNull(nowUtc) ?: return true
         val read = store.read()
         if (read == SchedulePolicyStoreRead.Corrupt) return true
         val snapshot = (read as? SchedulePolicyStoreRead.Present)?.snapshot ?: return false
-        val policy = currentEffectivePolicy(snapshot, nowUtc) ?: return false
+        val policy = currentEffectivePolicy(snapshot, trustedNow) ?: return false
         return policy.effectiveWindows().any {
             (it.kind == ScheduleWindowKind.BEDTIME || it.kind == ScheduleWindowKind.SCHOOL_MODE) &&
                 it.appScope is AppScope.All &&
-                isWindowActive(it, nowUtc)
+                isWindowActive(it, trustedNow)
         }
     }
+
+    /** A failed trusted-floor read cannot fall back to a possibly rolled-back system clock. */
+    private fun trustedNowOrNull(nowUtc: Instant): Instant? = try {
+        maxOf(nowUtc, trustedTimeFloorProvider() ?: nowUtc)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun untrustedTimeResult() = Result(
+        ScheduleRuntimeState.INVALID,
+        ScheduleDecision(
+            decision = ScheduleDecisionKind.ENFORCEMENT_UNAVAILABLE,
+            reason = "Trusted policy time is unavailable; enforcement cannot be determined.",
+        ),
+        effectivePolicy = null,
+    )
 
     private fun currentEffectivePolicy(snapshot: SchedulePolicySnapshot, nowUtc: Instant): SchedulePolicyV1? {
         // Connectivity only distinguishes CURRENT vs. STALE_REMOTE here, both of which resolve

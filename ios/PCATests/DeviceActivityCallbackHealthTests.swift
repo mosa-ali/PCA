@@ -1446,6 +1446,57 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             store.read(forKey: deviceActivityMonitorInstallationStorageKey)!), replacement)
     }
 
+    func testDuplicateRetirementIntentKeysCannotRetireEitherPolicyGeneration() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let prior = installation()
+        let priorSchedule = try policy()
+        let priorTokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        let priorFloor = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        try store.write(priorSchedule, forKey: "schedule.policy")
+        try store.write(priorTokens, forKey: "applicationTokens.policy")
+        try store.write(priorFloor, forKey: "protectedApplicationTokens")
+
+        let replacementGeneration = "33333333-3333-4333-8333-333333333333"
+        let replacementMonitor = "pca-monitor-44444444-4444-4444-8444-444444444444"
+        let replacement = DeviceActivityMonitorInstallation(
+            policyActivityId: "replacement", monitorActivityId: replacementMonitor,
+            generation: replacementGeneration, installedAtUtc: installedAt,
+            timeZoneIdentifier: "UTC", state: .active, schemaVersion: 2,
+            boundaryMonitors: [])
+        let replacementSchedule = try policy("replacement")
+        let replacementTokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        let replacementFloor = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        try store.write(replacementSchedule, forKey: "schedule.replacement.\(replacementGeneration)")
+        try store.write(replacementTokens, forKey: "applicationTokens.replacement.\(replacementGeneration)")
+        try store.write(replacementFloor, forKey: "protectedApplicationTokens.\(replacementGeneration)")
+        try store.write(Data("replacement".utf8), forKey: "activeActivityId")
+        try store.write(JSONEncoder().encode(replacement), forKey: deviceActivityMonitorInstallationStorageKey)
+
+        let first = try JSONEncoder().encode(DeviceActivityPolicyRetirementIntent(previousInstallation: replacement))
+        let second = try JSONEncoder().encode(DeviceActivityPolicyRetirementIntent(previousInstallation: prior))
+        let firstObject = String(decoding: first, as: UTF8.self)
+        let secondObject = String(decoding: second, as: UTF8.self)
+        let firstValue = String(firstObject.dropFirst("{\"previousInstallation\":".count).dropLast())
+        let secondValue = String(secondObject.dropFirst("{\"previousInstallation\":".count).dropLast())
+        let duplicateIntent = Data(("{\"previousInstallation\":\(firstValue),\"previousInstallation\":\(secondValue)}").utf8)
+        try store.write(duplicateIntent, forKey: deviceActivityPolicyRetirementIntentStorageKey)
+
+        scheduler.orphanIds = [monitor, replacementMonitor]
+        _ = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt })
+
+        XCTAssertNil(store.read(forKey: deviceActivityPolicyRetirementIntentStorageKey), "ambiguous recovery metadata must be discarded")
+        XCTAssertEqual(store.read(forKey: "schedule.policy"), priorSchedule, "a duplicate-key marker must not retire the previous generation")
+        XCTAssertEqual(store.read(forKey: "applicationTokens.policy"), priorTokens)
+        XCTAssertEqual(store.read(forKey: "protectedApplicationTokens"), priorFloor)
+        XCTAssertEqual(store.read(forKey: "schedule.replacement.\(replacementGeneration)"), replacementSchedule)
+        XCTAssertEqual(store.read(forKey: "applicationTokens.replacement.\(replacementGeneration)"), replacementTokens)
+        XCTAssertEqual(store.read(forKey: "protectedApplicationTokens.\(replacementGeneration)"), replacementFloor)
+        XCTAssertEqual(DeviceActivityMonitorInstallation.decodeValidated(
+            store.read(forKey: deviceActivityMonitorInstallationStorageKey)!), replacement)
+    }
+
     func testStartingCorruptAndMissingInstallationCannotCertifyHealth() throws {
         let store = CallbackRuntimeBlobStore()
         try seed(store, state: .starting)

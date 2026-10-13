@@ -916,6 +916,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private func loadRetirementIntent() -> DeviceActivityPolicyRetirementIntent? {
         guard let data = blobStore.read(forKey: deviceActivityPolicyRetirementIntentStorageKey) else { return nil }
         guard data.count <= 262_144,
+              (try? StrictJSONDocument.validateNoDuplicateMembers(data, maximumBytes: 262_144)) != nil,
               let intent = try? JSONDecoder().decode(DeviceActivityPolicyRetirementIntent.self, from: data),
               intent.previousInstallation.state == .active,
               let installationBytes = try? JSONEncoder().encode(intent.previousInstallation),

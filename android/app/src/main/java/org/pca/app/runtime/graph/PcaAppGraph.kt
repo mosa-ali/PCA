@@ -330,6 +330,9 @@ class PcaAppGraph private constructor(
     val scheduleRuntime = ScheduleRuntime(
         schedulePolicyStore,
         currentPolicyScopeProvider = ::currentSchedulePolicyRuntimeScope,
+        trustedTimeFloorProvider = {
+            wallClockRollbackMonitor.trustedTimeFloorMillis()?.let { java.time.Instant.ofEpochMilli(it) }
+        },
     ) {
         communicationSurfaceResolver.resolveCommunicationSurfaces()
     }

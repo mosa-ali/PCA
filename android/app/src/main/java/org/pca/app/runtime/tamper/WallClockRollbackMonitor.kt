@@ -106,6 +106,14 @@ class WallClockRollbackMonitor(
      */
     fun highWaterMarkMillis(): Long? = stateStore.getString(HIGH_WATER_MARK_KEY)?.toLongOrNull()
 
+    /** Strict policy-time read: only an absent first-run mark is nullable; corrupt stored values throw. */
+    fun trustedTimeFloorMillis(): Long? {
+        val raw = stateStore.getString(HIGH_WATER_MARK_KEY) ?: return null
+        val floor = raw.toLongOrNull() ?: error("wall_clock_trusted_floor_corrupt")
+        require(floor >= 0) { "wall_clock_trusted_floor_corrupt" }
+        return floor
+    }
+
     companion object {
         const val CONDITION_CLOCK_ROLLBACK = "WALL_CLOCK_ROLLBACK_DETECTED"
         private const val HIGH_WATER_MARK_KEY = "wall_clock_high_water_mark_millis"

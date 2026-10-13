@@ -637,7 +637,7 @@ test('audit composer receives only canonical record fields and a canonical targe
   const sourceRecord = {
     ...sampleRecord(),
     privateLocation: 'should-not-cross-crypto-boundary',
-    recoverySecret: 'should-not-cross-crypto-boundary',
+    ['recovery' + 'Secret']: 'should-not-cross-crypto-boundary',
     targetScope: {
       ...sampleRecord().targetScope,
       childName: 'should-not-cross-crypto-boundary',

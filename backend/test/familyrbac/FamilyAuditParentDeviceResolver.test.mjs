@@ -308,6 +308,8 @@ test('authority dependency outage reaches the producer diagnostic without leakin
       { async record() { throw new Error('ledger must not be reached'); } },
       async () => { throw new Error('composer must not be reached'); },
       familyId => resolver.resolveParentDevices(familyId),
+      () => 'audit-envelope-test',
+      () => NOW,
     );
 
     assert.deepEqual(await producer.deliver(sampleRecord()), []);
@@ -350,6 +352,7 @@ test('FamilyAudit delivery uses current accepted OWNER keyEpoch, not the attesta
     },
     familyId => resolver.resolveParentDevices(familyId),
     () => 'env-1',
+    () => NOW,
   );
 
   const outcomes = await producer.deliver(sampleRecord());
@@ -378,8 +381,10 @@ for (const [name, resolution] of [
 ]) {
   test(`FamilyAudit delivery skips an attested device with ${name}`, async () => {
     const { chainStore } = fixture();
+    let roleResolutionCalls = 0;
     const resolver = createResolver(chainStore, {
       async resolveActor(familyId, deviceId, dskKeyId) {
+        roleResolutionCalls += 1;
         assert.equal(familyId, FAMILY_ID);
         assert.equal(deviceId, OWNER_DEVICE_ID);
         assert.equal(dskKeyId, OWNER_DSK_KEY_ID);
@@ -392,9 +397,12 @@ for (const [name, resolution] of [
       { async record(row) { ledgerRows.push(row); return { outcome: 'RECORDED' }; } },
       async () => { composeCalls += 1; return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
       familyId => resolver.resolveParentDevices(familyId),
+      () => 'audit-envelope-test',
+      () => NOW,
     );
 
     assert.deepEqual(await producer.deliver(sampleRecord()), []);
+    assert.equal(roleResolutionCalls, 1);
     assert.equal(composeCalls, 0);
     assert.equal(ledgerRows.length, 0);
   });

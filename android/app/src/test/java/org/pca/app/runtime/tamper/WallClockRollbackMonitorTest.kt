@@ -3,6 +3,7 @@ package org.pca.app.runtime.tamper
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -207,5 +208,21 @@ class WallClockRollbackMonitorTest {
         wallClock.now = 30_000L
         monitor.checkAndHandle()
         assertEquals(30_000L, monitor.highWaterMarkMillis())
+    }
+
+    @Test
+    fun `strict policy floor rejects corrupt persisted high-water mark`() {
+        val store = InMemoryPersistentStateStore().apply {
+            putString("wall_clock_high_water_mark_millis", "not-a-time")
+        }
+        val monitor = WallClockRollbackMonitor(
+            wallClockTimeSource = wallClock,
+            stateStore = store,
+            deviceIdProvider = { "device-1" },
+            tamperEventRepository = repository,
+            notifyParent = { true },
+        )
+
+        assertThrows(IllegalStateException::class.java) { monitor.trustedTimeFloorMillis() }
     }
 }

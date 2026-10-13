@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## CI failure remediation implementation checkpoint — 2026-10-13
+
+Source base `ec11be90d207a84bbf86235859acb81bf568c176`. Fixed all three backend unit failures in exact-head Quality Gates run `38429863004`: FamilyAudit test fixtures now inject the same fixed clock used to create their audit records, and the scanner canary constructs its extra recovery-field key dynamically without weakening the security scanner. Added an Xcode 15-compatible `xcresulttool` fallback so failed iOS startup artifacts retain structured result data.
+
+Validation: backend build and full `npm test` **3445/3445 PASS**; focused FamilyAudit suites **57/57 PASS**; deterministic quality/security checks passed (3045 tracked files, 11 privacy sentinels); Android `testDebugUnitTest` **2137/2137 PASS**; changed Swift files parse successfully. The exact-head CI run failed overall: Repository quality/Security controls and Backend unit failures are addressed above. iOS xcodebuild built and launched the PCA host, but XCTest timed out before any test case began (`XCTFuture Code=1000`, “Test runner never began executing tests”); its simulator logs report missing App Group entitlement and unavailable `FamilyControlsAgent`. The immediately preceding exact-head run `38422821662` passed iOS; the iOS source tree was unchanged between that SHA and this one. Evidence points to a hosted simulator/XCTest startup failure, not a product assertion. Rerun exact-head CI after publication to verify; do not claim XCTest PASS from local Swift parsing.
+
+TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. No DB/schema/grant changes. Physical Android/iOS evidence, live DB, owner localhost acceptance, Platform dependency, Azure deployment and production acceptance remain separate gates. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Local source hardening checkpoint — 2026-10-13
 
 Unpublished source checkpoint against `0f8d3c377ff729921d65e3ee0392da101e53f42e`: backend Ordinary Trust Set now checks replay/accepted records against the current authorized head; FamilyAudit validates canonical target scope and event time before delivery and rechecks the immutable captured timestamp before each recipient composition; signed Web Rule package expiry is guarded across async verification/repository preparation; schedule configuration rejects malformed identifiers and parent exceptions. Android root-bound Trust Set persistence, strict persisted family/schedule JSON validation, and bounded bootstrap error-body draining are covered by focused regressions. No schema, migration, or runtime-grant change was made.
