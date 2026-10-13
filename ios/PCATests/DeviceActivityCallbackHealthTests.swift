@@ -717,6 +717,7 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let legacyPlan = try JSONDecoder().decode(DeviceActivityUsageDayPlan.self,
             from: JSONSerialization.data(withJSONObject: planObject, options: [.sortedKeys]))
         XCTAssertTrue(legacyPlan.isValid)
+        scheduler.orphanIds = [legacyPlan.monitorActivityId]
 
         let installation = DeviceActivityMonitorInstallation(policyActivityId: "policy",
             monitorActivityId: "pca-monitor-" + UUID().uuidString.lowercased(), generation: legacyPlan.generation,
@@ -753,6 +754,10 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             })
 
         XCTAssertEqual(activationCalls, 0, "legacy pending usage is not eligible for publication")
+        XCTAssertFalse(scheduler.started.contains(legacyPlan.monitorActivityId),
+            "an unscoped legacy usage plan must not be re-registered during recovery")
+        XCTAssertTrue(scheduler.stopped.contains(legacyPlan.monitorActivityId),
+            "a still-running unscoped legacy usage monitor must be retired during recovery")
         XCTAssertGreaterThan(shields.applyCount, 0,
             "unscoped usage must not prevent the already committed policy from restoring enforcement")
         XCTAssertEqual(try runtime.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60)), .degraded)

@@ -21,8 +21,7 @@ Thumbs.db
 .tmp/ios-diagnostics-*/
 .tmp/swift-module-cache/
 # Keep the same generated diagnostics ignored if a runner uses the non-dot tmp root.
-tmp/ios-diagnostics-*/
-tmp/ci-diagnostics-*/
+tmp/
 ios/scripts/__pycache__/
 # Local Gradle user home used by the Android test runner; never repository content.
 android/.gradle-user-home/

@@ -1232,9 +1232,18 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 started.append(boundary.activityId)
                 try scheduler.startBoundary(activityId: boundary.activityId, trigger: boundary.trigger)
             }
-            if let plan = installation.usageDayPlan, !activeIds.contains(plan.monitorActivityId) {
-                started.append(plan.monitorActivityId)
-                try scheduler.startUsage(plan: plan, applications: snapshot.applicationTokens)
+            if let plan = installation.usageDayPlan {
+                if plan.binding.hasAuthoritativeScope {
+                    if !activeIds.contains(plan.monitorActivityId) {
+                        started.append(plan.monitorActivityId)
+                        try scheduler.startUsage(plan: plan, applications: snapshot.applicationTokens)
+                    }
+                } else if activeIds.contains(plan.monitorActivityId) {
+                    // A legacy unscoped plan cannot attribute usage to this
+                    // family/device. Retire its callback source while keeping
+                    // the committed policy and pending evidence for recovery.
+                    scheduler.stop(activityId: plan.monitorActivityId)
+                }
             }
             guard blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey) == manifestData else {
                 throw PCAProtectionPolicyApplicationError.persistenceFailed
