@@ -1042,7 +1042,7 @@ test('MYSQL HTTP protection alerts: anonymous 401, owner 200 with a durably reco
     await protectionAlertLedger.record({
       alertId,
       familyId: owner.familyId,
-      deviceId: null,
+      deviceId: `child-${randomUUID()}`,
       parentDeviceId: actor.deviceId,
       trigger: 'PROTECTION_DEGRADED',
       keyEpoch: 1,

@@ -38,8 +38,8 @@ function protectionAlert(overrides = {}) {
     trigger: 'PROTECTION_DEGRADED',
     keyEpoch: 7,
     generatedAtUtc: new Date(READ_NOW),
-    encryptedPayloadB64: `opaque-ciphertext-${randomUUID()}`,
-    nonceB64: `opaque-nonce-${randomUUID()}`,
+    encryptedPayloadB64: Buffer.from(`opaque-ciphertext-${randomUUID()}`).toString('base64'),
+    nonceB64: Buffer.from(randomUUID()).toString('base64'),
     ...overrides,
   };
 }
