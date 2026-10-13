@@ -14,14 +14,21 @@ private class InboxBacking : PersistentStateStore {
     var corruptReadback = false
     var flushCalls = 0
     var failOnFlushNumber: Int? = null
+    var failOnFlushNumbers: Set<Int> = emptySet()
+    var putCalls = 0
+    var failOnPutNumber: Int? = null
     override fun getString(key: String) = if (corruptReadback && values.containsKey(key)) "{}" else values[key]
-    override fun putString(key: String, value: String) { values[key] = value }
+    override fun putString(key: String, value: String) {
+        putCalls++
+        if (putCalls == failOnPutNumber) error("unavailable")
+        values[key] = value
+    }
     override fun contains(key: String) = values.containsKey(key)
     override fun remove(key: String) { values.remove(key) }
     override fun clear() { values.clear() }
     override fun flush() {
         flushCalls++
-        if (failFlush || flushCalls == failOnFlushNumber) error("unavailable")
+        if (failFlush || flushCalls == failOnFlushNumber || flushCalls in failOnFlushNumbers) error("unavailable")
         disk.clear(); disk.putAll(values)
     }
     fun restarted() = InboxBacking().also { it.values.putAll(disk); it.disk.putAll(disk) }
@@ -80,6 +87,80 @@ class DurableCiphertextInboxTest {
         val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
         assertEquals("cursor1", restored.navigationFor(incarnation)?.nextCursor)
         assertEquals(1, restored.pendingAcknowledgements(scope).size)
+    }
+
+    @Test fun `one-shot failed page flush restores prior snapshot for same-process retry`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val priorSnapshot = store.values.toMap()
+
+        // The first write mutates the store's cache, then its durability barrier
+        // fails. The rollback barrier succeeds and restores the prior page.
+        store.failOnFlushNumber = store.flushCalls + 1
+        unavailable {
+            inbox.capture(scope, listOf(wire("message-2")), navigation = navigation("cursor2"),
+                expectedSessionIncarnation = incarnation, expectedCursor = "cursor1")
+        }
+        assertEquals(priorSnapshot, store.values)
+        assertEquals("cursor1", inbox.navigationFor(incarnation)?.nextCursor)
+        assertEquals(listOf("message-1"), inbox.pendingCrypto(scope).map { it.messageId })
+
+        // Retry the exact page from the durable prior cursor; it is accepted
+        // and both rows and the next cursor become durable together.
+        inbox.capture(scope, listOf(wire("message-2")), navigation = navigation("cursor2"),
+            expectedSessionIncarnation = incarnation, expectedCursor = "cursor1")
+        val restored = PersistentCiphertextInbox(store.restarted(), "device-1")
+        assertEquals("cursor2", restored.navigationFor(incarnation)?.nextCursor)
+        assertEquals(listOf("message-1", "message-2"), restored.pendingCrypto(scope).map { it.messageId })
+    }
+
+    @Test fun `failed rollback mutation poisons snapshot for every inbox wrapper`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+
+        // The attempted page mutates the cache, its flush fails, and restoring
+        // the prior snapshot also fails before it can replace the cached value.
+        store.failOnFlushNumber = store.flushCalls + 1
+        store.failOnPutNumber = store.putCalls + 2
+        unavailable {
+            inbox.capture(scope, listOf(wire("message-2")), navigation = navigation("cursor2"),
+                expectedSessionIncarnation = incarnation, expectedCursor = "cursor1")
+        }
+        assertEquals(listOf("message-1", "message-2"),
+            JSONObject(store.values.values.single()).getJSONArray("records").let { records ->
+                (0 until records.length()).map { records.getJSONObject(it).getString("messageId") }
+            })
+
+        unavailable { inbox.pendingAcknowledgements(scope) }
+        unavailable { inbox.navigationFor(incarnation) }
+        unavailable { PersistentCiphertextInbox(store, "device-1").pendingCrypto(scope) }
+        unavailable {
+            inbox.capture(scope, listOf(wire("message-2")), navigation = navigation("cursor2"),
+                expectedSessionIncarnation = incarnation, expectedCursor = "cursor1")
+        }
+    }
+
+    @Test fun `failed rollback flush poisons even when cache appears restored`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val priorSnapshot = store.values.toMap()
+        store.failOnFlushNumbers = setOf(store.flushCalls + 1, store.flushCalls + 2)
+
+        unavailable {
+            inbox.capture(scope, listOf(wire("message-2")), navigation = navigation("cursor2"),
+                expectedSessionIncarnation = incarnation, expectedCursor = "cursor1")
+        }
+        // The cache has the old snapshot, but the failed rollback barrier means
+        // its durability cannot be proven. Do not expose it as committed state.
+        assertEquals(priorSnapshot, store.values)
+        unavailable { inbox.pendingAcknowledgements(scope) }
+        unavailable { PersistentCiphertextInbox(store, "device-1").navigationFor(incarnation) }
     }
 
     @Test fun `wrong session repeated cursor and stale request cannot advance custody`() {
@@ -195,11 +276,13 @@ class DurableCiphertextInboxTest {
     @Test fun `failed durability barrier cannot expose cached ack candidates`() {
         val store = InboxBacking()
         val inbox = PersistentCiphertextInbox(store, "device-1")
-        store.failFlush = true
+        store.failOnFlushNumber = store.flushCalls + 1
         unavailable { inbox.capture(scope, listOf(wire())) }
         unavailable { inbox.pendingAcknowledgements(scope) }
-        unavailable { inbox.capture(scope, listOf(wire())) }
-        store.failFlush = false
+        // A failed first commit is rolled back to the empty prior snapshot;
+        // the relay can redeliver because no ACK or cursor was committed.
+        unavailable { inbox.pendingAcknowledgements(scope) }
+        inbox.capture(scope, listOf(wire()))
         assertEquals(1, inbox.pendingAcknowledgements(scope).size)
     }
 
@@ -278,10 +361,12 @@ class DurableCiphertextInboxTest {
         val store = InboxBacking()
         val inbox = PersistentCiphertextInbox(store, "device-1")
         inbox.capture(scope, listOf(wire()))
-        store.failFlush = true
+        // markAcknowledged confirms the current snapshot first, then writes
+        // the marker. Fail that marker barrier once; the rollback barrier can
+        // then durably restore the pending-ACK snapshot.
+        store.failOnFlushNumber = store.flushCalls + 2
         unavailable { inbox.markAcknowledged(scope, "message-1", wire()) }
-        unavailable { inbox.pendingAcknowledgements(scope) }
-        store.failFlush = false
+        assertEquals(1, inbox.pendingAcknowledgements(scope).size)
         assertEquals(1, PersistentCiphertextInbox(store, "device-1").pendingAcknowledgements(scope).size)
         assertEquals(wire(), inbox.pendingCrypto(scope).single().envelopeWire)
     }

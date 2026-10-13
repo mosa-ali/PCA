@@ -12,6 +12,7 @@ import org.pca.app.runtime.sync.transport.MAX_INBOUND_CURSOR_LENGTH
 import org.pca.app.runtime.sync.transport.InboundNavigation
 import org.pca.app.runtime.sync.transport.InboundReceipt
 import org.pca.app.runtime.sync.transport.InboundReceiptOutcome
+import java.util.WeakHashMap
 
 data class RuntimeInboxScope(val familyId: String, val recipientDeviceId: String) {
     init {
@@ -216,6 +217,7 @@ class PersistentCiphertextInbox(
     }
 
     private fun readSnapshot(): Snapshot? {
+        ensureSnapshotUsable()
         try {
             val raw = store.getString(storageKey)
             if (raw == null) {
@@ -274,6 +276,7 @@ class PersistentCiphertextInbox(
 
     private fun persist(snapshot: Snapshot) {
         try {
+            ensureSnapshotUsable()
             val array = JSONArray()
             snapshot.records.forEach { record ->
                 array.put(JSONObject().put("messageId", record.messageId).put("envelopeWire", record.envelopeWire)
@@ -289,10 +292,43 @@ class PersistentCiphertextInbox(
                 .put("navigation", navigation ?: JSONObject.NULL).put("receipts", receiptArray)
                 .put("campaignUnresolved", snapshot.campaignUnresolved).toString()
             if (raw.toByteArray(Charsets.UTF_8).size > maxSnapshotBytes) unavailable()
-            store.putString(storageKey, raw)
-            store.flush()
-            if (store.getString(storageKey) != raw) unavailable()
+            val hadPriorValue = store.contains(storageKey)
+            val priorRaw = store.getString(storageKey)
+            if (hadPriorValue && priorRaw == null) unavailable()
+            try {
+                store.putString(storageKey, raw)
+                store.flush()
+                if (store.getString(storageKey) != raw) unavailable()
+            } catch (_: Exception) {
+                // PersistentStateStore implementations may update their in-memory
+                // cache before flush() reports failure. Restore the prior snapshot
+                // before returning so a same-process retry cannot observe or
+                // advance from a cursor/ACK state whose barrier did not succeed.
+                var rollbackConfirmed = false
+                try {
+                    if (hadPriorValue) store.putString(storageKey, priorRaw!!) else store.remove(storageKey)
+                    store.flush()
+                    rollbackConfirmed = store.contains(storageKey) == hadPriorValue &&
+                        store.getString(storageKey) == priorRaw
+                } catch (_: Exception) { /* fail closed below */ }
+                if (!rollbackConfirmed) markSnapshotUnusable()
+                unavailable()
+            }
         } catch (_: Exception) { unavailable() }
+    }
+
+    /** A failed rollback poisons this shared store/key for every inbox wrapper in this process. */
+    private fun ensureSnapshotUsable() {
+        val isPoisoned = synchronized(poisonedSnapshots) {
+            poisonedSnapshots[coordinationLock]?.contains(storageKey) == true
+        }
+        if (isPoisoned) unavailable()
+    }
+
+    private fun markSnapshotUnusable() {
+        synchronized(poisonedSnapshots) {
+            poisonedSnapshots.getOrPut(coordinationLock) { mutableSetOf() }.add(storageKey)
+        }
     }
 
     private fun unavailable(): Nothing = throw CiphertextInboxUnavailable()
@@ -301,6 +337,8 @@ class PersistentCiphertextInbox(
         (cursor.length in 1..MAX_INBOUND_CURSOR_LENGTH && INBOUND_CURSOR.matches(cursor))
 
     internal companion object {
+        private val poisonedSnapshots = WeakHashMap<Any, MutableSet<String>>()
+
         internal fun validateEnvelope(wire: String, scope: RuntimeInboxScope): FamilyEnvelope {
             try {
                 if (wire.toByteArray(Charsets.UTF_8).size > 64 * 1024) unavailable()
