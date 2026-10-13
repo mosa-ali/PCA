@@ -5258,7 +5258,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(roots.current(), "recovery must not capture a root seed before attempt-bound keys are restored")
         XCTAssertTrue(identity.savedDeviceIds.isEmpty)
         XCTAssertNil(model.pendingDisclosure)
-        XCTAssertEqual(transport.requestPaths(), ["/v1/enrollment/bootstrap/recover"])
+        XCTAssertEqual(transport.requests.compactMap { $0.url?.path }, ["/v1/enrollment/bootstrap/recover"])
 
         preparation.failPreparation = false
         model.sceneBecameActive()
@@ -5268,7 +5268,7 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(roots.current()?.seed.attemptId, attempt.attemptId)
         XCTAssertEqual(identity.savedDeviceIds, ["device-1"])
         XCTAssertNotNil(model.pendingDisclosure)
-        XCTAssertEqual(transport.requestPaths(), [
+        XCTAssertEqual(transport.requests.compactMap { $0.url?.path }, [
             "/v1/enrollment/bootstrap/recover",
             "/v1/enrollment/bootstrap/recover",
         ], "retry must resolve the existing attempt through recovery, never submit bootstrap again")
