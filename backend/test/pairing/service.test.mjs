@@ -76,6 +76,36 @@ test('authorized parent confirmation: PAIRING_PENDING -> PAIRED', async () => {
   assert.equal(transition?.actorMemberId, null);
 });
 
+test('confirmation rejects invalid or out-of-DATETIME-range clock values before repository mutation', async () => {
+  const { deviceService, pairingService, repository } = buildServices();
+  const { device } = await pairedCandidateDevice(deviceService);
+  const displayed = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
+  const confirmPairing = repository.confirmPairing.bind(repository);
+  let repositoryCalls = 0;
+  repository.confirmPairing = async (...args) => {
+    repositoryCalls += 1;
+    return confirmPairing(...args);
+  };
+
+  for (const invalidTime of [
+    new Date(Number.NaN),
+    new Date(Date.UTC(999, 11, 31, 23, 59, 59, 999)),
+    new Date(Date.UTC(10_000, 0, 1, 0, 0, 0, 0)),
+  ]) {
+    const invalidClockService = new PairingService(repository, () => invalidTime);
+    await assert.rejects(
+      () => invalidClockService.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), {
+        expectedDskFingerprint: displayed.dskFingerprint,
+        expectedDekFingerprint: displayed.dekFingerprint,
+      }),
+      { name: 'TypeError', message: 'Pairing clock must return a valid persistence timestamp.' },
+    );
+  }
+
+  assert.equal(repositoryCalls, 0);
+  assert.equal((await pairingService.getPairingRequest(FAMILY_A, device.deviceId)).status, 'PAIRING_PENDING');
+});
+
 test('confirmation rejects a stale fingerprint snapshot after key rotation and leaves the request pending', async () => {
   const { deviceService, pairingService } = buildServices();
   const { device } = await pairedCandidateDevice(deviceService);

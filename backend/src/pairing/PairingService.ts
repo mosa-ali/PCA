@@ -25,6 +25,13 @@ const PAIRING_ERROR_MESSAGES: Record<PairingErrorCode, string> = {
   FINGERPRINT_MISMATCH: 'The device key fingerprints changed; refresh the pairing request.',
 };
 
+// Pairing timestamps are persisted to MySQL DATETIME(3), whose supported
+// range is 1000-01-01 through 9999-12-31 23:59:59.999 UTC. Validate before
+// calling a repository so test doubles and production storage share the same
+// failure boundary.
+const MIN_PAIRING_TIMESTAMP_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MAX_PAIRING_TIMESTAMP_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
 /**
  * Thin, family-scoped facade over the device directory: exposes pairing
  * request state and public-key fingerprints to an ALREADY-authorized
@@ -47,6 +54,17 @@ export class PairingService {
     this.deviceRepository = deviceRepository;
     this.now = now;
     this.auditService = auditService;
+  }
+
+  private persistenceTimestamp(): Date {
+    const timestamp: unknown = this.now();
+    if (!(timestamp instanceof Date)) throw new TypeError('Pairing clock must return a valid persistence timestamp.');
+    const milliseconds = timestamp.getTime();
+    if (!Number.isFinite(milliseconds) || milliseconds < MIN_PAIRING_TIMESTAMP_MS ||
+        milliseconds > MAX_PAIRING_TIMESTAMP_MS) {
+      throw new TypeError('Pairing clock must return a valid persistence timestamp.');
+    }
+    return new Date(milliseconds);
   }
 
   async getPairingRequest(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId): Promise<PairingRequestView> {
@@ -77,7 +95,7 @@ export class PairingService {
       throw new PairingError('INVALID_FINGERPRINT');
     }
     const result = await this.deviceRepository.confirmPairing(
-      authorizedFamilyId, deviceId, confirmedByAccountId, this.now(), { ...expectedFingerprints },
+      authorizedFamilyId, deviceId, confirmedByAccountId, this.persistenceTimestamp(), { ...expectedFingerprints },
     );
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new PairingError('NOT_FOUND');
     if (result.outcome === 'SELF_APPROVAL_DENIED') throw new PairingError('SELF_APPROVAL_DENIED');
