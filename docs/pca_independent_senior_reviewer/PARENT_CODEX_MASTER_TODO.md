@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Current implementation checkpoint — 2026-10-14
+
+Working from published `pca-dev` base `99cf64ba2f6dd04e980bdf2141db0a8c261d9f9f`, this checkpoint integrates Android durable-inbox rollback hardening, Parent pairing timestamp bounds before repository mutation, a recovery lost-response regression, the App Link manifest contract, and the remaining ProtectionAlert HTTP MySQL fixture correction. The repeated MySQL CI failure was traced to a noncanonical Base64 nonce (`bm9uY2U`) in that fixture; it now uses canonical Base64. No schema or grant changes were made.
+
+VALIDATION = Backend full unit suite **3462/3462 PASS**; post-integration pairing + recovery **38/38 PASS**; backend build PASS; Android durable inbox **24/24 PASS** and full Debug **2167/2167 PASS**; App Link manifest **2/2 PASS**. Exact-head CI `38478943934` completed with Android and iOS PASS and full disposable MySQL FAIL; local MySQL 9.7 remains refused by the repository's 8.4.x guard, so the corrected HTTP fixture still requires disposable MySQL CI validation. The original iOS reclaim failure was the existing 30-second cancellation/fresh-authority guard during the 256-alias stress case; unchanged iOS source passed exact-head runs `38477537604` and `38478943934`, so no product lifecycle defect reproduced. `.gitignore` and `.dockerignore` exclude generated `tmp/` artifacts; none are staged or tracked.
+
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. Pairing may reach PAIRED only; server-authoritative ACTIVE still awaits the approved first-policy application receipt and verifier/key-root composition. Web Rules production delivery remains architecture-gated on approved encrypted-storage and verification contracts. Physical-device evidence, owner localhost acceptance, live DB, Platform dependency, Azure deployment, and production acceptance remain separate gates. Exact-head CI for this checkpoint is pending; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Integrated source checkpoint — 2026-10-14
 
 Against published base `da72cd39db5d6e1a0ef322c604fb2b95b76bfc7d`, this checkpoint adds bounded persisted-row validation for Safe Zone, FamilyAudit, and ProtectionAlert ciphertext ledgers; device challenge/revocation serialization coverage; exact-DSK Trust Set revocation race coverage; best-effort device-session audit failure reporting; and Android App Link manifest/runtime contract coverage. A peer review caught and corrected a nonce/storage mismatch: ProtectionAlert producer and persistence limits now align to migration `0025` (`nonce_b64 VARCHAR(64)`). No schema or grant changes were made.

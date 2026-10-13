@@ -1048,7 +1048,7 @@ test('MYSQL HTTP protection alerts: anonymous 401, owner 200 with a durably reco
       keyEpoch: 1,
       generatedAtUtc: new Date(),
       encryptedPayloadB64: 'b3BhcXVl',
-      nonceB64: 'bm9uY2U',
+      nonceB64: Buffer.from('nonce').toString('base64'),
     });
 
     const anonymous = await app.inject({ method: 'GET', url: `/api/parent/families/${owner.familyId}/protection-alerts` });

@@ -4,7 +4,6 @@ import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
@@ -25,30 +24,41 @@ class EnrollmentAppLinkManifestTest {
 
     private fun Element.android(name: String): String? = getAttributeNS(ANDROID_NS, name).takeIf(String::isNotEmpty)
 
+    private fun elements(parent: Element, tag: String): List<Element> {
+        val nodes = parent.getElementsByTagName(tag)
+        return (0 until nodes.length).map { nodes.item(it) as Element }
+    }
+
     @Test
     fun `enrollment app link filter uses the exact configured HTTPS origin and narrow path prefix`() {
         val document = manifest()
-        val activities = document.getElementsByTagName("activity")
-        val enrollment = (0 until activities.length).map { activities.item(it) as Element }
+        val enrollment = elements(document.documentElement, "activity")
             .single { it.android("name") == ".enrollment.EnrollmentActivity" }
-        val filters = enrollment.getElementsByTagName("intent-filter")
-        val verified = (0 until filters.length).map { filters.item(it) as Element }
-            .single { it.android("autoVerify") == "true" }
-        val actions = verified.getElementsByTagName("action")
-        assertEquals(1, (0 until actions.length).count { (actions.item(it) as Element).android("name") == "android.intent.action.VIEW" })
-        val categories = verified.getElementsByTagName("category")
-        assertEquals(1, (0 until categories.length).count { (categories.item(it) as Element).android("name") == "android.intent.category.DEFAULT" })
-        assertEquals(1, (0 until categories.length).count { (categories.item(it) as Element).android("name") == "android.intent.category.BROWSABLE" })
+        assertEquals("true", enrollment.android("exported"))
 
-        val data = verified.getElementsByTagName("data")
-        assertEquals("one narrow App Link data declaration", 1, data.length)
-        val appLinkData = data.item(0) as Element
+        val verified = elements(enrollment, "intent-filter")
+            .single { it.android("autoVerify") == "true" }
+        val actions = elements(verified, "action")
+        assertEquals(1, actions.count { it.android("name") == "android.intent.action.VIEW" })
+        val categories = elements(verified, "category")
+        assertEquals(1, categories.count { it.android("name") == "android.intent.category.DEFAULT" })
+        assertEquals(1, categories.count { it.android("name") == "android.intent.category.BROWSABLE" })
+
+        val data = elements(verified, "data")
+        assertEquals("one narrow App Link data declaration", 1, data.size)
+        val appLinkData = data.single()
         assertEquals("https", appLinkData.android("scheme"))
         assertEquals("${'$'}{pcaChildAppLinkHost}", appLinkData.android("host"))
         assertEquals("${'$'}{pcaChildAppLinkPathPrefix}", appLinkData.android("pathPrefix"))
         assertFalse("The App Link must not claim an exact alternate path", appLinkData.hasAttributeNS(ANDROID_NS, "path"))
         assertFalse("The App Link must not broaden to path patterns", appLinkData.hasAttributeNS(ANDROID_NS, "pathPattern"))
         assertFalse("The App Link must not accept arbitrary content types", appLinkData.hasAttributeNS(ANDROID_NS, "mimeType"))
+
+        val gradle = locate("build.gradle.kts").readText()
+        val pathPrefix = Regex("""(?m)^val childAppLinkPathPrefix = "([^"]+)"$""")
+            .find(gradle)?.groupValues?.get(1)
+        assertEquals("The App Link path stays scoped to enrollment", "/enroll/", pathPrefix)
+        assertTrue(gradle.contains("""manifestPlaceholders["pcaChildAppLinkPathPrefix"] = childAppLinkPathPrefix"""))
     }
 
     @Test
@@ -67,15 +77,16 @@ class EnrollmentAppLinkManifestTest {
         assertTrue(graph.contains("appLinkPathPrefix = EnrollmentDeepLinkConfig.APP_LINK_PATH_PREFIX"))
 
         val document = manifest()
-        val activities = document.getElementsByTagName("activity")
-        val enrollment = (0 until activities.length)
-            .map { activities.item(it) as Element }
+        val enrollment = elements(document.documentElement, "activity")
             .single { it.android("name") == ".enrollment.EnrollmentActivity" }
-        val customFilters = enrollment.getElementsByTagName("intent-filter")
-        val customSchemeFilter = (0 until customFilters.length).map { customFilters.item(it) as Element }
-            .firstOrNull { it.android("autoVerify") == null && it.getElementsByTagName("data").length == 1 }
-        assertNotNull("The compatibility custom-scheme filter remains available", customSchemeFilter)
-        val customData = (customSchemeFilter!!.getElementsByTagName("data").item(0) as Element)
+        val customSchemeFilter = elements(enrollment, "intent-filter").single { filter ->
+            filter.android("autoVerify") == null && elements(filter, "data").any {
+                it.android("scheme") == "pca" && it.android("host") == "enroll"
+            }
+        }
+        val customData = elements(customSchemeFilter, "data").single {
+            it.android("scheme") == "pca" && it.android("host") == "enroll"
+        }
         assertEquals("pca", customData.android("scheme"))
         assertEquals("enroll", customData.android("host"))
     }
