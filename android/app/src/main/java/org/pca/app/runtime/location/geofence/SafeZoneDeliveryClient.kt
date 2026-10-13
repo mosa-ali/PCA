@@ -4,6 +4,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
 import java.math.BigDecimal
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.ZoneOffset
@@ -183,8 +186,17 @@ class HttpSafeZoneDeliveryClient(
                     }
                     output.toByteArray()
                 }
+                val responseText = try {
+                    StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes))
+                        .toString()
+                } catch (malformed: java.nio.charset.CharacterCodingException) {
+                    throw SafeZoneDeliveryMalformedResponseException(malformed)
+                }
                 val page = try {
-                    decodeResponse(bytes.toString(Charsets.UTF_8), cursor)
+                    decodeResponse(responseText, cursor)
                 } catch (malformed: org.json.JSONException) {
                     throw SafeZoneDeliveryMalformedResponseException(malformed)
                 }

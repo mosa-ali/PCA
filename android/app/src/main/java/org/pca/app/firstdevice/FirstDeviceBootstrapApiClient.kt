@@ -5,12 +5,16 @@ import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
 import org.pca.app.enrollment.BootstrapEndpointConfig
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /**
  * Wave 6C: client contract for the certified first-device trust-root
@@ -117,7 +121,7 @@ class HttpFirstDeviceBootstrapApiClient(
                 .put("dskPublicKey", dskPublicKeyBase64)
             writeRequestBody(connection, body)
             when (val code = readStatusCode(connection)) {
-                200 -> parseChallenge(readBoundedBody(connection.inputStream))
+                200 -> parseFirstDeviceChallenge(readBoundedBody(connection.inputStream))
                 404 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.Unavailable }
                 400 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.InvalidRequest }
                 else -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.UnexpectedServerError }
@@ -152,10 +156,7 @@ class HttpFirstDeviceBootstrapApiClient(
             writeRequestBody(connection, body)
             when (readStatusCode(connection)) {
                 200 -> {
-                    val status = runCatching { JSONObject(readBoundedBody(connection.inputStream)).optString("status", "") }
-                        .getOrElse { throw FirstDeviceBootstrapError.AmbiguousOutcome }
-                    if (status != ACCEPTED_STATUS) throw FirstDeviceBootstrapError.AmbiguousOutcome
-                    FirstDeviceSubmitOutcome(status)
+                    parseFirstDeviceSubmitResponse(readBoundedBody(connection.inputStream))
                 }
                 404 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.Unavailable }
                 409 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.Rejected }
@@ -179,12 +180,7 @@ class HttpFirstDeviceBootstrapApiClient(
                 writeRequestBody(connection, body)
                 when (readStatusCode(connection)) {
                     200 -> {
-                        val json = runCatching { JSONObject(readBoundedBody(connection.inputStream)) }
-                            .getOrElse { throw FirstDeviceBootstrapError.AmbiguousOutcome }
-                        val status = json.optString("status", "")
-                        if (status.isBlank()) throw FirstDeviceBootstrapError.AmbiguousOutcome
-                        val outcome = json.optString("outcome", "").ifBlank { null }
-                        FirstDeviceStatusOutcome(status = status, outcome = outcome)
+                        parseFirstDeviceStatusResponse(readBoundedBody(connection.inputStream))
                     }
                     404 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.Unavailable }
                     400 -> { drainQuietly(connection.errorStream); throw FirstDeviceBootstrapError.InvalidRequest }
@@ -230,24 +226,6 @@ class HttpFirstDeviceBootstrapApiClient(
         throw FirstDeviceBootstrapError.AmbiguousOutcome
     }
 
-    private fun parseChallenge(bodyText: String): FirstDeviceChallenge {
-        val json = try {
-            JSONObject(bodyText)
-        } catch (e: JSONException) {
-            throw FirstDeviceBootstrapError.AmbiguousOutcome
-        }
-        val ceremonyId = json.optString("ceremonyId", "")
-        val challengeId = json.optString("challengeId", "")
-        val nonce = json.optString("nonce", "")
-        val expiresAt = json.optString("expiresAt", "")
-        val familyId = json.optString("familyId", "")
-        val deviceId = json.optString("deviceId", "")
-        if (ceremonyId.isBlank() || challengeId.isBlank() || nonce.isBlank() || expiresAt.isBlank() || familyId.isBlank() || deviceId.isBlank()) {
-            throw FirstDeviceBootstrapError.AmbiguousOutcome
-        }
-        return FirstDeviceChallenge(ceremonyId, challengeId, nonce, expiresAt, familyId, deviceId)
-    }
-
     /** Bounded read: never buffers more than [MAX_RESPONSE_BYTES]; a filled buffer is treated as unparseable. */
     private fun readBoundedBody(stream: InputStream?): String {
         if (stream == null) return ""
@@ -267,7 +245,15 @@ class HttpFirstDeviceBootstrapApiClient(
             throw FirstDeviceBootstrapError.AmbiguousOutcome
         }
         if (total >= MAX_RESPONSE_BYTES) throw FirstDeviceBootstrapError.AmbiguousOutcome
-        return String(buffer, 0, total, Charsets.UTF_8)
+        return try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(buffer, 0, total))
+                .toString()
+        } catch (_: Exception) {
+            throw FirstDeviceBootstrapError.AmbiguousOutcome
+        }
     }
 
     private fun drainQuietly(stream: InputStream?) {
@@ -285,11 +271,74 @@ class HttpFirstDeviceBootstrapApiClient(
         const val CHALLENGE_PATH = "/v1/first-device-bootstrap/challenge"
         const val SUBMIT_PATH = "/v1/first-device-bootstrap/submit"
         const val STATUS_PATH = "/v1/first-device-bootstrap/status"
-        const val ACCEPTED_STATUS = "ACCEPTED"
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000
     }
 }
+
+/** Parse only the exact successful challenge DTO; coercion could turn malformed identity fields into authority input. */
+internal fun parseFirstDeviceChallenge(bodyText: String): FirstDeviceChallenge {
+    val json = parseFirstDeviceJson(bodyText, setOf(
+            "status", "ceremonyId", "challengeId", "nonce", "expiresAt", "familyId", "deviceId",
+        ))
+    if (requiredFirstDeviceString(json, "status") != "PENDING") {
+        throw FirstDeviceBootstrapError.AmbiguousOutcome
+    }
+    return FirstDeviceChallenge(
+        ceremonyId = requiredFirstDeviceString(json, "ceremonyId"),
+        challengeId = requiredFirstDeviceString(json, "challengeId"),
+        nonce = requiredFirstDeviceString(json, "nonce"),
+        expiresAt = requiredFirstDeviceString(json, "expiresAt"),
+        familyId = requiredFirstDeviceString(json, "familyId"),
+        deviceId = requiredFirstDeviceString(json, "deviceId"),
+    )
+}
+
+internal fun parseFirstDeviceSubmitResponse(bodyText: String): FirstDeviceSubmitOutcome {
+    val json = parseFirstDeviceJson(bodyText, setOf("status"))
+    val status = requiredFirstDeviceString(json, "status")
+    if (status != "ACCEPTED") throw FirstDeviceBootstrapError.AmbiguousOutcome
+    return FirstDeviceSubmitOutcome(status)
+}
+
+internal fun parseFirstDeviceStatusResponse(bodyText: String): FirstDeviceStatusOutcome {
+    val json = parseFirstDeviceJson(bodyText, setOf("status", "outcome"))
+    val status = requiredFirstDeviceString(json, "status")
+    if (status !in setOf("PENDING", "APPROVED", "COMMITTED", "EXPIRED")) {
+        throw FirstDeviceBootstrapError.AmbiguousOutcome
+    }
+    val rawOutcome = json.opt("outcome")
+    val outcome = when (rawOutcome) {
+        JSONObject.NULL -> null
+        is String -> rawOutcome
+        else -> throw FirstDeviceBootstrapError.AmbiguousOutcome
+    }
+    val validCombination = when (status) {
+        "COMMITTED" -> outcome == null || outcome == "ACCEPTED"
+        else -> outcome == null
+    }
+    if (!validCombination) throw FirstDeviceBootstrapError.AmbiguousOutcome
+    return FirstDeviceStatusOutcome(status, outcome)
+}
+
+private fun parseFirstDeviceJson(bodyText: String, expectedKeys: Set<String>): JSONObject {
+    try {
+        StrictJsonMemberNames.requireUnique(bodyText)
+    } catch (_: Exception) {
+        throw FirstDeviceBootstrapError.AmbiguousOutcome
+    }
+    val json = try {
+        JSONObject(bodyText)
+    } catch (_: JSONException) {
+        throw FirstDeviceBootstrapError.AmbiguousOutcome
+    }
+    if (json.keys().asSequence().toSet() != expectedKeys) throw FirstDeviceBootstrapError.AmbiguousOutcome
+    return json
+}
+
+private fun requiredFirstDeviceString(json: JSONObject, name: String): String =
+    (json.opt(name) as? String)?.takeIf { it.isNotBlank() }
+        ?: throw FirstDeviceBootstrapError.AmbiguousOutcome
 
 /** Error classification uses the status code; discarded bodies cannot consume an unbounded stream. */
 internal fun discardBootstrapErrorResponse(stream: InputStream, maximumBytes: Int) {

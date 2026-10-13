@@ -82,6 +82,32 @@ class HttpDeviceBootstrapApiClientTest {
     }
 
     @Test
+    fun `prepareAttempt rejects noncanonical successful status DTOs`() = runBlocking {
+        val responseBody = AtomicReference("""{"status":"READY"}""")
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start { 200 to responseBody.get().toByteArray() }
+        val api = client(fake.baseUrl)
+
+        responseBody.set("""{"status":"COMPLETED"}""")
+        withTimeout(5_000) { api.prepareAttempt("token", "ANDROID", "dsk", "dek", "attempt", "recovery") }
+
+        for (body in listOf(
+            """{"status":"READY","status":"COMPLETED"}""",
+            """{"status":"READY","unexpectedAuthority":"ACTIVE"}""",
+            """{"status":true}""",
+            """{"status":"PENDING"}""",
+        )) {
+            responseBody.set(body)
+            try {
+                withTimeout(5_000) { api.prepareAttempt("token", "ANDROID", "dsk", "dek", "attempt", "recovery") }
+                fail("noncanonical prepare response must remain ambiguous")
+            } catch (_: BootstrapError.AmbiguousOutcome) {
+                // A malformed response cannot prove whether the reservation completed.
+            }
+        }
+    }
+
+    @Test
     fun `prepareAttempt maps unavailable response without inventing a successful reservation`() = runBlocking {
         val fake = FakeHttpServer.start().also { server = it }
         fake.start { 404 to " \r\n{\t\"error\"\n:\r\"invitation_unavailable\"\t}\n ".toByteArray() }
@@ -165,6 +191,28 @@ class HttpDeviceBootstrapApiClientTest {
         assertEquals("attempt-id-1", body.getString("bootstrapAttemptId"))
         assertEquals("recovery-token-1", body.getString("attemptRecoveryToken"))
         assertFalse(body.has("rawInvitationToken"))
+    }
+
+    @Test
+    fun `recoverAttempt only accepts the exact abandoned terminal DTO`() = runBlocking {
+        val responseBody = AtomicReference("""{"status":"ATTEMPT_ABANDONED"}""")
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start { 200 to responseBody.get().toByteArray() }
+        val api = client(fake.baseUrl)
+
+        for (body in listOf(
+            """{"status":"ATTEMPT_ABANDONED","status":"PAIRING_PENDING"}""",
+            """{"status":"ATTEMPT_ABANDONED","unexpectedAuthority":"ACTIVE"}""",
+            """{"status":true}""",
+        )) {
+            responseBody.set(body)
+            try {
+                withTimeout(5_000) { api.recoverAttempt("attempt-id-1", "recovery-token-1") }
+                fail("noncanonical abandonment response must remain ambiguous")
+            } catch (_: RecoveryError.AmbiguousOutcome) {
+                // Do not release pending attempt or key custody based on a malformed terminal DTO.
+            }
+        }
     }
 
     @Test
@@ -325,6 +373,37 @@ class HttpDeviceBootstrapApiClientTest {
     }
 
     @Test
+    fun `malformed UTF-8 cannot become an accepted bootstrap or recovery DTO`() = runBlocking {
+        val malformed = byteArrayOf(0xC3.toByte(), 0x28)
+        val prefix = "{\"deviceId\":\"".toByteArray(Charsets.UTF_8)
+        val suffix = "(device-123\",\"status\":\"PAIRING_PENDING\",\"signingKeyId\":\"dsk-key-123\",\"encryptionKeyId\":\"dek-key-123\",\"ageUxTier\":\"TEEN\",\"initialPolicyProfile\":\"STRICT\",\"childProfileId\":null}".toByteArray(Charsets.UTF_8)
+        // Replacement decoding would make deviceId a non-blank string and accept this DTO.
+        val body = prefix + malformed + suffix
+
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.startRequest { request ->
+            when (request.path) {
+                "/v1/enrollment/bootstrap" -> 201 to body
+                "/v1/enrollment/bootstrap/recover" -> 200 to body
+                else -> 500 to byteArrayOf()
+            }
+        }
+        try {
+            withTimeout(5_000) { client(fake.baseUrl).bootstrap("t", "ANDROID", "s", "e", "a", "r") }
+            fail("malformed bootstrap bytes cannot establish a device")
+        } catch (_: BootstrapError.AmbiguousOutcome) {
+            // Preserve the exact attempt for status recovery.
+        }
+
+        try {
+            withTimeout(5_000) { client(fake.baseUrl).recoverAttempt("a", "r") }
+            fail("malformed recovery bytes cannot establish a device")
+        } catch (_: RecoveryError.AmbiguousOutcome) {
+            // Preserve attempt credentials and key custody for a later retry.
+        }
+    }
+
+    @Test
     fun `a 201 claiming a lifecycle state beyond PAIRING_PENDING is ambiguous`() = runBlocking {
         val fake = FakeHttpServer.start().also { server = it }
         fake.start {
@@ -353,6 +432,39 @@ class HttpDeviceBootstrapApiClientTest {
             fail("expected BootstrapError.AmbiguousOutcome")
         } catch (e: BootstrapError.AmbiguousOutcome) {
             // expected
+        }
+    }
+
+    @Test
+    fun `bootstrap and recovery reject duplicate and unknown response members`() = runBlocking {
+        val canonical = validSuccessBody().toString()
+        val duplicateDeviceId = canonical.dropLast(1) + ",\"deviceId\":\"device-123\"}"
+        val unknownField = validSuccessBody().put("unexpectedAuthority", "ACTIVE").toString()
+        val responseBody = AtomicReference(canonical)
+        val statusCode = AtomicReference(201)
+        val fake = FakeHttpServer.start().also { server = it }
+        fake.start { statusCode.get() to responseBody.get().toByteArray(Charsets.UTF_8) }
+        val api = client(fake.baseUrl)
+
+        for (invalidBody in listOf(duplicateDeviceId, unknownField)) {
+            responseBody.set(invalidBody)
+            statusCode.set(201)
+            try {
+                withTimeout(5_000) {
+                    api.bootstrap("t", "ANDROID", "s", "e", "attempt", "recovery")
+                }
+                fail("duplicate or unknown bootstrap response members must be ambiguous")
+            } catch (_: BootstrapError.AmbiguousOutcome) {
+                // Retain the attempt; do not accept a DTO with non-canonical authority fields.
+            }
+
+            statusCode.set(200)
+            try {
+                withTimeout(5_000) { api.recoverAttempt("attempt", "recovery") }
+                fail("duplicate or unknown recovery response members must be ambiguous")
+            } catch (_: RecoveryError.AmbiguousOutcome) {
+                // Recovery enforces the same exact DTO contract as initial bootstrap.
+            }
         }
     }
 

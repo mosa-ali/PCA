@@ -75,6 +75,26 @@ class SafeZoneDeliveryClientTest {
         assertTrue(authorityFailure is SafeZoneDeliveryAuthorityFailure)
     }
 
+    @Test fun `malformed UTF-8 response is rejected before Safe Zone page or cursor staging`() = runBlocking {
+        val scope = GeofenceStorageScope("family-1", "device-1")
+        val inbox = PersistentSafeZoneDeliveryInbox(InMemoryPersistentStateStore()) { scope }
+        val malformed = byteArrayOf(0xC3.toByte(), 0x28)
+        val prefix = """{"safeZones":[{"zoneId":"zone-1","ciphertextB64":"AQID","nonceB64":"${"A".repeat(16)}","keyEpoch":1,"revision":1,"deliveryState":"READY","updatedAtUtc":"2026-10-10T10:20:30.""".toByteArray()
+        val suffix = """Z"} ],"nextCursor":null}""".toByteArray()
+        val server = RawByteServer(200, prefix + malformed + suffix)
+        val session = sessions().also { it.authenticate() }
+
+        val failure = runCatching {
+            HttpSafeZoneDeliveryClient(server.url, session, allowInsecureLocal = true).synchronize(inbox)
+        }.exceptionOrNull()
+
+        assertTrue(failure is SafeZoneDeliveryMalformedResponseException)
+        assertTrue(failure?.cause is java.nio.charset.CharacterCodingException)
+        assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+        assertTrue(inbox.read().isEmpty())
+        assertNull(inbox.nextCursor())
+    }
+
     @Test fun `fractional revision is typed malformed and never advances the durable cursor`() = runBlocking {
         val scope = GeofenceStorageScope("family-1", "device-1")
         val inbox = PersistentSafeZoneDeliveryInbox(InMemoryPersistentStateStore()) { scope }
@@ -561,6 +581,39 @@ class SafeZoneDeliveryClientTest {
                         }
                     }
                 } catch (_: java.net.SocketException) {
+                    // Test teardown can close a server that intentionally received no request.
+                } finally {
+                    finished.countDown()
+                    socket.close()
+                }
+            }.apply { isDaemon = true; start() }
+        }
+    }
+
+    private class RawByteServer(private val status: Int, private val body: ByteArray) {
+        private val socket = ServerSocket(0)
+        val url = "http://127.0.0.1:${socket.localPort}"
+        val finished = CountDownLatch(1)
+
+        init {
+            Thread {
+                try {
+                    socket.soTimeout = 5000
+                    socket.accept().use { client ->
+                        val input = client.getInputStream().bufferedReader(StandardCharsets.US_ASCII)
+                        while (true) {
+                            val line = input.readLine() ?: break
+                            if (line.isEmpty()) break
+                        }
+                        val reason = if (status == 200) "OK" else "Service Unavailable"
+                        val header = "HTTP/1.1 $status $reason\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                        client.getOutputStream().apply {
+                            write(header.toByteArray(StandardCharsets.US_ASCII))
+                            write(body)
+                            flush()
+                        }
+                    }
+                } catch (_: SocketException) {
                     // Test teardown can close a server that intentionally received no request.
                 } finally {
                     finished.countDown()

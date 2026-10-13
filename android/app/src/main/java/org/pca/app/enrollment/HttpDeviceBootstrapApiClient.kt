@@ -5,6 +5,9 @@ import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -153,9 +156,9 @@ class HttpDeviceBootstrapApiClient(
             val status = readStatusCode(connection) { BootstrapError.AmbiguousOutcome }
             when (status) {
                 200 -> {
-                    val json = runCatching { JSONObject(readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }) }
-                        .getOrElse { throw BootstrapError.AmbiguousOutcome }
-                    if (json.optString("status") !in setOf("READY", "COMPLETED")) throw BootstrapError.AmbiguousOutcome
+                    val responseBody = readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }
+                    val responseStatus = parseExactStatusField(responseBody) { BootstrapError.AmbiguousOutcome }
+                    if (responseStatus !in setOf("READY", "COMPLETED")) throw BootstrapError.AmbiguousOutcome
                 }
                 404 -> {
                     val errorBody = readBoundedBytes(connection.errorStream) { BootstrapError.AmbiguousOutcome }
@@ -226,8 +229,8 @@ class HttpDeviceBootstrapApiClient(
             when (status) {
                 200 -> {
                     val responseBody = readBoundedBody(connection.inputStream) { RecoveryError.AmbiguousOutcome }
-                    val json = runCatching { JSONObject(responseBody) }.getOrElse { throw RecoveryError.AmbiguousOutcome }
-                    if (json.optString("status") == ATTEMPT_ABANDONED_STATUS) throw RecoveryError.AttemptAbandoned
+                    val responseStatus = parseExactStatusField(responseBody) { RecoveryError.AmbiguousOutcome }
+                    if (responseStatus == ATTEMPT_ABANDONED_STATUS) throw RecoveryError.AttemptAbandoned
                     parseSuccessBody(responseBody) { RecoveryError.AmbiguousOutcome }
                 }
                 404 -> {
@@ -292,6 +295,7 @@ class HttpDeviceBootstrapApiClient(
             // created/found server-side, but its deviceId cannot be recovered from this response.
             throw onAmbiguous()
         }
+        if (topLevelObjectKeys(bodyText) != BOOTSTRAP_RESULT_FIELDS) throw onAmbiguous()
         val deviceId = json.opt("deviceId") as? String ?: throw onAmbiguous()
         val status = json.opt("status") as? String ?: throw onAmbiguous()
         // Bootstrap and recovery DTOs are intentionally narrower than the
@@ -334,6 +338,111 @@ class HttpDeviceBootstrapApiClient(
         )
     }
 
+    /** Terminal/small success responses still carry authority semantics, so require one exact string status. */
+    private fun parseExactStatusField(bodyText: String, onAmbiguous: () -> Exception): String {
+        if (topLevelObjectKeys(bodyText) != setOf("status")) throw onAmbiguous()
+        val json = try {
+            JSONObject(bodyText)
+        } catch (_: JSONException) {
+            throw onAmbiguous()
+        }
+        return json.opt("status") as? String ?: throw onAmbiguous()
+    }
+
+    /**
+     * Return the unique top-level JSON object keys, or null for duplicates or a non-object body.
+     * JSONObject intentionally accepts and collapses duplicate members, so the raw response is
+     * scanned before any server authority fields are trusted. The regular JSONObject parse in
+     * [parseSuccessBody] remains responsible for validating JSON syntax and value types.
+     */
+    private fun topLevelObjectKeys(bodyText: String): Set<String>? {
+        var index = 0
+
+        fun skipWhitespace() {
+            while (index < bodyText.length && bodyText[index] in JSON_WHITESPACE) index++
+        }
+
+        fun parseKey(): String? {
+            if (index >= bodyText.length || bodyText[index] != '"') return null
+            val start = index++
+            var escaped = false
+            while (index < bodyText.length) {
+                val character = bodyText[index++]
+                if (escaped) {
+                    escaped = false
+                } else if (character == '\\') {
+                    escaped = true
+                } else if (character == '"') {
+                    val token = bodyText.substring(start, index)
+                    return try {
+                        JSONObject("{\"key\":$token}").getString("key")
+                    } catch (_: JSONException) {
+                        null
+                    }
+                }
+            }
+            return null
+        }
+
+        skipWhitespace()
+        if (index >= bodyText.length || bodyText[index++] != '{') return null
+        skipWhitespace()
+        if (index < bodyText.length && bodyText[index] == '}') {
+            index++
+            skipWhitespace()
+            return if (index == bodyText.length) emptySet() else null
+        }
+
+        val keys = mutableSetOf<String>()
+        while (index < bodyText.length) {
+            val key = parseKey() ?: return null
+            if (!keys.add(key)) return null
+            skipWhitespace()
+            if (index >= bodyText.length || bodyText[index++] != ':') return null
+            skipWhitespace()
+
+            // Skip one complete JSON value. The validated JSONObject parse above rejects bad
+            // nesting/types; this lexical pass only needs to find the next outer delimiter.
+            val valueStart = index
+            var nesting = 0
+            var inString = false
+            var escaped = false
+            while (index < bodyText.length) {
+                val character = bodyText[index]
+                if (inString) {
+                    when {
+                        escaped -> escaped = false
+                        character == '\\' -> escaped = true
+                        character == '"' -> inString = false
+                    }
+                } else {
+                    when (character) {
+                        '"' -> inString = true
+                        '{', '[' -> nesting++
+                        '}', ']' -> {
+                            if (nesting == 0) break
+                            nesting--
+                        }
+                        ',' -> if (nesting == 0) break
+                    }
+                }
+                index++
+            }
+            if (index == valueStart) return null
+            skipWhitespace()
+            if (index >= bodyText.length) return null
+            when (bodyText[index++]) {
+                ',' -> skipWhitespace()
+                '}' -> {
+                    skipWhitespace()
+                    return if (index == bodyText.length) keys else null
+                }
+                else -> return null
+            }
+        }
+        return null
+    }
+
     /**
      * Bounded read: never buffers more than [MAX_RESPONSE_BYTES] regardless of what the server
      * sends. If the buffer fills completely (the body is at least [MAX_RESPONSE_BYTES]), the
@@ -343,8 +452,18 @@ class HttpDeviceBootstrapApiClient(
      * a simple non-keep-alive test server); filling the bound exactly is already conservative
      * enough to distrust the body without further reads.
      */
-    private fun readBoundedBody(stream: InputStream?, onAmbiguous: () -> Exception): String =
-        String(readBoundedBytes(stream, onAmbiguous), Charsets.UTF_8)
+    private fun readBoundedBody(stream: InputStream?, onAmbiguous: () -> Exception): String {
+        val bytes = readBoundedBytes(stream, onAmbiguous)
+        return try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            throw onAmbiguous()
+        }
+    }
 
     private fun readBoundedBytes(stream: InputStream?, onAmbiguous: () -> Exception): ByteArray {
         if (stream == null) return ByteArray(0)
@@ -426,6 +545,16 @@ class HttpDeviceBootstrapApiClient(
         const val RECOVER_PATH = "/v1/enrollment/bootstrap/recover"
         const val ATTEMPT_ABANDONED_STATUS = "ATTEMPT_ABANDONED"
         const val PAIRING_PENDING_STATUS = "PAIRING_PENDING"
+        val BOOTSTRAP_RESULT_FIELDS = setOf(
+            "deviceId",
+            "signingKeyId",
+            "encryptionKeyId",
+            "status",
+            "childProfileId",
+            "ageUxTier",
+            "initialPolicyProfile",
+        )
+        val JSON_WHITESPACE = setOf(' ', '\t', '\n', '\r')
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000
     }
