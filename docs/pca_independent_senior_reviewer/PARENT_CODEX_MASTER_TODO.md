@@ -1,5 +1,13 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Source and validation checkpoint — 2026-10-14
+
+Published base `7ddd59dd6ab215483aae8197b9ebf3e18538374a` passed Quality Gates run `38481324030` with 27/27 jobs successful. The local follow-up corrects Safe Zone production-path certification to retain its verified-device-session gate, requires the owned disposable database guard before direct Safe Zone MySQL tests, and snapshots Android ordinary Trust Set candidates before lock/network suspension. Android rejects more than 64 entries before head I/O or signing. No schema, grant, or production configuration changed.
+
+VALIDATION = Backend full suite **3466/3466 PASS** and build PASS; Safe Zone disposable MySQL 8.4.11 **14/14 PASS**, including migrations and wrapper-owned schema removal; production-path certification **11/11 PASS**; Android focused candidate-mutation and size-bound tests **2/2 PASS**. Android source received independent security review with no blocker. `git diff --check` passes. Generated `tmp/ios-diagnostics-*` is Git-ignored and Docker-excluded; no generated temp files are staged or tracked. This local checkpoint awaits publication and its own exact-head CI.
+
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS for the approved current schema/grant state. Server-authoritative ACTIVE and production policy/Web Rules receiving paths still require the approved receipt, signer/key-root, and encrypted delivery contracts. Physical-device, owner localhost acceptance, live DB, Platform dependency, Azure deployment, and production acceptance remain separate gates. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Current implementation checkpoint — 2026-10-14
 
 Working from published `pca-dev` base `99cf64ba2f6dd04e980bdf2141db0a8c261d9f9f`, this checkpoint integrates Android durable-inbox rollback hardening, Parent pairing timestamp bounds before repository mutation, a recovery lost-response regression, the App Link manifest contract, and the remaining ProtectionAlert HTTP MySQL fixture correction. The repeated MySQL CI failure was traced to a noncanonical Base64 nonce (`bm9uY2U`) in that fixture; it now uses canonical Base64. No schema or grant changes were made.
