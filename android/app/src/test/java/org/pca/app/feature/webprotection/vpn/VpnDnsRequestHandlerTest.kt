@@ -130,6 +130,24 @@ class VpnDnsRequestHandlerTest {
     }
 
     @Test
+    fun `fixed old tunnel epoch cannot resolve or publish after stop and restart`() {
+        val channel = VpnDnsDecisionChannel()
+        val oldTunnelEpoch = channel.setEnforcing(true)
+        channel.setEnforcing(false)
+        channel.setEnforcing(true)
+        val requestedNames = mutableListOf<String>()
+        val h = handler(
+            decider = { VpnDnsDomainDecision.ALLOW },
+            channel = channel,
+            resolveUpstream = { name, _ -> requestedNames.add(name); fakeUpstreamAnswer(name) },
+        )
+
+        assertNull(h.handle(query("example.com"), oldTunnelEpoch))
+        assertTrue(requestedNames.isEmpty())
+        assertNull(channel.decisionFor("example.com"))
+    }
+
+    @Test
     fun `a non-A AAAA query type is forwarded and relayed verbatim without ever consulting the domain decider`() {
         var deciderCalled = false
         val h = handler(decider = { deciderCalled = true; VpnDnsDomainDecision.BLOCK })

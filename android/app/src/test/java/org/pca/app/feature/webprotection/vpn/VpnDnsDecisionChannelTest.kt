@@ -45,8 +45,7 @@ class VpnDnsDecisionChannelTest {
     @Test
     fun `an attempt captured before stop cannot clear or publish a verdict after restart`() {
         val channel = VpnDnsDecisionChannel()
-        channel.setEnforcing(true)
-        val oldLifecycle = channel.captureLifecycleEpoch()
+        val oldLifecycle = channel.setEnforcing(true)
         val oldAttempt = channel.clearDecision("example.com", oldLifecycle)!!
         channel.recordDecision("example.com", VpnDecisionOutcome.ALLOWED, oldAttempt)
 
@@ -57,6 +56,16 @@ class VpnDnsDecisionChannelTest {
         assertNull(channel.decisionFor("example.com"))
         channel.recordDecision("example.com", VpnDecisionOutcome.BLOCKED, oldAttempt)
         assertNull(channel.decisionFor("example.com"))
+    }
+
+    @Test
+    fun `same-state activation returns current epoch without creating a new lifecycle`() {
+        val channel = VpnDnsDecisionChannel()
+        val startedEpoch = channel.setEnforcing(true)
+
+        assertEquals(startedEpoch, channel.setEnforcing(true))
+        assertEquals(startedEpoch + 1L, channel.setEnforcing(false))
+        assertEquals(startedEpoch + 2L, channel.setEnforcing(true))
     }
 
     @Test

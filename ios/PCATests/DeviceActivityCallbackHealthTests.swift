@@ -1010,7 +1010,10 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
                 return TimeZone(identifier: "UTC")!
             }, shieldEnforcer: shields)
 
-        let policyData = try policy("revoked-at-final-boundary", capability: .unavailable, restrictive: true)
+        // This test asserts successful reapplication after authorization returns;
+        // an unavailable capability correctly reports `.degraded` even when
+        // ManagedSettings mutation succeeds.
+        let policyData = try policy("revoked-at-final-boundary", capability: .enforced, restrictive: true)
         XCTAssertThrowsError(try runtime.applyVerifiedPolicy(scheduleData: policyData,
             applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
             protectedApplicationTokenData: nil, now: installedAt)) {
@@ -1040,7 +1043,9 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let store = CallbackRuntimeBlobStore()
         let scheduler = CallbackRuntimeScheduler()
         let shields = ShieldRecorder()
-        let policyData = try policy("recovery-revoked-at-final-boundary", capability: .unavailable, restrictive: true)
+        // Keep the policy capability enforced so `.applied` measures recovery
+        // success, rather than the stored capability's degraded status.
+        let policyData = try policy("recovery-revoked-at-final-boundary", capability: .enforced, restrictive: true)
         let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
         let writer = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
             scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },

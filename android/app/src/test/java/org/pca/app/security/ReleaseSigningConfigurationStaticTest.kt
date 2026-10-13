@@ -37,4 +37,19 @@ class ReleaseSigningConfigurationStaticTest {
         assertTrue(source.contains("require(!hasAnyReleaseSigningValue || hasReleaseSigning)"))
         assertTrue(source.contains("file(releaseKeystorePath!!).isFile"))
     }
+
+    @Test
+    fun `android package version is pipeline-configurable and validates supplied values`() {
+        val source = buildScript()
+        assertTrue(source.contains("PCA_ANDROID_VERSION_CODE"))
+        assertTrue(source.contains("PCA_ANDROID_VERSION_NAME"))
+        assertTrue(source.contains("val androidVersionCodePattern = Regex(\"^[1-9][0-9]{0,9}$\")"))
+        assertTrue(source.contains("it in 1..2_100_000_000"))
+        assertTrue(source.contains("configuredAndroidVersionCode == null"))
+        assertTrue(source.contains("configuredAndroidVersionName == null) \"0.1.0\""))
+        assertTrue(source.contains("versionCode = androidVersionCode"))
+        assertTrue(source.contains("versionName = androidVersionName"))
+        assertTrue(source.contains("androidVersionName.length <= 64"))
+        assertTrue(source.contains("androidVersionName.none { it.isISOControl() }"))
+    }
 }

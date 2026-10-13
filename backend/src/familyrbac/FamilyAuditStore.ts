@@ -167,12 +167,16 @@ export class FamilyAuditService {
     // Best-effort/non-blocking, matching runtimeSyncRoutes.ts's
     // emitProtectionDegradedAlert precedent exactly: a delivery failure
     // must never affect (or be affected by) the audit record itself, which
-    // has already durably committed above.
+    // has already been appended above.
     if (this.delivery) {
       try {
-        await this.delivery.deliver(snapshotRecord(record));
+        // Recipient resolution/composition/ledger writes are an independent
+        // delivery path. Do not let their latency hold the audited product
+        // action open; contain both a synchronous adapter throw and a
+        // rejected delivery promise.
+        void Promise.resolve(this.delivery.deliver(snapshotRecord(record))).catch(() => undefined);
       } catch {
-        // Delivery is deliberately non-blocking -- see this field's own doc comment.
+        // A synchronous delivery failure is equally best-effort.
       }
     }
     return snapshotRecord(record);

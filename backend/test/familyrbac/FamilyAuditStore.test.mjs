@@ -169,6 +169,10 @@ test('async delivery mutation cannot change stored audit scope, timestamp, or re
 
   const recording = service.record(baseInput());
   await started;
+  let recordSettled = false;
+  void recording.then(() => { recordSettled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(recordSettled, true, 'the audit record must return while delivery is still pending');
   releaseDelivery();
   const returned = await recording;
 
@@ -178,6 +182,24 @@ test('async delivery mutation cannot change stored audit scope, timestamp, or re
   const listed = await repo.listForFamily('fam-1');
   assert.equal(listed[0].targetScope.id, 'child-1');
   assert.equal(listed[0].occurredAtUtc.toISOString(), '2026-01-01T00:00:00.000Z');
+});
+
+test('synchronous delivery throws and asynchronous delivery rejections do not affect the committed audit record', async () => {
+  for (const deliver of [
+    () => { throw new Error('sync delivery failure'); },
+    () => Promise.reject(new Error('async delivery failure')),
+  ]) {
+    const repo = new InMemoryFamilyAuditRepository();
+    const service = new FamilyAuditService(repo);
+    service.configureDelivery({ deliver });
+
+    const record = await service.record(baseInput());
+    assert.equal(record.familyId, 'fam-1');
+    assert.equal((await repo.listForFamily('fam-1')).length, 1);
+    // Allow a detached rejected promise to reach Node's unhandled-rejection
+    // checkpoint. The service must consume it without rejecting record().
+    await new Promise(resolve => setImmediate(resolve));
+  }
 });
 
 test('audit projection excludes unapproved input and nested target-scope fields at every boundary', async () => {

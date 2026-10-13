@@ -31,12 +31,18 @@ class VpnDnsDecisionChannel {
     private val lifecycleLock = Any()
 
     /** Called by [WebProtectionVpnService] as its own tunnel lifecycle changes -- mirrors the existing [org.pca.app.platform.StandardVpnCapabilitySource.updateState] convention (the service reports transitions as they actually happen). Setting `false` clears every recorded decision: an adapter reading after the tunnel stops must never see a decision from a now-dead tunnel. */
-    fun setEnforcing(value: Boolean) = synchronized(lifecycleLock) {
+    /**
+     * Update tunnel lifecycle and return its epoch atomically. The service binds
+     * this returned value to that tunnel's reader thread, so a delayed old
+     * reader cannot capture a later lifecycle epoch after stop/restart.
+     */
+    fun setEnforcing(value: Boolean): Long = synchronized(lifecycleLock) {
         if (enforcing.get() != value) {
             lifecycleEpoch.incrementAndGet()
             enforcing.set(value)
         }
         if (!value) decisions.clear()
+        lifecycleEpoch.get()
     }
 
     fun isEnforcing(): Boolean = enforcing.get()

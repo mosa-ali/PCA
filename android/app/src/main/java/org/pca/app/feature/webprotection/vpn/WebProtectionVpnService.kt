@@ -118,12 +118,14 @@ class WebProtectionVpnService : VpnService() {
         val pool = Executors.newFixedThreadPool(DNS_WORKER_THREADS)
         executor = pool
         g.vpnCapabilitySource.updateState(VpnConnectionState.CONNECTED)
-        g.vpnDnsDecisionChannel.setEnforcing(true)
+        val decisionLifecycleEpoch = g.vpnDnsDecisionChannel.setEnforcing(true)
 
         startForeground(NOTIFICATION_ID, buildNotification())
 
         val handler = buildRequestHandler(g)
-        readerThread = Thread({ runTunnelLoop(established, handler, pool) }, "pca-web-protection-vpn").apply {
+        readerThread = Thread({
+            runTunnelLoop(established, handler, pool, decisionLifecycleEpoch)
+        }, "pca-web-protection-vpn").apply {
             isDaemon = true
             start()
         }
@@ -197,7 +199,12 @@ class WebProtectionVpnService : VpnService() {
         null
     }
 
-    private fun runTunnelLoop(pfd: android.os.ParcelFileDescriptor, handler: VpnDnsRequestHandler, pool: ExecutorService) {
+    private fun runTunnelLoop(
+        pfd: android.os.ParcelFileDescriptor,
+        handler: VpnDnsRequestHandler,
+        pool: ExecutorService,
+        decisionLifecycleEpoch: Long,
+    ) {
         val input = FileInputStream(pfd.fileDescriptor)
         val output = FileOutputStream(pfd.fileDescriptor)
         val buffer = ByteArray(MAX_PACKET_SIZE)
@@ -216,8 +223,6 @@ class WebProtectionVpnService : VpnService() {
             val packet = Ipv4UdpPacketCodec.parse(buffer, length) ?: continue
             if (packet.destPort != DNS_PORT) continue
             val query = DnsMessageCodec.parse(packet.payload) ?: continue
-            val decisionLifecycleEpoch = g.vpnDnsDecisionChannel.captureLifecycleEpoch()
-
             try {
                 pool.submit {
                     try {

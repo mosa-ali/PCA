@@ -30,6 +30,27 @@ require(
 val childAppLinkHost = parsedChildAppPublicOrigin.host.lowercase()
 val childAppLinkPathPrefix = "/enroll/"
 
+// A Play/managed release update must carry a monotonically increasing package
+// version code. Keep stable local/CI defaults, while allowing the release
+// pipeline to supply the next owner-approved version without source edits.
+// A present but invalid value fails configuration rather than silently
+// producing another artifact with the default version code.
+val androidVersionCodePattern = Regex("^[1-9][0-9]{0,9}$")
+val configuredAndroidVersionCode = System.getenv("PCA_ANDROID_VERSION_CODE")
+val androidVersionCode = if (configuredAndroidVersionCode == null) {
+    1
+} else {
+    configuredAndroidVersionCode.trim().takeIf { androidVersionCodePattern.matches(it) }
+        ?.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }
+        ?: error("PCA_ANDROID_VERSION_CODE must be an integer from 1 through 2100000000.")
+}
+val configuredAndroidVersionName = System.getenv("PCA_ANDROID_VERSION_NAME")
+val androidVersionName = if (configuredAndroidVersionName == null) "0.1.0" else configuredAndroidVersionName.trim()
+require(androidVersionName.isNotEmpty()) { "PCA_ANDROID_VERSION_NAME must not be blank when supplied." }
+require(androidVersionName.length <= 64 && androidVersionName.none { it.isISOControl() }) {
+    "PCA_ANDROID_VERSION_NAME must be at most 64 characters and contain no control characters."
+}
+
 android {
     namespace = "org.pca.app"
     compileSdk = 35
@@ -38,8 +59,8 @@ android {
         applicationId = "org.pca.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = androidVersionCode
+        versionName = androidVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["pcaChildAppLinkHost"] = childAppLinkHost
         manifestPlaceholders["pcaChildAppLinkPathPrefix"] = childAppLinkPathPrefix
