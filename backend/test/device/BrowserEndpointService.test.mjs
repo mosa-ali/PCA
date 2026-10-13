@@ -55,6 +55,41 @@ test('registerEndpoint rejects a malformed public key, never creates a device', 
   await assert.rejects(() => service.registerEndpoint(FAMILY, randomUUID(), ''), { code: 'INVALID_PUBLIC_KEY' });
 });
 
+test('registerEndpoint rejects an invalid or out-of-range persistence clock before repository effects', async () => {
+  let repositoryCalls = 0;
+  const repository = {
+    async createDeviceWithKey() {
+      repositoryCalls += 1;
+      return { outcome: 'CREATED' };
+    },
+  };
+  for (const clockValue of [
+    new Date(Number.NaN),
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date('10000-01-01T00:00:00.000Z'),
+    '2026-01-01T00:00:00.000Z',
+  ]) {
+    const service = new BrowserEndpointService(repository, () => clockValue);
+    await assert.rejects(
+      () => service.registerEndpoint(FAMILY, randomUUID(), key()),
+      (error) => error instanceof TypeError && error.message === 'Device directory clock must return a valid persistence timestamp.',
+    );
+  }
+  assert.equal(repositoryCalls, 0, 'invalid timestamps must be rejected before persistence is invoked');
+});
+
+test('registerEndpoint accepts MySQL DATETIME year boundaries', async () => {
+  for (const timestamp of [new Date('1000-01-01T00:00:00.000Z'), new Date('9999-12-31T23:59:59.999Z')]) {
+    const repository = createInMemoryDeviceRepository();
+    const service = new BrowserEndpointService(repository, () => timestamp);
+    const result = await service.registerEndpoint(FAMILY, randomUUID(), key());
+    const device = await repository.findDeviceForFamily(FAMILY, result.deviceId);
+    const [registeredKey] = await repository.findKeysByDeviceForFamily(FAMILY, result.deviceId);
+    assert.equal(device.createdAt.getTime(), timestamp.getTime());
+    assert.equal(registeredKey.createdAt.getTime(), timestamp.getTime());
+  }
+});
+
 test('registerEndpoint rejects a public key already registered to another device', async () => {
   const { service } = buildService();
   const sharedKey = key();

@@ -23,6 +23,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
     private let callbackLog: CallbackObservationLog
     private let managedSettings: ManagedSettingsStore
     private let policyCoordination: DeviceActivityPolicyCoordination?
+    private let trustedTimeFloor: DeviceActivityTrustedTimeFloor?
     private let usageState: OpaqueBlobStore?
 
     override init() {
@@ -39,6 +40,11 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         self.usageState = callbackState
         let coordination = try? AppGroupDeviceActivityPolicyCoordination(appGroupIdentifier: AppGroup.identifier)
         self.policyCoordination = coordination
+        if let callbackState, let coordination {
+            self.trustedTimeFloor = DeviceActivityTrustedTimeFloor(store: callbackState, coordination: coordination)
+        } else {
+            self.trustedTimeFloor = nil
+        }
         if let coordination {
             let baseCallbackLog: CallbackObservationLog
             if let appGroupLog = try? AppGroupCallbackObservationLog(
@@ -62,13 +68,13 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
-        callbackLog.record(kind: .intervalDidStart, activityId: activity.rawValue, at: Date())
+        recordCallback(kind: .intervalDidStart, activityId: activity.rawValue)
         applyCurrentDecision(for: activity)
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
-        callbackLog.record(kind: .intervalDidEnd, activityId: activity.rawValue, at: Date())
+        recordCallback(kind: .intervalDidEnd, activityId: activity.rawValue)
         // The interval ending removes ITS OWN contribution to the shield;
         // ScheduleEngine is re-evaluated (rather than unconditionally
         // clearing the shield) because another still-active window (e.g. a
@@ -79,7 +85,7 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         super.eventDidReachThreshold(event, activity: activity)
-        callbackLog.record(kind: .eventDidReachThreshold(eventId: event.rawValue), activityId: activity.rawValue, at: Date())
+        recordCallback(kind: .eventDidReachThreshold(eventId: event.rawValue), activityId: activity.rawValue)
         applyCurrentDecision(for: activity, usageEventId: event.rawValue)
     }
 
@@ -98,10 +104,14 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
             return
         }
         do {
-            try coordination.withExclusiveAccess {
+            try coordination.withExclusiveAccessContext { access in
                 switch DeviceActivityAuthorizationGate.action(for: currentCallbackAuthorization()) {
                 case .applyCurrentPolicy:
-                    self.applyCurrentDecisionUnderLock(for: activity, usageEventId: usageEventId)
+                    guard let trustedTimeFloor = self.trustedTimeFloor else {
+                        throw DeviceActivityTrustedTimeFloorError.coordinationUnavailable
+                    }
+                    let trustedNow = try trustedTimeFloor.observe(Date(), access: access)
+                    self.applyCurrentDecisionUnderLock(for: activity, usageEventId: usageEventId, now: trustedNow)
                 case .clearShieldsPreservingPolicy:
                     self.clearManagedSettingsShield()
                 }
@@ -109,6 +119,11 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         } catch {
             clearShieldsIfAuthorizationDoesNotPermitEnforcement()
         }
+    }
+
+    private func recordCallback(kind: DeviceActivityCallbackKind, activityId: String) {
+        guard let trustedTimeFloor, let trustedNow = try? trustedTimeFloor.observe(Date()) else { return }
+        callbackLog.record(kind: kind, activityId: activityId, at: trustedNow)
     }
 
     private func currentCallbackAuthorization() -> DeviceActivityCallbackAuthorization {
@@ -136,12 +151,12 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
         managedSettings.shield.webDomains = nil
     }
 
-    private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName, usageEventId: String?) {
+    private func applyCurrentDecisionUnderLock(for activity: DeviceActivityName, usageEventId: String?, now: Date) {
         if let eventId = usageEventId {
             guard let usageState else { return }
             do {
                 let active = try DeviceActivityUsageCallbackProcessor<ApplicationToken>(store: usageState)
-                    .consume(activityId: activity.rawValue, eventId: eventId, at: Date(), deviceTimeZone: .current)
+                    .consume(activityId: activity.rawValue, eventId: eventId, at: now, deviceTimeZone: .current)
                 if !active { return } // Staged registration observation; no shield mutation.
             } catch { return } // Unrecognized/stale/corrupt attribution preserves current shields.
         }
@@ -165,7 +180,6 @@ final class PCADeviceActivityMonitorExtension: DeviceActivityMonitor {
             return
         }
 
-        let now = Date()
         var observationPlan: DeviceActivityUsageDayPlan?
         var coverageAvailable = policy.schedule.dailyLimit == nil
         if let usageState, let data = usageState.read(forKey: deviceActivityMonitorInstallationStorageKey),

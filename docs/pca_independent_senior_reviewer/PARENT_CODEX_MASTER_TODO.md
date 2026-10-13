@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Mobile/backend implementation checkpoint — 2026-10-13
+
+Published base `47ee55d795ba4c6e129cc941f157dc049e3686e9` passed exact-head Quality Gates run `38437346783` (27/27 jobs). Local work adds strict UTF-8 rejection to Android Trust Set and relay HTTP response decoders while preserving response byte bounds; Trust Set transport tests passed 20/20 and relay decoding received a clean peer review. Focused relay Gradle validation could not complete because this Windows host exhausted native memory and paging space during Kotlin compilation. Backend browser endpoint registration now rejects invalid/out-of-range MySQL `DATETIME(3)` timestamps before repository effects; backend build and focused tests passed 9/9. iOS policy planning, recovery, status and DeviceActivity callbacks now share a persisted App Group trusted-time high-water floor with restart, rollback, corruption, concurrency and expiry regressions. Swift parsing passed for all five changed files and independent review found no source blocker; Apple XCTest/typecheck could not run on this Windows host and awaits Apple CI.
+
+One proposed backend session-revocation change was rejected in review because separate repositories provide no transaction/outbox and best-effort audit failure would permanently lose a required family lifecycle audit; no such change is retained. No schema/migration/DB change was made. TODO-12/14/15 remain IN_PROGRESS and TODO-20 remains PASS. Physical Android/iOS, live DB, owner localhost acceptance, Platform dependency, Azure deployment and production acceptance remain separate gates; `READY_FOR_AZURE_DEPLOYMENT = NO`. The new source checkpoint is not yet published or covered by exact-head CI.
+
 ## CI failure remediation implementation checkpoint — 2026-10-13
 
 Source base `ec11be90d207a84bbf86235859acb81bf568c176`. Fixed all three backend unit failures in exact-head Quality Gates run `38429863004`: FamilyAudit test fixtures now inject the same fixed clock used to create their audit records, and the scanner canary constructs its extra recovery-field key dynamically without weakening the security scanner. Added an Xcode 15-compatible `xcresulttool` fallback so failed iOS startup artifacts retain structured result data.

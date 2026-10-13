@@ -196,6 +196,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let installationClock: () -> Date
     private let mutationLock = NSRecursiveLock()
     private let policyCoordination: DeviceActivityPolicyCoordination
+    private let trustedTimeFloor: DeviceActivityTrustedTimeFloor
     private let usageBindingProvider: PCADeviceActivityUsageBindingProvider
     private let deviceTimeZone: () -> TimeZone
     private let shieldEnforcer: PCADeviceActivityShieldEnforcing
@@ -246,6 +247,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         self.callbackLog = callbackLog
         self.installationClock = installationClock
         self.policyCoordination = policyCoordination
+        self.trustedTimeFloor = DeviceActivityTrustedTimeFloor(store: blobStore, coordination: policyCoordination)
         self.usageBindingProvider = usageBindingProvider
         self.deviceTimeZone = deviceTimeZone
         self.shieldEnforcer = shieldEnforcer
@@ -256,7 +258,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         // names left by a process death during staging; a monitor absent from
         // the committed manifest cannot apply policy.
         do {
-            try policyCoordination.withExclusiveAccess {
+            try policyCoordination.withExclusiveAccessContext { access in
                 try reconcileClearIntent()
                 reconcileRetirementIntent()
                 if let installation = currentInstallation(), installation.state == .active {
@@ -282,7 +284,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                         markStartupRecoveryRequired(for: installation)
                         return
                     }
-                    recoverStartupState(for: installation)
+                    let trustedNow = try trustedTimeFloor.observe(installationClock(), access: access)
+                    recoverStartupState(for: installation, now: trustedNow)
                 } else {
                     if let incomplete = currentInstallation() {
                         if incomplete.state == .invalidated {
@@ -340,6 +343,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             shieldEnforcer.removeAll()
             throw PCAProtectionPolicyApplicationError.authorizationRequired
         }
+        let trustedNow = try trustedTimeFloor.observe(now, access: lockAccess)
         guard case .success(let policy) = PolicySyncDecoder.decode(scheduleData) else {
             throw PCAProtectionPolicyApplicationError.malformedPolicy
         }
@@ -369,10 +373,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             throw PCAProtectionPolicyApplicationError.unsafePolicy
         }
 
-        // The caller supplies the authoritative evaluation instant for this
-        // policy application. installationClock is reserved for recording
-        // when the OS monitor generation was actually installed.
-        let planningTime = now
+        // The caller supplies a wall-clock candidate; the durable local
+        // high-water mark prevents a rollback from reviving an expired rule.
+        // installationClock remains only the OS-generation install timestamp.
+        let planningTime = trustedNow
         let triggers: [DeviceActivityBoundaryTrigger]
         do {
             triggers = try DeviceActivityScheduleMapper.boundaryTriggers(for: policy, now: planningTime)
@@ -564,7 +568,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         // restrictions until approval returns.
         try requireEnforcementAuthorization(for: installation.confirmingActive())
 
-        let evaluationTime = now
+        let evaluationTime = trustedNow
         var usageAvailable = false
         var observationPlan: DeviceActivityUsageDayPlan?
         let retainedPlan = usagePlan ?? previousInstallation?.usageDayPlan
@@ -619,7 +623,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
 
     /// Planned registration status only; this does not certify callback delivery.
     public func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus {
-        return (try? policyCoordination.withExclusiveAccess {
+        return (try? policyCoordination.withExclusiveAccessContext { access in
+            let trustedNow = try trustedTimeFloor.observe(now, access: access)
             try reconcileClearIntent()
             guard let installation = currentInstallation(), installation.state == .active,
                   let plan = installation.usageDayPlan,
@@ -629,7 +634,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                   plan.binding.matches(policy.applicationTokens, logicalAppToken: policy.schedule.appToken) else {
                 return DeviceActivityUsageMonitorStatus.unavailable
             }
-            return plan.status(at: now, deviceTimeZone: deviceTimeZone())
+            return plan.status(at: trustedNow, deviceTimeZone: deviceTimeZone())
         }) ?? .unavailable
     }
 
@@ -663,7 +668,8 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     /// create policy authority.
     public func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? {
         do {
-            return try policyCoordination.withExclusiveAccess {
+            return try policyCoordination.withExclusiveAccessContext { access in
+                let trustedNow = try trustedTimeFloor.observe(now, access: access)
                 try reconcileClearIntent()
                 mutationLock.lock()
                 defer { mutationLock.unlock() }
@@ -673,7 +679,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     try requireEnforcementAuthorization(for: installation)
                     try restoreMissingMonitors(for: installation)
                     if let usagePlan = installation.usageDayPlan { try pendingUsageActivator(usagePlan) }
-                    try restoreCommittedEnforcement(for: installation, now: now)
+                    try restoreCommittedEnforcement(for: installation, now: trustedNow)
                     startupRecoveryDeferred = false
                     startupMonitorFailureGeneration = nil
                     startupUsageFailureGeneration = nil
@@ -690,7 +696,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                               plan.binding.matches(snapshot.applicationTokens, logicalAppToken: snapshot.schedule.appToken),
                               plan.policyTimeZoneIdentifier.utf8.elementsEqual(snapshot.schedule.timeZone.identifier.utf8),
                               plan.coverage == .wholePolicyDayPlanned,
-                              plan.contains(now, deviceTimeZone: deviceTimeZone()) else { return .degraded }
+                              plan.contains(trustedNow, deviceTimeZone: deviceTimeZone()) else { return .degraded }
                     }
                     switch snapshot.schedule.enforcementCapability {
                     case .enforced: return .applied
@@ -946,7 +952,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
 
     public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth {
         do {
-            return try policyCoordination.withExclusiveAccess {
+            return try policyCoordination.withExclusiveAccessContext { access in
                 // Reconcile before taking mutationLock; reconciliation owns
                 // that lock while clearing persisted and system policy state.
                 try reconcileClearIntent()
@@ -974,6 +980,12 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     // reconciliation if approval is later restored.
                     markStartupRecoveryRequired(for: installation)
                     shieldEnforcer.removeAll()
+                    return .enforcementUnavailable
+                }
+                let trustedNow: Date
+                do { trustedNow = try trustedTimeFloor.observe(now, access: access) }
+                catch {
+                    markStartupRecoveryRequired(for: installation)
                     return .enforcementUnavailable
                 }
                 if startupMonitorFailureGeneration == installation.generation {
@@ -1010,7 +1022,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                         }
                     }
                     do {
-                        try restoreCommittedEnforcement(for: installation)
+                        try restoreCommittedEnforcement(for: installation, now: trustedNow)
                         startupEnforcementFailureGeneration = nil
                     } catch {
                         return .enforcementUnavailable
@@ -1028,7 +1040,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 calendar.timeZone = timeZone
                 let expected = DeviceActivityCallbackPlanner.expectedCallbacks(
                     installedAt: installation.installedAtUtc,
-                    now: now,
+                    now: trustedNow,
                     calendar: calendar
                 )
                 let observations = callbackLog.readAll()
@@ -1042,7 +1054,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     observed: observations,
                     activityId: installation.monitorActivityId,
                     installationGeneration: installation.generation,
-                    nowUtc: now
+                    nowUtc: trustedNow
                 )
             }
         } catch {
@@ -1092,7 +1104,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     /// Replays the exact durable startup state in dependency order. In
     /// particular, staged usage is merged before its enforcement decision can
     /// be declared restored; failures leave a generation-scoped retry marker.
-    private func recoverStartupState(for installation: DeviceActivityMonitorInstallation) {
+    private func recoverStartupState(for installation: DeviceActivityMonitorInstallation, now: Date) {
         do {
             try restoreMissingMonitors(for: installation)
             startupMonitorFailureGeneration = nil
@@ -1112,7 +1124,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
             startupUsageFailureGeneration = nil
         }
         do {
-            try restoreCommittedEnforcement(for: installation)
+            try restoreCommittedEnforcement(for: installation, now: now)
             startupEnforcementFailureGeneration = nil
         } catch {
             startupEnforcementFailureGeneration = installation.generation
@@ -1132,7 +1144,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     }
 
     private func restoreCommittedEnforcement(for installation: DeviceActivityMonitorInstallation,
-                                             now suppliedNow: Date? = nil) throws {
+                                             now: Date) throws {
         guard installation.state == .active,
               let manifestData = blobStore.read(forKey: deviceActivityMonitorInstallationStorageKey),
               DeviceActivityMonitorInstallation.decodeValidated(manifestData) == installation,
@@ -1145,7 +1157,6 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
 
         try requireEnforcementAuthorization(for: installation)
 
-        let now = suppliedNow ?? installationClock()
         var observationPlan: DeviceActivityUsageDayPlan?
         var coverageAvailable = false
         if let plan = installation.usageDayPlan,

@@ -133,7 +133,13 @@ class HttpUrlConnectionRelayHttpClientTest {
         } finally { server.close(); thread.join(1000) }
     }
 
-    private suspend fun readInboundResponse(body: String): InboundListResult {
+    private suspend fun readInboundResponse(body: String): InboundListResult =
+        withResponse(body.toByteArray(Charsets.UTF_8)) { client -> client.listInbound("session-token") }
+
+    private suspend fun <T> withResponse(
+        payload: ByteArray,
+        request: suspend (HttpUrlConnectionRelayHttpClient) -> T,
+    ): T {
         val server = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
         val thread = Thread {
             server.accept().use { socket ->
@@ -141,7 +147,6 @@ class HttpUrlConnectionRelayHttpClientTest {
                 val reader = socket.getInputStream().bufferedReader()
                 reader.readLine()
                 while (!reader.readLine().isNullOrEmpty()) { }
-                val payload = body.toByteArray(Charsets.UTF_8)
                 val output = socket.getOutputStream()
                 output.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
                 output.write(payload)
@@ -151,8 +156,7 @@ class HttpUrlConnectionRelayHttpClientTest {
         thread.isDaemon = true
         thread.start()
         return try {
-            HttpUrlConnectionRelayHttpClient("http://127.0.0.1:${server.localPort}", allowInsecureHttp = true)
-                .listInbound("session-token")
+            request(HttpUrlConnectionRelayHttpClient("http://127.0.0.1:${server.localPort}", allowInsecureHttp = true))
         } finally {
             server.close()
             thread.join(1000)
@@ -166,6 +170,28 @@ class HttpUrlConnectionRelayHttpClientTest {
             fail("Expected bounded response rejection")
         } catch (_: org.pca.app.runtime.sync.transport.RelayHttpException) { }
         org.junit.Assert.assertEquals("1234", org.pca.app.runtime.sync.transport.readBoundedResponse("1234".byteInputStream(), maxBytes = 4))
+    }
+
+    @Test
+    fun `malformed UTF-8 is rejected in successful relay and read-only response bodies`() = kotlinx.coroutines.test.runTest {
+        val malformed = byteArrayOf(0xC3.toByte(), 0x28) // invalid two-byte UTF-8 sequence
+        val inboundPrefix = """{"scope":{"familyId":"family-1","recipientDeviceId":"device-1"},"applied":[],"unparseableMessageIds":[],"droppedForListBound":[],"extension":""".toByteArray()
+        val jsonSuffix = """"}""".toByteArray()
+        val statusPrefix = """{"connectionState":""".toByteArray()
+
+        for ((body, readOnly) in listOf(
+            (inboundPrefix + malformed + jsonSuffix) to false,
+            (statusPrefix + malformed + jsonSuffix) to true,
+        )) {
+            try {
+                withResponse(body) { client ->
+                    if (readOnly) client.getStatus("session-token") else client.listInbound("session-token")
+                }
+                fail("Malformed UTF-8 must not be replacement-decoded and accepted")
+            } catch (error: RelayHttpException) {
+                org.junit.Assert.assertEquals(RelayHttpErrorCode.InvalidRequest, error.errorCode)
+            }
+        }
     }
     @Test
     fun `production config refuses plain http against a non-local host`() {

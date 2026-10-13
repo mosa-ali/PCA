@@ -362,6 +362,72 @@ final class BoundaryCallbackIsolationTests: XCTestCase {
 
 #if canImport(Darwin)
 final class DeviceActivityFileStorageTests: XCTestCase {
+    func testTrustedTimeFloorPersistsAcrossStoreRecreationAndRejectsRollback() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-trusted-time-restart-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let lockFile = directory.appendingPathComponent("policy.lock")
+        let firstStore = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: InMemoryBlobStore())
+        let first = DeviceActivityTrustedTimeFloor(store: firstStore,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let high = Date(timeIntervalSince1970: 1_748_908_800.125)
+        let lower = high.addingTimeInterval(-3_600)
+
+        XCTAssertEqual(try first.observe(high), high)
+
+        let restartedStore = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: InMemoryBlobStore())
+        let restarted = DeviceActivityTrustedTimeFloor(store: restartedStore,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        XCTAssertEqual(try restarted.observe(lower), high,
+            "a process restart and lower wall clock must retain the persisted high-water bound")
+        XCTAssertEqual(try restartedStore.readTrustedTimeFloor(forKey: deviceActivityTrustedTimeFloorStorageKey),
+            Data("1748908800125".utf8))
+    }
+
+    func testTrustedTimeFloorRejectsMalformedAndMissingOwnedState() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-trusted-time-corrupt-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: InMemoryBlobStore())
+        let floor = DeviceActivityTrustedTimeFloor(store: store,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: directory.appendingPathComponent("policy.lock")))
+        let candidate = Date(timeIntervalSince1970: 1_748_908_800)
+
+        try store.write(Data("01748908800000".utf8), forKey: deviceActivityTrustedTimeFloorStorageKey)
+        XCTAssertThrowsError(try floor.observe(candidate), "noncanonical stored values must fail closed")
+
+        try store.write(Data("1748908800000".utf8), forKey: deviceActivityTrustedTimeFloorStorageKey)
+        let key = Data(deviceActivityTrustedTimeFloorStorageKey.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
+        try FileManager.default.removeItem(at: directory.appendingPathComponent(key))
+        XCTAssertThrowsError(try floor.observe(candidate), "a missing value with a durable owner marker is corruption, not first run")
+    }
+
+    func testTrustedTimeFloorConcurrentWritersCannotRegressThePersistedMaximum() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-trusted-time-concurrent-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let lockFile = directory.appendingPathComponent("policy.lock")
+        let firstStore = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: InMemoryBlobStore())
+        let secondStore = try AppGroupDeviceActivityFileStore(directory: directory, legacyStore: InMemoryBlobStore())
+        let first = DeviceActivityTrustedTimeFloor(store: firstStore,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let second = DeviceActivityTrustedTimeFloor(store: secondStore,
+            coordination: AppGroupDeviceActivityPolicyCoordination(lockFile: lockFile))
+        let base = Date(timeIntervalSince1970: 1_748_908_800)
+        let failureLock = NSLock()
+        var failures: [String] = []
+
+        DispatchQueue.concurrentPerform(iterations: 64) { index in
+            do {
+                let writer = index.isMultiple(of: 2) ? first : second
+                _ = try writer.observe(base.addingTimeInterval(Double(index)))
+            } catch {
+                failureLock.lock(); failures.append(String(describing: error)); failureLock.unlock()
+            }
+        }
+
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: ", "))
+        XCTAssertEqual(try first.observe(base), base.addingTimeInterval(63))
+    }
+
     func testFileOwnershipNeverFallsBackAfterInvalidationOrCorruption() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pca-policy-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }

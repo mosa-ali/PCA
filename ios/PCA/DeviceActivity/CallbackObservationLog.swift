@@ -14,6 +14,123 @@ enum DeviceActivityTimestamp {
     }
 }
 
+/// App Group key shared by the host and DeviceActivity extension. It stores
+/// only the greatest wall-clock instant observed by either process. This is a
+/// local rollback bound; it is not authenticated server time.
+public let deviceActivityTrustedTimeFloorStorageKey = "com.pca.app.deviceactivity.trusted-time-floor.v1"
+
+public enum DeviceActivityTrustedTimeFloorError: Error, Equatable {
+    case invalidCandidate
+    case corruptState
+    case coordinationUnavailable
+}
+
+/// Optional strict read capability for stores that can distinguish a missing
+/// floor from a damaged/unreadable persisted floor. Production App Group file
+/// storage implements this; simple in-memory OpaqueBlobStore fakes may omit it.
+public protocol DeviceActivityTrustedTimeFloorStrictReading {
+    func readTrustedTimeFloor(forKey key: String) throws -> Data?
+}
+
+public protocol DeviceActivityTrustedTimeFloorStrictWriting {
+    func writeTrustedTimeFloor(_ data: Data, forKey key: String) throws
+}
+
+/// Persists a monotonic high-water mark under the same cross-process policy
+/// lock used for policy replacement and callback enforcement. Every caller
+/// receives max(candidate, persistedFloor); writes are re-read before they are
+/// considered durable. A locked or corrupt floor therefore cannot make a
+/// policy appear newer or extend an expiry.
+public final class DeviceActivityTrustedTimeFloor {
+    private let store: OpaqueBlobStore
+    private let coordination: DeviceActivityPolicyCoordination
+    private let key: String
+
+    public init(store: OpaqueBlobStore, coordination: DeviceActivityPolicyCoordination,
+                key: String = deviceActivityTrustedTimeFloorStorageKey) {
+        self.store = store
+        self.coordination = coordination
+        self.key = key
+    }
+
+    public func observe(_ candidate: Date) throws -> Date {
+        try coordination.withExclusiveAccessContext { access in
+            try observe(candidate, access: access)
+        }
+    }
+
+    /// Use only while the caller holds this exact coordinator's access token;
+    /// this avoids reacquiring the non-recursive App Group file lock.
+    public func observe(_ candidate: Date, access: DeviceActivityPolicyLockAccess) throws -> Date {
+        guard let result = try access.withActiveUse(for: coordination, {
+            try observeUnderLock(candidate)
+        }) else { throw DeviceActivityTrustedTimeFloorError.coordinationUnavailable }
+        return result
+    }
+
+    private func observeUnderLock(_ candidate: Date) throws -> Date {
+        guard DeviceActivityTimestamp.isValid(candidate),
+              let candidateMillis = Self.milliseconds(candidate) else {
+            throw DeviceActivityTrustedTimeFloorError.invalidCandidate
+        }
+
+        let previousData = try readPersisted()
+        let previousMillis: Int64?
+        if let previousData {
+            guard let decoded = Self.decode(previousData) else {
+                throw DeviceActivityTrustedTimeFloorError.corruptState
+            }
+            previousMillis = decoded
+        } else {
+            previousMillis = nil
+        }
+
+        let acceptedMillis = max(candidateMillis, previousMillis ?? candidateMillis)
+        let needsWrite: Bool
+        if let previousMillis { needsWrite = acceptedMillis > previousMillis }
+        else { needsWrite = true }
+        if needsWrite {
+            let encoded = Self.encode(acceptedMillis)
+            if let strict = store as? DeviceActivityTrustedTimeFloorStrictWriting {
+                try strict.writeTrustedTimeFloor(encoded, forKey: key)
+            } else {
+                try store.write(encoded, forKey: key)
+            }
+            guard try readPersisted() == encoded else {
+                throw DeviceActivityTrustedTimeFloorError.corruptState
+            }
+        }
+        return Date(timeIntervalSince1970: Double(acceptedMillis) / 1_000)
+    }
+
+    private func readPersisted() throws -> Data? {
+        if let strict = store as? DeviceActivityTrustedTimeFloorStrictReading {
+            return try strict.readTrustedTimeFloor(forKey: key)
+        }
+        return store.read(forKey: key)
+    }
+
+    private static func milliseconds(_ date: Date) -> Int64? {
+        let value = date.timeIntervalSince1970 * 1_000
+        guard value.isFinite, value >= Double(Int64.min), value <= Double(Int64.max) else { return nil }
+        // Round upward so the stored bound is never even a fractional
+        // millisecond earlier than a time that was already observed.
+        return Int64(ceil(value))
+    }
+
+    private static func encode(_ milliseconds: Int64) -> Data {
+        Data(String(milliseconds).utf8)
+    }
+
+    private static func decode(_ data: Data) -> Int64? {
+        guard !data.isEmpty, data.count <= 32,
+              let raw = String(data: data, encoding: .ascii),
+              let value = Int64(raw), String(value) == raw,
+              DeviceActivityTimestamp.isValid(Date(timeIntervalSince1970: Double(value) / 1_000)) else { return nil }
+        return value
+    }
+}
+
 /// doc 07 Section 14 / PCA-15 correction F1: real, durable callback
 /// recording so `DeviceActivityCallbackReconciler` has something to read
 /// on next host-app foreground. Persists ONLY bounded operational
@@ -469,7 +586,8 @@ public final class AppGroupDeviceActivityPolicyCoordination: DeviceActivityPolic
 /// the shared process lock. Old defaults are read only before the first file
 /// mutation; a permanent marker prevents deleted/corrupt new state falling
 /// back to an older legacy installation. No wildcard deletion or data seeding.
-public final class AppGroupDeviceActivityFileStore: OpaqueBlobStore {
+public final class AppGroupDeviceActivityFileStore: OpaqueBlobStore,
+    DeviceActivityTrustedTimeFloorStrictReading, DeviceActivityTrustedTimeFloorStrictWriting {
     private let directory: URL
     private let marker: URL
     private let legacy: OpaqueBlobStore
@@ -511,6 +629,27 @@ public final class AppGroupDeviceActivityFileStore: OpaqueBlobStore {
             return try? Data(contentsOf: url(for: key))
         }
         return legacy.read(forKey: key)
+    }
+    /// The trusted-time key has no legacy representation. A present but
+    /// unreadable value, or an owner marker with no value, is corruption and
+    /// must never be treated like first-run absence.
+    public func readTrustedTimeFloor(forKey key: String) throws -> Data? {
+        let value = url(for: key)
+        if FileManager.default.fileExists(atPath: value.path) {
+            return try Data(contentsOf: value)
+        }
+        if FileManager.default.fileExists(atPath: ownershipMarker(for: key).path) {
+            throw DeviceActivityTrustedTimeFloorError.corruptState
+        }
+        return nil
+    }
+    /// Claim this dedicated high-water key before writing the value. If the
+    /// process dies between the marker and value writes, strict reads detect
+    /// the owned-but-missing state and fail closed instead of establishing a
+    /// fresh baseline.
+    public func writeTrustedTimeFloor(_ data: Data, forKey key: String) throws {
+        try Data("2".utf8).write(to: ownershipMarker(for: key), options: .atomic)
+        try data.write(to: url(for: key), options: .atomic)
     }
     public func remove(forKey key: String) {
         // Remove both copies before claiming an unowned key. If the process

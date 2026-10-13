@@ -1642,6 +1642,41 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             "the active Tuesday window is evaluated at callerNow, not the noon installation timestamp")
         XCTAssertEqual(shields.removeCount, 0)
     }
+
+    func testPolicyApplicationCannotResurrectAnExpiredWindowAfterClockRollback() throws {
+        let activeAt = ISO8601DateFormatter().date(from: "2025-06-03T09:00:00Z")!
+        let expiredAt = ISO8601DateFormatter().date(from: "2025-06-03T11:00:00Z")!
+        let activeWindow = StoredScheduleWindow(id: "morning", kind: .bedtime,
+            daysOfWeek: [2], start: .init(hour: 8, minute: 0), end: .init(hour: 10, minute: 0),
+            appScope: .all, timezone: "UTC")
+        let storedPolicy = StoredDeviceActivityPolicy(schemaVersion: 1, activityId: "policy", appToken: "opaque",
+            timeZoneIdentifier: "UTC", windows: [activeWindow], bonusGrants: [], exceptions: [],
+            dailyLimit: nil, enforcementCapability: .enforced)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let scheduleData = try encoder.encode(storedPolicy)
+        let store = CallbackRuntimeBlobStore()
+        let shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: CallbackRuntimeScheduler(), blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        let tokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(scheduleData: scheduleData,
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: activeAt), .applied)
+        XCTAssertEqual(shields.applyCount, 1)
+
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(scheduleData: scheduleData,
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: expiredAt), .applied)
+        XCTAssertEqual(shields.removeCount, 1, "the expired policy window removes its prior shield")
+
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(scheduleData: scheduleData,
+            applicationTokenData: tokens, protectedApplicationTokenData: nil, now: activeAt), .applied)
+        XCTAssertEqual(shields.applyCount, 1,
+            "a later wall-clock rollback must use the trusted floor and cannot resurrect the expired window")
+        XCTAssertEqual(shields.removeCount, 2)
+    }
+
     func testEveryRegistrationFailurePositionStopsEntireStagedSet() throws {
         for failAt in 1...3 {
             let store = CallbackRuntimeBlobStore(), scheduler = CallbackRuntimeScheduler()

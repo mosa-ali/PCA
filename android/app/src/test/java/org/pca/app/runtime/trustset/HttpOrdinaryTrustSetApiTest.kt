@@ -2,6 +2,7 @@ package org.pca.app.runtime.trustset
 
 import java.net.ServerSocket
 import java.io.ByteArrayOutputStream
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
@@ -383,7 +384,57 @@ class HttpOrdinaryTrustSetApiTest {
         }
     }
 
-    private class LocalServer(private val body: String) {
+    @Test fun `successful submit rejects malformed UTF8 response bytes`() = runBlocking {
+        val pending = accepted(epoch(2))
+        val valid = response(OrdinaryEpochOutcome.ACCEPTED, pending, pending).toByteArray(Charsets.UTF_8)
+        val malformed = insertMalformedUtf8(valid, "\"outcome\":\"".toByteArray(Charsets.US_ASCII).size + 1)
+        val server = LocalServer(malformed)
+        try {
+            val session = sessions().also { it.authenticate() }
+            val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+            val failure = runCatching { api.submit("family", pending.request) }.exceptionOrNull()
+
+            assertTrue(failure is CharacterCodingException)
+            assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test fun `read only accepted head rejects malformed UTF8 response bytes`() = runBlocking {
+        val head = accepted(epoch(2))
+        val valid = """{"acceptedHead":${recordJson(head)}}""".toByteArray(Charsets.UTF_8)
+        val marker = "\"signerDeviceId\":\"".toByteArray(Charsets.US_ASCII)
+        val markerStart = valid.indices.first { start ->
+            start + marker.size <= valid.size && marker.indices.all { valid[start + it] == marker[it] }
+        }
+        val malformed = insertMalformedUtf8(valid, markerStart + marker.size)
+        val server = LocalServer(malformed)
+        try {
+            val session = sessions().also { it.authenticate() }
+            val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+            val failure = runCatching { api.getHead("family") }.exceptionOrNull()
+
+            assertTrue(failure is CharacterCodingException)
+            assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+        }
+    }
+
+    private fun insertMalformedUtf8(valid: ByteArray, offset: Int): ByteArray {
+        val malformed = ByteArray(valid.size + 1)
+        valid.copyInto(malformed, endIndex = offset)
+        malformed[offset] = 0xC3.toByte() // invalid when followed by the original ASCII byte
+        valid.copyInto(malformed, destinationOffset = offset + 1, startIndex = offset)
+        return malformed
+    }
+
+    private class LocalServer(private val body: ByteArray) {
+        constructor(body: String) : this(body.toByteArray(Charsets.UTF_8))
+
         private val socket = ServerSocket(0)
         val url = "http://127.0.0.1:${socket.localPort}"
         val request = AtomicReference("")
@@ -413,11 +464,10 @@ class HttpOrdinaryTrustSetApiTest {
                         val payload = input.readNBytes(contentLength)
                         require(payload.size == contentLength) { "incomplete request body" }
                         requestBody.set(payload)
-                        val bytes = body.toByteArray(Charsets.UTF_8)
-                        val header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
+                        val header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
                         client.getOutputStream().apply {
                             write(header.toByteArray(StandardCharsets.US_ASCII))
-                            write(bytes)
+                            write(body)
                             flush()
                         }
                     }

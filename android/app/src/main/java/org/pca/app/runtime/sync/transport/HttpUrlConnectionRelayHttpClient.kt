@@ -6,6 +6,9 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -256,5 +259,13 @@ internal fun readBoundedResponse(stream: InputStream, maxBytes: Int = 4 * 1024 *
         if (count > maxBytes - output.size()) throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Response too large")
         output.write(buffer, 0, count)
     }
-    return output.toString(Charsets.UTF_8.name())
+    return try {
+        StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(output.toByteArray()))
+            .toString()
+    } catch (_: java.nio.charset.CharacterCodingException) {
+        throw RelayHttpException(RelayHttpErrorCode.InvalidRequest, "Response is not valid UTF-8")
+    }
 }

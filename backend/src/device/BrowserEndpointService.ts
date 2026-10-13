@@ -23,6 +23,12 @@ export interface RegisterEndpointResult {
   status: 'PAIRING_PENDING';
 }
 
+// Match MySQL DATETIME(3)'s supported year range and DeviceDirectoryService's
+// persistence guard so a broken injected/system clock fails before a device
+// or key is created.
+const MIN_DEVICE_TIMESTAMP_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
+const MAX_DEVICE_TIMESTAMP_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
 /**
  * PCA-FR-063 / doc 08 Section 8-style ceremony: registers a
  * service-authenticated browser's own non-extractable DSK (generated
@@ -63,11 +69,21 @@ export class BrowserEndpointService {
     this.auditService = auditService;
   }
 
+  private persistenceTimestamp(): Date {
+    const timestamp: unknown = this.now();
+    if (!(timestamp instanceof Date)) throw new TypeError('Device directory clock must return a valid persistence timestamp.');
+    const milliseconds = timestamp.getTime();
+    if (!Number.isFinite(milliseconds) || milliseconds < MIN_DEVICE_TIMESTAMP_MS || milliseconds > MAX_DEVICE_TIMESTAMP_MS) {
+      throw new TypeError('Device directory clock must return a valid persistence timestamp.');
+    }
+    return new Date(milliseconds);
+  }
+
   async registerEndpoint(familyId: OpaqueFamilyId, registeredByAccountId: string, dskPublicKey: string): Promise<RegisterEndpointResult> {
     if (!isPlausiblePublicKey(dskPublicKey)) throw new BrowserEndpointError('INVALID_PUBLIC_KEY');
 
     const deviceId = randomUUID();
-    const createdAt = this.now();
+    const createdAt = this.persistenceTimestamp();
     const result = await this.deviceRepository.createDeviceWithKey(
       {
         deviceId,

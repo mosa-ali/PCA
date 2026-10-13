@@ -3,6 +3,9 @@ package org.pca.app.runtime.trustset
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,7 +54,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                     }
                     output.toByteArray()
                 }
-                val responseBody = bytes.toString(Charsets.UTF_8)
+                val responseBody = decodeOrdinaryTrustSetJson(bytes)
                 StrictJsonObjectKeys.requireUnique(responseBody)
                 val json = JSONObject(responseBody)
                 require(json.keys().asSequence().toSet() == setOf(field))
@@ -93,7 +96,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                     }
                     output.toByteArray()
                 }
-                val responseBody = bytes.toString(Charsets.UTF_8)
+                val responseBody = decodeOrdinaryTrustSetJson(bytes)
                 StrictJsonObjectKeys.requireUnique(responseBody)
                 val json = JSONObject(responseBody)
                 require(json.keys().asSequence().toSet() == setOf("outcome", "acceptedEpoch", "acceptedHead"))
@@ -150,6 +153,13 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
     }
 
 }
+
+/** HTTP JSON is UTF-8; reject malformed byte sequences instead of replacing them with U+FFFD. */
+internal fun decodeOrdinaryTrustSetJson(bytes: ByteArray): String = StandardCharsets.UTF_8.newDecoder()
+    .onMalformedInput(CodingErrorAction.REPORT)
+    .onUnmappableCharacter(CodingErrorAction.REPORT)
+    .decode(ByteBuffer.wrap(bytes))
+    .toString()
 
 /** Server-aligned limits for ordinary POST requests; bootstrap and inbound record caps are separate. */
 internal object OrdinaryEpochHttpRequestBounds {
