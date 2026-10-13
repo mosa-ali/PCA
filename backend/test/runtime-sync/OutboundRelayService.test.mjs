@@ -69,6 +69,59 @@ test('a slow recipient lookup cannot queue ciphertext past the signed validUntil
   assert.deepEqual(await relayService.listQueuedForRecipient(recipientDeviceId), []);
 });
 
+test('a slow recipient lookup cannot replace caller-owned ciphertext before enqueue', async () => {
+  const { deviceRepository, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const originalLookup = deviceRepository.findDeviceForFamily.bind(deviceRepository);
+  let enteredLookup;
+  const lookupEntered = new Promise((resolve) => { enteredLookup = resolve; });
+  let releaseLookup;
+  const lookupGate = new Promise((resolve) => { releaseLookup = resolve; });
+  deviceRepository.findDeviceForFamily = async (...args) => {
+    enteredLookup();
+    await lookupGate;
+    return originalLookup(...args);
+  };
+  const outboundService = new OutboundRelayService(relayService, deviceRepository);
+  const callerOwnedCiphertext = Buffer.from('signed-envelope-bytes');
+  const expectedCiphertext = Buffer.from(callerOwnedCiphertext);
+  const submission = outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ recipientDeviceId, ciphertext: callerOwnedCiphertext })],
+    authorize(familyId, senderDeviceId, recipientDeviceId),
+  );
+  await lookupEntered;
+  callerOwnedCiphertext.fill(0x78);
+  releaseLookup();
+
+  const result = await submission;
+  assert.equal(result.results[0].outcome, 'QUEUED');
+  const queued = await relayService.listQueuedForRecipient(recipientDeviceId);
+  assert.equal(queued.length, 1);
+  assert.deepEqual(queued[0].ciphertext, expectedCiphertext);
+});
+
+test('outbound enqueue keeps malformed non-Buffer ciphertext fail-closed', async () => {
+  const { deviceRepository, relayService, outboundService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const messageId = `invalid-ciphertext-${randomUUID()}`;
+
+  const result = await outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ messageId, recipientDeviceId, ciphertext: 'not-a-buffer' })],
+    authorize(familyId, senderDeviceId, recipientDeviceId),
+  );
+
+  assert.deepEqual(result.results, [{ messageId, outcome: 'INVALID' }]);
+  assert.deepEqual(await relayService.listQueuedForRecipient(recipientDeviceId), []);
+});
+
 function item(overrides = {}) {
   return {
     messageId: `msg-${randomUUID()}`,

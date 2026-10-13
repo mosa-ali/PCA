@@ -82,8 +82,12 @@ export class OutboundRelayService {
   ): Promise<OutboundBatchResult> {
     // Copy absolute expiry dates before the first async recipient lookup, so
     // mutation of an input Date cannot lengthen retention during a slow read.
+    // Also snapshot ciphertext before that lookup: RelayService's own copy
+    // occurs after this boundary, so retaining a caller-owned Buffer here
+    // would let an in-flight mutation change the bytes eventually queued.
     const capturedItems = items.map((item) => ({
       ...item,
+      ciphertext: Buffer.isBuffer(item.ciphertext) ? Buffer.from(item.ciphertext) : item.ciphertext,
       validUntil: item.validUntil instanceof Date ? new Date(item.validUntil.getTime()) : item.validUntil,
     }));
     const prioritized = sortByPriority(capturedItems);

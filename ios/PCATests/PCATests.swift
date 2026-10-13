@@ -1,9 +1,7 @@
 import XCTest
 import Foundation
-@testable import PCA
-#if canImport(FamilyControls)
 import FamilyControls
-#endif
+@testable import PCA
 
 private final class DeviceSessionTestProof: PCADeviceProofProvider {
     var signingPublicKey = "public-key"
@@ -171,8 +169,12 @@ final class PCAProtectionPolicyClearIntentTests: XCTestCase {
                 case .callbackHealth:
                     _ = runtime.callbackHealth(now: Date())
                 case .apply:
-                    XCTAssertNoThrow(try runtime.applyVerifiedPolicy(scheduleData: policyData,
-                        applicationTokenData: applicationTokens, protectedApplicationTokenData: nil, now: Date()))
+                    do {
+                        try runtime.applyVerifiedPolicy(scheduleData: policyData,
+                            applicationTokenData: applicationTokens, protectedApplicationTokenData: nil, now: Date())
+                    } catch {
+                        XCTFail("pending clear recovery must permit policy apply: \(error)")
+                    }
                 case .clear:
                     runtime.clearPolicy(activityId: installation.policyActivityId)
                 }

@@ -164,16 +164,30 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         var error: Error?
         var holdBuild = false
         var onBuildEntered: (() -> Void)?
+        private let buildBarrierLock = NSLock()
         private var releaseRequested = false
         private var buildBarrier: CheckedContinuation<Void, Never>?
 
         func releaseBuild() {
-            guard let buildBarrier else {
-                releaseRequested = true
-                return
-            }
-            buildBarrier.resume()
+            buildBarrierLock.lock()
+            let barrier = buildBarrier
             buildBarrier = nil
+            if barrier == nil {
+                releaseRequested = true
+            }
+            buildBarrierLock.unlock()
+            barrier?.resume()
+        }
+
+        private func shouldResumeBuildImmediately(_ continuation: CheckedContinuation<Void, Never>) -> Bool {
+            buildBarrierLock.lock()
+            defer { buildBarrierLock.unlock() }
+            if releaseRequested {
+                releaseRequested = false
+                return true
+            }
+            buildBarrier = continuation
+            return false
         }
 
         func buildEvidence(transcript: String, dskKeyId: String, dskPublicKeyBase64: String) async throws -> IosAppAttestEvidence {
@@ -182,12 +196,9 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
             lastTranscript = transcript
             if holdBuild {
                 await withCheckedContinuation { continuation in
-                    if releaseRequested {
-                        continuation.resume()
-                    } else {
-                        buildBarrier = continuation
-                    }
+                    let resumeImmediately = shouldResumeBuildImmediately(continuation)
                     onBuildEntered?()
+                    if resumeImmediately { continuation.resume() }
                 }
             } else {
                 onBuildEntered?()
