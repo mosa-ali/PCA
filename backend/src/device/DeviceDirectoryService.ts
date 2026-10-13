@@ -203,10 +203,14 @@ export class DeviceDirectoryService {
         this.auditAppendFailureCount += 1;
         if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
           // eslint-disable-next-line no-console -- structured operational warning contains no family/device identifiers or key material.
-          console.warn(JSON.stringify({
-            event: 'device_lifecycle_audit_append_failed',
-            occurrences: this.auditAppendFailureCount,
-          }));
+          try {
+            console.warn(JSON.stringify({
+              event: 'device_lifecycle_audit_append_failed',
+              occurrences: this.auditAppendFailureCount,
+            }));
+          } catch {
+            // Logging is best-effort too; the device/key revocation already committed.
+          }
         }
       }
     }

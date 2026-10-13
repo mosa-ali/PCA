@@ -55,6 +55,24 @@ test('issueChallenge for a known, non-revoked device returns a fresh, plausible 
   assert.equal(issued.expiresAt.getTime(), clock.now().getTime() + DEVICE_CHALLENGE_TTL_MS);
 });
 
+test('issueChallenge rejects invalid creation or expiry clocks before repository writes', async () => {
+  const { authService, directoryService, challengeRepository, clock } = buildHarness();
+  const { device } = await registerDeviceWithDsk(directoryService);
+  const create = challengeRepository.create.bind(challengeRepository);
+  let createCalls = 0;
+  challengeRepository.create = async (record) => { createCalls += 1; return create(record); };
+
+  for (const timestamp of [
+    Number.NaN,
+    Date.UTC(999, 11, 31, 23, 59, 59, 999),
+    Date.UTC(9999, 11, 31, 23, 59, 59, 999),
+  ]) {
+    clock.setTime(timestamp);
+    await assert.rejects(() => authService.issueChallenge(device.deviceId), RangeError);
+  }
+  assert.equal(createCalls, 0, 'invalid or unpersistable challenge timestamps must be rejected before storage');
+});
+
 test('issueChallenge for an unknown device is DEVICE_NOT_FOUND', async () => {
   const { authService } = buildHarness();
   await assert.rejects(() => authService.issueChallenge('unknown-device-id'), DeviceAuthError);

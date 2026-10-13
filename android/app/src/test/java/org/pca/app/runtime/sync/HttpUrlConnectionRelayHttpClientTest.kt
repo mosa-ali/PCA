@@ -87,6 +87,72 @@ class HttpUrlConnectionRelayHttpClientTest {
     }
 
     @Test
+    fun `authenticated relay request does not follow redirect with device session`() = kotlinx.coroutines.test.runTest {
+        for (redirectStatus in listOf(301, 302, 307)) {
+            val redirectTarget = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).apply {
+                soTimeout = 1500
+            }
+            val redirectTargetRequests = java.util.concurrent.atomic.AtomicInteger()
+            val targetThread = Thread {
+                try {
+                    redirectTarget.accept().use { socket ->
+                        redirectTargetRequests.incrementAndGet()
+                        socket.soTimeout = 1000
+                        val reader = socket.getInputStream().bufferedReader()
+                        while (!reader.readLine().isNullOrEmpty()) { }
+                    }
+                } catch (_: java.net.SocketTimeoutException) {
+                    // Expected: the client must treat a redirect as a response, not issue another request.
+                }
+            }.apply { isDaemon = true; start() }
+
+            val source = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
+            val sourceAuthorization = java.util.concurrent.atomic.AtomicReference<String?>()
+            val sourceThread = Thread {
+                source.accept().use { socket ->
+                    socket.soTimeout = 5000
+                    val reader = socket.getInputStream().bufferedReader()
+                    reader.readLine()
+                    while (true) {
+                        val header = reader.readLine() ?: break
+                        if (header.isEmpty()) break
+                        if (header.startsWith("Authorization:", ignoreCase = true)) {
+                            sourceAuthorization.set(header.substringAfter(':').trim())
+                        }
+                    }
+                    val response = "{}".toByteArray(Charsets.UTF_8)
+                    socket.getOutputStream().write(
+                        ("HTTP/1.1 $redirectStatus Redirect\r\n" +
+                            "Location: http://127.0.0.1:${redirectTarget.localPort}/stolen\r\n" +
+                            "Content-Length: ${response.size}\r\nConnection: close\r\n\r\n").toByteArray(),
+                    )
+                    socket.getOutputStream().write(response)
+                    socket.getOutputStream().flush()
+                }
+            }.apply { isDaemon = true; start() }
+
+            try {
+                val client = HttpUrlConnectionRelayHttpClient("http://127.0.0.1:${source.localPort}", allowInsecureHttp = true)
+                try {
+                    client.getStatus("device-session-secret")
+                    fail("HTTP $redirectStatus must not be treated as a successful relay response")
+                } catch (error: RelayHttpException) {
+                    org.junit.Assert.assertEquals(RelayHttpErrorCode.Unknown, error.errorCode)
+                }
+                sourceThread.join(1000)
+                targetThread.join(2000)
+                org.junit.Assert.assertEquals("Bearer device-session-secret", sourceAuthorization.get())
+                org.junit.Assert.assertEquals("Redirect $redirectStatus must not be followed", 0, redirectTargetRequests.get())
+            } finally {
+                source.close()
+                redirectTarget.close()
+                sourceThread.join(1000)
+                targetThread.join(1000)
+            }
+        }
+    }
+
+    @Test
     fun `ack retires an expired relay row only for the exact authenticated not found response`() = kotlinx.coroutines.test.runTest {
         val responses = listOf(
             404 to """{"error":"not_found"}""",

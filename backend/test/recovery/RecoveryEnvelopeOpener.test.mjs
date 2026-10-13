@@ -51,6 +51,70 @@ test('a genuine RS successfully opens the stored envelope end to end', async () 
   assert.equal(opened.recoveryTransactionId, 'txn-1');
 });
 
+test('derived RWK is zeroized after successful, null, and throwing cipher opens while RS stays caller-owned', async () => {
+  const requestSecret = Buffer.from('caller-owned-recovery-secret');
+  const originalSecret = Buffer.from(requestSecret);
+  const repository = fakeRepository({
+    familyId: 'family-1', ciphertext: Buffer.from('opaque-envelope'),
+    version: 1, createdAt: new Date(), updatedAt: new Date(),
+  });
+
+  for (const outcome of ['OPENED', 'NULL', 'THROW']) {
+    const rwk = Buffer.from('ephemeral-derived-rwk');
+    const kdf = { async derive(secret) {
+      assert.strictEqual(secret, requestSecret);
+      return rwk;
+    } };
+    const cipher = { async open(receivedRwk) {
+      assert.strictEqual(receivedRwk, rwk);
+      if (outcome === 'THROW') throw new Error('cipher failure');
+      if (outcome === 'NULL') return null;
+      return {
+        familyId: 'family-1', recoveryEnvelopeId: 'envelope-1', recoveryTransactionId: 'txn-1',
+        boundTrustSetEpoch: 1, boundKeyEpoch: 1,
+      };
+    } };
+    const request = {
+      familyId: 'family-1', recoverySecret: requestSecret, kdfSalt: SALT,
+      kdfSuite: SUITE, associatedData: ASSOCIATED_DATA,
+    };
+
+    if (outcome === 'THROW') {
+      await assert.rejects(() => openStoredRecoveryEnvelope(request, repository, kdf, cipher), /cipher failure/);
+    } else {
+      const opened = await openStoredRecoveryEnvelope(request, repository, kdf, cipher);
+      assert.equal(opened?.familyId ?? null, outcome === 'OPENED' ? 'family-1' : null);
+    }
+    assert.deepEqual(rwk, Buffer.alloc(rwk.length));
+    assert.deepEqual(requestSecret, originalSecret);
+  }
+});
+
+test('derived RWK aliases of caller buffers are rejected before cipher use without zeroizing RS', async () => {
+  for (const aliasKind of ['DIRECT', 'OVERLAPPING_VIEW']) {
+    const backing = Buffer.from('recovery-secret-backing-buffer');
+    const requestSecret = aliasKind === 'DIRECT' ? backing : backing.subarray(0, 18);
+    const rwk = aliasKind === 'DIRECT' ? requestSecret : backing.subarray(12, 28);
+    const originalSecret = Buffer.from(requestSecret);
+    let cipherCalls = 0;
+    const kdf = { async derive() { return rwk; } };
+    const cipher = { async open() { cipherCalls += 1; return null; } };
+    const repository = fakeRepository({
+      familyId: 'family-1', ciphertext: Buffer.from('opaque-envelope'),
+      version: 1, createdAt: new Date(), updatedAt: new Date(),
+    });
+
+    const opened = await openStoredRecoveryEnvelope({
+      familyId: 'family-1', recoverySecret: requestSecret, kdfSalt: SALT,
+      kdfSuite: SUITE, associatedData: ASSOCIATED_DATA,
+    }, repository, kdf, cipher);
+
+    assert.equal(opened, null, aliasKind);
+    assert.equal(cipherCalls, 0, aliasKind);
+    assert.deepEqual(requestSecret, originalSecret, aliasKind);
+  }
+});
+
 test('RS lost / no stored envelope for the family -- returns null, never fabricates one (a valid RECOVERY_REQUIRED/unrecoverable outcome upstream)', async () => {
   const kdf = createTestOnlyRecoveryKdf();
   const cipher = createTestOnlyRecoveryEnvelopeCipher();

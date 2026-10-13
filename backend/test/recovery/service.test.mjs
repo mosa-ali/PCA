@@ -32,6 +32,40 @@ test('storeEnvelope creates a new envelope at version 1 with expectedVersion 0',
   assert.equal(record.familyId, FAMILY_A);
 });
 
+test('storeEnvelope snapshots validated ciphertext before asynchronous persistence', async () => {
+  let releaseWrite;
+  let receivedCiphertext;
+  const repository = {
+    async getEnvelope() { return null; },
+    async storeEnvelope(familyId, ciphertext, expectedVersion, now) {
+      receivedCiphertext = ciphertext;
+      await new Promise((resolve) => { releaseWrite = resolve; });
+      return {
+        outcome: 'STORED',
+        record: {
+          familyId,
+          ciphertext: Buffer.from(ciphertext),
+          version: expectedVersion + 1,
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
+        },
+      };
+    },
+    async deleteEnvelope() { return { outcome: 'NOT_FOUND' }; },
+  };
+  const service = new RecoveryService(repository, () => new Date(BASE_TIME));
+  const expectedBytes = Buffer.from('opaque-envelope-bytes');
+  const callerBuffer = Buffer.from(expectedBytes);
+  const pendingWrite = service.storeEnvelope(FAMILY_A, callerBuffer, 0);
+
+  callerBuffer.fill(0);
+  releaseWrite();
+  const stored = await pendingWrite;
+
+  assert.notStrictEqual(receivedCiphertext, callerBuffer);
+  assert.deepEqual(stored.ciphertext, expectedBytes);
+});
+
 test('fetchEnvelope returns the stored ciphertext intact', async () => {
   const { service } = buildService();
   const ciphertext = Buffer.from('wrapped-recovery-material');
@@ -41,17 +75,31 @@ test('fetchEnvelope returns the stored ciphertext intact', async () => {
 });
 
 test('fetchEnvelope fails closed for a wrong-family or out-of-contract stored record', async () => {
+  const baseRecord = {
+    familyId: FAMILY_A,
+    ciphertext: Buffer.from('valid-envelope'),
+    version: 1,
+    createdAt: new Date(BASE_TIME),
+    updatedAt: new Date(BASE_TIME),
+  };
   const invalidRecords = [
     { familyId: FAMILY_B, ciphertext: Buffer.from('foreign-family-envelope') },
     { familyId: FAMILY_A, ciphertext: Buffer.alloc(0) },
     { familyId: FAMILY_A, ciphertext: Buffer.alloc(MAX_ENVELOPE_BYTES + 1) },
     { familyId: FAMILY_A, ciphertext: 'not-a-buffer' },
-  ].map((record) => ({
-    ...record,
-    version: 1,
-    createdAt: new Date(BASE_TIME),
-    updatedAt: new Date(BASE_TIME),
-  }));
+  ].map((record) => ({ ...baseRecord, ...record }));
+  invalidRecords.push(
+    { ...baseRecord, version: 0 },
+    { ...baseRecord, version: -1 },
+    { ...baseRecord, version: 1.5 },
+    { ...baseRecord, version: 0x1_0000_0000 },
+    { ...baseRecord, version: Number.NaN },
+    { ...baseRecord, createdAt: new Date(Number.NaN) },
+    { ...baseRecord, updatedAt: new Date(Number.NaN) },
+    { ...baseRecord, createdAt: '2026-01-01T00:00:00Z' },
+    { ...baseRecord, createdAt: new Date('0999-12-31T23:59:59.999Z') },
+    { ...baseRecord, updatedAt: new Date('+010000-01-01T00:00:00.000Z') },
+  );
 
   for (const invalidRecord of invalidRecords) {
     const repository = {
@@ -162,11 +210,42 @@ test('oversized familyId rejected', async () => {
   );
 });
 
-test('negative or non-integer expectedVersion rejected', async () => {
-  const { service } = buildService();
-  await assert.rejects(() => service.storeEnvelope(FAMILY_A, Buffer.from('x'), -1), { code: 'INVALID_INPUT' });
-  await assert.rejects(() => service.storeEnvelope(FAMILY_A, Buffer.from('x'), 1.5), { code: 'INVALID_INPUT' });
-  await assert.rejects(() => service.storeEnvelope(FAMILY_A, Buffer.from('x'), Number.NaN), { code: 'INVALID_INPUT' });
+test('expectedVersion rejects negative, malformed, out-of-range, and exhausted versions before repository writes', async () => {
+  let writes = 0;
+  const repository = {
+    async getEnvelope() { return null; },
+    async storeEnvelope() { writes += 1; throw new Error('invalid version must not reach repository'); },
+    async deleteEnvelope() { return { outcome: 'NOT_FOUND' }; },
+  };
+  const service = new RecoveryService(repository, () => new Date(BASE_TIME));
+  const uint32Max = 0xffff_ffff;
+  for (const version of [-1, 1.5, Number.NaN, uint32Max + 1, uint32Max]) {
+    await assert.rejects(() => service.storeEnvelope(FAMILY_A, Buffer.from('x'), version), { code: 'INVALID_INPUT' });
+  }
+  assert.equal(writes, 0);
+});
+
+test('expectedVersion UINT32_MAX - 1 may advance to the maximum persisted version', async () => {
+  const uint32Max = 0xffff_ffff;
+  const repository = {
+    async getEnvelope() { return null; },
+    async storeEnvelope(familyId, ciphertext, expectedVersion, now) {
+      return {
+        outcome: 'STORED',
+        record: {
+          familyId,
+          ciphertext: Buffer.from(ciphertext),
+          version: expectedVersion + 1,
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
+        },
+      };
+    },
+    async deleteEnvelope() { return { outcome: 'NOT_FOUND' }; },
+  };
+  const service = new RecoveryService(repository, () => new Date(BASE_TIME));
+  const record = await service.storeEnvelope(FAMILY_A, Buffer.from('x'), uint32Max - 1);
+  assert.equal(record.version, uint32Max);
 });
 
 test('errors never carry ciphertext or family id in their message', async () => {

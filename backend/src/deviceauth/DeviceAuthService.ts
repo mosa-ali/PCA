@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { generateChallengeNonce } from './nonce.js';
-import { computeExpiryInstant, DEVICE_CHALLENGE_TTL_MS } from './policy.js';
+import { computeExpiryInstant, DEVICE_CHALLENGE_TTL_MS, isSupportedChallengeTime } from './policy.js';
 import type { DeviceChallengeRepository, ConsumeChallengeResult } from './DeviceChallengeRepository.js';
 import type { DeviceSignatureVerifier } from './DeviceSignatureVerifier.js';
 import type { DeviceChallengeRecord, DeviceId } from './types.js';
@@ -32,15 +32,6 @@ const DEVICE_AUTH_ERROR_MESSAGES: Record<DeviceAuthErrorCode, string> = {
   ALREADY_CONSUMED: 'Challenge has already been used.',
   INVALID_SIGNATURE: 'Signature verification failed.',
 };
-
-const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
-const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
-
-function isSupportedChallengeTime(value: unknown): value is Date {
-  if (!(value instanceof Date)) return false;
-  const time = value.getTime();
-  return Number.isFinite(time) && time >= MYSQL_DATETIME_MIN_MS && time <= MYSQL_DATETIME_MAX_MS;
-}
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -115,14 +106,22 @@ export class DeviceAuthService {
     if (!device) throw new DeviceAuthError('DEVICE_NOT_FOUND');
     if (device.status === 'REVOKED') throw new DeviceAuthError('DEVICE_REVOKED');
 
-    const createdAt = this.now();
+    const clockValue = this.now();
+    if (!isSupportedChallengeTime(clockValue)) {
+      throw new RangeError('Challenge creation time is outside the supported persistence range.');
+    }
+    const createdAt = new Date(clockValue.getTime());
+    const expiresAt = computeExpiryInstant(createdAt, DEVICE_CHALLENGE_TTL_MS);
+    if (!isSupportedChallengeTime(expiresAt)) {
+      throw new RangeError('Challenge expiry is outside the supported persistence range.');
+    }
     const record: DeviceChallengeRecord = {
       challengeId: randomUUID(),
       deviceId: device.deviceId,
       familyId: device.familyId,
       nonce: generateChallengeNonce(),
       createdAt,
-      expiresAt: computeExpiryInstant(createdAt, DEVICE_CHALLENGE_TTL_MS),
+      expiresAt,
       consumedAt: null,
     };
     await this.challengeRepository.create(record);

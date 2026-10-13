@@ -179,7 +179,7 @@ test('revokeDevice emits one lifecycle audit only for the winning transition', a
   assert.equal(deviceRevocations[0].actorDeviceId, 'SERVICE_SESSION', 'server-side revocation must not be attributed to the device it targets');
 });
 
-test('revokeDevice returns committed state when the one-shot audit append fails; retry stays idempotent', async () => {
+test('revokeDevice returns committed state when audit append and warning sink fail; retry stays idempotent', async () => {
   const repository = createInMemoryDeviceRepository();
   let auditAttempts = 0;
   const auditService = {
@@ -190,7 +190,10 @@ test('revokeDevice returns committed state when the one-shot audit append fails;
   };
   const warnings = [];
   const originalWarn = console.warn;
-  console.warn = (message) => warnings.push(String(message));
+  console.warn = (message) => {
+    warnings.push(String(message));
+    throw new Error('synthetic warning sink failure');
+  };
   try {
     const service = new DeviceDirectoryService(
       repository,

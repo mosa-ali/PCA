@@ -1,6 +1,7 @@
 import { execute, runInTransaction } from '../db/pool.js';
 import type { ConsumeChallengeResult, DeviceChallengeRepository, VerifiedChallengeSigner } from './DeviceChallengeRepository.js';
 import type { ChallengeId, DeviceChallengeRecord } from './types.js';
+import { isSupportedChallengeTime } from './policy.js';
 
 interface DeviceChallengeRow {
   challenge_id: string;
@@ -20,14 +21,8 @@ interface DeviceSigningKeyRow {
   status: 'ACTIVE' | 'REVOKED';
 }
 
-const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
-const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
-
 function snapshotConsumedAt(value: Date): Date | null {
-  if (!(value instanceof Date)) return null;
-  const time = value.getTime();
-  if (!Number.isFinite(time) || time < MYSQL_DATETIME_MIN_MS || time > MYSQL_DATETIME_MAX_MS) return null;
-  return new Date(time);
+  return isSupportedChallengeTime(value) ? new Date(value.getTime()) : null;
 }
 
 function mapRow(row: DeviceChallengeRow): DeviceChallengeRecord {

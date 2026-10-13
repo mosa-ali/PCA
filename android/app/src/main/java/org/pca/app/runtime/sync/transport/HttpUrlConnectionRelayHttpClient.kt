@@ -60,6 +60,10 @@ class HttpUrlConnectionRelayHttpClient(
                 throw RelayHttpException(RelayHttpErrorCode.Network, "Could not open connection: ${e.message}")
             }
             try {
+                // This transport may carry a device bearer token and opaque family-sync
+                // envelopes. Do not let a relay redirect forward either to a different host
+                // or silently change the route/method under the caller.
+                connection.instanceFollowRedirects = false
                 connection.requestMethod = method
                 connection.setRequestProperty("content-type", "application/json")
                 if (sessionToken != null) connection.setRequestProperty("authorization", "Bearer $sessionToken")

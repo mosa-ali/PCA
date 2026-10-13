@@ -272,6 +272,16 @@ test('issueChallengeSafely for a nonexistent device returns a well-formed challe
   );
 });
 
+test('issueChallengeSafely rejects an invalid synthetic challenge clock instead of returning an invalid expiry', async () => {
+  for (const timestamp of [Number.NaN, Date.UTC(9999, 11, 31, 23, 59, 59, 999)]) {
+    const { sessionService } = buildHarness(() => new Date(timestamp));
+    await assert.rejects(
+      () => sessionService.issueChallengeSafely('nonexistent-device'),
+      RangeError,
+    );
+  }
+});
+
 test('issueChallengeSafely for a revoked device is indistinguishable at the API boundary from a nonexistent one', async () => {
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId } = await registerDevice(deviceRepository);

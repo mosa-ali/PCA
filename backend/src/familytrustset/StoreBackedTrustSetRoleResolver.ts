@@ -171,10 +171,17 @@ export class StoreBackedTrustSetRoleResolver implements TrustSetRoleResolver {
 
       // Signature and device-directory checks above await external state.
       // Re-read the complete accepted row at the end so a newer epoch that
-      // revoked or changed this member cannot return a stale actor. This
-      // query is the authorization decision's linearization point.
+      // revoked or changed this member cannot return a stale actor. A final
+      // lifecycle snapshot follows before returning, since it is stored separately.
       const current = await this.deps.epochStore.readLatestEpoch(familyId);
       if (!sameAcceptedHead(latest, current)) return 'NO_TRUST_SET';
+      // Lifecycle can change while the final accepted-head read is in flight.
+      // Make the last pre-return authority snapshot cover both the accepted
+      // head and the exact DSK/device state, so a revocation observed during
+      // that await cannot still produce a successful actor resolution.
+      if (await this.readActiveDsk(familyId, member.deviceId, member.dskKeyId, member.dskPublicKey) === null) {
+        return 'DEVICE_NOT_ACTIVE';
+      }
       return { ...resolved, dskKeyId: member.dskKeyId };
     } catch {
       return 'NO_TRUST_SET';

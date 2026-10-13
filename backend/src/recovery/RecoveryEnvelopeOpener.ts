@@ -4,6 +4,12 @@ import type { OpenedRecoveryEnvelope, RecoveryEnvelopeCipher } from './RecoveryE
 import type { OpaqueFamilyId } from './types.js';
 import { isPlausibleEnvelopeCiphertext } from './policy.js';
 
+function buffersOverlap(left: Buffer, right: Buffer): boolean {
+  return left.buffer === right.buffer &&
+    left.byteOffset < right.byteOffset + right.byteLength &&
+    right.byteOffset < left.byteOffset + left.byteLength;
+}
+
 export interface RecoveryEnvelopeOpenRequest {
   familyId: OpaqueFamilyId;
   /** Offline, high-entropy Recovery Secret (doc 09 Section 3.1) -- caller-owned; this function never persists or logs it. */
@@ -30,9 +36,10 @@ export interface RecoveryEnvelopeOpenRequest {
  *
  * Returns `null` on ANY failure -- envelope not found, or the AEAD open
  * itself failing -- never partial/best-effort material. `recoverySecret`
- * and the derived RWK are both zeroized-by-the-caller's-responsibility
- * ephemeral material (doc 09 Section 3.1); this function does not retain
- * either beyond the call.
+ * remains caller-owned ephemeral material and must be zeroized by the
+ * caller (doc 09 Section 3.1). This function zeroizes the derived RWK in a
+ * `finally` block after the awaited cipher open completes and retains neither
+ * value beyond the call.
  */
 export async function openStoredRecoveryEnvelope(
   request: RecoveryEnvelopeOpenRequest,
@@ -51,15 +58,24 @@ export async function openStoredRecoveryEnvelope(
   ) return null;
 
   const rwk = await kdf.derive(request.recoverySecret, request.kdfSalt, request.kdfSuite);
-  const opened = await cipher.open(rwk, record.ciphertext, request.associatedData);
-  if (!opened) return null;
+  // Injected KDF implementations must return an independently-owned key
+  // buffer. Refuse aliases before cipher use so clearing the derived key
+  // cannot mutate the caller's RS, salt, or associated-data buffers.
+  if ([request.recoverySecret, request.kdfSalt, request.associatedData]
+    .some((input) => buffersOverlap(rwk, input))) return null;
+  try {
+    const opened = await cipher.open(rwk, record.ciphertext, request.associatedData);
+    if (!opened) return null;
 
-  // Defense-in-depth: even if a cipher implementation were ever buggy
-  // enough to authenticate against the wrong associated data, the
-  // envelope it opened must still claim the SAME family this request was
-  // for -- never trust the opened result's own familyId claim over what
-  // was actually requested.
-  if (opened.familyId !== request.familyId) return null;
+    // Defense-in-depth: even if a cipher implementation were ever buggy
+    // enough to authenticate against the wrong associated data, the
+    // envelope it opened must still claim the SAME family this request was
+    // for -- never trust the opened result's own familyId claim over what
+    // was actually requested.
+    if (opened.familyId !== request.familyId) return null;
 
-  return opened;
+    return opened;
+  } finally {
+    rwk.fill(0);
+  }
 }

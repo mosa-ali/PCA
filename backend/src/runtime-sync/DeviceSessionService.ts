@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { DeviceAuthError, DeviceAuthService, type IssuedChallenge, type VerifiedDeviceIdentity } from '../deviceauth/DeviceAuthService.js';
 import { generateChallengeNonce } from '../deviceauth/nonce.js';
-import { computeExpiryInstant as computeChallengeExpiry, DEVICE_CHALLENGE_TTL_MS } from '../deviceauth/policy.js';
+import { computeExpiryInstant as computeChallengeExpiry, DEVICE_CHALLENGE_TTL_MS,
+  isSupportedChallengeTime } from '../deviceauth/policy.js';
 import { generateSessionToken, hashSessionToken, isPlausibleSessionToken } from '../auth/token.js';
 import { DEVICE_SESSION_TTL_MS } from './policy.js';
 import type { DeviceSessionRepository } from './DeviceSessionRepository.js';
@@ -73,11 +74,19 @@ export class DeviceSessionService {
       return await this.deviceAuthService.issueChallenge(deviceId);
     } catch (error) {
       if (error instanceof DeviceAuthError && (error.code === 'DEVICE_NOT_FOUND' || error.code === 'DEVICE_REVOKED')) {
-        const createdAt = this.now();
+        const clockValue = this.now();
+        if (!isSupportedChallengeTime(clockValue)) {
+          throw new RangeError('Challenge creation time is outside the supported persistence range.');
+        }
+        const createdAt = new Date(clockValue.getTime());
+        const expiresAt = computeChallengeExpiry(createdAt, DEVICE_CHALLENGE_TTL_MS);
+        if (!isSupportedChallengeTime(expiresAt)) {
+          throw new RangeError('Challenge expiry is outside the supported persistence range.');
+        }
         return {
           challengeId: randomUUID(),
           nonce: generateChallengeNonce(),
-          expiresAt: computeChallengeExpiry(createdAt, DEVICE_CHALLENGE_TTL_MS),
+          expiresAt,
         };
       }
       throw error;

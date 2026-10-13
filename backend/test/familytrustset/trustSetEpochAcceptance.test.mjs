@@ -1290,6 +1290,49 @@ test('RESOLVER_HEAD_ADVANCE_DURING_ASYNC_CHECK: a newer accepted head prevents r
   assert.equal(advanced, true);
 });
 
+test('RESOLVER_DEVICE_REVOKED_DURING_FINAL_HEAD_READ: final lifecycle snapshot denies a revoked device', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({});
+  seedAcceptedEpoch(harness.state, epochFields({ entries: [entryFor(owner)] }), owner);
+
+  const originalReadLatest = harness.deps.epochStore.readLatestEpoch.bind(harness.deps.epochStore);
+  let latestReadCount = 0;
+  let signalFinalReadStarted;
+  const finalReadStarted = new Promise((resolve) => { signalFinalReadStarted = resolve; });
+  let releaseFinalRead;
+  const finalReadGate = new Promise((resolve) => { releaseFinalRead = resolve; });
+  harness.deps.epochStore.readLatestEpoch = async (familyId) => {
+    latestReadCount += 1;
+    if (latestReadCount === 2) {
+      signalFinalReadStarted();
+      await finalReadGate;
+    }
+    return originalReadLatest(familyId);
+  };
+
+  let revoked = false;
+  const resolver = new StoreBackedTrustSetRoleResolver({
+    epochStore: harness.deps.epochStore,
+    deviceRepository: {
+      async isDeviceSessionActive(familyId, deviceId) {
+        return familyId === FAMILY_ID && deviceId === owner.deviceId && !revoked;
+      },
+      async findKeysByDeviceForFamily(familyId, deviceId) {
+        if (familyId !== FAMILY_ID || deviceId !== owner.deviceId) return [];
+        return [{ deviceId, keyId: owner.dskKeyId, keyPurpose: 'DSK', publicKey: owner.dskPublicKey,
+          status: revoked ? 'REVOKED' : 'ACTIVE' }];
+      },
+    },
+    verifier: new P256TrustSetSignatureVerifier(),
+  });
+
+  const resolution = resolver.resolveActor(FAMILY_ID, owner.deviceId, owner.dskKeyId);
+  await finalReadStarted;
+  revoked = true;
+  releaseFinalRead();
+  assert.equal(await resolution, 'DEVICE_NOT_ACTIVE');
+});
+
 test('RESOLVER_READ_ERROR: a store read failure resolves fail-closed as NO_TRUST_SET', async () => {
   const harness = createHarness({ readErrors: { epochStore: new Error('resolver-boom') } });
   const resolver = createStoreBackedResolver(harness);
