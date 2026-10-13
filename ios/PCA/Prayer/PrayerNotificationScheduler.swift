@@ -36,7 +36,9 @@ public enum PrayerNotificationScheduling {
               nowUtc.timeIntervalSince1970.isFinite else {
             return .rejectedInvalidDate
         }
-        request.fireDate > nowUtc ? .scheduled : .rejectedPastFireDate
+        request.fireDate > nowUtc
+            ? PrayerSchedulingOutcome.scheduled
+            : PrayerSchedulingOutcome.rejectedPastFireDate
     }
 
     #if canImport(UserNotifications)

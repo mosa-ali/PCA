@@ -200,6 +200,37 @@ test('indexed history rejects a row ahead of the currently authorized accepted h
   await assert.rejects(f.service.epoch(scope, 2), rejectsCode('CONFLICT'));
 });
 
+test('status rejects indexed rows ahead of the authorized head, including a lost-response race', async () => {
+  const f = fixture(); await f.bootstrap();
+  const candidate = f.request(2);
+  const bytes = Buffer.from(candidate.canonicalEpochBase64, 'base64');
+  const epoch = (await import('../../dist/familytrustset/decode.js')).decodeCanonicalTrustSetEpochBytes(bytes);
+  const owner = epoch.entries.find((entry) => entry.role === 'OWNER' && entry.status === 'ACTIVE');
+  assert.ok(owner);
+  const futureRecord = {
+    familyId: FAMILY,
+    trustSetEpoch: epoch.trustSetEpoch,
+    keyEpoch: epoch.keyEpoch,
+    supersedesEpoch: epoch.supersedesEpoch,
+    signedEpochBytes: bytes,
+    signature: Buffer.from(candidate.signatureBase64, 'base64').toString('base64url'),
+    signerKeyId: owner.dskKeyId,
+    signerDeviceId: owner.deviceId,
+    issuedAt: epoch.issuedAt,
+    receivedAt: new Date(),
+  };
+
+  f.acceptance.readAcceptedEpoch = async () => futureRecord;
+  await assert.rejects(f.service.status(scope, candidate), rejectsCode('CONFLICT'));
+
+  // The initial indexed lookup can miss a concurrent commit; if its
+  // reconciliation lookup then sees an orphaned row, it must apply the
+  // same authoritative-head check before reporting ACCEPTED.
+  let lookupCount = 0;
+  f.acceptance.readAcceptedEpoch = async () => ++lookupCount === 1 ? null : futureRecord;
+  await assert.rejects(f.service.status(scope, candidate), rejectsCode('CONFLICT'));
+});
+
 test('indexed history rejects a different signed record at the current head epoch', async () => {
   const f = fixture(); await f.bootstrap();
   const current = f.rows.get(`${FAMILY}/1`);

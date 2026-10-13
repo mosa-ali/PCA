@@ -152,6 +152,11 @@ export class OrdinaryTrustSetService {
     const record = await this.acceptanceService.readAcceptedEpoch(scope.familyId, trustSetEpoch);
     if (record === null) throw new OrdinaryTrustSetError('EPOCH_NOT_FOUND');
     const currentHead = await this.authorizedHead(scope, false);
+    this.assertRecordWithinHead(record, currentHead);
+    return dto(record);
+  }
+
+  private assertRecordWithinHead(record: TrustSetEpochRecord, currentHead: TrustSetEpochRecord): void {
     if (record.trustSetEpoch > currentHead.trustSetEpoch || record.keyEpoch > currentHead.keyEpoch ||
         (record.trustSetEpoch === currentHead.trustSetEpoch &&
           (!record.signedEpochBytes.equals(currentHead.signedEpochBytes) || record.signature !== currentHead.signature))) {
@@ -160,7 +165,6 @@ export class OrdinaryTrustSetService {
       // at the current head if those views disagree.
       throw new OrdinaryTrustSetError('CONFLICT');
     }
-    return dto(record);
   }
 
   async status(sourceScope: OrdinaryTrustSetScope, input: unknown): Promise<OrdinaryTrustSetStatusResult> {
@@ -179,8 +183,10 @@ export class OrdinaryTrustSetService {
       const reconciled = await this.acceptanceService.readAcceptedEpoch(scope.familyId, request.epoch.trustSetEpoch);
       if (reconciled !== null) {
         const exact = reconciled.signedEpochBytes.equals(request.bytes) && reconciled.signature === request.signature;
+        const finalHead = await this.authorizedHead(scope, true);
+        this.assertRecordWithinHead(reconciled, finalHead);
         return { outcome: exact ? 'ACCEPTED' : 'CONFLICT', acceptedEpoch: exact ? dto(reconciled) : null,
-          acceptedHead: dto(await this.authorizedHead(scope, true)) };
+          acceptedHead: dto(finalHead) };
       }
       if (request.epoch.trustSetEpoch === currentHead.trustSetEpoch) {
         throw new Error('Accepted head disappeared from indexed lookup.');
@@ -188,8 +194,10 @@ export class OrdinaryTrustSetService {
       return { outcome: 'NOT_ACCEPTED', acceptedEpoch: null, acceptedHead: dto(currentHead) };
     }
     const exact = accepted.signedEpochBytes.equals(request.bytes) && accepted.signature === request.signature;
+    const currentHead = await this.authorizedHead(scope, true);
+    this.assertRecordWithinHead(accepted, currentHead);
     return { outcome: exact ? 'ACCEPTED' : 'CONFLICT', acceptedEpoch: exact ? dto(accepted) : null,
-      acceptedHead: dto(await this.authorizedHead(scope, true)) };
+      acceptedHead: dto(currentHead) };
   }
 
   async submit(sourceScope: OrdinaryTrustSetScope, input: unknown, receivedAt = new Date()): Promise<OrdinaryTrustSetSubmitResult> {
