@@ -149,12 +149,13 @@ class SyncOutboxQueueBoundsTest {
         val originalPayload = "original usage summary"
         val otherPayload = "independent pending decision"
         val replacementPayload = "replacement usage summary with much larger encrypted contents"
-        val currentBytes = cipher.encryptToColumns(originalPayload).first.length.toLong() +
-            cipher.encryptToColumns(otherPayload).first.length.toLong()
+        val originalCiphertextBytes = cipher.encryptToColumns(originalPayload).first.length.toLong()
+        val otherCiphertextBytes = cipher.encryptToColumns(otherPayload).first.length.toLong()
+        val currentBytes = originalCiphertextBytes + otherCiphertextBytes
         val replacementBytes = cipher.encryptToColumns(replacementPayload).first.length.toLong()
         val maxBytes = currentBytes + 1L
         assertTrue(currentBytes <= maxBytes)
-        assertTrue(replacementBytes > maxBytes)
+        assertTrue(currentBytes - originalCiphertextBytes + replacementBytes > maxBytes)
         val outbox = SyncOutboxRepository(
             db.syncOutboxDao(),
             cipher,
