@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -569,6 +570,99 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(2, TrustSetEpochCodec.decodeCanonical(
             Base64.getDecoder().decode(firstStore.read()!!.pending!!.canonicalEpochBase64)).trustSetEpoch)
         assertNotNull(firstStore.read()!!.pending)
+    }
+
+    @Test fun `prepare signs the candidate snapshot captured before suspended head read`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        seedStore(store)
+        val root = store.read()!!.accepted
+        val enteredHead = CompletableDeferred<Unit>()
+        val releaseHead = CompletableDeferred<Unit>()
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest) = error("no submit expected")
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest) = error("no status expected")
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = error("no history expected")
+            override suspend fun getHead(familyId: String): AcceptedEpochRecord {
+                enteredHead.complete(Unit)
+                releaseHead.await()
+                return root
+            }
+        }
+        val callerEntries = epoch(2).entries.toMutableList()
+        val candidate = epoch(2).copy(entries = callerEntries)
+        val expectedBytes = TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8)
+        val expectedRootBytes = TrustSetEpochCodec.canonicalize(epoch(1)).toByteArray(Charsets.UTF_8)
+        var signedBytes: ByteArray? = null
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signedBytes = message.copyOf()
+                return ByteArray(64) { 1 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, bytes, _ ->
+                bytes.contentEquals(expectedRootBytes) || bytes.contentEquals(expectedBytes)
+            },
+            "owner", "dsk", "alias")
+        val result = CompletableDeferred<Boolean>()
+        val operation = launch(start = CoroutineStart.UNDISPATCHED) {
+            result.complete(coordinator.prepare(candidate))
+        }
+
+        try {
+            withTimeout(5_000) { enteredHead.await() }
+            callerEntries += UntrustedTrustSetEntry("child", TrustSetRole.CHILD, "child-dsk", "child-public-dsk",
+                "child-dek", "child-public-dek", TrustSetMembershipStatus.ACTIVE)
+            releaseHead.complete(Unit)
+            withTimeout(5_000) { operation.join() }
+        } finally {
+            releaseHead.complete(Unit)
+            operation.cancel()
+        }
+
+        assertTrue(result.await())
+        assertEquals(2, callerEntries.size)
+        assertArrayEquals("signing bytes must be the candidate validated before suspension", expectedBytes, signedBytes)
+        val pending = requireNotNull(store.read()!!.pending)
+        val decodedPending = TrustSetEpochCodec.decodeCanonical(Base64.getDecoder().decode(pending.canonicalEpochBase64))
+        assertEquals(1, decodedPending.entries.size)
+        assertEquals("owner", decodedPending.entries.single().deviceId)
+    }
+
+    @Test fun `prepare rejects more than codec entry limit before head read or signing`() = runBlocking {
+        val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+        seedStore(store)
+        var headReads = 0
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest) = error("no submit expected")
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest) = error("no status expected")
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int) = error("no history expected")
+            override suspend fun getHead(familyId: String): AcceptedEpochRecord {
+                headReads++
+                return store.read()!!.accepted
+            }
+        }
+        var signs = 0
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                signs++
+                return ByteArray(64) { 1 }
+            }
+        }
+        val coordinator = OrdinaryTrustSetCoordinator(store, api, signer,
+            OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+        val oversized = epoch(2).copy(entries = List(65) { epoch(2).entries.single() })
+
+        try {
+            coordinator.prepare(oversized)
+            fail("candidate above canonical codec entry limit must be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected before authenticated server I/O, signing, or durable pending custody.
+        }
+
+        assertEquals(0, headReads)
+        assertEquals(0, signs)
+        assertNull(store.read()!!.pending)
     }
 
     @Test fun `restart status miss replays exact durable request without signing again`() = runBlocking {

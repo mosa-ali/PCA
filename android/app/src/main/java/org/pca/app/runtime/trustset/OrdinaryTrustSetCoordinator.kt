@@ -76,32 +76,50 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
     private val localDeviceId: String, private val localSigningKeyId: String, private val signingAlias: String) {
     private val flight = OrdinaryEpochCoordinatorLocks.forIdentity(store.coordinationIdentity)
 
-    suspend fun prepare(candidate: UntrustedTrustSetEpoch): Boolean = flight.withLock {
-        val current = store.read() ?: return@withLock false
-        if (!hasTrustedFloor(current)) return@withLock false
-        if (current.pending != null) return@withLock false
-        val prior = decode(current.accepted)
-        val owner = owner(prior)
-        require(owner.deviceId == localDeviceId && owner.dskKeyId == localSigningKeyId)
-        // Locally-created pending requests retain the exact accepted signing base. The wire
-        // field is lineage metadata at the server boundary, but this client writes the precise
-        // current floor so its durable custody record can be verified after restart.
-        require(candidate.supersedesEpoch == prior.trustSetEpoch)
-        validateTransition(prior, candidate)
-        // A valid local owner signature proves authorship, not that the server accepted this
-        // persisted floor. Before using it to authorize another DSK signature, require the
-        // authenticated server projection to match the exact durable record. If the server
-        // advanced, runtime reconciliation must verify/catch up the chain before retrying.
-        val serverHead = try { api.getHead(prior.familyId) }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { return@withLock false }
-        if (serverHead != current.accepted || !store.confirmDurable(current)) return@withLock false
-        val bytes = TrustSetEpochCodec.canonicalize(candidate).toByteArray(Charsets.UTF_8)
-        val signature = signOrdinaryEpochRequestBytes(signer, signingAlias, bytes)
-        require(signature.size == 64)
-        val request = OrdinaryEpochRequest(Base64.getEncoder().encodeToString(bytes), Base64.getEncoder().encodeToString(signature))
-        require(verifier.verify(owner.dskPublicKey, bytes, request.signatureBase64))
-        store.compareAndSetDurably(current, current.copy(pending = request, pendingBase = current.accepted))
+    suspend fun prepare(candidate: UntrustedTrustSetEpoch): Boolean {
+        // Snapshot caller-owned collection state before waiting for the shared flight lock or
+        // suspending on authenticated head I/O. Validation and signing must cover the same bytes.
+        val frozenCandidate = snapshotCandidate(candidate)
+        return flight.withLock {
+            val current = store.read() ?: return@withLock false
+            if (!hasTrustedFloor(current)) return@withLock false
+            if (current.pending != null) return@withLock false
+            val prior = decode(current.accepted)
+            val owner = owner(prior)
+            require(owner.deviceId == localDeviceId && owner.dskKeyId == localSigningKeyId)
+            // Locally-created pending requests retain the exact accepted signing base. The wire
+            // field is lineage metadata at the server boundary, but this client writes the precise
+            // current floor so its durable custody record can be verified after restart.
+            require(frozenCandidate.supersedesEpoch == prior.trustSetEpoch)
+            validateTransition(prior, frozenCandidate)
+            // A valid local owner signature proves authorship, not that the server accepted this
+            // persisted floor. Before using it to authorize another DSK signature, require the
+            // authenticated server projection to match the exact durable record. If the server
+            // advanced, runtime reconciliation must verify/catch up the chain before retrying.
+            val serverHead = try { api.getHead(prior.familyId) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { return@withLock false }
+            if (serverHead != current.accepted || !store.confirmDurable(current)) return@withLock false
+            val bytes = TrustSetEpochCodec.canonicalize(frozenCandidate).toByteArray(Charsets.UTF_8)
+            val signature = signOrdinaryEpochRequestBytes(signer, signingAlias, bytes)
+            require(signature.size == 64)
+            val request = OrdinaryEpochRequest(Base64.getEncoder().encodeToString(bytes), Base64.getEncoder().encodeToString(signature))
+            require(verifier.verify(owner.dskPublicKey, bytes, request.signatureBase64))
+            store.compareAndSetDurably(current, current.copy(pending = request, pendingBase = current.accepted))
+        }
+    }
+
+    /** Keep caller-controlled collections bounded by the canonical codec's 64-entry contract. */
+    private fun snapshotCandidate(candidate: UntrustedTrustSetEpoch): UntrustedTrustSetEpoch {
+        val suppliedEntries = candidate.entries
+        require(suppliedEntries.size in 1..MAX_EPOCH_ENTRIES)
+        val frozenEntries = ArrayList<UntrustedTrustSetEntry>(suppliedEntries.size)
+        for (entry in suppliedEntries) {
+            // Recheck during iteration in case a mutable caller collection grows after the size check.
+            require(frozenEntries.size < MAX_EPOCH_ENTRIES)
+            frozenEntries += entry
+        }
+        return candidate.copy(entries = frozenEntries)
     }
 
     /** A timeout leaves the persisted request unchanged. Restart callers invoke this without preparing again. */
@@ -473,5 +491,9 @@ class OrdinaryTrustSetCoordinator(private val store: OrdinaryEpochStore, private
         require(next.entries.map { it.deviceId }.distinct().size == next.entries.size)
         require(next.entries.flatMap { listOf(it.dskKeyId, it.dekKeyId) }.distinct().size == next.entries.size * 2)
         require(next.entries.flatMap { listOf(it.dskPublicKey, it.dekPublicKey) }.distinct().size == next.entries.size * 2)
+    }
+
+    private companion object {
+        const val MAX_EPOCH_ENTRIES = 64
     }
 }
