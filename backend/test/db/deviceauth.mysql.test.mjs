@@ -208,6 +208,84 @@ test('MySQL: revoking the device after challenge issuance blocks verification ev
   assert.equal(error.code, 'DEVICE_REVOKED');
 });
 
+test('MySQL CONCURRENCY: challenge proof waits for device-wide revocation and is not consumed in the key-cascade window', async () => {
+  const { device, dskPublicKey } = await registerDeviceWithDsk();
+  const [dsk] = await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId);
+  const issued = await buildAuthService().issueChallenge(device.deviceId);
+  const pool = getPool();
+  const originalGetConnectionMethod = pool.getConnection;
+  const originalGetConnection = pool.getConnection.bind(pool);
+  let signalDeviceLockAttempt;
+  const deviceLockAttempted = new Promise((resolve) => { signalDeviceLockAttempt = resolve; });
+  let lockQueryObserved = false;
+  const lockHolder = await originalGetConnection();
+  let revocationCommitted = false;
+
+  try {
+    await lockHolder.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+    await lockHolder.beginTransaction();
+    // Match the first durable mutation in revokeDeviceAndKeysAtomically, then
+    // hold its device-row lock before the cascading public-key UPDATE.
+    await lockHolder.query(
+      `UPDATE devices SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND family_id = ? AND status != 'REVOKED'`,
+      [device.deviceId, device.familyId],
+    );
+
+    pool.getConnection = async (...args) => {
+      const connection = await originalGetConnection(...args);
+      const originalQuery = connection.query.bind(connection);
+      connection.query = (sql, ...queryArgs) => {
+        const statement = typeof sql === 'string' ? sql : sql?.sql ?? '';
+        const normalized = statement.replace(/\s+/g, ' ').toUpperCase();
+        const result = originalQuery(sql, ...queryArgs);
+        if (normalized.includes('FROM DEVICES') && normalized.includes('FOR UPDATE')) {
+          lockQueryObserved = true;
+          signalDeviceLockAttempt();
+        }
+        return result;
+      };
+      return connection;
+    };
+
+    const verification = buildAuthService().verifyChallenge(issued.challengeId, sign(dskPublicKey, issued.nonce))
+      .then((identity) => ({ identity }), (error) => ({ error }));
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('challenge consumption did not attempt the device-row lock')), 5000);
+      deviceLockAttempted.then(() => { clearTimeout(timer); resolve(); });
+    });
+    assert.equal(lockQueryObserved, true);
+
+    // The SELECT ... FOR UPDATE has been sent while the revoke transaction
+    // still owns that row; it must remain pending until revocation commits.
+    const settledBeforeRelease = await Promise.race([
+      verification.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+    ]);
+    assert.equal(settledBeforeRelease, false, 'proof consumption must serialize behind the in-flight device revocation');
+
+    await lockHolder.query(
+      `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND key_id = ? AND status = 'ACTIVE'`,
+      [device.deviceId, dsk.keyId],
+    );
+    await lockHolder.commit();
+    revocationCommitted = true;
+    const result = await verification;
+    assert.ok(result.error instanceof DeviceAuthError);
+    assert.equal(result.error.code, 'INVALID_SIGNATURE');
+    assert.equal((await challengeRepository.findById(issued.challengeId)).consumedAt, null,
+      'the challenge must remain available because revoked-device proof was not accepted');
+    assert.equal((await deviceRepository.findDeviceForFamily(device.familyId, device.deviceId)).status, 'REVOKED');
+    assert.equal((await deviceRepository.findKeysByDeviceForFamily(device.familyId, device.deviceId))
+      .find((key) => key.keyId === dsk.keyId).status, 'REVOKED');
+  } finally {
+    pool.getConnection = originalGetConnectionMethod;
+    if (!revocationCommitted) await lockHolder.rollback().catch(() => {});
+    lockHolder.release();
+  }
+});
+
 test('MySQL: a DEK can never satisfy a device-authentication challenge, only the DSK, against real persisted key rows', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();

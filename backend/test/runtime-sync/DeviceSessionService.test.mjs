@@ -13,7 +13,7 @@ import { createInMemoryDeviceChallengeRepository } from '../support/inMemoryDevi
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../support/testOnlyDeviceSignatureVerifier.mjs';
 
-function buildHarness(now = () => new Date(), auditService = undefined) {
+function buildHarness(now = () => new Date(), auditService = undefined, auditFailureObserver = undefined) {
   const deviceRepository = createInMemoryDeviceRepository();
   const sessionRepository = new InMemoryDeviceSessionRepository();
   const deviceAuthService = new DeviceAuthService(
@@ -21,7 +21,7 @@ function buildHarness(now = () => new Date(), auditService = undefined) {
     deviceRepository,
     createTestOnlyDeviceSignatureVerifier(),
   );
-  const sessionService = new DeviceSessionService(deviceAuthService, sessionRepository, now, auditService);
+  const sessionService = new DeviceSessionService(deviceAuthService, sessionRepository, now, auditService, auditFailureObserver);
   return { deviceRepository, deviceAuthService, sessionRepository, sessionService };
 }
 
@@ -387,6 +387,33 @@ test('revokeSession makes a previously valid token unusable, and is idempotent',
   await sessionService.revokeSession(session.rawToken);
   await sessionService.revokeSession(session.rawToken); // idempotent, no throw
   await assert.rejects(() => sessionService.validateSession(session.rawToken));
+});
+
+test('revokeSession remains successful after committed revocation when audit and warning sinks throw', async () => {
+  let auditCalls = 0;
+  const reportedFailures = [];
+  const auditService = { async record() { auditCalls += 1; throw new Error('audit unavailable'); } };
+  const { deviceRepository, sessionService } = buildHarness(
+    () => new Date(),
+    auditService,
+    (failure) => {
+      reportedFailures.push(failure);
+      throw new Error('logger unavailable');
+    },
+  );
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(deviceId, challenge.challengeId,
+    signTestOnlyChallenge(publicKey, challenge.nonce));
+
+  await sessionService.revokeSession(session.rawToken);
+
+  assert.equal(auditCalls, 1, 'the audit is attempted for the committed transition');
+  assert.deepEqual(reportedFailures, [{ event: 'device_session_revocation_audit_append_failed', occurrences: 1 }]);
+  await assert.rejects(() => sessionService.validateSession(session.rawToken),
+    error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+  await sessionService.revokeSession(session.rawToken);
+  assert.equal(auditCalls, 1, 'an idempotent retry cannot recreate the transition audit');
 });
 
 test('concurrent revocations emit exactly one lifecycle transition audit', async () => {

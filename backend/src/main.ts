@@ -894,7 +894,14 @@ async function start(): Promise<void> {
   // requireActorDeviceInFamily doc comment / buildServer.ts's
   // registerParentAccountRoutes call) -- never a second, independently-
   // constructed copy.
-  const deviceSessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService);
+  const deviceSessionService = new DeviceSessionService(
+    deviceAuthService,
+    new InMemoryDeviceSessionRepository(),
+    () => new Date(),
+    familyAuditService,
+    // Only a fixed event and count leave the payload-adjacent service boundary.
+    (failure) => console.warn(JSON.stringify(failure)),
+  );
 
   // parentpanel family dashboard (doc 18 Section 6): see this file's own
   // import-block comment above for the full rationale. blockDecisionStateRepository

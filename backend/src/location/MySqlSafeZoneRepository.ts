@@ -18,7 +18,35 @@ interface SafeZoneRow {
   updated_at: Date;
 }
 
-function toSafeZone(row: SafeZoneRow): SafeZone {
+const SAFE_ZONE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const SAFE_ZONE_ROUTE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_MYSQL_UINT32 = 0xffff_ffff;
+const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1);
+const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isMysqlDate(value: unknown): value is Date {
+  if (!(value instanceof Date)) return false;
+  const timestamp = value.getTime();
+  return Number.isFinite(timestamp) && timestamp >= MYSQL_DATETIME_MIN_MS && timestamp <= MYSQL_DATETIME_MAX_MS;
+}
+
+export function safeZoneFromStorage(value: unknown): SafeZone {
+  if (!isRecord(value)) throw new SafeZoneError('INVALID_INPUT');
+  const row = value as unknown as SafeZoneRow;
+  if (typeof row.zone_id !== 'string' || !SAFE_ZONE_ID.test(row.zone_id) ||
+      typeof row.family_id !== 'string' || !SAFE_ZONE_ROUTE_ID.test(row.family_id) ||
+      typeof row.recipient_endpoint_id !== 'string' || !SAFE_ZONE_ROUTE_ID.test(row.recipient_endpoint_id) ||
+      !Buffer.isBuffer(row.ciphertext) || row.ciphertext.length < 1 || row.ciphertext.length > 65_535 ||
+      !Buffer.isBuffer(row.nonce) || row.nonce.length < 12 || row.nonce.length > 64 ||
+      typeof row.revision !== 'number' || !Number.isSafeInteger(row.revision) || row.revision < 1 || row.revision > MAX_MYSQL_UINT32 ||
+      (row.delivery_state !== 'PENDING_OFFLINE' && row.delivery_state !== 'READY') ||
+      !isMysqlDate(row.created_at) || !isMysqlDate(row.updated_at)) {
+    throw new SafeZoneError('INVALID_INPUT');
+  }
   let keyEpoch: number;
   try {
     keyEpoch = familyEpochFromStorage(row.key_epoch);
@@ -145,7 +173,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE BINARY family_id = BINARY ? ORDER BY BINARY zone_id`,
       [familyId],
     ));
-    return rows.map(toSafeZone);
+    return rows.map(safeZoneFromStorage);
   }
 
   async listForRecipient(familyId: string, recipientEndpointId: string, keyEpoch: number, cursor?: string): Promise<SafeZoneRecipientPage> {
@@ -170,7 +198,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     const pageRows = rows.slice(0, SAFE_ZONE_DELIVERY_PAGE_SIZE);
     const hasMore = rows.length > SAFE_ZONE_DELIVERY_PAGE_SIZE;
     return {
-      safeZones: pageRows.map(toSafeZone),
+      safeZones: pageRows.map(safeZoneFromStorage),
       nextCursor: hasMore ? createSafeZoneDeliveryCursor(keyEpoch, pageRows[pageRows.length - 1]!.zone_id) : null,
     };
   }
@@ -201,7 +229,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       [zoneId, safeInput.familyId],
     ));
     if (!rows[0]) throw new SafeZoneError('NOT_FOUND');
-    return toSafeZone(rows[0]);
+    return safeZoneFromStorage(rows[0]);
   }
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch, authority?: SafeZoneMutationAuthoritySnapshot): Promise<SafeZone> {
@@ -273,7 +301,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       if (!persisted.rows[0]) throw new SafeZoneError('NOT_FOUND');
       return persisted.rows[0];
     });
-    return toSafeZone(row);
+    return safeZoneFromStorage(row);
   }
 
   async remove(familyId: string, zoneId: string, authority?: SafeZoneMutationAuthoritySnapshot): Promise<boolean> {

@@ -11,30 +11,72 @@ import {
   isServerCiphertextExpired,
   isPersistableServerCiphertextWindow,
   resolveServerCiphertextFeedLimit,
+  SERVER_CIPHERTEXT_TTL_MS,
 } from '../retention/serverCiphertextTtl.js';
 
 interface FamilyAuditEventRow {
-  envelope_id: string;
-  family_id: string;
-  parent_device_id: string;
-  key_epoch: number;
-  generated_at_utc: Date | string;
-  encrypted_payload_b64: string;
-  nonce_b64: string;
-  expires_at: Date | string;
+  envelope_id: unknown;
+  family_id: unknown;
+  parent_device_id: unknown;
+  key_epoch: unknown;
+  generated_at_utc: unknown;
+  encrypted_payload_b64: unknown;
+  nonce_b64: unknown;
+  expires_at: unknown;
 }
 
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value);
+const MAX_ENVELOPE_ID_LENGTH = 200;
+const MAX_FAMILY_ID_LENGTH = 128;
+const MAX_PARENT_DEVICE_ID_LENGTH = 200;
+const MAX_ENCRYPTED_PAYLOAD_LENGTH = 4_194_304;
+const MAX_NONCE_LENGTH = 64;
+
+export class FamilyAuditEventStorageError extends Error {
+  constructor() {
+    super('Stored FamilyAudit envelope row is malformed.');
+    this.name = 'FamilyAuditEventStorageError';
+  }
 }
 
-function toEnvelope(row: FamilyAuditEventRow): FamilyAuditEventEnvelope {
+function hasValidBoundedId(value: unknown, maximumLength: number): value is string {
+  return typeof value === 'string' && value.length > 0 && Array.from(value).length <= maximumLength &&
+    !/[\uD800-\uDFFF]/u.test(value);
+}
+
+function isAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) return false;
+  }
+  return true;
+}
+
+export function familyAuditEnvelopeFromStorage(value: unknown): FamilyAuditEventEnvelope {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new FamilyAuditEventStorageError();
+  const row = value as FamilyAuditEventRow;
+  if (!hasValidBoundedId(row.envelope_id, MAX_ENVELOPE_ID_LENGTH) ||
+      !hasValidBoundedId(row.family_id, MAX_FAMILY_ID_LENGTH) ||
+      !hasValidBoundedId(row.parent_device_id, MAX_PARENT_DEVICE_ID_LENGTH) ||
+      typeof row.encrypted_payload_b64 !== 'string' || row.encrypted_payload_b64.length < 1 ||
+      row.encrypted_payload_b64.length > MAX_ENCRYPTED_PAYLOAD_LENGTH || !isAscii(row.encrypted_payload_b64) ||
+      typeof row.nonce_b64 !== 'string' || row.nonce_b64.length < 1 || row.nonce_b64.length > MAX_NONCE_LENGTH ||
+      !isAscii(row.nonce_b64) || !(row.generated_at_utc instanceof Date) || !(row.expires_at instanceof Date) ||
+      !isPersistableServerCiphertextWindow(row.generated_at_utc) || !Number.isFinite(row.expires_at.getTime()) ||
+      row.expires_at.getTime() !== computeServerCiphertextExpiry(row.generated_at_utc).getTime()) {
+    throw new FamilyAuditEventStorageError();
+  }
+  let keyEpoch: number;
+  try {
+    keyEpoch = familyEpochFromStorage(row.key_epoch);
+  } catch {
+    throw new FamilyAuditEventStorageError();
+  }
+  if (!isFamilyEpochNumber(keyEpoch)) throw new FamilyAuditEventStorageError();
   return {
     envelopeId: row.envelope_id,
     familyId: row.family_id,
     parentDeviceId: row.parent_device_id,
-    keyEpoch: familyEpochFromStorage(row.key_epoch),
-    generatedAtUtc: toDate(row.generated_at_utc),
+    keyEpoch,
+    generatedAtUtc: new Date(row.generated_at_utc.getTime()),
     encryptedPayloadB64: row.encrypted_payload_b64,
     nonceB64: row.nonce_b64,
   };
@@ -128,7 +170,7 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
     const { rows } = await runInTransaction((conn) =>
       execute<FamilyAuditEventRow>(conn, `SELECT * FROM family_audit_events WHERE envelope_id = ?`, [envelopeId]),
     );
-    return rows[0] ? toEnvelope(rows[0]) : null;
+    return rows[0] ? familyAuditEnvelopeFromStorage(rows[0]) : null;
   }
 
   async listForFamily(familyId: string, options: FamilyAuditEventListOptions = {}): Promise<FamilyAuditEventEnvelope[]> {
@@ -150,7 +192,7 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
         [familyId, now, limit],
       ),
     );
-    return rows.map(toEnvelope);
+    return rows.map(familyAuditEnvelopeFromStorage);
   }
 
   async listForParentDevice(
@@ -181,13 +223,14 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
         parameters,
       ),
     );
-    return rows.map(toEnvelope);
+    return rows.map(familyAuditEnvelopeFromStorage);
   }
 
-  /** Mirrors MySqlRelayRepository.purgeExpired exactly. */
+  /** Purges by policy expiry and also removes rows whose expiry diverges from the generated-at TTL. */
   async purgeExpired(now: Date): Promise<number> {
     const { rowCount } = await runInTransaction((conn) =>
-      execute(conn, `DELETE FROM family_audit_events WHERE expires_at <= ?`, [now]),
+      execute(conn, `DELETE FROM family_audit_events
+        WHERE expires_at <= ? OR generated_at_utc <= ?`, [now, new Date(now.getTime() - SERVER_CIPHERTEXT_TTL_MS)]),
     );
     return rowCount;
   }

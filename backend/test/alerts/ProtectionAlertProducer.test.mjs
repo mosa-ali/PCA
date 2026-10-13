@@ -192,7 +192,7 @@ test('composer extra routing fields and malformed opaque shapes never reach stor
     { ...OPAQUE, alertsEnabled: false }, null, [], {},
     { ...OPAQUE, encryptedPayloadB64: 'not base64' },
     { ...OPAQUE, encryptedPayloadB64: Buffer.alloc(16385).toString('base64') },
-    { ...OPAQUE, nonceB64: Buffer.alloc(65).toString('base64') },
+    { ...OPAQUE, nonceB64: Buffer.alloc(49).toString('base64') },
   ];
   for (const payload of invalid) {
     let stored = false;

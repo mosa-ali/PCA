@@ -832,6 +832,57 @@ test('LIFECYCLE RACE: revocation and ordinary epoch append serialize on the sign
   }
 });
 
+test('LIFECYCLE RACE: DSK revocation and ordinary epoch append serialize on the exact signer key', async () => {
+  const familyId = uniqueFamilyId();
+  const deviceId = randomUUID();
+  const store = new MySqlTrustSetEpochStoreBase();
+  const floorStore = new MySqlEpochFloorStore();
+  const first = makeRecord(familyId, 1, 1, { signerDeviceId: deviceId });
+  await insertFamilyAndActiveDevice(familyId, deviceId, first.signerKeyId);
+  assert.deepEqual(await store.appendAcceptedEpoch(first, null), { outcome: 'APPENDED' });
+  const floorsBeforeRace = await floorStore.readFloors(familyId);
+  const next = makeRecord(familyId, 2, 2, { signerDeviceId: deviceId, signerKeyId: first.signerKeyId });
+
+  // These are independent MySQL transactions. The append locks the active
+  // device and then the exact DSK row; key revocation updates that same DSK
+  // row. Whichever obtains the key-row lock first defines the valid order:
+  // append-before-revocation may commit, while revocation-before-append must
+  // be observed as stale authority without changing epoch history or floors.
+  const [appendOutcome] = await Promise.all([
+    store.appendAcceptedEpoch(next, expectedHeadFrom(first)),
+    getPool().query(
+      `UPDATE device_public_keys
+          SET status = 'REVOKED', revoked_at = NOW(3)
+        WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK' AND status = 'ACTIVE'`,
+      [deviceId, first.signerKeyId],
+    ),
+  ]);
+
+  const [[keyState]] = await getPool().query(
+    `SELECT status FROM device_public_keys
+      WHERE device_id = ? AND key_id = ? AND key_purpose = 'DSK'`,
+    [deviceId, first.signerKeyId],
+  );
+  assert.equal(keyState?.status, 'REVOKED');
+  assert.ok(
+    appendOutcome.outcome === 'APPENDED' || appendOutcome.outcome === 'REJECTED_STALE_AUTHORITY',
+    `unexpected serialized outcome: ${appendOutcome.outcome}`,
+  );
+
+  if (appendOutcome.outcome === 'APPENDED') {
+    assert.equal(await countEpochRows(familyId), 2, 'the append linearized before key revocation');
+    assert.deepEqual(await floorStore.readFloors(familyId), {
+      minimumAcceptedTrustSetEpoch: 2,
+      minimumAcceptedKeyEpoch: 2,
+    });
+    assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 2);
+  } else {
+    assert.equal(await countEpochRows(familyId), 1, 'key revocation won before the append');
+    assert.deepEqual(await floorStore.readFloors(familyId), floorsBeforeRace, 'rejected append leaves floors unchanged');
+    assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 1);
+  }
+});
+
 test('LIFECYCLE SCOPE: revoked, moved, and cross-family signer devices cannot append or mutate floors/history', async () => {
   const familyA = uniqueFamilyId();
   const familyB = uniqueFamilyId();

@@ -2,7 +2,9 @@ import type { ProtectionAlertTrigger } from './types.js';
 
 export const MAX_ALERT_ID_LENGTH = 128;
 export const MAX_ENCRYPTED_PAYLOAD_BYTES = 16 * 1024;
-export const MAX_NONCE_BYTES = 64;
+// migration 0025 stores canonical Base64 in nonce_b64 VARCHAR(64). The
+// largest raw nonce that fits that persisted contract is 48 bytes.
+export const MAX_NONCE_BYTES = 48;
 
 /** Every addendum trigger is represented explicitly; adding a trigger without
  * a policy row is a compile-time error. */

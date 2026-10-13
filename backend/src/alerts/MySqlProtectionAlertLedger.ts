@@ -6,35 +6,63 @@ import {
   computeServerCiphertextExpiry,
   isPersistableServerCiphertextWindow,
   resolveServerCiphertextFeedLimit,
+  SERVER_CIPHERTEXT_TTL_MS,
 } from '../retention/serverCiphertextTtl.js';
 import { InvalidProtectionAlertInputError } from './ProtectionAlertGenerator.js';
+import { isPlausibleEncryptedPayload, isPlausibleNonce, isPlausibleOpaqueId, PROTECTION_ALERT_POLICY } from './policy.js';
 
 interface ProtectionAlertRow {
-  alert_id: string;
-  family_id: string;
-  device_id: string | null;
-  parent_device_id: string;
-  trigger_type: ProtectionAlertTrigger;
-  key_epoch: number;
-  generated_at_utc: Date | string;
-  encrypted_payload_b64: string;
-  nonce_b64: string;
-  expires_at: Date | string;
+  alert_id: unknown;
+  family_id: unknown;
+  device_id: unknown;
+  parent_device_id: unknown;
+  trigger_type: unknown;
+  key_epoch: unknown;
+  generated_at_utc: unknown;
+  encrypted_payload_b64: unknown;
+  nonce_b64: unknown;
+  expires_at: unknown;
 }
 
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value);
+export class ProtectionAlertStorageError extends Error {
+  constructor() {
+    super('Stored protection alert row is malformed.');
+    this.name = 'ProtectionAlertStorageError';
+  }
 }
 
-function toEvent(row: ProtectionAlertRow): ProtectionAlertEvent {
+function hasValidBoundedId(value: unknown): value is string {
+  return isPlausibleOpaqueId(value) && !/[\uD800-\uDFFF]/u.test(value);
+}
+
+export function protectionAlertFromStorage(value: unknown): ProtectionAlertEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new ProtectionAlertStorageError();
+  const row = value as ProtectionAlertRow;
+  if (!hasValidBoundedId(row.alert_id) || !hasValidBoundedId(row.family_id) ||
+      (row.device_id !== null && !hasValidBoundedId(row.device_id)) || !hasValidBoundedId(row.parent_device_id) ||
+      typeof row.trigger_type !== 'string' || !Object.hasOwn(PROTECTION_ALERT_POLICY, row.trigger_type) ||
+      (PROTECTION_ALERT_POLICY[row.trigger_type as ProtectionAlertTrigger].requiresDeviceId && row.device_id === null) ||
+      !isPlausibleEncryptedPayload(row.encrypted_payload_b64) || !isPlausibleNonce(row.nonce_b64) ||
+      !(row.generated_at_utc instanceof Date) || !(row.expires_at instanceof Date) ||
+      !isPersistableServerCiphertextWindow(row.generated_at_utc) || !Number.isFinite(row.expires_at.getTime()) ||
+      row.expires_at.getTime() !== computeServerCiphertextExpiry(row.generated_at_utc).getTime()) {
+    throw new ProtectionAlertStorageError();
+  }
+  let keyEpoch: number;
+  try {
+    keyEpoch = familyEpochFromStorage(row.key_epoch);
+  } catch {
+    throw new ProtectionAlertStorageError();
+  }
+  if (!isFamilyEpochNumber(keyEpoch)) throw new ProtectionAlertStorageError();
   return {
     alertId: row.alert_id,
     familyId: row.family_id,
     deviceId: row.device_id,
     parentDeviceId: row.parent_device_id,
-    trigger: row.trigger_type,
-    keyEpoch: familyEpochFromStorage(row.key_epoch),
-    generatedAtUtc: toDate(row.generated_at_utc),
+    trigger: row.trigger_type as ProtectionAlertTrigger,
+    keyEpoch,
+    generatedAtUtc: new Date(row.generated_at_utc.getTime()),
     encryptedPayloadB64: row.encrypted_payload_b64,
     nonceB64: row.nonce_b64,
   };
@@ -125,7 +153,7 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
     const { rows } = await runInTransaction((conn) =>
       execute<ProtectionAlertRow>(conn, `SELECT * FROM protection_alerts WHERE alert_id = ?`, [alertId]),
     );
-    return rows[0] ? toEvent(rows[0]) : null;
+    return rows[0] ? protectionAlertFromStorage(rows[0]) : null;
   }
 
   async listForFamily(familyId: string, options: ProtectionAlertListOptions = {}): Promise<ProtectionAlertEvent[]> {
@@ -148,7 +176,7 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
         [familyId, now, limit],
       ),
     );
-    return rows.map(toEvent);
+    return rows.map(protectionAlertFromStorage);
   }
 
   async listForParentDevice(
@@ -176,13 +204,14 @@ export class MySqlProtectionAlertLedger implements ProtectionAlertLedger {
         [familyId, parentDeviceId, now, keyEpoch, limit],
       ),
     );
-    return rows.map(toEvent);
+    return rows.map(protectionAlertFromStorage);
   }
 
-  /** Mirrors MySqlRelayRepository.purgeExpired exactly. */
+  /** Purges by policy expiry and also removes rows whose expiry diverges from generatedAt. */
   async purgeExpired(now: Date): Promise<number> {
     const { rowCount } = await runInTransaction((conn) =>
-      execute(conn, `DELETE FROM protection_alerts WHERE expires_at <= ?`, [now]),
+      execute(conn, `DELETE FROM protection_alerts
+        WHERE expires_at <= ? OR generated_at_utc <= ?`, [now, new Date(now.getTime() - SERVER_CIPHERTEXT_TTL_MS)]),
     );
     return rowCount;
   }

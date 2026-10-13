@@ -37,6 +37,11 @@ export interface IssuedDeviceSession {
   expiresAt: Date;
 }
 
+export interface DeviceSessionRevocationAuditFailure {
+  event: 'device_session_revocation_audit_append_failed';
+  occurrences: number;
+}
+
 /**
  * Composes -- never reimplements -- DeviceAuthService's proof-of-possession
  * challenge/response, and adds exactly the missing piece its own doc
@@ -46,11 +51,14 @@ export interface IssuedDeviceSession {
  * use (auth/token.ts, reused not duplicated/reimplemented).
  */
 export class DeviceSessionService {
+  private auditAppendFailureCount = 0;
+
   constructor(
     private readonly deviceAuthService: DeviceAuthService,
     private readonly sessionRepository: DeviceSessionRepository,
     private readonly now: () => Date = () => new Date(),
     private readonly auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+    private readonly observeRevocationAuditFailure: (failure: DeviceSessionRevocationAuditFailure) => void = () => {},
   ) {}
 
   /**
@@ -188,23 +196,42 @@ export class DeviceSessionService {
     const priorState = await this.sessionRepository.validate(tokenHash, this.now());
     const revoked = await this.sessionRepository.revoke(tokenHash, this.now());
     if (priorState.outcome === 'VALID' && revoked) {
-      await this.auditService.record({
-        familyId: priorState.session.familyId,
-        actionType: 'DEVICE_LIFECYCLE_TRANSITION',
-        actorDeviceId: priorState.session.deviceId,
-        actorMemberId: null,
-        targetScope: { kind: 'DEVICE', id: priorState.session.deviceId },
-        authorizationRole: null,
-        trustSetEpoch: 0,
-        policyRevision: null,
-        clientMonotonicSequence: null,
-        resultStatus: 'SUCCESS',
-        targetAcknowledgementCount: 0,
-        reasonCategory: null,
-        correlationId: null,
-        actionId: null,
-        freeTextNote: 'DEVICE_SESSION_REVOKED',
-      });
+      try {
+        await this.auditService.record({
+          familyId: priorState.session.familyId,
+          actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+          actorDeviceId: priorState.session.deviceId,
+          actorMemberId: null,
+          targetScope: { kind: 'DEVICE', id: priorState.session.deviceId },
+          authorizationRole: null,
+          trustSetEpoch: 0,
+          policyRevision: null,
+          clientMonotonicSequence: null,
+          resultStatus: 'SUCCESS',
+          targetAcknowledgementCount: 0,
+          reasonCategory: null,
+          correlationId: null,
+          actionId: null,
+          freeTextNote: 'DEVICE_SESSION_REVOKED',
+        });
+        this.auditAppendFailureCount = 0;
+      } catch {
+        // The session repository already revoked the bearer. Reporting
+        // failure would misstate committed state and a retry cannot recreate
+        // this one-shot transition audit. Keep operational visibility without
+        // including session, device, family, or token identifiers.
+        this.auditAppendFailureCount += 1;
+        if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
+          try {
+            this.observeRevocationAuditFailure({
+              event: 'device_session_revocation_audit_append_failed',
+              occurrences: this.auditAppendFailureCount,
+            });
+          } catch {
+            // Operational reporting is best-effort too; revocation committed.
+          }
+        }
+      }
     }
   }
 }

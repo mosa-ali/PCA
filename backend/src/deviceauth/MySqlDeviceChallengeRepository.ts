@@ -21,6 +21,12 @@ interface DeviceSigningKeyRow {
   status: 'ACTIVE' | 'REVOKED';
 }
 
+interface DeviceAuthorityRow {
+  device_id: string;
+  family_id: string;
+  status: 'PAIRING_PENDING' | 'PAIRED' | 'ACTIVE' | 'REVOKED';
+}
+
 function snapshotConsumedAt(value: Date): Date | null {
   return isSupportedChallengeTime(value) ? new Date(value.getTime()) : null;
 }
@@ -57,10 +63,12 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
   }
 
   /**
-   * Locks the exact verified DSK before consuming the challenge, so key
-   * revocation and proof acceptance serialize on the same InnoDB row. The
-   * challenge remains single-use under concurrent verification; a revoked,
-   * substituted, wrong-purpose or wrong-device key cannot consume it.
+   * Locks the challenge, then the family-scoped device, then the exact
+   * verified DSK before consuming proof. Device-wide revocation follows the
+   * same device-to-key order, so the proof cannot be accepted between device
+   * revocation and its key cascade. The challenge remains single-use under
+   * concurrent verification; a revoked, substituted, wrong-purpose or
+   * wrong-device key cannot consume it.
    */
   async consumeAtomically(
     challengeId: ChallengeId,
@@ -73,8 +81,8 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
     if (safeConsumedAt === null) return { outcome: 'EXPIRED' } as const;
     const safeSigner = { ...verifiedSigner };
     return runInTransaction(async (conn) => {
-      // Lock challenge first, then the exact key. Key revocation never locks
-      // a challenge row, so this order cannot form a cycle with revocation.
+      // Lock challenge first. Device/key revocation never locks a challenge
+      // row, so the following device→key order cannot form a cycle with it.
       const current = await execute<DeviceChallengeRow>(
         conn,
         `SELECT * FROM device_challenges WHERE challenge_id = ? FOR UPDATE`,
@@ -85,6 +93,24 @@ export class MySqlDeviceChallengeRepository implements DeviceChallengeRepository
       if (row.consumed_at) return { outcome: 'ALREADY_CONSUMED' } as const;
       if (safeConsumedAt.getTime() >= row.expires_at.getTime()) return { outcome: 'EXPIRED' } as const;
       if (row.device_id !== safeSigner.deviceId || row.family_id !== safeSigner.familyId) {
+        return { outcome: 'SIGNER_KEY_INACTIVE' } as const;
+      }
+
+      // Serialize challenge consumption with device-wide revocation. The
+      // revocation transaction locks the device before cascading to its keys;
+      // rechecking that same row first prevents consuming proof in the window
+      // after device status changes but before the DSK row is updated.
+      const deviceResult = await execute<DeviceAuthorityRow>(
+        conn,
+        `SELECT device_id, family_id, status
+           FROM devices
+          WHERE device_id = ? AND family_id = ?
+          FOR UPDATE`,
+        [safeSigner.deviceId, safeSigner.familyId],
+      );
+      const device = deviceResult.rows[0];
+      if (!device || device.device_id !== safeSigner.deviceId || device.family_id !== safeSigner.familyId ||
+          device.status === 'REVOKED') {
         return { outcome: 'SIGNER_KEY_INACTIVE' } as const;
       }
 
