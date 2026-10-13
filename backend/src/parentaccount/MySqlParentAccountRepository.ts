@@ -561,6 +561,20 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
     return rows[0] ? rows[0].status : null;
   }
 
+  /** Read-only structural-owner lookup using PCA-DEC-037's existing unique provisioned_for_account_id marker. */
+  async isFamilyProvisioningAccount(accountId: ParentAccountId, familyId: string): Promise<boolean> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<{ owner_account_id: string }>(
+        conn,
+        `SELECT provisioned_for_account_id AS owner_account_id
+         FROM families
+         WHERE family_id = ? AND provisioned_for_account_id = ?`,
+        [familyId, accountId],
+      ),
+    );
+    return rows.length === 1;
+  }
+
   /** See ParentAccountRepository.ts's own doc comment for why this direct, narrowly-scoped write against the SHARED service_account_family_scopes table exists here. */
   async grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: string, now: Date): Promise<void> {
     await runInTransaction((conn) =>

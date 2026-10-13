@@ -330,6 +330,10 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       return familyStatuses.get(familyId);
     },
 
+    async isFamilyProvisioningAccount(accountId, familyId) {
+      return provisionedFamilyByAccount.get(accountId) === familyId;
+    },
+
     async createFamilyIfAbsent(familyId) {
       createdFamilies.add(familyId);
     },

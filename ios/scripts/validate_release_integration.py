@@ -16,6 +16,8 @@ PROJECT = ROOT / "PCA.xcodeproj" / "project.pbxproj"
 APP_GROUP = "group.org.pca.app"
 ENROLLMENT_URL_SCHEME = "pca"
 ENROLLMENT_ASSOCIATED_DOMAIN = "applinks:www.pcasafe.com"
+ENROLLMENT_UNIVERSAL_HOST = "www.pcasafe.com"
+ENROLLMENT_UNIVERSAL_PATH = "/enroll/"
 MINIMUM_IOS_DEPLOYMENT_TARGET = "17.0"
 TARGETS = {
     "PCA": ("PCA/PCA.entitlements", "PCA/Info.plist", "org.pca.app", None),
@@ -133,6 +135,22 @@ def validate_enrollment_link_configuration(entitlements: dict, info: dict) -> No
             f"PCA is missing the {ENROLLMENT_URL_SCHEME} enrollment URL scheme")
 
 
+def validate_enrollment_link_source(parser_source: str, app_source: str) -> None:
+    """Keep the parser's canonical URL and the SwiftUI delivery hook aligned with release config."""
+    require(
+        f'universalLinkHost = "{ENROLLMENT_UNIVERSAL_HOST}"' in parser_source,
+        "enrollment parser host does not match the associated domain",
+    )
+    require(
+        f'universalLinkPath = "{ENROLLMENT_UNIVERSAL_PATH}"' in parser_source,
+        "enrollment parser path does not match the supported invite path",
+    )
+    require(
+        ".onOpenURL { url in _ = application.receiveEnrollmentLink(url) }" in app_source,
+        "PCAApp does not forward incoming URLs to the enrollment handler",
+    )
+
+
 def validate_build_settings(settings: dict[str, str], target: str, configuration: str) -> None:
     deployment = settings.get("IPHONEOS_DEPLOYMENT_TARGET")
     require(deployment == MINIMUM_IOS_DEPLOYMENT_TARGET,
@@ -212,6 +230,10 @@ def main() -> int:
     validate_enrollment_link_configuration(
         parse_plist(ROOT / TARGETS["PCA"][0]),
         parse_plist(ROOT / TARGETS["PCA"][1]),
+    )
+    validate_enrollment_link_source(
+        (ROOT / "PCA/Enrollment/ChildEnrollmentCoordinator.swift").read_text(encoding="utf-8"),
+        (ROOT / "PCA/PCAApp.swift").read_text(encoding="utf-8"),
     )
 
     # The app must embed all three Screen Time extensions in its PlugIns

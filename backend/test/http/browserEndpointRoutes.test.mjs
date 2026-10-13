@@ -16,6 +16,7 @@ function key() {
 }
 
 const FAMILY = 'family-browser-http-1';
+const OTHER_FAMILY = 'family-browser-http-other';
 const ACCOUNT_A = 'account-a';
 const ACCOUNT_B = 'account-b';
 
@@ -33,19 +34,31 @@ function buildAuthService(validAccountsByToken) {
   };
 }
 
-function buildApp({ withService = true, roles = { [ACCOUNT_A]: 'ADMINISTRATOR', [ACCOUNT_B]: 'ADMINISTRATOR' } } = {}) {
+function buildApp({
+  withService = true,
+  roles = { [ACCOUNT_A]: 'ADMINISTRATOR', [ACCOUNT_B]: 'ADMINISTRATOR' },
+  structuralOwnerAccountIds = [ACCOUNT_B],
+} = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const authzRepository = createInMemoryAuthzRepository();
   authzRepository._grantScope(ACCOUNT_A, FAMILY, 'ACTIVE');
   authzRepository._grantScope(ACCOUNT_B, FAMILY, 'ACTIVE');
+  authzRepository._grantScope(ACCOUNT_A, OTHER_FAMILY, 'ACTIVE');
   const authzService = new AuthzService(authzRepository);
   const tokens = new Map([
     ['token-a', ACCOUNT_A],
     ['token-b', ACCOUNT_B],
   ]);
   const authService = buildAuthService(tokens);
+  const stepUpConsumptionAttempts = [];
+  const structuralOwnerChecks = [];
   const parentAccountService = {
+    async isStructuralFamilyOwner(accountId, familyId) {
+      structuralOwnerChecks.push({ accountId, familyId });
+      return familyId === FAMILY && structuralOwnerAccountIds.includes(accountId);
+    },
     async consumeSensitiveStepUp(accountId, familyId, operation, token) {
+      stepUpConsumptionAttempts.push({ accountId, familyId, operation, token });
       return familyId === FAMILY &&
         operation === 'family.security.settings.change' &&
         token === `valid-step-up-${accountId === ACCOUNT_A ? 'a' : 'b'}`;
@@ -53,7 +66,7 @@ function buildApp({ withService = true, roles = { [ACCOUNT_A]: 'ADMINISTRATOR', 
   };
   const familyMembershipRepository = {
     async findActiveRoleByServiceAccountId(accountId, familyId) {
-      return familyId === FAMILY ? roles[accountId] ?? null : null;
+      return familyId === FAMILY || familyId === OTHER_FAMILY ? roles[accountId] ?? null : null;
     },
   };
   const now = () => new Date('2026-01-01T00:00:00.000Z');
@@ -65,7 +78,7 @@ function buildApp({ withService = true, roles = { [ACCOUNT_A]: 'ADMINISTRATOR', 
   const authAttemptLimiter = rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' });
   registerBrowserEndpointRoutes(app, { browserEndpointService, authService, authzService, familyMembershipRepository, rateLimiter, authAttemptLimiter });
   registerPairingRoutes(app, { pairingService, authService, authzService, parentAccountService, familyMembershipRepository, rateLimiter, authAttemptLimiter });
-  return { app, deviceRepository };
+  return { app, deviceRepository, stepUpConsumptionAttempts, structuralOwnerChecks };
 }
 
 async function pairingConfirmBody(app, deviceId, token, stepUpToken) {
@@ -158,8 +171,8 @@ test('a real service-authenticated registration succeeds, records the registerin
   }
 });
 
-test('end-to-end via real HTTP: the registering account cannot confirm its own endpoint, but a different account can', async () => {
-  const { app } = buildApp();
+test('the structural Owner can confirm a different Administrator\'s endpoint after step-up', async () => {
+  const { app, stepUpConsumptionAttempts, structuralOwnerChecks } = buildApp();
   try {
     const registerResponse = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
@@ -167,15 +180,6 @@ test('end-to-end via real HTTP: the registering account cannot confirm its own e
       payload: { dskPublicKey: key() },
     });
     const { deviceId } = registerResponse.json();
-
-    const selfConfirm = await app.inject({
-      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
-      headers: { authorization: 'Bearer token-a' },
-      payload: await pairingConfirmBody(app, deviceId, 'token-a', 'valid-step-up-a'),
-    });
-    assert.equal(selfConfirm.statusCode, 403);
-    assertPrivateNoStore(selfConfirm);
-    assert.equal(selfConfirm.json().error, 'self_approval_denied');
 
     const otherConfirm = await app.inject({
       method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
@@ -185,6 +189,107 @@ test('end-to-end via real HTTP: the registering account cannot confirm its own e
     assert.equal(otherConfirm.statusCode, 200);
     assertPrivateNoStore(otherConfirm);
     assert.equal(otherConfirm.json().status, 'PAIRED');
+    assert.deepEqual(structuralOwnerChecks, [{ accountId: ACCOUNT_B, familyId: FAMILY }]);
+    assert.equal(stepUpConsumptionAttempts.length, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an ordinary Administrator cannot confirm pairing and denial consumes no step-up', async () => {
+  const { app, deviceRepository, stepUpConsumptionAttempts } = buildApp();
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+
+    const denied = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-a', 'valid-step-up-a'),
+    });
+    assert.equal(denied.statusCode, 403);
+    assertPrivateNoStore(denied);
+    assert.deepEqual(denied.json(), { error: 'forbidden' });
+    assert.equal(stepUpConsumptionAttempts.length, 0);
+    assert.equal((await deviceRepository.findDeviceForFamily(FAMILY, deviceId)).status, 'PAIRING_PENDING');
+  } finally {
+    await app.close();
+  }
+});
+
+test('legacy family without a structural Owner marker fails closed before step-up or pairing mutation', async () => {
+  const { app, deviceRepository, stepUpConsumptionAttempts } = buildApp({ structuralOwnerAccountIds: [] });
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+    const denied = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-b', 'valid-step-up-b'),
+    });
+
+    assert.equal(denied.statusCode, 403);
+    assertPrivateNoStore(denied);
+    assert.deepEqual(denied.json(), { error: 'forbidden' });
+    assert.equal(stepUpConsumptionAttempts.length, 0);
+    assert.equal((await deviceRepository.findDeviceForFamily(FAMILY, deviceId)).status, 'PAIRING_PENDING');
+  } finally {
+    await app.close();
+  }
+});
+
+test('wrong-family Owner lookup fails closed before step-up or pairing mutation', async () => {
+  const { app, deviceRepository, stepUpConsumptionAttempts } = buildApp();
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+    const body = await pairingConfirmBody(app, deviceId, 'token-a', 'valid-step-up-a');
+    const denied = await app.inject({
+      method: 'POST', url: `/v1/families/${OTHER_FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-a' },
+      payload: body,
+    });
+
+    assert.equal(denied.statusCode, 403);
+    assertPrivateNoStore(denied);
+    assert.deepEqual(denied.json(), { error: 'forbidden' });
+    assert.equal(stepUpConsumptionAttempts.length, 0);
+    assert.equal((await deviceRepository.findDeviceForFamily(FAMILY, deviceId)).status, 'PAIRING_PENDING');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a structural Owner cannot approve their own browser endpoint', async () => {
+  const { app, deviceRepository } = buildApp();
+  try {
+    const registered = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/browser-endpoints`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: { dskPublicKey: key() },
+    });
+    const { deviceId } = registered.json();
+    const denied = await app.inject({
+      method: 'POST', url: `/v1/families/${FAMILY}/pairing-requests/${deviceId}/confirm`,
+      headers: { authorization: 'Bearer token-b' },
+      payload: await pairingConfirmBody(app, deviceId, 'token-b', 'valid-step-up-b'),
+    });
+    assert.equal(denied.statusCode, 403);
+    assertPrivateNoStore(denied);
+    assert.equal(denied.json().error, 'self_approval_denied');
+    assert.equal((await deviceRepository.findDeviceForFamily(FAMILY, deviceId)).status, 'PAIRING_PENDING');
   } finally {
     await app.close();
   }

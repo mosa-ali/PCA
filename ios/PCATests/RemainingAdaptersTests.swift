@@ -234,6 +234,22 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
         }
     }
 
+    func testKeyMaterialRejectsReusingIdenticalBytesAcrossSigningAndEncryptionRoles() throws {
+        let keychain = InMemoryKeychainStore()
+        let store = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
+        let coordinator = ChildEnrollmentCoordinator(keyMaterialStore: store,
+            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource(),
+                observationStore: InMemoryChildAuthorizationObservationStore()))
+        let reusedMaterial = Data("same-private-key-material".utf8)
+
+        guard case .keyMaterialFailed = coordinator.persistKeyMaterial(
+            dsk: reusedMaterial, dek: reusedMaterial, deviceId: "device-role-reuse") else {
+            return XCTFail("signing and encryption key roles must not persist the same private bytes")
+        }
+        XCTAssertThrowsError(try store.retrieve(kind: .deviceSigningKey, deviceId: "device-role-reuse"))
+        XCTAssertThrowsError(try store.retrieve(kind: .deviceEncryptionKey, deviceId: "device-role-reuse"))
+    }
+
     func testKeyMaterialRetryCompletesOnlyMatchingPartialPairAndRejectsReplacement() throws {
         let keychain = FailingEncryptionKeyWriteKeychain()
         let store = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")

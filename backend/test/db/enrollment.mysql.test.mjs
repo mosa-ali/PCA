@@ -461,6 +461,42 @@ test('MySQL RECOVERY: recoverAttempt returns the original deviceId after a lost 
   assert.equal(recovered.result.encryptionKeyId, original.encryptionKeyId);
 });
 
+test('MySQL RECOVERY: retries post-commit slot consumption for the invitation bound to the completed attempt', async () => {
+  const { rawToken, record } = await createInvitation();
+  const input = deviceKeysInput();
+  const consumedIds = [];
+  let failFirstConsume = true;
+  const coordinator = new EnrollmentCoordinator(
+    enrollmentRepository,
+    () => new Date(),
+    new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+    {
+      consumeForInvitation: async (invitationId) => {
+        consumedIds.push(invitationId);
+        if (failFirstConsume) {
+          failFirstConsume = false;
+          throw new Error('temporary slot repository failure');
+        }
+      },
+    },
+  );
+  const request = { rawInvitationToken: rawToken, ...input };
+
+  assert.equal(await coordinator.prepareAttempt(request), 'READY');
+  await assert.rejects(() => coordinator.enrollDevice(request), /temporary slot repository failure/);
+
+  const recovered = await coordinator.recoverAttempt({
+    attemptId: input.attemptId,
+    attemptRecoveryToken: input.attemptRecoveryToken,
+  });
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.status, 'PAIRING_PENDING');
+  assert.equal('invitationId' in recovered.result, false, 'the internal reconciliation key is not exposed');
+  assert.deepEqual(consumedIds, [record.invitationId, record.invitationId]);
+  const device = await deviceRepository.findDeviceForFamily(record.familyId, recovered.result.deviceId);
+  assert.equal(device?.status, 'PAIRING_PENDING', 'the committed enrollment remains recoverable');
+});
+
 test('MySQL RESOLUTION: prepare is durable without a device; recovery abandons it atomically and permits a fresh attempt', async () => {
   const coordinator = buildCoordinator();
   const { rawToken, record } = await createInvitation();

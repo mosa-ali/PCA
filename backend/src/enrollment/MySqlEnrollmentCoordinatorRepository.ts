@@ -405,6 +405,7 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
         throw new Error('Completed enrollment attempt has incomplete result fields');
       }
       const result: NonNullable<AttemptRecoveryRow['result']> = {
+        invitationId: row.invitation_id,
         deviceId: row.device_id,
         signingKeyId: row.signing_key_id,
         encryptionKeyId: row.encryption_key_id,

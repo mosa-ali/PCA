@@ -28,6 +28,7 @@ import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshot
 import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.engine.ScreenTimeState
+import org.pca.app.feature.screentime.engine.ScreenTimeConfig
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
 import org.pca.app.feature.screentime.persistence.PersistentUsedAuthorizationStore
@@ -39,8 +40,13 @@ import org.pca.app.platform.StandardPowerSaveModeSource
 import org.pca.app.runtime.identity.DeviceIdentityState
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.InitialPolicyProfile
+import org.pca.app.enrollment.PairingState
+import org.pca.app.storage.LocalFamilyState
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Section 21 "graph creation" requirement. Exercises the real production composition root under
@@ -144,6 +150,36 @@ class PcaAppGraphTest {
         // A freshly-composed graph over an empty store has no enrollment yet -- this must be
         // reported honestly as NotEnrolled, never a fabricated id.
         assertEquals(DeviceIdentityState.NotEnrolled, graph.deviceIdentityProvider.currentIdentity())
+    }
+
+    @Test
+    fun `runtime adopts confirmed enrollment Screen Time defaults after graph startup`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context, stateStore = InMemoryPersistentStateStore())
+
+        // PcaApplication creates and starts this process graph before the child completes the
+        // enrollment flow. A first install therefore starts with the safe fallback, then the
+        // persisted server-authorized profile must become effective without waiting for process
+        // death/recreation.
+        assertEquals(ScreenTimeConfig(), graph.screenTimeConfig)
+        graph.familyStateStore.save(
+            LocalFamilyState(
+                familyId = "family-1",
+                deviceId = "device-1",
+                pairingState = PairingState.PAIRING_PENDING,
+                trustSetEpoch = 1,
+                keyEpoch = 1,
+                childProfileId = "child-1",
+                ageUxTier = AgeUxTier.YOUNG_CHILD,
+                initialPolicyProfile = InitialPolicyProfile.BALANCED,
+            ),
+        )
+
+        graph.runtime.tick()
+
+        assertEquals(45.minutes, graph.screenTimeConfig.activeThreshold)
+        assertTrue(graph.runtime.status.value.remainingActiveMillis <= 45.minutes.inWholeMilliseconds)
+        assertTrue(graph.runtime.status.value.remainingActiveMillis > 44.minutes.inWholeMilliseconds)
     }
 
     @Test

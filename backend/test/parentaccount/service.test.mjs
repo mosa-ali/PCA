@@ -321,6 +321,9 @@ test('email verification creates no family; password login provisions it and eac
   assert.equal(first.status, 'AUTHENTICATED');
   assert.equal(typeof first.familyId, 'string', 'the first login provisions the family server-side');
   assert.equal(first.role, 'ADMINISTRATOR', 'the provisioning account is the family ADMINISTRATOR');
+  assert.equal(await harness.service.isStructuralFamilyOwner(verifiedAccount.accountId, first.familyId), true, 'the provisioned account is the structural Owner even though its membership role is ADMINISTRATOR');
+  assert.equal(await harness.service.isStructuralFamilyOwner(verifiedAccount.accountId, 'another-family'), false, 'the owner marker is family-scoped');
+  assert.equal(await harness.service.isStructuralFamilyOwner('unrelated-account', first.familyId), false, 'an unrelated account cannot inherit structural Owner authority');
   assert.equal(first.mfa.status, 'GRACE');
   assert.equal(harness.emailSender.countFor(EMAIL, 'FIRST_LOGIN'), 1);
 

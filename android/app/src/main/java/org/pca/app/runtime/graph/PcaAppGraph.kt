@@ -786,21 +786,26 @@ class PcaAppGraph private constructor(
     )
     val modeBFeatureFlagLocalStore = ModeBFeatureFlagLocalStore(runtimeStateStore)
 
-    /** PCA-SCREEN-BASELINE-1 (Agent 17) Coordinator glue: [PcaRuntime] is handed the applier's own
-     * safe 60/30 default explicitly, rather than relying on [ScreenTimeConfig]'s constructor
-     * default matching it by coincidence -- [ScreenTimePolicyApplier] is the single source of
-     * truth for "the currently effective, baseline-compliant screen-time config" everywhere in
-     * this app (also now enforced structurally by [ScreenTimeConfig]'s own `init` block). A future
+    /** PCA-SCREEN-BASELINE-1 (Agent 17) Coordinator glue. The config provider returns the locally
+     * confirmed enrollment profile when one exists, otherwise the applier's safe 60/30 baseline.
+     * It is read when Screen Time is evaluated, not only when the graph is constructed, because
+     * [PcaApplication] starts the graph before a first enrollment can be completed in that process.
+     * [ScreenTimeConfig]'s `init` structurally preserves the non-weakenable baseline. A future
      * parent-authored policy-delivery path (gated on the same production-crypto review as every
      * other incoming signed policy) must call [ScreenTimePolicyApplier.apply] and persist its
      * result as the next `lastKnownGoodConfig`, never construct a [ScreenTimeConfig] directly. */
-    val screenTimeConfig: ScreenTimeConfig = try {
+    private fun currentScreenTimeConfig(): ScreenTimeConfig = try {
         familyStateStore.currentState()?.let { state ->
             screenTimeConfigForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)
         } ?: ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
     } catch (_: CorruptLocalFamilyStateException) {
         ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
     }
+
+    /** The current local profile config, read live because first enrollment may finish after the
+     * process graph/runtime has already started. */
+    val screenTimeConfig: ScreenTimeConfig
+        get() = currentScreenTimeConfig()
 
     private val hardwareProximitySource = HardwareProximitySource(context, monotonicTimeSource)
     /** Tier 2 (doc 13 Section 4, PCA-FR-024): CameraX-backed foreground face-geometry fallback,
@@ -942,6 +947,7 @@ class PcaAppGraph private constructor(
         monotonicTimeSource = monotonicTimeSource,
         wallClockTimeSource = wallClockTimeSource,
         screenTimeConfig = screenTimeConfig,
+        screenTimeConfigProvider = ::currentScreenTimeConfig,
         screenTimeSnapshotStore = screenTimeSnapshotStore,
         eyeDistanceSnapshotStore = eyeDistanceSnapshotStore,
         currentBootId = bootId,

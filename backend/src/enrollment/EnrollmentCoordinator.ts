@@ -209,9 +209,26 @@ export class EnrollmentCoordinator {
     );
     if (resolution.outcome === 'NOT_FOUND') throw new EnrollmentError('NOT_FOUND');
     if (resolution.outcome === 'ABANDONED') return { outcome: 'ABANDONED' };
+    // Bootstrap commits invitation redemption/device creation before slot
+    // consumption. If that post-commit write failed or its response was
+    // lost, an authenticated recovery retries the idempotent consume against
+    // the invitation id read from the durable attempt row. Never accept an
+    // invitation id from the recovery caller or expose this reconciliation
+    // key in the public recovery DTO.
+    if (this.slotReservationService) {
+      await this.slotReservationService.consumeForInvitation(resolution.result.invitationId);
+    }
+    const publicResult = {
+      deviceId: resolution.result.deviceId,
+      signingKeyId: resolution.result.signingKeyId,
+      encryptionKeyId: resolution.result.encryptionKeyId,
+      childProfileId: resolution.result.childProfileId,
+      ageUxTier: resolution.result.ageUxTier,
+      initialPolicyProfile: resolution.result.initialPolicyProfile,
+    };
     return {
       outcome: 'COMPLETED',
-      result: { ...resolution.result, status: 'PAIRING_PENDING' },
+      result: { ...publicResult, status: 'PAIRING_PENDING' },
     };
   }
 }

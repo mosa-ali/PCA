@@ -21,7 +21,7 @@ export interface PairingRoutesDeps {
   pairingService: PairingService;
   authService: AuthService;
   authzService: AuthzService;
-  parentAccountService: Pick<ParentAccountService, 'consumeSensitiveStepUp'>;
+  parentAccountService: Pick<ParentAccountService, 'consumeSensitiveStepUp' | 'isStructuralFamilyOwner'>;
   familyMembershipRepository: Pick<FamilyMembershipRepository, 'findActiveRoleByServiceAccountId'>;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   /** Runs before requireServiceSession on every route below -- bounds session-validation DB load per IP regardless of token validity. */
@@ -32,10 +32,11 @@ export interface PairingRoutesDeps {
  * Both routes require an authenticated service session, active family
  * membership, and family scope before PairingService is called. Viewing is
  * allowed to Administrators and Viewers; confirmation requires an active
- * Administrator. PairingService itself performs no authorization.
+ * Administrator who is also the structural Family Owner. PairingService
+ * itself performs no authorization.
  *
- * Confirmation requires the current Administrator's fresh, family-scoped
- * TOTP step-up grant and only ever reaches PAIRED (see
+ * Confirmation requires the structural Owner's fresh, family-scoped TOTP
+ * step-up grant and only ever reaches PAIRED (see
  * PairingService/DeviceRepository doc comments) -- it never creates Family
  * Trust Set authority, issues policy, or makes a device ACTIVE.
  */
@@ -89,6 +90,9 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
       if (!isKeyFingerprint(expectedDskFingerprint) ||
           !(expectedDekFingerprint === null || isKeyFingerprint(expectedDekFingerprint))) {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (!(await deps.parentAccountService.isStructuralFamilyOwner(request.accountId as string, familyId))) {
+        return reply.code(403).send({ error: 'forbidden' });
       }
       if (
         typeof stepUpToken !== 'string' ||

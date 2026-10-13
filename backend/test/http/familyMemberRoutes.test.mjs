@@ -18,7 +18,7 @@ const OTHER_FAMILY = 'family-members-http-other';
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 const INVITED_EMAIL = 'newmember@example.test';
 
-function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinder = new NoopFamilyMemberAccountBinder() } = {}) {
+function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinder = new NoopFamilyMemberAccountBinder(), provisionedOwnerAccountId = 'acct-owner' } = {}) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch({
     familyId: FAMILY,
@@ -67,6 +67,7 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
 
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
+    ['session-admin', { accountId: 'acct-admin', familyId: FAMILY }],
     ['session-viewer', { accountId: 'acct-viewer', familyId: FAMILY }],
     ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
     ['session-no-family', { accountId: 'acct-no-family', familyId: null }],
@@ -80,6 +81,9 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
     async activeFamilyRole(accountId, familyId) {
       if (familyId !== FAMILY) return 'ADMINISTRATOR';
       return accountId === 'acct-viewer' ? 'VIEWER' : 'ADMINISTRATOR';
+    },
+    async isStructuralFamilyOwner(accountId, familyId) {
+      return familyId === FAMILY && accountId === provisionedOwnerAccountId;
     },
     async consumeSensitiveStepUpForSession(_sessionToken, _familyId, _operation, token) {
       return token === 'test-sensitive-step-up';
@@ -115,6 +119,7 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
 }
 
 const ownerHeaders = { cookie: 'pca_family_session=session-owner; pca_family_csrf=csrf-a', 'x-pca-csrf-token': 'csrf-a' };
+const adminHeaders = { cookie: 'pca_family_session=session-admin; pca_family_csrf=csrf-e', 'x-pca-csrf-token': 'csrf-e' };
 const viewerHeaders = { cookie: 'pca_family_session=session-viewer; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
 
 after(async () => {
@@ -170,6 +175,30 @@ test('a VIEWER cannot invite an Administrator (ROLE_NOT_PERMITTED collapses to t
   }
 });
 
+test('only the structurally provisioned Owner can invite an Administrator; a separate Administrator cannot', async () => {
+  const { app } = buildApp();
+  try {
+    const ownerInvite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { invitedEmail: 'newadmin@example.test', role: 'ADMINISTRATOR' },
+    });
+    assert.equal(ownerInvite.statusCode, 201);
+
+    const adminInvite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: adminHeaders,
+      payload: { invitedEmail: 'secondadmin@example.test', role: 'ADMINISTRATOR' },
+    });
+    assert.equal(adminInvite.statusCode, 403);
+    assert.equal(adminInvite.json().error, 'forbidden');
+  } finally {
+    await app.close();
+  }
+});
+
 test('a cross-family Parent session cannot invite into this family', async () => {
   const { app } = buildApp();
   try {
@@ -199,7 +228,7 @@ test('a session cookie for a different family cannot list or invite into this fa
   }
 });
 
-test('an active family Administrator can change a pending invitation role with fresh TOTP step-up', async () => {
+test('the structurally provisioned Owner can change a pending invitation role with fresh TOTP step-up', async () => {
   const { app } = buildApp();
   try {
     const invite = await app.inject({
@@ -227,6 +256,76 @@ test('an active family Administrator can change a pending invitation role with f
     assert.equal(changeRole.statusCode, 200);
     recordParentRouteScenario({ method: 'POST', route: '/api/parent/families/:familyId/members/invitations/:invitationId/role', scenarioId: 'family_invitation_role_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: changeRole });
     assert.equal(changeRole.json().invitation.role, 'ADMINISTRATOR');
+  } finally {
+    await app.close();
+  }
+});
+
+test('an invited Administrator cannot change a pending role; the structurally provisioned Owner can', async () => {
+  const { app } = buildApp();
+  try {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: ownerHeaders,
+      payload: { invitedEmail: 'newmember@example.test', role: 'VIEWER' },
+    });
+    const invitationId = invite.json().invitation.invitationId;
+    const denied = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
+      headers: adminHeaders,
+      payload: { role: 'ADMINISTRATOR', stepUpToken: 'test-sensitive-step-up' },
+    });
+    assert.equal(denied.statusCode, 403);
+    assert.equal(denied.json().error, 'forbidden');
+
+    const ownerChange = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
+      headers: ownerHeaders,
+      payload: { role: 'ADMINISTRATOR', stepUpToken: 'test-sensitive-step-up' },
+    });
+    assert.equal(ownerChange.statusCode, 200);
+    assert.equal(ownerChange.json().invitation.role, 'ADMINISTRATOR');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Owner-only membership mutations fail closed when a legacy family has no provisioning-owner marker', async () => {
+  const { app } = buildApp({ provisionedOwnerAccountId: null });
+  try {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: ownerHeaders,
+      payload: { invitedEmail: 'newmember@example.test', role: 'VIEWER' },
+    });
+    const invitationId = invite.json().invitation.invitationId;
+
+    const addAdmin = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: ownerHeaders,
+      payload: { invitedEmail: 'newadmin@example.test', role: 'ADMINISTRATOR' },
+    });
+    assert.equal(addAdmin.statusCode, 403);
+
+    const changeRole = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations/${invitationId}/role`,
+      headers: ownerHeaders,
+      payload: { role: 'ADMINISTRATOR', stepUpToken: 'test-sensitive-step-up' },
+    });
+    assert.equal(changeRole.statusCode, 403);
+    const invitations = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: { cookie: ownerHeaders.cookie },
+    });
+    assert.equal(invitations.statusCode, 200);
+    assert.equal(invitations.json().invitations.find((item) => item.invitationId === invitationId).role, 'VIEWER');
   } finally {
     await app.close();
   }

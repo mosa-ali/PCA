@@ -178,8 +178,15 @@ public final class KeychainOrdinaryTrustSetStore: OrdinaryTrustSetStoring {
         let current: OrdinaryTrustSetRecord?
         do { current = try loadUnlocked() }
         catch KeychainStoreError.itemNotFound { current = nil }
-        guard current == expected else { return false }
+        guard Self.sameRecordExactlyOptional(current, expected) else { return false }
         if let current {
+            // A persisted request is immutable custody. It may be retained
+            // exactly or retired after verified acceptance/catch-up, but a
+            // caller cannot replace its canonical bytes or signature in place.
+            if let pending = current.pending, let nextPending = next.pending,
+               !Self.samePendingExactly(pending, nextPending) {
+                throw OrdinaryTrustSetError.responseMismatch
+            }
             let old = try current.head.epoch(), new = try next.head.epoch()
             if !OrdinaryTrustSetRecord.sameHeadExactlyOptional(current.rootAnchor, next.rootAnchor) { throw OrdinaryTrustSetError.responseMismatch }
             guard Data(old.familyId.utf8) == Data(new.familyId.utf8), new.trustSetEpoch >= old.trustSetEpoch,
@@ -197,11 +204,37 @@ public final class KeychainOrdinaryTrustSetStore: OrdinaryTrustSetStoring {
             throw OrdinaryTrustSetError.responseMismatch
         }
         try saveUnlocked(next)
-        return try loadUnlocked() == next
+        return Self.sameRecordExactly(try loadUnlocked(), next)
+    }
+    private static func sameRecordExactly(_ lhs: OrdinaryTrustSetRecord, _ rhs: OrdinaryTrustSetRecord) -> Bool {
+        OrdinaryTrustSetRecord.sameHeadExactly(lhs.head, rhs.head)
+            && OrdinaryTrustSetRecord.sameHeadExactlyOptional(lhs.rootAnchor, rhs.rootAnchor)
+            && OrdinaryTrustSetRecord.sameHeadExactlyOptional(lhs.acceptedBase, rhs.acceptedBase)
+            && samePendingExactlyOptional(lhs.pending, rhs.pending)
+    }
+    private static func sameRecordExactlyOptional(_ lhs: OrdinaryTrustSetRecord?, _ rhs: OrdinaryTrustSetRecord?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (left?, right?): return sameRecordExactly(left, right)
+        default: return false
+        }
+    }
+    private static func samePendingExactly(_ lhs: OrdinaryTrustSetPending, _ rhs: OrdinaryTrustSetPending) -> Bool {
+        OrdinaryTrustSetRecord.sameHeadExactly(lhs.previousHead, rhs.previousHead)
+            && OrdinaryTrustSetRecord.sameHeadExactly(lhs.candidate, rhs.candidate)
+            && Data(lhs.signerDeviceId.utf8) == Data(rhs.signerDeviceId.utf8)
+            && Data(lhs.signerKeyId.utf8) == Data(rhs.signerKeyId.utf8)
+    }
+    private static func samePendingExactlyOptional(_ lhs: OrdinaryTrustSetPending?, _ rhs: OrdinaryTrustSetPending?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (left?, right?): return samePendingExactly(left, right)
+        default: return false
+        }
     }
     public func confirmDurable(_ expected: OrdinaryTrustSetRecord) throws -> Bool {
         Self.custodyLock.lock(); defer { Self.custodyLock.unlock() }
-        return try loadUnlocked() == expected
+        return Self.sameRecordExactly(try loadUnlocked(), expected)
     }
 }
 

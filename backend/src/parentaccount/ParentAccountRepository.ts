@@ -155,6 +155,9 @@ export interface ParentAccountRepository {
    */
   findFamilyStatus(familyId: OpaqueFamilyId): Promise<'ACTIVE' | 'SUSPENDED' | null>;
 
+  /** Read-only structural-owner lookup for families created by PCA-DEC-037. Legacy families with no provisioning marker resolve false. */
+  isFamilyProvisioningAccount(accountId: ParentAccountId, familyId: OpaqueFamilyId): Promise<boolean>;
+
   insertVerificationCode(record: NewVerificationCode): Promise<void>;
   /**
    * The account's most recently issued verification codes (newest first,

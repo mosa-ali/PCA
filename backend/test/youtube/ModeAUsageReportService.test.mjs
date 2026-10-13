@@ -23,6 +23,16 @@ test('buildEvidence rejects a duration figure without GRANTED capability status'
   );
 });
 
+test('buildEvidence rejects a duration attributed to an unavailable source, including zero', () => {
+  const service = new ModeAUsageReportService();
+  for (const durationMs of [0, 60_000]) {
+    assert.throws(
+      () => service.buildEvidence('fam-1', 'prof-1', 'UNAVAILABLE', 'GRANTED', durationMs),
+      (err) => err instanceof ModeAError && err.code === 'DURATION_WITHOUT_SOURCE',
+    );
+  }
+});
+
 test('buildEvidence rejects a negative or non-finite duration', () => {
   const service = new ModeAUsageReportService();
   assert.throws(() => service.buildEvidence('fam-1', 'prof-1', 'ANDROID_USAGE_STATS', 'GRANTED', -1), ModeAError);

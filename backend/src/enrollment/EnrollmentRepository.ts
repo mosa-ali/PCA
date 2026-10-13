@@ -48,6 +48,8 @@ export interface AttemptRecoveryRow {
   status: AttemptStatus;
   recoveryTokenHash: string;
   result: {
+    /** Internal reconciliation key. It is never included in the public recovery DTO. */
+    invitationId: string;
     deviceId: string;
     signingKeyId: string;
     encryptionKeyId: string;

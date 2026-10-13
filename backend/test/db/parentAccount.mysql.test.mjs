@@ -398,6 +398,41 @@ test('MySQL: verify-email creates no family; the first sign-in provisions exactl
   assert.equal(await countRows('SELECT COUNT(*) AS n FROM service_account_family_scopes WHERE account_id = ?', [account.serviceAccountId]), 1);
 });
 
+test('MySQL SECURITY: structural family owner lookup binds the provisioning account to its exact family and fails closed for legacy markers', async () => {
+  const { service, emailSender, parentAccountRepository } = buildService();
+  const firstEmail = uniqueEmail();
+  const secondEmail = uniqueEmail();
+  const password = 'a genuinely long password';
+  const firstAccount = await registerAndVerifyRealAccount(service, emailSender, firstEmail, password);
+  const firstSession = await loginWithOtp(service, emailSender, firstEmail, password);
+  const secondAccount = await registerAndVerifyRealAccount(service, emailSender, secondEmail, password);
+  const secondSession = await loginWithOtp(service, emailSender, secondEmail, password);
+
+  assert.equal(await parentAccountRepository.isFamilyProvisioningAccount(firstAccount.accountId, firstSession.familyId), true);
+  assert.equal(await parentAccountRepository.isFamilyProvisioningAccount(secondAccount.accountId, secondSession.familyId), true);
+  assert.equal(
+    await parentAccountRepository.isFamilyProvisioningAccount(firstAccount.accountId, secondSession.familyId),
+    false,
+    'a provisioning account is not the structural owner of a different family',
+  );
+  assert.equal(
+    await parentAccountRepository.isFamilyProvisioningAccount(secondAccount.accountId, firstSession.familyId),
+    false,
+    'a different account cannot claim the family owner marker',
+  );
+
+  const [legacyMarkerUpdate] = await getPool().query(
+    'UPDATE families SET provisioned_for_account_id = NULL WHERE family_id = ? AND provisioned_for_account_id = ?',
+    [firstSession.familyId, firstAccount.accountId],
+  );
+  assert.equal(Number(legacyMarkerUpdate.affectedRows), 1, 'the test converts only its own row to a legacy null marker');
+  assert.equal(
+    await parentAccountRepository.isFamilyProvisioningAccount(firstAccount.accountId, firstSession.familyId),
+    false,
+    'a family without the structural provisioning marker fails closed',
+  );
+});
+
 // PCA-ADD-PA-017 enforcement (Writer73): end-to-end proof, against real
 // MySQL, that a Platform Admin's real suspend action (through the real
 // FamilyAccountStatusService, real RBAC, real step-up -- identical to

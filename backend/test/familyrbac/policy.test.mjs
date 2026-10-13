@@ -130,10 +130,10 @@ test('PCA-DEC-034 DISCREPANCY RECORD: the four operations doc 18 Section 2 marks
   }
 });
 
-test('owner architecture: ADD_ADMINISTRATOR / CHANGE_ROLE are normal role administration with step-up', () => {
+test('doc 18 table row: ADD_ADMINISTRATOR / CHANGE_ROLE are Owner-only with step-up', () => {
   for (const op of ['ADD_ADMINISTRATOR', 'CHANGE_ROLE']) {
     assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'ALLOW_WITH_STEP_UP');
+    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'DENY');
     assert.equal(resolveOperationAuthorization('VIEWER', op, CONFIGURED), 'DENY');
     assert.equal(resolveOperationAuthorization('CHILD', op, CONFIGURED), 'DENY');
   }

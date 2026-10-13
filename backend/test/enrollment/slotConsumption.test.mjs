@@ -64,6 +64,35 @@ test('a successful enrollment retry replays consumption idempotently for the sam
   assert.equal(calls, 2);
 });
 
+test('authenticated recovery retries post-commit slot consumption for only the committed invitation', async () => {
+  const repository = createInMemoryEnrollmentRepository();
+  const { token, invitation } = seed(repository);
+  const input = { rawInvitationToken: token, ...deviceInput() };
+  const consumedIds = [];
+  let failFirstConsume = true;
+  const coordinator = new EnrollmentCoordinator(repository, () => BASE_TIME, undefined, {
+    consumeForInvitation: async (invitationId) => {
+      consumedIds.push(invitationId);
+      if (failFirstConsume) {
+        failFirstConsume = false;
+        throw new Error('temporary slot repository failure');
+      }
+    },
+  });
+
+  assert.equal(await coordinator.prepareAttempt(input), 'READY');
+  await assert.rejects(() => coordinator.enrollDevice(input), /temporary slot repository failure/);
+
+  const recovered = await coordinator.recoverAttempt({
+    attemptId: input.attemptId,
+    attemptRecoveryToken: input.attemptRecoveryToken,
+  });
+  assert.equal(recovered.outcome, 'COMPLETED');
+  assert.equal(recovered.result.status, 'PAIRING_PENDING');
+  assert.equal('invitationId' in recovered.result, false, 'the internal reconciliation key is not exposed');
+  assert.deepEqual(consumedIds, [invitation.invitationId, invitation.invitationId]);
+});
+
 test('slot consumption treats missing and already-consumed reservations as idempotent', async () => {
   for (const outcome of ['NOT_FOUND', 'ALREADY_CONSUMED']) {
     const service = new SlotReservationService({ consumeByInvitationId: async () => ({ outcome }) });

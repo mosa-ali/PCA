@@ -36,6 +36,30 @@ class ModeAUsageReportBuilderTest {
         assertTrue(evidence.coverageGap)
     }
 
+    @Test
+    fun `measured zero duration is valid when Android UsageStats is granted`() {
+        val evidence = ModeAUsageReportBuilder().buildEvidence(
+            "family-1", "profile-1", UsageSource.ANDROID_USAGE_STATS, UsageCapabilityStatus.GRANTED, durationMs = 0L,
+        )
+
+        assertEquals(0L, evidence.durationMs)
+        assertEquals(false, evidence.coverageGap)
+    }
+
+    @Test(expected = ModeAError.DurationWithoutSource::class)
+    fun `zero duration from an unavailable source is rejected`() {
+        ModeAUsageReportBuilder().buildEvidence(
+            "family-1", "profile-1", UsageSource.UNAVAILABLE, UsageCapabilityStatus.GRANTED, durationMs = 0L,
+        )
+    }
+
+    @Test(expected = ModeAError.DurationWithoutSource::class)
+    fun `positive duration from an unavailable source is rejected`() {
+        ModeAUsageReportBuilder().buildEvidence(
+            "family-1", "profile-1", UsageSource.UNAVAILABLE, UsageCapabilityStatus.GRANTED, durationMs = 60_000L,
+        )
+    }
+
     @Test(expected = ModeAError.DurationWithoutGrant::class)
     fun `a duration figure without GRANTED capability status is rejected`() {
         ModeAUsageReportBuilder().buildEvidence("family-1", "profile-1", UsageSource.ANDROID_USAGE_STATS, UsageCapabilityStatus.REVOKED, durationMs = 1000L)

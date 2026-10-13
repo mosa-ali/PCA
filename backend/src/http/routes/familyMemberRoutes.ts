@@ -151,6 +151,14 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
     return true;
   }
 
+  async function requireStructuralOwner(session: { accountId: string; familyId: string }, reply: FastifyReply): Promise<boolean> {
+    if (!(await parentAccountService.isStructuralFamilyOwner(session.accountId, session.familyId))) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
+    }
+    return true;
+  }
+
   async function consumeStepUp(session: { rawSessionToken: string; familyId: string }, reply: FastifyReply, operation: 'family.member.add' | 'family.member.remove' | 'family.member.role_change' | 'family.member.invitation.revoke', token: unknown): Promise<boolean> {
     if (typeof token !== 'string' || !(await parentAccountService.consumeSensitiveStepUpForSession(session.rawSessionToken, session.familyId, operation, token))) {
       await reply.code(403).send({ error: 'forbidden' });
@@ -189,6 +197,7 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (body.role === 'ADMINISTRATOR' && !(await requireStructuralOwner(session, reply))) return;
       if (!(await consumeStepUp(session, reply, 'family.member.add', body.stepUpToken))) return;
 
       try {
@@ -242,6 +251,7 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (!(await requireRole(session, reply, PARENT_ADMIN_ROLES))) return;
+      if (!(await requireStructuralOwner(session, reply))) return;
       if (!(await consumeStepUp(session, reply, 'family.member.role_change', body.stepUpToken))) return;
 
       try {

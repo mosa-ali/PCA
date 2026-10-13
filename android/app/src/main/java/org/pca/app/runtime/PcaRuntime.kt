@@ -91,6 +91,13 @@ class PcaRuntime(
     private val childRequestQueue: ChildRequestOfflineQueue,
     private val externalScope: CoroutineScope,
     private val screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
+    /**
+     * Resolves the currently effective, locally established Screen Time defaults. Production
+     * supplies this because the process graph starts before first enrollment; capturing the
+     * constructor's fallback config would otherwise leave the runtime on 60/30 for the rest of
+     * that process even after the confirmed enrollment profile has been persisted.
+     */
+    private val screenTimeConfigProvider: () -> ScreenTimeConfig = { screenTimeConfig },
     private val eyeDistanceConfig: EyeDistanceConfig = EyeDistanceConfig(),
     private val tickIntervalMillis: Long = DEFAULT_TICK_INTERVAL_MILLIS,
     private val foregroundAppPackageSource: ForegroundAppPackageSource = NoOpForegroundAppPackageSource,
@@ -101,6 +108,7 @@ class PcaRuntime(
     private var screenStateJob: Job? = null
 
     private val nowNanos: Long get() = monotonicTimeSource.elapsedRealtimeNanos()
+    private val currentScreenTimeConfig: ScreenTimeConfig get() = screenTimeConfigProvider()
 
     private val screenTimeStateFlow = MutableStateFlow(restoreScreenTimeState())
     private val eyeDistanceStateFlow = MutableStateFlow(restoreEyeDistanceState())
@@ -137,13 +145,13 @@ class PcaRuntime(
                 // untrusted counters; require the configured full break as the conservative
                 // recovery boundary instead.
                 mode = ScreenTimeMode.BREAK_SHIELD,
-                activeElapsedNanos = screenTimeConfig.activeThresholdNanos,
+                activeElapsedNanos = currentScreenTimeConfig.activeThresholdNanos,
             )
             is ScreenTimeSnapshotRead.Present -> ScreenTimeRestorer.restore(
                 persisted.snapshot,
                 nowNanos,
                 currentBootId,
-                screenTimeConfig,
+                currentScreenTimeConfig,
             )
         }
     }
@@ -270,7 +278,7 @@ class PcaRuntime(
 
     private fun applyScreenTimeEvent(event: ScreenTimeEvent) {
         val previous = screenTimeStateFlow.value
-        val next = ScreenTimeEngine.reduce(previous, event, screenTimeConfig)
+        val next = ScreenTimeEngine.reduce(previous, event, currentScreenTimeConfig)
         screenTimeStateFlow.value = next
         screenTimeSnapshotStore.save(
             ScreenTimeSnapshot(state = next, snapshotWallClockMillis = wallClockTimeSource.currentTimeMillis(), bootId = currentBootId),
@@ -355,13 +363,14 @@ class PcaRuntime(
 
     fun buildStatus(): PcaRuntimeStatus {
         val screenTime = screenTimeStateFlow.value
-        val breakShieldView = BreakShieldController.viewState(screenTime, screenTimeConfig)
+        val config = currentScreenTimeConfig
+        val breakShieldView = BreakShieldController.viewState(screenTime, config)
         return PcaRuntimeStatus(
             protectionMode = runCatching { protectionCapabilities.currentMode() }.getOrElse { ProtectionMode.NOT_SUPPORTED },
             screenTimeMode = screenTime.mode,
-            remainingActiveMillis = ScreenTimeEngine.remainingActiveNanos(screenTime, screenTimeConfig) / 1_000_000L,
+            remainingActiveMillis = ScreenTimeEngine.remainingActiveNanos(screenTime, config) / 1_000_000L,
             isBreakShieldActive = breakShieldView.isShieldVisible,
-            remainingBreakMillis = ScreenTimeEngine.remainingBreakNanos(screenTime, screenTimeConfig) / 1_000_000L,
+            remainingBreakMillis = ScreenTimeEngine.remainingBreakNanos(screenTime, config) / 1_000_000L,
             isEmergencyExceptionActive = screenTime.mode == ScreenTimeMode.EMERGENCY_EXCEPTION,
             scheduleStatus = scheduleRuntimePort.currentStatus(),
             syncConnectionState = familySyncRuntimePort.currentConnectionState(),

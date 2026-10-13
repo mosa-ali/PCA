@@ -661,6 +661,14 @@ export class ParentAccountService {
     return this.resolveFamilyRole(accountId, familyId);
   }
 
+  /** Structural Owner identity is the account that provisioned this family, not every ADMINISTRATOR membership. */
+  async isStructuralFamilyOwner(accountId: ParentAccountId, familyId: string): Promise<boolean> {
+    const account = await this.repository.findById(accountId);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null || account.familyId !== familyId) return false;
+    if (await this.repository.findFamilyStatus(familyId) !== 'ACTIVE') return false;
+    return this.repository.isFamilyProvisioningAccount(accountId, familyId);
+  }
+
   async consumeSensitiveStepUpForSession(rawSessionToken: string, familyId: string, operation: SensitiveParentStepUpOperation, rawToken: unknown): Promise<boolean> {
     const { account, posture } = await this.resolveUsableSession(rawSessionToken);
     if (account.familyId !== familyId || (await this.resolveFamilyRole(account.accountId, familyId)) !== 'ADMINISTRATOR' || posture.status !== 'ACTIVE') return false;

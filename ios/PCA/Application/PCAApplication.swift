@@ -164,6 +164,10 @@ public struct PCAProductionDependencies {
     /// Ordinary signed Trust Set epoch progression uses the committed first
     /// device root and the same device-session/Secure Enclave custody.
     public let ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging?
+    /// Production composition may be created before the first-device root is
+    /// committed. Retain a factory so the signed epoch coordinator can be
+    /// resolved lazily once the same durable root reaches that state.
+    public let ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)?
     public let policyRuntime: PCAProtectionPolicyRuntime
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
@@ -189,6 +193,7 @@ public struct PCAProductionDependencies {
         firstDeviceRootStore: FirstDeviceRootStoring? = nil,
         firstDeviceTrustRootCoordinator: FirstDeviceTrustRootCoordinating? = nil,
         ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging? = nil,
+        ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)? = nil,
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
@@ -213,6 +218,7 @@ public struct PCAProductionDependencies {
         self.firstDeviceRootStore = firstDeviceRootStore
         self.firstDeviceTrustRootCoordinator = firstDeviceTrustRootCoordinator
         self.ordinaryTrustSetCoordinator = ordinaryTrustSetCoordinator
+        self.ordinaryTrustSetCoordinatorFactory = ordinaryTrustSetCoordinatorFactory
         self.policyRuntime = policyRuntime
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
@@ -270,6 +276,7 @@ enum PCAFirstDeviceTrustRootComposition {
     public let dependencies: PCAProductionDependencies
     public let linkRouter: PCAEnrollmentLinkRouter
     private let now: () -> Date
+    private var resolvedOrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging?
     /// A newly received invite may have a durable local attempt before any
     /// bootstrap request reached the server. Do not reinterpret that pre-send
     /// security gate as a remotely recoverable attempt in this process.
@@ -345,6 +352,7 @@ enum PCAFirstDeviceTrustRootComposition {
 
     public init(dependencies: PCAProductionDependencies, now: @escaping () -> Date = { Date() }) {
         self.dependencies = dependencies
+        self.resolvedOrdinaryTrustSetCoordinator = dependencies.ordinaryTrustSetCoordinator
         self.linkRouter = PCAEnrollmentLinkRouter()
         self.now = now
         self.pendingDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
@@ -1193,8 +1201,7 @@ enum PCAFirstDeviceTrustRootComposition {
     /// signed coordinator. Candidate creation remains with the product flow;
     /// this boundary never accepts Parent/browser credentials or raw keys.
     @MainActor public func submitOrdinaryTrustSetEpoch(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult {
-        guard let coordinator = dependencies.ordinaryTrustSetCoordinator,
-              let rootStore = dependencies.firstDeviceRootStore,
+        guard let rootStore = dependencies.firstDeviceRootStore,
               let root = rootStore.current(), root.state == .rootCommitted,
               let familyId = root.familyId,
               let session = try dependencies.sessionStore.loadSession(),
@@ -1202,6 +1209,9 @@ enum PCAFirstDeviceTrustRootComposition {
               pcaOpaqueEqual(session.deviceId, root.seed.deviceId),
               pcaOpaqueEqual(candidate.familyId, familyId),
               rootStore.confirmDurable(root) else {
+            throw PCADeviceProofError.secureKeyUnavailable
+        }
+        guard let coordinator = try ordinaryTrustSetRuntimeManagerIfAvailable() else {
             throw PCADeviceProofError.secureKeyUnavailable
         }
         do {
@@ -1235,6 +1245,16 @@ enum PCAFirstDeviceTrustRootComposition {
             }
             throw error
         }
+    }
+
+    private func ordinaryTrustSetRuntimeManagerIfAvailable() throws -> OrdinaryTrustSetRuntimeManaging? {
+        if let resolvedOrdinaryTrustSetCoordinator { return resolvedOrdinaryTrustSetCoordinator }
+        guard let rootStore = dependencies.firstDeviceRootStore,
+              rootStore.current()?.state == .rootCommitted,
+              let factory = dependencies.ordinaryTrustSetCoordinatorFactory else { return nil }
+        let coordinator = try factory()
+        resolvedOrdinaryTrustSetCoordinator = coordinator
+        return coordinator
     }
 
     /// Existing-session-only transport campaign, shared with OS background recovery.
@@ -1310,7 +1330,7 @@ enum PCAFirstDeviceTrustRootComposition {
             try assertContinuity()
             guard let consumer = dependencies.inboundConsumer else { return }
             guard ProcessInfo.processInfo.systemUptime - started < 30 else { return }
-            guard let trustSet = dependencies.ordinaryTrustSetCoordinator,
+            guard let trustSet = try ordinaryTrustSetRuntimeManagerIfAvailable(),
                   try await trustSet.catchUp(maximumRecords: 32) else {
                 throw PCAInboundInboxError.unavailable
             }
@@ -1342,7 +1362,7 @@ enum PCAFirstDeviceTrustRootComposition {
         syncConnectionState = .syncing
         do {
             try assertContinuity()
-            if let trustSet = dependencies.ordinaryTrustSetCoordinator {
+            if let trustSet = try ordinaryTrustSetRuntimeManagerIfAvailable() {
                 _ = try await trustSet.resumePending()
                 try assertContinuity()
                 guard try await trustSet.catchUp(maximumRecords: 32) else { throw PCAInboundInboxError.unavailable }
@@ -1620,16 +1640,23 @@ public enum PCAProductionCompositionRoot {
         firstDeviceTrustRootCoordinator = nil
         #endif
         let ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging?
+        let ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)?
         #if canImport(Security) && canImport(CryptoKit)
-        ordinaryTrustSetCoordinator = try? OrdinaryTrustSetBootstrapAnchor.makeCoordinator(
-            rootStore: firstDeviceRootStore,
-            keychain: keychain,
-            keyMaterial: secureEnclaveProvider,
-            sessionStore: stateStore,
-            baseURL: productionAPIBaseURL
-        )
+        let coordinatorFactory: () throws -> OrdinaryTrustSetRuntimeManaging = {
+            try OrdinaryTrustSetBootstrapAnchor.makeCoordinator(
+                rootStore: firstDeviceRootStore,
+                keychain: keychain,
+                keyMaterial: secureEnclaveProvider,
+                sessionStore: stateStore,
+                baseURL: productionAPIBaseURL
+            )
+        }
+        ordinaryTrustSetCoordinatorFactory = coordinatorFactory
+        ordinaryTrustSetCoordinator = firstDeviceRootStore.current()?.state == .rootCommitted
+            ? try? coordinatorFactory() : nil
         #else
         ordinaryTrustSetCoordinator = nil
+        ordinaryTrustSetCoordinatorFactory = nil
         #endif
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
@@ -1686,6 +1713,7 @@ public enum PCAProductionCompositionRoot {
             firstDeviceRootStore: firstDeviceRootStore,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
             ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
+            ordinaryTrustSetCoordinatorFactory: ordinaryTrustSetCoordinatorFactory,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()

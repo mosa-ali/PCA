@@ -715,7 +715,7 @@ public struct ChildEnrollmentCoordinator {
         // cases onto the same identity, and empty bytes are not usable key
         // material. Reject the complete pair before either item is written.
         guard !deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !dsk.isEmpty, !dek.isEmpty else {
+              !dsk.isEmpty, !dek.isEmpty, dsk != dek else {
             return .keyMaterialFailed("invalid_key_material_input")
         }
 

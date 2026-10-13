@@ -702,7 +702,7 @@ test('family/members operations: a Viewer is denied every one of them outright (
   }
 });
 
-test('family/members operations: an Administrator may manage normal roles with fresh step-up', async () => {
+test('family/members operations: an Administrator cannot add another Administrator or change roles, even with fresh step-up', async () => {
   const { service } = makeService();
   for (const operation of ['ADD_ADMINISTRATOR', 'CHANGE_ROLE']) {
     const decision = await service.authorize(
@@ -715,7 +715,7 @@ test('family/members operations: an Administrator may manage normal roles with f
         actionId: `act-fm-admin-${operation}`,
       }),
     );
-    assert.deepEqual(decision, { verdict: 'ALLOW' }, `expected ALLOW for Administrator attempting ${operation}`);
+    assert.deepEqual(decision, { verdict: 'DENY', reason: 'ROLE_NOT_PERMITTED' }, `expected role denial for Administrator attempting ${operation}`);
   }
 });
 

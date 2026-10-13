@@ -977,6 +977,49 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertEqual(manager.events, ["resume", "catchUp"],
             "a rejected durable attempt must be reconciled but must not be hidden by a new candidate submission")
     }
+
+    @MainActor func testOrdinaryTrustSetManagerIsResolvedAfterRootCommitAndUsedByProductBoundary() async throws {
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
+        let state = InMemoryPCADeviceStateStore()
+        try state.saveSession(session)
+        let root = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+            seed: trustRootSeed(), state: .approved, familyId: "family-1"))
+        let events = NSMutableArray()
+        let manager = RecordingOrdinaryTrustSetRuntimeManager(events: events)
+        var factoryCalls = 0
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: state,
+            firstDeviceRootStore: root,
+            ordinaryTrustSetCoordinatorFactory: {
+                factoryCalls += 1
+                events.add("factory")
+                return manager
+            },
+            assertRuntimeKeyCustody: { deviceId in
+                XCTAssertEqual(deviceId, "device-1")
+                events.add("keyCustody")
+            })
+        let candidate = UntrustedTrustSetEpoch(familyId: "family-1", trustSetEpoch: 2, keyEpoch: 1,
+            entries: [], issuedAt: "2026-10-09T00:00:00Z", supersedesEpoch: 1)
+
+        do {
+            _ = try await model.submitOrdinaryTrustSetEpoch(candidate)
+            XCTFail("a non-committed first-device root must not resolve the runtime manager")
+        } catch let error as PCADeviceProofError {
+            XCTAssertEqual(error, .secureKeyUnavailable)
+        }
+        XCTAssertEqual(factoryCalls, 0)
+
+        var committed = try XCTUnwrap(root.current())
+        committed.state = .rootCommitted
+        XCTAssertTrue(root.save(committed))
+        let result = try await model.submitOrdinaryTrustSetEpoch(candidate)
+
+        guard case .unknown = result else { return XCTFail("the app boundary should return the manager result") }
+        XCTAssertEqual(factoryCalls, 1, "the manager is lazily composed once after root commitment")
+        XCTAssertEqual(events as? [String], ["factory", "resume", "catchUp", "keyCustody", "submit"])
+    }
     @MainActor func testRuntimeSyncHTTPForbiddenRetainsSessionAndUnauthorizedClearsIt() async throws {
         let session = PCADeviceSession(deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: Date().addingTimeInterval(600))
         for (statusCode, expectedOutcome) in [(403, PCARuntimeCustodyOutcome.blocked), (401, .retryableFailure)] {
@@ -4639,6 +4682,7 @@ final class ProductionIntegrationTests: XCTestCase {
         safeZoneDeliveryClient: PCADeviceSafeZoneDeliveryClient? = nil,
         safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox? = nil,
         ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging? = nil,
+        ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         authorizationStatus: RawAuthorizationStatus = .approved,
@@ -4677,6 +4721,7 @@ final class ProductionIntegrationTests: XCTestCase {
             firstDeviceRootStore: runtimeRoot,
             firstDeviceTrustRootCoordinator: firstDeviceTrustRootCoordinator,
             ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
+            ordinaryTrustSetCoordinatorFactory: ordinaryTrustSetCoordinatorFactory,
             policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: identityStore

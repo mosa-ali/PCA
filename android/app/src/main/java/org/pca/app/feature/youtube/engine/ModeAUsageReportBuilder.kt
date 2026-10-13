@@ -8,6 +8,7 @@ import org.pca.app.feature.youtube.policy.UsageSource
 
 sealed class ModeAError(message: String) : Exception(message) {
     object InvalidDuration : ModeAError("durationMs must be a non-negative finite number when supplied.")
+    object DurationWithoutSource : ModeAError("A duration figure requires an available platform source.")
     object DurationWithoutGrant : ModeAError("A duration figure requires GRANTED capability status.")
 }
 
@@ -30,6 +31,7 @@ class ModeAUsageReportBuilder(private val now: () -> Long = { System.currentTime
         durationMs: Long?,
     ): ModeAUsageEvidence {
         if (durationMs != null && durationMs < 0) throw ModeAError.InvalidDuration
+        if (durationMs != null && source == UsageSource.UNAVAILABLE) throw ModeAError.DurationWithoutSource
         if (durationMs != null && capabilityStatus != UsageCapabilityStatus.GRANTED) throw ModeAError.DurationWithoutGrant
 
         return ModeAUsageEvidence(

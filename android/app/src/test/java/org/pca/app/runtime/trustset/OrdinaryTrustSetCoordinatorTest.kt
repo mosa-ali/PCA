@@ -629,6 +629,37 @@ class OrdinaryTrustSetCoordinatorTest {
         assertEquals(pendingState, store.read())
     }
 
+    @Test fun `durable store preserves exact pending signature bytes and confirms only the exact request`() {
+        val backing = InMemoryPersistentStateStore()
+        val store = PersistentOrdinaryEpochStore(backing)
+        seedStore(store)
+        val initial = requireNotNull(store.read())
+        val originalRequest = record(epoch(2)).request
+        assertTrue(store.compareAndSetDurably(
+            initial,
+            initial.copy(pending = originalRequest, pendingBase = initial.accepted),
+        ))
+        val pendingState = requireNotNull(store.read())
+        val replacementSignature = Base64.getEncoder().encodeToString(ByteArray(64) { 2 })
+        val replacementRequest = originalRequest.copy(signatureBase64 = replacementSignature)
+        assertEquals(originalRequest.canonicalEpochBase64, replacementRequest.canonicalEpochBase64)
+        assertNotEquals(originalRequest.signatureBase64, replacementRequest.signatureBase64)
+
+        assertFalse("the same signed payload with a different signature cannot replace durable custody",
+            store.compareAndSetDurably(
+                pendingState,
+                pendingState.copy(pending = replacementRequest),
+            ))
+        assertEquals(pendingState, store.read())
+        assertTrue("confirmation succeeds only while the exact request is durable", store.confirmDurable(pendingState))
+
+        val persisted = JSONObject(requireNotNull(backing.getString("ordinary_trust_set_v1")))
+        persisted.getJSONObject("pending").put("signatureBase64", replacementSignature)
+        backing.putString("ordinary_trust_set_v1", persisted.toString())
+        assertFalse("a byte-different persisted signature cannot confirm the original request",
+            store.confirmDurable(pendingState))
+    }
+
     @Test fun `contradictory not accepted status cannot authorize a submit retry`() = runBlocking {
         val store = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
         val pendingAccepted = record(epoch(2))

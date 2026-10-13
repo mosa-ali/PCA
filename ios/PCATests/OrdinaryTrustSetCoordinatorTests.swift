@@ -1375,6 +1375,42 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
             XCTAssertEqual($0 as? OrdinaryTrustSetError, .responseMismatch)
         }
     }
+    func testKeychainStoreDoesNotReplacePersistedPendingSignatureInPlace() throws {
+        let root = try rootHead()
+        let custody = KeychainOrdinaryTrustSetStore(keychain: InMemoryKeychainStore(), account: "owner-device")
+        XCTAssertTrue(try custody.compareAndSetDurably(expected: nil,
+            next: OrdinaryTrustSetRecord(head: root, rootAnchor: root)))
+        let current = try custody.load()
+        let candidate = try signedHead(epoch(2), signature: "\u{00E9}")
+        let pending = OrdinaryTrustSetPending(previousHead: root, candidate: candidate,
+            signerDeviceId: "owner-device", signerKeyId: "owner-dsk")
+        var withPending = current
+        withPending.pending = pending
+        XCTAssertTrue(try custody.compareAndSetDurably(expected: current, next: withPending))
+
+        let replacement = OrdinaryTrustSetPending(previousHead: root,
+            candidate: OrdinaryTrustSetHead(familyId: candidate.familyId,
+                canonicalBytes: candidate.canonicalBytes, signature: "e\u{0301}"),
+            signerDeviceId: "owner-device", signerKeyId: "owner-dsk")
+        XCTAssertEqual(pending.candidate.signature, replacement.candidate.signature,
+            "Swift String equality treats these canonically equivalent spellings as equal")
+        XCTAssertNotEqual(Data(pending.candidate.signature.utf8), Data(replacement.candidate.signature.utf8),
+            "the persisted wire spelling differs byte-for-byte")
+        var replaced = withPending
+        replaced.pending = replacement
+        XCTAssertFalse(try custody.compareAndSetDurably(expected: replaced, next: withPending),
+            "a byte-distinct canonical-equivalent expected record must fail CAS")
+        XCTAssertFalse(try custody.confirmDurable(replaced),
+            "durability confirmation must compare exact serialized request bytes")
+        XCTAssertThrowsError(try custody.compareAndSetDurably(expected: withPending, next: replaced)) {
+            XCTAssertEqual($0 as? OrdinaryTrustSetError, .responseMismatch,
+                "the stored signature is part of the exact retry request")
+        }
+        let persisted = try XCTUnwrap(custody.load().pending)
+        XCTAssertEqual(Data(persisted.candidate.signature.utf8), Data(pending.candidate.signature.utf8),
+            "a failed replacement must preserve the exact durable signature bytes")
+    }
+
     func testCatchUpRefusesUnanchoredOrBadSignatureHeadWithoutChangingFloor() async throws {
         let (store, _, transport, coordinator) = try fixture(verifier: Verifier(rejectedSignatures: ["bad"]))
         transport.head = OrdinaryTrustSetHead(familyId: "family-test", canonicalBytes: try FamilyTrustSetCodec.canonicalize(epoch(2)), signature: "bad")

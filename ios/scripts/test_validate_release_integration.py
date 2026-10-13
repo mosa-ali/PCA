@@ -63,6 +63,22 @@ class ReleaseIntegrationValidatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             VALIDATOR.validate_enrollment_link_configuration(missing_domain, info)
 
+    def test_enrollment_parser_and_app_url_delivery_match_release_link_configuration(self):
+        parser_source = (VALIDATOR.ROOT / "PCA/Enrollment/ChildEnrollmentCoordinator.swift").read_text(encoding="utf-8")
+        app_source = (VALIDATOR.ROOT / "PCA/PCAApp.swift").read_text(encoding="utf-8")
+        VALIDATOR.validate_enrollment_link_source(parser_source, app_source)
+
+        with self.assertRaises(ValueError):
+            VALIDATOR.validate_enrollment_link_source(
+                parser_source.replace('universalLinkHost = "www.pcasafe.com"', 'universalLinkHost = "other.example"'),
+                app_source,
+            )
+        with self.assertRaises(ValueError):
+            VALIDATOR.validate_enrollment_link_source(
+                parser_source,
+                app_source.replace("application.receiveEnrollmentLink(url)", "application.ignoreURL(url)"),
+            )
+
     def test_release_rejects_signing_disabled_or_ad_hoc_local_signing(self):
         base = {
             "IPHONEOS_DEPLOYMENT_TARGET": "17.0",

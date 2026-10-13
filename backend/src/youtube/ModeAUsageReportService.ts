@@ -1,6 +1,6 @@
 import type { ModeAUsageEvidence, OpaqueFamilyId, OpaqueProfileId, UsageCapabilityStatus, UsageSource } from './types.js';
 
-export type ModeAErrorCode = 'INVALID_DURATION' | 'DURATION_WITHOUT_GRANT';
+export type ModeAErrorCode = 'INVALID_DURATION' | 'DURATION_WITHOUT_GRANT' | 'DURATION_WITHOUT_SOURCE';
 
 export class ModeAError extends Error {
   readonly code: ModeAErrorCode;
@@ -14,6 +14,7 @@ export class ModeAError extends Error {
 const MODE_A_ERROR_MESSAGES: Record<ModeAErrorCode, string> = {
   INVALID_DURATION: 'durationMs must be a non-negative finite number when supplied.',
   DURATION_WITHOUT_GRANT: 'A duration figure requires GRANTED capability status.',
+  DURATION_WITHOUT_SOURCE: 'A duration figure requires an available platform source.',
 };
 
 /**
@@ -40,6 +41,9 @@ export class ModeAUsageReportService {
   ): ModeAUsageEvidence {
     if (durationMs !== null && (!Number.isFinite(durationMs) || durationMs < 0)) {
       throw new ModeAError('INVALID_DURATION');
+    }
+    if (durationMs !== null && source === 'UNAVAILABLE') {
+      throw new ModeAError('DURATION_WITHOUT_SOURCE');
     }
     if (durationMs !== null && capabilityStatus !== 'GRANTED') {
       throw new ModeAError('DURATION_WITHOUT_GRANT');

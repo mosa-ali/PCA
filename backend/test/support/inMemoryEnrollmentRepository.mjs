@@ -156,6 +156,7 @@ export function createInMemoryEnrollmentRepository() {
       return {
         outcome: 'COMPLETED',
         result: {
+          invitationId: attempt.invitationId,
           deviceId: attempt.deviceId,
           signingKeyId: attempt.signingKeyId,
           encryptionKeyId: attempt.encryptionKeyId,
