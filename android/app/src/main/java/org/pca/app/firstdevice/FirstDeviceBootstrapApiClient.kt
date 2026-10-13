@@ -273,8 +273,7 @@ class HttpFirstDeviceBootstrapApiClient(
     private fun drainQuietly(stream: InputStream?) {
         if (stream == null) return
         try {
-            val buffer = ByteArray(MAX_RESPONSE_BYTES)
-            stream.use { input -> while (input.read(buffer) != -1) { /* discard */ } }
+            discardBootstrapErrorResponse(stream, MAX_RESPONSE_BYTES)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
@@ -289,5 +288,20 @@ class HttpFirstDeviceBootstrapApiClient(
         const val ACCEPTED_STATUS = "ACCEPTED"
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000
+    }
+}
+
+/** Error classification uses the status code; discarded bodies cannot consume an unbounded stream. */
+internal fun discardBootstrapErrorResponse(stream: InputStream, maximumBytes: Int) {
+    require(maximumBytes > 0)
+    val buffer = ByteArray(minOf(maximumBytes, 8 * 1024))
+    stream.use { input ->
+        var consumed = 0
+        while (consumed < maximumBytes) {
+            val count = input.read(buffer, 0, minOf(buffer.size, maximumBytes - consumed))
+            if (count == -1) break
+            if (count == 0) break
+            consumed += count
+        }
     }
 }

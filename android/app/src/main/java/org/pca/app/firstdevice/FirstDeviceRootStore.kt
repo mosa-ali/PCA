@@ -130,6 +130,9 @@ interface FirstDeviceRootStore {
      */
     fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean
 
+    /** Run a durable dependent CAS while root writers are excluded. Compatibility stores deny. */
+    fun compareAndRunIfCurrent(expected: FirstDeviceRootRecord, action: () -> Boolean): Boolean = false
+
     /**
      * Captures a seed without erasing an existing ceremony. Same-attempt
      * capture is idempotent and preserves the complete current record. A
@@ -168,6 +171,10 @@ class InMemoryFirstDeviceRootStore : FirstDeviceRootStore {
         true
     }
     override fun save(record: FirstDeviceRootRecord) { synchronized(lock) { this.record = record } }
+    override fun compareAndRunIfCurrent(expected: FirstDeviceRootRecord, action: () -> Boolean): Boolean = synchronized(lock) {
+        if (record != expected) return@synchronized false
+        action()
+    }
     override fun clear() { synchronized(lock) { record = null } }
     override fun writeIfCurrent(expected: FirstDeviceRootRecord?, record: FirstDeviceRootRecord): Boolean = synchronized(lock) {
         if (this.record != expected) return@synchronized false
@@ -297,6 +304,11 @@ class PersistentFirstDeviceRootStore(
         } catch (_: Exception) {
             false
         }
+    }
+
+    override fun compareAndRunIfCurrent(expected: FirstDeviceRootRecord, action: () -> Boolean): Boolean = synchronized(store.coordinationLock) {
+        if (!confirmDurable(expected)) return@synchronized false
+        action()
     }
 
     override fun flush() = synchronized(store.coordinationLock) {

@@ -63,10 +63,51 @@ class OrdinaryTrustSetRuntime private constructor(
         ): OrdinaryTrustSetRuntime {
             val root = rootStore.current() ?: throw IllegalStateException("committed_first_device_root_unavailable")
             require(root.state == FirstDeviceRootState.ROOT_COMMITTED && root.familyId != null)
-            OrdinaryTrustSetBootstrapAnchor.seed(rootStore, ordinaryStore, verifier)
+            check(rootStore.compareAndRunIfCurrent(root) {
+                OrdinaryTrustSetBootstrapAnchor.seed(rootStore, ordinaryStore, verifier)
+                true
+            }) { "committed_first_device_root_changed" }
             check(rootStore.confirmDurable(root)) { "committed_first_device_root_changed" }
+            fun assertRoot() {
+                check(rootStore.current() == root && rootStore.confirmDurable(root)) {
+                    "committed_first_device_root_changed"
+                }
+            }
+            // A root can change while authenticated transport is suspended. Revalidate before
+            // handing any response to the coordinator, where it could authorize signing,
+            // replay or a durable floor update.
+            val boundApi = object : OrdinaryTrustSetApi {
+                override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                    assertRoot()
+                    return api.submit(familyId, request).also { assertRoot() }
+                }
+                override suspend fun status(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                    assertRoot()
+                    return api.status(familyId, request).also { assertRoot() }
+                }
+                override suspend fun getEpoch(familyId: String, trustSetEpoch: Int): AcceptedEpochRecord {
+                    assertRoot()
+                    return api.getEpoch(familyId, trustSetEpoch).also { assertRoot() }
+                }
+                override suspend fun getHead(familyId: String): AcceptedEpochRecord {
+                    assertRoot()
+                    return api.getHead(familyId).also { assertRoot() }
+                }
+            }
+            val boundSigner = object : DskSignatureEngine {
+                override fun signCanonicalDer(alias: String, message: ByteArray): ByteArray {
+                    assertRoot()
+                    return signer.signCanonicalDer(alias, message).also { assertRoot() }
+                }
+            }
+            val boundStore = object : OrdinaryEpochStore by ordinaryStore {
+                override fun compareAndSetDurably(expected: OrdinaryEpochState?, next: OrdinaryEpochState): Boolean =
+                    rootStore.compareAndRunIfCurrent(root) {
+                        ordinaryStore.compareAndSetDurably(expected, next)
+                    }
+            }
             val coordinator = OrdinaryTrustSetCoordinator(
-                ordinaryStore, api, signer, verifier, root.seed.deviceId, root.seed.signingKeyId, root.seed.dskAlias,
+                boundStore, boundApi, boundSigner, verifier, root.seed.deviceId, root.seed.signingKeyId, root.seed.dskAlias,
             )
             return OrdinaryTrustSetRuntime(rootStore, root, ordinaryStore, coordinator)
         }

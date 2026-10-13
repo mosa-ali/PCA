@@ -44,6 +44,34 @@ class PersistentSchedulePolicyStoreCorruptionTest {
         effectiveFrom = Instant.parse("2026-10-05T00:00:00Z"),
     )
 
+    @Test fun `ambiguous JSON epoch and nested policy fields are corrupt in legacy and active slots`() {
+        val snapshot = emptySnapshot().copy(candidatePolicy = samplePolicy(), deviceTrustSetEpoch = 1, deviceKeyEpoch = 1)
+        val valid = SchedulePolicyJson.encodeSnapshot(snapshot).toString()
+        val malformed = listOf(
+            valid.replace("\"deviceTrustSetEpoch\":1", "\"deviceTrustSetEpoch\":0,\"deviceTrustSetEpoch\":1"),
+            valid.replace("\"policyRevision\":1", "\"policyRevision\":0,\"policyRevision\":1"),
+            valid.replace("\"policyRevision\":1", "\"policyRevision\":0,\"policyRev\\u0069sion\":1"),
+            "$valid {}",
+            valid.dropLast(1) + ",}",
+        )
+        assertEquals(5, malformed.distinct().size)
+        assertTrue(malformed.all { it != valid })
+        for (raw in malformed) {
+            assertCorruptWithoutRewrite(raw)
+            val backing = InMemoryPersistentStateStore()
+            PersistentSchedulePolicyStore(backing).save(snapshot)
+            val snapshotKey = "schedule_policy_snapshot_v1.slot.0.snapshot"
+            backing.putString(snapshotKey, raw)
+            // A readable legacy fallback must not rescue an ambiguous active slot.
+            backing.putString("schedule_policy_snapshot_v1", valid)
+            val restored = PersistentSchedulePolicyStore(backing)
+            assertSame(SchedulePolicyStoreRead.Corrupt, restored.read())
+            assertNull(restored.load())
+            assertEquals(raw, backing.getString(snapshotKey))
+            assertEquals(valid, backing.getString("schedule_policy_snapshot_v1"))
+        }
+    }
+
     @Test
     fun `read distinguishes absent and valid persisted snapshots`() {
         val backing = InMemoryPersistentStateStore()

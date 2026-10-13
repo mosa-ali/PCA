@@ -157,6 +157,80 @@ test('package that expires during verification does not replace active snapshot'
   assert.equal((await repo.findMatching('family', 'malware.example')).length, 0);
 });
 
+test('wall-clock rollback during verification cannot extend a package beyond its monotonic expiry', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  let wallClock = new Date('2026-01-15T00:00:00.000Z');
+  let monotonicMs = 100;
+  let rollbackDuringVerification = false;
+  const consumer = new SignedRulePackageConsumer(
+    repo,
+    { verify: async () => {
+      if (rollbackDuringVerification) {
+        monotonicMs += 11;
+        wallClock = new Date(wallClock.getTime() - 1_000);
+      }
+      return true;
+    } },
+    () => wallClock,
+    () => monotonicMs,
+  );
+
+  assert.equal((await consumer.apply(pkg({ expiresAt: new Date('2026-01-15T00:01:00.000Z') }))).status, 'APPLIED');
+  rollbackDuringVerification = true;
+  const outcome = await consumer.apply(pkg({
+    packageVersion: '2.0.0',
+    expiresAt: new Date(wallClock.getTime() + 10),
+    rules: [{ domain: 'new-malware.example', listType: 'DENY' }],
+  }));
+
+  assert.deepEqual(outcome, { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' });
+  assert.equal(consumer.getActiveVersion(), '1.0.0');
+  assert.equal((await repo.findMatching('family', 'malware.example')).length, 1);
+  assert.equal((await repo.findMatching('family', 'new-malware.example')).length, 0);
+});
+
+test('expiry during repository replacement preparation preserves the prior snapshot and rollback floor', async () => {
+  const backingRepo = new InMemoryWebRuleRepository();
+  let wallClock = new Date('2026-01-15T00:00:00.000Z');
+  let monotonicMs = 500;
+  let expireDuringPreparation = false;
+  const repo = {
+    replaceSecurityPackageIfNewer: async (version, rules, canCommit) => {
+      const preparedRules = rules.map(rule => ({ ...rule, createdAt: new Date(rule.createdAt) }));
+      if (expireDuringPreparation) {
+        expireDuringPreparation = false;
+        monotonicMs += 11;
+        wallClock = new Date(wallClock.getTime() - 1_000);
+      }
+      return backingRepo.replaceSecurityPackageIfNewer(version, preparedRules, canCommit);
+    },
+  };
+  const consumer = new SignedRulePackageConsumer(repo, verifierThatSays(true), () => wallClock, () => monotonicMs);
+
+  assert.equal((await consumer.apply(pkg({ expiresAt: new Date('2026-01-15T00:01:00.000Z') }))).status, 'APPLIED');
+  expireDuringPreparation = true;
+  const expired = await consumer.apply(pkg({
+    packageVersion: '2.0.0',
+    expiresAt: new Date(wallClock.getTime() + 10),
+    rules: [{ domain: 'new-malware.example', listType: 'DENY' }],
+  }));
+
+  assert.deepEqual(expired, { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' });
+  assert.equal(consumer.getActiveVersion(), '1.0.0');
+  assert.equal((await backingRepo.findMatching('family', 'malware.example')).length, 1);
+  assert.equal((await backingRepo.findMatching('family', 'new-malware.example')).length, 0);
+
+  // If the rejected version had advanced the repository floor independently
+  // of its rules, this lower (but still newer than 1.0.0) full snapshot would
+  // now be rejected as stale.
+  const nextConsumer = new SignedRulePackageConsumer(backingRepo, verifierThatSays(true), () => wallClock, () => monotonicMs);
+  assert.equal((await nextConsumer.apply(pkg({
+    packageVersion: '1.5.0',
+    expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+    rules: [{ domain: 'replacement.example', listType: 'DENY' }],
+  }))).status, 'APPLIED');
+});
+
 test('atomic repository failure preserves prior snapshot and observed floor', async () => {
   const repo = new InMemoryWebRuleRepository();
   let unavailable = false;

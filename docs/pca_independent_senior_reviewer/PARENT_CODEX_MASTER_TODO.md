@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Local source hardening checkpoint — 2026-10-13
+
+Unpublished source checkpoint against `0f8d3c377ff729921d65e3ee0392da101e53f42e`: backend Ordinary Trust Set now checks replay/accepted records against the current authorized head; FamilyAudit validates canonical target scope and event time before delivery and rechecks the immutable captured timestamp before each recipient composition; signed Web Rule package expiry is guarded across async verification/repository preparation; schedule configuration rejects malformed identifiers and parent exceptions. Android root-bound Trust Set persistence, strict persisted family/schedule JSON validation, and bounded bootstrap error-body draining are covered by focused regressions. No schema, migration, or runtime-grant change was made.
+
+Validation: backend full `npm test` **3443/3443 PASS** before the final FamilyAudit age guard; after that guard, backend build and focused FamilyAudit producer tests **30/30 PASS**. Android full `testDebugUnitTest` **2131/2131 PASS** across 293 suites; focused schedule-policy corruption tests **128/128 PASS**. Exact-head CI for these unpublished changes is pending. TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS with no DB change. Physical Android/iOS evidence, live DB, owner localhost acceptance, Platform dependency, Azure deployment, and production acceptance remain separate gates. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Source integration checkpoint — 2026-10-13
 
 Base `pca-dev` SHA `598394c490ff36d630fab7c7f7aaf460cc236ede` matched local, fetched origin and direct server before this unpublished checkpoint. Ordinary Trust Set root/head validation, exact pending custody, FamilyEnvelope version ordering, FamilyAudit expiry handling, Android/iOS schedule fail-closed app identity, Android durable schedule fallback and iOS policy-clear recovery received bounded source fixes and peer review. Parent Web's local Vitest worker limit now matches the two-worker CI shards. The previously dirty Parent/mobile source remains part of the integrated worktree; no owner-excluded files were staged.

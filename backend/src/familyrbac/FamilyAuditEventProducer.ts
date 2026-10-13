@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { isPersistableServerCiphertextWindow, isServerCiphertextExpired } from '../retention/serverCiphertextTtl.js';
 import { isPlausibleOpaqueId } from './policy.js';
 import type { FamilyAuditEventLedger } from './FamilyAuditEventLedger.js';
 import type { OpaqueFamilyAuditEventComposer } from './FamilyAuditEventComposer.js';
@@ -22,8 +23,20 @@ export interface FamilyAuditEventDeliveryOutcome {
  */
 const LOG_EVERY_NTH_FAILURE = 100;
 const MAX_TRACKED_DEVICE_FAILURES = 1024;
+const FAMILY_AUDIT_TARGET_SCOPE_KINDS = new Set(['FAMILY', 'CHILD_PROFILE', 'DEVICE', 'MEMBER']);
 function shouldLogFailure(occurrences: number): boolean {
   return occurrences === 1 || occurrences % LOG_EVERY_NTH_FAILURE === 0;
+}
+
+function isWithinRetainedWindow(generatedAtUtc: unknown, now: () => Date): boolean {
+  if (!isPersistableServerCiphertextWindow(generatedAtUtc)) return false;
+  try {
+    const observedNow = now();
+    return observedNow instanceof Date && Number.isFinite(observedNow.getTime()) &&
+      !isServerCiphertextExpired(generatedAtUtc, observedNow);
+  } catch {
+    return false;
+  }
 }
 
 /** Diagnostics are best-effort too: a broken console sink must not make an
@@ -87,6 +100,7 @@ function warnFamilyAuditDelivery(detail: Readonly<Record<string, unknown>>): voi
  */
 export class FamilyAuditEventProducer {
   /** Counted, rate-limited logging -- see this class's doc comment. */
+  private recordValidationFailureCount = 0;
   private scopeValidationFailureCount = 0;
   private recipientResolutionFailureCount = 0;
   /** Delivery failures are recipient-scoped: one healthy parent device must
@@ -99,9 +113,22 @@ export class FamilyAuditEventProducer {
     private readonly composeOpaquePayload: OpaqueFamilyAuditEventComposer,
     private readonly resolveParentDevices: ResolveFamilyParentDevices,
     private readonly nextEnvelopeId: () => string = () => randomUUID(),
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   async deliver(record: FamilyAuditRecord): Promise<FamilyAuditEventDeliveryOutcome[]> {
+    if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+      this.recordValidationFailureCount += 1;
+      if (shouldLogFailure(this.recordValidationFailureCount)) {
+        warnFamilyAuditDelivery({
+          event: 'family_audit_event_record_validation_failed',
+          occurrences: this.recordValidationFailureCount,
+          failureStage: 'RECORD_VALIDATION',
+          note: 'audit delivery rejected a malformed record before recipient resolution; no record content is logged.',
+        });
+      }
+      return [];
+    }
     const familyId = record.familyId;
     // The resolver is family-scoped; reject malformed scope before asking it
     // for recipients so invalid input cannot trigger cross-scope work.
@@ -118,10 +145,49 @@ export class FamilyAuditEventProducer {
       return [];
     }
     this.scopeValidationFailureCount = 0;
-    const generatedAtMillis = record.occurredAtUtc.getTime();
-    const capturedRecord = Object.freeze({ ...record,
-      targetScope: Object.freeze({ ...record.targetScope }),
+    const occurredAtUtc = record.occurredAtUtc;
+    const targetScope = record.targetScope;
+    if (!isWithinRetainedWindow(occurredAtUtc, this.now) ||
+        targetScope === null || typeof targetScope !== 'object' || Array.isArray(targetScope) ||
+        typeof targetScope.kind !== 'string' || !FAMILY_AUDIT_TARGET_SCOPE_KINDS.has(targetScope.kind) ||
+        !isPlausibleOpaqueId(targetScope.id) ||
+        (targetScope.kind === 'FAMILY' && targetScope.id !== familyId)) {
+      this.recordValidationFailureCount += 1;
+      if (shouldLogFailure(this.recordValidationFailureCount)) {
+        warnFamilyAuditDelivery({
+          event: 'family_audit_event_record_validation_failed',
+          familyId,
+          occurrences: this.recordValidationFailureCount,
+          failureStage: 'RECORD_VALIDATION',
+          note: 'audit delivery rejected a malformed record before recipient resolution; no record content is logged.',
+        });
+      }
+      return [];
+    }
+    this.recordValidationFailureCount = 0;
+    const generatedAtMillis = occurredAtUtc.getTime();
+    // Copy only the canonical FamilyAuditRecord fields across the crypto
+    // boundary. A runtime caller can carry extra enumerable properties that
+    // are absent from the TypeScript interface; spreading it here could send
+    // unreviewed PII or activity detail to the payload composer.
+    const capturedRecord: FamilyAuditRecord = Object.freeze({
+      eventId: record.eventId,
+      familyId,
+      actionType: record.actionType,
+      actorDeviceId: record.actorDeviceId,
+      actorMemberId: record.actorMemberId,
+      targetScope: Object.freeze({ kind: targetScope.kind, id: targetScope.id }),
+      authorizationRole: record.authorizationRole,
+      trustSetEpoch: record.trustSetEpoch,
+      policyRevision: record.policyRevision,
       occurredAtUtc: new Date(generatedAtMillis),
+      clientMonotonicSequence: record.clientMonotonicSequence,
+      resultStatus: record.resultStatus,
+      targetAcknowledgementCount: record.targetAcknowledgementCount,
+      reasonCategory: record.reasonCategory,
+      correlationId: record.correlationId,
+      actionId: record.actionId,
+      freeTextNote: record.freeTextNote,
     });
     let parentDevices: Array<{ deviceId: string; keyEpoch: number }>;
     try {
@@ -151,6 +217,9 @@ export class FamilyAuditEventProducer {
         if (!isPlausibleOpaqueId(parentDevice.deviceId) || !Number.isFinite(generatedAtMillis) ||
           !isFamilyEpochNumber(parentDevice.keyEpoch)) {
           throw new Error('resolved parent recipient or key epoch is invalid');
+        }
+        if (!isWithinRetainedWindow(capturedRecord.occurredAtUtc, this.now)) {
+          throw new Error('audit event expired before recipient composition');
         }
         failureStage = 'OPAQUE_COMPOSITION';
         // Each recipient gets its own Date copy; no composer can mutate the

@@ -5,7 +5,7 @@
 // per-device failure.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FamilyAuditEventProducer } from '../../dist/familyrbac/FamilyAuditEventProducer.js';
+import { FamilyAuditEventProducer as ProductionFamilyAuditEventProducer } from '../../dist/familyrbac/FamilyAuditEventProducer.js';
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
 import { createRejectingOpaqueFamilyAuditEventComposer } from '../../dist/familyrbac/FamilyAuditEventComposer.js';
 import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
@@ -16,6 +16,14 @@ import { SERVER_CIPHERTEXT_TTL_MS } from '../../dist/retention/serverCiphertextT
 // past would be correctly filtered out against a real wall clock. Anchor the
 // ledger's clock to the same instant the fixtures use.
 const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
+// Keep producer and ledger clocks aligned in fixtures; production constructors
+// retain the real server clock unless one is explicitly injected.
+class FamilyAuditEventProducer extends ProductionFamilyAuditEventProducer {
+  constructor(ledger, composer, resolver, nextEnvelopeId, now = () => LEDGER_NOW) {
+    super(ledger, composer, resolver, nextEnvelopeId, now);
+  }
+}
 
 /**
  * Runs `fn` with console.warn captured. The producer's return value alone
@@ -614,6 +622,133 @@ test('audit composition captures caller routing, target and timestamp before rec
   assert.equal(seen[0].record.targetScope.id, 'fam-1');
   assert.equal(stored[0].familyId, 'fam-1');
   assert.equal(stored[0].generatedAtUtc.getTime(), LEDGER_NOW.getTime());
+});
+
+test('audit composer receives only canonical record fields and a canonical target scope', async () => {
+  let composedRecord;
+  const producer = new FamilyAuditEventProducer(
+    { record: async () => ({ outcome: 'RECORDED' }) },
+    async ({ record }) => {
+      composedRecord = record;
+      return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' };
+    },
+    async () => [{ deviceId: 'parent-device-a', keyEpoch: 1 }],
+  );
+  const sourceRecord = {
+    ...sampleRecord(),
+    privateLocation: 'should-not-cross-crypto-boundary',
+    recoverySecret: 'should-not-cross-crypto-boundary',
+    targetScope: {
+      ...sampleRecord().targetScope,
+      childName: 'should-not-cross-crypto-boundary',
+    },
+  };
+
+  const outcomes = await producer.deliver(sourceRecord);
+
+  assert.deepEqual(outcomes, [{ parentDeviceId: 'parent-device-a', outcome: 'QUEUED' }]);
+  assert.deepEqual(Object.keys(composedRecord).sort(), [
+    'actionId', 'actionType', 'actorDeviceId', 'actorMemberId', 'authorizationRole',
+    'clientMonotonicSequence', 'correlationId', 'eventId', 'familyId', 'freeTextNote',
+    'occurredAtUtc', 'policyRevision', 'reasonCategory', 'resultStatus',
+    'targetAcknowledgementCount', 'targetScope', 'trustSetEpoch',
+  ].sort());
+  assert.deepEqual(Object.keys(composedRecord.targetScope).sort(), ['id', 'kind']);
+  assert.equal(Object.hasOwn(composedRecord, 'privateLocation'), false);
+  assert.equal(Object.hasOwn(composedRecord, 'recoverySecret'), false);
+  assert.equal(Object.hasOwn(composedRecord.targetScope, 'childName'), false);
+  assert.equal(sourceRecord.privateLocation, 'should-not-cross-crypto-boundary');
+});
+
+test('malformed audit record timestamps fail best-effort before recipient resolution or composition', async () => {
+  const invalidRecords = [
+    sampleRecord({ occurredAtUtc: null }),
+    sampleRecord({ occurredAtUtc: new Date(Number.NaN) }),
+    sampleRecord({ occurredAtUtc: new Date('0999-12-31T23:59:59.999Z') }),
+    sampleRecord({ occurredAtUtc: new Date('9999-12-31T23:59:59.999Z') }),
+  ];
+  for (const record of invalidRecords) {
+    let resolved = false;
+    let composed = false;
+    let stored = false;
+    const producer = new FamilyAuditEventProducer(
+      { record: async () => { stored = true; return { outcome: 'RECORDED' }; } },
+      async () => { composed = true; return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
+      async () => { resolved = true; return [{ deviceId: 'parent-device-a', keyEpoch: 1 }]; },
+    );
+    const { result, warnings } = await withCapturedWarnings(() => producer.deliver(record));
+    assert.deepEqual(result, []);
+    assert.equal(resolved, false);
+    assert.equal(composed, false);
+    assert.equal(stored, false);
+    assert.equal(JSON.parse(warnings[0]).failureStage, 'RECORD_VALIDATION');
+  }
+});
+
+test('expired audit timestamps fail before recipient resolution, composition, or ledger write', async () => {
+  let resolved = false;
+  let composed = false;
+  let stored = false;
+  const expiredAt = new Date(LEDGER_NOW.getTime() + SERVER_CIPHERTEXT_TTL_MS + 1);
+  const producer = new FamilyAuditEventProducer(
+    { record: async () => { stored = true; return { outcome: 'RECORDED' }; } },
+    async () => { composed = true; return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
+    async () => { resolved = true; return [{ deviceId: 'parent-device-a', keyEpoch: 1 }]; },
+    undefined,
+    () => expiredAt,
+  );
+  const { result, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+  assert.deepEqual(result, []);
+  assert.equal(resolved, false);
+  assert.equal(composed, false);
+  assert.equal(stored, false);
+  assert.equal(JSON.parse(warnings[0]).failureStage, 'RECORD_VALIDATION');
+});
+
+test('audit timestamp expiring during recipient resolution is rejected before composition', async () => {
+  let now = LEDGER_NOW;
+  let composed = false;
+  let stored = false;
+  const producer = new FamilyAuditEventProducer(
+    { record: async () => { stored = true; return { outcome: 'RECORDED' }; } },
+    async () => { composed = true; return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
+    async () => {
+      now = new Date(LEDGER_NOW.getTime() + SERVER_CIPHERTEXT_TTL_MS);
+      return [{ deviceId: 'parent-device-a', keyEpoch: 1 }];
+    },
+    undefined,
+    () => now,
+  );
+  const { result } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+  assert.deepEqual(result, [{ parentDeviceId: 'parent-device-a', outcome: 'FAILED' }]);
+  assert.equal(composed, false);
+  assert.equal(stored, false);
+});
+
+test('invalid target scopes fail before recipient resolution, composition, or ledger write', async () => {
+  const invalidScopes = [
+    { kind: 'FAMILY', id: 'another-family' },
+    { kind: 'FUTURE_SCOPE', id: 'scope-1' },
+    { kind: 'DEVICE', id: '' },
+    { kind: 'MEMBER', id: 'x'.repeat(129) },
+  ];
+  for (const targetScope of invalidScopes) {
+    let resolved = false;
+    let composed = false;
+    let stored = false;
+    const producer = new FamilyAuditEventProducer(
+      { record: async () => { stored = true; return { outcome: 'RECORDED' }; } },
+      async () => { composed = true; return { encryptedPayloadB64: 'opaque', nonceB64: 'nonce' }; },
+      async () => { resolved = true; return [{ deviceId: 'parent-device-a', keyEpoch: 1 }]; },
+    );
+    const record = sampleRecord({ targetScope });
+    const { result, warnings } = await withCapturedWarnings(() => producer.deliver(record));
+    assert.deepEqual(result, [], JSON.stringify(targetScope));
+    assert.equal(resolved, false, JSON.stringify(targetScope));
+    assert.equal(composed, false, JSON.stringify(targetScope));
+    assert.equal(stored, false, JSON.stringify(targetScope));
+    assert.equal(JSON.parse(warnings[0]).failureStage, 'RECORD_VALIDATION');
+  }
 });
 
 test('audit composer routing smuggling or timestamp mutation fails only that recipient', async () => {

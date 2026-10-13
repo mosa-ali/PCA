@@ -88,7 +88,14 @@ function validateAppToken(value: unknown): string[] {
 function validateParentExceptions(exceptions: unknown): string[] {
   const errors: string[] = [];
   if (!Array.isArray(exceptions)) return ['parent exceptions must be an array'];
-  for (const exception of exceptions) {
+  for (const [index, exception] of exceptions.entries()) {
+    if (typeof exception !== 'object' || exception === null || Array.isArray(exception)) {
+      errors.push(`parent exception at index ${index} must be an object`);
+      continue;
+    }
+    if (typeof exception?.id !== 'string' || exception.id.trim().length === 0) {
+      errors.push('parent exception id must be a non-empty string');
+    }
     errors.push(...validateAppScope(exception?.appScope, `parent exception ${exception?.id ?? '(unknown)'}`));
     const startAt = exception?.startAtUtc instanceof Date ? exception.startAtUtc.getTime() : Number.NaN;
     const endAt = exception?.endAtUtc instanceof Date ? exception.endAtUtc.getTime() : Number.NaN;
@@ -161,6 +168,9 @@ function validateBonusGrants(grants: unknown): string[] {
     if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) {
       errors.push(`bonus grant at index ${index} must be an object`);
       continue;
+    }
+    if (typeof grant.id !== 'string' || grant.id.trim().length === 0) {
+      errors.push(`bonus grant at index ${index} id must be a non-empty string`);
     }
     errors.push(...validateAppScope(grant?.appScope, `bonus grant ${grant?.id ?? '(unknown)'}`));
     if (!Number.isSafeInteger(grant.extraMinutes) || grant.extraMinutes < 0) {

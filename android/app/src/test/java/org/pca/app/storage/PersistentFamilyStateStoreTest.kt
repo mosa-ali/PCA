@@ -16,6 +16,35 @@ import org.pca.app.foundation.InMemoryPersistentStateStore
 
 class PersistentFamilyStateStoreTest {
 
+    @Test fun `ambiguous versioned identity and profile JSON blocks restart without rewriting custody`() {
+        val valid = """{"version":2,"familyId":"family","deviceId":"device","pairingState":"PAIRING_PENDING","trustSetEpoch":0,"keyEpoch":0,"childProfileId":null,"ageUxTier":"TEEN","initialPolicyProfile":"STRICT"}"""
+        val malformed = listOf(
+            valid.replace("\"deviceId\":\"device\"", "\"deviceId\":\"old\",\"deviceId\":\"device\""),
+            valid.replace("\"initialPolicyProfile\":\"STRICT\"", "\"initialPolicyProfile\":\"BALANCED\",\"initialPolicyProfile\":\"STRICT\""),
+            valid.replace("\"ageUxTier\":\"TEEN\"", "\"ageUxTier\":\"YOUNG_CHILD\",\"ageUxT\\u0069er\":\"TEEN\""),
+            "$valid {}",
+            valid.dropLast(1) + ",}",
+        )
+        for (raw in malformed) {
+            val backing = InMemoryPersistentStateStore()
+            backing.putString("family_state_v1.v2", raw)
+            backing.putString("family_state_v1", "legacy|device|ACTIVE|1|1")
+            assertThrows(CorruptLocalFamilyStateException::class.java) {
+                PersistentFamilyStateStore(backing).currentState()
+            }
+            assertEquals(raw, backing.getString("family_state_v1.v2"))
+            assertEquals("legacy|device|ACTIVE|1|1", backing.getString("family_state_v1"))
+        }
+    }
+
+    @Test fun `strict persisted JSON accepts escaped quotes backslashes and Unicode identities`() {
+        val backing = InMemoryPersistentStateStore()
+        val expected = LocalFamilyState("family\\\"العائلة", "device\\\"🔐", PairingState.PAIRING_PENDING, 0, 0,
+            childProfileId = "child\\\"👧")
+        PersistentFamilyStateStore(backing).save(expected)
+        assertEquals(expected, PersistentFamilyStateStore(backing).currentState())
+    }
+
     @Test
     fun `save then load round-trips every field exactly`() {
         val store = PersistentFamilyStateStore(InMemoryPersistentStateStore())

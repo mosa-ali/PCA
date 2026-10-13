@@ -31,6 +31,9 @@ export function validateScheduleWindow(window: ScheduleWindow): string[] {
   if (typeof window.kind !== 'string' || !scheduleWindowKinds.has(window.kind)) {
     errors.push(`window ${window.id ?? '(unknown)'}: invalid kind`);
   }
+  if (typeof window.id !== 'string' || window.id.trim().length === 0) {
+    errors.push('schedule window id must be a non-empty string');
+  }
   errors.push(...validateAppScope(window?.appScope, `window ${window?.id ?? '(unknown)'}`));
   for (const [label, tod] of [
     ['start', window.start],

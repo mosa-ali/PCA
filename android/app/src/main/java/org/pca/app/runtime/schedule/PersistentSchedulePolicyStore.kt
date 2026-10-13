@@ -2,6 +2,7 @@ package org.pca.app.runtime.schedule
 
 import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /**
  * Coordinator integration glue: backs [SchedulePolicyStore] with the same durable, OS-backed
@@ -169,6 +170,9 @@ class PersistentSchedulePolicyStore(
     }
 
     private fun decode(raw: String): SchedulePolicyStoreRead = try {
+        // Reject ambiguous persisted policy fields before JSONObject can collapse duplicates
+        // or ignore trailing data. Preserve corruption rather than inventing a restored policy.
+        StrictJsonMemberNames.requireUnique(raw)
         val snapshot = SchedulePolicyJson.decodeSnapshot(JSONObject(raw))
         validateSnapshotRevisionState(snapshot)
         SchedulePolicyStoreRead.Present(snapshot)

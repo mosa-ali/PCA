@@ -20,12 +20,17 @@ export interface WebRuleRepository {
 
 /** Replacement and rollback floor must commit together. An implementation
  * must not expose a partial security feed or store a version without its rules.
- * This port does not authorize readable Parent rules in production. */
+ * It must evaluate `canCommit` synchronously after replacement preparation
+ * and immediately before the atomic commit/swap; durable implementations must
+ * do so inside their transaction immediately before commit. `false` rejects
+ * without changing the current snapshot or floor. This port does not authorize
+ * readable Parent rules in production. */
 export interface SecurityRulePackageRepository {
   replaceSecurityPackageIfNewer(
     packageVersion: string,
     rules: readonly WebRule[],
-  ): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }>;
+    canCommit: () => boolean,
+  ): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string } | { status: 'EXPIRED' }>;
 }
 
 function cloneRule(rule: WebRule): WebRule {
@@ -72,7 +77,11 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
     return matched.map(cloneRule);
   }
 
-  async replaceSecurityPackageIfNewer(packageVersion: string, rules: readonly WebRule[]): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string }> {
+  async replaceSecurityPackageIfNewer(
+    packageVersion: string,
+    rules: readonly WebRule[],
+    canCommit: () => boolean,
+  ): Promise<{ status: 'APPLIED' } | { status: 'STALE'; activeVersion: string } | { status: 'EXPIRED' }> {
     if (!isPlausiblePackageVersion(packageVersion) || rules.some((rule) =>
       rule.familyId !== null || rule.source !== 'SECURITY_DENYLIST' || rule.listType !== 'DENY')) {
       throw new Error('Invalid security package snapshot');
@@ -88,8 +97,11 @@ export class InMemoryWebRuleRepository implements WebRuleRepository, SecurityRul
       const snapshot = cloneRule(rule);
       replacement.set(this.key(null, snapshot.domain, snapshot.listType, snapshot.source), snapshot);
     }
-    // No suspension between the floor check and these assignments. Consumers
-    // sharing this fixture cannot race a lower version over a newer snapshot.
+    // Durable implementations must call this synchronous guard inside their
+    // transaction immediately before commit. Here it runs after replacement
+    // preparation and directly before the atomic in-memory swap, so a package
+    // that expires during preparation cannot advance either the floor or data.
+    if (!canCommit()) return { status: 'EXPIRED' };
     this.rules = replacement;
     this.securityPackageVersion = packageVersion;
     return { status: 'APPLIED' };

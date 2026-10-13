@@ -240,6 +240,42 @@ test('indexed history rejects a different signed record at the current head epoc
   await assert.rejects(f.service.epoch(scope, 1), rejectsCode('CONFLICT'));
 });
 
+test('submit rejects an exact indexed replay ahead of its authorized head without appending', async () => {
+  const f = fixture(); await f.bootstrap();
+  const candidate = f.request(2);
+  await f.service.submit(scope, candidate);
+  const indexed = f.rows.get(`${FAMILY}/2`);
+  f.rows.delete(`${FAMILY}/2`);
+  f.setFloor({ minimumAcceptedTrustSetEpoch: 1, minimumAcceptedKeyEpoch: 1 });
+  f.acceptance.readAcceptedEpoch = async () => indexed;
+  const appendsBefore = f.appends;
+
+  await assert.rejects(f.service.submit(scope, candidate), rejectsCode('CONFLICT'));
+  assert.equal(f.appends, appendsBefore);
+  assert.equal((await f.service.head(scope)).trustSetEpoch, 1);
+});
+
+test('submit rejects a post-acceptance receipt when its final authorized head disagrees', async () => {
+  const f = fixture(); await f.bootstrap();
+  const first = f.rows.get(`${FAMILY}/1`);
+  const candidate = f.request(2);
+  const accept = f.acceptance.acceptCandidate.bind(f.acceptance);
+  f.acceptance.acceptCandidate = async (input) => {
+    const result = await accept(input);
+    assert.equal(result.outcome, 'ACCEPTED');
+    const indexed = f.rows.get(`${FAMILY}/2`);
+    f.acceptance.readAcceptedEpoch = async () => indexed;
+    f.rows.delete(`${FAMILY}/2`);
+    f.setFloor({ minimumAcceptedTrustSetEpoch: 1, minimumAcceptedKeyEpoch: 1 });
+    assert.equal(f.rows.get(`${FAMILY}/1`), first);
+    return result;
+  };
+
+  await assert.rejects(f.service.submit(scope, candidate), rejectsCode('CONFLICT'));
+  assert.equal(f.appends, 2);
+  assert.equal((await f.service.head(scope)).trustSetEpoch, 1);
+});
+
 test('head is available to active child but submit and exact status require current owner', async () => {
   const f = fixture(); await f.bootstrap(); const child = { familyId: FAMILY, deviceId: 'child-device', dskKeyId: 'child-dsk' };
   assert.equal((await f.service.head(child)).trustSetEpoch, 1);

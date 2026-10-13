@@ -212,8 +212,10 @@ export class OrdinaryTrustSetService {
       if (!previous.signedEpochBytes.equals(request.bytes) || previous.signature !== request.signature) {
         throw new OrdinaryTrustSetError('CONFLICT');
       }
+      const currentHead = await this.authorizedHead(scope, true);
+      this.assertRecordWithinHead(previous, currentHead);
       return { outcome: 'IDEMPOTENT_MATCH', acceptedEpoch: dto(previous),
-        acceptedHead: dto(await this.authorizedHead(scope, true)) };
+        acceptedHead: dto(currentHead) };
     }
     const result = await this.acceptanceService.acceptCandidate({ familyId: scope.familyId,
       signedCanonicalBytes: request.bytes.toString('utf8'), signature: request.signature, receivedAt: serverReceivedAt,
@@ -224,7 +226,9 @@ export class OrdinaryTrustSetService {
     if (accepted === null || !accepted.signedEpochBytes.equals(request.bytes) || accepted.signature !== request.signature) {
       throw new Error('Successful acceptance did not retain the exact request.');
     }
+    const currentHead = await this.authorizedHead(scope, true);
+    this.assertRecordWithinHead(accepted, currentHead);
     return { outcome: result.outcome === 'ACCEPTED' ? 'ACCEPTED' : 'IDEMPOTENT_MATCH',
-      acceptedEpoch: dto(accepted), acceptedHead: dto(await this.authorizedHead(scope, true)) };
+      acceptedEpoch: dto(accepted), acceptedHead: dto(currentHead) };
   }
 }

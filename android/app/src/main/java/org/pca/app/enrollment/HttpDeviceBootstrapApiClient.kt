@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
+import org.pca.app.firstdevice.discardBootstrapErrorResponse
 
 /**
  * Where and how to reach the unauthenticated bootstrap endpoint
@@ -411,8 +412,7 @@ class HttpDeviceBootstrapApiClient(
     private fun drainQuietly(stream: InputStream?) {
         if (stream == null) return
         try {
-            val buffer = ByteArray(MAX_RESPONSE_BYTES)
-            stream.use { input -> while (input.read(buffer) != -1) { /* discard */ } }
+            discardBootstrapErrorResponse(stream, MAX_RESPONSE_BYTES)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {

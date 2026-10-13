@@ -2,6 +2,7 @@ import { isCanonicalDomain } from './canonicalize.js';
 import { isPlausiblePackageVersion, isPlausibleSignature, MAX_RULES_PER_PACKAGE } from './policy.js';
 import type { SignedRulePackage, WebRule } from './types.js';
 import type { SecurityRulePackageRepository } from './WebRuleStore.js';
+import { performance } from 'node:perf_hooks';
 export { comparePackageVersions } from './policy.js';
 
 /** The verifier must authenticate every metadata field and rule. This consumer
@@ -26,6 +27,7 @@ export class SignedRulePackageConsumer {
     private readonly repository: SecurityRulePackageRepository,
     private readonly verifier: SignedRulePackageVerifier,
     private readonly now: () => Date = () => new Date(),
+    private readonly monotonicNow: () => number = () => performance.now(),
   ) {}
   /** Last observed repository floor, not an independently authoritative floor. */
   getActiveVersion(): string | null { return this.activeVersion; }
@@ -60,6 +62,11 @@ export class SignedRulePackageConsumer {
       return { status: 'REJECTED_MALFORMED', reason: 'MALFORMED_PACKAGE' };
     }
     if (pkg.expiresAt.getTime() <= receivedAt.getTime()) return { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' };
+    const remainingLifetimeMs = pkg.expiresAt.getTime() - receivedAt.getTime();
+    const receivedMonotonic = this.monotonicNow();
+    if (!Number.isFinite(remainingLifetimeMs) || remainingLifetimeMs <= 0 || !Number.isFinite(receivedMonotonic)) {
+      return { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' };
+    }
     // Own verified input before suspension; caller mutation cannot change commit.
     const captured: SignedRulePackage = {
       packageVersion: pkg.packageVersion, signature: pkg.signature,
@@ -73,9 +80,25 @@ export class SignedRulePackageConsumer {
     if (!Number.isFinite(commitTime.getTime()) || expiresAt <= commitTime.getTime()) {
       return { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' };
     }
-    const result = await this.repository.replaceSecurityPackageIfNewer(packageVersion, canonicalRules.map((rule) => ({
-      ...rule, source: 'SECURITY_DENYLIST', familyId: null, createdAt: commitTime,
-    })));
+    // Prepare the potentially large replacement before the final validity
+    // check. The repository invokes the same synchronous guard again after
+    // its own replacement preparation, immediately before the atomic swap.
+    const rulesToCommit = canonicalRules.map((rule) => ({
+      ...rule, source: 'SECURITY_DENYLIST' as const, familyId: null, createdAt: commitTime,
+    }));
+    const canCommit = (): boolean => {
+      const checkedAt = this.now().getTime();
+      const elapsedLifetimeMs = this.monotonicNow() - receivedMonotonic;
+      // Wall-clock adjustment during verification/storage preparation must
+      // not extend the signed package's admitted lifetime.
+      return Number.isFinite(checkedAt) && expiresAt > checkedAt &&
+        Number.isFinite(elapsedLifetimeMs) && elapsedLifetimeMs >= 0 && elapsedLifetimeMs < remainingLifetimeMs;
+    };
+    if (!canCommit()) {
+      return { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' };
+    }
+    const result = await this.repository.replaceSecurityPackageIfNewer(packageVersion, rulesToCommit, canCommit);
+    if (result.status === 'EXPIRED') return { status: 'REJECTED_EXPIRED', reason: 'PACKAGE_EXPIRED' };
     if (result.status === 'STALE') {
       this.activeVersion = result.activeVersion;
       return { status: 'REJECTED_STALE', reason: 'NOT_NEWER_THAN_ACTIVE', activeVersion: result.activeVersion };

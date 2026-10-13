@@ -50,6 +50,23 @@ class FirstDeviceRootStoreTest {
         dekAlias = "pca.dek." + "a".repeat(32),
     )
 
+    @Test fun `dependent CAS requires exact durable root and propagates its Boolean result`() {
+        val backing = RecordingStore()
+        val store = PersistentFirstDeviceRootStore(backing)
+        val record = FirstDeviceRootRecord(seed())
+        store.save(record)
+        var calls = 0
+        assertTrue(store.compareAndRunIfCurrent(record) { calls++; true })
+        assertFalse(store.compareAndRunIfCurrent(record) { calls++; false })
+        assertEquals(2, calls)
+        assertFalse(store.compareAndRunIfCurrent(record.copy(familyId = "changed")) { calls++; true })
+        backing.failNextFlush = true
+        assertFalse(store.compareAndRunIfCurrent(record) { calls++; true })
+        backing.failReads = true
+        assertFalse(store.compareAndRunIfCurrent(record) { calls++; true })
+        assertEquals(2, calls)
+    }
+
     @Test
     fun `full record round-trips through the persistent store, including the submission payload`() {
         val backing = RecordingStore()

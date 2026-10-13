@@ -6,6 +6,7 @@ import org.pca.app.enrollment.AgeUxTier
 import org.pca.app.enrollment.InitialPolicyProfile
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.EpochBounds
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /**
  * Durable binding for [FamilyStateStore], backed by the OS-protected [PersistentStateStore].
@@ -65,6 +66,9 @@ class PersistentFamilyStateStore(
         .toString()
 
     private fun decodeVersioned(raw: String): LocalFamilyState = try {
+        // JSONObject may collapse duplicate identity/profile fields or accept a trailing
+        // suffix. Ambiguous persisted authority is corruption, never a usable family record.
+        StrictJsonMemberNames.requireUnique(raw)
         val json = JSONObject(raw)
         require(json.keys().asSequence().toSet() == VERSION_2_KEYS)
         require(json.get("version") == VERSION_2)

@@ -215,6 +215,48 @@ test('malformed parent exception intervals fail closed before they can authorize
   }
 });
 
+test('missing or empty schedule policy identifiers fail structural validation', () => {
+  const malformedWindow = window({ id: '' });
+  const windowResult = evaluateSchedule(baseInput({ windows: [malformedWindow] }));
+  assert.equal(windowResult.decision, 'INVALID_CONFIG');
+  assert.ok(windowResult.configErrors?.some((error) => error.includes('window id')));
+  const missingWindowIdResult = evaluateSchedule(baseInput({ windows: [window({ id: undefined })] }));
+  assert.equal(missingWindowIdResult.decision, 'INVALID_CONFIG');
+  assert.ok(missingWindowIdResult.configErrors?.some((error) => error.includes('window id')));
+  assert.equal(evaluateSchedule(baseInput({ windows: [window({ id: '  ' })] })).decision, 'INVALID_CONFIG');
+
+  const grant = {
+    id: '', appScope: 'ALL', extraMinutes: 5,
+    grantedAtUtc: new Date('2026-01-07T11:00:00.000Z'),
+    expiresAtUtc: new Date('2026-01-07T13:00:00.000Z'),
+  };
+  const grantResult = evaluateSchedule(baseInput({ bonusGrants: [grant] }));
+  assert.equal(grantResult.decision, 'INVALID_CONFIG');
+  assert.ok(grantResult.configErrors?.some((error) => error.includes('bonus grant') && error.includes('id')));
+  const missingGrantIdResult = evaluateSchedule(baseInput({ bonusGrants: [{ ...grant, id: undefined }] }));
+  assert.equal(missingGrantIdResult.decision, 'INVALID_CONFIG');
+  assert.ok(missingGrantIdResult.configErrors?.some((error) => error.includes('bonus grant') && error.includes('id')));
+  assert.equal(evaluateSchedule(baseInput({ bonusGrants: [{ ...grant, id: '\t ' }] })).decision, 'INVALID_CONFIG');
+
+  const exception = {
+    id: '', appScope: 'ALL',
+    startAtUtc: new Date('2026-01-07T11:00:00.000Z'),
+    endAtUtc: new Date('2026-01-07T13:00:00.000Z'),
+  };
+  const exceptionResult = evaluateSchedule(baseInput({ exceptions: [exception] }));
+  assert.equal(exceptionResult.decision, 'INVALID_CONFIG');
+  assert.ok(exceptionResult.configErrors?.some((error) => error.includes('parent exception') && error.includes('id')));
+  const missingExceptionIdResult = evaluateSchedule(baseInput({ exceptions: [{ ...exception, id: undefined }] }));
+  assert.equal(missingExceptionIdResult.decision, 'INVALID_CONFIG');
+  assert.ok(missingExceptionIdResult.configErrors?.some((error) => error.includes('parent exception') && error.includes('id')));
+  assert.equal(evaluateSchedule(baseInput({ exceptions: [{ ...exception, id: '  ' }] })).decision, 'INVALID_CONFIG');
+  for (const invalidException of [null, [], 'not-an-exception']) {
+    const result = evaluateSchedule(baseInput({ exceptions: [invalidException] }));
+    assert.equal(result.decision, 'INVALID_CONFIG');
+    assert.ok(result.configErrors?.some((error) => error.includes('parent exception') && error.includes('object')));
+  }
+});
+
 test('malformed app scopes in every schedule policy dimension fail closed', () => {
   const validException = {
     id: 'exception', appScope: 'ALL',
