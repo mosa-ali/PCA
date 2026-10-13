@@ -15,6 +15,7 @@ export type OutboundItemOutcome =
   | { messageId: string; outcome: 'CROSS_FAMILY_RECIPIENT' }
   | { messageId: string; outcome: 'CONFLICT' }
   | { messageId: string; outcome: 'EXPIRED' }
+  | { messageId: string; outcome: 'AUTHORITY_CHANGED' }
   | { messageId: string; outcome: 'INVALID' };
 
 export interface OutboundBatchResult {

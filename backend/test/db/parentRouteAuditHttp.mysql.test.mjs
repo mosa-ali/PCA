@@ -163,7 +163,7 @@ const testAcceptedTrustSetRoleResolver = {
   async resolveActor(familyId, deviceId, dskKeyId) {
     const key = `${familyId}\u0000${deviceId}\u0000${dskKeyId}`;
     if (!testAcceptedActorKeys.has(key)) return 'DEVICE_NOT_IN_TRUST_SET';
-    return { deviceId, role: 'ADMINISTRATOR', trustSetEpoch: 1, keyEpoch: 1 };
+    return { familyId, deviceId, dskKeyId, role: 'ADMINISTRATOR', trustSetEpoch: 1, keyEpoch: 1 };
   },
 };
 

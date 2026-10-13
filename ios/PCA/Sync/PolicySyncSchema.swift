@@ -29,7 +29,7 @@ public struct StoredDeviceActivityPolicyLoader<Token: Hashable & Codable> {
     /// Stored FamilyControls token payloads use the same 1 MiB bound as the
     /// decoded policy document. Check bytes before invoking PropertyListDecoder
     /// so corrupted App Group state cannot trigger an unbounded decode.
-    private static let maximumTokenPayloadBytes = 1_048_576
+    private static var maximumTokenPayloadBytes: Int { 1_048_576 }
     private let scheduleStore: OpaqueBlobStore
     private let tokenStore: OpaqueBlobStore
 

@@ -224,7 +224,8 @@ test('MySQL PRIVACY: provider-call exceptions return a fixed error category and 
 
   assert.equal(result.outcome, 'PROVIDER_CALL_ERROR');
   assert.equal(result.error, 'PROVIDER_CALL_FAILED');
-  assert.equal(JSON.stringify(result).includes(sensitiveProviderError), false);
+  const serializedResult = JSON.stringify(result, (_key, value) => typeof value === 'bigint' ? value.toString() : value);
+  assert.equal(serializedResult.includes(sensitiveProviderError), false);
   const [rows] = await getPool().query(`SELECT state FROM billing_refund_operations WHERE refund_operation_id = ?`, [result.operation.refundOperationId]);
   assert.equal(rows[0].state, 'CREATED', 'provider transport failure must preserve the durable retry intent');
 });

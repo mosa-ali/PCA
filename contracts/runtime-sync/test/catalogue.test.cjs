@@ -95,4 +95,6 @@ test("an emitted outcome the catalogue omits is detected", () => {
   const invalid = clone(catalogue);
   invalid.outboundSubmitErrorCodes = invalid.outboundSubmitErrorCodes.filter((c) => c !== "CONFLICT");
   assert.match(validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n"), /emitted by source but absent from catalogue: CONFLICT/);
+  invalid.outboundSubmitErrorCodes = catalogue.outboundSubmitErrorCodes.filter((c) => c !== "AUTHORITY_CHANGED");
+  assert.match(validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n"), /emitted by source but absent from catalogue: AUTHORITY_CHANGED/);
 });
