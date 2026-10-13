@@ -61,11 +61,23 @@ function fixture(attestationOverrides = {}, floors = {}, headOverrides = {}) {
   return { attestation, chainStore, head };
 }
 
+function resolvedOwner(overrides = {}) {
+  return {
+    familyId: FAMILY_ID,
+    deviceId: OWNER_DEVICE_ID,
+    dskKeyId: OWNER_DSK_KEY_ID,
+    role: 'OWNER',
+    trustSetEpoch: 3,
+    keyEpoch: 3,
+    ...overrides,
+  };
+}
+
 test('FamilyAudit skips an attestation below the attestation-chain freshness floors before role resolution', async () => {
   const { chainStore } = fixture({ keyEpoch: 1 }, { requiredKeyEpoch: 2 });
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner(); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -75,7 +87,7 @@ test('FamilyAudit skips an attestation below the attestation-chain freshness flo
 test('FamilyAudit skips an active OWNER whose accepted epochs remain below the attestation-chain freshness floors', async () => {
   const { chainStore } = fixture({}, { requiredTrustSetEpoch: 4, requiredKeyEpoch: 3 });
   const resolver = createResolver(chainStore, {
-    async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { return resolvedOwner(); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -85,7 +97,7 @@ test('FamilyAudit skips a revoked owner head without consulting current membersh
   const { chainStore } = fixture({}, { status: 'REVOKED' });
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -96,7 +108,7 @@ test('FamilyAudit skips an expired owner attestation', async () => {
   const { chainStore } = fixture({ expiresAt: new Date('2025-01-01T00:00:00.000Z') });
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -111,7 +123,7 @@ test('FamilyAudit rejects a signed owner head issued beyond the allowed future c
   let verifyCalls = 0;
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); },
   }, { async verify() { verifyCalls += 1; return true; } });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -126,7 +138,7 @@ test('FamilyAudit rejects an over-age signed owner head even while its expiry re
   });
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -139,7 +151,7 @@ test('FamilyAudit accepts a valid owner attestation at the maximum allowed TTL',
     expiresAt: new Date(NOW.getTime() + MAX_ATTESTATION_TTL_MS),
   });
   const resolver = createResolver(chainStore, {
-    async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; },
+    async resolveActor() { return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); },
   });
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), [{ deviceId: OWNER_DEVICE_ID, keyEpoch: 1 }]);
@@ -151,7 +163,7 @@ test('FamilyAudit rejects a bad current-attestation signature before checking me
   let keyCalls = 0;
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner(); },
   }, { async verify() { verifyCalls += 1; return false; } }, {
     async isActiveDsk() { keyCalls += 1; return true; },
   });
@@ -168,7 +180,7 @@ test('FamilyAudit rejects altered stored content when its content-addressed head
   let verifyCalls = 0;
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner(); },
   }, { async verify() { verifyCalls += 1; return true; } }, ACTIVE_KEY_RESOLVER);
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -181,7 +193,7 @@ test('FamilyAudit requires the attestation revision to equal the current chain h
   let verifyCalls = 0;
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner(); },
   }, { async verify() { verifyCalls += 1; return true; } }, ACTIVE_KEY_RESOLVER);
 
   assert.deepEqual(await resolver.resolveParentDevices(FAMILY_ID), []);
@@ -192,7 +204,7 @@ test('FamilyAudit requires the attestation revision to equal the current chain h
 test('FamilyAudit reports unavailable authority dependencies without resolving a recipient', async () => {
   const verifierFailure = fixture();
   const rejectedVerifier = createResolver(verifierFailure.chainStore, {
-    async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { return resolvedOwner(); },
   }, { async verify() { throw new Error('verifier unavailable'); } }, ACTIVE_KEY_RESOLVER);
   await assert.rejects(rejectedVerifier.resolveParentDevices(FAMILY_ID), {
     message: 'family_audit_parent_device_resolution_unavailable',
@@ -201,7 +213,7 @@ test('FamilyAudit reports unavailable authority dependencies without resolving a
   const chainFailure = fixture();
   chainFailure.chainStore.findHead = async () => { throw new Error('chain unavailable'); };
   const rejectedChain = createResolver(chainFailure.chainStore, {
-    async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { return resolvedOwner(); },
   }, ACCEPTING_VERIFIER, ACTIVE_KEY_RESOLVER);
   await assert.rejects(rejectedChain.resolveParentDevices(FAMILY_ID), {
     message: 'family_audit_parent_device_resolution_unavailable',
@@ -209,7 +221,7 @@ test('FamilyAudit reports unavailable authority dependencies without resolving a
 
   const keyFailure = fixture();
   const rejectedKey = createResolver(keyFailure.chainStore, {
-    async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { return resolvedOwner(); },
   }, ACCEPTING_VERIFIER, { async isActiveDsk() { throw new Error('device directory unavailable'); } });
   await assert.rejects(rejectedKey.resolveParentDevices(FAMILY_ID), {
     message: 'family_audit_parent_device_resolution_unavailable',
@@ -222,7 +234,7 @@ test('FamilyAudit requires both the owner DSK and current attestation signer DSK
   let verifyCalls = 0;
   let roleCalls = 0;
   const resolver = createResolver(chainStore, {
-    async resolveActor() { roleCalls += 1; return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 3, keyEpoch: 3 }; },
+    async resolveActor() { roleCalls += 1; return resolvedOwner(); },
   }, { async verify() { verifyCalls += 1; return true; } }, {
     async isActiveDsk(input) { checks.push(input); return checks.length === 1; },
   });
@@ -234,8 +246,12 @@ test('FamilyAudit requires both the owner DSK and current attestation signer DSK
 });
 
 for (const [name, actor] of [
-  ['non-OWNER role', { deviceId: OWNER_DEVICE_ID, role: 'ADMINISTRATOR', trustSetEpoch: 4, keyEpoch: 3 }],
-  ['mismatched device', { deviceId: 'different-device', role: 'OWNER', trustSetEpoch: 4, keyEpoch: 3 }],
+  ['non-OWNER role', resolvedOwner({ role: 'ADMINISTRATOR', trustSetEpoch: 4 })],
+  ['mismatched family', resolvedOwner({ familyId: 'different-family' })],
+  ['mismatched device', resolvedOwner({ deviceId: 'different-device', trustSetEpoch: 4 })],
+  ['mismatched attested DSK', resolvedOwner({ dskKeyId: 'rotated-owner-dsk' })],
+  ['missing family projection', resolvedOwner({ familyId: undefined })],
+  ['missing DSK projection', resolvedOwner({ dskKeyId: undefined })],
   ['attested DSK no longer active', 'DEVICE_NOT_ACTIVE'],
 ]) {
   test(`FamilyAudit skips the attested recipient when current membership has ${name}`, async () => {
@@ -280,7 +296,7 @@ test('authority dependency outage reaches the producer diagnostic without leakin
   chainStore.findHead = async () => { throw new Error('private database failure sentinel'); };
   const resolver = createResolver(
     chainStore,
-    { async resolveActor() { return { deviceId: OWNER_DEVICE_ID, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1 }; } },
+    { async resolveActor() { return resolvedOwner({ trustSetEpoch: 1, keyEpoch: 1 }); } },
     ACCEPTING_VERIFIER,
     ACTIVE_KEY_RESOLVER,
   );
@@ -311,7 +327,7 @@ test('FamilyAudit delivery uses current accepted OWNER keyEpoch, not the attesta
   const roleResolver = {
     async resolveActor(familyId, deviceId, dskKeyId) {
       roleCalls.push({ familyId, deviceId, dskKeyId });
-      return { deviceId, role: 'OWNER', trustSetEpoch: 4, keyEpoch: 3 };
+      return { familyId, deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 4, keyEpoch: 3 };
     },
   };
   const verifier = {

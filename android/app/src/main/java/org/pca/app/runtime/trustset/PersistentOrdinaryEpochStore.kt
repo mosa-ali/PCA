@@ -177,6 +177,11 @@ class PersistentOrdinaryEpochStore(
             val pendingBytes = decodeCanonicalRequest(state.pending)
             val pendingEpoch = TrustSetEpochCodec.decodeCanonical(pendingBytes)
             require(TrustSetEpochCodec.canonicalize(pendingEpoch).toByteArray(Charsets.UTF_8).contentEquals(pendingBytes))
+            // Legacy states may lack the exact signing predecessor, but the pending request is
+            // still scoped to the same durable family as the accepted floor. A cross-family
+            // request cannot be retried safely and must be surfaced as corrupt custody instead
+            // of occupying the single-pending slot until an unrelated later catch-up.
+            require(pendingEpoch.familyId == acceptedEpoch.familyId)
             decodeSignature(state.pending.signatureBase64)
             state.pendingBase?.let { baseRecord ->
                 val base = validateAccepted(baseRecord)

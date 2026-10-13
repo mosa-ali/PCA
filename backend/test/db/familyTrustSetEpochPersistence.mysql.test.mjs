@@ -719,6 +719,12 @@ test('OUT-OF-RANGE STORED VALUES: epoch rows and floors fail closed without rewr
   const epochFamilyId = uniqueFamilyId();
   const overRangeRecord = makeRecord(epochFamilyId, MAX_FAMILY_EPOCH + 1, 1);
   await insertEpochWithoutFloors(overRangeRecord);
+  await getPool().query(
+    `INSERT INTO family_epoch_floors
+       (family_id, minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch, updated_at)
+     VALUES (?, ?, 1, ?)`,
+    [epochFamilyId, MAX_FAMILY_EPOCH + 1, stamp()],
+  );
 
   await assert.rejects(() => store.readLatestEpoch(epochFamilyId), /outside the supported protocol range/);
   await assert.rejects(() => new MySqlKeyEpochStore().readCanonicalKeyEpoch(epochFamilyId), /outside the supported protocol range/);
@@ -754,7 +760,11 @@ test('STALE_AUTHORITY_ROLLBACK: a stale comparison leaves no recreated floors ro
   assert.deepEqual(stale, { outcome: 'REJECTED_STALE_AUTHORITY' });
   assert.equal(await new MySqlEpochFloorStore().readFloors(familyId), null);
   assert.equal(await countEpochRows(familyId), 1);
-  assert.equal((await store.readLatestEpoch(familyId))?.trustSetEpoch, 1);
+  await assert.rejects(
+    () => store.readLatestEpoch(familyId),
+    /accepted epoch has no complete durable acceptance floors/,
+    'an accepted row without its atomically committed floors is unavailable to authority readers',
+  );
 });
 
 test('DUPLICATE_ROLLBACK: exact replay and same-epoch conflict preserve duplicate precedence without recreating missing floors', async () => {

@@ -203,6 +203,23 @@ final class DeviceActivityUsageBindingResolverTests: XCTestCase {
         })
     }
 
+    func testResolverDoesNotInferUsageBindingWhenCurrentAuthorityIsMissing() throws {
+        let (_, coordination, associations) = try installedStore()
+        let resolver = DeviceActivityUsageAssociationBindingResolver<Token>(
+            associations: associations,
+            coordination: coordination,
+            currentAuthority: { nil },
+            revalidateAuthority: { _ in
+                XCTFail("authority revalidation must not run without a current accepted authority")
+            }
+        )
+
+        let resolved = try coordination.withExclusiveAccessContext { access in
+            resolver.resolve(policy: policy(), selectedTokens: [token], under: access)
+        }
+        XCTAssertNil(resolved, "usage cannot be attributed from a picker selection alone")
+    }
+
     func testRevokedAssociationCannotCreateUsagePlan() throws {
         let (_, coordination, associations) = try installedStore()
         try associations.revokeAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",

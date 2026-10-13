@@ -67,7 +67,9 @@ export class FamilyAuditParentDeviceResolver {
       );
       if (
         isActorResolutionFailure(actor) ||
+        actor.familyId !== familyId ||
         actor.deviceId !== attestation.ownerDeviceId ||
+        actor.dskKeyId !== attestation.ownerDskKeyId ||
         actor.role !== 'OWNER' ||
         !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
         !isFamilyEpochNumber(actor.keyEpoch, 1) ||

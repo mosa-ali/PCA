@@ -721,6 +721,61 @@ class OrdinaryTrustSetCoordinatorTest {
         val backing = InMemoryPersistentStateStore().apply { putString("ordinary_trust_set_v1", "bad") }
         try { PersistentOrdinaryEpochStore(backing).read(); fail() } catch (_: IllegalStateException) { }
     }
+    @Test fun legacyPendingRequestFromAnotherFamilyIsCorruptCustodyBeforeContact() = runBlocking {
+        val root = record(epoch(1))
+        val foreignPending = record(epoch(2).copy(familyId = "other-family")).request
+        val apiCalls = mutableListOf<String>()
+        val api = object : OrdinaryTrustSetApi {
+            override suspend fun submit(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                apiCalls += "submit"
+                error("corrupt legacy custody must not submit")
+            }
+            override suspend fun status(familyId: String, request: OrdinaryEpochRequest): OrdinaryEpochResponse {
+                apiCalls += "status"
+                error("corrupt legacy custody must not query status")
+            }
+            override suspend fun getEpoch(familyId: String, trustSetEpoch: Int): AcceptedEpochRecord {
+                apiCalls += "getEpoch"
+                error("corrupt legacy custody must not fetch epochs")
+            }
+            override suspend fun getHead(familyId: String): AcceptedEpochRecord {
+                apiCalls += "getHead"
+                error("corrupt legacy custody must not fetch the head")
+            }
+        }
+        val signer = object : DskSignatureEngine {
+            override fun signCanonicalDer(alias: String, message: ByteArray) =
+                error("corrupt legacy custody must not sign")
+        }
+
+        for (legacyStore in listOf(
+            legacyV2Store(DiskBackedPersistentStateStore(), root, root, foreignPending),
+            legacyV3Store(DiskBackedPersistentStateStore(), root, root, foreignPending),
+        )) {
+            try {
+                legacyStore.read()
+                fail("cross-family legacy pending request must be rejected as corrupt custody")
+            } catch (failure: IllegalStateException) {
+                assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+            }
+
+            val coordinator = OrdinaryTrustSetCoordinator(legacyStore, api, signer,
+                OrdinaryEpochSignatureVerifier { _, _, _ -> true }, "owner", "dsk", "alias")
+            val contacts: List<suspend () -> Boolean> = listOf(
+                { coordinator.submitExact() },
+                { coordinator.reconcile() },
+            )
+            for (contact in contacts) {
+                try {
+                    contact()
+                    fail("corrupt legacy custody must abort before contact")
+                } catch (failure: IllegalStateException) {
+                    assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+                }
+            }
+        }
+        assertTrue("corrupt v2/v3 state must abort before every API method", apiCalls.isEmpty())
+    }
     @Test fun persistedPendingRequestRejectsMalformedSignatureAndCanonicalBytesAsCorrupt() {
         fun corruptedStore(change: (JSONObject) -> Unit): PersistentOrdinaryEpochStore {
             val backing = DiskBackedPersistentStateStore()

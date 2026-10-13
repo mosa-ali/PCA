@@ -126,6 +126,54 @@ test('MySQL accepted membership controls head reads and revocation denies catch-
   assert.equal((await f.store.readLatestEpoch(f.familyId)).trustSetEpoch, 2);
 });
 
+test('MySQL role resolution fails closed when the accepted head and durable floors disagree', async () => {
+  const corruptions = [
+    {
+      label: 'missing floor row',
+      async apply(familyId) {
+        await getPool().query('DELETE FROM family_epoch_floors WHERE family_id = ?', [familyId]);
+      },
+    },
+    {
+      label: 'trust-set floor ahead of head',
+      async apply(familyId) {
+        await getPool().query(
+          `UPDATE family_epoch_floors SET minimum_accepted_trust_set_epoch = 2 WHERE family_id = ?`,
+          [familyId],
+        );
+      },
+    },
+    {
+      label: 'key-epoch floor ahead of head',
+      async apply(familyId) {
+        await getPool().query(
+          `UPDATE family_epoch_floors SET minimum_accepted_key_epoch = 2 WHERE family_id = ?`,
+          [familyId],
+        );
+      },
+    },
+  ];
+
+  for (const corruption of corruptions) {
+    const f = await fixture();
+    await corruption.apply(f.familyId);
+    const before = await snapshot(f.familyId);
+
+    assert.equal(
+      await f.roleResolver.resolveActor(f.familyId, f.scope.deviceId, f.scope.dskKeyId),
+      'NO_TRUST_SET',
+      `${corruption.label}: direct production role resolution must not authorize from an inconsistent head`,
+    );
+    // The facade's durable-state error maps to HTTP 503 `trust_set_unavailable`;
+    // unlike resolver's closed result union, it is intentionally not a 403 or
+    // a fabricated NO_TRUST_SET/empty-head response.
+    await assert.rejects(f.service.head(f.scope));
+    await assert.rejects(f.service.status(f.scope, f.request(2)));
+    await assert.rejects(f.service.submit(f.scope, f.request(2)));
+    assert.deepEqual(await snapshot(f.familyId), before, `${corruption.label}: denial must not repair or mutate stored state`);
+  }
+});
+
 test('MySQL facade binds an active device session to the exact DSK in the current accepted epoch', async () => {
   const f = await fixture();
   const oldChildScope = { familyId: f.familyId, deviceId: f.child.entry.deviceId,

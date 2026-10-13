@@ -360,6 +360,48 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         XCTAssertEqual(shields.removeCount, count + 1)
     }
 
+    func testRestartReconstructsClearIntentAfterCrashBetweenInvalidationAndIntentWrite() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt }, shieldEnforcer: shields)
+        _ = try runtime.applyVerifiedPolicy(scheduleData: policy(),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt)
+        let active = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
+            try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+        let payloadKey = "schedule.policy.\(active.generation)"
+        XCTAssertNotNil(store.read(forKey: payloadKey))
+
+        // Model process death after the invalidated manifest is durable but
+        // before the separate clear-intent record can be written.
+        store.failKey = deviceActivityPolicyClearIntentStorageKey
+        runtime.clearPolicy(activityId: "policy")
+        let invalidated = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(
+            try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))))
+        XCTAssertEqual(invalidated.state, .invalidated)
+        XCTAssertNil(store.read(forKey: deviceActivityPolicyClearIntentStorageKey))
+        XCTAssertNotNil(store.read(forKey: "activeActivityId"))
+        XCTAssertNotNil(store.read(forKey: payloadKey))
+
+        store.failKey = nil
+        let restartScheduler = CallbackRuntimeScheduler()
+        restartScheduler.orphanIds = scheduler.orphanIds
+        let removalsBeforeRestart = shields.removeCount
+        _ = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: restartScheduler, blobStore: store,
+            installationClock: { self.installedAt }, shieldEnforcer: shields)
+
+        XCTAssertEqual(shields.removeCount, removalsBeforeRestart + 1,
+            "startup must clear stale enforcement while completing the interrupted clear")
+        XCTAssertTrue(Set(restartScheduler.stopped).isSuperset(of: Set(active.allMonitorActivityIds)))
+        XCTAssertNil(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        XCTAssertNil(store.read(forKey: deviceActivityPolicyClearIntentStorageKey))
+        XCTAssertNil(store.read(forKey: "activeActivityId"))
+        XCTAssertNil(store.read(forKey: payloadKey))
+    }
+
     func testEveryAcceptedActivityIdLengthCanBeCleared() throws {
         let activityIds = [
             String(repeating: "p", count: 129),

@@ -131,7 +131,10 @@ export interface TrustSetEpochStore {
    * other error condition once a real epoch has been persisted -- a
    * persistent implementation must raise/throw on a genuine read failure,
    * never fall back to `null`, since a false "never initialized" answer
-   * would let a later flow silently re-trigger trust-on-first-use.
+   * would let a later flow silently re-trigger trust-on-first-use. The MySQL
+   * implementation also reads the latest epoch and its durable acceptance
+   * floors in one statement; a missing or disagreeing floor is an error,
+   * while the virgin (1,1) floor seed with no epoch remains a valid empty state.
    */
   readLatestEpoch(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord | null>;
 

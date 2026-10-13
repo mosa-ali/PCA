@@ -35,6 +35,21 @@ interface FloorRow {
   minimum_accepted_key_epoch: number;
 }
 
+interface LatestEpochAndFloorRow {
+  family_id: string | null;
+  trust_set_epoch: number | null;
+  key_epoch: number | null;
+  supersedes_epoch: number | null;
+  signed_epoch_bytes: Buffer | null;
+  signature: string | null;
+  signer_key_id: string | null;
+  signer_device_id: string | null;
+  issued_at: Date | string | null;
+  received_at: Date | string | null;
+  minimum_accepted_trust_set_epoch: number | null;
+  minimum_accepted_key_epoch: number | null;
+}
+
 const EPOCH_COLUMNS = `family_id, trust_set_epoch, key_epoch, supersedes_epoch, signed_epoch_bytes, signature, signer_key_id, signer_device_id, issued_at, received_at`;
 
 function invalidInput(message: string): TrustSetEpochStoreError {
@@ -457,13 +472,57 @@ export class MySqlTrustSetEpochStore implements TrustSetEpochStore {
 
   async readLatestEpoch(familyId: OpaqueFamilyId): Promise<TrustSetEpochRecord | null> {
     const { rows } = await runInTransaction((conn) =>
-      execute<EpochRow>(
+      execute<LatestEpochAndFloorRow>(
         conn,
-        `SELECT ${EPOCH_COLUMNS} FROM family_trust_set_epochs WHERE family_id = ? ORDER BY trust_set_epoch DESC LIMIT 1`,
+        `SELECT e.family_id, e.trust_set_epoch, e.key_epoch, e.supersedes_epoch,
+                e.signed_epoch_bytes, e.signature, e.signer_key_id, e.signer_device_id,
+                e.issued_at, e.received_at,
+                f.minimum_accepted_trust_set_epoch, f.minimum_accepted_key_epoch
+           FROM (SELECT ? AS requested_family_id) requested
+           LEFT JOIN family_trust_set_epochs e
+             ON e.family_id = requested.requested_family_id
+            AND e.trust_set_epoch = (
+              SELECT MAX(candidate.trust_set_epoch)
+                FROM family_trust_set_epochs candidate
+               WHERE candidate.family_id = requested.requested_family_id
+            )
+           LEFT JOIN family_epoch_floors f
+             ON f.family_id = requested.requested_family_id`,
         [familyId],
       ),
     );
-    return rows[0] ? toRecord(rows[0]) : null;
+    const row = rows[0];
+    if (!row) throw new Error('Family trust set head read returned no state row.');
+
+    const hasEpoch = row.family_id !== null;
+    const hasTrustSetFloor = row.minimum_accepted_trust_set_epoch !== null;
+    const hasKeyEpochFloor = row.minimum_accepted_key_epoch !== null;
+    if (!hasEpoch) {
+      if (hasTrustSetFloor !== hasKeyEpochFloor) {
+        throw new Error('Family trust set head unavailable: incomplete durable acceptance floors.');
+      }
+      if (!hasTrustSetFloor) return null;
+
+      const trustSetFloor = familyEpochFromStorage(row.minimum_accepted_trust_set_epoch);
+      const keyFloor = familyEpochFromStorage(row.minimum_accepted_key_epoch);
+      // A previous rejected first append may leave the virgin (1,1) seed,
+      // but an advanced floor without its accepted row is inconsistent.
+      if (trustSetFloor !== MIN_TRUST_SET_EPOCH || keyFloor !== 1) {
+        throw new Error('Family trust set head unavailable: acceptance floors advanced without an accepted epoch.');
+      }
+      return null;
+    }
+
+    if (!hasTrustSetFloor || !hasKeyEpochFloor) {
+      throw new Error('Family trust set head unavailable: accepted epoch has no complete durable acceptance floors.');
+    }
+    const record = toRecord(row as unknown as EpochRow);
+    const trustSetFloor = familyEpochFromStorage(row.minimum_accepted_trust_set_epoch);
+    const keyFloor = familyEpochFromStorage(row.minimum_accepted_key_epoch);
+    if (trustSetFloor !== record.trustSetEpoch || keyFloor !== record.keyEpoch) {
+      throw new Error('Family trust set head unavailable: acceptance floors disagree with the accepted epoch.');
+    }
+    return record;
   }
 
   async readEpoch(familyId: OpaqueFamilyId, trustSetEpoch: number): Promise<TrustSetEpochRecord | null> {

@@ -32,6 +32,7 @@ final class IosAppAttestAdapterTests: XCTestCase {
         var generateKeyError: Error?
         var attestationError: Error?
         var assertionError: Error?
+        private(set) var generateKeyCallCount = 0
         private(set) var attestationClientDataHashes: [Data] = []
         private(set) var assertionClientDataHashes: [Data] = []
         private(set) var requestedKeyIds: [String] = []
@@ -53,6 +54,7 @@ final class IosAppAttestAdapterTests: XCTestCase {
         }
 
         func generateKey() async throws -> String {
+            generateKeyCallCount += 1
             if let generateKeyError { throw generateKeyError }
             await suspendIfNeeded(.generateKey)
             return appleKeyId
@@ -115,6 +117,10 @@ final class IosAppAttestAdapterTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? IosAppAttestError, .appAttestUnsupported)
         }
+        XCTAssertEqual(service.generateKeyCallCount, 0,
+            "unsupported devices must not allocate an App Attest key")
+        XCTAssertTrue(service.attestationClientDataHashes.isEmpty)
+        XCTAssertTrue(service.assertionClientDataHashes.isEmpty)
     }
 
     func testPlatformFailuresMapToTypedErrors() async {
