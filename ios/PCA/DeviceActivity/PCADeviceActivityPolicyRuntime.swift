@@ -684,7 +684,10 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 do {
                     try requireEnforcementAuthorization(for: installation)
                     try restoreMissingMonitors(for: installation)
-                    if let usagePlan = installation.usageDayPlan { try pendingUsageActivator(usagePlan) }
+                    if let usagePlan = installation.usageDayPlan,
+                       usagePlan.binding.hasAuthoritativeScope {
+                        try pendingUsageActivator(usagePlan)
+                    }
                     try restoreCommittedEnforcement(for: installation, now: trustedNow)
                     startupRecoveryDeferred = false
                     startupMonitorFailureGeneration = nil
@@ -699,6 +702,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                     }
                     if snapshot.schedule.dailyLimit != nil {
                         guard let plan = installation.usageDayPlan,
+                              plan.binding.hasAuthoritativeScope,
                               plan.binding.matches(snapshot.applicationTokens, logicalAppToken: snapshot.schedule.appToken),
                               plan.policyTimeZoneIdentifier.utf8.elementsEqual(snapshot.schedule.timeZone.identifier.utf8),
                               plan.coverage == .wholePolicyDayPlanned,
@@ -1117,7 +1121,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         } catch {
             startupMonitorFailureGeneration = installation.generation
         }
-        if let usagePlan = installation.usageDayPlan {
+        if let usagePlan = installation.usageDayPlan, usagePlan.binding.hasAuthoritativeScope {
             do {
                 try pendingUsageActivator(usagePlan)
                 startupUsageFailureGeneration = nil
@@ -1127,6 +1131,9 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
                 return
             }
         } else {
+            // Pre-scope usage evidence remains readable for retirement but is
+            // never published into a family/device counter. Its active policy
+            // still proceeds through restrictive, degraded enforcement below.
             startupUsageFailureGeneration = nil
         }
         do {
@@ -1166,6 +1173,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         var observationPlan: DeviceActivityUsageDayPlan?
         var coverageAvailable = false
         if let plan = installation.usageDayPlan,
+           plan.binding.hasAuthoritativeScope,
            snapshot.schedule.dailyLimit != nil,
            plan.binding.matches(snapshot.applicationTokens, logicalAppToken: snapshot.schedule.appToken),
            plan.policyTimeZoneIdentifier.utf8.elementsEqual(snapshot.schedule.timeZone.identifier.utf8),

@@ -22,6 +22,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
     }
     private struct PersistedRecordFixture: Codable {
         let binding: DeviceActivityUsageSelectionBinding
+        let scope: DeviceActivityUsageAssociationScope?
         let localDate: String
         let zone: String
         let dayStart: Date
@@ -156,6 +157,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         }
     }
     private let now = Date(timeIntervalSince1970: 1_760_011_200)
+    private let usageScope = DeviceActivityUsageAssociationScope(familyId: "family-test", deviceId: "device-test")
 
     private func associationBinding(_ token: Token, logicalAppToken: String = "logical-app") throws -> DeviceActivityUsageSelectionBinding {
         DeviceActivityUsageSelectionBinding(logicalAppToken: logicalAppToken,
@@ -177,7 +179,9 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             revision: 1, revalidateAuthority: { _ in })
         let restored = DeviceActivityUsageAssociationStore<Token>(store: backing, coordination: coordination)
         XCTAssertEqual(try restored.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
-            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), binding)
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }),
+            DeviceActivityUsageSelectionBinding(logicalAppToken: binding.logicalAppToken,
+                applicationTokenData: binding.applicationTokenData, scope: scope))
         XCTAssertNil(try restored.resolveAcceptedAssociation(
             scope: DeviceActivityUsageAssociationScope(familyId: "family-b", deviceId: "device-a"),
             logicalAppToken: "logical-app", selectedTokens: [Token(value: "selected")],
@@ -214,7 +218,8 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
                 selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
                 under: access, revalidateAuthority: { _ in })
         }
-        XCTAssertEqual(resolved, binding)
+        XCTAssertEqual(resolved, DeviceActivityUsageSelectionBinding(logicalAppToken: binding.logicalAppToken,
+            applicationTokenData: binding.applicationTokenData, scope: scope))
         XCTAssertEqual(coordination.acquisitions, 1, "resolution must use the held lock, not reacquire it")
 
         let staleAuthority = try coordination.withExclusiveAccessContext { access in
@@ -353,7 +358,9 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         try associations.installAcceptedAssociation(scope: scope, binding: binding, authorityBinding: authority,
             revision: 6, revalidateAuthority: { _ in })
         XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
-            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), binding)
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }),
+            DeviceActivityUsageSelectionBinding(logicalAppToken: binding.logicalAppToken,
+                applicationTokenData: binding.applicationTokenData, scope: scope))
     }
 
     func testUsageAssociationUsesByteExactFamilyAndDeviceScopeDuringResolution() throws {
@@ -374,7 +381,8 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             currentAuthorityBinding: authority, revalidateAuthority: { _ in }))
         XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
             selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority,
-            revalidateAuthority: { _ in }), binding)
+            revalidateAuthority: { _ in }), DeviceActivityUsageSelectionBinding(logicalAppToken: binding.logicalAppToken,
+                applicationTokenData: binding.applicationTokenData, scope: scope))
     }
 
     func testUsageAssociationRetainsTombstoneWhenPostRevokeAuthorityCheckFails() throws {
@@ -432,7 +440,9 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
             revision: 2, revalidateAuthority: { _ in }))
         backing.ignoreWrites = false
         XCTAssertEqual(try associations.resolveAcceptedAssociation(scope: scope, logicalAppToken: "logical-app",
-            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }), original)
+            selectedTokens: [Token(value: "selected")], currentAuthorityBinding: authority, revalidateAuthority: { _ in }),
+            DeviceActivityUsageSelectionBinding(logicalAppToken: original.logicalAppToken,
+                applicationTokenData: original.applicationTokenData, scope: scope))
     }
 
     func testUsageAssociationTreatsOwnedCorruptionAsUnavailableAndRevalidatesAuthority() throws {
@@ -807,7 +817,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
     }
     private func binding(_ name: String = "app") throws -> DeviceActivityUsageSelectionBinding {
         DeviceActivityUsageSelectionBinding(logicalAppToken: name,
-            applicationTokenData: try PropertyListEncoder().encode(Token(value: "opaque")))
+            applicationTokenData: try PropertyListEncoder().encode(Token(value: "opaque")), scope: usageScope)
     }
     private func policy(zone: String = "UTC", minutes: Int = 60, bonuses: [BonusGrant] = [],
                         exceptions: [ParentException] = [], capability: EnforcementCapabilityState = .enforced) -> DecodedSchedulePolicy {
@@ -999,10 +1009,83 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertEqual(shieldRemovals, 0,
             "lost usage evidence must preserve the existing enforcement state")
     }
+    func testUsageCountersAreIsolatedAcrossFamilyAndDeviceRebinds() throws {
+        let store = Store()
+        let first = try plan(policy())
+        let event = try XCTUnwrap(first.thresholds.first)
+        try install(first, store: store, active: true)
+        let usage = DeviceActivityUsageLowerBoundStore<Token>(store: store)
+        XCTAssertEqual(try usage.record(plan: first, activityId: first.monitorActivityId,
+            eventId: event.eventId, at: now, deviceTimeZone: TimeZone(identifier: "UTC")!), 60)
+
+        let changedScopes = [
+            DeviceActivityUsageAssociationScope(familyId: "family-other", deviceId: "device-test"),
+            DeviceActivityUsageAssociationScope(familyId: "family-test", deviceId: "device-other"),
+        ]
+        for scope in changedScopes {
+            let rebound = DeviceActivityUsageSelectionBinding(logicalAppToken: first.binding.logicalAppToken,
+                applicationTokenData: first.binding.applicationTokenData, scope: scope)
+            let plan = try DeviceActivityUsagePlanner.plan(policy: policy(), binding: rebound,
+                generation: UUID().uuidString, now: now, deviceTimeZone: TimeZone(identifier: "UTC")!,
+                historicalActivitySupported: true, otherMonitorCount: 1)
+            XCTAssertNil(try usage.lowerBound(for: plan), "a counter from another family/device scope must not be reused")
+            try install(plan, store: store, active: true)
+            XCTAssertEqual(try usage.record(plan: plan, activityId: plan.monitorActivityId,
+                eventId: try XCTUnwrap(plan.thresholds.first).eventId, at: now,
+                deviceTimeZone: TimeZone(identifier: "UTC")!), 60)
+            XCTAssertEqual(try usage.lowerBound(for: plan), 60)
+            XCTAssertEqual(try usage.lowerBound(for: first), 60, "the old scope's counter remains available")
+        }
+    }
+    func testLegacyUnscopedUsageEvidenceIsPreservedAndUnavailableAfterScopeBinding() throws {
+        let store = Store()
+        let current = try plan(policy())
+        let legacyBinding = DeviceActivityUsageSelectionBinding(logicalAppToken: current.binding.logicalAppToken,
+            applicationTokenData: current.binding.applicationTokenData)
+        let legacy = PersistedRecordFixture(binding: legacyBinding, scope: nil, localDate: current.localDate,
+            zone: current.policyTimeZoneIdentifier, dayStart: current.dayStartUtc, dayEnd: current.dayEndUtc, minutes: 45)
+        let key = "com.pca.app.deviceactivity.usage-lower-bound.v1"
+        let original = try JSONEncoder().encode(PersistedStateFixture(schemaVersion: 1, records: [legacy]))
+        store.values[key] = original
+
+        XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: current)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
+        XCTAssertEqual(store.read(forKey: key), original, "legacy counters remain byte-for-byte preserved")
+        let restored = try JSONDecoder().decode(PersistedStateFixture.self, from: XCTUnwrap(store.read(forKey: key)))
+        XCTAssertEqual(restored.records.count, 1)
+        XCTAssertEqual(restored.records[0].minutes, 45)
+        XCTAssertNil(restored.records[0].scope)
+        XCTAssertNil(restored.records[0].binding.scope)
+    }
+    func testUsageEvidenceWithMalformedOrMismatchedScopeFailsClosed() throws {
+        let store = Store(), current = try plan(policy())
+        let key = "com.pca.app.deviceactivity.usage-lower-bound.v1"
+        let invalid = DeviceActivityUsageAssociationScope(familyId: "", deviceId: "device-test")
+        let malformedBinding = DeviceActivityUsageSelectionBinding(logicalAppToken: current.binding.logicalAppToken,
+            applicationTokenData: current.binding.applicationTokenData, scope: invalid)
+        let malformedRecord = PersistedRecordFixture(binding: malformedBinding, scope: invalid,
+            localDate: current.localDate, zone: current.policyTimeZoneIdentifier,
+            dayStart: current.dayStartUtc, dayEnd: current.dayEndUtc, minutes: 45)
+        store.values[key] = try JSONEncoder().encode(PersistedStateFixture(schemaVersion: 1, records: [malformedRecord]))
+        XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: current)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
+
+        let mismatched = PersistedRecordFixture(binding: current.binding,
+            scope: DeviceActivityUsageAssociationScope(familyId: "family-other", deviceId: "device-test"),
+            localDate: current.localDate, zone: current.policyTimeZoneIdentifier,
+            dayStart: current.dayStartUtc, dayEnd: current.dayEndUtc, minutes: 45)
+        store.values[key] = try JSONEncoder().encode(PersistedStateFixture(schemaVersion: 1, records: [mismatched]))
+        XCTAssertThrowsError(try DeviceActivityUsageLowerBoundStore<Token>(store: store).lowerBound(for: current)) {
+            XCTAssertEqual($0 as? DeviceActivityUsageError, .unavailableState)
+        }
+    }
     func testPersistedZeroMinuteRecordIsUnavailableState() throws {
         let store = Store(), value = try plan(policy())
-        let impossible = PersistedRecordFixture(binding: value.binding, localDate: value.localDate,
-            zone: value.policyTimeZoneIdentifier, dayStart: value.dayStartUtc, dayEnd: value.dayEndUtc, minutes: 0)
+        let impossible = PersistedRecordFixture(binding: value.binding, scope: value.binding.scope,
+            localDate: value.localDate, zone: value.policyTimeZoneIdentifier,
+            dayStart: value.dayStartUtc, dayEnd: value.dayEndUtc, minutes: 0)
         store.values["com.pca.app.deviceactivity.usage-lower-bound.v1"] = try JSONEncoder().encode(
             PersistedStateFixture(schemaVersion: 1, records: [impossible]))
 
@@ -1069,7 +1152,7 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .xml
         let equivalent = DeviceActivityUsageSelectionBinding(logicalAppToken: "app",
-            applicationTokenData: try encoder.encode(Token(value: "opaque")))
+            applicationTokenData: try encoder.encode(Token(value: "opaque")), scope: usageScope)
         XCTAssertNotEqual(equivalent.applicationTokenData, first.binding.applicationTokenData)
         let replacement = try DeviceActivityUsagePlanner.plan(policy: policy(), binding: equivalent,
             generation: UUID().uuidString, now: now, deviceTimeZone: TimeZone(identifier: "UTC")!,
@@ -1137,6 +1220,30 @@ final class DeviceActivityUsageAttributionTests: XCTestCase {
         XCTAssertNoThrow(try processor.consume(activityId: value.monitorActivityId,
             eventId: event.eventId, at: now, deviceTimeZone: utc),
             "usage callbacks follow the committed active manifest, not its repairable pointer")
+
+        struct PendingUsage: Codable { let plan: DeviceActivityUsageDayPlan; let minutes: Int }
+        var legacyPlanObject = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
+        var legacyBindingObject = try XCTUnwrap(legacyPlanObject["binding"] as? [String: Any])
+        legacyBindingObject.removeValue(forKey: "scope")
+        legacyPlanObject["binding"] = legacyBindingObject
+        let legacyPlan = try JSONDecoder().decode(DeviceActivityUsageDayPlan.self,
+            from: JSONSerialization.data(withJSONObject: legacyPlanObject, options: [.sortedKeys]))
+        let legacyManifest = DeviceActivityMonitorInstallation(policyActivityId: value.policyActivityId,
+            monitorActivityId: "pca-monitor-" + UUID().uuidString.lowercased(), generation: value.generation,
+            installedAtUtc: now, timeZoneIdentifier: "UTC", state: .active, schemaVersion: 3,
+            boundaryMonitors: [], usageDayPlan: legacyPlan)
+        try store.write(JSONEncoder().encode(legacyManifest), forKey: manifestKey)
+        let pendingKey = "usage.pending." + value.generation
+        let pendingBytes = try JSONEncoder().encode(PendingUsage(plan: legacyPlan, minutes: event.minutes))
+        try store.write(pendingBytes, forKey: pendingKey)
+        let usageBefore = try XCTUnwrap(store.read(forKey: "com.pca.app.deviceactivity.usage-lower-bound.v1"))
+        XCTAssertThrowsError(try processor.consume(activityId: value.monitorActivityId,
+            eventId: event.eventId, at: now, deviceTimeZone: utc),
+            "legacy unscoped callbacks cannot publish usage")
+        XCTAssertEqual(store.read(forKey: pendingKey), pendingBytes,
+            "legacy pending evidence must remain available for explicit retirement")
+        XCTAssertEqual(store.read(forKey: "com.pca.app.deviceactivity.usage-lower-bound.v1"), usageBefore,
+            "rejecting a legacy callback cannot mutate accepted usage counters")
     }
     func testObservedQuotaIsExtendedOnlyDuringBonusAndRestoredAtExpiry() throws {
         let bonus = BonusGrant(id: "bonus", appScope: .all, extraMinutes: 15,

@@ -62,7 +62,8 @@ final class DeviceActivityUsageBindingResolverTests: XCTestCase {
             resolver.resolve(policy: policy(), selectedTokens: [token], under: access)
         }
         let acceptedBinding = try XCTUnwrap(resolved)
-        XCTAssertEqual(acceptedBinding, try binding())
+        XCTAssertEqual(acceptedBinding, DeviceActivityUsageSelectionBinding(logicalAppToken: "logical-app",
+            applicationTokenData: try binding().applicationTokenData, scope: scope))
 
         let now = ISO8601DateFormatter().date(from: "2026-10-09T12:00:00Z")!
         let plan = try DeviceActivityUsagePlanner.plan(policy: policy(), binding: acceptedBinding,

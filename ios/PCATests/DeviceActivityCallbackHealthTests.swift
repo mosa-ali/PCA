@@ -638,7 +638,8 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let zone = TimeZone(identifier: "UTC")!
         let token = Token(value: "opaque-token")
         let binding = DeviceActivityUsageSelectionBinding(logicalAppToken: "opaque",
-            applicationTokenData: try PropertyListEncoder().encode(token))
+            applicationTokenData: try PropertyListEncoder().encode(token),
+            scope: DeviceActivityUsageAssociationScope(familyId: "family-test", deviceId: "device-test"))
         let dailyPolicy = DecodedSchedulePolicy(activityId: "policy", appToken: "opaque",
             timeZone: zone, windows: [], bonusGrants: [], exceptions: [],
             dailyLimit: DailyAppLimit(appScope: .all, limitMinutes: 60, usedMinutesToday: 0,
@@ -687,6 +688,81 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             "missing callback evidence remains unknown despite usage recovery")
     }
 
+    func testLegacyUnscopedPendingUsageDoesNotBlockCommittedPolicyRecovery() throws {
+        struct Token: Hashable, Codable { let value: String }
+        struct PendingUsage: Codable {
+            let plan: DeviceActivityUsageDayPlan
+            let minutes: Int
+        }
+
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        let scope = DeviceActivityUsageAssociationScope(familyId: "family-a", deviceId: "device-a")
+        let token = Token(value: "opaque-token")
+        let binding = DeviceActivityUsageSelectionBinding(logicalAppToken: "opaque",
+            applicationTokenData: try PropertyListEncoder().encode(token), scope: scope)
+        let dailyPolicy = DecodedSchedulePolicy(activityId: "policy", appToken: "opaque",
+            timeZone: TimeZone(identifier: "UTC")!, windows: [], bonusGrants: [], exceptions: [],
+            dailyLimit: DailyAppLimit(appScope: .all, limitMinutes: 60, usedMinutesToday: 0,
+                anchorLocalDate: "2000-01-01"), enforcementCapability: .enforced)
+        let scopedPlan = try DeviceActivityUsagePlanner.plan(policy: dailyPolicy, binding: binding,
+            generation: UUID().uuidString.lowercased(), now: installedAt, deviceTimeZone: TimeZone(identifier: "UTC")!,
+            historicalActivitySupported: true, otherMonitorCount: 1)
+        let planData = try JSONEncoder().encode(scopedPlan)
+        var planObject = try XCTUnwrap(JSONSerialization.jsonObject(with: planData) as? [String: Any])
+        var bindingObject = try XCTUnwrap(planObject["binding"] as? [String: Any])
+        bindingObject.removeValue(forKey: "scope")
+        planObject["binding"] = bindingObject
+        let legacyPlan = try JSONDecoder().decode(DeviceActivityUsageDayPlan.self,
+            from: JSONSerialization.data(withJSONObject: planObject, options: [.sortedKeys]))
+        XCTAssertTrue(legacyPlan.isValid)
+
+        let installation = DeviceActivityMonitorInstallation(policyActivityId: "policy",
+            monitorActivityId: "pca-monitor-" + UUID().uuidString.lowercased(), generation: legacyPlan.generation,
+            installedAtUtc: installedAt, timeZoneIdentifier: "UTC", state: .active,
+            schemaVersion: 3, boundaryMonitors: [], usageDayPlan: legacyPlan)
+        let manifestData = try JSONEncoder().encode(installation)
+        try store.write(manifestData, forKey: deviceActivityMonitorInstallationStorageKey)
+        try store.write(Data("policy".utf8), forKey: "activeActivityId")
+
+        let window = StoredScheduleWindow(id: "all-day", kind: .bedtime,
+            daysOfWeek: [0, 1, 2, 3, 4, 5, 6], start: .init(hour: 0, minute: 0),
+            end: .init(hour: 23, minute: 59), appScope: .all, timezone: "UTC")
+        let storedPolicy = StoredDeviceActivityPolicy(schemaVersion: 1, activityId: "policy",
+            appToken: "opaque", timeZoneIdentifier: "UTC", windows: [window], bonusGrants: [],
+            exceptions: [], dailyLimit: StoredDailyAppLimit(appScope: .all, limitMinutes: 60,
+                usedMinutesToday: 0, anchorLocalDate: "2025-06-03"), enforcementCapability: .enforced)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try store.write(encoder.encode(storedPolicy), forKey: "schedule.policy." + legacyPlan.generation)
+        let applicationTokens = try PropertyListEncoder().encode(Set<ApplicationToken>())
+        try store.write(applicationTokens, forKey: "applicationTokens.policy." + legacyPlan.generation)
+        try store.write(applicationTokens, forKey: "protectedApplicationTokens." + legacyPlan.generation)
+
+        let pendingKey = "usage.pending." + legacyPlan.generation
+        let pendingBytes = try JSONEncoder().encode(PendingUsage(plan: legacyPlan,
+            minutes: try XCTUnwrap(legacyPlan.thresholds.first?.minutes)))
+        try store.write(pendingBytes, forKey: pendingKey)
+
+        var activationCalls = 0
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { true },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields, pendingUsageActivator: { _ in
+                activationCalls += 1
+                throw DeviceActivityUsageError.unavailableState
+            })
+
+        XCTAssertEqual(activationCalls, 0, "legacy pending usage is not eligible for publication")
+        XCTAssertGreaterThan(shields.applyCount, 0,
+            "unscoped usage must not prevent the already committed policy from restoring enforcement")
+        XCTAssertEqual(try runtime.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60)), .degraded)
+        XCTAssertEqual(activationCalls, 0)
+        XCTAssertEqual(store.read(forKey: pendingKey), pendingBytes,
+            "pending evidence remains unchanged for explicit retirement or future migration handling")
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifestData)
+        XCTAssertNil(store.read(forKey: "com.pca.app.deviceactivity.usage-lower-bound.v1"))
+    }
+
     func testRuntimeRestartPreservesPendingUsageAndRetriesActivationFailure() throws {
         struct Token: Hashable, Codable { let value: String }
         struct PendingUsage: Codable {
@@ -700,7 +776,8 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
         let zone = TimeZone(identifier: "UTC")!
         let token = Token(value: "opaque-token")
         let binding = DeviceActivityUsageSelectionBinding(logicalAppToken: "opaque",
-            applicationTokenData: try PropertyListEncoder().encode(token))
+            applicationTokenData: try PropertyListEncoder().encode(token),
+            scope: DeviceActivityUsageAssociationScope(familyId: "family-test", deviceId: "device-test"))
         let dailyPolicy = DecodedSchedulePolicy(activityId: "policy", appToken: "opaque",
             timeZone: zone, windows: [], bonusGrants: [], exceptions: [],
             dailyLimit: DailyAppLimit(appScope: .all, limitMinutes: 60, usedMinutesToday: 0,

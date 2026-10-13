@@ -5,15 +5,27 @@ import Foundation
 public struct DeviceActivityUsageSelectionBinding: Codable, Equatable {
     public let logicalAppToken: String
     public let applicationTokenData: Data
-    public init(logicalAppToken: String, applicationTokenData: Data) {
+    /// Present on newly accepted associations. Nil is retained only when
+    /// decoding pre-scope local evidence; it is never sufficient to create or
+    /// consume a new usage plan.
+    public let scope: DeviceActivityUsageAssociationScope?
+    public init(logicalAppToken: String, applicationTokenData: Data,
+                scope: DeviceActivityUsageAssociationScope? = nil) {
         self.logicalAppToken = logicalAppToken; self.applicationTokenData = applicationTokenData
+        self.scope = scope
     }
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.logicalAppToken.utf8.elementsEqual(rhs.logicalAppToken.utf8) && lhs.applicationTokenData == rhs.applicationTokenData
+        lhs.logicalAppToken.utf8.elementsEqual(rhs.logicalAppToken.utf8) &&
+            lhs.applicationTokenData == rhs.applicationTokenData && lhs.scope == rhs.scope
     }
     public var isValid: Bool {
         !logicalAppToken.isEmpty && logicalAppToken.utf8.count <= 256 &&
-            !applicationTokenData.isEmpty && applicationTokenData.count <= 8_192
+            !applicationTokenData.isEmpty && applicationTokenData.count <= 8_192 &&
+            (scope == nil || scope!.isValid)
+    }
+    public var hasAuthoritativeScope: Bool { scope?.isValid == true }
+    fileprivate func scoped(to scope: DeviceActivityUsageAssociationScope) -> Self {
+        Self(logicalAppToken: logicalAppToken, applicationTokenData: applicationTokenData, scope: scope)
     }
     public func matches<Token: Hashable & Codable>(_ tokens: Set<Token>, logicalAppToken: String) -> Bool {
         guard isValid, self.logicalAppToken.utf8.elementsEqual(logicalAppToken.utf8), tokens.count == 1,
@@ -55,6 +67,8 @@ public struct DeviceActivityUsageDayPlan: Codable, Equatable {
     public let thresholds: [DeviceActivityUsageThreshold]
 
     public var isValid: Bool {
+        // A nil binding scope remains decodable for old committed manifests,
+        // but the planner below never creates new unscoped plans.
         guard binding.isValid, !policyActivityId.isEmpty, policyActivityId.utf8.count <= 256,
               UUID(uuidString: generation) != nil, monitorActivityId.hasPrefix("pca-monitor-"),
               UUID(uuidString: String(monitorActivityId.dropFirst("pca-monitor-".count))) != nil,
@@ -130,7 +144,8 @@ public enum DeviceActivityUsagePlanner {
                             generation: String, now: Date, deviceTimeZone: TimeZone,
                             historicalActivitySupported: Bool, otherMonitorCount: Int) throws -> DeviceActivityUsageDayPlan {
         guard historicalActivitySupported else { throw DeviceActivityUsageError.unsupportedHistoricalActivity }
-        guard binding.isValid, binding.logicalAppToken.utf8.elementsEqual(policy.appToken.utf8),
+        guard binding.isValid, binding.hasAuthoritativeScope,
+              binding.logicalAppToken.utf8.elementsEqual(policy.appToken.utf8),
               let limit = policy.dailyLimit else { throw DeviceActivityUsageError.unsupportedBinding }
         switch limit.appScope {
         case .all: break
@@ -322,7 +337,8 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
         try coordination.withExclusiveAccess {
             try revalidateAuthority(.init(scope: scope, logicalAppToken: binding.logicalAppToken,
                 binding: binding, authorityBinding: authorityBinding, revision: revision))
-            guard scope.isValid, binding.isValid, binding.logicalAppToken.utf8.count <= 256,
+            guard scope.isValid, binding.isValid, binding.scope == nil || binding.scope == scope,
+                  binding.logicalAppToken.utf8.count <= 256,
                   authorityBinding.count > 0, authorityBinding.count <= 8_192, revision > 0,
                   let token = try? tokenDecoder.decode(Token.self, from: binding.applicationTokenData),
                   binding.matches(Set([token]), logicalAppToken: binding.logicalAppToken) else {
@@ -480,9 +496,13 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
         guard !record.revoked, record.authorityBinding == currentAuthorityBinding,
               let binding = record.binding,
               binding.matches(selectedTokens, logicalAppToken: logicalAppToken) else { return nil }
+        guard record.scope == scope, binding.scope == nil || binding.scope == scope else {
+            throw DeviceActivityUsageAssociationError.unavailableState
+        }
+        let scopedBinding = binding.scoped(to: scope)
         try revalidateAuthority(.init(scope: scope, logicalAppToken: logicalAppToken,
             binding: binding, authorityBinding: currentAuthorityBinding, revision: record.revision))
-        return binding
+        return scopedBinding
     }
 
     private func sameIdentity(_ record: Record, scope: DeviceActivityUsageAssociationScope,
@@ -517,6 +537,7 @@ public final class DeviceActivityUsageAssociationStore<Token: Hashable & Codable
                 guard record.binding == nil else { throw DeviceActivityUsageAssociationError.unavailableState }
             } else {
                 guard let binding = record.binding, binding.isValid,
+                      binding.scope == nil || binding.scope == record.scope,
                       binding.logicalAppToken.utf8.elementsEqual(record.logicalAppToken.utf8),
                       (try? tokenDecoder.decode(Token.self, from: binding.applicationTokenData)) != nil else {
                     throw DeviceActivityUsageAssociationError.unavailableState
@@ -667,6 +688,9 @@ public final class DeviceActivityUsageAssociationBindingResolver<Token: Hashable
 public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable> {
     private struct Record: Codable {
         let binding: DeviceActivityUsageSelectionBinding
+        /// Nil only in pre-scope local snapshots. This evidence remains
+        /// preserved and unavailable; it is never assigned to a new scope.
+        let scope: DeviceActivityUsageAssociationScope?
         let localDate: String
         let zone: String
         let dayStart: Date
@@ -698,6 +722,12 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
         return first == second
     }
     private func matches(_ record: Record, _ plan: DeviceActivityUsageDayPlan) -> Bool {
+        record.scope == plan.binding.scope && record.binding.scope == plan.binding.scope &&
+            sameSelection(record.binding, plan.binding) && record.localDate == plan.localDate &&
+            record.zone.utf8.elementsEqual(plan.policyTimeZoneIdentifier.utf8) &&
+            record.dayStart == plan.dayStartUtc && record.dayEnd == plan.dayEndUtc
+    }
+    private func sameAccountingWindow(_ record: Record, _ plan: DeviceActivityUsageDayPlan) -> Bool {
         sameSelection(record.binding, plan.binding) && record.localDate == plan.localDate &&
             record.zone.utf8.elementsEqual(plan.policyTimeZoneIdentifier.utf8) &&
             record.dayStart == plan.dayStartUtc && record.dayEnd == plan.dayEndUtc
@@ -714,7 +744,10 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
               let state = try? JSONDecoder().decode(State.self, from: data),
               state.schemaVersion == 1, state.records.count <= 8 else { throw DeviceActivityUsageError.unavailableState }
         for record in state.records {
-            guard record.binding.isValid, let zone = TimeZone(identifier: record.zone),
+            guard record.binding.isValid,
+                  (record.scope == nil && record.binding.scope == nil) ||
+                    (record.scope?.isValid == true && record.binding.scope == record.scope),
+                  let zone = TimeZone(identifier: record.zone),
                   (1...DeviceActivityUsagePlanner.maximumMinutes).contains(record.minutes),
                   DeviceActivityUsagePlanner.isValidPolicyInstant(record.dayStart.timeIntervalSince1970),
                   DeviceActivityUsagePlanner.isValidPolicyInstant(record.dayEnd.timeIntervalSince1970),
@@ -732,7 +765,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
         for i in state.records.indices {
             for j in state.records.indices where j > i {
                 let a = state.records[i], b = state.records[j]
-                guard !(a.localDate == b.localDate && a.zone == b.zone && sameSelection(a.binding, b.binding)) else {
+                guard !(a.scope == b.scope && a.localDate == b.localDate && a.zone == b.zone &&
+                    sameSelection(a.binding, b.binding)) else {
                     throw DeviceActivityUsageError.unavailableState
                 }
             }
@@ -752,7 +786,12 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
     }
     public func lowerBound(for plan: DeviceActivityUsageDayPlan) throws -> Int? {
         guard plan.isValid else { throw DeviceActivityUsageError.malformedPlan }
-        return try load().records.first(where: { matches($0, plan) })?.minutes
+        guard plan.binding.hasAuthoritativeScope else { throw DeviceActivityUsageError.unavailableState }
+        let records = try load().records
+        guard !records.contains(where: { $0.scope == nil && sameAccountingWindow($0, plan) }) else {
+            throw DeviceActivityUsageError.unavailableState
+        }
+        return records.first(where: { matches($0, plan) })?.minutes
     }
     @discardableResult public func record(plan: DeviceActivityUsageDayPlan, activityId: String,
                                          eventId: String, at: Date, deviceTimeZone: TimeZone) throws -> Int {
@@ -762,14 +801,20 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
         return try merge(plan: plan, minutes: threshold.minutes, pruningAt: at)
     }
     private func merge(plan: DeviceActivityUsageDayPlan, minutes: Int, pruningAt at: Date) throws -> Int {
+        guard plan.binding.hasAuthoritativeScope else { throw DeviceActivityUsageError.unavailableState }
         var state = try load()
+        guard !state.records.contains(where: { $0.scope == nil && sameAccountingWindow($0, plan) }) else {
+            throw DeviceActivityUsageError.unavailableState
+        }
         if let index = state.records.firstIndex(where: { matches($0, plan) }) {
             state.records[index].minutes = max(state.records[index].minutes, minutes)
         } else {
             // Never evict evidence for an unexpired day just to create a new identity.
-            state.records.removeAll { $0.dayEnd <= at }
+            // Scoped counters may be pruned after expiry. Legacy evidence is
+            // deliberately retained across rebinds and process restarts.
+            state.records.removeAll { $0.scope != nil && $0.dayEnd <= at }
             guard state.records.count < 8 else { throw DeviceActivityUsageError.unavailableState }
-            state.records.append(Record(binding: plan.binding, localDate: plan.localDate,
+            state.records.append(Record(binding: plan.binding, scope: plan.binding.scope, localDate: plan.localDate,
                 zone: plan.policyTimeZoneIdentifier, dayStart: plan.dayStartUtc, dayEnd: plan.dayEndUtc, minutes: minutes))
         }
         let data = try JSONEncoder().encode(state)
@@ -786,7 +831,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
     /// Starting callbacks cannot publish observations from an uncommitted installation.
     public func stage(plan: DeviceActivityUsageDayPlan, activityId: String, eventId: String,
                       at: Date, deviceTimeZone: TimeZone) throws {
-        guard installedState(for: plan) == .starting,
+        guard plan.isValid, plan.binding.hasAuthoritativeScope,
+              installedState(for: plan) == .starting,
               plan.contains(at, deviceTimeZone: deviceTimeZone), plan.monitorActivityId == activityId,
               let threshold = plan.thresholds.first(where: { $0.eventId == eventId }) else { throw DeviceActivityUsageError.staleCallback }
         let previous = try pending(for: plan)
@@ -808,7 +854,8 @@ public final class DeviceActivityUsageLowerBoundStore<Token: Hashable & Codable>
     }
     /// Caller must first confirm the active manifest and active pointer under the shared lock.
     public func activate(plan: DeviceActivityUsageDayPlan) throws {
-        guard plan.isValid, installedState(for: plan) == .active else { throw DeviceActivityUsageError.staleCallback }
+        guard plan.isValid, plan.binding.hasAuthoritativeScope,
+              installedState(for: plan) == .active else { throw DeviceActivityUsageError.staleCallback }
         guard let staged = try pending(for: plan) else { return }
         _ = try merge(plan: plan, minutes: staged.minutes, pruningAt: plan.dayStartUtc)
         store.remove(forKey: "usage.pending." + plan.generation)
