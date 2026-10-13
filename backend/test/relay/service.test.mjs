@@ -34,10 +34,21 @@ function envelope(overrides = {}) {
 
 test('production MySQL relay repository requires an accepted authority snapshot before any transaction', async () => {
   const repository = new MySqlRelayRepository();
-  await assert.rejects(
-    () => repository.createOrMatchEnvelope(envelope()),
-    { name: 'TypeError', message: 'MySQL relay enqueue requires an accepted authority snapshot.' },
-  );
+  const databaseUrl = process.env.PCA_DATABASE_URL;
+  delete process.env.PCA_DATABASE_URL;
+  try {
+    await assert.rejects(
+      () => repository.createOrMatchEnvelope(envelope()),
+      { name: 'TypeError', message: 'MySQL relay enqueue requires an accepted authority snapshot.' },
+    );
+    await assert.rejects(
+      () => repository.acknowledgeAtomically(envelope().recipientDeviceId, envelope().messageId, new Date()),
+      { name: 'TypeError', message: 'MySQL relay acknowledgement requires an accepted authority snapshot.' },
+    );
+  } finally {
+    if (databaseUrl === undefined) delete process.env.PCA_DATABASE_URL;
+    else process.env.PCA_DATABASE_URL = databaseUrl;
+  }
 });
 
 test('queue valid opaque envelope', async () => {

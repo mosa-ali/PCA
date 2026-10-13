@@ -388,11 +388,18 @@ export class MySqlRelayRepository implements RelayRepository {
     acknowledgedAt: Date,
     authority?: RelayRecipientAuthoritySnapshot,
   ): Promise<AcknowledgeResult> {
+    if (authority === undefined && this.options.allowMissingAuthorityForTests !== true) {
+      throw new TypeError('MySQL relay acknowledgement requires an accepted authority snapshot.');
+    }
+    // Detach this request before connection acquisition can yield. The
+    // accepted family/key/head tuple is part of the ACK authorization and
+    // must remain the exact snapshot resolved by the authenticated route.
+    const safeAuthority = snapshotRecipientAuthority(authority);
     return runInTransaction(async (conn) => {
-      if (authority !== undefined) {
-        if (typeof authority.familyId !== 'string' || authority.familyId.length === 0 ||
-            typeof authority.dskKeyId !== 'string' || authority.dskKeyId.length === 0 ||
-            !isFamilyEpochNumber(authority.trustSetEpoch, 1) || !isFamilyEpochNumber(authority.keyEpoch, 1)) {
+      if (safeAuthority !== undefined) {
+        if (typeof safeAuthority.familyId !== 'string' || safeAuthority.familyId.length === 0 ||
+            typeof safeAuthority.dskKeyId !== 'string' || safeAuthority.dskKeyId.length === 0 ||
+            !isFamilyEpochNumber(safeAuthority.trustSetEpoch, 1) || !isFamilyEpochNumber(safeAuthority.keyEpoch, 1)) {
           throw new TypeError('Relay recipient authority snapshot is malformed.');
         }
 
@@ -407,12 +414,12 @@ export class MySqlRelayRepository implements RelayRepository {
              FROM family_epoch_floors
             WHERE family_id = ?
             FOR UPDATE`,
-          [authority.familyId],
+          [safeAuthority.familyId],
         );
         const floor = floors[0];
         if (!floor ||
-            familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch) !== authority.trustSetEpoch ||
-            familyEpochFromStorage(floor.minimum_accepted_key_epoch) !== authority.keyEpoch) {
+            familyEpochFromStorage(floor.minimum_accepted_trust_set_epoch) !== safeAuthority.trustSetEpoch ||
+            familyEpochFromStorage(floor.minimum_accepted_key_epoch) !== safeAuthority.keyEpoch) {
           throw new RelayAuthorityChangedError();
         }
 
@@ -427,7 +434,7 @@ export class MySqlRelayRepository implements RelayRepository {
               AND f.status = 'ACTIVE'
               AND f.deleted_at IS NULL
             FOR UPDATE`,
-          [recipientDeviceId, authority.familyId],
+          [recipientDeviceId, safeAuthority.familyId],
         );
         if (!devices[0]) throw new RelayAuthorityChangedError();
 
@@ -441,13 +448,13 @@ export class MySqlRelayRepository implements RelayRepository {
               AND status = 'ACTIVE'
             LIMIT 1
             FOR UPDATE`,
-          [recipientDeviceId, authority.dskKeyId],
+          [recipientDeviceId, safeAuthority.dskKeyId],
         );
         if (keys.length !== 1) throw new RelayAuthorityChangedError();
       }
 
-      const familyPredicate = authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?';
-      const familyParameters = authority === undefined ? [] : [authority.familyId, authority.familyId];
+      const familyPredicate = safeAuthority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?';
+      const familyParameters = safeAuthority === undefined ? [] : [safeAuthority.familyId, safeAuthority.familyId];
       const updated = await execute(
         conn,
         `UPDATE relay_envelopes SET state = 'ACKNOWLEDGED', acknowledged_at = ?
@@ -463,7 +470,7 @@ export class MySqlRelayRepository implements RelayRepository {
           `SELECT * FROM relay_envelopes
             WHERE message_id = ? AND recipient_device_id = ?
               AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
-              ${authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
+              ${safeAuthority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
           [messageId, recipientDeviceId, messageId, recipientDeviceId, ...familyParameters],
         );
         return { outcome: 'ACKNOWLEDGED', record: mapRow(reread.rows[0]!) };
@@ -474,7 +481,7 @@ export class MySqlRelayRepository implements RelayRepository {
         `SELECT * FROM relay_envelopes
           WHERE message_id = ? AND recipient_device_id = ?
             AND BINARY message_id = BINARY ? AND BINARY recipient_device_id = BINARY ?
-            ${authority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
+            ${safeAuthority === undefined ? '' : 'AND family_id = ? AND BINARY family_id = BINARY ?'}`,
         [messageId, recipientDeviceId, messageId, recipientDeviceId, ...familyParameters],
       );
       const row = existing.rows[0];

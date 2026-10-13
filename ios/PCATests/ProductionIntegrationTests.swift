@@ -1613,14 +1613,19 @@ final class ProductionIntegrationTests: XCTestCase {
         pairing.start()
         let pairingToken = String(repeating: "P", count: 43)
         XCTAssertTrue(pairing.receiveEnrollmentLink(URL(string: "https://www.pcasafe.com/enroll/\(pairingToken)")!))
-        await waitForRecoverableEnrollment(pairing)
+        for _ in 0..<100 where pairingIdentity.savedDeviceIds.isEmpty {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(pairing.applicationState, .enrollmentInProgress,
+            "a successful PAIRING_PENDING response proceeds to the profile-confirmation setup state")
+        XCTAssertNil(pairing.lastError)
         let retainedPairingAttempt = try XCTUnwrap(try pairingAttempts.loadAttempt())
         XCTAssertEqual(retainedPairingAttempt.invitationTokenSHA256, FirstDeviceCanonical.sha256Hex(pairingToken))
         XCTAssertFalse(pairing.receiveEnrollmentLink(
             URL(string: "https://www.pcasafe.com/enroll/\(String(repeating: "Q", count: 43))")!
         ), "PAIRING_PENDING may recover only through its original invitation, never a fresh invitation")
-        XCTAssertTrue(pairingIdentity.savedDeviceIds.isEmpty,
-            "PAIRING_PENDING does not commit a client-owned device identity")
+        XCTAssertEqual(pairingIdentity.savedDeviceIds, ["device-1"],
+            "the server-issued device id is retained after successful PAIRING_PENDING bootstrap")
 
         let seed = trustRootSeed()
         let attempts = InMemoryPCADeviceStateStore()
@@ -4291,8 +4296,8 @@ final class ProductionIntegrationTests: XCTestCase {
 
         let outcome = try await model.synchronizeRuntimeCampaign()
 
-        XCTAssertEqual(outcome, .retryableFailure,
-            "application remains pending when the post-capture Trust Set catch-up cannot establish authority")
+        XCTAssertEqual(outcome, .blocked,
+            "application remains blocked when the post-capture Trust Set catch-up cannot establish authority")
         XCTAssertEqual(paths, ["/v1/runtime-sync/inbound", "/v1/runtime-sync/inbound/message-1/ack"])
         XCTAssertEqual(trustSet.catchUpCalls, 2)
         let retained = try inbox.pendingCrypto(scope: response.scope)
@@ -4889,26 +4894,30 @@ final class ProductionIntegrationTests: XCTestCase {
         } catch is CancellationError { }
     }
 
-    func testProductionURLSessionTransportDoesNotForwardSecretRequestAcrossRedirect() async throws {
-        RedirectingRuntimeURLProtocol.reset()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RedirectingRuntimeURLProtocol.self]
-        let transport = PCAURLSessionTransport(configuration: configuration)
+    func testProductionRedirectDelegateRejectsSecretBearingRedirect() throws {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: URL(string: "https://api.example.test/v1/enrollment/bootstrap")!)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer opaque-session-secret", forHTTPHeaderField: "Authorization")
         request.httpBody = Data(#"{"attemptRecoveryToken":"secret"}"#.utf8)
+        let task = session.dataTask(with: request)
+        let redirect = try XCTUnwrap(HTTPURLResponse(
+            url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": "https://redirect-target.example/collect"]
+        ))
+        var redirectTargetRequest = request
+        redirectTargetRequest.url = URL(string: "https://redirect-target.example/collect")
+        var forwardedRequest: URLRequest? = redirectTargetRequest
+        let delegate = PCARejectRedirectDelegate()
 
-        let response = try await transport.send(request)
+        delegate.urlSession(session, task: task, willPerformHTTPRedirection: redirect,
+            newRequest: redirectTargetRequest, completionHandler: { forwardedRequest = $0 })
 
-        XCTAssertEqual(response.statusCode, 302, "the original redirect response is returned without following it")
-        let requests = RedirectingRuntimeURLProtocol.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
-        XCTAssertEqual(requests.first?.url?.host, "api.example.test")
-        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session-secret")
-        XCTAssertFalse(requests.contains { $0.url?.host == "redirect-target.example" },
-            "the redirect target must never receive the secret-bearing request")
+        XCTAssertNil(forwardedRequest,
+            "the production delegate must refuse forwarding a secret-bearing request to the redirect target")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session-secret")
+        XCTAssertEqual(request.httpBody, Data(#"{"attemptRecoveryToken":"secret"}"#.utf8))
     }
 
     func testRuntimePullDecodesContinuationAndUsesDeferredIdsForLegacyResponses() async throws {
@@ -5615,56 +5624,6 @@ private final class CancelledRuntimeURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
-    override func stopLoading() { }
-}
-
-private final class RedirectingRuntimeURLProtocol: URLProtocol {
-    private static let lock = NSLock()
-    private static var requests: [URLRequest] = []
-
-    static func reset() {
-        lock.lock()
-        defer { lock.unlock() }
-        requests = []
-    }
-
-    static func recordedRequests() -> [URLRequest] {
-        lock.lock()
-        defer { lock.unlock() }
-        return requests
-    }
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        Self.lock.lock()
-        Self.requests.append(request)
-        Self.lock.unlock()
-        guard let url = request.url else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        if url.host == "redirect-target.example" {
-            guard let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: "HTTP/1.1", headerFields: nil) else {
-                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-                return
-            }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data())
-            client?.urlProtocolDidFinishLoading(self)
-            return
-        }
-        guard let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
-            headerFields: ["Location": "https://redirect-target.example/collect"]) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        var redirectedRequest = request
-        redirectedRequest.url = URL(string: "https://redirect-target.example/collect")
-        client?.urlProtocol(self, wasRedirectedTo: redirectedRequest, redirectResponse: response)
-    }
-
     override func stopLoading() { }
 }
 

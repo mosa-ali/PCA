@@ -32,7 +32,7 @@ public protocol PCAHTTPTransport {
 /// particular, enrollment bodies can contain invitation and recovery tokens;
 /// refusing a redirect prevents URLSession from replaying those bodies to a
 /// different endpoint.
-private final class PCARejectRedirectDelegate: NSObject, URLSessionTaskDelegate {
+final class PCARejectRedirectDelegate: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

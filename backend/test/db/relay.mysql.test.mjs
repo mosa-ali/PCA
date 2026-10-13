@@ -281,6 +281,32 @@ test('MySQL AUTHORITY RACE: ACK refuses a revoked exact DSK without changing rel
   assert.equal((await service.fetchEnvelope(deviceId, input.messageId)).state, 'QUEUED');
 });
 
+test('MySQL ACK snapshots the exact recipient authority before waiting for database access', async () => {
+  const fixture = await seedOutboundAuthorityFixture();
+  const message = outboundItem(fixture);
+  const service = buildAuthorizedOutboundService();
+  const queued = await service.submitBatch(fixture.senderDeviceId, fixture.familyId, [message], async () => fixture.snapshot);
+  assert.deepEqual(queued.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
+
+  const authority = {
+    familyId: fixture.familyId,
+    dskKeyId: fixture.recipientDskKeyId,
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+  };
+  const acknowledgement = buildService().acknowledgeEnvelope(fixture.recipientDeviceId, message.messageId, authority);
+  // The repository call must capture the route's accepted-session tuple
+  // synchronously, before asynchronous pool connection acquisition yields.
+  authority.familyId = randomUUID();
+  authority.dskKeyId = randomUUID();
+  authority.trustSetEpoch = 2;
+  authority.keyEpoch = 2;
+
+  const result = await acknowledgement;
+  assert.equal(result.state, 'ACKNOWLEDGED');
+  assert.equal((await buildService().fetchEnvelope(fixture.recipientDeviceId, message.messageId)).state, 'ACKNOWLEDGED');
+});
+
 test('MySQL AUTHORITY RACE: outbound enqueue refuses a sender removed by a committed Trust Set rotation', async () => {
   const fixture = await seedOutboundAuthorityFixture();
   const messageId = randomUUID();

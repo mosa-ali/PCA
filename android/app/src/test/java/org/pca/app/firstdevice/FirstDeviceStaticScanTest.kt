@@ -61,6 +61,41 @@ class FirstDeviceStaticScanTest {
     }
 
     @Test
+    fun `production runtime custody composition retains ciphertext without verified dispatch`() {
+        val graph = locateMainDir("src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt").readText()
+        val start = graph.indexOf("custodyOrchestrator = ReconnectSyncOrchestrator(")
+        assertTrue("production custody orchestrator must remain explicitly composed", start >= 0)
+        val end = graph.indexOf("\n            custodyDeviceId = deviceId", start)
+        assertTrue("production custody composition boundary must remain identifiable", end > start)
+
+        val composition = graph.substring(start, end)
+        assertTrue(
+            "runtime custody must retain encrypted inbound records in persistent storage",
+            composition.contains("ciphertextInbox = PersistentCiphertextInbox(runtimeStateStore, deviceId)"),
+        )
+        assertTrue(
+            "legacy inbound callback must reject unverified command dispatch",
+            composition.contains("error(\"Unverified ciphertext dispatch is unavailable\")"),
+        )
+        assertTrue(
+            "inbound custody must stay family-scoped",
+            composition.contains("expectedFamilyId = rootFamilyId"),
+        )
+        assertFalse(
+            "production must not inject a verified consumer before its verifier and effect policy are approved",
+            composition.contains("inboundConsumer ="),
+        )
+        assertFalse(
+            "production must not construct a verified consumer in the custody-only composition",
+            composition.contains("VerifiedInboundCommandConsumer("),
+        )
+        assertFalse(
+            "production must not construct replay reclamation without a trusted retirement verifier",
+            composition.contains("VerifiedInboundReplayReclaimer("),
+        )
+    }
+
+    @Test
     fun `no production source under firstdevice or security references the test-only generator`() {
         val dirs = listOf(
             locateMainDir("src/main/java/org/pca/app/firstdevice"),
