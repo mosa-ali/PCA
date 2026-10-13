@@ -715,6 +715,12 @@ test('MySqlSafeZoneRepository is gated on production device-session authority, n
   assert.match(readRealFile('test/db/safeZoneDeliveryRoutes.mysql.test.mjs'), /MySQL HTTP Safe Zone delivery/);
 });
 
+test('Safe Zone repository MySQL writes require the verifier-owned disposable database guard', () => {
+  const mysqlSuite = readRealFile('test/db/safeZoneRepository.mysql.test.mjs');
+  assert.match(mysqlSuite, /import ['"]\.\.\/\.\.\/scripts\/require-owned-disposable-db\.mjs['"];?/,
+    'direct invocation must validate local/Compose endpoint, random disposable schema name, and wrapper ownership before any fixture write');
+});
+
 test('PCA_PRODUCTION_PATH_CERTIFICATION 4: the certified file list in the runner matches this register exactly', () => {
   // The certified files are executed as their own script so the empirical gates
   // (zero skips, populated-database independence) have one list to run against.

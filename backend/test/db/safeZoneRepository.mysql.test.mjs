@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test, { after } from 'node:test';
 import mysql from 'mysql2/promise';
+import '../../scripts/require-owned-disposable-db.mjs';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { MySqlSafeZoneRepository } from '../../dist/location/MySqlSafeZoneRepository.js';
 import { SafeZoneAuthorityChangedError, SafeZoneError } from '../../dist/location/SafeZoneRepository.js';
