@@ -7,6 +7,7 @@ import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
 import { isAcceptedEpochInScope, requestedTrustSetEpochInFamily } from '../../familytrustset/acceptedEpochScope.js';
 import type { createRateLimiter } from '../rateLimit.js';
+import { isCanonicalP256Signature } from '../../deviceauth/P256DeviceSignatureVerifier.js';
 
 export interface OrdinaryTrustSetRouteService {
   submit(scope: OrdinaryTrustSetScope, body: unknown): Promise<OrdinaryTrustSetSubmitResult>;
@@ -41,6 +42,7 @@ function projectAcceptedEpoch(value: unknown, expectedFamilyId: string): Accepte
   const { canonicalEpochBase64, signatureBase64, signerDeviceId, signerKeyId, trustSetEpoch, keyEpoch } = value;
   if (!isCanonicalBase64(canonicalEpochBase64, MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES) ||
       !isCanonicalBase64(signatureBase64, 64) || Buffer.from(signatureBase64, 'base64').length !== 64 ||
+      !isCanonicalP256Signature(Buffer.from(signatureBase64 as string, 'base64').toString('base64url')) ||
       !isPlausibleOpaqueId(signerDeviceId) || !isPlausibleOpaqueId(signerKeyId) ||
       !isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
     return null;

@@ -150,6 +150,30 @@ test('current session DSK is passed unchanged to each scoped service operation',
   for (const call of calls) assert.deepEqual(call[1], { familyId: 'family-one', deviceId: 'device-one', dskKeyId: 'rotated-dsk' });
 });
 
+test('accepted projections reject non-canonical P-256 signature scalars even when they have the right byte length', async (t) => {
+  const highSSignature = Buffer.alloc(64);
+  highSSignature[31] = 1;
+  const p256Order = BigInt('0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551');
+  Buffer.from((p256Order / 2n + 1n).toString(16).padStart(64, '0'), 'hex').copy(highSSignature, 32);
+  const malformedSignatures = [Buffer.alloc(64), Buffer.alloc(64, 0xff), highSSignature];
+  for (const signature of malformedSignatures) {
+    const malformedHead = { ...HEAD, signatureBase64: signature.toString('base64') };
+    const { request } = fixture(t, { service: {
+      submit: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: malformedHead, acceptedHead: malformedHead }),
+      status: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: malformedHead, acceptedHead: malformedHead }),
+      head: async () => malformedHead,
+      epoch: async () => malformedHead,
+    } });
+    for (const [method, url, payload] of [
+      ['POST', BASE, BODY], ['POST', `${BASE}/status`, BODY], ['GET', `${BASE}/head`], ['GET', `${BASE}/records/2`],
+    ]) {
+      const result = await request(method, url, payload);
+      assert.equal(result.statusCode, 503);
+      assert.deepEqual(result.json(), { error: 'trust_set_unavailable' });
+    }
+  }
+});
+
 test('malformed nominal service success fails closed instead of claiming acceptance or returning another epoch', async (t) => {
   const { request } = fixture(t, { service: {
     submit: async () => ({ outcome: 'ACCEPTED', acceptedEpoch: null, acceptedHead: HEAD }),
