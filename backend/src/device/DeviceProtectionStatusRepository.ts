@@ -240,6 +240,7 @@ export class InMemoryDeviceProtectionStatusRepository implements DeviceProtectio
     const safeRecord = snapshotRecord(record);
     snapshotAuthority(_authority);
     const current = this.records.get(safeRecord.deviceId);
+    if (current && current.familyId !== safeRecord.familyId) throw new ProtectionStatusDeviceUnavailableError();
     if (current && current.familyId === safeRecord.familyId && safeRecord.updatedAt.getTime() < current.updatedAt.getTime()) {
       throw new ProtectionStatusStaleReportError();
     }
@@ -256,6 +257,7 @@ export class InMemoryDeviceProtectionStatusRepository implements DeviceProtectio
     const safeRecord = snapshotRecord(record);
     snapshotAuthority(_authority);
     const stored = this.records.get(safeRecord.deviceId);
+    if (stored && stored.familyId !== safeRecord.familyId) throw new ProtectionStatusDeviceUnavailableError();
     const previous = stored?.familyId === safeRecord.familyId ? this.snapshot(stored) : null;
     if (previous && safeRecord.updatedAt.getTime() < previous.updatedAt.getTime()) {
       throw new ProtectionStatusStaleReportError();

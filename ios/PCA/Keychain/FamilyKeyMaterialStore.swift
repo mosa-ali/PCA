@@ -56,7 +56,7 @@ public struct FamilyKeyMaterialStore {
 
     public func retrieve(kind: FamilyKeyMaterialKind, deviceId: String) throws -> Data {
         try validateDeviceId(deviceId)
-        try keychain.retrieve(forAccount: deviceId, service: service(for: kind))
+        return try keychain.retrieve(forAccount: deviceId, service: service(for: kind))
     }
 
     /// Used on authorized device/family removal (doc 08 Section 8, doc 11

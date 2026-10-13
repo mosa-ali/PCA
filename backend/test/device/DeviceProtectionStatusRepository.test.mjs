@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   InMemoryDeviceProtectionStatusRepository,
+  ProtectionStatusDeviceUnavailableError,
   ProtectionStatusStaleReportError,
 } from '../../dist/device/DeviceProtectionStatusRepository.js';
 
@@ -49,6 +50,23 @@ test('in-memory recordAndReadPrevious serializes concurrent status transitions',
 
   assert.deepEqual(prior.map((item) => item?.protectionLevel).sort(), ['DEGRADED', 'PROTECTED']);
   assert.equal((await repository.findForDevice('family-one', 'device-one'))?.protectionLevel, 'DEGRADED');
+});
+
+test('in-memory status writes reject a device ID presented under another family', async () => {
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  const original = {
+    deviceId: 'device-one',
+    familyId: 'family-one',
+    protectionLevel: 'PROTECTED',
+    updatedAt: new Date('2026-10-09T12:00:00.000Z'),
+  };
+  await repository.upsert(original);
+  const foreign = { ...original, familyId: 'family-two', protectionLevel: 'DEGRADED', updatedAt: new Date('2026-10-09T12:01:00.000Z') };
+
+  await assert.rejects(repository.upsert(foreign), ProtectionStatusDeviceUnavailableError);
+  await assert.rejects(repository.recordAndReadPrevious(foreign), ProtectionStatusDeviceUnavailableError);
+  assert.deepEqual(await repository.findForDevice(original.familyId, original.deviceId), original);
+  assert.equal(await repository.findForDevice(foreign.familyId, foreign.deviceId), null);
 });
 
 test('protection status repositories reject invalid receipt dates and runtime levels', async () => {
