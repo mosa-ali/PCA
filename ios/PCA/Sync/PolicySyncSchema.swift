@@ -327,20 +327,38 @@ public enum PolicySyncDecoder {
         guard hasValidUsageConfiguration(stored) else {
             return .failure(.invalidUsageConfig)
         }
-        let scopeErrors = stored.windows.compactMap { validateAppScope($0.appScope, description: "window \($0.id)") }
-            + stored.bonusGrants.compactMap { validateAppScope($0.appScope, description: "bonus grant \($0.id)") }
-            + stored.exceptions.compactMap { validateAppScope($0.appScope, description: "parent exception \($0.id)") }
-            + (stored.dailyLimit.map { validateAppScope($0.appScope, description: "daily limit") } ?? [])
+        var scopeErrors: [String] = []
+        for window in stored.windows {
+            if let error = validateAppScope(window.appScope, description: "window \(window.id)") {
+                scopeErrors.append(error)
+            }
+        }
+        for grant in stored.bonusGrants {
+            if let error = validateAppScope(grant.appScope, description: "bonus grant \(grant.id)") {
+                scopeErrors.append(error)
+            }
+        }
+        for exception in stored.exceptions {
+            if let error = validateAppScope(exception.appScope, description: "parent exception \(exception.id)") {
+                scopeErrors.append(error)
+            }
+        }
+        if let dailyLimit = stored.dailyLimit,
+           let error = validateAppScope(dailyLimit.appScope, description: "daily limit") {
+            scopeErrors.append(error)
+        }
         guard scopeErrors.isEmpty else { return .failure(.invalidAppScope(scopeErrors)) }
-        let exceptionErrors = stored.exceptions.compactMap { exception -> String? in
+
+        var exceptionErrors: [String] = []
+        for exception in stored.exceptions {
             let start = exception.startAtUtc.timeIntervalSince1970
             let end = exception.endAtUtc.timeIntervalSince1970
-            guard start.isFinite, end.isFinite,
-                  abs(start) <= maximumPolicyDateSeconds, abs(end) <= maximumPolicyDateSeconds,
-                  start < end else {
-                return "parent exception \(exception.id): startAt and endAt must be finite in-range instants with startAt before endAt"
+            let validRange = start.isFinite && end.isFinite &&
+                abs(start) <= maximumPolicyDateSeconds && abs(end) <= maximumPolicyDateSeconds &&
+                start < end
+            if !validRange {
+                exceptionErrors.append("parent exception \(exception.id): startAt and endAt must be finite in-range instants with startAt before endAt")
             }
-            return nil
         }
         guard exceptionErrors.isEmpty else { return .failure(.invalidExceptionConfig(exceptionErrors)) }
         guard let timeZone = TimeZone(identifier: stored.timeZoneIdentifier) else {
