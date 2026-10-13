@@ -157,7 +157,10 @@ class HttpDeviceBootstrapApiClient(
             when (status) {
                 200 -> {
                     val responseBody = readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }
-                    val responseStatus = parseExactStatusField(responseBody) { BootstrapError.AmbiguousOutcome }
+                    val responseStatus = parseExactStatusField(
+                        responseBody,
+                        setOf(setOf("status")),
+                    ) { BootstrapError.AmbiguousOutcome }.value
                     if (responseStatus !in setOf("READY", "COMPLETED")) throw BootstrapError.AmbiguousOutcome
                 }
                 404 -> {
@@ -229,8 +232,14 @@ class HttpDeviceBootstrapApiClient(
             when (status) {
                 200 -> {
                     val responseBody = readBoundedBody(connection.inputStream) { RecoveryError.AmbiguousOutcome }
-                    val responseStatus = parseExactStatusField(responseBody) { RecoveryError.AmbiguousOutcome }
-                    if (responseStatus == ATTEMPT_ABANDONED_STATUS) throw RecoveryError.AttemptAbandoned
+                    val parsedStatus = parseExactStatusField(
+                        responseBody,
+                        setOf(setOf("status"), BOOTSTRAP_RESULT_FIELDS),
+                    ) { RecoveryError.AmbiguousOutcome }
+                    if (parsedStatus.value == ATTEMPT_ABANDONED_STATUS) {
+                        if (parsedStatus.fields != setOf("status")) throw RecoveryError.AmbiguousOutcome
+                        throw RecoveryError.AttemptAbandoned
+                    }
                     parseSuccessBody(responseBody) { RecoveryError.AmbiguousOutcome }
                 }
                 404 -> {
@@ -339,15 +348,23 @@ class HttpDeviceBootstrapApiClient(
     }
 
     /** Terminal/small success responses still carry authority semantics, so require one exact string status. */
-    private fun parseExactStatusField(bodyText: String, onAmbiguous: () -> Exception): String {
-        if (topLevelObjectKeys(bodyText) != setOf("status")) throw onAmbiguous()
+    private fun parseExactStatusField(
+        bodyText: String,
+        allowedFieldSets: Set<Set<String>>,
+        onAmbiguous: () -> Exception,
+    ): ParsedStatusField {
+        val fields = topLevelObjectKeys(bodyText)
+        if (fields == null || fields !in allowedFieldSets) throw onAmbiguous()
         val json = try {
             JSONObject(bodyText)
         } catch (_: JSONException) {
             throw onAmbiguous()
         }
-        return json.opt("status") as? String ?: throw onAmbiguous()
+        val value = json.opt("status") as? String ?: throw onAmbiguous()
+        return ParsedStatusField(value, fields)
     }
+
+    private data class ParsedStatusField(val value: String, val fields: Set<String>)
 
     /**
      * Return the unique top-level JSON object keys, or null for duplicates or a non-object body.

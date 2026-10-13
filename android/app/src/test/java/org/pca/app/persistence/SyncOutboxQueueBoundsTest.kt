@@ -82,6 +82,109 @@ class SyncOutboxQueueBoundsTest {
     }
 
     @Test
+    fun `enqueue rejects a same-priority row that would exceed the ciphertext byte bound`() = runTest {
+        val cipher = PersistenceTestSupport.testCipher()
+        val firstPayload = "small"
+        val secondPayload = "a substantially larger encrypted payload"
+        val firstBytes = cipher.encryptToColumns(firstPayload).first.length.toLong()
+        val secondBytes = cipher.encryptToColumns(secondPayload).first.length.toLong()
+        val maxBytes = firstBytes + secondBytes - 1L
+        assertTrue(firstBytes <= maxBytes)
+        assertTrue(firstBytes + secondBytes > maxBytes)
+        val outbox = SyncOutboxRepository(
+            db.syncOutboxDao(),
+            cipher,
+            OutboxQueueBounds(maxTotalRecords = 10, maxTotalBytes = maxBytes, maxPerFamily = 10),
+        )
+
+        assertEquals(
+            EnqueueOutcome.ENQUEUED,
+            outbox.enqueue("msg-small", "family-1", "device-1", firstPayload, 1L, 999_999L, 1_000L),
+        )
+        val oversized = outbox.enqueue(
+            "msg-large", "family-1", "device-1", secondPayload, 2L, 999_999L, 1_000L,
+        )
+
+        assertEquals(EnqueueOutcome.REJECTED_QUEUE_FULL, oversized)
+        assertNotNull(db.syncOutboxDao().getById("msg-small"))
+        assertNull(db.syncOutboxDao().getById("msg-large"))
+        assertEquals(firstBytes, db.syncOutboxDao().totalCiphertextLengthByState(SyncOutboxState.PENDING))
+    }
+
+    @Test
+    fun `single ciphertext larger than total bound is rejected without evicting eligible rows`() = runTest {
+        val cipher = PersistenceTestSupport.testCipher()
+        val retainedPayload = "retained activity"
+        val oversizedPayload = "ciphertext larger than the configured entire queue budget"
+        val retainedBytes = cipher.encryptToColumns(retainedPayload).first.length.toLong()
+        val maxBytes = retainedBytes + 1L
+        assertTrue(cipher.encryptToColumns(oversizedPayload).first.length > maxBytes)
+        val outbox = SyncOutboxRepository(
+            db.syncOutboxDao(),
+            cipher,
+            OutboxQueueBounds(maxTotalRecords = 10, maxTotalBytes = maxBytes, maxPerFamily = 10),
+        )
+
+        assertEquals(
+            EnqueueOutcome.ENQUEUED,
+            outbox.enqueue(
+                "msg-retained", "family-1", "device-1", retainedPayload, 1L, 999_999L, 1_000L,
+                priority = OutboxPriority.ACTIVITY_SUMMARY,
+            ),
+        )
+        val oversized = outbox.enqueue(
+            "msg-oversized", "family-1", "device-1", oversizedPayload, 2L, 999_999L, 1_000L,
+            priority = OutboxPriority.SECURITY_TRUST,
+        )
+
+        assertEquals(EnqueueOutcome.REJECTED_QUEUE_FULL, oversized)
+        assertNotNull(db.syncOutboxDao().getById("msg-retained"))
+        assertNull(db.syncOutboxDao().getById("msg-oversized"))
+        assertEquals(retainedBytes, db.syncOutboxDao().totalCiphertextLengthByState(SyncOutboxState.PENDING))
+    }
+
+    @Test
+    fun `over-budget coalescing preserves prior ciphertext and other pending rows`() = runTest {
+        val cipher = PersistenceTestSupport.testCipher()
+        val originalPayload = "original usage summary"
+        val otherPayload = "independent pending decision"
+        val replacementPayload = "replacement usage summary with much larger encrypted contents"
+        val currentBytes = cipher.encryptToColumns(originalPayload).first.length.toLong() +
+            cipher.encryptToColumns(otherPayload).first.length.toLong()
+        val replacementBytes = cipher.encryptToColumns(replacementPayload).first.length.toLong()
+        val maxBytes = currentBytes + 1L
+        assertTrue(currentBytes <= maxBytes)
+        assertTrue(replacementBytes > maxBytes)
+        val outbox = SyncOutboxRepository(
+            db.syncOutboxDao(),
+            cipher,
+            OutboxQueueBounds(maxTotalRecords = 10, maxTotalBytes = maxBytes, maxPerFamily = 10),
+        )
+
+        assertEquals(
+            EnqueueOutcome.ENQUEUED,
+            outbox.enqueue(
+                "msg-coalesced", "family-1", "device-1", originalPayload, 1L, 999_999L, 1_000L,
+                coalesceKey = "usage:device-1:hour-1",
+            ),
+        )
+        assertEquals(
+            EnqueueOutcome.ENQUEUED,
+            outbox.enqueue("msg-independent", "family-1", "device-1", otherPayload, 2L, 999_999L, 1_000L),
+        )
+
+        val outcome = outbox.enqueue(
+            "msg-replacement", "family-1", "device-1", replacementPayload, 3L, 999_999L, 2_000L,
+            coalesceKey = "usage:device-1:hour-1",
+        )
+
+        assertEquals(EnqueueOutcome.REJECTED_QUEUE_FULL, outcome)
+        val retained = outbox.getReadyForDelivery(3_000L).associate { (record, payload) -> record.messageId to payload }
+        assertEquals(mapOf("msg-coalesced" to originalPayload, "msg-independent" to otherPayload), retained)
+        assertEquals(currentBytes, db.syncOutboxDao().totalCiphertextLengthByState(SyncOutboxState.PENDING))
+    }
+
+    @Test
     fun `messages with the same coalesce key merge into one pending row instead of queuing one per tick`() = runTest {
         val outbox = repo()
 

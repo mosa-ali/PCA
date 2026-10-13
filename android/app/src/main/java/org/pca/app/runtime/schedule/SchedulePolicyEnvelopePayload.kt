@@ -128,7 +128,7 @@ object SchedulePolicyEnvelopePayload {
             keyEpoch = EpochBounds.decodeJson(json, "keyEpoch"),
             issuedAt = Instant.parse(json.getString("issuedAt")),
             effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
-            expiresAt = json.optString("expiresAt", "").takeIf { it.isNotEmpty() }?.let { Instant.parse(it) },
+            expiresAt = decodeOptionalInstant(json, "expiresAt"),
             continuousUseLimitMinutes = decodeOptionalInt(json, "continuousUseLimitMinutes"),
             breakDurationMinutes = decodeOptionalInt(json, "breakDurationMinutes"),
         )
@@ -140,6 +140,17 @@ object SchedulePolicyEnvelopePayload {
      * as one that explicitly nulls it out. */
     private fun decodeOptionalInt(json: JSONObject, key: String): Int? =
         if (json.isNull(key)) null else json.scheduleInt(key)
+
+    /** An explicit empty/invalid timestamp is malformed policy, never an unbounded expiry. */
+    private fun decodeOptionalInstant(json: JSONObject, key: String): Instant? {
+        if (!json.has(key) || json.isNull(key)) return null
+        val value = json.opt(key) as? String ?: throw JSONException("invalid_schedule_policy_instant")
+        return try {
+            Instant.parse(value)
+        } catch (_: RuntimeException) {
+            throw JSONException("invalid_schedule_policy_instant")
+        }
+    }
 
     private fun encodeAppScope(scope: AppScope): Any = when (scope) {
         is AppScope.All -> "ALL"

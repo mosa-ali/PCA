@@ -102,12 +102,17 @@ class SyncOutboxRepository(
         if (coalesceKey != null) {
             val existing = dao.getByCoalesceKey(coalesceKey, SyncOutboxState.PENDING)
             if (existing != null) {
+                if (!replacementFitsByteBound(existing.envelopeCipherEnc.length.toLong(), enc.length.toLong())) {
+                    return@withQueueMutationLock EnqueueOutcome.REJECTED_QUEUE_FULL
+                }
                 dao.coalesceUpdate(existing.messageId, enc, iv, sequence, expiresAtEpochMillis)
                 return@withQueueMutationLock EnqueueOutcome.COALESCED
             }
         }
 
-        if (!makeRoomFor(priority, familyScope)) return@withQueueMutationLock EnqueueOutcome.REJECTED_QUEUE_FULL
+        if (!makeRoomFor(priority, familyScope, enc.length.toLong())) {
+            return@withQueueMutationLock EnqueueOutcome.REJECTED_QUEUE_FULL
+        }
 
         val rowId = dao.enqueue(
             SyncOutboxRecordEntity(
@@ -130,15 +135,38 @@ class SyncOutboxRepository(
     }
 
     /** Evicts at most one least-urgent row per bound that would otherwise be exceeded. Returns false if a bound remains exceeded and no eligible eviction candidate exists. */
-    private suspend fun makeRoomFor(priority: OutboxPriority, familyScope: String): Boolean {
+    private suspend fun makeRoomFor(
+        priority: OutboxPriority,
+        familyScope: String,
+        incomingCiphertextBytes: Long,
+    ): Boolean {
+        if (incomingCiphertextBytes > bounds.maxTotalBytes) return false
         while (dao.countByState(SyncOutboxState.PENDING) >= bounds.maxTotalRecords ||
-            dao.totalCiphertextLengthByState(SyncOutboxState.PENDING) >= bounds.maxTotalBytes ||
+            exceedsByteBound(incomingCiphertextBytes) ||
             dao.countByFamilyAndState(familyScope, SyncOutboxState.PENDING) >= bounds.maxPerFamily
         ) {
             val candidate = dao.getLeastUrgentEvictionCandidate(SyncOutboxState.PENDING, priority.rank) ?: return false
             dao.deleteById(candidate.messageId)
         }
         return true
+    }
+
+    /** Include the new encrypted row in the bound check before inserting it. */
+    private suspend fun exceedsByteBound(incomingCiphertextBytes: Long): Boolean {
+        if (incomingCiphertextBytes > bounds.maxTotalBytes) return true
+        val currentBytes = dao.totalCiphertextLengthByState(SyncOutboxState.PENDING)
+        return currentBytes > bounds.maxTotalBytes - incomingCiphertextBytes
+    }
+
+    /** A coalesced replacement must fit after subtracting the row it replaces. */
+    private suspend fun replacementFitsByteBound(
+        replacedCiphertextBytes: Long,
+        incomingCiphertextBytes: Long,
+    ): Boolean {
+        if (incomingCiphertextBytes > bounds.maxTotalBytes) return false
+        val currentBytes = dao.totalCiphertextLengthByState(SyncOutboxState.PENDING)
+        if (currentBytes < replacedCiphertextBytes) return false
+        return currentBytes - replacedCiphertextBytes <= bounds.maxTotalBytes - incomingCiphertextBytes
     }
 
     override suspend fun getReadyForDelivery(nowEpochMillis: Long): List<Pair<SyncOutboxRecordEntity, String>> =

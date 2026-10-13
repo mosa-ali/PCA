@@ -1,6 +1,7 @@
 package org.pca.app.runtime.schedule
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.json.JSONException
@@ -182,6 +183,34 @@ class SchedulePolicyEnvelopePayloadTest {
         val original = samplePolicy().copy(expiresAt = null)
         val decoded = SchedulePolicyEnvelopePayload.decode(SchedulePolicyEnvelopePayload.encode(original))
         assertEquals(original, decoded)
+    }
+
+    @Test
+    fun `accepts legacy policy payload that omits expiresAt`() {
+        val payload = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        payload.getJSONObject("policy").remove("expiresAt")
+
+        val decoded = SchedulePolicyEnvelopePayload.decode(payload.toString())
+
+        assertNull(decoded.expiresAt)
+    }
+
+    @Test
+    fun `malformed expiresAt cannot be coerced into a policy with no expiry`() {
+        for (value in listOf("", "not-an-instant", "123")) {
+            val payload = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+            payload.getJSONObject("policy").put("expiresAt", value)
+
+            assertThrows(JSONException::class.java) {
+                SchedulePolicyEnvelopePayload.decode(payload.toString())
+            }
+        }
+
+        val nonString = JSONObject(SchedulePolicyEnvelopePayload.encode(samplePolicy()))
+        nonString.getJSONObject("policy").put("expiresAt", 123)
+        assertThrows(JSONException::class.java) {
+            SchedulePolicyEnvelopePayload.decode(nonString.toString())
+        }
     }
 
     @Test

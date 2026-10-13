@@ -32,18 +32,32 @@ function isSafeZoneRecipientPage(page: unknown, familyId: string, deviceId: stri
   const candidate = page as { safeZones?: unknown; nextCursor?: unknown };
   if (!Array.isArray(candidate.safeZones) || candidate.safeZones.length > MAX_SAFE_ZONE_DELIVERY_PAGE_ROWS ||
       !(candidate.nextCursor === null || typeof candidate.nextCursor === 'string')) return false;
-  return candidate.safeZones.every((value) => {
+  const seenZoneIds = new Set<string>();
+  let previousZoneId: string | null = null;
+  const rowsAreValid = candidate.safeZones.every((value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const zone = value as Record<string, unknown>;
+    const zoneId = zone.zoneId;
     const updatedAtUtc = zone.updatedAtUtc;
     const parsedUpdatedAt = typeof updatedAtUtc === 'string' ? new Date(updatedAtUtc) : null;
-    return zone.familyId === familyId && zone.recipientEndpointId === deviceId && zone.keyEpoch === keyEpoch &&
-      typeof zone.zoneId === 'string' && OPAQUE_TOKEN.test(zone.zoneId) &&
-      isCanonicalBase64Url(zone.ciphertextB64, 1, 65_535) && isCanonicalBase64Url(zone.nonceB64, 12, 64) &&
-      Number.isSafeInteger(zone.revision) && (zone.revision as number) >= 1 &&
-      (zone.deliveryState === 'PENDING_OFFLINE' || zone.deliveryState === 'READY') &&
-      parsedUpdatedAt !== null && Number.isFinite(parsedUpdatedAt.getTime()) && parsedUpdatedAt.toISOString() === updatedAtUtc;
+    if (zone.familyId !== familyId || zone.recipientEndpointId !== deviceId || zone.keyEpoch !== keyEpoch ||
+      typeof zoneId !== 'string' || !OPAQUE_TOKEN.test(zoneId) || seenZoneIds.has(zoneId) ||
+      (previousZoneId !== null && zoneId <= previousZoneId)) return false;
+    if (!isCanonicalBase64Url(zone.ciphertextB64, 1, 65_535) || !isCanonicalBase64Url(zone.nonceB64, 12, 64) ||
+        !Number.isSafeInteger(zone.revision) || (zone.revision as number) < 1 ||
+        (zone.deliveryState !== 'PENDING_OFFLINE' && zone.deliveryState !== 'READY') ||
+        parsedUpdatedAt === null || !Number.isFinite(parsedUpdatedAt.getTime()) || parsedUpdatedAt.toISOString() !== updatedAtUtc) {
+      return false;
+    }
+    seenZoneIds.add(zoneId);
+    previousZoneId = zoneId;
+    return true;
   });
+  if (!rowsAreValid) return false;
+  // Android treats a continuation as a full fixed-size keyset page. Returning
+  // a cursor with a short page makes the client reject the whole response and
+  // can strand the delivery walk, so verify the repository contract here too.
+  return candidate.nextCursor === null || candidate.safeZones.length === MAX_SAFE_ZONE_DELIVERY_PAGE_ROWS;
 }
 
 async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -181,7 +195,7 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
         return reply.code(503).send({ error: 'safe_zone_unavailable' });
       }
       if (page.nextCursor !== null) {
-        if (typeof page.nextCursor !== 'string' || page.safeZones.length === 0) {
+        if (typeof page.nextCursor !== 'string' || page.safeZones.length !== MAX_SAFE_ZONE_DELIVERY_PAGE_ROWS) {
           return reply.code(503).send({ error: 'safe_zone_unavailable' });
         }
         let cursorAfterZoneId: string | undefined;

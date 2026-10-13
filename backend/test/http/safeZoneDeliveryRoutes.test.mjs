@@ -346,6 +346,10 @@ test('device Safe Zone delivery rejects malformed opaque rows and oversized page
     { name: 'invalid delivery state', page: { safeZones: [{ ...opaqueZone, deliveryState: 'APPLIED' }], nextCursor: null } },
     { name: 'noncanonical update timestamp', page: { safeZones: [{ ...opaqueZone, updatedAtUtc: 'not-a-timestamp' }], nextCursor: null } },
     { name: 'oversized page', page: { safeZones: Array.from({ length: 17 }, (_, index) => ({ ...opaqueZone, zoneId: `zone_${index}` })), nextCursor: null } },
+    { name: 'duplicate zone in page', page: { safeZones: [opaqueZone, { ...opaqueZone }], nextCursor: null } },
+    { name: 'out-of-order zones in page', page: { safeZones: [
+      { ...opaqueZone, zoneId: 'zone_2' }, { ...opaqueZone, zoneId: 'zone_1' },
+    ], nextCursor: null } },
   ];
 
   for (const scenario of scenarios) {
@@ -365,18 +369,19 @@ test('device Safe Zone delivery rejects malformed opaque rows and oversized page
 });
 
 test('device Safe Zone delivery rejects a repository cursor outside the returned page and accepted key epoch', async (t) => {
+  const fullPage = Array.from({ length: 16 }, (_, index) => ({ ...opaqueZone, zoneId: `zone_${String(index + 1).padStart(2, '0')}` }));
   const valid = await appFor({ repository: {
-    async listForRecipient() { return { safeZones: [opaqueZone], nextCursor: 'v1~2~zone_1' }; },
+    async listForRecipient() { return { safeZones: fullPage, nextCursor: 'v1~2~zone_16' }; },
   } });
   t.after(() => valid.app.close());
   const validResponse = await valid.app.inject({ method: 'GET', url: '/v1/runtime-sync/safe-zones',
     headers: { authorization: 'Bearer valid-session' } });
   assert.equal(validResponse.statusCode, 200);
-  assert.equal(validResponse.json().nextCursor, 'v1~2~zone_1');
+  assert.equal(validResponse.json().nextCursor, 'v1~2~zone_16');
 
-  for (const nextCursor of ['v1~3~zone_1', 'v1~2~another-zone', 'malformed~cursor', {}]) {
+  for (const nextCursor of ['v1~3~zone_16', 'v1~2~another-zone', 'malformed~cursor', {}]) {
     const { app } = await appFor({ repository: {
-      async listForRecipient() { return { safeZones: [opaqueZone], nextCursor }; },
+      async listForRecipient() { return { safeZones: fullPage, nextCursor }; },
     } });
     t.after(() => app.close());
 
@@ -386,6 +391,16 @@ test('device Safe Zone delivery rejects a repository cursor outside the returned
     assert.deepEqual(response.json(), { error: 'safe_zone_unavailable' });
     assert.equal(response.body.includes('AQID'), false, 'invalid page continuation cannot accompany ciphertext');
   }
+
+  const shortPage = await appFor({ repository: {
+    async listForRecipient() { return { safeZones: [opaqueZone], nextCursor: 'v1~2~zone_1' }; },
+  } });
+  t.after(() => shortPage.app.close());
+  const shortPageResponse = await shortPage.app.inject({ method: 'GET', url: '/v1/runtime-sync/safe-zones',
+    headers: { authorization: 'Bearer valid-session' } });
+  assert.equal(shortPageResponse.statusCode, 503);
+  assert.deepEqual(shortPageResponse.json(), { error: 'safe_zone_unavailable' });
+  assert.equal(shortPageResponse.body.includes('AQID'), false, 'short continuation page cannot expose ciphertext');
 });
 
 test('device Safe Zone delivery rejects malformed accepted-member projections before storage access', async (t) => {

@@ -204,6 +204,7 @@ class HttpDeviceBootstrapApiClientTest {
             """{"status":"ATTEMPT_ABANDONED","status":"PAIRING_PENDING"}""",
             """{"status":"ATTEMPT_ABANDONED","unexpectedAuthority":"ACTIVE"}""",
             """{"status":true}""",
+            validSuccessBody().put("status", "ATTEMPT_ABANDONED").toString(),
         )) {
             responseBody.set(body)
             try {

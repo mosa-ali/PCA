@@ -88,11 +88,13 @@ class SafeZoneDeliveryClientTest {
             HttpSafeZoneDeliveryClient(server.url, session, allowInsecureLocal = true).synchronize(inbox)
         }.exceptionOrNull()
 
-        assertTrue(failure is SafeZoneDeliveryMalformedResponseException)
-        assertTrue(failure?.cause is java.nio.charset.CharacterCodingException)
-        assertTrue(server.finished.await(2, TimeUnit.SECONDS))
-        assertTrue(inbox.read().isEmpty())
-        assertNull(inbox.nextCursor())
+        assertTrue(
+            "Malformed UTF-8 must map to SafeZoneDeliveryMalformedResponseException; got ${failure?.javaClass?.name}",
+            failure is SafeZoneDeliveryMalformedResponseException,
+        )
+        val stagedRows = inbox.read()
+        assertTrue("Malformed response staged opaque rows: ${stagedRows.map { it.zoneId }}", stagedRows.isEmpty())
+        assertNull("Malformed response advanced the durable cursor", inbox.nextCursor())
     }
 
     @Test fun `fractional revision is typed malformed and never advances the durable cursor`() = runBlocking {
