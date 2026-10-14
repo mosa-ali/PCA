@@ -85,6 +85,12 @@ export interface ParentRuntimeSyncRoutesDeps {
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
 }
 
+async function markPrivateResponseNoStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // The authenticated parent status projection contains family/device
+  // bookkeeping and must not be retained by browser or intermediary caches.
+  reply.header('Cache-Control', 'private, no-store');
+}
+
 export function registerParentRuntimeSyncRoutes(app: FastifyInstance, deps: ParentRuntimeSyncRoutesDeps): void {
   const requireServiceSession = createRequireServiceSession(deps.authService);
   const requireViewDeviceSyncStatus = createRequireFamilyAuthorization(deps.authzService, 'VIEW_DEVICE_SYNC_STATUS');
@@ -93,6 +99,7 @@ export function registerParentRuntimeSyncRoutes(app: FastifyInstance, deps: Pare
   app.get(
     '/v1/families/:familyId/runtime-sync/devices/:deviceId/status',
     {
+      onRequest: markPrivateResponseNoStore,
       preHandler: [deps.authAttemptLimiter, requireServiceSession, requireViewDeviceSyncStatus, statusLimiter],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {

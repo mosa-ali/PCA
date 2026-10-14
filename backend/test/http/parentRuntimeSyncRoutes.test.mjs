@@ -77,6 +77,7 @@ test('no Authorization header: 401, never reaches family-scope or device-ownersh
   const { app } = buildHarness();
   const response = await app.inject({ method: 'GET', url: statusUrl('family-A', 'device-1') });
   assert.equal(response.statusCode, 401);
+  assert.equal(response.headers['cache-control'], 'private, no-store');
 });
 
 test('recognized service account with NO family-scope row for the target family: 403 forbidden', async () => {
@@ -137,6 +138,7 @@ test('active family scope + own device with no sync history yet: 200 with honest
   assert.equal(body.pendingDelivery.oldestQueuedAtUtc, null);
   assert.equal(body.protectionLevel, null);
   assert.equal(body.protectionUpdatedAtUtc, null);
+  assert.equal(response.headers['cache-control'], 'private, no-store');
   // No heartbeat and no pending work -> STALE (never LIVE, which would
   // fabricate a "recently synced" claim this tracker cannot honestly make).
   assert.equal(body.connectionState, 'STALE');
