@@ -438,7 +438,13 @@ class PersistentSafeZoneDeliveryInbox(
         if (storageKey in failClosedStorageKeys) {
             throw SafeZoneDeliveryPersistenceIoException(IOException("Safe Zone delivery rollback durability is uncertain"))
         }
-        val raw = state.getString(storageKey) ?: return@synchronized InboxSnapshot(emptyList(), null)
+        val raw = try {
+            state.getString(storageKey)
+        } catch (failure: IOException) {
+            // A failed adapter read says nothing about the persisted payload's integrity. Keep
+            // it retryable so a transient local-storage outage cannot permanently block sync.
+            throw SafeZoneDeliveryPersistenceIoException(failure)
+        } ?: return@synchronized InboxSnapshot(emptyList(), null)
         try {
             require(raw.length <= MAX_STAGED_CHARS)
             StrictJsonMemberNames.requireUnique(raw)

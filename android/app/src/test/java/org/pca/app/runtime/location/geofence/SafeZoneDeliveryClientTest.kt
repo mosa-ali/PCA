@@ -548,6 +548,35 @@ class SafeZoneDeliveryClientTest {
         assertTrue(failure is SafeZoneDeliveryPersistenceIoException)
     }
 
+    @Test fun `inbox read I O failure remains retryable without changing rows or cursor`() {
+        val scope = GeofenceStorageScope("family-1", "device-1")
+        val backing = InMemoryPersistentStateStore()
+        val storageKey = "opaque_safe_zone_delivery_v1:${scope.keyPart()}"
+        val firstPage = (0 until 16).map { index ->
+            delivery(ciphertext = "AQID", revision = 1).copy(zoneId = "zone-%03d".format(index))
+        }
+        PersistentSafeZoneDeliveryInbox(backing) { scope }
+            .stagePage(scope, firstPage, requestedCursor = null, nextCursor = "zone-015")
+        val priorRaw = backing.getString(storageKey)
+        var failRead = true
+        val failingState = object : PersistentStateStore by backing {
+            override fun getString(key: String): String? {
+                if (failRead && key == storageKey) throw IOException("storage temporarily unavailable")
+                return backing.getString(key)
+            }
+        }
+        val reopened = PersistentSafeZoneDeliveryInbox(failingState) { scope }
+
+        val failure = runCatching { reopened.nextCursor() }.exceptionOrNull()
+
+        assertTrue(failure is SafeZoneDeliveryPersistenceIoException)
+        assertEquals(priorRaw, backing.getString(storageKey))
+        failRead = false
+        assertEquals(firstPage, reopened.read())
+        assertEquals("zone-015", reopened.nextCursor())
+        assertEquals(priorRaw, backing.getString(storageKey))
+    }
+
     @Test fun `failed page flush restores prior rows and cursor for same process retry`() {
         val scope = GeofenceStorageScope("family-1", "device-1")
         val backing = InMemoryPersistentStateStore()
