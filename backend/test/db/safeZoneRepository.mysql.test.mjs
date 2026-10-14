@@ -80,6 +80,32 @@ async function seedMutationAuthority() {
   };
 }
 
+async function waitForMembershipLockWaits(blockingThreadId, minimumWaiters) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const [rows] = await getPool().query(
+      `SELECT COUNT(DISTINCT waiting.THREAD_ID) AS waiter_count
+         FROM performance_schema.data_lock_waits waits
+         JOIN performance_schema.data_locks waiting
+           ON waiting.ENGINE = waits.ENGINE
+          AND waiting.ENGINE_LOCK_ID = waits.REQUESTING_ENGINE_LOCK_ID
+          AND waiting.ENGINE_TRANSACTION_ID = waits.REQUESTING_ENGINE_TRANSACTION_ID
+         JOIN performance_schema.data_locks blocking
+           ON blocking.ENGINE = waits.ENGINE
+          AND blocking.ENGINE_LOCK_ID = waits.BLOCKING_ENGINE_LOCK_ID
+          AND blocking.ENGINE_TRANSACTION_ID = waits.BLOCKING_ENGINE_TRANSACTION_ID
+        WHERE blocking.THREAD_ID = ?
+          AND waiting.OBJECT_SCHEMA = DATABASE()
+          AND waiting.OBJECT_NAME = 'family_parent_memberships'
+          AND waiting.LOCK_STATUS = 'WAITING'`,
+      [blockingThreadId],
+    );
+    if (Number(rows[0]?.waiter_count ?? 0) >= minimumWaiters) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${minimumWaiters} observed Parent membership row-lock waiter(s).`);
+}
+
 after(async () => {
   await closePool();
 });
@@ -230,34 +256,59 @@ test('MySQL Safe Zone mutation locks Parent membership so demotion linearizes af
   const lock = await mysql.createConnection({ uri: process.env.PCA_DATABASE_URL, timezone: 'Z' });
   await lock.beginTransaction();
   let pendingMutation;
-  let demotionFinished = false;
+  let mutationSettled;
+  let demotionSettled;
   try {
     await lock.execute(
       `SELECT account_id FROM family_parent_memberships
         WHERE family_id = ? AND account_id = ? FOR UPDATE`,
       [fixture.familyId, fixture.parentAccountId],
     );
-    // Let the mutation acquire floor/device/key locks and queue for this Parent
-    // row before starting the concurrent role update. Releasing the lock must
-    // let the already-authorized write linearize first, then the demotion.
+    const [[{ threadId }]] = await lock.execute(
+      `SELECT THREAD_ID AS threadId FROM performance_schema.threads WHERE PROCESSLIST_ID = CONNECTION_ID()`,
+    );
+    // Both operations contend on this held Parent row. Either serial order is
+    // valid; the invariant is that no Safe Zone write commits after demotion.
     pendingMutation = repository.create({
       ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1,
     }, fixture.snapshot);
-    await new Promise((resolve) => setTimeout(resolve, 75));
+    mutationSettled = Promise.allSettled([pendingMutation]);
+    // Observe the repository transaction waiting on this exact table before
+    // introducing the demotion; this proves the authority SELECT is locking.
+    await waitForMembershipLockWaits(threadId, 1);
     const demotion = getPool().query(
       `UPDATE family_parent_memberships SET role = 'VIEWER', updated_at = NOW(3)
         WHERE family_id = ? AND account_id = ?`,
       [fixture.familyId, fixture.parentAccountId],
-    ).then(() => { demotionFinished = true; });
-    await new Promise((resolve) => setTimeout(resolve, 75));
-    assert.equal(demotionFinished, false, 'concurrent role change must wait on the membership row lock');
+    );
+    demotionSettled = Promise.allSettled([demotion]);
+    await waitForMembershipLockWaits(threadId, 2);
     await lock.commit();
-    const created = await pendingMutation;
-    await demotion;
-    assert.equal(created.familyId, fixture.familyId);
-    assert.equal(demotionFinished, true);
+    const [[mutationResult], [demotionResult]] = await Promise.all([mutationSettled, demotionSettled]);
+    assert.equal(demotionResult.status, 'fulfilled', 'the concurrent role change must complete');
+    const [membershipRows] = await getPool().query(
+      `SELECT role, status FROM family_parent_memberships WHERE family_id = ? AND account_id = ?`,
+      [fixture.familyId, fixture.parentAccountId],
+    );
+    assert.equal(membershipRows[0]?.role, 'VIEWER');
+    assert.equal(membershipRows[0]?.status, 'ACTIVE');
+
+    const [zoneRows] = await getPool().query(
+      `SELECT zone_id FROM safe_zones WHERE family_id = ?`,
+      [fixture.familyId],
+    );
+    if (mutationResult.status === 'fulfilled') {
+      assert.equal(mutationResult.value.familyId, fixture.familyId);
+      assert.equal(zoneRows.length, 1, 'an authorized write may serialize before demotion');
+    } else {
+      assert.ok(mutationResult.reason instanceof SafeZoneAuthorityChangedError,
+        'if demotion serializes first, the mutation must fail at its transactional authority check');
+      assert.equal(zoneRows.length, 0, 'a demoted Parent must not commit a Safe Zone mutation');
+    }
   } finally {
     try { await lock.rollback(); } catch { /* transaction already committed */ }
+    if (mutationSettled) await mutationSettled;
+    if (demotionSettled) await demotionSettled;
     await lock.end();
   }
 });
