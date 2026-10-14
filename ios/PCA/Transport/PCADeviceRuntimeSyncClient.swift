@@ -261,7 +261,15 @@ public final class PCADeviceRuntimeSyncClient {
     private let decoder = JSONDecoder()
 
     public init(baseURL: URL, transport: PCAHTTPTransport) throws {
-        guard baseURL.scheme?.lowercased() == "https" else { throw PCAAPIError.invalidConfiguration }
+        // The bearer credential is attached to every runtime-sync request. Require an
+        // origin URL so URL.appendingPathComponent cannot inherit userinfo, a query,
+        // a fragment, or an unrelated base path from injected configuration.
+        guard baseURL.scheme?.lowercased() == "https", baseURL.host != nil,
+              baseURL.user == nil, baseURL.password == nil,
+              baseURL.query == nil, baseURL.fragment == nil,
+              baseURL.path.isEmpty || baseURL.path == "/" else {
+            throw PCAAPIError.invalidConfiguration
+        }
         self.baseURL = baseURL
         self.transport = transport
     }

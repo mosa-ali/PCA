@@ -4796,6 +4796,24 @@ final class ProductionIntegrationTests: XCTestCase {
         try await client.reportProtectionStatus(.active, session: session)
     }
 
+    func testRuntimeSyncBearerClientRequiresOriginBaseURL() throws {
+        let transport = InMemoryPCAHTTPTransport { _ in
+            XCTFail("Rejected runtime-sync configuration must never send a bearer credential")
+            return PCAHTTPResponse(statusCode: 200, data: Data())
+        }
+        for value in ["http://api.example.test", "https://user:password@api.example.test",
+                      "https://api.example.test/other", "https://api.example.test/?source=other",
+                      "https://api.example.test/#other"] {
+            let url = try XCTUnwrap(URL(string: value))
+            XCTAssertThrowsError(try PCADeviceRuntimeSyncClient(baseURL: url, transport: transport), value) {
+                XCTAssertEqual($0 as? PCAAPIError, .invalidConfiguration)
+            }
+        }
+        XCTAssertNoThrow(try PCADeviceRuntimeSyncClient(
+            baseURL: URL(string: "https://api.example.test/")!, transport: transport))
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
     func testRuntimeSyncRejectsMalformedSessionTokenBeforeSendWithoutChangingInbox() async throws {
         let response = try inboundResponse()
         let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "invalid-runtime-session")
