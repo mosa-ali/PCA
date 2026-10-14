@@ -3,6 +3,7 @@ package org.pca.app.runtime.sync.inbox
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.withLock
+import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 
 sealed class InboundRetirementVerification {
     object Unavailable : InboundRetirementVerification()
@@ -53,19 +54,39 @@ class VerifiedInboundReplayReclaimer(
         freshAuthority()
         var reclaimed = 0
         val journalAtStart = journal.records().filter { it.intent.scope == scope }
+        // Read the bounded inbox once instead of reparsing and durably confirming the full
+        // snapshot for every terminal journal record. Exact equality is checked again by the
+        // batch removal before it commits, so this is an index for preflight only.
+        val inboxAtStartByMessageId = inbox.pendingCrypto(scope).associateBy { it.messageId }
+        val acknowledgedRetirements = mutableListOf<CiphertextInboxRecord>()
+        val terminalRetirements = mutableListOf<Pair<InboundApplicationRecord, FamilyEnvelope>>()
         for (record in journalAtStart.filter { it.outcome != null }) {
             freshAuthority()
             val envelope = PersistentCiphertextInbox.validateEnvelope(record.intent.envelopeWire, scope)
             if (!denial.coversReplayIdentityPermanently(envelope, scope)) continue
-            fun coverage() {
-                freshAuthority()
-                if (!denial.coversReplayIdentityPermanently(envelope, scope)) throw InboundReplayDenialUnavailable()
-            }
-            val held = inbox.pendingCrypto(scope).find { it.messageId == record.intent.messageId }
+            val held = inboxAtStartByMessageId[record.intent.messageId]
             if (held != null) {
                 if (held.envelopeWire != record.intent.envelopeWire) throw InboundReplayDenialUnavailable()
                 if (held.acknowledgementPending) continue
-                inbox.removeRetiredAcknowledged(scope, held, ::coverage)
+                acknowledgedRetirements += held
+            }
+            terminalRetirements += record to envelope
+        }
+        if (acknowledgedRetirements.isNotEmpty()) {
+            // The inbox validates every exact row and rechecks fresh permanent authority for each
+            // item before committing one filtered snapshot. A mid-batch failure leaves all rows
+            // intact; once committed, remaining journal rows are resumable under permanent denial.
+            inbox.removeRetiredAcknowledgedBatch(scope, acknowledgedRetirements) { held ->
+                freshAuthority()
+                val envelope = PersistentCiphertextInbox.validateEnvelope(held.envelopeWire, scope)
+                if (envelope.messageId != held.messageId ||
+                    !denial.coversReplayIdentityPermanently(envelope, scope)) throw InboundReplayDenialUnavailable()
+            }
+        }
+        for ((record, envelope) in terminalRetirements) {
+            fun coverage() {
+                freshAuthority()
+                if (!denial.coversReplayIdentityPermanently(envelope, scope)) throw InboundReplayDenialUnavailable()
             }
             // Missing ciphertext within the retained scope is the resumable state after its
             // deletion succeeded but the final journal write failed. Permanent denial remains.

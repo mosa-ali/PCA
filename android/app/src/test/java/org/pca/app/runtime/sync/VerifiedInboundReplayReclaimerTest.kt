@@ -15,12 +15,13 @@ class VerifiedInboundReplayReclaimerTest {
         val disk = mutableMapOf<String, String>()
         var ignoredKey: String? = null
         var flushCount = 0
+        val flushSnapshots = mutableListOf<Map<String, String>>()
         override fun getString(key: String) = cache[key]
         override fun putString(key: String, value: String) { if (ignoredKey?.let { key.contains(it) } != true) cache[key] = value }
         override fun remove(key: String) { cache.remove(key) }
         override fun contains(key: String) = cache.containsKey(key)
         override fun clear() { cache.clear() }
-        override fun flush() { flushCount++; disk.clear(); disk.putAll(cache) }
+        override fun flush() { flushCount++; disk.clear(); disk.putAll(cache); flushSnapshots += disk.toMap() }
         fun restart() = Backing().also { it.cache.putAll(disk); it.disk.putAll(disk) }
     }
     private val scope = RuntimeInboxScope("family-1", "device-1")
@@ -134,6 +135,80 @@ class VerifiedInboundReplayReclaimerTest {
         val restarted = PersistentCiphertextInbox(store.restart(), "device-1")
         assertEquals(listOf("unrelated-pending-ack"), restarted.pendingCrypto(scope).map { it.messageId })
         assertTrue(restarted.pendingCrypto(scope).single().acknowledgementPending)
+    }
+
+    @Test fun `reclaimer retires covered acknowledged journal ciphertext in one inbox snapshot`() = runBlocking {
+        val store = Backing()
+        val denial = denial(store)
+        repeat(8) { index -> seed(store, "covered-$index", index + 1) }
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val inboxKey = store.disk.keys.single { it.startsWith("runtime.ciphertext-inbox.v1.") }
+        val priorInboxBytes = store.disk[inboxKey]
+        val firstNewFlush = store.flushSnapshots.size
+
+        assertEquals(8, VerifiedInboundReplayReclaimer(journal, inbox, denial, verifier(8)).reclaim(scope) {})
+
+        var previousInboxBytes = priorInboxBytes
+        val inboxMutations = store.flushSnapshots.drop(firstNewFlush).count { snapshot ->
+            val currentInboxBytes = snapshot[inboxKey]
+            val changed = currentInboxBytes != previousInboxBytes
+            previousInboxBytes = currentInboxBytes
+            changed
+        }
+        assertEquals(1, inboxMutations)
+        assertTrue(inbox.pendingCrypto(scope).isEmpty())
+        assertTrue(journal.records().isEmpty())
+    }
+
+    @Test fun `mid-batch authority loss leaves ciphertext and journal intact for retry`() = runBlocking {
+        val store = Backing()
+        val denial = denial(store)
+        repeat(3) { index -> seed(store, "batch-$index", index + 1) }
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val beforeInboxBytes = store.disk.entries.single { it.key.startsWith("runtime.ciphertext-inbox.v1.") }.value
+        var validations = 0
+        val failsDuringBatch = InboundRetirementVerifier {
+            InboundRetirementVerification.Accepted(accepted(3).boundary) {
+                validations += 1
+                // 1 pre-latch + 3 denial-install checks + 1 post-install + 3 per-row preflight;
+                // fail on the second per-row authority check inside the batch callback.
+                if (validations == 10) throw InboundReplayDenialUnavailable()
+            }
+        }
+
+        try {
+            VerifiedInboundReplayReclaimer(journal, inbox, denial, failsDuringBatch).reclaim(scope) {}
+            fail("authority loss during batch must stop retirement before the snapshot commit")
+        } catch (_: InboundReplayDenialUnavailable) { }
+
+        assertEquals(beforeInboxBytes, store.disk.entries.single { it.key.startsWith("runtime.ciphertext-inbox.v1.") }.value)
+        assertEquals(3, inbox.pendingCrypto(scope).size)
+        assertEquals(3, journal.records().size)
+
+        assertEquals(3, VerifiedInboundReplayReclaimer(journal, inbox, denial, verifier(3)).reclaim(scope) {})
+        assertTrue(inbox.pendingCrypto(scope).isEmpty())
+        assertTrue(journal.records().isEmpty())
+    }
+
+    @Test fun `incomplete permanent coverage leaves uncovered journal and ciphertext intact`() = runBlocking {
+        val store = Backing()
+        val denial = denial(store)
+        repeat(3) { index -> seed(store, "partially-covered-$index", index + 1) }
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+
+        assertEquals(2, VerifiedInboundReplayReclaimer(journal, inbox, denial, verifier(2)).reclaim(scope) {})
+
+        assertEquals(listOf("partially-covered-2"), inbox.pendingCrypto(scope).map { it.messageId })
+        assertEquals(listOf("partially-covered-2"), journal.records().map { it.intent.messageId })
+        assertTrue(denial.coversReplayIdentityPermanently(
+            PersistentCiphertextInbox.validateEnvelope(wire("partially-covered-1", 2), scope), scope,
+        ))
+        assertFalse(denial.coversReplayIdentityPermanently(
+            PersistentCiphertextInbox.validateEnvelope(wire("partially-covered-2", 3), scope), scope,
+        ))
     }
 
     @Test fun `batch retirement rejects scope mismatch without changing persisted aliases`() {
