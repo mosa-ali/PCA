@@ -37,6 +37,7 @@ import {
 import { parseFamilyEnvelope } from '../../familyenvelope/parse.js';
 import { envelopeToRelayCiphertext } from '../../runtime-sync/envelopeWireCodec.js';
 import type { RelayEnvelopeAuthoritySnapshot } from '../../relay/RelayRepository.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 
 const MAX_BODY_BYTES = 96 * 1024; // matches parentAccountRoutes.ts's MAX_SAFE_ZONE_BODY_BYTES order of magnitude
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -225,8 +226,8 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
           acceptedActor.deviceId !== actorDeviceId.deviceId ||
           acceptedActor.dskKeyId !== actorDeviceId.dskKeyId ||
           !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(acceptedActor.role) ||
-          !Number.isSafeInteger(acceptedActor.trustSetEpoch) || acceptedActor.trustSetEpoch < 1 ||
-          !Number.isSafeInteger(acceptedActor.keyEpoch) || acceptedActor.keyEpoch < 1) {
+          !isFamilyEpochNumber(acceptedActor.trustSetEpoch, 1) ||
+          !isFamilyEpochNumber(acceptedActor.keyEpoch, 1)) {
         return reply.code(503).send({ error: 'authority_unavailable' });
       }
 
@@ -289,8 +290,8 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
           acceptedRecipient.familyId !== session.familyId ||
           acceptedRecipient.deviceId !== envelope.recipient.recipientDeviceId ||
           typeof acceptedRecipient.dskKeyId !== 'string' || acceptedRecipient.dskKeyId.length === 0 ||
-          !Number.isSafeInteger(acceptedRecipient.trustSetEpoch) || acceptedRecipient.trustSetEpoch < 1 ||
-          !Number.isSafeInteger(acceptedRecipient.keyEpoch) || acceptedRecipient.keyEpoch < 1) {
+          !isFamilyEpochNumber(acceptedRecipient.trustSetEpoch, 1) ||
+          !isFamilyEpochNumber(acceptedRecipient.keyEpoch, 1)) {
         return reply.code(503).send({ error: 'authority_unavailable' });
       }
       if (acceptedRecipient.role !== 'CHILD') return reply.code(400).send({ error: 'invalid_recipient' });
@@ -355,8 +356,8 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
               currentRecipient.deviceId !== recipientDeviceId ||
               typeof currentRecipient.dskKeyId !== 'string' || currentRecipient.dskKeyId.length === 0 ||
               !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(currentRecipient.role) ||
-              !Number.isSafeInteger(currentRecipient.trustSetEpoch) || currentRecipient.trustSetEpoch < 1 ||
-              !Number.isSafeInteger(currentRecipient.keyEpoch) || currentRecipient.keyEpoch < 1) {
+              !isFamilyEpochNumber(currentRecipient.trustSetEpoch, 1) ||
+              !isFamilyEpochNumber(currentRecipient.keyEpoch, 1)) {
             throw new RecipientAuthorizationUnavailableError();
           }
           if (currentRecipient.role !== 'CHILD' ||
@@ -399,8 +400,8 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
               currentSender.deviceId !== actorDeviceId.deviceId ||
               currentSender.dskKeyId !== actorDeviceId.dskKeyId ||
               !['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'].includes(currentSender.role) ||
-              !Number.isSafeInteger(currentSender.trustSetEpoch) || currentSender.trustSetEpoch < 1 ||
-              !Number.isSafeInteger(currentSender.keyEpoch) || currentSender.keyEpoch < 1) {
+              !isFamilyEpochNumber(currentSender.trustSetEpoch, 1) ||
+              !isFamilyEpochNumber(currentSender.keyEpoch, 1)) {
             throw new RecipientAuthorizationUnavailableError();
           }
           if (currentSender.role !== acceptedActor.role ||

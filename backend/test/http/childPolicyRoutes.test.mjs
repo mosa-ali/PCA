@@ -575,6 +575,100 @@ test('schedule-policy rejects stale or unaccepted future envelope epochs before 
   }
 });
 
+test('schedule-policy accepts the shared family epoch maximum and rejects authority snapshots above it', async () => {
+  const authority = (deviceId, role, dskKeyId, trustSetEpoch = MAX_FAMILY_EPOCH, keyEpoch = MAX_FAMILY_EPOCH) => ({
+    familyId: FAMILY, deviceId, role, dskKeyId, trustSetEpoch, keyEpoch,
+  });
+  const maxEpochResolver = {
+    async resolveActor(_familyId, deviceId) {
+      return deviceId === 'dev-child'
+        ? authority('dev-child', 'CHILD', 'child-key')
+        : authority('dev-owner', 'OWNER', 'owner-key-1');
+    },
+  };
+  let authorizationCalls = 0;
+  const authorization = { async authorize() { authorizationCalls += 1; return { verdict: 'ALLOW' }; } };
+  const { app, submittedBatches } = buildApp({ authorization, trustSetRoleResolver: maxEpochResolver });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { ...VALID_ENVELOPE, trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH },
+    });
+    assert.equal(response.statusCode, 202);
+    assert.equal(authorizationCalls, 1);
+    assert.equal(submittedBatches.length, 1);
+  } finally {
+    await app.close();
+  }
+
+  for (const invalidProjection of ['actor', 'recipient']) {
+    let authorizationCount = 0;
+    const resolver = {
+      async resolveActor(_familyId, deviceId) {
+        if (deviceId === 'dev-child') {
+          return authority('dev-child', 'CHILD', 'child-key',
+            invalidProjection === 'recipient' ? MAX_FAMILY_EPOCH + 1 : MAX_FAMILY_EPOCH,
+            MAX_FAMILY_EPOCH);
+        }
+        return authority('dev-owner', 'OWNER', 'owner-key-1',
+          invalidProjection === 'actor' ? MAX_FAMILY_EPOCH + 1 : MAX_FAMILY_EPOCH,
+          MAX_FAMILY_EPOCH);
+      },
+    };
+    const authorization = { async authorize() { authorizationCount += 1; return { verdict: 'ALLOW' }; } };
+    const { app, submittedBatches } = buildApp({ authorization, trustSetRoleResolver: resolver });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: { ...VALID_ENVELOPE, trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH },
+      });
+      assert.equal(response.statusCode, 503, `${invalidProjection} authority must fail closed`);
+      assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+      assert.equal(authorizationCount, invalidProjection === 'actor' ? 0 : 1);
+      assert.equal(submittedBatches.length, 0);
+    } finally {
+      await app.close();
+    }
+  }
+
+  for (const invalidProjection of ['current-recipient', 'current-sender']) {
+    const projectionCalls = new Map();
+    const resolver = {
+      async resolveActor(_familyId, deviceId) {
+        const count = (projectionCalls.get(deviceId) ?? 0) + 1;
+        projectionCalls.set(deviceId, count);
+        const invalid = (invalidProjection === 'current-recipient' && deviceId === 'dev-child' && count === 2) ||
+          (invalidProjection === 'current-sender' && deviceId === 'dev-owner' && count === 2);
+        return deviceId === 'dev-child'
+          ? authority('dev-child', 'CHILD', 'child-key', invalid ? MAX_FAMILY_EPOCH + 1 : MAX_FAMILY_EPOCH)
+          : authority('dev-owner', 'OWNER', 'owner-key-1', invalid ? MAX_FAMILY_EPOCH + 1 : MAX_FAMILY_EPOCH);
+      },
+    };
+    let authorizationCount = 0;
+    const authorization = { async authorize() { authorizationCount += 1; return { verdict: 'ALLOW' }; } };
+    const { app, submittedBatches, delegatedBatches } = buildApp({ authorization, trustSetRoleResolver: resolver });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+        payload: { ...VALID_ENVELOPE, trustSetEpoch: MAX_FAMILY_EPOCH, keyEpoch: MAX_FAMILY_EPOCH },
+      });
+      assert.equal(response.statusCode, 503, `${invalidProjection} authority must fail closed`);
+      assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+      assert.equal(authorizationCount, 1);
+      assert.equal(submittedBatches.length, 1);
+      assert.equal(delegatedBatches.length, 0);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
 test('a VIEWER cannot edit child policy: DENY from the real OPERATION_MATRIX, no relay submission', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
   const { app, submittedBatches } = buildApp({ authorization });
