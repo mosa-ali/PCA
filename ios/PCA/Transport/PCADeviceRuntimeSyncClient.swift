@@ -229,12 +229,22 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
         } else {
             navigation = nil
         }
+        let appliedIds = Set(applied.map { Data($0.messageId.utf8) })
+        let unparseableIds = Set(unparseableMessageIds.map { Data($0.utf8) })
+        let droppedIds = Set(droppedForListBound.map { Data($0.utf8) })
+        let receiptIds = Set(receipts.map { Data($0.messageId.utf8) })
         guard !scope.familyId.isEmpty, scope.familyId.utf16.count <= 128,
               !scope.recipientDeviceId.isEmpty, scope.recipientDeviceId.utf16.count <= 128,
               applied.count <= 256, unparseableMessageIds.count <= 100, droppedForListBound.count <= 100,
-              Set(applied.map { Data($0.messageId.utf8) }).count == applied.count,
+              appliedIds.count == applied.count,
               (unparseableMessageIds + droppedForListBound).allSatisfy({ !$0.isEmpty && $0.utf16.count <= 128 }),
-              receipts.count <= 100, Set(receipts.map { Data($0.messageId.utf8) }).count == receipts.count else {
+              unparseableIds.count == unparseableMessageIds.count,
+              droppedIds.count == droppedForListBound.count,
+              receipts.count <= 100, receiptIds.count == receipts.count,
+              appliedIds.isDisjoint(with: unparseableIds), appliedIds.isDisjoint(with: droppedIds),
+              unparseableIds.isDisjoint(with: droppedIds),
+              receiptIds.isDisjoint(with: unparseableIds), receiptIds.isDisjoint(with: droppedIds),
+              receipts.allSatisfy({ !appliedIds.contains(Data($0.messageId.utf8)) || $0.outcome == .applied }) else {
             throw PCAAPIError.malformedResponse
         }
         for receipt in receipts { try receipt.validate() }

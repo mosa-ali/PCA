@@ -4918,6 +4918,46 @@ final class ProductionIntegrationTests: XCTestCase {
             "duplicate applied message IDs must fail at the response boundary before inbox capture")
     }
 
+    func testRuntimeResponseRejectsContradictoryDispositionsAndAllowsAppliedReceipt() throws {
+        let source = try inboundResponse()
+        let envelope = try XCTUnwrap(source.applied.first)
+        let messageId = envelope.messageId
+        let wireEnvelope = try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
+        let receiptDate = "2026-10-07T00:00:00.000Z"
+        let appliedReceipt: [String: String] = ["messageId": messageId, "outcome": "APPLIED", "atUtc": receiptDate]
+        let priorReceipt: [String: String] = ["messageId": "unknown-receipt", "outcome": "HELD_PENDING", "atUtc": receiptDate]
+        let base: [String: Any] = [
+            "scope": ["familyId": source.scope.familyId, "recipientDeviceId": source.scope.recipientDeviceId],
+            "applied": [wireEnvelope],
+            "unparseableMessageIds": ["unknown-unparseable"],
+            "droppedForListBound": ["unknown-dropped"],
+            "receipts": [appliedReceipt, priorReceipt],
+        ]
+        func decode(_ body: [String: Any]) throws -> PCAInboundRuntimeSyncResponse {
+            try JSONDecoder().decode(PCAInboundRuntimeSyncResponse.self, from: JSONSerialization.data(withJSONObject: body))
+        }
+
+        let valid = try decode(base)
+        XCTAssertEqual(valid.applied.map(\.messageId), [messageId])
+        XCTAssertEqual(valid.unparseableMessageIds, ["unknown-unparseable"])
+        XCTAssertEqual(valid.droppedForListBound, ["unknown-dropped"])
+        XCTAssertEqual(valid.receipts.map(\.messageId), [messageId, "unknown-receipt"],
+            "APPLIED receipt overlap and historical receipt IDs outside this page remain valid")
+
+        let invalidBodies: [[String: Any]] = [
+            { var body = base; body["unparseableMessageIds"] = [messageId]; return body }(),
+            { var body = base; body["droppedForListBound"] = [messageId]; return body }(),
+            { var body = base; body["droppedForListBound"] = ["unknown-unparseable"]; return body }(),
+            { var body = base; body["unparseableMessageIds"] = ["unknown-receipt"]; return body }(),
+            { var body = base; body["droppedForListBound"] = ["unknown-receipt"]; return body }(),
+            { var body = base; body["unparseableMessageIds"] = ["same-id", "same-id"]; return body }(),
+            { var body = base; body["droppedForListBound"] = ["same-id", "same-id"]; return body }(),
+            { var body = base; body["receipts"] = [["messageId": messageId, "outcome": "HELD_PENDING", "atUtc": receiptDate]]; return body }(),
+            { var body = base; body["receipts"] = [["messageId": messageId, "outcome": "REJECTED", "atUtc": receiptDate]]; return body }(),
+        ]
+        for body in invalidBodies { XCTAssertThrowsError(try decode(body)) }
+    }
+
     func testPublishedLegacyReceiptsDoNotRequireNewNavigationFields() throws {
         for outcomes in [[], ["APPLIED"], ["HELD_PENDING"], ["REJECTED"]] as [[String]] {
             let receipts = outcomes.map { ["messageId": "message-1", "outcome": $0, "atUtc": "2026-10-07T00:00:00.000Z"] }
