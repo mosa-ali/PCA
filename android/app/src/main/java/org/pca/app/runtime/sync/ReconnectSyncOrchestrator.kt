@@ -318,7 +318,14 @@ class ReconnectSyncOrchestrator(
                     (if (result.hasMore || inbox.hasUnresolvedRelayWork()) 1 else 0)
                 // ACK recovery is independent of which wrappers appeared on this page.
                 if (!acknowledgeStored(scope)) return RuntimeCustodyOutcome.MORE_PENDING
-                if (navigation == null || !navigation.hasMore) return RuntimeCustodyOutcome.COMPLETE
+                if (navigation == null) {
+                    // Legacy servers have no resumable cursor, but their deferred-work bit still
+                    // tells the caller that another bounded pull is required. Do not report a
+                    // completed drain merely because continuation metadata is unavailable.
+                    return if (result.hasMore) RuntimeCustodyOutcome.MORE_PENDING
+                    else RuntimeCustodyOutcome.COMPLETE
+                }
+                if (!navigation.hasMore) return RuntimeCustodyOutcome.COMPLETE
                 val next = navigation.nextCursor ?: return RuntimeCustodyOutcome.BLOCKED
                 if (next == cursor) return RuntimeCustodyOutcome.BLOCKED
                 cursor = next

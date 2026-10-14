@@ -287,14 +287,14 @@ class ReconnectSyncOrchestratorTest {
         val relay = FakeRelayHttpClient().apply { inboundHasMore = true }
         val orchestrator = buildOrchestrator(FakeDurableBackingStore(), relay)
 
-        orchestrator.syncNow()
+        assertEquals(RuntimeCustodyOutcome.MORE_PENDING, orchestrator.syncNow())
 
         assertEquals(SyncConnectionState.SYNC_PENDING, orchestrator.connectionState.value)
         assertEquals(1, relay.inboundListCalls)
         assertTrue(relay.acknowledgedMessageIds.isEmpty())
 
         relay.inboundHasMore = false
-        orchestrator.syncNow()
+        assertEquals(RuntimeCustodyOutcome.COMPLETE, orchestrator.syncNow())
 
         assertEquals(SyncConnectionState.LIVE, orchestrator.connectionState.value)
         assertEquals(2, relay.inboundListCalls)
