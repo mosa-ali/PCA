@@ -319,6 +319,8 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                 let serverHead: OrdinaryTrustSetHead
                 do {
                     serverHead = try await self.transport.acceptedHead(familyId: self.familyId)
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     return .rejected
                 }
@@ -329,6 +331,8 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                 if !Self.sameHeadExactly(serverHead, pending.previousHead) {
                     do {
                         _ = try await self.catchUpUnlocked(maximumRecords: 32)
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
                         // An unavailable or invalid predecessor chain leaves
                         // the existing immutable request available for a

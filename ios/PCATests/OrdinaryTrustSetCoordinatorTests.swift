@@ -72,6 +72,8 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         var beforeReply: (() -> Void)?
         var statusValue: OrdinaryTrustSetSubmissionResult = .unknown
         var statusCalls = 0
+        var acceptedHeadFailure: Error?
+        var acceptedRecordFailure: Error?
         var head: OrdinaryTrustSetHead?
         var records: [Int: OrdinaryTrustSetHead] = [:]
         func submit(_ request: OrdinaryTrustSetPending) async throws -> OrdinaryTrustSetSubmissionResult {
@@ -90,11 +92,13 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         }
         func acceptedRecord(familyId: String, epoch: Int) async throws -> OrdinaryTrustSetHead {
             events.append("acceptedRecord:\(epoch)")
+            if let acceptedRecordFailure { throw acceptedRecordFailure }
             guard let value = records[epoch] else { throw PCAAPIError.unavailable }
             return value
         }
         func acceptedHead(familyId: String) async throws -> OrdinaryTrustSetHead {
             events.append("acceptedHead")
+            if let acceptedHeadFailure { throw acceptedHeadFailure }
             guard let value = head else { throw PCAAPIError.unavailable }
             return value
         }
@@ -443,6 +447,52 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.value.head, try XCTUnwrap(store.value.rootAnchor))
         XCTAssertEqual(store.value.pending, pending,
             "an unavailable accepted-head read must not erase or replace the immutable request")
+        XCTAssertTrue(transport.sent.isEmpty)
+        XCTAssertEqual(signer.calls, 1)
+    }
+
+    func testRejectedPendingPropagatesAcceptedHeadCancellationAndPreservesRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let trustedRoot = try XCTUnwrap(store.value.rootAnchor)
+        transport.statusValue = .rejected
+        transport.acceptedHeadFailure = CancellationError()
+
+        do {
+            _ = try await coordinator.resumePending()
+            XCTFail("cancellation during accepted-head recovery must propagate")
+        } catch is CancellationError {
+            // Expected: the enclosing background task must stop promptly.
+        }
+
+        XCTAssertEqual(store.value.head, trustedRoot)
+        XCTAssertEqual(store.value.pending, pending,
+            "cancellation must retain the exact signed request for the next runtime session")
+        XCTAssertTrue(transport.sent.isEmpty)
+        XCTAssertEqual(signer.calls, 1)
+    }
+
+    func testRejectedPendingPropagatesCatchUpCancellationAndPreservesRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let trustedRoot = try XCTUnwrap(store.value.rootAnchor)
+        transport.statusValue = .rejected
+        transport.head = try signedHead(epoch(3, supersedes: 2), signature: "advanced-conflicting-head")
+        transport.acceptedRecordFailure = CancellationError()
+
+        do {
+            _ = try await coordinator.resumePending()
+            XCTFail("cancellation during verified-chain catch-up must propagate")
+        } catch is CancellationError {
+            // Expected: do not turn cancellation into a terminal status result.
+        }
+
+        XCTAssertEqual(store.value.head, trustedRoot,
+            "a cancelled incomplete chain must not advance the trusted floor")
+        XCTAssertEqual(store.value.pending, pending,
+            "a cancelled recovery must retain the exact immutable request")
         XCTAssertTrue(transport.sent.isEmpty)
         XCTAssertEqual(signer.calls, 1)
     }
