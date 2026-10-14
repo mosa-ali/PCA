@@ -310,6 +310,32 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
                 try self.acceptExact(head, record: record, pending: pending)
                 return .accepted(head)
             case .rejected:
+                // A terminal conflict can leave this immutable request based
+                // on an obsolete accepted floor. Reconcile only from the
+                // authenticated accepted head and retire the request through
+                // the same fully verified predecessor-chain path used by
+                // ordinary catch-up. An unchanged head or unavailable chain
+                // leaves the exact signed request in custody.
+                let serverHead: OrdinaryTrustSetHead
+                do {
+                    serverHead = try await self.transport.acceptedHead(familyId: self.familyId)
+                } catch {
+                    return .rejected
+                }
+                if Self.sameHeadExactly(serverHead, pending.candidate) {
+                    try self.acceptExact(serverHead, record: record, pending: pending)
+                    return .accepted(serverHead)
+                }
+                if !Self.sameHeadExactly(serverHead, pending.previousHead) {
+                    do {
+                        _ = try await self.catchUpUnlocked(maximumRecords: 32)
+                    } catch {
+                        // An unavailable or invalid predecessor chain leaves
+                        // the existing immutable request available for a
+                        // later recovery attempt.
+                        return .rejected
+                    }
+                }
                 return .rejected
             case .unknown:
                 // Do not replay an attempt against a predecessor that is no

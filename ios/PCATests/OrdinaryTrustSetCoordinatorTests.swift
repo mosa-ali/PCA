@@ -391,6 +391,62 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(transport.statusCalls, 2)
         XCTAssertEqual(signer.calls, 2)
     }
+
+    func testRejectedPendingConflictReconcilesVerifiedAcceptedRecordAndRetiresRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let conflictingAccepted = try signedHead(epoch(2), signature: "accepted-conflicting-signature")
+        transport.statusValue = .rejected
+        transport.head = conflictingAccepted
+
+        let result = try await coordinator.resumePending()
+
+        guard case .rejected? = result else { return XCTFail("the persisted candidate itself was rejected") }
+        XCTAssertEqual(store.value.head, conflictingAccepted,
+            "a conflicting immutable record is adopted only after its signed predecessor chain is verified")
+        XCTAssertEqual(store.value.acceptedBase, pending.previousHead)
+        XCTAssertNil(store.value.pending, "verified advancement retires the now-stale exact request")
+        XCTAssertEqual(transport.sent, [], "a terminally rejected request is never replayed")
+        XCTAssertEqual(signer.calls, 1, "reconciliation never signs a replacement")
+    }
+
+    func testRejectedPendingWithUnavailableConflictChainPreservesExactRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        transport.statusValue = .rejected
+        transport.head = try signedHead(epoch(3, supersedes: 2), signature: "advanced-conflicting-head")
+        // The accepted epoch-2 predecessor is deliberately unavailable.
+
+        let result = try await coordinator.resumePending()
+
+        guard case .rejected? = result else { return XCTFail("the original conflict status remains terminal") }
+        XCTAssertEqual(store.value.head, try XCTUnwrap(store.value.rootAnchor),
+            "no accepted floor advances without a complete verified predecessor chain")
+        XCTAssertEqual(store.value.pending, pending,
+            "an unavailable predecessor must preserve the exact signed request bytes")
+        XCTAssertTrue(transport.sent.isEmpty)
+        XCTAssertEqual(signer.calls, 1)
+    }
+
+    func testRejectedPendingWithUnavailableAcceptedHeadPreservesExactRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        transport.statusValue = .rejected
+        transport.head = nil
+
+        let result = try await coordinator.resumePending()
+
+        guard case .rejected? = result else { return XCTFail("the terminal rejection remains the returned outcome") }
+        XCTAssertEqual(store.value.head, try XCTUnwrap(store.value.rootAnchor))
+        XCTAssertEqual(store.value.pending, pending,
+            "an unavailable accepted-head read must not erase or replace the immutable request")
+        XCTAssertTrue(transport.sent.isEmpty)
+        XCTAssertEqual(signer.calls, 1)
+    }
+
     func testRuntimeResumeRetriesPersistedBytesOnlyAfterUnknownStatus() async throws {
         let (store, signer, transport, coordinator) = try fixture()
         try await coordinator.prepare(epoch(2))
