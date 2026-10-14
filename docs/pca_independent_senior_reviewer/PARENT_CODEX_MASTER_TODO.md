@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Android Safe Zone delivery parsing — 2026-10-14
+
+SOURCE = Android Safe Zone delivery now rejects duplicate JSON member names before parsing both authenticated server pages and persisted inbox snapshots. The guard catches nested and escaped aliases, preventing ambiguous payloads from changing rows or advancing a cursor. iOS already enforced the same boundary. No schema or authority contract changed.
+VALIDATION = Focused Safe Zone suite **27/27 PASS**; full Android unit suite **2171/2171 PASS**; `:app:lint` and `:app:assembleRelease` **BUILD SUCCESSFUL**. Release artifact is unsigned because release signing configuration is not present. Android and backend/iOS peer reviews found no P1/P2 issue. Exact-head CI remains pending publication.
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. Physical-device, crypto approval, owner localhost acceptance, Platform dependency, live DB, Azure, and production gates remain separate. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Source and validation checkpoint — 2026-10-14
 
 Published base `7ddd59dd6ab215483aae8197b9ebf3e18538374a` passed Quality Gates run `38481324030` with 27/27 jobs successful. The local follow-up corrects Safe Zone production-path certification to retain its verified-device-session gate, requires the owned disposable database guard before direct Safe Zone MySQL tests, and snapshots Android ordinary Trust Set candidates before lock/network suspension. Android rejects more than 64 entries before head I/O or signing. No schema, grant, or production configuration changed.
