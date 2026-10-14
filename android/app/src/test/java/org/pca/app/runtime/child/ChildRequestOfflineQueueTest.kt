@@ -177,6 +177,33 @@ class ChildRequestOfflineQueueTest {
     }
 
     @Test
+    fun `present but unreadable pending marker blocks reads enqueue and outbound submission`() = runTest {
+        for (presenceCheckFails in listOf(false, true)) {
+            val backing = InMemoryPersistentStateStore()
+            val originalQueue = ChildRequestOfflineQueue(backing)
+            originalQueue.enqueue(payload("req-existing"))
+            val queueKey = "child_request_offline_queue_v1"
+            val markerKey = "$queueKey.pending_write"
+            val queueBytes = backing.getString(queueKey)
+            val markerBytes = "retained-unreadable-marker"
+            backing.putString(markerKey, markerBytes)
+            backing.flush()
+
+            val unreadableStore = UnreadablePendingWriteMarkerStore(backing, presenceCheckFails)
+            val queue = ChildRequestOfflineQueue(unreadableStore)
+            val port = FakeFamilySyncRuntimePort(state = FamilySyncConnectionState.LIVE)
+
+            assertQueueUnavailable { queue.pending() }
+            assertQueueUnavailable { queue.enqueue(payload("req-new")) }
+            assertQueueUnavailableSuspend { queue.flush(port) }
+
+            assertEquals(queueBytes, backing.getString(queueKey))
+            assertEquals(markerBytes, backing.getString(markerKey))
+            assertTrue("unresolved marker must never authorize a transport submission", port.submitted.isEmpty())
+        }
+    }
+
+    @Test
     fun `process death with the exact prior snapshot recovers and clears the marker`() {
         val durableState = InMemoryPersistentStateStore()
         val crashingStore = CrashAtFlushStore(durableState)
@@ -555,6 +582,22 @@ class ChildRequestOfflineQueueTest {
             flushCount++
             if (flushCount == failOnFlushNumber) throw IllegalStateException("simulated commit failure")
             backing.flush()
+        }
+    }
+
+    private class UnreadablePendingWriteMarkerStore(
+        private val backing: InMemoryPersistentStateStore,
+        private val presenceCheckFails: Boolean,
+    ) : PersistentStateStore by backing {
+        private val markerKey = "child_request_offline_queue_v1.pending_write"
+
+        override fun getString(key: String): String? =
+            if (key == markerKey) null else backing.getString(key)
+
+        override fun contains(key: String): Boolean = when {
+            key != markerKey -> backing.contains(key)
+            presenceCheckFails -> error("presence check unavailable")
+            else -> true
         }
     }
 

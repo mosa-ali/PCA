@@ -147,7 +147,7 @@ class ChildRequestOfflineQueue(
         if (ChildRequestQueueHealth.isPoisoned(lock, key)) unavailable()
         val pendingKey = pendingWriteKey
         val previous = try {
-            if (store.getString(pendingKey) != null) unavailable()
+            if (readPendingWriteMarkerOrAbsent() != null) unavailable()
             store.getString(key)
         } catch (_: Exception) {
             unavailable()
@@ -212,7 +212,7 @@ class ChildRequestOfflineQueue(
     /** Clears a write marker only when storage is byte-for-byte one of the recorded transaction
      * endpoints. Legacy markers and any unknown/malformed state are preserved and fail closed. */
     private fun recoverPendingWrite() {
-        val marker = store.getString(pendingWriteKey) ?: return
+        val marker = readPendingWriteMarkerOrAbsent() ?: return
         val descriptor = decodePendingWrite(marker) ?: unavailable()
         val snapshot = store.getString(key)
         val fingerprint = snapshotFingerprint(snapshot)
@@ -227,6 +227,13 @@ class ChildRequestOfflineQueue(
         } catch (_: Exception) {
             unavailable()
         }
+    }
+
+    /** A null read means no pending write only when the backing store also reports no key. */
+    private fun readPendingWriteMarkerOrAbsent(): String? {
+        val marker = store.getString(pendingWriteKey)
+        if (marker == null && store.contains(pendingWriteKey)) unavailable()
+        return marker
     }
 
     private data class PendingWriteDescriptor(
