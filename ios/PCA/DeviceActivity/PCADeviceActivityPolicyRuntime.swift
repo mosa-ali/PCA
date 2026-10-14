@@ -325,6 +325,23 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private func applyPolicyUnderLock(scheduleData: Data, applicationTokenData: Data,
                                       protectedApplicationTokenData: Data?, now: Date,
                                       lockAccess: DeviceActivityPolicyLockAccess) throws -> PCAProtectionPolicyApplicationResult {
+        // A corrupt pending clear record must not prevent live authorization
+        // revocation from removing the committed generation's enforcement.
+        // The cross-process policy lock keeps the manifest stable while this
+        // preflight clears only an active installation; approved callers keep
+        // the normal clear-intent reconciliation order below.
+        if !authorizationIsApproved() {
+            mutationLock.lock()
+            if let installation = currentInstallation(), installation.state == .active {
+                do {
+                    try requireEnforcementAuthorization(for: installation)
+                } catch {
+                    mutationLock.unlock()
+                    throw error
+                }
+            }
+            mutationLock.unlock()
+        }
         // Clear recovery takes mutationLock itself. Resolve it while the
         // cross-process policy lock is held, but before entering the local
         // mutation critical section.
