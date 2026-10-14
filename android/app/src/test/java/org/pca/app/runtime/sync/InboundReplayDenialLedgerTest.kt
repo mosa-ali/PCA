@@ -127,6 +127,28 @@ class InboundReplayDenialLedgerTest {
         unavailable { ledger.boundaries() }
     }
 
+    @Test fun `ambiguous persisted replay floors fail closed without rewriting denial`() {
+        val store = Backing()
+        val ledger = initialized(store)
+        ledger.install(boundary(trust = 2, key = 3, prefixes = mapOf("key-1" to 4))) {}
+        val storageKey = store.cache.keys.single { !it.endsWith(".required") }
+        val valid = requireNotNull(store.cache[storageKey])
+        val ambiguousSnapshots = listOf(
+            valid.replace("\"version\":1", "\"version\":1,\"version\":1"),
+            valid.replace("\"trustSetFloor\":2", "\"trustSetFloor\":2,\"trustSetFloor\":1"),
+            valid.replace("\"through\":4", "\"through\":4,\"\\u0074hrough\":0"),
+        )
+        for (ambiguous in ambiguousSnapshots) {
+            assertNotEquals(valid, ambiguous)
+            store.cache[storageKey] = ambiguous
+            unavailable { ledger.boundaries() }
+            unavailable { ledger.isEnvelopeDenied(envelope(nonce = "4", trust = 2, key = 3), scope) }
+            assertEquals(ambiguous, store.cache[storageKey])
+        }
+        store.cache[storageKey] = valid
+        assertTrue(ledger.isEnvelopeDenied(envelope(nonce = "4", trust = 2, key = 3), scope))
+    }
+
     @Test fun `lost authority before installation does not manufacture denial`() {
         val ledger = initialized(Backing())
         unavailable { ledger.install(boundary(prefixes = mapOf("key-1" to 2))) { error("root changed") } }

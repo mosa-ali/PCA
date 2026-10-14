@@ -8,6 +8,7 @@ import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.EpochBounds
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 import org.pca.app.runtime.sync.envelope.RecipientBinding
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /** Inputs must come from authenticated, permanent retirement authority, not envelope syntax. */
 data class InboundReplayRetirementBoundary(
@@ -126,6 +127,9 @@ class PersistentInboundReplayDenialLedger(
             if (store.getString(requiredKey) != requiredValue) unavailable()
             val raw = store.getString(storageKey) ?: unavailable()
             if (raw.toByteArray(Charsets.UTF_8).size > 131072) unavailable()
+            // JSONObject collapses duplicate names. A replay floor must have one
+            // unambiguous value at every level before it can authorize admission.
+            StrictJsonMemberNames.requireUnique(raw)
             val json = JSONObject(raw)
             if (json.get("version") != 1) unavailable()
             val entries = json.getJSONArray("boundaries")
