@@ -282,6 +282,29 @@ test('issueChallengeSafely rejects an invalid synthetic challenge clock instead 
   }
 });
 
+test('completeChallenge rejects an invalid final session clock or expiry without minting a bearer', async () => {
+  const valid = new Date('2026-01-01T00:00:00.000Z');
+  for (const finalTimestamp of [
+    Number.NaN,
+    Date.UTC(9999, 11, 31, 23, 30, 0, 0),
+  ]) {
+    let clockCalls = 0;
+    const { deviceRepository, sessionRepository, sessionService } = buildHarness(() => {
+      clockCalls += 1;
+      return new Date(clockCalls === 1 ? finalTimestamp : valid.getTime());
+    });
+    const { deviceId, publicKey } = await registerDevice(deviceRepository);
+    const challenge = await sessionService.issueChallengeSafely(deviceId);
+    await assert.rejects(
+      () => sessionService.completeChallenge(deviceId, challenge.challengeId,
+        signTestOnlyChallenge(publicKey, challenge.nonce)),
+      (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+    );
+    assert.equal(clockCalls, 1, 'the failure must happen at final session issuance, after successful proof verification');
+    assert.equal(sessionRepository.byTokenHash.size, 0, 'invalid persistence timestamps cannot create a bearer');
+  }
+});
+
 test('issueChallengeSafely for a revoked device is indistinguishable at the API boundary from a nonexistent one', async () => {
   const { deviceRepository, sessionService } = buildHarness();
   const { deviceId, familyId } = await registerDevice(deviceRepository);

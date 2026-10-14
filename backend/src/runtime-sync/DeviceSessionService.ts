@@ -120,7 +120,15 @@ export class DeviceSessionService {
     }
 
     const { rawToken, tokenHash } = generateSessionToken();
-    const issuedAt = this.now();
+    const clockValue: unknown = this.now();
+    if (!isSupportedChallengeTime(clockValue)) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
+    const issuedAt = new Date(clockValue.getTime());
+    const expiresAt = new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS);
+    if (!isSupportedChallengeTime(expiresAt)) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
     const record: DeviceSessionRecord = {
       sessionId: randomUUID(),
       tokenHash,
@@ -130,7 +138,7 @@ export class DeviceSessionService {
       dskPublicKey: identity.dskPublicKey,
       familySessionEpoch,
       issuedAt,
-      expiresAt: new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS),
+      expiresAt,
       revokedAt: null,
     };
     await this.sessionRepository.create(record);
