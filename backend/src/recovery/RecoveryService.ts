@@ -91,7 +91,9 @@ export class RecoveryService {
     // Callers can reuse or mutate their Buffer while persistence is pending;
     // the exact bounded bytes validated here must be the bytes stored.
     const ciphertextSnapshot = Buffer.from(ciphertext);
-    const writeTime = new Date(this.now().getTime());
+    const clockValue: unknown = this.now();
+    if (!isValidMySqlDateTime(clockValue)) throw new RecoveryError('INVALID_INPUT');
+    const writeTime = new Date(clockValue.getTime());
     const result: StoreEnvelopeResult = await this.repository.storeEnvelope(
       familyId,
       ciphertextSnapshot,

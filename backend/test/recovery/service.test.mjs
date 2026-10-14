@@ -32,6 +32,44 @@ test('storeEnvelope creates a new envelope at version 1 with expectedVersion 0',
   assert.equal(record.familyId, FAMILY_A);
 });
 
+test('storeEnvelope rejects invalid or non-persistable clock values before repository mutation', async () => {
+  const durable = createInMemoryRecoveryRepository();
+  let writeCalls = 0;
+  const repository = {
+    getEnvelope: (familyId) => durable.getEnvelope(familyId),
+    async storeEnvelope(...args) {
+      writeCalls += 1;
+      return durable.storeEnvelope(...args);
+    },
+    deleteEnvelope: (familyId) => durable.deleteEnvelope(familyId),
+  };
+  let clockValue = new Date(BASE_TIME);
+  const service = new RecoveryService(repository, () => clockValue);
+  const initial = await service.storeEnvelope(FAMILY_A, Buffer.from('before'), 0);
+  const invalidClocks = [
+    new Date(Number.NaN),
+    new Date('0999-12-31T23:59:59.999Z'),
+    new Date('+010000-01-01T00:00:00.000Z'),
+  ];
+
+  for (const invalidClock of invalidClocks) {
+    clockValue = invalidClock;
+    await assert.rejects(
+      () => service.storeEnvelope(FAMILY_A, Buffer.from('replacement'), initial.version),
+      { code: 'INVALID_INPUT' },
+    );
+    await assert.rejects(
+      () => service.storeEnvelope(FAMILY_B, Buffer.from('new-envelope'), 0),
+      { code: 'INVALID_INPUT' },
+    );
+    const stored = await service.fetchEnvelope(FAMILY_A);
+    assert.equal(stored.version, initial.version);
+    assert.deepEqual(stored.ciphertext, Buffer.from('before'));
+    assert.equal(await durable.getEnvelope(FAMILY_B), null);
+    assert.equal(writeCalls, 1, 'invalid persistence times must be rejected before either write reaches the repository');
+  }
+});
+
 test('storeEnvelope snapshots validated ciphertext before asynchronous persistence', async () => {
   let releaseWrite;
   let receivedCiphertext;
