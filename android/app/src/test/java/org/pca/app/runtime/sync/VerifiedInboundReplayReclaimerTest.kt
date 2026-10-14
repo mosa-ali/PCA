@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
+import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.sync.envelope.*
 import org.pca.app.runtime.sync.inbox.*
@@ -209,6 +210,31 @@ class VerifiedInboundReplayReclaimerTest {
         assertFalse(denial.coversReplayIdentityPermanently(
             PersistentCiphertextInbox.validateEnvelope(wire("partially-covered-2", 3), scope), scope,
         ))
+    }
+
+    @Test fun `same message id with substituted ciphertext fails closed and preserves both records`() = runBlocking {
+        val store = Backing()
+        val intent = seed(store, "ciphertext-substitution", 1)
+        val journal = PersistentInboundApplicationJournal(store, "device-1")
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        val inboxKey = store.disk.keys.single { it.startsWith("runtime.ciphertext-inbox.v1.") }
+        val substitutedWire = wire("ciphertext-substitution", 2)
+        val substitutedSnapshot = JSONObject(store.disk.getValue(inboxKey)).apply {
+            getJSONArray("records").getJSONObject(0).put("envelopeWire", substitutedWire)
+        }.toString()
+        // Inject a valid envelope with the same messageId but different bytes, simulating corrupted
+        // or substituted custody state while preserving the store's normal durable snapshot format.
+        store.cache[inboxKey] = substitutedSnapshot
+        store.disk[inboxKey] = substitutedSnapshot
+
+        try {
+            VerifiedInboundReplayReclaimer(journal, inbox, denial(store), verifier(2)).reclaim(scope) {}
+            fail("A same-id ciphertext substitution must not be retired")
+        } catch (_: InboundReplayDenialUnavailable) { }
+
+        assertEquals(intent, journal.records().single().intent)
+        assertEquals(listOf(CiphertextInboxRecord("ciphertext-substitution", substitutedWire, false)), inbox.pendingCrypto(scope))
+        assertEquals("failed exact binding must not rewrite the inbox", substitutedSnapshot, store.disk.getValue(inboxKey))
     }
 
     @Test fun `batch retirement rejects scope mismatch without changing persisted aliases`() {
