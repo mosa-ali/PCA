@@ -361,11 +361,28 @@ class SafeZonePolicyReceiver(
                 if (candidate.keyEpoch < zoneStore.acceptedKeyEpochFloor(receiverScope)) {
                     return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
                 }
+                val priorZone = zoneStore.loadZones(receiverScope).firstOrNull { it.zoneId == payload.zoneId }
+                val priorState = try {
+                    zoneStateStore.load(receiverScope, payload.zoneId)
+                } catch (_: CorruptGeofenceZoneStateException) {
+                    // A new signed revision may clear an unreadable old baseline. It cannot be
+                    // restored if the zone write fails, but it must not block policy repair.
+                    null
+                }
                 // A revision changes the meaning of the zone id. Clear the old
                 // baseline durably before replacing geometry, while a monitor
                 // tick cannot save state derived from the prior zone snapshot.
                 zoneStateStore.clear(receiverScope, payload.zoneId)
-                if (!zoneStore.addOrReplaceIfNewer(receiverScope, payload.zone, candidate.keyEpoch)) {
+                val zoneAccepted = try {
+                    zoneStore.addOrReplaceIfNewer(receiverScope, payload.zone, candidate.keyEpoch)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    restorePriorBaselineIfPriorZoneRemains(receiverScope, payload.zoneId, priorZone, priorState)
+                    throw failure
+                }
+                if (!zoneAccepted) {
+                    restorePriorBaselineIfPriorZoneRemains(receiverScope, payload.zoneId, priorZone, priorState)
                     return@withPolicyLock SafeZonePolicyReceiveResult.REJECTED
                 }
                 SafeZonePolicyReceiveResult.APPLIED
@@ -389,6 +406,36 @@ class SafeZonePolicyReceiver(
         throw cancelled
     } catch (failure: Exception) {
         Result.failure(failure)
+    }
+
+    /**
+     * If persistence rejected a replacement and the previously accepted geometry is still
+     * readable, restore its exact debounce baseline. Uncertain/poisoned storage stays fail-closed:
+     * the zone snapshot cannot be trusted, so its old baseline must not be reintroduced.
+     */
+    private fun restorePriorBaselineIfPriorZoneRemains(
+        scope: GeofenceStorageScope,
+        zoneId: String,
+        priorZone: GeofenceZone?,
+        priorState: GeofenceZoneState?,
+    ) {
+        if (priorZone == null || priorState == null) return
+        val priorZoneStillAccepted = try {
+            zoneStore.isCurrentScope(scope) && zoneStore.loadZones(scope).firstOrNull { it.zoneId == zoneId } == priorZone
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        if (!priorZoneStillAccepted) return
+        try {
+            zoneStateStore.save(scope, priorState)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep the original policy-write failure as the receive result. If the backing store
+            // is uncertain, GeofenceDurableStorage prevents restoring untrusted state anyway.
+        }
     }
 
     private fun SafeZonePolicyEnvelope.cryptoCopy(): SafeZonePolicyEnvelope =

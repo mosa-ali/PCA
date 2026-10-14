@@ -12,6 +12,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.platform.LocationSample
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -604,6 +605,78 @@ class SafeZonePolicyReceiverTest {
     }
 
     @Test
+    fun `failed zone replacement restores prior accepted policy baseline`() = runTest {
+        val failingBacking = OneShotZoneCandidateFailureStore(InMemoryPersistentStateStore())
+        val zones = GeofenceZoneStore(failingBacking, scopeProvider = { familyScope })
+        val states = GeofenceZoneStateStore(failingBacking, scopeProvider = { familyScope })
+        zones.addOrReplace(zone)
+        val priorBaseline = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+            candidateMembership = GeofenceMembership.OUTSIDE,
+            candidateStreak = 1,
+            lastEvaluatedMonotonicNanos = 40L,
+            lastAcceptedSampleElapsedRealtimeMillis = 35L,
+            bootInstanceId = "boot-test",
+        )
+        states.save(priorBaseline)
+        failingBacking.failNextCandidateKey = familyScope.zoneStoreKey("geofence_zones_v2")
+        val replacement = zone.copy(centerLatitude = 25.01, revision = 2L)
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String) =
+                    SafeZonePolicyPayloadCodec.encode(
+                        SafeZonePolicyPayload("family-a", "child-a", zone.zoneId, 2L, 3L, replacement),
+                    )
+            },
+            zoneStore = zones,
+            zoneStateStore = states,
+        )
+
+        assertEquals(
+            SafeZonePolicyReceiveResult.REJECTED,
+            receiver.receive(envelope().copy(revision = 2L), nowEpochMillis = 2_000L),
+        )
+        assertEquals(listOf(zone), zones.loadZones())
+        assertEquals(priorBaseline, states.load(zone.zoneId))
+    }
+
+    @Test
+    fun `failed first zone write does not restore orphan debounce state`() = runTest {
+        val failingBacking = OneShotZoneCandidateFailureStore(InMemoryPersistentStateStore())
+        val zones = GeofenceZoneStore(failingBacking, scopeProvider = { familyScope })
+        val states = GeofenceZoneStateStore(failingBacking, scopeProvider = { familyScope })
+        val orphanBaseline = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+        )
+        states.save(orphanBaseline)
+        failingBacking.failNextCandidateKey = familyScope.zoneStoreKey("geofence_zones_v2")
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String) =
+                    SafeZonePolicyPayloadCodec.encode(
+                        SafeZonePolicyPayload("family-a", "child-a", zone.zoneId, 1L, 3L, zone),
+                    )
+            },
+            zoneStore = zones,
+            zoneStateStore = states,
+        )
+
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
+        assertTrue(zones.loadZones().isEmpty())
+        assertNull(states.load(zone.zoneId))
+    }
+
+    @Test
     fun `deleted zone replay and key epoch rollback stay rejected after process restart`() = runTest {
         val flexibleAuthority = object : SafeZoneFamilyAuthority {
             override suspend fun isRecipientAuthorized(
@@ -726,4 +799,24 @@ class SafeZonePolicyReceiverTest {
 
     private fun SafeZonePolicyEnvelope.payloadForTest(): ByteArray =
         SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload(familyId, recipientEndpointId, zoneId, revision, keyEpoch, zone))
+
+    private class OneShotZoneCandidateFailureStore(
+        private val delegate: PersistentStateStore,
+    ) : PersistentStateStore {
+        override val coordinationLock: Any get() = delegate.coordinationLock
+        var failNextCandidateKey: String? = null
+
+        override fun getString(key: String): String? = delegate.getString(key)
+        override fun putString(key: String, value: String) {
+            if (key == failNextCandidateKey) {
+                failNextCandidateKey = null
+                error("injected Safe Zone candidate write failure")
+            }
+            delegate.putString(key, value)
+        }
+        override fun remove(key: String) = delegate.remove(key)
+        override fun contains(key: String): Boolean = delegate.contains(key)
+        override fun clear() = delegate.clear()
+        override fun flush() = delegate.flush()
+    }
 }
