@@ -1488,12 +1488,17 @@ final class ProductionIntegrationTests: XCTestCase {
     private final class UsageRuntime: PCAProtectionPolicyRuntime {
         var status: DeviceActivityUsageMonitorStatus = .expired
         var renewals = 0
+        var reconciliations = 0
         var fails = false
         var result: PCAProtectionPolicyApplicationResult = .degraded
         func applyVerifiedPolicy(scheduleData: Data, applicationTokenData: Data,
             protectedApplicationTokenData: Data?, now: Date) throws -> PCAProtectionPolicyApplicationResult { .degraded }
         func clearPolicy(activityId: String) {}
         func callbackHealth(now: Date) -> DeviceActivityCallbackHealth { .unknown }
+        func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? {
+            reconciliations += 1
+            return nil
+        }
         func usageMonitorStatus(now: Date) -> DeviceActivityUsageMonitorStatus { status }
         func renewInstalledUsageMonitor(now: Date) throws -> PCAProtectionPolicyApplicationResult {
             renewals += 1
@@ -1539,6 +1544,25 @@ final class ProductionIntegrationTests: XCTestCase {
         model.sceneBecameActive()
         XCTAssertEqual(runtime.renewals, 0)
         XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded)
+    }
+    @MainActor func testAuthorizationRequestRevocationImmediatelyReconcilesInstalledPolicy() async throws {
+        let runtime = UsageRuntime()
+        runtime.status = .planned(.wholePolicyDayPlanned)
+        let source = RevokingAuthorizationStatusSource()
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            policyRuntime: runtime,
+            authorizationSource: source
+        )
+        model.start()
+        let priorReconciliations = runtime.reconciliations
+
+        await model.requestAuthorization()
+
+        XCTAssertEqual(model.authorization, .revoked(to: .denied))
+        XCTAssertEqual(runtime.reconciliations, priorReconciliations + 1,
+            "a denial observed during the active authorization request must reach the installed policy runtime immediately")
     }
     @MainActor func testRenewalDoesNotPromoteProtectionAndNonAppliedResultsDegrade() throws {
         for result in [PCAProtectionPolicyApplicationResult.applied, .scheduledOnly, .degraded] {
@@ -4745,11 +4769,18 @@ final class ProductionIntegrationTests: XCTestCase {
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         authorizationStatus: RawAuthorizationStatus = .approved,
+        authorizationSource: AuthorizationStatusSource? = nil,
         enrollmentTransport: PCAHTTPTransport? = nil
     ) throws -> PCAApplicationModel {
-        let authorizationSource = FakeAuthorizationStatusSource()
-        authorizationSource.status = authorizationStatus
-        let authorizationCenter = ChildAuthorizationCenter(source: authorizationSource,
+        let resolvedAuthorizationSource: AuthorizationStatusSource
+        if let authorizationSource {
+            resolvedAuthorizationSource = authorizationSource
+        } else {
+            let source = FakeAuthorizationStatusSource()
+            source.status = authorizationStatus
+            resolvedAuthorizationSource = source
+        }
+        let authorizationCenter = ChildAuthorizationCenter(source: resolvedAuthorizationSource,
             observationStore: InMemoryChildAuthorizationObservationStore())
         // Runtime fixtures use an explicit committed root; this is not real-device evidence.
         let runtimeRoot = firstDeviceRootStore ?? (runtimeSyncClient == nil ? nil :
@@ -5513,6 +5544,12 @@ private final class RecordingDeviceIdentityStore: PCADeviceIdentityStore {
     private(set) var savedDeviceIds: [String] = []
     func loadDeviceId() -> String? { savedDeviceIds.last }
     func saveDeviceId(_ deviceId: String) { savedDeviceIds.append(deviceId) }
+}
+
+private final class RevokingAuthorizationStatusSource: AuthorizationStatusSource {
+    private var status: RawAuthorizationStatus = .approved
+    func currentRawStatus() -> RawAuthorizationStatus { status }
+    func requestChildAuthorization() async throws { status = .denied }
 }
 
 private final class RecordingKeyDeletion: FirstDeviceKeyPairDeletion {

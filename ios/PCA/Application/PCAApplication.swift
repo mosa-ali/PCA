@@ -428,6 +428,13 @@ enum PCAFirstDeviceTrustRootComposition {
         }
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        if !authorization.permitsEnforcement {
+            // An authorization request can itself observe revocation while the
+            // app is active. Drive the installed runtime gate immediately so
+            // stale ManagedSettings do not wait for another foreground or OS
+            // DeviceActivity callback to be removed.
+            reconcileInstalledProtectionPolicy(now: now())
+        }
         if authorization.permitsEnforcement {
             Task {
                 await self.resumeEnrollmentIfPossible()

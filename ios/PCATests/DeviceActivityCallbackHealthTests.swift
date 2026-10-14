@@ -1036,6 +1036,34 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))), installation)
     }
 
+    func testPolicyReconciliationClearsRevokedShieldsBeforeInvalidClockRead() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        var authorized = true
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { authorized },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(
+            scheduleData: policy("revoked-invalid-clock", capability: .enforced, restrictive: true),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt), .applied)
+        let manifest = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifest))
+        let removalsBeforeRevocation = shields.removeCount
+        authorized = false
+
+        XCTAssertThrowsError(try runtime.reconcileInstalledPolicy(now: Date(timeIntervalSince1970: .infinity))) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .authorizationRequired,
+                "the live authorization gate must run before a corrupt clock can block cleanup")
+        }
+
+        XCTAssertEqual(shields.removeCount, removalsBeforeRevocation + 1)
+        XCTAssertTrue(scheduler.stopped.contains(installation.monitorActivityId))
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifest,
+            "revocation clears enforcement but retains the exact committed policy for authorized recovery")
+    }
+
     func testUnauthorizedApplyClearsShieldsAndPreservesActiveGenerationForRecovery() throws {
         let store = CallbackRuntimeBlobStore()
         let scheduler = CallbackRuntimeScheduler()

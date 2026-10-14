@@ -675,14 +675,18 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     public func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? {
         do {
             return try policyCoordination.withExclusiveAccessContext { access in
-                let trustedNow = try trustedTimeFloor.observe(now, access: access)
                 try reconcileClearIntent()
                 mutationLock.lock()
                 defer { mutationLock.unlock() }
                 reconcileRetirementIntent()
                 guard let installation = currentInstallation(), installation.state == .active else { return nil }
                 do {
+                    // Authorization revocation must clear stale settings even
+                    // when the wall clock or persisted time floor is corrupt.
+                    // Read the committed manifest first, then enforce the live
+                    // FamilyControls gate before any time-dependent recovery.
                     try requireEnforcementAuthorization(for: installation)
+                    let trustedNow = try trustedTimeFloor.observe(now, access: access)
                     try restoreMissingMonitors(for: installation)
                     if let usagePlan = installation.usageDayPlan,
                        usagePlan.binding.hasAuthoritativeScope {
