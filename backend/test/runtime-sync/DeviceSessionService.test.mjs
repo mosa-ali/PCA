@@ -247,7 +247,7 @@ test('an issued device session is rejected immediately after device revocation',
   );
 });
 
-test('a bearer remains bound to its verified DSK when a second active DSK exists', async () => {
+test('active-device key insertion is rejected without invalidating its issued DSK bearer', async () => {
   const { deviceRepository, sessionRepository, sessionService } = buildHarness();
   const { deviceId, familyId, publicKey, dskKeyId } = await registerDevice(deviceRepository);
   const firstChallenge = await sessionService.issueChallengeSafely(deviceId);
@@ -256,29 +256,27 @@ test('a bearer remains bound to its verified DSK when a second active DSK exists
 
   const replacementKey = { deviceId, keyId: `key-${randomUUID()}`, keyPurpose: 'DSK',
     publicKey: `pubkey-${randomUUID()}`, status: 'ACTIVE', createdAt: new Date(), revokedAt: null };
-  assert.equal((await deviceRepository.addKeyAtomically(familyId, replacementKey)).outcome, 'ADDED');
-  assert.equal((await deviceRepository.revokeKeyForFamily(familyId, deviceId, dskKeyId, new Date())).outcome, 'REVOKED');
+  assert.equal((await deviceRepository.addKeyAtomically(familyId, replacementKey)).outcome, 'INVALID_STATE');
   const activeKeys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
-  assert.equal(activeKeys.filter(key => key.keyPurpose === 'DSK' && key.status === 'ACTIVE').length, 1);
-  assert.equal(activeKeys.find(key => key.keyId === replacementKey.keyId).status, 'ACTIVE');
-
-  await assert.rejects(() => sessionService.validateSession(oldSession.rawToken),
-    error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+  assert.deepEqual(activeKeys.map(key => key.keyId), [dskKeyId]);
+  assert.deepEqual(await sessionService.validateSession(oldSession.rawToken),
+    { deviceId, familyId, dskKeyId }, 'the original bearer remains bound to the existing DSK');
 
   const replacementChallenge = await sessionService.issueChallengeSafely(deviceId);
-  const replacementSession = await sessionService.completeChallenge(deviceId, replacementChallenge.challengeId,
-    signTestOnlyChallenge(replacementKey.publicKey, replacementChallenge.nonce));
-  assert.deepEqual(await sessionService.validateSession(replacementSession.rawToken),
-    { deviceId, familyId, dskKeyId: replacementKey.keyId });
+  await assert.rejects(
+    () => sessionService.completeChallenge(deviceId, replacementChallenge.challengeId,
+      signTestOnlyChallenge(replacementKey.publicKey, replacementChallenge.nonce)),
+    error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
   // Validation of a token whose persisted DSK snapshot was corrupted also fails closed.
   const validate = sessionRepository.validate.bind(sessionRepository);
   sessionRepository.validate = async (tokenHash, now) => {
     const result = await validate(tokenHash, now);
-    return result.outcome === 'VALID' && result.session.dskKeyId === replacementKey.keyId
-      ? { outcome: 'VALID', session: { ...result.session, dskPublicKey: `${replacementKey.publicKey}-tampered` } }
+    return result.outcome === 'VALID' && result.session.dskKeyId === dskKeyId
+      ? { outcome: 'VALID', session: { ...result.session, dskPublicKey: `${publicKey}-tampered` } }
       : result;
   };
-  await assert.rejects(() => sessionService.validateSession(replacementSession.rawToken),
+  await assert.rejects(() => sessionService.validateSession(oldSession.rawToken),
     error => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
 });
 

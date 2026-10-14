@@ -22,7 +22,7 @@ const CHILD_PROFILE_FAMILY_MAP = new Map([
 ]);
 const T0 = new Date('2026-01-07T09:00:00.000Z');
 
-function buildApp({ nowFn = () => T0, trustSetRoleResolverOverride = 'DEFAULT' } = {}) {
+function buildApp({ nowFn = () => T0, trustSetRoleResolverOverride = 'DEFAULT', deviceChildBindingRepositoryOverride = 'DEFAULT' } = {}) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch({
     familyId: FAMILY,
@@ -91,6 +91,13 @@ function buildApp({ nowFn = () => T0, trustSetRoleResolverOverride = 'DEFAULT' }
       return identity;
     },
   };
+  const deviceChildBindingRepository = deviceChildBindingRepositoryOverride === 'DEFAULT'
+    ? { async resolveBinding(familyId, deviceId) {
+      return familyId === FAMILY && deviceId === 'dev-child'
+        ? { outcome: 'BOUND', childProfileId: 'child-1' }
+        : { outcome: 'UNBOUND' };
+    } }
+    : deviceChildBindingRepositoryOverride;
 
   const app = Fastify();
   registerChildRequestRoutes(app, {
@@ -102,6 +109,7 @@ function buildApp({ nowFn = () => T0, trustSetRoleResolverOverride = 'DEFAULT' }
     // SAME childProfileResolver instance the authorization service above uses -- see
     // childRequestRoutes.ts's own doc comment on why active-grants/revoke need this independently.
     childProfileMembership: childProfileResolver,
+    deviceChildBindingRepository,
     now: nowFn,
   });
   return { app, childRequestService, bonusGrantLedger, deviceTokens, roleResolver };
@@ -133,6 +141,66 @@ test('child request submission still requires a same-family device-session beare
     assert.equal((await childRequestService.listForFamily(FAMILY_B)).length, 0);
   } finally {
     await app.close();
+  }
+});
+
+test('child request submission is bound to the authenticated device enrollment profile', async () => {
+  const calls = [];
+  const { app, childRequestService } = buildApp({
+    deviceChildBindingRepositoryOverride: {
+      async resolveBinding(familyId, deviceId) {
+        calls.push([familyId, deviceId]);
+        return { outcome: 'BOUND', childProfileId: 'child-1' };
+      },
+    },
+  });
+  try {
+    const accepted = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { requestType: 'UNBLOCK', childProfileId: 'child-1' } });
+    assert.equal(accepted.statusCode, 201, JSON.stringify(accepted.json()));
+    assert.deepEqual(calls, [[FAMILY, 'dev-child']]);
+    assert.equal((await childRequestService.listForFamily(FAMILY)).length, 1);
+
+    const mismatch = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { requestType: 'UNBLOCK', childProfileId: 'child-in-other-family' } });
+    assert.equal(mismatch.statusCode, 403, JSON.stringify(mismatch.json()));
+    assert.equal((await childRequestService.listForFamily(FAMILY)).length, 1, 'mismatched target must not be persisted');
+  } finally {
+    await app.close();
+  }
+});
+
+test('child request submission rejects unbound or ambiguous device profiles without persistence', async () => {
+  for (const binding of [{ outcome: 'UNBOUND' }, { outcome: 'AMBIGUOUS' }]) {
+    const { app, childRequestService } = buildApp({
+      deviceChildBindingRepositoryOverride: { async resolveBinding() { return binding; } },
+    });
+    try {
+      const response = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+        headers: { authorization: 'Bearer dev-token-child' },
+        payload: { requestType: 'UNBLOCK', childProfileId: 'child-1' } });
+      assert.equal(response.statusCode, 403, JSON.stringify(response.json()));
+      assert.deepEqual(await childRequestService.listForFamily(FAMILY), []);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('child request submission fails closed when device profile authority is unavailable', async () => {
+  for (const repository of [null, { async resolveBinding() { throw new Error('registry unavailable'); } }]) {
+    const { app, childRequestService } = buildApp({ deviceChildBindingRepositoryOverride: repository });
+    try {
+      const response = await app.inject({ method: 'POST', url: `/api/families/${FAMILY}/child-requests`,
+        headers: { authorization: 'Bearer dev-token-child' },
+        payload: { requestType: 'UNBLOCK', childProfileId: 'child-1' } });
+      assert.equal(response.statusCode, 503, JSON.stringify(response.json()));
+      assert.deepEqual(await childRequestService.listForFamily(FAMILY), []);
+    } finally {
+      await app.close();
+    }
   }
 });
 

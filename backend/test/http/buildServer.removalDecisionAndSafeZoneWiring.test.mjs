@@ -184,6 +184,29 @@ test('buildServer registers removal-decision routes (reachable, not 404)', async
   }
 });
 
+test('buildServer wires durable device/profile authority before a child request is persisted', async () => {
+  const deps = buildStubDeps({ withDeviceSessionService: true });
+  let createDraftCalls = 0;
+  deps.childRequestService = {
+    createDraft() { createDraftCalls += 1; throw new Error('must not persist an unbound target'); },
+  };
+  deps.bonusGrantLedger = {};
+  const app = buildServer(deps);
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/families/family-a/child-requests',
+      headers: { authorization: 'Bearer devtoken-a' },
+      payload: { requestType: 'UNBLOCK', childProfileId: 'child-profile-other' },
+    });
+    assert.equal(response.statusCode, 403, JSON.stringify(response.json()));
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(createDraftCalls, 0, 'buildServer must deliver profile-binding authority to the route before persistence');
+  } finally {
+    await app.close();
+  }
+});
+
 test('buildServer Safe Zone reads use active Parent session role without a device bearer', async () => {
   const app = buildServer(buildStubDeps({ withDeviceSessionService: true }));
   try {
@@ -267,6 +290,7 @@ test('buildServer wires Parent Safe Zone writes to the durable child-profile bin
     assert.equal(creates[0].recipientEndpointId, 'child-device');
     assert.deepEqual(authoritySnapshots[0], {
       familyId: 'family-a',
+      parentAccountId: 'account-a',
       trustSetEpoch: 1,
       keyEpoch: 1,
       actor: { deviceId: 'device-a', dskKeyId: 'dsk-a' },
@@ -342,7 +366,7 @@ test('buildServer binds PATCH and DELETE Safe Zone mutations to exact accepted a
     });
     assert.equal(deleteResponse.statusCode, 204);
     const expected = {
-      familyId: 'family-a', trustSetEpoch: 1, keyEpoch: 1,
+      familyId: 'family-a', parentAccountId: 'account-a', trustSetEpoch: 1, keyEpoch: 1,
       actor: { deviceId: 'device-a', dskKeyId: 'dsk-a' },
       recipient: { deviceId: 'child-device', dskKeyId: 'dsk-child' },
     };

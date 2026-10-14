@@ -695,6 +695,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     deviceSessionService: deps.deviceSessionService,
     childProfileMembership: deps.childProfileMembership,
     trustSetRoleResolver: deps.trustSetRoleResolver,
+    deviceChildBindingRepository: deps.deviceChildBindingRepository,
   });
   registerChildPolicyRoutes(app, {
     parentAccountService: deps.parentAccountService,

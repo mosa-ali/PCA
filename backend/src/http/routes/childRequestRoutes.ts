@@ -26,6 +26,7 @@ import type { BonusGrantLedger } from '../../childrequests/BonusGrantLedger.js';
 import { RuntimeSyncAuthError, type DeviceSessionIdentity, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ActorResolutionFailure, ResolvedActor, TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { AppScope } from '../../schedule/types.js';
+import type { DeviceChildBindingRepository } from '../../device/DeviceChildBindingRepository.js';
 import {
   UnavailableChildProfileMembershipResolver,
   type ChildProfileMembershipResolver,
@@ -46,6 +47,8 @@ export interface ChildRequestRoutesDeps {
   deviceSessionService: DeviceSessionService;
   /** Binds device-session proof to the exact currently accepted Trust Set DSK. Omission fails closed. */
   trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
+  /** Resolves the authenticated CHILD device to its existing family profile. Omission fails closed. */
+  deviceChildBindingRepository?: Pick<DeviceChildBindingRepository, 'resolveBinding'>;
   /**
    * PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: the `bonus-time/active-grants` (read) and
    * `bonus-time/grants/:grantId/revoke` (write) routes below read/mutate `bonusGrantLedger` directly
@@ -261,6 +264,29 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       if (typeof requestType !== 'string' || !REQUEST_TYPES.has(requestType) || typeof childProfileId !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+
+      // A verified CHILD role alone does not establish which child profile
+      // this device represents. Resolve the durable enrollment binding before
+      // accepting caller-supplied target scope; never persist a request for a
+      // different, unbound, or ambiguous profile.
+      if (!deps.deviceChildBindingRepository) {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      let childBinding;
+      try {
+        childBinding = await deps.deviceChildBindingRepository.resolveBinding(familyId, childIdentity.deviceId);
+      } catch {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (!childBinding || typeof childBinding !== 'object' || Array.isArray(childBinding) ||
+          typeof childBinding.outcome !== 'string') {
+        return reply.code(503).send({ error: 'authority_unavailable' });
+      }
+      if (childBinding.outcome !== 'BOUND' || typeof childBinding.childProfileId !== 'string' ||
+          childBinding.childProfileId !== childProfileId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+
       const requestedAppScope = requestType === 'BONUS_TIME' ? parseAppScope(body.requestedAppScope) : undefined;
       if (requestType === 'BONUS_TIME' && (requestedAppScope === undefined || requestedAppScope === null)) {
         return reply.code(400).send({ error: 'invalid_request' });
