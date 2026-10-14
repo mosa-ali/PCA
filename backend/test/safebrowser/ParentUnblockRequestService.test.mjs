@@ -33,7 +33,23 @@ test('submit creates a PENDING request tied to the block decision', async () => 
   const request = await service.submit('fam-1', 'prof-1', state.id);
   assert.equal(request.status, 'PENDING');
   assert.equal(request.blockDecisionId, state.id);
+  assert.equal(request.familyId, state.familyId);
+  assert.equal(request.profileId, state.profileId);
   assert.equal(request.domain, 'blocked.example');
+});
+
+test('submit rejects a decision from another family or profile without creating a request', async () => {
+  const { state, requests, service } = await setup();
+
+  await assert.rejects(
+    () => service.submit('fam-other', 'prof-1', state.id),
+    (err) => err instanceof UnblockRequestError && err.code === 'DECISION_SCOPE_MISMATCH',
+  );
+  await assert.rejects(
+    () => service.submit('fam-1', 'prof-other', state.id),
+    (err) => err instanceof UnblockRequestError && err.code === 'DECISION_SCOPE_MISMATCH',
+  );
+  assert.equal(await requests.findPendingForDecision(state.id), null);
 });
 
 test('submit rejects a request for a non-requestable (security) block', async () => {

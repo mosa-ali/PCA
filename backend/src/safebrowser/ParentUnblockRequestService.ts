@@ -38,6 +38,7 @@ export class InMemoryParentUnblockRequestRepository implements ParentUnblockRequ
 
 export type UnblockRequestErrorCode =
   | 'DECISION_NOT_FOUND'
+  | 'DECISION_SCOPE_MISMATCH'
   | 'NOT_REQUESTABLE'
   | 'REQUEST_NOT_FOUND'
   | 'ALREADY_PENDING'
@@ -55,6 +56,7 @@ export class UnblockRequestError extends Error {
 
 const UNBLOCK_ERROR_MESSAGES: Record<UnblockRequestErrorCode, string> = {
   DECISION_NOT_FOUND: 'The referenced block decision does not exist.',
+  DECISION_SCOPE_MISMATCH: 'The referenced block decision is outside the requested family or profile.',
   NOT_REQUESTABLE: 'This block decision is not eligible for a parent review request.',
   REQUEST_NOT_FOUND: 'The unblock request does not exist.',
   ALREADY_PENDING: 'A pending request already exists for this block decision.',
@@ -92,6 +94,13 @@ export class ParentUnblockRequestService {
   ): Promise<ParentUnblockRequest> {
     const decision = await this.decisions.get(blockDecisionId);
     if (decision === null) throw new UnblockRequestError('DECISION_NOT_FOUND');
+    // A local decision id is not authority to attach its domain/context to a
+    // different family or profile. Bind the request to the exact scope under
+    // which the child saw this decision before checking requestability or
+    // writing any request state.
+    if (decision.familyId !== familyId || decision.profileId !== profileId) {
+      throw new UnblockRequestError('DECISION_SCOPE_MISMATCH');
+    }
     if (!decision.requestable) throw new UnblockRequestError('NOT_REQUESTABLE');
 
     const existingPending = await this.requests.findPendingForDecision(blockDecisionId);
