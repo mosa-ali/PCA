@@ -34,6 +34,7 @@ import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-s
 import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
 import type { TrustSetRoleResolver, ResolvedActor, ActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { FamilyRole } from '../../familyrbac/types.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import { WebRuleError, type WebRuleService } from '../../web/WebRuleStore.js';
 import type { WebRule, WebRuleListType } from '../../web/types.js';
 
@@ -141,8 +142,8 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (
         typeof actor !== 'object' || actor === null || Array.isArray(actor) ||
         actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role as FamilyRole) ||
-        !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
-        !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1
+        !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
+        !isFamilyEpochNumber(actor.keyEpoch, 1)
       ) {
         await reply.code(503).send({ error: 'authority_unavailable' });
         return null;

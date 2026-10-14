@@ -104,7 +104,7 @@ test('Web Rules binds exact session DSK to accepted Trust Set membership before 
   const trustSetRoleResolver = {
     async resolveActor(...args) {
       resolverCalls.push(args);
-      return { deviceId: args[1], role: 'OWNER', trustSetEpoch: 5, keyEpoch: 1 };
+      return { deviceId: args[1], role: 'OWNER', trustSetEpoch: 2_147_483_647, keyEpoch: 2_147_483_647 };
     },
   };
   const webRuleService = {
@@ -149,6 +149,8 @@ test('Web Rules fails closed on unavailable, stale, mismatched, or malformed DSK
     { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 0, keyEpoch: 1 }; } },
     { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 5, keyEpoch: -1 }; } },
     { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 5, keyEpoch: 0 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 2_147_483_648, keyEpoch: 1 }; } },
+    { async resolveActor(_familyId, deviceId) { return { deviceId, role: 'OWNER', trustSetEpoch: 5, keyEpoch: 2_147_483_648 }; } },
   ];
   for (const trustSetRoleResolver of invalidResolvers) {
     let serviceCalls = 0;
