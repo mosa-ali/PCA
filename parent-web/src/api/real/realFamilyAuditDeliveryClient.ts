@@ -26,6 +26,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function compareUtf8(left: string, right: string): number {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    if (leftBytes[index] !== rightBytes[index]) return leftBytes[index]! - rightBytes[index]!;
+  }
+  return leftBytes.length - rightBytes.length;
+}
+
 function isOpaqueEnvelope(value: unknown): value is OpaqueFamilyAuditEnvelope {
   return (
     isRecord(value) &&
@@ -98,6 +108,7 @@ export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient 
     const seenCursors = new Set<string>();
     const seenEnvelopeIds = new Set<string>();
     let previousGeneratedAt = Number.NEGATIVE_INFINITY;
+    let previousEnvelopeId: string | null = null;
     let cursor: string | null = null;
     let complete = false;
     let envelopeCount = 0;
@@ -116,10 +127,13 @@ export class RealFamilyAuditDeliveryClient implements FamilyAuditDeliveryClient 
 
         for (const envelope of page.envelopes) {
           const generatedAt = Date.parse(envelope.generatedAtUtc);
-          if (generatedAt < previousGeneratedAt || seenEnvelopeIds.has(envelope.envelopeId)) {
+          if (generatedAt < previousGeneratedAt || seenEnvelopeIds.has(envelope.envelopeId) ||
+            (generatedAt === previousGeneratedAt && previousEnvelopeId !== null &&
+              compareUtf8(envelope.envelopeId, previousEnvelopeId) <= 0)) {
             return { status: 'PENDING_TRUSTED_DECRYPTION' };
           }
           previousGeneratedAt = generatedAt;
+          previousEnvelopeId = envelope.envelopeId;
           seenEnvelopeIds.add(envelope.envelopeId);
         }
         if (envelopeCount + page.envelopes.length > MAX_AUDIT_ENVELOPES) {

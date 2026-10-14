@@ -221,6 +221,70 @@ describe('RealFamilyAuditDeliveryClient', () => {
     expect(new URL(auditUrls[1]!).searchParams.get('cursor')).toBe('v1:cursor/a');
   });
 
+  it('accepts equal-time envelopes in binary UTF-8 ID order across pages', async () => {
+    // UTF-8 byte order places U+E000 before U+10000; JavaScript UTF-16 string
+    // order does the opposite, so this also proves the server comparator is used.
+    const ordered = [
+      { envelopeId: '\uE000', encryptedPayloadB64: 'YQ', nonceB64: 'bg', keyEpoch: 1, generatedAtUtc: '2026-01-01T00:00:00.000Z' },
+      { envelopeId: '\u{10000}', encryptedPayloadB64: 'Yg', nonceB64: 'bg', keyEpoch: 1, generatedAtUtc: '2026-01-01T00:00:00.000Z' },
+    ];
+    const firstPage = [...envelopeBatch('env-a', 499), ordered[0]!];
+    let auditCalls = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+      if (url.includes('/audit-events')) {
+        auditCalls += 1;
+        return Promise.resolve(jsonResponse(200, auditCalls === 1
+          ? auditPage(firstPage, false, 'v1:equal-time')
+          : auditPage([ordered[1]!], true, null)));
+      }
+      return Promise.resolve(jsonResponse(404, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new RealFamilyAuditDeliveryClient(
+      'https://api.example.test',
+      new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT),
+      new StubDecryptionBoundary(async (envelope) => fakeEntry(envelope.envelopeId)),
+    );
+    const result = await client.list();
+    expect(result.status).toBe('READY');
+    if (result.status === 'READY') {
+      expect(result.entries).toEqual([...firstPage, ordered[1]!].map((item) => fakeEntry(item.envelopeId)));
+    }
+    expect(auditCalls).toBe(2);
+  });
+
+  it('fails closed when an equal-time page reverses binary UTF-8 ID order', async () => {
+    const reversed = [
+      { envelopeId: '\u{10000}', encryptedPayloadB64: 'Yg', nonceB64: 'bg', keyEpoch: 1, generatedAtUtc: '2026-01-01T00:00:00.000Z' },
+      { envelopeId: '\uE000', encryptedPayloadB64: 'YQ', nonceB64: 'bg', keyEpoch: 1, generatedAtUtc: '2026-01-01T00:00:00.000Z' },
+    ];
+    const firstPage = [...envelopeBatch('env-a', 499), reversed[0]!];
+    let auditCalls = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+      if (url.includes('/audit-events')) {
+        auditCalls += 1;
+        return Promise.resolve(jsonResponse(200, auditCalls === 1
+          ? auditPage(firstPage, false, 'v1:reversed-time')
+          : auditPage([reversed[1]!], true, null)));
+      }
+      return Promise.resolve(jsonResponse(404, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new RealFamilyAuditDeliveryClient(
+      'https://api.example.test',
+      new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT),
+      new StubDecryptionBoundary(async (envelope) => fakeEntry(envelope.envelopeId)),
+    );
+    await expect(client.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+    expect(auditCalls).toBe(2);
+  });
+
   it('keeps incomplete or failed later pages pending without exposing earlier decrypted entries', async () => {
     const envelopes = envelopeBatch('env-first', 500);
     for (const laterPage of [
