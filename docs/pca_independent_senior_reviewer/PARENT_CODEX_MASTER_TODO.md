@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Android replay ledger and iOS transport origin guards — 2026-10-14
+
+SOURCE = Android persisted inbound replay-denial floors now reject duplicate JSON members before parsing, fail closed without rewriting ambiguous bytes, and retain the valid floor when restored. iOS device-session and runtime-sync clients now accept only HTTPS origin URLs (host required; no userinfo, path, query, or fragment) before any device proof or bearer traffic. No schema or authority contract changed.
+VALIDATION = Android replay-denial ledger regression **10/10 PASS**. iOS modified sources/tests parse; release integration declarations PASS and validator suite **9/9 PASS**. Apple XCTest is pending exact-head CI; Windows lacks the SwiftShims SDK needed for local XCTest. The preceding published base `bc66177a` passed Quality Gates `38501865887` **27/27**; this integrated source checkpoint awaits publication and new exact-head CI.
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. Physical-device, human crypto approval, owner localhost acceptance, Platform dependency, live DB, Azure, and production gates remain separate. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Android Safe Zone delivery parsing — 2026-10-14
 
 SOURCE = Android Safe Zone delivery now rejects duplicate JSON member names before parsing both authenticated server pages and persisted inbox snapshots. The guard catches nested and escaped aliases, preventing ambiguous payloads from changing rows or advancing a cursor. iOS already enforced the same boundary. No schema or authority contract changed.
