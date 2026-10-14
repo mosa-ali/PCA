@@ -16,7 +16,10 @@ data class FakeHttpRequest(val method: String, val path: String, val body: Strin
 
 class FakeHttpServer private constructor(private val serverSocket: ServerSocket) {
     val baseUrl: String = "http://127.0.0.1:${serverSocket.localPort}"
+    @Volatile var requestCount: Int = 0
+        private set
     @Volatile private var stopped = false
+    @Volatile private var redirectLocation: String? = null
     private var thread: Thread? = null
 
     /** [respond] receives the captured request body (already fully read) and returns (status, body bytes). Never called for a connection that this server was told to drop instead (see [dropConnections]). */
@@ -46,6 +49,13 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
         thread!!.start()
     }
 
+    /** Serves a redirect response with an explicit Location for credential-forwarding tests. */
+    fun startRedirect(status: Int, location: String) {
+        require(status in setOf(301, 302, 307, 308))
+        redirectLocation = location
+        startRequest { status to ByteArray(0) }
+    }
+
     /** Accepts and immediately closes every connection without ever writing a response -- simulates a response lost in transit / connection reset mid-flight. */
     fun startAndDropEveryConnection() {
         thread = Thread {
@@ -63,6 +73,7 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
     }
 
     private fun handleOneRequest(socket: Socket, respond: (FakeHttpRequest) -> Pair<Int, ByteArray>) {
+        requestCount++
         val input = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
         val requestLine = input.readLine() ?: return
         val requestParts = requestLine.split(' ')
@@ -90,6 +101,10 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
         val statusText = when (status) {
             200 -> "OK"
             201 -> "Created"
+            301 -> "Moved Permanently"
+            302 -> "Found"
+            307 -> "Temporary Redirect"
+            308 -> "Permanent Redirect"
             400 -> "Bad Request"
             404 -> "Not Found"
             else -> "Server Error"
@@ -97,6 +112,7 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
         val output = socket.getOutputStream()
         output.write("HTTP/1.1 $status $statusText\r\n".toByteArray(Charsets.UTF_8))
         output.write("Content-Type: application/json\r\n".toByteArray(Charsets.UTF_8))
+        redirectLocation?.let { output.write("Location: $it\r\n".toByteArray(Charsets.UTF_8)) }
         output.write("Content-Length: ${responseBytes.size}\r\n".toByteArray(Charsets.UTF_8))
         output.write("Connection: close\r\n\r\n".toByteArray(Charsets.UTF_8))
         output.write(responseBytes)

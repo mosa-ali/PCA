@@ -532,6 +532,70 @@ class HttpDeviceBootstrapApiClientTest {
         BootstrapEndpointConfig(baseUrl = "http://127.0.0.1:8080", allowInsecureHttp = true)
     }
 
+    @Test
+    fun `bootstrap endpoint accepts only HTTPS or explicitly enabled local HTTP origins`() {
+        BootstrapEndpointConfig("https://api.pca.app")
+        BootstrapEndpointConfig("https://api.pca.app:8443/")
+        BootstrapEndpointConfig("http://localhost:8080", allowInsecureHttp = true)
+
+        for (baseUrl in listOf(
+            "https://user@api.pca.app",
+            "https://api.pca.app/v1",
+            "https://api.pca.app?next=/",
+            "https://api.pca.app#fragment",
+            "ftp://api.pca.app",
+            "http://api.pca.app",
+            "http://localhost:8080/v1",
+        )) {
+            try {
+                BootstrapEndpointConfig(baseUrl, allowInsecureHttp = baseUrl.startsWith("http://localhost"))
+                fail("expected origin validation to reject $baseUrl")
+            } catch (_: IllegalArgumentException) {
+                // Credentials are sent only to an explicitly configured origin.
+            }
+        }
+    }
+
+    @Test
+    fun `bootstrap prepare and recovery never follow 301 302 307 or 308 redirects`() = runBlocking {
+        for (redirectStatus in listOf(301, 302, 307, 308)) {
+            val destination = FakeHttpServer.start()
+            destination.start { 200 to validSuccessBody().toString().toByteArray() }
+            val redirect = FakeHttpServer.start()
+            redirect.startRedirect(redirectStatus, "${destination.baseUrl}/capture")
+            try {
+                val api = client(redirect.baseUrl)
+                suspend fun expectBootstrapRedirectFailure(action: suspend () -> Unit) {
+                    try {
+                        withTimeout(5_000) { action() }
+                        fail("redirect status $redirectStatus should be rejected")
+                    } catch (_: BootstrapError.UnexpectedServerError) {
+                        // A redirect response arrived; it is unexpected, and credentials stay at the configured origin.
+                    }
+                }
+
+                expectBootstrapRedirectFailure {
+                    api.prepareAttempt("invitation", "ANDROID", "signing-key", "encryption-key", "attempt", "recovery")
+                }
+                expectBootstrapRedirectFailure {
+                    api.bootstrap("invitation", "ANDROID", "signing-key", "encryption-key", "attempt", "recovery")
+                }
+                try {
+                    withTimeout(5_000) { api.recoverAttempt("attempt", "recovery") }
+                    fail("redirect status $redirectStatus should be rejected")
+                } catch (_: RecoveryError.UnexpectedServerError) {
+                    // Recovery credentials must not be replayed to the redirect target.
+                }
+
+                assertEquals("each operation contacted only the configured endpoint", 3, redirect.requestCount)
+                assertEquals("the redirect target received no bootstrap or recovery request", 0, destination.requestCount)
+            } finally {
+                redirect.stop()
+                destination.stop()
+            }
+        }
+    }
+
     // --- PCA-ENROLLMENT-RUNTIME-2: recoverAttempt() ---
 
     @Test

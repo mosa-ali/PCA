@@ -192,7 +192,11 @@ class HttpFirstDeviceBootstrapApiClient(
         }
 
     private fun openConnection(path: String): HttpURLConnection = try {
-        URL("${config.baseUrl}$path").openConnection() as HttpURLConnection
+        (URL("${config.baseUrl.trimEnd('/')}$path").openConnection() as HttpURLConnection).apply {
+            // These POST bodies contain recovery credentials, signatures, and attestation
+            // material. Never forward them to a redirect target, even for 307/308 responses.
+            instanceFollowRedirects = false
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

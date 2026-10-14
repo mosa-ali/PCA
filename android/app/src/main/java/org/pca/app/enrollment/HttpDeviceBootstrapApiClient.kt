@@ -4,7 +4,9 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
+import java.util.Locale
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -30,12 +32,19 @@ data class BootstrapEndpointConfig(
     val allowInsecureHttp: Boolean = false,
 ) {
     init {
-        val isHttps = baseUrl.startsWith("https://", ignoreCase = true)
-        val host = runCatching { URL(baseUrl).host }.getOrNull()
-        val isLocalDevHost = host != null && LOCAL_DEV_HOSTS.contains(host)
-        require(isHttps || (allowInsecureHttp && isLocalDevHost)) {
+        val endpoint = runCatching { URI(baseUrl) }.getOrNull()
+        val scheme = endpoint?.scheme
+        val host = endpoint?.host?.lowercase(Locale.ROOT)
+        val isHttpsOrigin = endpoint != null && scheme.equals("https", ignoreCase = true) &&
+            host != null && endpoint.userInfo == null && endpoint.path in setOf("", "/") &&
+            endpoint.query == null && endpoint.fragment == null
+        val isLocalHttpOrigin = endpoint != null && scheme.equals("http", ignoreCase = true) &&
+            allowInsecureHttp && host != null && LOCAL_DEV_HOSTS.contains(host) &&
+            endpoint.userInfo == null && endpoint.path in setOf("", "/") &&
+            endpoint.query == null && endpoint.fragment == null
+        require(isHttpsOrigin || isLocalHttpOrigin) {
             "Refusing to configure an insecure (non-HTTPS) bootstrap endpoint '$baseUrl' -- " +
-                "only localhost/10.0.2.2 development hosts may use HTTP, and only with allowInsecureHttp=true."
+                "use an HTTPS origin, or an HTTP localhost/10.0.2.2 origin with allowInsecureHttp=true."
         }
     }
 
@@ -256,7 +265,11 @@ class HttpDeviceBootstrapApiClient(
     }
 
     private fun openConnection(path: String, onAmbiguous: () -> Exception): HttpURLConnection = try {
-        URL("${config.baseUrl}$path").openConnection() as HttpURLConnection
+        (URL("${config.baseUrl.trimEnd('/')}$path").openConnection() as HttpURLConnection).apply {
+            // Bootstrap and recovery requests contain invitation/recovery credentials and public
+            // key material. Never replay them to a Location supplied by an endpoint or proxy.
+            instanceFollowRedirects = false
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
