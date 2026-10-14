@@ -39,7 +39,8 @@
 
 # Local Xcode test diagnostics are never part of the repository-root image context.
 .tmp/ios-diagnostics-*/
-tmp/
+tmp/ios-diagnostics-*/
+tmp/ci-diagnostics-*/
 
 # ...then re-admit exactly what public-web/deploy/Dockerfile COPYs.
 !public-web

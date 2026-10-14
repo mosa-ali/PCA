@@ -20,8 +20,10 @@ Thumbs.db
 # Local Xcode test diagnostics captured under the retained .tmp evidence area.
 .tmp/ios-diagnostics-*/
 .tmp/swift-module-cache/
-# Keep the same generated diagnostics ignored if a runner uses the non-dot tmp root.
-tmp/
+# Keep generated Xcode bundles ignored if a runner uses the non-dot tmp root.
+tmp/ios-diagnostics-*/
+# Retained CI diagnostics are evidence artifacts, not repository source.
+tmp/ci-diagnostics-*/
 ios/scripts/__pycache__/
 # Local Gradle user home used by the Android test runner; never repository content.
 android/.gradle-user-home/
