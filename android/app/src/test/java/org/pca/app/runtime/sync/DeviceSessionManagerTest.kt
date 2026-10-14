@@ -1,5 +1,6 @@
 package org.pca.app.runtime.sync
 
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,7 +12,7 @@ class DeviceSessionManagerTest {
         var sequence = 0
         val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
             override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) =
-                relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "session-${++sequence}")
+                relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "A".repeat(41) + "%02d".format(++sequence))
         }
         val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" }, assertKeyCustody = {})
         val old = manager.authenticate().sessionToken
@@ -20,7 +21,7 @@ class DeviceSessionManagerTest {
         assertEquals(replacement, manager.requireSessionToken())
         assertEquals(2, sequence)
         manager.invalidateRejectedSession(replacement)
-        assertEquals("session-3", manager.requireSessionToken())
+        assertEquals("A".repeat(41) + "03", manager.requireSessionToken())
     }
 
     @Test fun `custody loss during challenge prevents signing or session exchange`() = runTest {
@@ -128,8 +129,64 @@ class DeviceSessionManagerTest {
 
         val token = manager.requireSessionToken()
 
-        assertEquals("session-for-device-1", token)
+        assertEquals("A".repeat(43), token)
         assertEquals("nonce-for-device-1", signedNonce)
+    }
+
+    @Test
+    fun `malformed token response is rejected and not cached`() = runTest {
+        val delegate = FakeRelayHttpClient()
+        var challengeCalls = 0
+        var completionCalls = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by delegate {
+            override suspend fun issueChallenge(deviceId: String): org.pca.app.runtime.sync.transport.ChallengeResponse {
+                challengeCalls++
+                return delegate.issueChallenge(deviceId)
+            }
+
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) =
+                delegate.completeChallenge(deviceId, challengeId, signature).let {
+                    completionCalls++
+                    if (completionCalls == 1) it.copy(sessionToken = "malformed-token") else it
+                }
+        }
+        val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" }, assertKeyCustody = {}, nowEpochMillis = { 0L })
+
+        assertTrue(runCatching { manager.requireSessionToken() }.isFailure)
+        assertTrue(!manager.isAuthenticated())
+        assertEquals(1, challengeCalls)
+        assertEquals("A".repeat(43), manager.requireSessionToken())
+        assertEquals(2, challengeCalls)
+    }
+
+    @Test
+    fun `malformed and expired session expiry responses are rejected and not cached`() = runTest {
+        val delegate = FakeRelayHttpClient()
+        val responses = ArrayDeque(
+            listOf(
+                delegate.completeChallenge("device-1", "challenge", "sig").copy(expiresAt = "not-an-iso-instant"),
+                delegate.completeChallenge("device-1", "challenge", "sig").copy(expiresAt = Instant.ofEpochMilli(1_000L).toString()),
+                delegate.completeChallenge("device-1", "challenge", "sig").copy(expiresAt = Instant.ofEpochMilli(1_001L).toString()),
+            ),
+        )
+        var challengeCalls = 0
+        val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by delegate {
+            override suspend fun issueChallenge(deviceId: String): org.pca.app.runtime.sync.transport.ChallengeResponse {
+                challengeCalls++
+                return delegate.issueChallenge(deviceId)
+            }
+
+            override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) = responses.removeFirst()
+        }
+        val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" }, assertKeyCustody = {}, nowEpochMillis = { 1_000L })
+
+        assertTrue(runCatching { manager.requireSessionToken() }.isFailure)
+        assertTrue(!manager.isAuthenticated())
+        assertTrue(runCatching { manager.requireSessionToken() }.isFailure)
+        assertTrue(!manager.isAuthenticated())
+        assertEquals("A".repeat(43), manager.requireSessionToken())
+        assertTrue(manager.isAuthenticated())
+        assertEquals(3, challengeCalls)
     }
 
     @Test

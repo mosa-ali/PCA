@@ -34,7 +34,7 @@ class FakeRelayHttpClient(
         ChallengeResponse(challengeId = "challenge-for-$deviceId", nonce = "nonce-for-$deviceId", expiresAt = "2099-01-01T00:00:00.000Z")
 
     override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): DeviceSessionInfo =
-        DeviceSessionInfo(sessionToken = "session-for-$deviceId", expiresAt = "2099-01-01T00:00:00.000Z")
+        DeviceSessionInfo(sessionToken = "A".repeat(43), expiresAt = "2099-01-01T00:00:00.000Z")
 
     /** Records the report. The real client sends familyId/deviceId from the verified session, never the body, so there is nothing else to capture here. */
     override suspend fun reportProtectionStatus(sessionToken: String, protectionLevel: RelayProtectionLevel) {

@@ -67,6 +67,7 @@ class DeviceSessionManager(
         val newSession = relayHttpClient.completeChallenge(deviceId, challenge.challengeId, signature)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         verifyKeyCustody()
+        validateSessionResponse(newSession)
         session = newSession
         return newSession
     }
@@ -93,5 +94,24 @@ class DeviceSessionManager(
             session = null
             throw error
         }
+    }
+
+    private fun validateSessionResponse(response: DeviceSessionInfo) {
+        if (!CANONICAL_SESSION_TOKEN.matches(response.sessionToken)) {
+            throw IllegalArgumentException("Invalid device session response")
+        }
+        val expiresAtEpochMillis = try {
+            Instant.parse(response.expiresAt).toEpochMilli()
+        } catch (_: Exception) {
+            throw IllegalArgumentException("Invalid device session response")
+        }
+        if (expiresAtEpochMillis <= nowEpochMillis()) {
+            throw IllegalArgumentException("Invalid device session response")
+        }
+    }
+
+    private companion object {
+        // Matches backend/src/auth/token.ts: 32 random bytes encoded as unpadded base64url.
+        val CANONICAL_SESSION_TOKEN = Regex("^[A-Za-z0-9_-]{43}$")
     }
 }

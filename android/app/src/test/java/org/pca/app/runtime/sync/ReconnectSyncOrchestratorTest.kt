@@ -178,7 +178,7 @@ class ReconnectSyncOrchestratorTest {
         val relay = FakeRelayHttpClient()
         val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
         val incarnation = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+            .digest("A".repeat(43).toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
         inbox.capture(RuntimeInboxScope("family-1", "device-1"), listOf(inbound("retained").envelopeWire!!),
             navigation = org.pca.app.runtime.sync.transport.InboundNavigation("oldCursor", true, false, incarnation),
             expectedSessionIncarnation = incarnation)
@@ -203,7 +203,7 @@ class ReconnectSyncOrchestratorTest {
         val relay = FakeRelayHttpClient()
         val inbox = PersistentCiphertextInbox(InMemoryPersistentStateStore(), "device-1")
         val incarnation = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+            .digest("A".repeat(43).toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
         inbox.capture(RuntimeInboxScope("family-1", "device-1"), emptyList(),
             navigation = org.pca.app.runtime.sync.transport.InboundNavigation("savedCursor", true, false, incarnation),
             expectedSessionIncarnation = incarnation)
@@ -245,7 +245,7 @@ class ReconnectSyncOrchestratorTest {
         val inbox = PersistentCiphertextInbox(backing, "device-1")
         val relay = FakeRelayHttpClient()
         val incarnation = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("session-for-device-1".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+            .digest("A".repeat(43).toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
         val cursors = mutableListOf<String?>()
         val modern = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
             override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
