@@ -11,6 +11,7 @@ import org.pca.app.firstdevice.FirstDeviceRootRecord
 import org.pca.app.firstdevice.FirstDeviceRootState
 import org.pca.app.firstdevice.InMemoryFirstDeviceRootStore
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.security.DskSignatureEngine
 
 class OrdinaryTrustSetBootstrapAnchorTest {
@@ -54,6 +55,27 @@ class OrdinaryTrustSetBootstrapAnchorTest {
 
     private fun rootStore(record: FirstDeviceRootRecord = rootRecord()) = InMemoryFirstDeviceRootStore().apply { save(record) }
     private fun ordinaryStore() = PersistentOrdinaryEpochStore(InMemoryPersistentStateStore())
+
+    @Test
+    fun `present ordinary custody with unreadable bytes is corruption and cannot be replaced by bootstrap`() {
+        val key = "ordinary_trust_set_v1"
+        val backing = InMemoryPersistentStateStore().apply { putString(key, "unreadable-existing-value") }
+        val unreadable = PresentButUnreadableOrdinaryStateStore(backing, key)
+        val ordinaryStore = PersistentOrdinaryEpochStore(unreadable)
+
+        try {
+            OrdinaryTrustSetBootstrapAnchor.seed(
+                rootStore(), ordinaryStore, OrdinaryEpochSignatureVerifier { _, _, _ -> true },
+            )
+            fail("a present key whose bytes cannot be read must not be treated as an empty store")
+        } catch (failure: IllegalStateException) {
+            assertEquals("corrupt_ordinary_trust_set_state", failure.message)
+        }
+
+        assertTrue(unreadable.contains(key))
+        assertEquals("unreadable-existing-value", backing.getString(key))
+        assertEquals(0, unreadable.writeCount)
+    }
 
     @Test
     fun `verified durable epoch one statement initializes ordinary store and immutable root floor`() {
@@ -344,5 +366,20 @@ class OrdinaryTrustSetBootstrapAnchorTest {
             ),
         )))
         assertNull(store.read())
+    }
+
+    private class PresentButUnreadableOrdinaryStateStore(
+        private val delegate: PersistentStateStore,
+        private val unreadableKey: String,
+    ) : PersistentStateStore by delegate {
+        var writeCount = 0
+
+        override fun getString(key: String): String? =
+            if (key == unreadableKey) null else delegate.getString(key)
+
+        override fun putString(key: String, value: String) {
+            writeCount++
+            delegate.putString(key, value)
+        }
     }
 }

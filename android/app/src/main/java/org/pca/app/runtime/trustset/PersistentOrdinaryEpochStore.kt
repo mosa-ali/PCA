@@ -13,7 +13,12 @@ class PersistentOrdinaryEpochStore(
     override val coordinationIdentity: Any get() = store.coordinationLock
 
     override fun read(): OrdinaryEpochState? = synchronized(store.coordinationLock) {
-        val raw = store.getString(key) ?: return@synchronized null
+        val raw = store.getString(key) ?: run {
+            // A present key whose bytes cannot be read is not an empty store. In particular,
+            // root bootstrap must never replace unreadable ordinary custody with a new anchor.
+            if (store.contains(key)) throw IllegalStateException("corrupt_ordinary_trust_set_state")
+            return@synchronized null
+        }
         try {
             require(raw.length <= MAX_STATE_UTF16_UNITS)
             StrictJsonMemberNames.requireUnique(raw)
