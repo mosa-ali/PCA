@@ -49,6 +49,14 @@ class SenderAuthorityChangedError extends Error {
   }
 }
 
+/** Parent family membership was revoked or demoted after the initial request authorization. */
+class ParentAuthorityChangedError extends Error {
+  constructor() {
+    super('The Parent account authority changed before enqueue.');
+    this.name = 'ParentAuthorityChangedError';
+  }
+}
+
 export interface ChildPolicyRoutesDeps {
   parentAccountService: ParentAccountService;
   deviceSessionService: DeviceSessionService;
@@ -400,6 +408,23 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
               currentSender.keyEpoch !== envelope.keyEpoch) {
             throw new SenderAuthorityChangedError();
           }
+          // The Parent account's family membership is a separate authority
+          // from its browser device's Trust Set role. Parent authorization
+          // and the recipient/binding checks above can yield to storage, so
+          // recheck the live account role at the final relay eligibility
+          // boundary as well. A still-OWNER browser device must not keep
+          // authoring policy after its Parent account was demoted/revoked.
+          let currentParentRole: string | null;
+          try {
+            currentParentRole = await deps.parentAccountService.activeFamilyRole(
+              session.accountId as never,
+              session.familyId,
+            );
+          } catch {
+            throw new RecipientAuthorizationUnavailableError();
+          }
+          if (currentParentRole !== 'ADMINISTRATOR') throw new ParentAuthorityChangedError();
+
           const authority: RelayEnvelopeAuthoritySnapshot = {
             familyId: session.familyId,
             trustSetEpoch: envelope.trustSetEpoch,
@@ -412,6 +437,9 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
       } catch (error) {
         if (error instanceof SenderAuthorityChangedError) {
           return reply.code(409).send({ error: 'authority_changed' });
+        }
+        if (error instanceof ParentAuthorityChangedError) {
+          return reply.code(403).send({ error: 'forbidden' });
         }
         if (error instanceof RecipientAuthorizationUnavailableError) {
           return reply.code(503).send({ error: 'authority_unavailable' });

@@ -86,7 +86,7 @@ function buildApp({ authorization, submitBatchImpl, configured = true, parentRol
     },
     async activeFamilyRole() {
       callCounts.activeFamilyRole += 1;
-      return parentRole;
+      return typeof parentRole === 'function' ? parentRole(callCounts.activeFamilyRole) : parentRole;
     },
   };
   const deviceTokens = new Map([
@@ -866,6 +866,42 @@ test('schedule-policy rechecks the sender Trust Set authority at enqueue after P
     assert.equal(bindingReads, 2, 'sender rotation happens during the final profile-binding lookup');
     assert.equal(submittedBatches.length, 1, 'the final sender check runs inside the relay submission boundary');
     assert.equal(delegatedBatches.length, 0, 'a demoted sender cannot persist an envelope authorized under its previous epoch');
+  } finally {
+    await app.close();
+  }
+});
+
+test('schedule-policy rechecks Parent account membership at enqueue after recipient and binding reads', async () => {
+  let parentRole = 'ADMINISTRATOR';
+  let bindingReads = 0;
+  const deviceChildBindingRepository = {
+    async resolveBinding(familyId, deviceId) {
+      bindingReads += 1;
+      if (bindingReads === 2) parentRole = 'VIEWER';
+      return familyId === FAMILY && deviceId === 'dev-child'
+        ? { outcome: 'BOUND', childProfileId: 'child-1' }
+        : { outcome: 'UNBOUND' };
+    },
+  };
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app, submittedBatches, delegatedBatches, callCounts } = buildApp({
+    authorization,
+    parentRole: () => parentRole,
+    deviceChildBindingRepository,
+  });
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/schedule-policy`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: VALID_ENVELOPE,
+    });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(bindingReads, 2, 'the Parent membership changes during the final recipient-binding read');
+    assert.equal(callCounts.activeFamilyRole, 2, 'the account role is resolved again at the final enqueue boundary');
+    assert.equal(submittedBatches.length, 1, 'the final Parent check runs inside recipient eligibility');
+    assert.equal(delegatedBatches.length, 0, 'revoked/demoted Parent authority cannot persist a policy envelope');
   } finally {
     await app.close();
   }
