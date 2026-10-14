@@ -43,6 +43,7 @@ export type UnblockRequestErrorCode =
   | 'REQUEST_NOT_FOUND'
   | 'ALREADY_PENDING'
   | 'ILLEGAL_TRANSITION'
+  | 'INVALID_TIME'
   | 'INVALID_DURATION';
 
 export class UnblockRequestError extends Error {
@@ -61,6 +62,7 @@ const UNBLOCK_ERROR_MESSAGES: Record<UnblockRequestErrorCode, string> = {
   REQUEST_NOT_FOUND: 'The unblock request does not exist.',
   ALREADY_PENDING: 'A pending request already exists for this block decision.',
   ILLEGAL_TRANSITION: 'This request has already been decided.',
+  INVALID_TIME: 'Decision time must be a valid date.',
   INVALID_DURATION: 'Temporary approval duration must be a positive number of milliseconds.',
 };
 
@@ -130,18 +132,26 @@ export class ParentUnblockRequestService {
     if (request === null) throw new UnblockRequestError('REQUEST_NOT_FOUND');
     if (!isLegalUnblockRequestTransition(request.status, to)) throw new UnblockRequestError('ILLEGAL_TRANSITION');
 
+    const decidedAt = this.now();
+    if (!(decidedAt instanceof Date) || !Number.isFinite(decidedAt.getTime())) {
+      throw new UnblockRequestError('INVALID_TIME');
+    }
+
     let temporaryApprovalExpiresAt: Date | null = null;
     if (to === 'APPROVED_TEMPORARY') {
       if (!Number.isFinite(temporaryApprovalDurationMs) || (temporaryApprovalDurationMs as number) <= 0) {
         throw new UnblockRequestError('INVALID_DURATION');
       }
-      temporaryApprovalExpiresAt = new Date(this.now().getTime() + (temporaryApprovalDurationMs as number));
+      temporaryApprovalExpiresAt = new Date(decidedAt.getTime() + (temporaryApprovalDurationMs as number));
+      if (!Number.isFinite(temporaryApprovalExpiresAt.getTime())) {
+        throw new UnblockRequestError('INVALID_DURATION');
+      }
     }
 
     const decided: ParentUnblockRequest = {
       ...request,
       status: to,
-      decidedAt: this.now(),
+      decidedAt,
       temporaryApprovalExpiresAt,
     };
     await this.requests.put(decided);

@@ -18,14 +18,14 @@ function decision(overrides = {}) {
   };
 }
 
-async function setup(decisionOverrides = {}) {
+async function setup(decisionOverrides = {}, now = () => new Date('2026-01-01T00:00:00Z')) {
   const decisions = new InMemoryBlockDecisionStateRepository();
   const decisionService = new BlockDecisionStateService(decisions, () => new Date('2026-01-01T00:00:00Z'));
   const built = decision(decisionOverrides);
   const state = await decisionService.record('fam-1', 'prof-1', `https://${built.domain}/`, null, built);
   const requests = new InMemoryParentUnblockRequestRepository();
-  const service = new ParentUnblockRequestService(requests, decisions, () => new Date('2026-01-01T00:00:00Z'));
-  return { state, requests, service };
+  const service = new ParentUnblockRequestService(requests, decisions, now);
+  return { state, requests, decisions, service };
 }
 
 test('submit creates a PENDING request tied to the block decision', async () => {
@@ -90,6 +90,31 @@ test('approveTemporary sets an expiry and rejects a non-positive duration', asyn
     () => service2.approveTemporary(request2.id, -1),
     (err) => err instanceof UnblockRequestError && err.code === 'INVALID_DURATION',
   );
+});
+
+test('temporary approval rejects an overflowing finite duration and leaves the request pending', async () => {
+  const { state, requests, service } = await setup();
+  const request = await service.submit('fam-1', 'prof-1', state.id);
+
+  await assert.rejects(
+    () => service.approveTemporary(request.id, Number.MAX_VALUE),
+    (err) => err instanceof UnblockRequestError && err.code === 'INVALID_DURATION',
+  );
+  assert.equal((await requests.get(request.id)).status, 'PENDING');
+  assert.equal((await requests.get(request.id)).temporaryApprovalExpiresAt, null);
+});
+
+test('decision rejects an invalid clock and leaves the request pending', async () => {
+  const { state, requests, decisions, service } = await setup();
+  const request = await service.submit('fam-1', 'prof-1', state.id);
+  const invalidClockService = new ParentUnblockRequestService(requests, decisions, () => new Date(Number.NaN));
+
+  await assert.rejects(
+    () => invalidClockService.approvePermanent(request.id),
+    (err) => err instanceof UnblockRequestError && err.code === 'INVALID_TIME',
+  );
+  assert.equal((await requests.get(request.id)).status, 'PENDING');
+  assert.equal((await requests.get(request.id)).decidedAt, null);
 });
 
 test('a decided request cannot be decided again', async () => {
