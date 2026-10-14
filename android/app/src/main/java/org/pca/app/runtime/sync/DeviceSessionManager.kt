@@ -97,7 +97,7 @@ class DeviceSessionManager(
     }
 
     private fun validateSessionResponse(response: DeviceSessionInfo) {
-        if (!CANONICAL_SESSION_TOKEN.matches(response.sessionToken)) {
+        if (!SESSION_TOKEN_SHAPE.matches(response.sessionToken)) {
             throw IllegalArgumentException("Invalid device session response")
         }
         val expiresAtEpochMillis = try {
@@ -111,7 +111,7 @@ class DeviceSessionManager(
     }
 
     private companion object {
-        // Matches backend/src/auth/token.ts: 32 random bytes encoded as unpadded base64url.
-        val CANONICAL_SESSION_TOKEN = Regex("^[A-Za-z0-9_-]{43}$")
+        // Match the backend's token shape check; token issuance and authenticity remain server-owned.
+        val SESSION_TOKEN_SHAPE = Regex("^[A-Za-z0-9_-]{43}$")
     }
 }

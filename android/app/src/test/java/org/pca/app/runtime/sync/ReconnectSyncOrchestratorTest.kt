@@ -156,15 +156,15 @@ class ReconnectSyncOrchestratorTest {
         val relay = FakeRelayHttpClient()
         var authentications = 0
         var pulls = 0
+        val sessionTokens = listOf("A".repeat(43), "A".repeat(42) + "E")
         val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
             override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): org.pca.app.runtime.sync.transport.DeviceSessionInfo {
-                authentications++
-                return relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "session-$authentications")
+                return relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = sessionTokens[authentications++])
             }
             override suspend fun listInbound(sessionToken: String, cursor: String?): org.pca.app.runtime.sync.transport.InboundListResult {
                 if (++pulls == 1) throw org.pca.app.runtime.sync.transport.RelayHttpException(
                     org.pca.app.runtime.sync.transport.RelayHttpErrorCode.Unauthorized, "rejected")
-                assertEquals("session-2", sessionToken)
+                assertEquals(sessionTokens[1], sessionToken)
                 return relay.listInbound(sessionToken, cursor)
             }
         }

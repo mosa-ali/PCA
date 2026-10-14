@@ -10,9 +10,10 @@ class DeviceSessionManagerTest {
     @Test fun `old rejected token cannot invalidate a replacement session`() = runTest {
         val relay = FakeRelayHttpClient()
         var sequence = 0
+        val sessionTokens = listOf("A".repeat(43), "A".repeat(42) + "E", "A".repeat(42) + "I")
         val transport = object : org.pca.app.runtime.sync.transport.RelayHttpClient by relay {
             override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String) =
-                relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = "A".repeat(41) + "%02d".format(++sequence))
+                relay.completeChallenge(deviceId, challengeId, signature).copy(sessionToken = sessionTokens[sequence++])
         }
         val manager = DeviceSessionManager(transport, "device-1", signer = { "sig" }, assertKeyCustody = {})
         val old = manager.authenticate().sessionToken
@@ -21,7 +22,7 @@ class DeviceSessionManagerTest {
         assertEquals(replacement, manager.requireSessionToken())
         assertEquals(2, sequence)
         manager.invalidateRejectedSession(replacement)
-        assertEquals("A".repeat(41) + "03", manager.requireSessionToken())
+        assertEquals(sessionTokens[2], manager.requireSessionToken())
     }
 
     @Test fun `custody loss during challenge prevents signing or session exchange`() = runTest {
