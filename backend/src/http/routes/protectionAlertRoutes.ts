@@ -75,7 +75,12 @@ export function registerProtectionAlertRoutes(app: FastifyInstance, deps: Protec
       return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
 
-    const role = await parentAccountService.activeFamilyRole(accountId! as never, familyId);
+    let role;
+    try {
+      role = await parentAccountService.activeFamilyRole(accountId! as never, familyId);
+    } catch {
+      return reply.code(503).send({ error: 'authority_unavailable' });
+    }
     if (role !== 'ADMINISTRATOR' && role !== 'VIEWER') return reply.code(403).send({ error: 'forbidden' });
     if (!deviceSessionService) return reply.code(503).send({ error: 'not_configured' });
 

@@ -149,6 +149,30 @@ test('an active Parent browser receives only its own device-scoped opaque protec
   }
 });
 
+test('protection-alert read maps an initial Parent authority outage to sanitized 503 before ledger access', async () => {
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  let listCalls = 0;
+  const list = ledger.listForParentDevice.bind(ledger);
+  ledger.listForParentDevice = async (...args) => {
+    listCalls += 1;
+    return list(...args);
+  };
+  const { app } = buildApp({ ledger, role: () => { throw new Error('parent membership secret'); } });
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/protection-alerts`,
+      headers: ownerHeaders,
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+    assert.equal(response.body.includes('parent membership secret'), false);
+    assert.equal(listCalls, 0, 'authority failure must precede recipient alert reads');
+  } finally {
+    await app.close();
+  }
+});
+
 test('missing actor-device-session bearer token is rejected even with an active Parent session', async () => {
   const { app } = buildApp();
   try {
