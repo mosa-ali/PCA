@@ -950,6 +950,39 @@ final class FirstDeviceTrustRootCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.current(), previous)
     }
 
+    func testSameAttemptCaptureRejectsChangedEnrollmentIdentityWithoutReplacingDurableRoot() throws {
+        let previous = approvedRecord()
+        let keychain = FailingOverwriteKeychainStore()
+        let originalBytes = try JSONEncoder().encode(previous)
+        keychain.storedData = originalBytes
+        let store = KeychainFirstDeviceRootStore(keychain: keychain, serviceNamespace: "org.pca.test")
+
+        var changedDevice = previous.seed
+        changedDevice.deviceId = "different-device"
+        var changedKeyId = previous.seed
+        changedKeyId.signingKeyId = "different-signing-key"
+        var changedEncryptionKeyId = previous.seed
+        changedEncryptionKeyId.encryptionKeyId = "different-encryption-key"
+        var changedPublicKey = previous.seed
+        changedPublicKey.dskPublicKeyBase64 = "different-dsk-public-key"
+        var changedEncryptionPublicKey = previous.seed
+        changedEncryptionPublicKey.dekPublicKeyBase64 = "different-dek-public-key"
+        var changedCredential = previous.seed
+        changedCredential.attemptRecoveryToken = "different-recovery-credential"
+
+        for candidateSeed in [changedDevice, changedKeyId, changedEncryptionKeyId,
+                              changedPublicKey, changedEncryptionPublicKey, changedCredential] {
+            XCTAssertEqual(candidateSeed.attemptId, previous.seed.attemptId)
+            XCTAssertFalse(store.captureSeed(FirstDeviceRootRecord(seed: candidateSeed),
+                replacingTerminalStates: [.expired, .rejected]),
+                "same-attempt idempotency must reject any changed enrollment identity")
+            XCTAssertEqual(store.current(), previous,
+                "a mismatched replay candidate must preserve the complete durable ceremony")
+            XCTAssertEqual(keychain.storedData, originalBytes,
+                "rejection must not rewrite or delete the retained root")
+        }
+    }
+
     func testCompetingKeychainCaptureConfirmsRetainedNonterminalRecord() throws {
         let previous = approvedRecord()
         let keychain = FailingOverwriteKeychainStore()

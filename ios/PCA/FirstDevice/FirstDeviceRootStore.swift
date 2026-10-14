@@ -415,7 +415,15 @@ public final class KeychainFirstDeviceRootStore: FirstDeviceRootStoring {
             guard let existing else {
                 return saveAndConfirmUnlocked(candidate)
             }
-            if existing.seed.attemptId.utf8.elementsEqual(candidate.seed.attemptId.utf8) { return confirmDurable(existing) }
+            if existing.seed.attemptId.utf8.elementsEqual(candidate.seed.attemptId.utf8) {
+                // A replay of the same attempt is idempotent only when the
+                // complete enrollment identity is unchanged. Confirming an
+                // existing root for a same-attempt response with different
+                // device/key material would let the caller continue with an
+                // identity that disagrees with the retained ceremony.
+                guard existing.seed == candidate.seed else { return false }
+                return confirmDurable(existing)
+            }
             guard replacingTerminalStates.contains(existing.state) else {
                 // A competing enrollment cannot replace this ceremony, and
                 // must verify the exact retained record before treating the
