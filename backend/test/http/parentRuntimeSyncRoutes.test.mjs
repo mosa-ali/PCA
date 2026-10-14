@@ -142,6 +142,44 @@ test('active family scope + own device with no sync history yet: 200 with honest
   assert.equal(body.connectionState, 'STALE');
 });
 
+test('family scope revoked while status reads are pending returns generic 403 without status metadata', async () => {
+  const { app, authService, authzRepository, deviceRepository, relayService } = buildHarness();
+  const { rawToken, accountId } = await issueToken(authService, 'parent-revoked-during-status-read');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+  const deviceId = await registerDevice(deviceRepository, 'family-A');
+
+  let markReadStarted;
+  const readStarted = new Promise((resolve) => { markReadStarted = resolve; });
+  let releaseRead;
+  const readGate = new Promise((resolve) => { releaseRead = resolve; });
+  const originalList = relayService.listQueuedForRecipient.bind(relayService);
+  relayService.listQueuedForRecipient = async (...args) => {
+    markReadStarted();
+    await readGate;
+    return originalList(...args);
+  };
+
+  try {
+    const responsePromise = app.inject({
+      method: 'GET',
+      url: statusUrl('family-A', deviceId),
+      headers: { authorization: `Bearer ${rawToken}` },
+    });
+    await readStarted;
+    authzRepository._grantScope(accountId, 'family-A', 'REVOKED');
+    releaseRead();
+
+    const response = await responsePromise;
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+    assert.equal(response.body.includes(deviceId), false, 'revoked scope must not receive device status metadata');
+    assert.equal('pendingDelivery' in response.json(), false);
+  } finally {
+    releaseRead();
+    await app.close();
+  }
+});
+
 test('reflects a real successful sync recorded via the SAME shared statusTracker instance (e.g. after the device itself completes /v1/runtime-sync/inbound)', async () => {
   const { app, authService, authzRepository, deviceRepository, statusTracker } = buildHarness();
   const { rawToken, accountId } = await issueToken(authService, 'parent-1');

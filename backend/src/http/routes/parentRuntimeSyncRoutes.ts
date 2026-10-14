@@ -59,7 +59,7 @@ import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import { createRequireFamilyAuthorization } from '../requireFamilyAuthorization.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { AuthService } from '../../auth/AuthService.js';
-import type { AuthzService } from '../../authz/AuthzService.js';
+import { AuthzError, type AuthzService } from '../../authz/AuthzService.js';
 import type { DeviceRepository } from '../../device/DeviceRepository.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
 import type { RelayService } from '../../relay/RelayService.js';
@@ -122,6 +122,21 @@ export function registerParentRuntimeSyncRoutes(app: FastifyInstance, deps: Pare
       const protectionRecord = deps.deviceProtectionStatusRepository
         ? await deps.deviceProtectionStatusRepository.findForDevice(familyId, deviceId)
         : null;
+
+      // The authorization prehandler runs before the asynchronous reads
+      // above. Recheck immediately before projecting status so a family-scope
+      // revocation that lands while those reads are pending cannot receive a
+      // stale successful response.
+      try {
+        await deps.authzService.authorize({
+          accountId: request.accountId as string,
+          operation: 'VIEW_DEVICE_SYNC_STATUS',
+          familyId,
+        });
+      } catch (error) {
+        if (error instanceof AuthzError) return reply.code(403).send({ error: 'forbidden' });
+        throw error;
+      }
 
       return reply.send({
         deviceId,
