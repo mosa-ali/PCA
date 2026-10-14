@@ -1,4 +1,5 @@
 import type { DeviceSessionRecord, ValidateDeviceSessionResult } from './types.js';
+import { isSupportedChallengeTime } from '../deviceauth/policy.js';
 
 export interface DeviceSessionRepository {
   create(record: DeviceSessionRecord): Promise<void>;
@@ -22,9 +23,9 @@ export class InMemoryDeviceSessionRepository implements DeviceSessionRepository 
 
   async create(record: DeviceSessionRecord): Promise<void> {
     const captured = cloneSession(record);
-    if (!Number.isFinite(captured.issuedAt.getTime()) || !Number.isFinite(captured.expiresAt.getTime()) ||
+    if (!isValidSessionRecord(captured) ||
         captured.expiresAt.getTime() <= captured.issuedAt.getTime() ||
-        (captured.revokedAt !== null && !Number.isFinite(captured.revokedAt.getTime()))) {
+        (captured.revokedAt !== null && !isSupportedChallengeTime(captured.revokedAt))) {
       throw new RangeError('Device session timestamps are invalid.');
     }
     this.pruneExpired(captured.issuedAt.getTime());
@@ -33,20 +34,24 @@ export class InMemoryDeviceSessionRepository implements DeviceSessionRepository 
   }
 
   async validate(tokenHash: string, now: Date): Promise<ValidateDeviceSessionResult> {
-    if (!(now instanceof Date) || !Number.isFinite(now.getTime())) return { outcome: 'INVALID' };
-    this.pruneExpired(now.getTime());
+    if (!isSupportedChallengeTime(now)) return { outcome: 'INVALID' };
     const record = this.byTokenHash.get(tokenHash);
-    if (!record) return { outcome: 'INVALID' };
-    if (record.revokedAt) return { outcome: 'INVALID' };
-    if (now.getTime() >= record.expiresAt.getTime()) return { outcome: 'INVALID' };
+    if (!record || !isValidSessionRecord(record)) return { outcome: 'INVALID' };
+    this.pruneExpired(now.getTime());
+    if (this.byTokenHash.get(tokenHash) !== record || record.revokedAt !== null ||
+        now.getTime() < record.issuedAt.getTime() || now.getTime() >= record.expiresAt.getTime()) {
+      return { outcome: 'INVALID' };
+    }
     return { outcome: 'VALID', session: cloneSession(record) };
   }
 
   async revoke(tokenHash: string, now: Date): Promise<boolean> {
-    if (!(now instanceof Date) || !Number.isFinite(now.getTime())) return false;
-    this.pruneExpired(now.getTime());
+    if (!isSupportedChallengeTime(now)) return false;
     const record = this.byTokenHash.get(tokenHash);
-    if (!record || record.revokedAt) return false;
+    if (!record || !isValidSessionRecord(record) || record.revokedAt !== null ||
+        now.getTime() < record.issuedAt.getTime()) return false;
+    this.pruneExpired(now.getTime());
+    if (this.byTokenHash.get(tokenHash) !== record) return false;
     record.revokedAt = new Date(now.getTime());
     // Revoke is an immediate terminal transition. The expiration heap entry
     // is a harmless tombstone and is guarded by sessionId/expiry on pop.
@@ -105,4 +110,12 @@ function cloneSession(record: DeviceSessionRecord): DeviceSessionRecord {
     expiresAt: new Date(record.expiresAt.getTime()),
     revokedAt: record.revokedAt === null ? null : new Date(record.revokedAt.getTime()),
   };
+}
+
+function isValidSessionRecord(record: DeviceSessionRecord): boolean {
+  return isSupportedChallengeTime(record.issuedAt) &&
+    isSupportedChallengeTime(record.expiresAt) &&
+    record.expiresAt.getTime() > record.issuedAt.getTime() &&
+    Number.isSafeInteger(record.familySessionEpoch) && record.familySessionEpoch >= 0 && record.familySessionEpoch <= 0xffff_ffff &&
+    (record.revokedAt === null || isSupportedChallengeTime(record.revokedAt));
 }

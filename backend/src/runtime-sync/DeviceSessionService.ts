@@ -115,7 +115,7 @@ export class DeviceSessionService {
     // token itself remains bound to the signer returned by DeviceAuthService.
     if (identity.deviceId !== expectedDeviceId) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const familySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(identity);
-    if (familySessionEpoch === null) {
+    if (!isValidFamilySessionEpoch(familySessionEpoch)) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
 
@@ -148,8 +148,15 @@ export class DeviceSessionService {
   /** Returns the authenticated device, family, and exact DSK key id; every failure remains generic UNAUTHORIZED. */
   async validateSession(rawToken: string): Promise<DeviceSessionIdentity> {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    const result = await this.sessionRepository.validate(hashSessionToken(rawToken), this.now());
+    const clockValue: unknown = this.now();
+    if (!isSupportedChallengeTime(clockValue)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    const now = new Date(clockValue.getTime());
+    const result = await this.sessionRepository.validate(hashSessionToken(rawToken), now);
     if (result.outcome !== 'VALID') throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    if (!isValidSessionSnapshot(result.session) || now.getTime() < result.session.issuedAt.getTime() ||
+        now.getTime() >= result.session.expiresAt.getTime()) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
     const verifiedKey = {
       deviceId: result.session.deviceId,
       familyId: result.session.familyId,
@@ -157,7 +164,7 @@ export class DeviceSessionService {
       dskPublicKey: result.session.dskPublicKey,
     };
     const activeFamilySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(verifiedKey);
-    if (activeFamilySessionEpoch === null || activeFamilySessionEpoch !== result.session.familySessionEpoch) {
+    if (!isValidFamilySessionEpoch(activeFamilySessionEpoch) || activeFamilySessionEpoch !== result.session.familySessionEpoch) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
     return { deviceId: verifiedKey.deviceId, familyId: verifiedKey.familyId, dskKeyId: verifiedKey.dskKeyId };
@@ -242,4 +249,21 @@ export class DeviceSessionService {
       }
     }
   }
+}
+
+function isValidFamilySessionEpoch(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 0xffff_ffff;
+}
+
+function isValidSessionSnapshot(value: unknown): value is DeviceSessionRecord {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as DeviceSessionRecord;
+  return typeof session.deviceId === 'string' && session.deviceId.length > 0 &&
+    typeof session.familyId === 'string' && session.familyId.length > 0 &&
+    typeof session.dskKeyId === 'string' && session.dskKeyId.length > 0 &&
+    typeof session.dskPublicKey === 'string' && session.dskPublicKey.length > 0 &&
+    isValidFamilySessionEpoch(session.familySessionEpoch) &&
+    isSupportedChallengeTime(session.issuedAt) && isSupportedChallengeTime(session.expiresAt) &&
+    session.expiresAt.getTime() > session.issuedAt.getTime() &&
+    session.revokedAt === null;
 }

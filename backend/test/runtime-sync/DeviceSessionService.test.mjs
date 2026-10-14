@@ -78,6 +78,55 @@ test('device-session repository fails closed on invalid clocks and immediately r
   assert.deepEqual(await repository.validate('hash-revoke', new Date(issuedAt.getTime() + 2)), { outcome: 'INVALID' });
 });
 
+test('device-session repository rejects non-persistable clocks and corrupted persisted records without mutating them', async () => {
+  const start = new Date('2026-01-01T00:00:00.000Z');
+  const invalidClocks = [new Date(Number.NaN), new Date('0001-01-01T00:00:00.000Z'), new Date('10000-01-01T00:00:00.000Z')];
+  for (const now of invalidClocks) {
+    const repository = new InMemoryDeviceSessionRepository();
+    await repository.create(sessionRecord('clock-hash', 'clock-session', new Date(start), new Date(start.getTime() + 1000)));
+    assert.deepEqual(await repository.validate('clock-hash', now), { outcome: 'INVALID' });
+    assert.equal(repository.byTokenHash.size, 1, 'an invalid clock cannot prune or alter a stored session');
+  }
+
+  const corrupt = [
+    (record) => { record.expiresAt = new Date(Number.NaN); },
+    (record) => { record.issuedAt = new Date('0001-01-01T00:00:00.000Z'); },
+    (record) => { record.familySessionEpoch = Number.NaN; },
+    (record) => { record.familySessionEpoch = 1.5; },
+  ];
+  for (const corruptRecord of corrupt) {
+    const repository = new InMemoryDeviceSessionRepository();
+    await repository.create(sessionRecord('corrupt-hash', 'corrupt-session', new Date(start), new Date(start.getTime() + 1000)));
+    const stored = repository.byTokenHash.get('corrupt-hash');
+    corruptRecord(stored);
+    assert.deepEqual(await repository.validate('corrupt-hash', new Date(start.getTime() + 10)), { outcome: 'INVALID' });
+    assert.equal(await repository.revoke('corrupt-hash', new Date(start.getTime() + 10)), false,
+      'revocation must not mutate a corrupted persisted session');
+    assert.equal(repository.byTokenHash.size, 1, 'invalid persisted state must remain untouched for diagnosis');
+    assert.equal(repository.byTokenHash.get('corrupt-hash'), stored, 'validation must not replace or repair corrupted state');
+  }
+});
+
+test('device-session repository refuses to create non-persistable dates or an invalid family epoch', async () => {
+  const repository = new InMemoryDeviceSessionRepository();
+  const start = new Date('2026-01-01T00:00:00.000Z');
+  const cases = [
+    sessionRecord('low-date', 'low-date', new Date('0001-01-01T00:00:00.000Z'), new Date(start)),
+    sessionRecord('bad-epoch', 'bad-epoch', new Date(start), new Date(start.getTime() + 1000)),
+    sessionRecord('large-epoch', 'large-epoch', new Date(start), new Date(start.getTime() + 1000)),
+  ];
+  cases[1].familySessionEpoch = -1;
+  cases[2].familySessionEpoch = 0x1_0000_0000;
+  for (const record of cases) {
+    await assert.rejects(() => repository.create(record), RangeError);
+  }
+  assert.equal(repository.byTokenHash.size, 0, 'invalid session records must not enter the bearer repository');
+  const zeroEpoch = sessionRecord('zero-epoch', 'zero-epoch', new Date(start), new Date(start.getTime() + 1000));
+  zeroEpoch.familySessionEpoch = 0;
+  await repository.create(zeroEpoch);
+  assert.equal(repository.byTokenHash.size, 1, 'zero is representable by the authoritative unsigned epoch contract');
+});
+
 test('an old expiry-heap tombstone cannot evict a later sessionId/expiry reusing a token hash', async () => {
   const repository = new InMemoryDeviceSessionRepository();
   const start = new Date('2026-01-01T00:00:00.000Z');
@@ -302,6 +351,39 @@ test('completeChallenge rejects an invalid final session clock or expiry without
     );
     assert.equal(clockCalls, 1, 'the failure must happen at final session issuance, after successful proof verification');
     assert.equal(sessionRepository.byTokenHash.size, 0, 'invalid persistence timestamps cannot create a bearer');
+  }
+});
+
+test('validateSession rejects unsupported clocks and corrupted session snapshots generically without changing storage', async () => {
+  const { deviceRepository, deviceAuthService, sessionRepository, sessionService } = buildHarness(() => new Date('2026-01-01T00:00:00.000Z'));
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const issued = await sessionService.completeChallenge(deviceId, challenge.challengeId,
+    signTestOnlyChallenge(publicKey, challenge.nonce));
+  const tokenHash = hashSessionToken(issued.rawToken);
+  const stored = sessionRepository.byTokenHash.get(tokenHash);
+  assert.ok(stored);
+
+  const unsupportedClock = new DeviceSessionService(
+    deviceAuthService, sessionRepository, () => new Date('0001-01-01T00:00:00.000Z'));
+  await assert.rejects(() => unsupportedClock.validateSession(issued.rawToken),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+  assert.equal(sessionRepository.byTokenHash.get(tokenHash), stored, 'unsupported service clock cannot mutate the bearer record');
+
+  const originalValidate = sessionRepository.validate.bind(sessionRepository);
+  const corruptions = [
+    (session) => ({ ...session, expiresAt: new Date(Number.NaN) }),
+    (session) => ({ ...session, issuedAt: new Date('0001-01-01T00:00:00.000Z') }),
+    (session) => ({ ...session, familySessionEpoch: Number.NaN }),
+  ];
+  for (const corrupt of corruptions) {
+    sessionRepository.validate = async (hash, now) => {
+      const result = await originalValidate(hash, now);
+      return result.outcome === 'VALID' ? { outcome: 'VALID', session: corrupt(result.session) } : result;
+    };
+    await assert.rejects(() => sessionService.validateSession(issued.rawToken),
+      (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+    assert.equal(sessionRepository.byTokenHash.get(tokenHash), stored, 'service-side validation must not mutate repository state');
   }
 });
 
