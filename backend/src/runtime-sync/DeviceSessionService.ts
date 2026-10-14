@@ -208,9 +208,15 @@ export class DeviceSessionService {
    */
   async revokeSession(rawToken: string): Promise<void> {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    const clockValue: unknown = this.now();
+    if (!isSupportedChallengeTime(clockValue)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    // Use one validated server timestamp for both the audit pre-read and the
+    // repository mutation. A second clock sample could move behind issuedAt,
+    // making revoke() a no-op after validate() observed a live session.
+    const revokedAt = new Date(clockValue.getTime());
     const tokenHash = hashSessionToken(rawToken);
-    const priorState = await this.sessionRepository.validate(tokenHash, this.now());
-    const revoked = await this.sessionRepository.revoke(tokenHash, this.now());
+    const priorState = await this.sessionRepository.validate(tokenHash, revokedAt);
+    const revoked = await this.sessionRepository.revoke(tokenHash, revokedAt);
     if (priorState.outcome === 'VALID' && revoked) {
       try {
         await this.auditService.record({

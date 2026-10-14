@@ -498,6 +498,55 @@ test('revokeSession makes a previously valid token unusable, and is idempotent',
   await assert.rejects(() => sessionService.validateSession(session.rawToken));
 });
 
+test('revokeSession uses one validated timestamp so a clock rollback cannot leave a live bearer after success', async () => {
+  const issuedAt = new Date('2026-01-01T00:00:00.000Z');
+  let revokeClockSamples = null;
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness(() =>
+    revokeClockSamples ? revokeClockSamples.shift() : new Date(issuedAt));
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(
+    deviceId,
+    challenge.challengeId,
+    signTestOnlyChallenge(publicKey, challenge.nonce),
+  );
+
+  // The old implementation sampled +1ms for the pre-read and -1ms for the
+  // write. The repository refused that pre-issuance revocation, while the
+  // service still returned success and left the token valid.
+  revokeClockSamples = [new Date(issuedAt.getTime() + 1), new Date(issuedAt.getTime() - 1)];
+  await sessionService.revokeSession(session.rawToken);
+
+  assert.equal(revokeClockSamples.length, 1, 'revocation samples the clock once');
+  assert.equal(sessionRepository.byTokenHash.size, 0, 'the bearer is removed by the committed revocation');
+  revokeClockSamples = null;
+  await assert.rejects(
+    () => sessionService.validateSession(session.rawToken),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
+});
+
+test('revokeSession rejects an invalid persistence clock instead of silently succeeding without revocation', async () => {
+  let currentTime = new Date('2026-01-01T00:00:00.000Z');
+  const { deviceRepository, sessionRepository, sessionService } = buildHarness(() => currentTime);
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(
+    deviceId,
+    challenge.challengeId,
+    signTestOnlyChallenge(publicKey, challenge.nonce),
+  );
+
+  currentTime = new Date(Number.NaN);
+  await assert.rejects(
+    () => sessionService.revokeSession(session.rawToken),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
+  assert.equal(sessionRepository.byTokenHash.size, 1, 'invalid clock cannot mutate session state');
+  currentTime = new Date('2026-01-01T00:00:00.001Z');
+  await sessionService.validateSession(session.rawToken);
+});
+
 test('revokeSession remains successful after committed revocation when audit and warning sinks throw', async () => {
   let auditCalls = 0;
   const reportedFailures = [];
