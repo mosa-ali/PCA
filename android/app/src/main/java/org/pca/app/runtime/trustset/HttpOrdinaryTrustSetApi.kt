@@ -1,6 +1,7 @@
 package org.pca.app.runtime.trustset
 
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.ByteBuffer
@@ -17,11 +18,14 @@ import org.pca.app.runtime.EpochBounds
 class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions: DeviceSessionManager,
     allowInsecureLocal: Boolean = false) : OrdinaryTrustSetApi {
     init {
-        val endpoint = URL(baseUrl)
-        require(endpoint.userInfo == null && endpoint.query == null && endpoint.ref == null)
+        val endpoint = URI.create(baseUrl)
+        val host = endpoint.host
+        require(!host.isNullOrBlank())
+        require(endpoint.userInfo == null && endpoint.query == null && endpoint.fragment == null)
         require(endpoint.path.isEmpty() || endpoint.path == "/")
-        require(endpoint.protocol == "https" || (allowInsecureLocal && endpoint.protocol == "http" &&
-            endpoint.host in setOf("localhost", "127.0.0.1", "10.0.2.2")))
+        require(endpoint.scheme.equals("https", ignoreCase = true) || (allowInsecureLocal &&
+            endpoint.scheme.equals("http", ignoreCase = true) &&
+            host in setOf("localhost", "127.0.0.1", "10.0.2.2")))
     }
     override suspend fun submit(familyId: String, request: OrdinaryEpochRequest) = contact(familyId, request, false)
     override suspend fun status(familyId: String, request: OrdinaryEpochRequest) = contact(familyId, request, true)

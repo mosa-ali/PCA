@@ -43,9 +43,33 @@ class HttpOrdinaryTrustSetApiTest {
         .put("trustSetEpoch", record.trustSetEpoch)
         .put("keyEpoch", record.keyEpoch)
 
-    private fun sessions() = DeviceSessionManager(
-        FakeRelayHttpClient(), "owner", signer = { "test-signature" }, assertKeyCustody = {},
+    private fun sessions(onSign: () -> Unit = {}) = DeviceSessionManager(
+        FakeRelayHttpClient(), "owner", signer = { onSign(); "test-signature" }, assertKeyCustody = {},
     )
+
+    @Test fun `origin requires a valid host before session use and allows supported HTTPS and local hosts`() {
+        val signingAttempted = AtomicBoolean(false)
+        val session = sessions { signingAttempted.set(true) }
+
+        for (invalidOrigin in listOf("https:/", "https://exa mple.com")) {
+            val failure = runCatching { HttpOrdinaryTrustSetApi(invalidOrigin, session) }.exceptionOrNull()
+            assertTrue("origin should be rejected: $invalidOrigin", failure is IllegalArgumentException)
+        }
+        assertFalse(session.isAuthenticated())
+        assertFalse(signingAttempted.get())
+
+        assertTrue(runCatching { HttpOrdinaryTrustSetApi("https://api.example.com", session) }.isSuccess)
+        for (host in listOf("localhost", "127.0.0.1", "10.0.2.2")) {
+            assertTrue(runCatching {
+                HttpOrdinaryTrustSetApi("http://$host", session, allowInsecureLocal = true)
+            }.isSuccess)
+        }
+        assertTrue(runCatching {
+            HttpOrdinaryTrustSetApi("http://localhost", session)
+        }.exceptionOrNull() is IllegalArgumentException)
+        assertFalse(session.isAuthenticated())
+        assertFalse(signingAttempted.get())
+    }
 
     @Test fun `not accepted status carrying an accepted record is rejected as malformed`() = runBlocking {
         val pending = accepted(epoch(2))
