@@ -408,6 +408,25 @@ class HttpOrdinaryTrustSetApiTest {
         }
     }
 
+    @Test fun `read only accepted head rejects non string protocol fields without coercion`() = runBlocking {
+        val head = accepted(epoch(2))
+        for (field in listOf("canonicalEpochBase64", "signatureBase64", "signerDeviceId", "signerKeyId")) {
+            val malformedRecord = recordJson(head).put(field, 123).toString()
+            val server = LocalServer("""{"acceptedHead":$malformedRecord}""")
+            try {
+                val session = sessions().also { it.authenticate() }
+                val api = HttpOrdinaryTrustSetApi(server.url, session, allowInsecureLocal = true)
+
+                val failure = runCatching { api.getHead("family") }.exceptionOrNull()
+
+                assertTrue("$field must be a JSON string, not a coerced number", failure is IllegalArgumentException)
+                assertTrue(server.finished.await(2, TimeUnit.SECONDS))
+            } finally {
+                server.close()
+            }
+        }
+    }
+
     @Test fun `successful submit rejects malformed UTF8 response bytes`() = runBlocking {
         val pending = accepted(epoch(2))
         val valid = response(OrdinaryEpochOutcome.ACCEPTED, pending, pending).toByteArray(Charsets.UTF_8)

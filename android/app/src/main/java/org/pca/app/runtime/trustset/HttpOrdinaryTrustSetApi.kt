@@ -104,7 +104,7 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
                 StrictJsonObjectKeys.requireUnique(responseBody)
                 val json = JSONObject(responseBody)
                 require(json.keys().asSequence().toSet() == setOf("outcome", "acceptedEpoch", "acceptedHead"))
-                val outcome = OrdinaryEpochOutcome.valueOf(json.getString("outcome"))
+                val outcome = OrdinaryEpochOutcome.valueOf(json.requireString("outcome"))
                 require(if (status) outcome != OrdinaryEpochOutcome.IDEMPOTENT_MATCH else
                     outcome == OrdinaryEpochOutcome.ACCEPTED || outcome == OrdinaryEpochOutcome.IDEMPOTENT_MATCH)
                 val acceptedEpoch = if (json.isNull("acceptedEpoch")) null else record(json.getJSONObject("acceptedEpoch"))
@@ -152,11 +152,18 @@ class HttpOrdinaryTrustSetApi(private val baseUrl: String, private val sessions:
     private fun record(json: JSONObject): AcceptedEpochRecord {
         require(json.keys().asSequence().toSet() == setOf("canonicalEpochBase64", "signatureBase64", "signerDeviceId",
             "signerKeyId", "trustSetEpoch", "keyEpoch"))
-        return AcceptedEpochRecord(OrdinaryEpochRequest(json.getString("canonicalEpochBase64"), json.getString("signatureBase64")),
-            json.getString("signerDeviceId"), json.getString("signerKeyId"), EpochBounds.decodeJson(json, "trustSetEpoch"), EpochBounds.decodeJson(json, "keyEpoch"))
+        return AcceptedEpochRecord(OrdinaryEpochRequest(
+            json.requireString("canonicalEpochBase64"),
+            json.requireString("signatureBase64"),
+        ), json.requireString("signerDeviceId"), json.requireString("signerKeyId"),
+            EpochBounds.decodeJson(json, "trustSetEpoch"), EpochBounds.decodeJson(json, "keyEpoch"))
     }
 
 }
+
+/** JSONObject.getString coerces numeric and boolean values; protocol string fields must stay typed. */
+private fun JSONObject.requireString(name: String): String =
+    get(name) as? String ?: throw IllegalArgumentException("ordinary_trust_set_invalid_response")
 
 /** HTTP JSON is UTF-8; reject malformed byte sequences instead of replacing them with U+FFFD. */
 internal fun decodeOrdinaryTrustSetJson(bytes: ByteArray): String = StandardCharsets.UTF_8.newDecoder()
