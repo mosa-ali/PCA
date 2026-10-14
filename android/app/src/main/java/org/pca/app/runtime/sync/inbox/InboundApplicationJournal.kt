@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /** A prepared intent is recovery state, never proof that a command took effect. */
 data class InboundApplicationIntent(
@@ -169,6 +170,7 @@ class PersistentInboundApplicationJournal(
                 return Snapshot(emptyList(), null)
             }
             if (raw.toByteArray(Charsets.UTF_8).size > maxSnapshotBytes) unavailable()
+            StrictJsonMemberNames.requireUnique(raw)
             val json = JSONObject(raw)
             if (json.get("version") != 1) unavailable()
             val array = json.getJSONArray("records")

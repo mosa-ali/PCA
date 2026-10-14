@@ -3,6 +3,7 @@ package org.pca.app.feature.wellbeing.policy
 import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /**
  * Durable local storage for the parent-policy adapter's own state: the
@@ -48,6 +49,7 @@ class ParentPolicyStateStore(
     fun load(): Snapshot {
         val raw = store.getString(key) ?: return Snapshot.EMPTY
         return try {
+            StrictJsonMemberNames.requireUnique(raw)
             decode(JSONObject(raw))
         } catch (_: Exception) {
             Snapshot.EMPTY

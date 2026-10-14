@@ -4,6 +4,7 @@ import java.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 import org.pca.app.runtime.sync.envelope.ProtocolVersionBounds
 import org.pca.app.runtime.sync.envelope.RecipientBinding
@@ -225,6 +226,7 @@ class PersistentCiphertextInbox(
                 return null
             }
             if (raw.toByteArray(Charsets.UTF_8).size > maxSnapshotBytes) unavailable()
+            StrictJsonMemberNames.requireUnique(raw)
             val json = JSONObject(raw)
             val version = json.get("version")
             if (version != 1 && version != 2) unavailable()

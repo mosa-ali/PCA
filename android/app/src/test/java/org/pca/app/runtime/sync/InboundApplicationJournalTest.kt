@@ -103,6 +103,22 @@ class InboundApplicationJournalTest {
         unavailable { journal.records() }
     }
 
+    @Test fun `ambiguous persisted journal members fail closed without rewriting snapshot`() {
+        val backing = Backing()
+        val journal = PersistentInboundApplicationJournal(backing, "device-1")
+        journal.prepare(intent())
+        val key = backing.cache.keys.single()
+        val valid = backing.cache.getValue(key)
+        val ambiguous = valid.replace("\"version\":1", "\"version\":1,\"version\":2")
+            .replace("\"messageId\":\"message-1\"", "\"messageId\":\"message-1\",\"messageId\":\"other\"")
+        assertNotEquals(valid, ambiguous)
+        backing.cache[key] = ambiguous
+
+        unavailable { journal.records() }
+
+        assertEquals(ambiguous, backing.cache[key])
+    }
+
     @Test fun `capacity never evicts receipts and cursor survives restart`() {
         val backing = Backing()
         val journal = PersistentInboundApplicationJournal(backing, "device-1", maxRecords = 1)

@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## Android durable policy and inbox duplicate JSON rejection — 2026-10-14
+
+SOURCE = Parent policy state, durable ciphertext inbox, and inbound application journal now reject duplicate JSON members before permissive parsing. Ambiguous persisted snapshots fail closed and remain byte-for-byte unchanged; valid snapshots still load normally. No schema, authority contract, or live database changed.
+VALIDATION = Focused persistence suites **39/39 PASS**; full Android unit suite **2175/2175 PASS**; `:app:lint` and `:app:assembleRelease` **BUILD SUCCESSFUL**. The release artifact is unsigned because signing credentials are absent. Independent Android/security peer review found no blocker. Prior published base `5d7d27c9` passed Quality Gates run `38503386274` **27/27**; this source checkpoint awaits publication and its own exact-head CI.
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. Physical-device, human crypto approval, owner localhost acceptance, Platform dependency, live DB, Azure, and production gates remain separate. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Android replay ledger and iOS transport origin guards — 2026-10-14
 
 SOURCE = Android persisted inbound replay-denial floors now reject duplicate JSON members before parsing, fail closed without rewriting ambiguous bytes, and retain the valid floor when restored. iOS device-session and runtime-sync clients now accept only HTTPS origin URLs (host required; no userinfo, path, query, or fragment) before any device proof or bearer traffic. No schema or authority contract changed.

@@ -1,6 +1,7 @@
 package org.pca.app.feature.wellbeing.policy
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 
@@ -84,6 +85,33 @@ class ParentPolicyStateStoreTest {
         backing.putString("wellbeing_parent_policy_sync_v1", "{ not valid json at all")
         val store = ParentPolicyStateStore(backing)
         assertEquals(ParentPolicyStateStore.Snapshot.EMPTY, store.load())
+    }
+
+    @Test
+    fun `ambiguous persisted policy members fail closed without rewriting snapshot`() {
+        val backing = InMemoryPersistentStateStore()
+        val store = ParentPolicyStateStore(backing)
+        val snapshot = ParentPolicyStateStore.Snapshot(
+            syncState = WellbeingPolicySyncState(active = ActivePolicy(samplePolicy(), 3)),
+            revisionGuard = RevisionGuardState(currentRevision = 3, appliedOperationIds = setOf("op-1")),
+        )
+        store.save(snapshot)
+        val valid = requireNotNull(backing.getString("wellbeing_parent_policy_sync_v1"))
+        val ambiguousSnapshots = listOf(
+            valid.replace("\"currentRevision\":3", "\"currentRevision\":3,\"currentRevision\":0"),
+            valid.replace("\"currentRevision\":3", "\"currentRevision\":3,\"\\u0063urrentRevision\":0"),
+            valid.replace("\"policyRevision\":3", "\"policyRevision\":3,\"policyRevision\":0"),
+        )
+
+        for (ambiguous in ambiguousSnapshots) {
+            assertNotEquals(valid, ambiguous)
+            backing.putString("wellbeing_parent_policy_sync_v1", ambiguous)
+            assertEquals(ParentPolicyStateStore.Snapshot.EMPTY, store.load())
+            assertEquals(ambiguous, backing.getString("wellbeing_parent_policy_sync_v1"))
+        }
+
+        backing.putString("wellbeing_parent_policy_sync_v1", valid)
+        assertEquals(snapshot, store.load())
     }
 
     @Test

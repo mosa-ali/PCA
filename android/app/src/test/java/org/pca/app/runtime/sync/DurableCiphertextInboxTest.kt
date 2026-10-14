@@ -224,6 +224,23 @@ class DurableCiphertextInboxTest {
         }
     }
 
+    @Test fun `ambiguous persisted inbox members fail closed without rewriting snapshot`() {
+        val store = InboxBacking()
+        val inbox = PersistentCiphertextInbox(store, "device-1")
+        inbox.capture(scope, listOf(wire()), navigation = navigation("cursor1"),
+            expectedSessionIncarnation = incarnation)
+        val key = store.values.keys.single()
+        val valid = store.values.getValue(key)
+        val ambiguous = valid.replace("\"version\":2", "\"version\":2,\"version\":1")
+            .replace("\"messageId\":\"message-1\"", "\"messageId\":\"message-1\",\"messageId\":\"other\"")
+        assertNotEquals(valid, ambiguous)
+        store.values[key] = ambiguous
+
+        unavailable { inbox.pendingCrypto(scope) }
+
+        assertEquals(ambiguous, store.values[key])
+    }
+
     private val scope = RuntimeInboxScope("family-1", "device-1")
     @Test fun `legacy response to resumed modern cursor retains entire snapshot`() {
         val store = InboxBacking()
