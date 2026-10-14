@@ -6,6 +6,7 @@ import org.pca.app.runtime.port.ScheduleEnforcementOutcome
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import java.time.Instant
+import java.util.concurrent.CancellationException
 
 /**
  * Coordinator integration glue: the real [ScheduleRuntimePort] binding, delegating every decision
@@ -55,7 +56,15 @@ class ProductionScheduleRuntimePort(
         if (packageName.isBlank()) return ScheduleEnforcementOutcome.UNAVAILABLE
         val nowUtc = Instant.ofEpochMilli(wallClockTimeSource.currentTimeMillis())
         val connectivity = if (connectivityObserver.isCurrentlyOnline()) Connectivity.ONLINE else Connectivity.OFFLINE
-        val communicationSurfaces = communicationSurfacesProvider()
+        val communicationSurfaces = try {
+            communicationSurfacesProvider()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Never substitute an empty token set: that could suspend a protected emergency,
+            // calling, or SMS transport surface when its current local snapshot is unavailable.
+            return ScheduleEnforcementOutcome.UNAVAILABLE
+        }
         val result = scheduleRuntime.evaluate(
             nowUtc = nowUtc,
             appToken = EmergencyAccessFloor.opaqueTokenForPackage(packageName),
