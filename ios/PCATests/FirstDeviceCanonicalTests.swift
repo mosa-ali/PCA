@@ -236,4 +236,22 @@ final class FirstDeviceBootstrapApiClientStrictResponseTests: XCTestCase {
         let response = try await api.status(attemptId: "attempt-0000000000000000", attemptRecoveryToken: "token", ceremonyId: "c")
         XCTAssertEqual(response, FirstDeviceStatusResponse(status: "COMMITTED", outcome: "ACCEPTED"))
     }
+
+    func testBootstrapClientRequiresHTTPSOriginBeforeProofOrTransport() throws {
+        let transport = InMemoryPCAHTTPTransport(autoAcceptEnrollmentPreparation: false) { _ in
+            XCTFail("Rejected bootstrap configuration must never send ceremony credentials")
+            return PCAHTTPResponse(statusCode: 200, data: Data())
+        }
+        for value in ["http://api.example.test", "https://user:password@api.example.test",
+                      "https://api.example.test/other", "https://api.example.test/?source=other",
+                      "https://api.example.test/#other", "https:///missing-host"] {
+            let url = try XCTUnwrap(URL(string: value))
+            XCTAssertThrowsError(try FirstDeviceBootstrapApiClient(baseURL: url, transport: transport), value) {
+                XCTAssertEqual($0 as? PCAAPIError, .invalidConfiguration)
+            }
+        }
+        XCTAssertNoThrow(try FirstDeviceBootstrapApiClient(
+            baseURL: URL(string: "https://api.example.test/")!, transport: transport))
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
 }

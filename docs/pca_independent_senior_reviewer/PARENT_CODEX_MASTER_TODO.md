@@ -1,5 +1,11 @@
 # PCA Parent Authentication + Authority — Codex Master TODO
 
+## iOS first-device bootstrap URL validation — 2026-10-14
+
+SOURCE = First-device bootstrap now accepts only an HTTPS origin URL with a host and no userinfo, non-root path, query, or fragment, matching the device-session and runtime-sync clients. Invalid configuration is rejected before transport. No schema or authority contract changed.
+VALIDATION = Swift 6.4 source/test syntax parse PASS; release integration declarations PASS; validator tests **9/9 PASS**. The focused Apple XCTest is added but awaits exact-head CI because Xcode is unavailable on this Windows host. Independent iOS self-review found no blocker. Base `ddebb4aa` passed exact-head Quality Gates run `38511675626` **27/27**; this source checkpoint awaits publication and its own CI.
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-20 remains PASS. Physical-device, human crypto approval, owner localhost acceptance, Platform dependency, live DB, Azure, and production gates remain separate. `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 ## Android durable policy and inbox duplicate JSON rejection — 2026-10-14
 
 SOURCE = Parent policy state, durable ciphertext inbox, and inbound application journal now reject duplicate JSON members before permissive parsing. Ambiguous persisted snapshots fail closed and remain byte-for-byte unchanged; valid snapshots still load normally. No schema, authority contract, or live database changed.
