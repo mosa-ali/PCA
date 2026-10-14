@@ -45,7 +45,10 @@ fun toZonedWallClock(instant: Instant, timeZone: String): ZonedWallClock {
         weekday = weekday,
         hour = zoned.hour,
         minute = zoned.minute,
-        localDate = "%04d-%02d-%02d".format(zoned.year, zoned.monthValue, zoned.dayOfMonth),
+        // DailyAppLimit.anchorLocalDate is canonical ASCII YYYY-MM-DD. Avoid
+        // default-locale formatting here: localized digits can make an unchanged
+        // family-local date compare unequal and reset the evaluated usage to zero.
+        localDate = zoned.toLocalDate().toString(),
     )
 }
 
