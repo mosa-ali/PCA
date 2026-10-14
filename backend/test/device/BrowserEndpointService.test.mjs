@@ -150,6 +150,29 @@ test('committed browser registration returns its device id when the one-shot aud
   }
 });
 
+test('committed browser registration still returns its device id when both audit and warning sinks fail', async () => {
+  const repository = createInMemoryDeviceRepository();
+  const service = new BrowserEndpointService(repository, () => new Date('2026-01-01T00:00:00.000Z'), {
+    async record() { throw new Error('private audit storage failure'); },
+  });
+  const originalWarn = console.warn;
+  console.warn = () => { throw new Error('stderr unavailable'); };
+  try {
+    const registeredBy = randomUUID();
+    const publicKey = key();
+    const result = await service.registerEndpoint(FAMILY, registeredBy, publicKey);
+
+    assert.ok(result.deviceId);
+    assert.equal(result.status, 'PAIRING_PENDING');
+    const device = await repository.findDeviceForFamily(FAMILY, result.deviceId);
+    assert.equal(device.status, 'PAIRING_PENDING');
+    assert.equal(device.registeredByAccountId, registeredBy);
+    assert.equal((await repository.findKeysByDeviceForFamily(FAMILY, result.deviceId)).length, 1);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('two different families can register browser endpoints independently, with independent deviceIds', async () => {
   const { service } = buildService();
   const a = await service.registerEndpoint('family-a', randomUUID(), key());

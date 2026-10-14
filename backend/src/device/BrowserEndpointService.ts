@@ -139,10 +139,14 @@ export class BrowserEndpointService {
       this.auditAppendFailureCount += 1;
       if (this.auditAppendFailureCount === 1 || this.auditAppendFailureCount % 100 === 0) {
         // eslint-disable-next-line no-console -- structured warning is bounded and contains no identifiers or private payload.
-        console.warn(JSON.stringify({
-          event: 'browser_endpoint_registration_audit_append_failed',
-          occurrences: this.auditAppendFailureCount,
-        }));
+        try {
+          console.warn(JSON.stringify({
+            event: 'browser_endpoint_registration_audit_append_failed',
+            occurrences: this.auditAppendFailureCount,
+          }));
+        } catch {
+          // Logging is best-effort too; the device and key already committed.
+        }
       }
     }
 
