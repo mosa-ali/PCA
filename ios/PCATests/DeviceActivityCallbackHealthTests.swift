@@ -1064,6 +1064,36 @@ final class DeviceActivityCallbackRuntimeTests: XCTestCase {
             "revocation clears enforcement but retains the exact committed policy for authorized recovery")
     }
 
+    func testPolicyReconciliationClearsRevokedShieldsBeforeCorruptClearIntentRead() throws {
+        let store = CallbackRuntimeBlobStore()
+        let scheduler = CallbackRuntimeScheduler()
+        let shields = ShieldRecorder()
+        var authorized = true
+        let runtime = PCAProductionProtectionPolicyRuntime(authorizationIsApproved: { authorized },
+            scheduler: scheduler, blobStore: store, installationClock: { self.installedAt },
+            shieldEnforcer: shields)
+        XCTAssertEqual(try runtime.applyVerifiedPolicy(
+            scheduleData: policy("revoked-corrupt-clear", capability: .enforced, restrictive: true),
+            applicationTokenData: PropertyListEncoder().encode(Set<ApplicationToken>()),
+            protectedApplicationTokenData: nil, now: installedAt), .applied)
+        let manifest = try XCTUnwrap(store.read(forKey: deviceActivityMonitorInstallationStorageKey))
+        let installation = try XCTUnwrap(DeviceActivityMonitorInstallation.decodeValidated(manifest))
+        let corruptIntent = Data("corrupt-clear-intent".utf8)
+        try store.write(corruptIntent, forKey: deviceActivityPolicyClearIntentStorageKey)
+        let removalsBeforeRevocation = shields.removeCount
+        authorized = false
+
+        XCTAssertThrowsError(try runtime.reconcileInstalledPolicy(now: installedAt.addingTimeInterval(60))) {
+            XCTAssertEqual($0 as? PCAProtectionPolicyApplicationError, .authorizationRequired)
+        }
+
+        XCTAssertEqual(shields.removeCount, removalsBeforeRevocation + 1)
+        XCTAssertTrue(scheduler.stopped.contains(installation.monitorActivityId))
+        XCTAssertEqual(store.read(forKey: deviceActivityMonitorInstallationStorageKey), manifest)
+        XCTAssertEqual(store.read(forKey: deviceActivityPolicyClearIntentStorageKey), corruptIntent,
+            "revocation cleanup runs before the invalid clear intent is parsed")
+    }
+
     func testUnauthorizedApplyClearsShieldsAndPreservesActiveGenerationForRecovery() throws {
         let store = CallbackRuntimeBlobStore()
         let scheduler = CallbackRuntimeScheduler()

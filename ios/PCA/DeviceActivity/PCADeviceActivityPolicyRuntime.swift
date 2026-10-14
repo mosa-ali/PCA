@@ -675,6 +675,24 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     public func reconcileInstalledPolicy(now: Date) throws -> PCAProtectionPolicyApplicationResult? {
         do {
             return try policyCoordination.withExclusiveAccessContext { access in
+                // A corrupt pending clear record must not prevent live
+                // authorization revocation from removing this generation's
+                // ManagedSettings and DeviceActivity enforcement. The shared
+                // policy lock keeps the committed manifest stable while this
+                // preflight runs; approved callers retain the normal clear
+                // reconciliation order below.
+                if !authorizationIsApproved() {
+                    mutationLock.lock()
+                    if let installation = currentInstallation(), installation.state == .active {
+                        do {
+                            try requireEnforcementAuthorization(for: installation)
+                        } catch {
+                            mutationLock.unlock()
+                            throw error
+                        }
+                    }
+                    mutationLock.unlock()
+                }
                 try reconcileClearIntent()
                 mutationLock.lock()
                 defer { mutationLock.unlock() }
