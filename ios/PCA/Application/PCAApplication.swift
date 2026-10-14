@@ -355,8 +355,22 @@ enum PCAFirstDeviceTrustRootComposition {
         self.resolvedOrdinaryTrustSetCoordinator = dependencies.ordinaryTrustSetCoordinator
         self.linkRouter = PCAEnrollmentLinkRouter()
         self.now = now
-        self.pendingDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
-        self.firstDeviceRootRecord = dependencies.firstDeviceRootStore?.current()
+        let durableRoot = dependencies.firstDeviceRootStore?.current()
+        self.firstDeviceRootRecord = durableRoot
+        let retainedDeviceId = dependencies.deviceId ?? dependencies.deviceIdentityStore.loadDeviceId()
+        if let retainedDeviceId {
+            self.pendingDeviceId = retainedDeviceId
+        } else if let durableRoot,
+                  durableRoot.state == .rootCommitted,
+                  dependencies.firstDeviceRootStore?.confirmDurable(durableRoot) == true {
+            // UserDefaults is only a convenience mirror. A committed, freshly
+            // confirmed Keychain root is the durable source of device identity
+            // after the mirror is lost; never derive it from an unreadable,
+            // pending, or unconfirmed root.
+            self.pendingDeviceId = durableRoot.seed.deviceId
+        } else {
+            self.pendingDeviceId = nil
+        }
         if self.firstDeviceRootRecord == nil,
            let rootStore = dependencies.firstDeviceRootStore {
             // `current()` uses nil for both a genuinely empty store and an

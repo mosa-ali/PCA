@@ -3969,6 +3969,65 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(try inbox.retainedScope())
     }
 
+    @MainActor func testCommittedDurableRootRecoversMissingDeviceIdentityMirror() async throws {
+        let state = InMemoryPCADeviceStateStore()
+        let identity = RecordingDeviceIdentityStore()
+        let root = FirstDeviceRootRecord(seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1")
+        let roots = InMemoryFirstDeviceRootStore(record: root)
+        let transport = InMemoryPCAHTTPTransport { request in
+            if request.url?.path.hasSuffix("/challenge") == true {
+                XCTAssertEqual(request.url?.path, "/v1/runtime-sync/devices/device-1/challenge")
+                return PCAHTTPResponse(statusCode: 200, data: Data(#"{"challengeId":"challenge-1","nonce":"nonce-1","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
+            }
+            XCTAssertEqual(request.url?.path, "/v1/runtime-sync/devices/device-1/session")
+            return PCAHTTPResponse(statusCode: 200, data: Data(#"{"sessionToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
+        }
+        let client = try PCADeviceSessionClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            transport: transport,
+            proof: TestEnrollmentProofProvider()
+        )
+        let model = try makeEnrollmentModel(
+            identityStore: identity,
+            attemptStore: state,
+            firstDeviceRootStore: roots,
+            sessionClient: client
+        )
+
+        XCTAssertNil(identity.loadDeviceId(), "the convenience identity mirror is intentionally absent")
+        await model.establishSessionIfNeeded()
+
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(try state.loadSession()?.deviceId, root.seed.deviceId)
+        XCTAssertNil(identity.loadDeviceId(), "recovery must not rewrite a lost convenience mirror as authority")
+
+        let unreadableState = InMemoryPCADeviceStateStore()
+        let unreadableIdentity = RecordingDeviceIdentityStore()
+        let unreadableRoots = SwitchableFirstDeviceRootStore()
+        XCTAssertTrue(unreadableRoots.save(root))
+        unreadableRoots.failCurrent = true
+        var unreadableRequests = 0
+        let unreadableTransport = InMemoryPCAHTTPTransport { _ in
+            unreadableRequests += 1
+            return PCAHTTPResponse(statusCode: 200, data: Data(#"{"challengeId":"challenge-1","nonce":"nonce-1","expiresAt":"2099-01-01T00:00:00Z"}"#.utf8))
+        }
+        let unreadableClient = try PCADeviceSessionClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            transport: unreadableTransport,
+            proof: TestEnrollmentProofProvider()
+        )
+        let unavailable = try makeEnrollmentModel(
+            identityStore: unreadableIdentity,
+            attemptStore: unreadableState,
+            firstDeviceRootStore: unreadableRoots,
+            sessionClient: unreadableClient
+        )
+        await unavailable.establishSessionIfNeeded()
+        XCTAssertTrue(unavailable.firstDeviceRootReadUnavailable)
+        XCTAssertEqual(unreadableRequests, 0, "an unreadable root cannot supply fallback identity")
+        XCTAssertNil(try unreadableState.loadSession())
+    }
+
     @MainActor func testEstablishmentRootOrSessionReplacementNeverPublishesOldCompletion() async throws {
         for mode in ["challenge-root", "exchange-root", "exchange-session", "exchange-cancel"] {
             let state = InMemoryPCADeviceStateStore()
