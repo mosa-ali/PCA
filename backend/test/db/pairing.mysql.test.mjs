@@ -7,7 +7,7 @@ import { PairingService } from '../../dist/pairing/PairingService.js';
 import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../../dist/familyrbac/FamilyAuditStore.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
-import { closePool } from '../../dist/db/pool.js';
+import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -21,7 +21,7 @@ function key() {
 }
 
 function family() {
-  return `family-${randomUUID()}`;
+  return randomUUID();
 }
 
 async function currentPairingFingerprints(familyId, deviceId) {
@@ -32,8 +32,26 @@ async function currentPairingFingerprints(familyId, deviceId) {
 // paired_by_account_id FK-references a real service_accounts row -- a
 // pairing confirmation always comes from an authenticated parent account,
 // never a synthetic id, so tests must create one for real.
-async function realAccountId() {
+async function realAccountId(familyId) {
   const { accountId } = await authRepository.findOrCreateAccount(randomBytes(32), new Date());
+  const parentAccountId = randomUUID();
+  const now = new Date();
+  await getPool().query(
+    `INSERT INTO parent_accounts (account_id, email_hash, password_hash, status, family_id, service_account_id, free_access_mode, created_at, verified_at)
+     VALUES (?, ?, 'pairing-test-placeholder', 'VERIFIED', ?, ?, 'PERPETUAL', ?, ?)`,
+    [parentAccountId, randomBytes(32), familyId, accountId, now, now],
+  );
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at, provisioned_for_account_id)
+     VALUES (?, ?, ?, ?)`,
+    [familyId, randomBytes(32), now, parentAccountId],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships
+       (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', ?, ?)`,
+    [randomUUID(), familyId, parentAccountId, accountId, now, now],
+  );
   return accountId;
 }
 
@@ -67,7 +85,7 @@ test('MySQL: wrong family cannot inspect a pairing request (IDOR)', async () => 
 test('MySQL: authorized parent confirmation transitions PAIRING_PENDING -> PAIRED, persisted', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
-  const confirmedBy = await realAccountId();
+  const confirmedBy = await realAccountId(familyId);
   const view = await pairingService.confirmPairing(familyId, device.deviceId, confirmedBy,
     await currentPairingFingerprints(familyId, device.deviceId));
   assert.equal(view.status, 'PAIRED');
@@ -78,7 +96,7 @@ test('MySQL: authorized parent confirmation transitions PAIRING_PENDING -> PAIRE
 test('MySQL: paired device rejects enrollment key mutation and persists the confirmed key set unchanged', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
-  const confirmedBy = await realAccountId();
+  const confirmedBy = await realAccountId(familyId);
   await pairingService.confirmPairing(familyId, device.deviceId, confirmedBy,
     await currentPairingFingerprints(familyId, device.deviceId));
 
@@ -95,7 +113,7 @@ test('MySQL: paired device rejects enrollment key mutation and persists the conf
 test('MySQL: key enrollment after the displayed pairing view rejects stale confirmation and leaves durable status pending', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
-  const confirmedBy = await realAccountId();
+  const confirmedBy = await realAccountId(familyId);
   const displayedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
 
   // This is the interleaving window: another valid key mutation commits after
@@ -109,12 +127,40 @@ test('MySQL: key enrollment after the displayed pairing view rejects stale confi
   assert.equal((await pairingService.getPairingRequest(familyId, device.deviceId)).status, 'PAIRING_PENDING');
 });
 
+test('MySQL: membership demotion or revocation after route preflight cannot pair a device', async () => {
+  for (const change of [
+    { role: 'VIEWER', status: 'ACTIVE', label: 'demoted' },
+    { role: 'ADMINISTRATOR', status: 'REVOKED', label: 'revoked' },
+  ]) {
+    const familyId = family();
+    const { device } = await pairedCandidateDevice(familyId);
+    const serviceAccountId = await realAccountId(familyId);
+    const displayedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
+
+    // Model the route preflight/step-up window: authorization was valid,
+    // then durable membership changed before the final repository boundary.
+    await getPool().query(
+      `UPDATE family_parent_memberships SET role = ?, status = ?, updated_at = NOW(3)
+        WHERE family_id = ? AND service_account_id = ?`,
+      [change.role, change.status, familyId, serviceAccountId],
+    );
+    await assert.rejects(
+      () => pairingService.confirmPairing(familyId, device.deviceId, serviceAccountId, displayedFingerprints),
+      { code: 'INVALID_STATE' },
+      `${change.label} membership must fail closed`,
+    );
+    const persisted = await repository.findDeviceForFamily(familyId, device.deviceId);
+    assert.equal(persisted?.status, 'PAIRING_PENDING', `${change.label} must not transition the device`);
+    assert.equal(persisted?.pairedAt, null);
+  }
+});
+
 test('MySQL: REVOKED pairing request cannot become PAIRED', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   const expectedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
   await deviceService.revokeDevice(familyId, device.deviceId);
-  const confirmedBy = await realAccountId();
+  const confirmedBy = await realAccountId(familyId);
   await assert.rejects(
     () => pairingService.confirmPairing(familyId, device.deviceId, confirmedBy, expectedFingerprints),
     { code: 'INVALID_STATE' },
@@ -124,7 +170,7 @@ test('MySQL: REVOKED pairing request cannot become PAIRED', async () => {
 test('MySQL CONCURRENCY: many genuinely simultaneous confirmation attempts converge on one winning pairedAt', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
-  const confirmedBy = await realAccountId();
+  const confirmedBy = await realAccountId(familyId);
   let currentTime = Date.now();
   const now = () => new Date(currentTime++);
   const auditRepository = new InMemoryFamilyAuditRepository();

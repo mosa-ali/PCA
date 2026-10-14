@@ -21,7 +21,7 @@ function key() {
 }
 
 function family() {
-  return `family-${randomUUID()}`;
+  return randomUUID();
 }
 
 async function createAccount() {
@@ -31,6 +31,28 @@ async function createAccount() {
     [accountId, Buffer.from(randomUUID())],
   );
   return accountId;
+}
+
+async function grantStructuralOwner(familyId, serviceAccountId) {
+  const parentAccountId = randomUUID();
+  const now = new Date();
+  await getPool().query(
+    `INSERT INTO parent_accounts
+       (account_id, email_hash, password_hash, status, family_id, service_account_id, free_access_mode, created_at, verified_at)
+     VALUES (?, ?, 'browser-pairing-test-placeholder', 'VERIFIED', ?, ?, 'PERPETUAL', ?, ?)`,
+    [parentAccountId, randomBytes(32), familyId, serviceAccountId, now, now],
+  );
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at, provisioned_for_account_id)
+     VALUES (?, ?, ?, ?)`,
+    [familyId, randomBytes(32), now, parentAccountId],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships
+       (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', ?, ?)`,
+    [randomUUID(), familyId, parentAccountId, serviceAccountId, now, now],
+  );
 }
 
 test('MySQL: registering a BROWSER endpoint persists platform=BROWSER, status=PAIRING_PENDING, a single DSK, and registered_by_account_id', async () => {
@@ -82,6 +104,7 @@ test('MySQL end-to-end: the registering account is denied confirming its own end
   const familyId = family();
   const registeredBy = await createAccount();
   const confirmedBy = await createAccount();
+  await grantStructuralOwner(familyId, confirmedBy);
   const { deviceId } = await browserEndpointService.registerEndpoint(familyId, registeredBy, key());
 
   await assert.rejects(

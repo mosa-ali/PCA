@@ -308,6 +308,31 @@ export class MySqlDeviceRepository implements DeviceRepository {
   ): Promise<ConfirmPairingResult> {
     try {
       return await runInTransaction(async (conn) => {
+        // The HTTP prehandlers establish active ADMINISTRATOR membership and
+        // the route establishes the structural family owner. Those reads are
+        // outside this write transaction (and step-up consumption is async),
+        // so lock/revalidate the same authority here before pairing. The
+        // service-session identity passed as confirmedByAccountId is the
+        // service_account_id column; the joined Parent account must still be
+        // the family's provisioned owner. Lock order is family+membership,
+        // then device, then active keys. Existing device mutations never
+        // acquire a membership/family lock after the device lock, so this
+        // closes the stale-role window without introducing a lock cycle.
+        const authority = await execute<{ membership_id: string }>(conn,
+          `SELECT m.membership_id
+             FROM family_parent_memberships m
+             JOIN families f ON f.family_id = m.family_id
+             JOIN parent_accounts pa ON pa.account_id = m.account_id
+            WHERE m.family_id = ?
+              AND m.service_account_id = ?
+              AND m.role = 'ADMINISTRATOR'
+              AND m.status = 'ACTIVE'
+              AND pa.service_account_id = m.service_account_id
+              AND pa.family_id = m.family_id
+              AND pa.status = 'VERIFIED'
+              AND pa.disabled_at IS NULL
+              AND f.provisioned_for_account_id = m.account_id
+            FOR UPDATE`, [familyId, confirmedByAccountId]);
         // Serialize confirmation against key additions, which take the same
         // device-row lock before inserting a new key. Then lock every active
         // key and compare the exact fingerprints shown in the Parent view.
@@ -321,6 +346,7 @@ export class MySqlDeviceRepository implements DeviceRepository {
         if (row.status === 'PAIRING_PENDING' && row.registered_by_account_id === confirmedByAccountId) {
           throw new SoftFailure<DeviceSoftCode>('SELF_APPROVAL_DENIED');
         }
+        if (!authority.rows[0]) throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
         if (row.status !== 'PAIRING_PENDING' && row.status !== 'PAIRED') {
           throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
         }
