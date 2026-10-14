@@ -610,7 +610,11 @@ test('runtime-sync transport fails closed with 503 when accepted Trust Set autho
 });
 
 test('outbound accepts both valid relay TTL boundaries', async () => {
-  const { app, deviceRepository } = buildApp();
+  // A 1 ms valid TTL must not expire while asynchronous authentication and
+  // relay cleanup run. Keep the relay clock fixed so this test exercises
+  // boundary validation, not wall-clock scheduling.
+  const relayNow = () => new Date('2026-08-21T00:00:00.000Z');
+  const { app, deviceRepository } = buildApp({ relayNow });
   try {
     const familyId = `family-${randomUUID()}`;
     const { deviceId: senderId, publicKey } = await registerDevice(deviceRepository, familyId);
