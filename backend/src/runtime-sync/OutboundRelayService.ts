@@ -3,6 +3,7 @@ import type { DeviceRepository } from '../device/DeviceRepository.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from './policy.js';
 import { sortByPriority } from './priority.js';
 import { RelayAuthorityChangedError, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot } from '../relay/RelayRepository.js';
+import { isPlausibleOpaqueId } from '../relay/policy.js';
 
 export interface OutboundEnvelopeItem {
   messageId: string;
@@ -150,7 +151,9 @@ export class OutboundRelayService {
         snapshot.recipient?.deviceId !== item.recipientDeviceId ||
         typeof snapshot.recipient?.dskKeyId !== 'string' || snapshot.recipient.dskKeyId.length === 0 ||
         !Number.isSafeInteger(snapshot.trustSetEpoch) || snapshot.trustSetEpoch < 1 ||
-        !Number.isSafeInteger(snapshot.keyEpoch) || snapshot.keyEpoch < 1) {
+        !Number.isSafeInteger(snapshot.keyEpoch) || snapshot.keyEpoch < 1 ||
+        (snapshot.parentAccountId !== undefined &&
+          !isPlausibleOpaqueId(snapshot.parentAccountId))) {
       return { messageId: item.messageId, outcome: 'INVALID' };
     }
     authority = {
@@ -159,6 +162,7 @@ export class OutboundRelayService {
       keyEpoch: snapshot.keyEpoch,
       sender: { deviceId: snapshot.sender.deviceId, dskKeyId: snapshot.sender.dskKeyId },
       recipient: { deviceId: snapshot.recipient.deviceId, dskKeyId: snapshot.recipient.dskKeyId },
+      ...(snapshot.parentAccountId === undefined ? {} : { parentAccountId: snapshot.parentAccountId }),
     };
 
     try {

@@ -108,6 +108,7 @@ export class RelayService {
       !isPlausibleOpaqueId(requestedAuthority.recipient?.deviceId) ||
       requestedAuthority.recipient.deviceId !== recipientDeviceId ||
       !isPlausibleOpaqueId(requestedAuthority.recipient?.dskKeyId) ||
+      (requestedAuthority.parentAccountId !== undefined && !isPlausibleOpaqueId(requestedAuthority.parentAccountId)) ||
       !Number.isSafeInteger(requestedAuthority.trustSetEpoch) || requestedAuthority.trustSetEpoch < 1 ||
       !Number.isSafeInteger(requestedAuthority.keyEpoch) || requestedAuthority.keyEpoch < 1
     )) throw new RelayError('INVALID_INPUT');
@@ -123,6 +124,7 @@ export class RelayService {
       keyEpoch: requestedAuthority.keyEpoch,
       sender: { deviceId: requestedAuthority.sender.deviceId, dskKeyId: requestedAuthority.sender.dskKeyId },
       recipient: { deviceId: requestedAuthority.recipient.deviceId, dskKeyId: requestedAuthority.recipient.dskKeyId },
+      ...(requestedAuthority.parentAccountId === undefined ? {} : { parentAccountId: requestedAuthority.parentAccountId }),
     };
     const ttlMs = resolveRelayTtlMs(requestedTtlMs);
     const createdAt = new Date(this.now().getTime());

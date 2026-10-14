@@ -76,6 +76,27 @@ async function seedOutboundAuthorityFixture() {
   };
 }
 
+async function seedParentOutboundAuthorityFixture() {
+  const fixture = await seedOutboundAuthorityFixture();
+  const parentAccountId = randomUUID();
+  await getPool().query(
+    `INSERT INTO parent_accounts
+       (account_id, email_hash, password_hash, status, free_access_mode, verified_at, created_at)
+     VALUES (?, ?, 'test-password-hash', 'VERIFIED', 'PERPETUAL', NOW(3), NOW(3))`,
+    [parentAccountId, randomBytes(32)],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships
+       (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, 'ADMINISTRATOR', 'ACTIVE', NOW(3), NOW(3))`,
+    [randomUUID(), fixture.familyId, parentAccountId],
+  );
+  return {
+    ...fixture,
+    snapshot: { ...fixture.snapshot, parentAccountId },
+  };
+}
+
 function outboundItem(fixture, messageId = randomUUID()) {
   return {
     messageId,
@@ -86,8 +107,8 @@ function outboundItem(fixture, messageId = randomUUID()) {
   };
 }
 
-function buildAuthorizedOutboundService() {
-  return new OutboundRelayService(buildService(), new MySqlDeviceRepository());
+function buildAuthorizedOutboundService(relayService = buildService()) {
+  return new OutboundRelayService(relayService, new MySqlDeviceRepository());
 }
 
 test('MySQL: queue + retrieve by correct recipient, ciphertext stored as opaque blob', async () => {
@@ -389,6 +410,55 @@ test('MySQL AUTHORITY: active exact sender and recipient snapshots permit creati
   assert.deepEqual(first.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
   assert.deepEqual(replay.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
   assert.equal((await buildService().fetchEnvelope(fixture.recipientDeviceId, message.messageId)).state, 'QUEUED');
+});
+
+test('MySQL Parent-authorized enqueue accepts an active Administrator membership', async () => {
+  const fixture = await seedParentOutboundAuthorityFixture();
+  const message = outboundItem(fixture);
+  const service = buildAuthorizedOutboundService();
+  const result = await service.submitBatch(
+    fixture.senderDeviceId,
+    fixture.familyId,
+    [message],
+    async () => fixture.snapshot,
+  );
+
+  assert.deepEqual(result.results, [{ messageId: message.messageId, outcome: 'QUEUED' }]);
+  assert.equal((await buildService().fetchEnvelope(fixture.recipientDeviceId, message.messageId)).state, 'QUEUED');
+});
+
+test('MySQL Parent-authorized enqueue rechecks membership after the route snapshot and rejects demotion or revocation', async () => {
+  for (const [label, updateSql] of [
+    ['demotion', `UPDATE family_parent_memberships SET role = 'VIEWER', updated_at = NOW(3) WHERE account_id = ? AND family_id = ?`],
+    ['revocation', `UPDATE family_parent_memberships SET status = 'REVOKED', updated_at = NOW(3) WHERE account_id = ? AND family_id = ?`],
+  ]) {
+    const fixture = await seedParentOutboundAuthorityFixture();
+    const messageId = randomUUID();
+    const repository = new MySqlRelayRepository();
+    const originalPurgeExpired = repository.purgeExpired.bind(repository);
+    // RelayService awaits expiry cleanup after the route's final role check
+    // and before the repository transaction. Change membership in that exact
+    // window while leaving the captured Parent authority snapshot unchanged.
+    repository.purgeExpired = async (now) => {
+      await getPool().query(updateSql, [fixture.snapshot.parentAccountId, fixture.familyId]);
+      return originalPurgeExpired(now);
+    };
+    const relayService = new RelayService(repository);
+    const outbound = buildAuthorizedOutboundService(relayService);
+    const result = await outbound.submitBatch(
+      fixture.senderDeviceId,
+      fixture.familyId,
+      [outboundItem(fixture, messageId)],
+      async () => fixture.snapshot,
+    );
+
+    assert.deepEqual(result.results, [{ messageId, outcome: 'AUTHORITY_CHANGED' }], label);
+    await assert.rejects(
+      () => relayService.fetchEnvelope(fixture.recipientDeviceId, messageId),
+      { code: 'NOT_FOUND' },
+      `${label} must prevent relay insertion`,
+    );
+  }
 });
 
 test('MySQL AUTHORITY: authorized recipient snapshot permits inbound page and supplement reads', async () => {

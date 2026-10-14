@@ -473,6 +473,7 @@ test('an Owner can submit a canonical POLICY_UPDATE envelope: authorized, serial
       keyEpoch: 3,
       sender: { deviceId: 'dev-owner', dskKeyId: 'owner-key-1' },
       recipient: { deviceId: 'dev-child', dskKeyId: 'k7' },
+      parentAccountId: 'acct-owner',
     }], 'the route must pass exact accepted sender and recipient DSK authority to the relay transaction');
     assert.equal(submittedBatches[0].items[0].recipientDeviceId, 'dev-child');
     assert.equal(submittedBatches[0].items[0].messageId, VALID_ENVELOPE.messageId);

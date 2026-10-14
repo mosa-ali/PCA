@@ -431,6 +431,7 @@ export function registerChildPolicyRoutes(app: FastifyInstance, deps: ChildPolic
             keyEpoch: envelope.keyEpoch,
             sender: { deviceId: currentSender.deviceId, dskKeyId: currentSender.dskKeyId },
             recipient: { deviceId: currentRecipient.deviceId, dskKeyId: currentRecipient.dskKeyId },
+            parentAccountId: session.accountId,
           };
           return authority;
         });

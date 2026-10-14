@@ -3,7 +3,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import { RelayAuthorityChangedError, type AcknowledgeResult, type CreateEnvelopeResult, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot, type RelayRepository } from './RelayRepository.js';
 import type { MessageId, OpaqueDeviceId, RelayEnvelopeRecord } from './types.js';
 import { familyEpochFromStorage, isFamilyEpochNumber } from '../familyepoch/bounds.js';
-import { MAX_CIPHERTEXT_BYTES } from './policy.js';
+import { isPlausibleOpaqueId, MAX_CIPHERTEXT_BYTES } from './policy.js';
 import { MAX_RELAY_SUPPLEMENT_RECORDS, validateRelayQueuePageInput, type RelayQueuePage, type RelayQueuePageInput, type RelayQueuedRecord, type RelayQueuePosition } from './queuePage.js';
 
 type QueuedRow = Omit<RelayRow, 'ciphertext'> & { ciphertext: Buffer | null };
@@ -158,6 +158,8 @@ export class MySqlRelayRepository implements RelayRepository {
             authority.recipient.deviceId !== record.recipientDeviceId ||
             typeof authority.sender.dskKeyId !== 'string' || authority.sender.dskKeyId.length === 0 ||
             typeof authority.recipient.dskKeyId !== 'string' || authority.recipient.dskKeyId.length === 0 ||
+            (authority.parentAccountId !== undefined &&
+              !isPlausibleOpaqueId(authority.parentAccountId)) ||
             !isFamilyEpochNumber(authority.trustSetEpoch, 1) || !isFamilyEpochNumber(authority.keyEpoch, 1)) {
           throw new TypeError('Relay enqueue authority snapshot is malformed.');
         }
@@ -231,6 +233,25 @@ export class MySqlRelayRepository implements RelayRepository {
         if (keys.length !== expectedKeys.length || expectedKeys.some((key) =>
           keys.filter((row) => row.device_id === key.deviceId && row.key_id === key.keyId).length !== 1)) {
           throw new RelayAuthorityChangedError();
+        }
+
+        // Parent account membership is separate from the browser device's
+        // Trust Set role. When the server-authenticated Parent account is
+        // part of this snapshot, lock its family membership through relay
+        // insertion so a concurrent demotion/revocation has a serial order.
+        if (authority.parentAccountId !== undefined) {
+          const { rows: memberships } = await execute<{ role: string; status: string }>(
+            conn,
+            `SELECT role, status
+               FROM family_parent_memberships
+              WHERE account_id = ? AND family_id = ?
+              FOR UPDATE`,
+            [authority.parentAccountId, authority.familyId],
+          );
+          if (memberships.length !== 1 || memberships[0]?.role !== 'ADMINISTRATOR' ||
+              memberships[0]?.status !== 'ACTIVE') {
+            throw new RelayAuthorityChangedError();
+          }
         }
       }
       try {

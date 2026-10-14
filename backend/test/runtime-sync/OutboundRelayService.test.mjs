@@ -157,6 +157,34 @@ test('a recipient in the caller\'s own family is queued', async () => {
   assert.equal(result.results[0].outcome, 'QUEUED');
 });
 
+test('Parent account authority metadata is validated and copied into the relay request', async () => {
+  const { deviceRepository, outboundService, relayService } = buildHarness();
+  const familyId = `family-${randomUUID()}`;
+  const senderDeviceId = await registerDevice(deviceRepository, familyId);
+  const recipientDeviceId = await registerDevice(deviceRepository, familyId);
+  const parentAccountId = randomUUID();
+  let captured;
+  relayService.queueEnvelope = async (input) => { captured = input; };
+
+  const result = await outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ recipientDeviceId })],
+    async () => ({ ...authoritySnapshot(familyId, senderDeviceId, recipientDeviceId), parentAccountId }),
+  );
+
+  assert.equal(result.results[0].outcome, 'QUEUED');
+  assert.equal(captured.authority.parentAccountId, parentAccountId);
+
+  const invalid = await outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ recipientDeviceId, messageId: `invalid-parent-${randomUUID()}` })],
+    async () => ({ ...authoritySnapshot(familyId, senderDeviceId, recipientDeviceId), parentAccountId: '' }),
+  );
+  assert.equal(invalid.results[0].outcome, 'INVALID');
+});
+
 test('same-family outbound enqueue fails closed without an exact sender+recipient authority snapshot', async () => {
   const { deviceRepository, outboundService, relayService } = buildHarness();
   const familyId = `family-${randomUUID()}`;

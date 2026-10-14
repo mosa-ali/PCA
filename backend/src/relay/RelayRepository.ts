@@ -26,6 +26,8 @@ export interface RelayEnvelopeAuthoritySnapshot {
   readonly keyEpoch: number;
   readonly sender: { readonly deviceId: string; readonly dskKeyId: string };
   readonly recipient: { readonly deviceId: string; readonly dskKeyId: string };
+  /** Present only when a Parent account, in addition to its device, authored the enqueue. */
+  readonly parentAccountId?: string;
 }
 
 /** The accepted head or exact session DSK changed before the ACK could persist. */
