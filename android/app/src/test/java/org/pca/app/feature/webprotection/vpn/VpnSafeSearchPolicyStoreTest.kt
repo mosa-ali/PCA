@@ -1,6 +1,7 @@
 package org.pca.app.feature.webprotection.vpn
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.pca.app.feature.webprotection.policy.SafeSearchMode
@@ -61,6 +62,31 @@ class VpnSafeSearchPolicyStoreTest {
         assertEquals(0, disk.flushCount)
     }
 
+    @Test
+    fun `present but unreadable mode is not treated as off or overwritten`() {
+        val disk = DurableStore().apply { unreadableKeys += KEY }
+        val store = VpnSafeSearchPolicyStore(disk)
+
+        assertFailure { store.currentMode() }
+        assertFailure { store.setMode(SafeSearchMode.STRICT) }
+
+        assertTrue(disk.contains(KEY))
+        assertTrue(KEY in disk.unreadableKeys)
+        assertEquals(0, disk.flushCount)
+    }
+
+    @Test
+    fun `failed presence check is treated as unreadable instead of off`() {
+        val disk = DurableStore().apply { failContains = true }
+        val store = VpnSafeSearchPolicyStore(disk)
+
+        assertFailure { store.currentMode() }
+        assertFailure { store.setMode(SafeSearchMode.STRICT) }
+
+        assertTrue(disk.disk.isEmpty())
+        assertEquals(0, disk.flushCount)
+    }
+
     private fun assertFailure(block: () -> Unit) {
         try {
             block()
@@ -70,15 +96,20 @@ class VpnSafeSearchPolicyStoreTest {
 
     private class DurableStore(initial: Map<String, String> = emptyMap()) : PersistentStateStore {
         private val memory = initial.toMutableMap()
+        val unreadableKeys = mutableSetOf<String>()
         var disk = initial.toMap()
         var flushCount = 0
         var failFlushAt = emptySet<Int>()
+        var failContains = false
         override val coordinationLock: Any = Any()
 
-        override fun getString(key: String): String? = memory[key]
+        override fun getString(key: String): String? = if (key in unreadableKeys) null else memory[key]
         override fun putString(key: String, value: String) { memory[key] = value }
         override fun remove(key: String) { memory.remove(key) }
-        override fun contains(key: String): Boolean = memory.containsKey(key)
+        override fun contains(key: String): Boolean {
+            if (failContains) error("contains failed")
+            return memory.containsKey(key) || key in unreadableKeys
+        }
         override fun clear() { memory.clear() }
         override fun flush() {
             flushCount++

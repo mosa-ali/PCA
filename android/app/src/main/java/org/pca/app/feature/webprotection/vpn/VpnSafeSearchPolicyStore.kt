@@ -27,14 +27,14 @@ class VpnSafeSearchPolicyStore(private val store: PersistentStateStore, private 
 
     fun currentMode(): SafeSearchMode = synchronized(coordinationLock) {
         check(!isPersistenceUncertain()) { "SafeSearch policy durability is uncertain" }
-        val raw = store.getString(key) ?: return@synchronized SafeSearchMode.OFF
+        val raw = readRawOrAbsent() ?: return@synchronized SafeSearchMode.OFF
         raw.toModeOrNull() ?: throw CorruptVpnSafeSearchPolicyException()
     }
 
     fun setMode(mode: SafeSearchMode) {
         synchronized(coordinationLock) {
             check(!isPersistenceUncertain()) { "SafeSearch policy durability is uncertain" }
-            val previous = store.getString(key)
+            val previous = readRawOrAbsent()
             if (previous != null && previous.toModeOrNull() == null) {
                 throw CorruptVpnSafeSearchPolicyException()
             }
@@ -58,6 +58,23 @@ class VpnSafeSearchPolicyStore(private val store: PersistentStateStore, private 
         if (raw == null) store.remove(key) else store.putString(key, raw)
         store.flush()
         check(store.getString(key) == raw) { "SafeSearch policy rollback readback failed" }
+    }
+
+    /** Null means a genuinely absent key; an unreadable present key is never implicit OFF. */
+    private fun readRawOrAbsent(): String? {
+        val raw = try {
+            store.getString(key)
+        } catch (_: Exception) {
+            throw CorruptVpnSafeSearchPolicyException()
+        }
+        if (raw != null) return raw
+        val present = try {
+            store.contains(key)
+        } catch (_: Exception) {
+            throw CorruptVpnSafeSearchPolicyException()
+        }
+        if (present) throw CorruptVpnSafeSearchPolicyException()
+        return null
     }
 
     private fun String.toModeOrNull(): SafeSearchMode? =
