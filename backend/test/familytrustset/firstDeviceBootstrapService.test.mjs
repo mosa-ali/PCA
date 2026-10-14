@@ -23,7 +23,7 @@ import {
   verifiedVerdict,
 } from './firstDeviceBootstrapFixtures.mjs';
 
-function makeRig({ ceremonyOverrides = {}, attemptOverrides = {}, verifier = new ScriptedAttestationVerifier() } = {}) {
+function makeRig({ ceremonyOverrides = {}, attemptOverrides = {}, verifier = new ScriptedAttestationVerifier(), now } = {}) {
   const device = makeP256Device('service');
   const { attemptId, rawRecoveryToken, attempt } = makeAttempt(device, attemptOverrides);
   const store = new FakeFirstDeviceBootstrapStore({ attempt });
@@ -49,7 +49,7 @@ function makeRig({ ceremonyOverrides = {}, attemptOverrides = {}, verifier = new
     ...ceremonyOverrides,
   };
   store.ceremony = ceremony;
-  const service = new FirstDeviceBootstrapService({ store, attestationVerifier: verifier });
+  const service = new FirstDeviceBootstrapService({ store, attestationVerifier: verifier, ...(now ? { now } : {}) });
   const perfect = buildPerfectSubmission({ attempt, ceremony, device });
   return { device, attemptId, rawRecoveryToken, attempt, store, ceremony, service, verifier, perfect };
 }
@@ -96,6 +96,26 @@ test('issueChallenge mints a 10-minute PENDING ceremony bound to the attempt DSK
   assert.equal(created.nonce.length, 43);
   assert.equal(created.expiresAt.getTime() - created.now.getTime(), 10 * 60_000);
   assert.equal(created.purpose, 'PCA_FIRST_DEVICE_BOOTSTRAP_V1');
+});
+
+test('issueChallenge fails closed for invalid or non-persistable clocks before creating a ceremony', async () => {
+  const timestamps = [
+    Number.NaN,
+    new Date('0001-01-01T00:00:00.000Z').getTime(),
+    Date.UTC(9999, 11, 31, 23, 55, 0), // valid now, but ten-minute expiry exceeds DATETIME(3)
+  ];
+  for (const timestamp of timestamps) {
+    const rig = makeRig({ now: () => new Date(timestamp) });
+    rig.store.ceremony = null;
+    const outcome = await rig.service.issueChallenge({
+      attemptId: rig.attemptId,
+      attemptRecoveryToken: rig.rawRecoveryToken,
+      dskKeyId: rig.attempt.signingKeyId,
+      dskPublicKey: rig.attempt.signingPublicKey,
+    });
+    assert.deepEqual(outcome, { status: 'UNAVAILABLE' });
+    assert.equal(rig.store.createCalls.length, 0, 'invalid ceremony timestamps must not reach persistence');
+  }
 });
 
 test('issueChallenge collapses unknown attempt, wrong token and DSK-claim mismatch into UNAVAILABLE', async () => {
@@ -154,6 +174,9 @@ test('readStatus answers only for the attempt-bound ceremony and reports EXPIRED
   rig.store.ceremony = { ...rig.ceremony, expiresAt: stamp(-1) };
   assert.deepEqual(await read(), { status: 'EXPIRED', outcome: null });
 
+  rig.store.ceremony = { ...rig.ceremony, expiresAt: new Date(Number.NaN) };
+  assert.deepEqual(await read(), { status: 'UNAVAILABLE' }, 'corrupt persisted expiry must not look live');
+
   rig.store.ceremony = { ...rig.ceremony, status: 'COMMITTED', outcome: 'ACCEPTED' };
   assert.deepEqual(await read(), { status: 'COMMITTED', outcome: 'ACCEPTED' });
 
@@ -161,6 +184,21 @@ test('readStatus answers only for the attempt-bound ceremony and reports EXPIRED
   assert.deepEqual(await read(), { status: 'COMMITTED', outcome: null });
 
   assert.deepEqual(await read({ attemptRecoveryToken: 'wrong' }), { status: 'UNAVAILABLE' });
+});
+
+test('readStatus never reports PENDING/APPROVED/COMMITTED when its trusted clock is invalid', async () => {
+  const rig = makeRig({ ceremonyOverrides: { status: 'PENDING' }, now: () => new Date(Number.NaN) });
+  assert.deepEqual(await rig.service.readStatus({
+    attemptId: rig.attemptId,
+    attemptRecoveryToken: rig.rawRecoveryToken,
+    ceremonyId: rig.ceremony.ceremonyId,
+  }), { status: 'UNAVAILABLE' });
+  rig.store.ceremony = { ...rig.ceremony, status: 'COMMITTED', outcome: 'ACCEPTED' };
+  assert.deepEqual(await rig.service.readStatus({
+    attemptId: rig.attemptId,
+    attemptRecoveryToken: rig.rawRecoveryToken,
+    ceremonyId: rig.ceremony.ceremonyId,
+  }), { status: 'UNAVAILABLE' });
 });
 
 test('submit accepts a perfect dual-signed payload and hands the store one commit with the exact digest, anchor and epoch record', async () => {
@@ -212,6 +250,29 @@ test('submit rechecks ceremony expiry after attestation before consuming the cha
   assert.deepEqual(result, { status: 'UNAVAILABLE' });
   assert.equal(rig.store.commitCalls.length, 0, 'expired one-time challenges must not reach atomic commit');
   assert.equal(rig.store.ceremony.status, 'APPROVED', 'expiry rejection must leave challenge state reusable only as expired, not consumed');
+});
+
+test('submit rejects invalid initial and commit-boundary clocks before writing an anchor or consuming the ceremony', async () => {
+  const inputForRig = (rig) => submissionInput(rig.attempt, rig.rawRecoveryToken, rig.ceremony, rig.perfect);
+  const invalidInitial = makeRig({ now: () => new Date(Number.NaN) });
+  assert.deepEqual(await invalidInitial.service.submit(inputForRig(invalidInitial)), { status: 'UNAVAILABLE' });
+  assert.equal(invalidInitial.verifier.calls.length, 0, 'invalid time cannot reach attestation verification');
+  assert.equal(invalidInitial.store.commitCalls.length, 0, 'invalid time cannot consume the ceremony or commit an anchor');
+
+  const valid = new Date('2026-10-14T00:00:00.000Z');
+  const overflow = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999) + 1);
+  const boundaryTimes = [valid, overflow];
+  const commitBoundaryInvalid = makeRig({ now: () => boundaryTimes.shift() });
+  assert.deepEqual(await commitBoundaryInvalid.service.submit(inputForRig(commitBoundaryInvalid)), { status: 'UNAVAILABLE' });
+  assert.equal(commitBoundaryInvalid.verifier.calls.length, 1, 'valid initial time allowed verification before final clock check');
+  assert.equal(commitBoundaryInvalid.store.commitCalls.length, 0, 'invalid commit time cannot consume the ceremony or commit an anchor');
+
+  const corruptExpiry = makeRig();
+  const corruptInput = inputForRig(corruptExpiry);
+  corruptExpiry.store.ceremony = { ...corruptExpiry.ceremony, expiresAt: new Date(Number.NaN) };
+  assert.deepEqual(await corruptExpiry.service.submit(corruptInput), { status: 'UNAVAILABLE' });
+  assert.equal(corruptExpiry.verifier.calls.length, 0, 'invalid persisted expiry must fail before attestation');
+  assert.equal(corruptExpiry.store.commitCalls.length, 0, 'invalid persisted expiry cannot consume the ceremony or commit an anchor');
 });
 
 test('submit replays a committed ceremony by payload digest WITHOUT re-running attestation (M3)', async () => {

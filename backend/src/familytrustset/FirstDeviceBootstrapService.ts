@@ -16,7 +16,7 @@ import {
 import { computeFirstDeviceBootstrapCommitDigest } from './FirstDeviceBootstrapCommit.js';
 import type { FirstDeviceAttemptContext, FirstDeviceBootstrapCeremonyRecord, FirstDeviceBootstrapStore } from './FirstDeviceBootstrapStore.js';
 import type { AttestationVerifier } from './AttestationVerifier.js';
-import type { TrustSetEpochRecord } from './TrustSetEpochStore.js';
+import { isPersistableTrustSetDate, type TrustSetEpochRecord } from './TrustSetEpochStore.js';
 
 /**
  * Wave 6B first-device trust-root bootstrap service.
@@ -117,6 +117,12 @@ export class FirstDeviceBootstrapService {
   private readonly now: () => Date;
   private readonly epochVerifier = new P256TrustSetSignatureVerifier();
 
+  /** Snapshot a trusted clock value only when every persisted timestamp is representable by MySQL DATETIME(3). */
+  private persistenceNow(): Date | null {
+    const value: unknown = this.now();
+    return isPersistableTrustSetDate(value) ? new Date(value.getTime()) : null;
+  }
+
   constructor(deps: FirstDeviceBootstrapServiceDeps) {
     this.store = deps.store;
     this.attestationVerifier = deps.attestationVerifier;
@@ -148,7 +154,9 @@ export class FirstDeviceBootstrapService {
   ): Promise<FirstDeviceBootstrapCeremonyRecord[] | null> {
     if (typeof familyId !== 'string' || typeof accountId !== 'string') return null;
     if (!(await this.store.readOwnerEligibility(familyId, accountId))) return null;
-    return this.store.listApprovalCeremonies(familyId, this.now(), MAX_APPROVAL_CEREMONIES);
+    const now = this.persistenceNow();
+    if (now === null) return null;
+    return this.store.listApprovalCeremonies(familyId, now, MAX_APPROVAL_CEREMONIES);
   }
 
   async approve(input: {
@@ -156,7 +164,8 @@ export class FirstDeviceBootstrapService {
     familyId: string;
     accountId: string;
   }): Promise<ApproveCeremonyServiceOutcome> {
-    const now = this.now();
+    const now = this.persistenceNow();
+    if (now === null) return { status: 'NOT_APPROVABLE' };
     const result = await this.store.approveCeremony({
       ceremonyId: input.ceremonyId,
       familyId: input.familyId,
@@ -195,7 +204,10 @@ export class FirstDeviceBootstrapService {
       return { status: 'UNAVAILABLE' };
     }
 
-    const now = this.now();
+    const now = this.persistenceNow();
+    if (now === null) return { status: 'UNAVAILABLE' };
+    const expiresAt = new Date(now.getTime() + BOOTSTRAP_CHALLENGE_TTL_MS);
+    if (!isPersistableTrustSetDate(expiresAt)) return { status: 'UNAVAILABLE' };
     const created = await this.store.createOrReuseCeremony({
       familyId: attempt.familyId,
       deviceId: attempt.deviceId,
@@ -205,7 +217,7 @@ export class FirstDeviceBootstrapService {
       purpose: BOOTSTRAP_PROOF_DOMAIN,
       nonce: randomBytes(32).toString('base64url'),
       challengeId: randomUUID(),
-      expiresAt: new Date(now.getTime() + BOOTSTRAP_CHALLENGE_TTL_MS),
+      expiresAt,
       now,
     });
     if (created.outcome === 'CONFLICT' || created.outcome === 'DEVICE_NOT_ELIGIBLE') {
@@ -213,6 +225,7 @@ export class FirstDeviceBootstrapService {
     }
 
     const ceremony = created.ceremony;
+    if (!isPersistableTrustSetDate(ceremony.expiresAt)) return { status: 'UNAVAILABLE' };
     return {
       status: 'PENDING',
       ceremonyId: ceremony.ceremonyId,
@@ -234,13 +247,16 @@ export class FirstDeviceBootstrapService {
       return { status: 'UNAVAILABLE' };
     }
     const ceremony = await this.store.readCeremony(input.ceremonyId);
-    if (!ceremony || ceremony.familyId !== attempt.familyId || ceremony.deviceId !== attempt.deviceId) {
+    if (!ceremony || ceremony.familyId !== attempt.familyId || ceremony.deviceId !== attempt.deviceId ||
+        !isPersistableTrustSetDate(ceremony.expiresAt)) {
       return { status: 'UNAVAILABLE' };
     }
+    const now = this.persistenceNow();
+    if (now === null) return { status: 'UNAVAILABLE' };
     if (ceremony.status === 'COMMITTED') {
       return { status: 'COMMITTED', outcome: ceremony.outcome === 'ACCEPTED' ? 'ACCEPTED' : null };
     }
-    if (ceremony.expiresAt.getTime() <= this.now().getTime()) {
+    if (ceremony.expiresAt.getTime() <= now.getTime()) {
       return { status: 'EXPIRED', outcome: null };
     }
     return { status: ceremony.status, outcome: null };
@@ -291,7 +307,8 @@ export class FirstDeviceBootstrapService {
     const attempt = await this.store.readAttemptContext(input.attemptId);
     if (!attempt || !this.verifyAttemptToken(attempt, input.attemptRecoveryToken)) return unavailable;
     const ceremony = await this.store.readCeremony(input.ceremonyId);
-    if (!ceremony || ceremony.familyId !== attempt.familyId || ceremony.deviceId !== attempt.deviceId) return unavailable;
+    if (!ceremony || ceremony.familyId !== attempt.familyId || ceremony.deviceId !== attempt.deviceId ||
+        !isPersistableTrustSetDate(ceremony.expiresAt)) return unavailable;
 
     const payloadDigest = computeFirstDeviceBootstrapCommitDigest(input);
 
@@ -300,7 +317,8 @@ export class FirstDeviceBootstrapService {
       return ceremony.payloadDigest === payloadDigest ? { status: 'ACCEPTED' } : rejected;
     }
     if (ceremony.status !== 'APPROVED') return unavailable;
-    const now = this.now();
+    const now = this.persistenceNow();
+    if (now === null) return unavailable;
     if (ceremony.expiresAt.getTime() <= now.getTime()) return unavailable;
 
     // ---- 4. Proof decode + total field-equality against the durable ceremony ----
@@ -392,7 +410,8 @@ export class FirstDeviceBootstrapService {
     // the one-time ceremony to expire. Recheck at the commit boundary and
     // use that instant for the durable receipt; the earlier verifier instant
     // must not keep an expired challenge alive.
-    const commitNow = this.now();
+    const commitNow = this.persistenceNow();
+    if (commitNow === null) return unavailable;
     if (ceremony.expiresAt.getTime() <= commitNow.getTime()) return unavailable;
 
     const epochRecord: TrustSetEpochRecord = {
