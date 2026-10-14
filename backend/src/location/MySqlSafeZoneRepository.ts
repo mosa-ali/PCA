@@ -74,6 +74,7 @@ function snapshotAuthority(authority?: SafeZoneMutationAuthoritySnapshot): SafeZ
   if (authority === undefined) return undefined;
   return {
     familyId: authority.familyId,
+    parentAccountId: authority.parentAccountId,
     trustSetEpoch: authority.trustSetEpoch,
     keyEpoch: authority.keyEpoch,
     actor: { deviceId: authority.actor.deviceId, dskKeyId: authority.actor.dskKeyId },
@@ -95,6 +96,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
       throw new TypeError('MySQL Safe Zone mutation requires an accepted device authority snapshot.');
     }
     if (authority.familyId !== familyId || authority.recipient.deviceId !== recipientDeviceId ||
+        typeof authority.parentAccountId !== 'string' || authority.parentAccountId.length === 0 || authority.parentAccountId.length > 128 ||
         typeof authority.actor.deviceId !== 'string' || authority.actor.deviceId.length === 0 ||
         typeof authority.actor.dskKeyId !== 'string' || authority.actor.dskKeyId.length === 0 ||
         typeof authority.recipient.dskKeyId !== 'string' || authority.recipient.dskKeyId.length === 0 ||
@@ -163,6 +165,25 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
     );
     if (keys.length !== keysToLock.length || keysToLock.some((key) =>
       keys.filter((row) => row.device_id === key.deviceId && row.key_id === key.keyId).length !== 1)) {
+      throw new SafeZoneAuthorityChangedError();
+    }
+
+    // Parent-account role is independent of the device Trust Set and may be
+    // demoted while the route performs its asynchronous recipient checks.
+    // Lock it in the same transaction as the mutation so authorization
+    // linearizes before a concurrent role change, or fails after that change.
+    const { rows: memberships } = await execute<{ account_id: string }>(
+      conn,
+      `SELECT account_id
+         FROM family_parent_memberships
+        WHERE BINARY family_id = BINARY ?
+          AND BINARY account_id = BINARY ?
+          AND status = 'ACTIVE'
+          AND role = 'ADMINISTRATOR'
+        FOR UPDATE`,
+      [familyId, authority.parentAccountId],
+    );
+    if (memberships.length !== 1 || memberships[0]?.account_id !== authority.parentAccountId) {
       throw new SafeZoneAuthorityChangedError();
     }
   }

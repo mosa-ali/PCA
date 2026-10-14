@@ -1231,6 +1231,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     try {
       const authority: SafeZoneMutationAuthoritySnapshot = {
         familyId: session.familyId,
+        parentAccountId: session.accountId,
         trustSetEpoch: actorCapture.value.trustSetEpoch,
         keyEpoch: actorCapture.value.keyEpoch,
         actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },
@@ -1296,6 +1297,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     try {
       const authority: SafeZoneMutationAuthoritySnapshot = {
         familyId: session.familyId,
+        parentAccountId: session.accountId,
         trustSetEpoch: actorCapture.value.trustSetEpoch,
         keyEpoch: actorCapture.value.keyEpoch,
         actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },
@@ -1351,6 +1353,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         !(await reauthorizeSafeZoneRemoval(request, reply, session, actorCapture.value, recipientCapture.value))) return;
     const authority: SafeZoneMutationAuthoritySnapshot = {
       familyId: session.familyId,
+      parentAccountId: session.accountId,
       trustSetEpoch: actorCapture.value.trustSetEpoch,
       keyEpoch: actorCapture.value.keyEpoch,
       actor: { deviceId: actorCapture.value.deviceId, dskKeyId: actorCapture.value.dskKeyId },

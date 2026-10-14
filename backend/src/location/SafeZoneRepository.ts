@@ -32,6 +32,8 @@ export interface SafeZonePatch {
 /** The accepted device authority required to commit a Parent Safe Zone mutation. */
 export interface SafeZoneMutationAuthoritySnapshot {
   readonly familyId: string;
+  /** Authenticated Parent identity whose live ADMINISTRATOR membership authorizes this mutation. */
+  readonly parentAccountId: string;
   readonly trustSetEpoch: number;
   readonly keyEpoch: number;
   readonly actor: { readonly deviceId: string; readonly dskKeyId: string };

@@ -33,6 +33,7 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   const preferences = new Map();
   const zones = new Map();
   const authorizationRequests = [];
+  const mutationAuthorities = [];
   const childBindingCalls = [];
   let currentParentRole = role;
   let roleReadCount = 0;
@@ -66,19 +67,22 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
     async list(familyId) {
       return [...zones.values()].filter((zone) => zone.familyId === familyId);
     },
-    async create(input) {
+    async create(input, authority) {
+      mutationAuthorities.push(authority);
       const zone = { zoneId: 'zone-a', ...input, revision: 1, deliveryState: 'PENDING_OFFLINE', createdAtUtc: new Date().toISOString(), updatedAtUtc: new Date().toISOString() };
       zones.set(zone.zoneId, zone);
       return zone;
     },
-    async update(familyId, zoneId, patch) {
+    async update(familyId, zoneId, patch, authority) {
+      mutationAuthorities.push(authority);
       const zone = zones.get(zoneId);
       if (!zone || zone.familyId !== familyId) throw new SafeZoneError('NOT_FOUND');
       const next = { ...zone, ...patch, revision: zone.revision + 1, deliveryState: 'PENDING_OFFLINE' };
       zones.set(zoneId, next);
       return next;
     },
-    async remove(familyId, zoneId) {
+    async remove(familyId, zoneId, authority) {
+      mutationAuthorities.push(authority);
       const zone = zones.get(zoneId);
       if (!zone || zone.familyId !== familyId) return false;
       zones.delete(zoneId);
@@ -152,6 +156,7 @@ function buildApp(role = 'OWNER', authorizationVerdict = 'ALLOW', safeZoneReposi
   app.safeZoneZones = zones;
   app.safeZoneRepository = safeZoneRepository;
   app.safeZoneAuthorizationRequests = authorizationRequests;
+  app.safeZoneMutationAuthorities = mutationAuthorities;
   app.safeZoneChildBindingCalls = childBindingCalls;
   app.setParentFamilyRole = (nextRole) => { currentParentRole = nextRole; };
   return app;
@@ -247,6 +252,7 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   recordParentRouteScenario({ method: 'POST', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_create_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 201, response: created });
   assert.equal(created.json().safeZone.deliveryState, 'PENDING_OFFLINE');
   assert.equal(created.json().safeZone.ciphertextB64, 'AQID');
+  assert.equal(app.safeZoneMutationAuthorities[0].parentAccountId, 'account-a');
   assert.equal(app.safeZoneAuthorizationRequests.length, 1);
   assert.equal(app.safeZoneAuthorizationRequests[0].familyId, 'family-a');
   assert.equal(app.safeZoneAuthorizationRequests[0].actorDeviceId, 'device-a');
@@ -263,6 +269,30 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(list.headers['cache-control'], 'private, no-store');
   recordParentRouteScenario({ method: 'GET', route: SAFE_ZONES_ROUTE, scenarioId: 'safe_zones_read_owner_allow', classification: 'ALLOW_PROVEN', expectedStatus: 200, response: list });
   assert.equal(list.json().safeZones.length, 1);
+});
+
+test('Safe Zone create, update, and delete pass the authenticated Parent identity to transactional authority checks', async () => {
+  const app = buildApp();
+  app.safeZoneZones.set('zone-a', {
+    zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'child-device',
+    ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1,
+    revision: 1, deliveryState: 'PENDING_OFFLINE',
+  });
+  const headers = { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' };
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers,
+      payload: { recipientEndpointId: 'child-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+    const updated = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers,
+      payload: { ciphertextB64: 'BAUG', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+    const removed = await app.inject({ method: 'DELETE', url: '/api/parent/families/family-a/safe-zones/zone-a', headers });
+    assert.equal(created.statusCode, 201);
+    assert.equal(updated.statusCode, 200);
+    assert.equal(removed.statusCode, 204);
+    assert.equal(app.safeZoneMutationAuthorities.length, 3);
+    assert.ok(app.safeZoneMutationAuthorities.every((authority) => authority.parentAccountId === 'account-a'));
+  } finally {
+    await app.close();
+  }
 });
 
 test('Safe Zone writes reject non-CHILD or unbound recipients before persistence', async () => {

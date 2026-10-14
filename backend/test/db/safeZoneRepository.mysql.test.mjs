@@ -23,6 +23,7 @@ function newZone(familyId = randomUUID()) {
 
 async function seedMutationAuthority() {
   const familyId = randomUUID();
+  const parentAccountId = randomUUID();
   const actorDeviceId = randomUUID();
   const actorDskKeyId = randomUUID();
   const recipientDeviceId = randomUUID();
@@ -50,13 +51,27 @@ async function seedMutationAuthority() {
      VALUES (?, 1, 1, NOW(3))`,
     [familyId],
   );
+  await getPool().query(
+    `INSERT INTO parent_accounts
+       (account_id, email_hash, password_hash, status, free_access_mode, verified_at, created_at)
+     VALUES (?, ?, 'test-password-hash', 'VERIFIED', 'PERPETUAL', NOW(3), NOW(3))`,
+    [parentAccountId, randomBytes(32)],
+  );
+  await getPool().query(
+    `INSERT INTO family_parent_memberships
+       (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, 'ADMINISTRATOR', 'ACTIVE', NOW(3), NOW(3))`,
+    [randomUUID(), familyId, parentAccountId],
+  );
   return {
     familyId,
+    parentAccountId,
     recipientDeviceId,
     actorDskKeyId,
     recipientDskKeyId,
     snapshot: {
       familyId,
+      parentAccountId,
       trustSetEpoch: 1,
       keyEpoch: 1,
       actor: { deviceId: actorDeviceId, dskKeyId: actorDskKeyId },
@@ -166,6 +181,85 @@ test('MySQL Safe Zone AUTHORITY RACE: committed head rotation and exact DSK revo
     SafeZoneAuthorityChangedError,
   );
   assert.equal((await repository.list(fixture.familyId)).length, 1);
+});
+
+test('MySQL Safe Zone authority transaction rejects a demoted/revoked Parent before create, update, or delete', async () => {
+  const fixture = await seedMutationAuthority();
+  const created = await repository.create({
+    ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1,
+  }, fixture.snapshot);
+
+  await getPool().query(
+    `UPDATE family_parent_memberships SET role = 'VIEWER', updated_at = NOW(3)
+      WHERE account_id = ? AND family_id = ?`,
+    [fixture.parentAccountId, fixture.familyId],
+  );
+  await assert.rejects(
+    () => repository.create({ ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1 }, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  await assert.rejects(
+    () => repository.update(fixture.familyId, created.zoneId, {
+      ciphertextB64: 'BAUG', nonceB64: 'EBESExQVFhcYGRob', keyEpoch: 1,
+    }, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  await assert.rejects(
+    () => repository.remove(fixture.familyId, created.zoneId, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  const [afterRejectedWrites] = await repository.list(fixture.familyId);
+  assert.equal(afterRejectedWrites.zoneId, created.zoneId);
+  assert.equal(afterRejectedWrites.revision, created.revision);
+  assert.equal(afterRejectedWrites.ciphertextB64, created.ciphertextB64);
+
+  await getPool().query(
+    `UPDATE family_parent_memberships SET role = 'ADMINISTRATOR', status = 'REVOKED', updated_at = NOW(3)
+      WHERE account_id = ? AND family_id = ?`,
+    [fixture.parentAccountId, fixture.familyId],
+  );
+  await assert.rejects(
+    () => repository.remove(fixture.familyId, created.zoneId, fixture.snapshot),
+    SafeZoneAuthorityChangedError,
+  );
+  assert.equal((await repository.list(fixture.familyId)).length, 1);
+});
+
+test('MySQL Safe Zone mutation locks Parent membership so demotion linearizes after an authorized write', async () => {
+  const fixture = await seedMutationAuthority();
+  const lock = await mysql.createConnection({ uri: process.env.PCA_DATABASE_URL, timezone: 'Z' });
+  await lock.beginTransaction();
+  let pendingMutation;
+  let demotionFinished = false;
+  try {
+    await lock.execute(
+      `SELECT account_id FROM family_parent_memberships
+        WHERE family_id = ? AND account_id = ? FOR UPDATE`,
+      [fixture.familyId, fixture.parentAccountId],
+    );
+    // Let the mutation acquire floor/device/key locks and queue for this Parent
+    // row before starting the concurrent role update. Releasing the lock must
+    // let the already-authorized write linearize first, then the demotion.
+    pendingMutation = repository.create({
+      ...newZone(fixture.familyId), recipientEndpointId: fixture.recipientDeviceId, keyEpoch: 1,
+    }, fixture.snapshot);
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const demotion = getPool().query(
+      `UPDATE family_parent_memberships SET role = 'VIEWER', updated_at = NOW(3)
+        WHERE family_id = ? AND account_id = ?`,
+      [fixture.familyId, fixture.parentAccountId],
+    ).then(() => { demotionFinished = true; });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    assert.equal(demotionFinished, false, 'concurrent role change must wait on the membership row lock');
+    await lock.commit();
+    const created = await pendingMutation;
+    await demotion;
+    assert.equal(created.familyId, fixture.familyId);
+    assert.equal(demotionFinished, true);
+  } finally {
+    try { await lock.rollback(); } catch { /* transaction already committed */ }
+    await lock.end();
+  }
 });
 
 test('MySQL Safe Zone snapshots nested authority before waiting for the transaction floor lock', async () => {
