@@ -75,6 +75,23 @@ test('MySQL: authorized parent confirmation transitions PAIRING_PENDING -> PAIRE
   assert.equal(reread.status, 'PAIRED');
 });
 
+test('MySQL: paired device rejects enrollment key mutation and persists the confirmed key set unchanged', async () => {
+  const familyId = family();
+  const { device } = await pairedCandidateDevice(familyId);
+  const confirmedBy = await realAccountId();
+  await pairingService.confirmPairing(familyId, device.deviceId, confirmedBy,
+    await currentPairingFingerprints(familyId, device.deviceId));
+
+  const before = await repository.findKeysByDeviceForFamily(familyId, device.deviceId);
+  await assert.rejects(
+    () => deviceService.addDeviceKey(familyId, device.deviceId, key(), 'DEK'),
+    { code: 'INVALID_STATE' },
+  );
+  const after = await repository.findKeysByDeviceForFamily(familyId, device.deviceId);
+  assert.deepEqual(after.map((item) => item.keyId).sort(), before.map((item) => item.keyId).sort());
+  assert.equal(after.length, 2, 'failed post-pairing enrollment must not append a key row');
+});
+
 test('MySQL: key enrollment after the displayed pairing view rejects stale confirmation and leaves durable status pending', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);

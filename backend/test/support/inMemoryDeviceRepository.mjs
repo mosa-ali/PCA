@@ -111,6 +111,7 @@ export function createInMemoryDeviceRepository() {
       const device = findOwnedDevice(familyId, record.deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       if (device.status === 'REVOKED') return { outcome: 'DEVICE_REVOKED' };
+      if (device.status !== 'PAIRING_PENDING') return { outcome: 'INVALID_STATE' };
       if (keyEverRegistered(record.publicKey)) return { outcome: 'DUPLICATE_KEY' };
       keysById.set(record.keyId, { ...record });
       keysByDevice.get(record.deviceId).add(record.keyId);

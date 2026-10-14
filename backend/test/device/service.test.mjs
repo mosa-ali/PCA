@@ -85,7 +85,7 @@ test('registerDevice rejects a public key already registered to another device',
   );
 });
 
-test('addDeviceKey rotates in a new active key for an active device (correct family)', async () => {
+test('addDeviceKey enrolls a new key while pairing is pending (correct family)', async () => {
   const { service } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
   const rotated = await service.addDeviceKey(FAMILY_A, device.deviceId, key(), 'DEK');
@@ -116,6 +116,23 @@ test('addDeviceKey rejects a revoked device', async () => {
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
   await service.revokeDevice(FAMILY_A, device.deviceId);
   await assert.rejects(() => service.addDeviceKey(FAMILY_A, device.deviceId, key(), 'DEK'), { code: 'DEVICE_REVOKED' });
+});
+
+test('addDeviceKey rejects post-pairing key mutation without changing the confirmed key set', async () => {
+  const { service, repository } = buildService();
+  const { device, key: registeredDsk } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  const registeredDek = await service.addDeviceKey(FAMILY_A, device.deviceId, key(), 'DEK');
+  const expectedFingerprints = await currentPairingFingerprints(repository, FAMILY_A, device.deviceId);
+  await service.confirmPairing(FAMILY_A, device.deviceId, randomUUID(), expectedFingerprints);
+
+  const before = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+  await assert.rejects(
+    () => service.addDeviceKey(FAMILY_A, device.deviceId, key(), 'DEK'),
+    { code: 'INVALID_STATE' },
+  );
+  const after = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+  assert.deepEqual(after, before, 'a paired device key set remains bound to the confirmed fingerprints');
+  assert.deepEqual(new Set(after.map((item) => item.keyId)), new Set([registeredDsk.keyId, registeredDek.keyId]));
 });
 
 test('revokeKey deactivates only the targeted key, leaving other active keys untouched', async () => {

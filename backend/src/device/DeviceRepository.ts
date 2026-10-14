@@ -9,7 +9,8 @@ export type AddKeyResult =
   | { outcome: 'ADDED'; key: DeviceKeyRecord }
   | { outcome: 'DUPLICATE_KEY' }
   | { outcome: 'DEVICE_NOT_FOUND' }
-  | { outcome: 'DEVICE_REVOKED' };
+  | { outcome: 'DEVICE_REVOKED' }
+  | { outcome: 'INVALID_STATE' };
 
 export type RevokeDeviceResult =
   | { outcome: 'REVOKED'; device: DeviceRecord; keys: DeviceKeyRecord[]; transitioned: boolean }

@@ -153,6 +153,8 @@ export class DeviceDirectoryService {
         throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
       case 'DEVICE_REVOKED':
         throw new DeviceDirectoryError('DEVICE_REVOKED');
+      case 'INVALID_STATE':
+        throw new DeviceDirectoryError('INVALID_STATE');
     }
   }
 

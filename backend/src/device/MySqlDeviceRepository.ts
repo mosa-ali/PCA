@@ -213,6 +213,10 @@ export class MySqlDeviceRepository implements DeviceRepository {
         const deviceRow = deviceResult.rows[0];
         if (!deviceRow) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
         if (deviceRow.status === 'REVOKED') throw new SoftFailure<DeviceSoftCode>('DEVICE_REVOKED');
+        // Enrollment keys are mutable only while the Parent is reviewing the
+        // pending pairing request. After fingerprint confirmation, key changes
+        // require the separate Trust Set-authorized rotation path.
+        if (deviceRow.status !== 'PAIRING_PENDING') throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
 
         try {
           await execute(
