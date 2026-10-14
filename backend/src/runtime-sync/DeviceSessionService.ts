@@ -151,9 +151,10 @@ export class DeviceSessionService {
     const clockValue: unknown = this.now();
     if (!isSupportedChallengeTime(clockValue)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const now = new Date(clockValue.getTime());
-    const result = await this.sessionRepository.validate(hashSessionToken(rawToken), now);
+    const tokenHash = hashSessionToken(rawToken);
+    const result = await this.sessionRepository.validate(tokenHash, now);
     if (result.outcome !== 'VALID') throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    if (!isValidSessionSnapshot(result.session) || now.getTime() < result.session.issuedAt.getTime() ||
+    if (!isValidSessionSnapshot(result.session, tokenHash) || now.getTime() < result.session.issuedAt.getTime() ||
         now.getTime() >= result.session.expiresAt.getTime()) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
@@ -255,10 +256,12 @@ function isValidFamilySessionEpoch(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 0xffff_ffff;
 }
 
-function isValidSessionSnapshot(value: unknown): value is DeviceSessionRecord {
+function isValidSessionSnapshot(value: unknown, expectedTokenHash: string): value is DeviceSessionRecord {
   if (!value || typeof value !== 'object') return false;
   const session = value as DeviceSessionRecord;
-  return typeof session.deviceId === 'string' && session.deviceId.length > 0 &&
+  return typeof session.sessionId === 'string' && session.sessionId.length > 0 &&
+    session.tokenHash === expectedTokenHash &&
+    typeof session.deviceId === 'string' && session.deviceId.length > 0 &&
     typeof session.familyId === 'string' && session.familyId.length > 0 &&
     typeof session.dskKeyId === 'string' && session.dskKeyId.length > 0 &&
     typeof session.dskPublicKey === 'string' && session.dskPublicKey.length > 0 &&

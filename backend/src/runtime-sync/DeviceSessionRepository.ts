@@ -36,7 +36,7 @@ export class InMemoryDeviceSessionRepository implements DeviceSessionRepository 
   async validate(tokenHash: string, now: Date): Promise<ValidateDeviceSessionResult> {
     if (!isSupportedChallengeTime(now)) return { outcome: 'INVALID' };
     const record = this.byTokenHash.get(tokenHash);
-    if (!record || !isValidSessionRecord(record)) return { outcome: 'INVALID' };
+    if (!record || !isValidSessionRecord(record) || record.tokenHash !== tokenHash) return { outcome: 'INVALID' };
     this.pruneExpired(now.getTime());
     if (this.byTokenHash.get(tokenHash) !== record || record.revokedAt !== null ||
         now.getTime() < record.issuedAt.getTime() || now.getTime() >= record.expiresAt.getTime()) {
@@ -48,7 +48,7 @@ export class InMemoryDeviceSessionRepository implements DeviceSessionRepository 
   async revoke(tokenHash: string, now: Date): Promise<boolean> {
     if (!isSupportedChallengeTime(now)) return false;
     const record = this.byTokenHash.get(tokenHash);
-    if (!record || !isValidSessionRecord(record) || record.revokedAt !== null ||
+    if (!record || !isValidSessionRecord(record) || record.tokenHash !== tokenHash || record.revokedAt !== null ||
         now.getTime() < record.issuedAt.getTime()) return false;
     this.pruneExpired(now.getTime());
     if (this.byTokenHash.get(tokenHash) !== record) return false;
@@ -113,7 +113,9 @@ function cloneSession(record: DeviceSessionRecord): DeviceSessionRecord {
 }
 
 function isValidSessionRecord(record: DeviceSessionRecord): boolean {
-  return isSupportedChallengeTime(record.issuedAt) &&
+  return typeof record.sessionId === 'string' && record.sessionId.length > 0 &&
+    typeof record.tokenHash === 'string' && record.tokenHash.length > 0 &&
+    isSupportedChallengeTime(record.issuedAt) &&
     isSupportedChallengeTime(record.expiresAt) &&
     record.expiresAt.getTime() > record.issuedAt.getTime() &&
     Number.isSafeInteger(record.familySessionEpoch) && record.familySessionEpoch >= 0 && record.familySessionEpoch <= 0xffff_ffff &&

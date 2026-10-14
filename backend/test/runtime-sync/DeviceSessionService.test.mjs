@@ -89,6 +89,8 @@ test('device-session repository rejects non-persistable clocks and corrupted per
   }
 
   const corrupt = [
+    (record) => { record.sessionId = ''; },
+    (record) => { record.tokenHash = 'another-token-hash'; },
     (record) => { record.expiresAt = new Date(Number.NaN); },
     (record) => { record.issuedAt = new Date('0001-01-01T00:00:00.000Z'); },
     (record) => { record.familySessionEpoch = Number.NaN; },
@@ -372,6 +374,8 @@ test('validateSession rejects unsupported clocks and corrupted session snapshots
 
   const originalValidate = sessionRepository.validate.bind(sessionRepository);
   const corruptions = [
+    (session) => ({ ...session, sessionId: '' }),
+    (session) => ({ ...session, tokenHash: 'another-token-hash' }),
     (session) => ({ ...session, expiresAt: new Date(Number.NaN) }),
     (session) => ({ ...session, issuedAt: new Date('0001-01-01T00:00:00.000Z') }),
     (session) => ({ ...session, familySessionEpoch: Number.NaN }),
