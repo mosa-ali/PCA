@@ -274,21 +274,36 @@ export class TrustSetEpochAcceptanceService {
   }
 
   async acceptCandidate(input: TrustSetEpochAcceptanceInput): Promise<TrustSetEpochAcceptanceResult> {
+    // Snapshot the complete request envelope before the first asynchronous
+    // store or verifier boundary. The input object and its nested metadata
+    // belong to the caller and may be mutated while this method is awaiting;
+    // every checked, verified, and persisted value must come from one snapshot.
+    const familyId = input.familyId;
+    const signedCanonicalBytes = input.signedCanonicalBytes;
+    const signature = input.signature;
+    const claimedSideMetadata = input.claimedSideMetadata === undefined
+      ? undefined
+      : {
+          ...input.claimedSideMetadata,
+          ...(input.claimedSideMetadata.issuedAt instanceof Date
+            ? { issuedAt: new Date(input.claimedSideMetadata.issuedAt.getTime()) }
+            : {}),
+        };
     // ---- 0. Candidate-envelope bounds (cheap, before decode/crypto) ----
-    if (!isPlausibleOpaqueId(input.familyId)) return rejected('MALFORMED_CANDIDATE');
-    if (!isPlausibleSignature(input.signature)) return rejected('MALFORMED_CANDIDATE');
+    if (!isPlausibleOpaqueId(familyId)) return rejected('MALFORMED_CANDIDATE');
+    if (!isPlausibleSignature(signature)) return rejected('MALFORMED_CANDIDATE');
     if (!isPersistableTrustSetDate(input.receivedAt)) return rejected('MALFORMED_CANDIDATE');
     // Date is mutable even when the request object is not. Capture the
     // acceptance receipt instant before any asynchronous store/verifier
     // boundary so callers cannot retimestamp a valid request in flight.
     const receivedAt = new Date(input.receivedAt.getTime());
-    const signedByteLength = Buffer.byteLength(input.signedCanonicalBytes, 'utf8');
+    const signedByteLength = Buffer.byteLength(signedCanonicalBytes, 'utf8');
     if (signedByteLength < 1 || signedByteLength > MAX_SIGNED_EPOCH_BYTES) return rejected('MALFORMED_CANDIDATE');
 
     // ---- 1. Strict decode + structural engine rules ----
     let epoch: FamilyTrustSetEpoch;
     try {
-      epoch = decodeCanonicalTrustSetEpoch(input.signedCanonicalBytes);
+      epoch = decodeCanonicalTrustSetEpoch(signedCanonicalBytes);
     } catch {
       // Any decode failure is a structurally unusable candidate; no detail
       // about the offending byte is leaked back to the submitter.
@@ -321,14 +336,14 @@ export class TrustSetEpochAcceptanceService {
     }
 
     // ---- 2. Family binding ----
-    if (epoch.familyId !== input.familyId) return rejected('FAMILY_MISMATCH');
+    if (epoch.familyId !== familyId) return rejected('FAMILY_MISMATCH');
 
     // ---- 3. Byte identity: signed bytes == canonical bytes == persisted bytes ----
     // With decode.ts this is defense-in-depth (a strict inverse rejects
     // non-canonical inputs first), but the persistence invariant must not
     // depend on the decoder's strictness: whatever decodes must
     // re-canonicalize to the exact same bytes before anything is appended.
-    if (canonicalizeTrustSetEpoch(epoch) !== input.signedCanonicalBytes) return rejected('CANONICAL_BYTES_MISMATCH');
+    if (canonicalizeTrustSetEpoch(epoch) !== signedCanonicalBytes) return rejected('CANONICAL_BYTES_MISMATCH');
 
     // ---- 4. Protocol-minimum epoch numbers ----
     if (epoch.keyEpoch < MIN_KEY_EPOCH) return rejected('STALE_KEY_EPOCH');
@@ -342,7 +357,7 @@ export class TrustSetEpochAcceptanceService {
     // decisions must never be based on a view where the floors moved past
     // the epoch record they were derived from (that would let a candidate
     // be verified against a superseded signer set).
-    const durableState = await this.readConsistentState(input.familyId);
+    const durableState = await this.readConsistentState(familyId);
     // A coherent head/floor tuple is not sufficient if the accepted row's
     // side metadata or signature no longer agrees with its signed bytes.
     // Validate the complete persisted record before using it as the signer
@@ -350,7 +365,7 @@ export class TrustSetEpochAcceptanceService {
     // after this snapshot.
     const latest = durableState.latest === null
       ? null
-      : await this.validateAcceptedRecord(input.familyId, durableState.latest);
+      : await this.validateAcceptedRecord(familyId, durableState.latest);
     const { canonicalKeyEpoch, floors } = durableState;
 
     let resolvedSigner: FamilyTrustSetEntry;
@@ -360,7 +375,7 @@ export class TrustSetEpochAcceptanceService {
       if (epoch.trustSetEpoch !== MIN_TRUST_SET_EPOCH) return rejected('NON_GENESIS_FIRST_EPOCH');
       if (epoch.supersedesEpoch !== null) return rejected('UNKNOWN_PREDECESSOR');
 
-      const anchor = await this.deps.genesisAnchorSource.readGenesisAnchor(input.familyId);
+      const anchor = await this.deps.genesisAnchorSource.readGenesisAnchor(familyId);
       if (anchor === null) return rejected('GENESIS_UNKNOWN_ANCHOR');
       if (
         activeOwner.deviceId !== anchor.genesisDeviceId ||
@@ -371,8 +386,8 @@ export class TrustSetEpochAcceptanceService {
       }
       const signatureValid = await this.deps.verifier.verify(
         anchor.genesisDskPublicKey,
-        input.signedCanonicalBytes,
-        input.signature,
+        signedCanonicalBytes,
+        signature,
       );
       if (!signatureValid) return rejected('SIGNATURE_INVALID');
       resolvedSigner = activeOwner;
@@ -403,8 +418,8 @@ export class TrustSetEpochAcceptanceService {
       }
       const signatureValid = await this.deps.verifier.verify(
         storedOwner.dskPublicKey,
-        input.signedCanonicalBytes,
-        input.signature,
+        signedCanonicalBytes,
+        signature,
       );
       if (!signatureValid) return rejected('SIGNATURE_INVALID');
       resolvedSigner = storedOwner;
@@ -435,14 +450,14 @@ export class TrustSetEpochAcceptanceService {
       if (latest !== null && epoch.supersedesEpoch > latest.trustSetEpoch) {
         return rejected('UNKNOWN_PREDECESSOR');
       }
-      const acceptedEpochs = await this.deps.epochStore.listEpochs(input.familyId);
+      const acceptedEpochs = await this.deps.epochStore.listEpochs(familyId);
       if (!acceptedEpochs.some((record) => record.trustSetEpoch === epoch.supersedesEpoch)) {
         return rejected('UNKNOWN_PREDECESSOR');
       }
     }
 
     // ---- 10. Claimed side metadata must equal the derived values ----
-    const claimed = input.claimedSideMetadata;
+    const claimed = claimedSideMetadata;
     if (claimed !== undefined) {
       if (claimed.signerDeviceId !== undefined && claimed.signerDeviceId !== resolvedSigner.deviceId) {
         return rejected('SIDE_METADATA_CONFLICT');
@@ -467,8 +482,8 @@ export class TrustSetEpochAcceptanceService {
       trustSetEpoch: epoch.trustSetEpoch,
       keyEpoch: epoch.keyEpoch,
       supersedesEpoch: epoch.supersedesEpoch,
-      signedEpochBytes: Buffer.from(input.signedCanonicalBytes, 'utf8'),
-      signature: input.signature,
+      signedEpochBytes: Buffer.from(signedCanonicalBytes, 'utf8'),
+      signature,
       signerKeyId: resolvedSigner.dskKeyId,
       signerDeviceId: resolvedSigner.deviceId,
       issuedAt: epoch.issuedAt,

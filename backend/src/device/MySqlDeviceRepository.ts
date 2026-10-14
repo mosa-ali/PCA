@@ -313,9 +313,11 @@ export class MySqlDeviceRepository implements DeviceRepository {
         // outside this write transaction (and step-up consumption is async),
         // so lock/revalidate the same authority here before pairing. The
         // service-session identity passed as confirmedByAccountId is the
-        // service_account_id column; the joined Parent account must still be
-        // the family's provisioned owner. Lock order is family+membership,
-        // then device, then active keys. Existing device mutations never
+        // service_account_id column; that service account, the joined Parent
+        // account, and the family must still be active, and the Parent must
+        // remain the family's provisioned owner. Lock order is family,
+        // membership, Parent account and service account, then device and
+        // active keys. Existing device mutations never
         // acquire a membership/family lock after the device lock, so this
         // closes the stale-role window without introducing a lock cycle.
         const authority = await execute<{ membership_id: string }>(conn,
@@ -323,14 +325,18 @@ export class MySqlDeviceRepository implements DeviceRepository {
              FROM family_parent_memberships m
              JOIN families f ON f.family_id = m.family_id
              JOIN parent_accounts pa ON pa.account_id = m.account_id
+             JOIN service_accounts sa ON sa.account_id = m.service_account_id
             WHERE m.family_id = ?
               AND m.service_account_id = ?
               AND m.role = 'ADMINISTRATOR'
               AND m.status = 'ACTIVE'
+              AND f.status = 'ACTIVE'
+              AND f.deleted_at IS NULL
               AND pa.service_account_id = m.service_account_id
               AND pa.family_id = m.family_id
               AND pa.status = 'VERIFIED'
               AND pa.disabled_at IS NULL
+              AND sa.disabled_at IS NULL
               AND f.provisioned_for_account_id = m.account_id
             FOR UPDATE`, [familyId, confirmedByAccountId]);
         // Serialize confirmation against key additions, which take the same

@@ -155,6 +155,49 @@ test('MySQL: membership demotion or revocation after route preflight cannot pair
   }
 });
 
+test('MySQL: family suspension or service-account disablement after route preflight cannot pair a device', async () => {
+  for (const change of [
+    {
+      label: 'family suspension',
+      async apply(familyId, serviceAccountId) {
+        const adminId = randomUUID();
+        await getPool().query(
+          `INSERT INTO platform_admin_accounts (admin_id, email_hash, display_name, password_credential, status)
+           VALUES (?, ?, 'Pairing test admin', 'pairing-test-placeholder', 'ACTIVE')`,
+          [adminId, randomBytes(32)],
+        );
+        await getPool().query(
+          `UPDATE families
+              SET status = 'SUSPENDED', suspended_at = NOW(3), suspended_by_admin_id = ?, suspension_reason = 'pairing test'
+            WHERE family_id = ?`,
+          [adminId, familyId],
+        );
+      },
+    },
+    {
+      label: 'service-account disablement',
+      async apply(_familyId, serviceAccountId) {
+        await getPool().query('UPDATE service_accounts SET disabled_at = NOW(3) WHERE account_id = ?', [serviceAccountId]);
+      },
+    },
+  ]) {
+    const familyId = family();
+    const { device } = await pairedCandidateDevice(familyId);
+    const serviceAccountId = await realAccountId(familyId);
+    const displayedFingerprints = await currentPairingFingerprints(familyId, device.deviceId);
+
+    await change.apply(familyId, serviceAccountId);
+    await assert.rejects(
+      () => pairingService.confirmPairing(familyId, device.deviceId, serviceAccountId, displayedFingerprints),
+      { code: 'INVALID_STATE' },
+      `${change.label} must fail closed`,
+    );
+    const persisted = await repository.findDeviceForFamily(familyId, device.deviceId);
+    assert.equal(persisted?.status, 'PAIRING_PENDING', `${change.label} must not transition the device`);
+    assert.equal(persisted?.pairedAt, null);
+  }
+});
+
 test('MySQL: REVOKED pairing request cannot become PAIRED', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);

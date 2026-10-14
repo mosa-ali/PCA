@@ -108,7 +108,8 @@ function validBody(body: unknown): boolean {
       Object.keys(body).sort().join(',') !== 'canonicalEpochBase64,signatureBase64') return false;
   const { canonicalEpochBase64, signatureBase64 } = body as Record<string, unknown>;
   return isCanonicalBase64(canonicalEpochBase64, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES) &&
-    isCanonicalBase64(signatureBase64, 64) && Buffer.from(signatureBase64, 'base64').length === 64;
+    isCanonicalBase64(signatureBase64, 64) && Buffer.from(signatureBase64, 'base64').length === 64 &&
+    isCanonicalP256Signature(Buffer.from(signatureBase64, 'base64').toString('base64url'));
 }
 
 /** Device-session-only transport. Registration does not activate a verifier or confer Parent authority. */

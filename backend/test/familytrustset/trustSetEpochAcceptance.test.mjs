@@ -935,6 +935,67 @@ test('receivedAt is snapshotted before asynchronous signature verification', asy
   assert.equal(harness.state.epochs[0].receivedAt.getTime(), originalReceiptMillis);
 });
 
+test('candidate bytes, family, and signature are snapshotted before asynchronous verification', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(epochFields({ entries: [entryFor(owner)] }), owner.dskPrivateKey);
+  const input = inputFor(candidate);
+  const verifierArguments = [];
+  let verificationStarted;
+  let releaseVerification;
+  const started = new Promise((resolve) => { verificationStarted = resolve; });
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  const realVerifier = new P256TrustSetSignatureVerifier();
+  harness.deps.verifier.verify = async (...args) => {
+    verifierArguments.push(args);
+    verificationStarted();
+    await verificationGate;
+    return realVerifier.verify(...args);
+  };
+
+  const pending = harness.service.acceptCandidate(input);
+  await started;
+  input.familyId = 'foreign-family';
+  input.signedCanonicalBytes = 'mutated-after-verification-started';
+  input.signature = 'mutated-signature';
+  releaseVerification();
+
+  assert.deepEqual(await pending, { outcome: 'ACCEPTED' });
+  assert.equal(verifierArguments.length, 1);
+  assert.equal(verifierArguments[0][1], candidate.bytes);
+  assert.equal(verifierArguments[0][2], candidate.signature);
+  assert.equal(harness.state.epochs.length, 1);
+  assert.equal(harness.state.epochs[0].familyId, FAMILY_ID);
+  assert.equal(harness.state.epochs[0].signedEpochBytes.toString('utf8'), candidate.bytes);
+  assert.equal(harness.state.epochs[0].signature, candidate.signature);
+});
+
+test('claimed side metadata is snapshotted before asynchronous verification', async () => {
+  const owner = makeDevice('owner');
+  const harness = createHarness({ anchors: [[FAMILY_ID, anchorFor(owner)]] });
+  const candidate = signedCandidate(epochFields({ entries: [entryFor(owner)] }), owner.dskPrivateKey);
+  const claimedSideMetadata = { signerDeviceId: 'contradictory-device' };
+  const input = inputFor(candidate, { claimedSideMetadata });
+  let verificationStarted;
+  let releaseVerification;
+  const started = new Promise((resolve) => { verificationStarted = resolve; });
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  const realVerifier = new P256TrustSetSignatureVerifier();
+  harness.deps.verifier.verify = async (...args) => {
+    verificationStarted();
+    await verificationGate;
+    return realVerifier.verify(...args);
+  };
+
+  const pending = harness.service.acceptCandidate(input);
+  await started;
+  claimedSideMetadata.signerDeviceId = owner.deviceId;
+  releaseVerification();
+
+  assertRejectedClean(await pending, 'SIDE_METADATA_CONFLICT', harness.state);
+  assert.equal(harness.state.appendCalls.length, 0, 'mutating a caller-owned claim cannot turn a contradiction into an append');
+});
+
 // --- Side metadata (Section 12) -----------------------------------------
 
 function chainedCandidateWithMetadata(metadata) {

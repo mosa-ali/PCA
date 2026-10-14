@@ -343,6 +343,27 @@ test('exact body fields and length limits reject caller authority or receive tim
   assert.equal(calls.length, 0);
 });
 
+test('noncanonical P-256 request signatures are rejected before reaching the service', async (t) => {
+  const { request, calls } = fixture(t);
+  const highSSignature = Buffer.alloc(64);
+  highSSignature[31] = 1;
+  const p256Order = BigInt('0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551');
+  Buffer.from((p256Order / 2n + 1n).toString(16).padStart(64, '0'), 'hex').copy(highSSignature, 32);
+  const malformed = { ...BODY, signatureBase64: highSSignature.toString('base64') };
+
+  for (const url of [BASE, `${BASE}/status`]) {
+    const response = await request('POST', url, malformed);
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'invalid_request' });
+    assert.equal(response.headers['cache-control'], 'private, no-store');
+  }
+  assert.equal(calls.length, 0, 'noncanonical signatures must not reach the service boundary');
+
+  const valid = await request('POST', BASE, BODY);
+  assert.equal(valid.statusCode, 200, 'the canonical low-S signature encoding remains accepted by the route');
+  assert.equal(calls.length, 1);
+});
+
 test('indexed record bounds are canonical positive supported integers and absence is 404', async (t) => {
   const { request, calls } = fixture(t);
   for (const value of ['0', '01', '-1', '1.0', '1e2', '2147483648', '99999999999']) {

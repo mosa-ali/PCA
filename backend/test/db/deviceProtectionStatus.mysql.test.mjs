@@ -281,10 +281,15 @@ test('concurrent MySQL status transitions serialize on the device row and expose
 test('concurrent first MySQL status reports serialize even though no status row exists yet', async () => {
   const familyId = await seedFamily();
   const deviceId = await seedDevice(familyId);
+  // Keep report ordering out of this row-lock test. Independently sampled
+  // wall-clock milliseconds can differ, while MySQL lock acquisition can
+  // complete in the opposite order; that correctly makes the earlier report
+  // stale and would test receipt ordering instead of first-row serialization.
+  const receivedAt = new Date();
 
   const previous = await Promise.all([
-    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
-    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: new Date() }),
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: receivedAt }),
+    repository.recordAndReadPrevious({ deviceId, familyId, protectionLevel: 'DEGRADED', updatedAt: receivedAt }),
   ]);
 
   assert.equal(previous.filter((item) => item === null).length, 1);
