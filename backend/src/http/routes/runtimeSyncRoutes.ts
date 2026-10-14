@@ -118,6 +118,13 @@ const MAX_CIPHERTEXT_BASE64_LENGTH = 90_000; // headroom over relay's 64 KiB cip
  */
 export const MAX_OUTBOUND_BODY_BYTES = 2315536;
 
+// Challenge requests carry no body; permit only a small amount of parser
+// overhead. Session proofs accept challengeId/signature strings up to 128 and
+// 4096 characters respectively. 26 KiB accommodates their worst-case JSON
+// escaping while remaining well below the global request ceiling.
+const MAX_DEVICE_CHALLENGE_BODY_BYTES = 1024;
+const MAX_DEVICE_SESSION_BODY_BYTES = 26 * 1024;
+
 /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses the status write. */
 async function emitProtectionDegradedAlert(
   alerting: ProtectionStatusAlerting | undefined,
@@ -267,7 +274,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
   // this never leaks device existence/family/revocation status.
   app.post(
     '/v1/runtime-sync/devices/:deviceId/challenge',
-    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, challengeLimiter] },
+    { bodyLimit: MAX_DEVICE_CHALLENGE_BODY_BYTES, onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, challengeLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { deviceId } = request.params as { deviceId: string };
       if (!isNonEmptyString(deviceId, 128)) return reply.code(400).send({ error: 'invalid_request' });
@@ -282,7 +289,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.post(
     '/v1/runtime-sync/devices/:deviceId/session',
-    { onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, sessionLimiter] },
+    { bodyLimit: MAX_DEVICE_SESSION_BODY_BYTES, onRequest: markPrivateResponseNoStore, preHandler: [deps.authAttemptLimiter, sessionLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { deviceId } = request.params as { deviceId: string };
       const body = request.body as { challengeId?: unknown; signature?: unknown };

@@ -2,7 +2,7 @@ import { canonicalizeEnvelope } from '../../../dist/familyenvelope/canonicalize.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { buildServer } from '../../../dist/http/buildServer.js';
+import { buildServer, GLOBAL_BODY_LIMIT_BYTES } from '../../../dist/http/buildServer.js';
 import { MAX_OUTBOUND_BODY_BYTES } from '../../../dist/http/routes/runtimeSyncRoutes.js';
 import { AuthService } from '../../../dist/auth/AuthService.js';
 import { AuthzService } from '../../../dist/authz/AuthzService.js';
@@ -111,7 +111,7 @@ function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, 
     alertComposeFailureLogger,
     trustSetRoleResolver: effectiveTrustSetRoleResolver,
   });
-  return { app, deviceRepository, relayService, sessionRepository };
+  return { app, deviceRepository, relayService, sessionRepository, deviceSessionService };
 }
 
 function makeAlerting({ enabled = true } = {}) {
@@ -218,6 +218,52 @@ test('runtime-sync challenge, bearer issuance, authenticated data, and auth deni
     });
     assert.equal(oversizedOutbound.statusCode, 413);
     assert.equal(oversizedOutbound.headers['cache-control'], 'private, no-store');
+  } finally {
+    await app.close();
+  }
+});
+
+test('runtime-sync challenge and session reject oversized bodies before reaching their handlers', async () => {
+  const { app, sessionRepository, deviceSessionService } = buildApp();
+  let challengeCalls = 0;
+  let sessionCalls = 0;
+  let repositoryCreateCalls = 0;
+  const issueChallengeSafely = deviceSessionService.issueChallengeSafely.bind(deviceSessionService);
+  const completeChallenge = deviceSessionService.completeChallenge.bind(deviceSessionService);
+  const createSession = sessionRepository.create.bind(sessionRepository);
+  deviceSessionService.issueChallengeSafely = async (...args) => {
+    challengeCalls += 1;
+    return issueChallengeSafely(...args);
+  };
+  deviceSessionService.completeChallenge = async (...args) => {
+    sessionCalls += 1;
+    return completeChallenge(...args);
+  };
+  sessionRepository.create = async (...args) => {
+    repositoryCreateCalls += 1;
+    return createSession(...args);
+  };
+
+  try {
+    const challengeResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/devices/nonexistent-device/challenge',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify('x'.repeat(1025)),
+    });
+    assert.equal(challengeResponse.statusCode, 413);
+    assert.equal(challengeCalls, 0, 'challenge handler is not invoked for an oversized body');
+
+    const sessionResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/devices/nonexistent-device/session',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ challengeId: 'c'.repeat(128), signature: 's'.repeat(4096), ignored: 'x'.repeat(26 * 1024) }),
+    });
+    assert.equal(sessionResponse.statusCode, 413);
+    assert.equal(sessionCalls, 0, 'proof verification/session handler is not invoked for an oversized body');
+    assert.equal(repositoryCreateCalls, 0, 'the session repository is never reached');
+    assert.equal(GLOBAL_BODY_LIMIT_BYTES, 256 * 1024, 'route bounds do not change the global request ceiling');
   } finally {
     await app.close();
   }
