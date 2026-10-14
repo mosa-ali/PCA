@@ -5,8 +5,10 @@ import android.net.http.SslError
 import android.view.ViewGroup
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -158,7 +160,11 @@ private fun SafeBrowserWebView(
             WebView(context).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 configureSecureSettings(this)
-                webViewClient = safeBrowserWebViewClient(controller, onAddressChanged)
+                webViewClient = safeBrowserWebViewClient(
+                    onMainFrameNavigation = controller::onMainFrameNavigation,
+                    onPageFinished = controller::onPageFinished,
+                    onAddressChanged = onAddressChanged,
+                )
                 onWebViewCreated(this)
             }
         },
@@ -191,22 +197,44 @@ private fun configureSecureSettings(webView: WebView) {
     WebView.setWebContentsDebuggingEnabled(org.pca.app.BuildConfig.DEBUG)
 }
 
-private fun safeBrowserWebViewClient(controller: SafeBrowserController, onAddressChanged: (String) -> Unit): WebViewClient =
+internal fun safeBrowserWebViewClient(
+    onMainFrameNavigation: (String) -> NavigationRequestOutcome,
+    onPageFinished: (String?, Boolean) -> Unit,
+    onAddressChanged: (String) -> Unit,
+): WebViewClient =
     object : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // Android does not invoke shouldOverrideUrlLoading for POST navigations. A top-level
+            // form POST therefore cannot traverse the async policy path without replaying request
+            // data. Refuse it locally before network dispatch; GETs still use the controller and
+            // subresource requests retain normal WebView behavior.
+            if (request.isForMainFrame && request.method.equals("POST", ignoreCase = true)) {
+                return WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    403,
+                    "Forbidden",
+                    mapOf("Cache-Control" to "no-store"),
+                    ByteArrayInputStream(ByteArray(0)),
+                )
+            }
+            return null
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             // doc 8: subresource loads (images, stylesheets, fonts, scripts, third-party trackers)
             // are never treated as a child browsing event or routed through the navigation policy
             // -- only the main frame is.
             if (!request.isForMainFrame) return false
             val url = request.url.toString()
-            return when (controller.onMainFrameNavigation(url)) {
+            return when (onMainFrameNavigation(url)) {
                 NavigationRequestOutcome.ProceedToLoad -> false // let the WebView load this one, already-approved URL itself
                 NavigationRequestOutcome.DoNotLoad -> true // intercepted: either being evaluated asynchronously, or rejected outright (bad scheme)
             }
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
-            controller.onPageFinished(url, view.canGoBack())
+            onPageFinished(url, view.canGoBack())
             onAddressChanged(url ?: "")
         }
 
