@@ -478,3 +478,23 @@ test('independent route buckets throttle submission without exhausting read/stat
   assert.equal((await request('POST', `${BASE}/status`, BODY)).statusCode, 200);
   assert.equal((await request('GET', `${BASE}/head`)).statusCode, 200);
 });
+
+test('duplicate JSON member names are rejected before service invocation', async (t) => {
+  const { request, calls } = fixture(t);
+  const encodedEpoch = JSON.stringify(BODY.canonicalEpochBase64);
+  const encodedSignature = JSON.stringify(BODY.signatureBase64);
+  const duplicateBodies = [
+    `{"canonicalEpochBase64":${encodedEpoch},"signatureBase64":${encodedSignature},"signatureBase64":${encodedSignature}}`,
+    `{"canonicalEpochBase64":${encodedEpoch},"signatureBase64":${encodedSignature},"signature\\u0042ase64":${encodedSignature}}`,
+  ];
+
+  for (const payload of duplicateBodies) {
+    for (const url of [BASE, `${BASE}/status`]) {
+      const response = await request('POST', url, payload, { 'content-type': 'application/json' });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), { error: 'invalid_request' });
+      assert.equal(response.headers['cache-control'], 'private, no-store');
+    }
+  }
+  assert.equal(calls.length, 0, 'ambiguous request fields must not reach the Trust Set service');
+});

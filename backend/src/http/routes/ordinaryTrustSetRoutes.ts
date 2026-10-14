@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, RequestPayload } from 'fastify';
+import { Readable } from 'node:stream';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import { MAX_ACCEPTED_TRUST_SET_CANONICAL_BYTES, MAX_ORDINARY_TRUST_SET_REQUEST_CANONICAL_BYTES,
   OrdinaryTrustSetError, type OrdinaryTrustSetScope, type AcceptedTrustSetEpochDto,
@@ -103,6 +104,79 @@ function projectStatusResult(value: unknown, requestBody: unknown, scope: Ordina
   return { outcome: value.outcome as OrdinaryTrustSetStatusResult['outcome'], acceptedEpoch, acceptedHead };
 }
 
+function hasDuplicateTopLevelJsonMemberNames(json: string): boolean {
+  let index = 0;
+  const skipWhitespace = () => {
+    while (index < json.length && /[\t\n\r ]/.test(json[index]!)) index += 1;
+  };
+  const readString = (): { value: string; end: number } | null => {
+    if (json[index] !== '"') return null;
+    const start = index;
+    index += 1;
+    while (index < json.length) {
+      const char = json[index]!;
+      if (char === '\\') {
+        index += 2;
+        continue;
+      }
+      if (char === '"') {
+        index += 1;
+        return { value: JSON.parse(json.slice(start, index)) as string, end: index };
+      }
+      index += 1;
+    }
+    return null;
+  };
+  const skipValue = () => {
+    let objectDepth = 0;
+    let arrayDepth = 0;
+    let inString = false;
+    let escaped = false;
+    while (index < json.length) {
+      const char = json[index]!;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+      } else if (char === '"') inString = true;
+      else if (char === '{') objectDepth += 1;
+      else if (char === '[') arrayDepth += 1;
+      else if (char === '}') {
+        if (objectDepth === 0 && arrayDepth === 0) return;
+        objectDepth -= 1;
+      } else if (char === ']') arrayDepth -= 1;
+      else if (char === ',' && objectDepth === 0 && arrayDepth === 0) return;
+      index += 1;
+    }
+  };
+
+  skipWhitespace();
+  if (json[index] !== '{') return false;
+  index += 1;
+  const names = new Set<string>();
+  while (index < json.length) {
+    skipWhitespace();
+    if (json[index] === '}') return false;
+    const member = readString();
+    if (member === null) return false;
+    if (names.has(member.value)) return true;
+    names.add(member.value);
+    index = member.end;
+    skipWhitespace();
+    if (json[index] !== ':') return false;
+    index += 1;
+    skipWhitespace();
+    skipValue();
+    skipWhitespace();
+    if (json[index] === ',') {
+      index += 1;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
 function validBody(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).sort().join(',') !== 'canonicalEpochBase64,signatureBase64') return false;
@@ -148,14 +222,53 @@ export function registerOrdinaryTrustSetRoutes(app: FastifyInstance, deps: Ordin
     }
     return reply.code(503).send({ error: 'trust_set_unavailable' });
   }
+  const duplicateRequests = new WeakSet<FastifyRequest>();
+  const inspectRawBody = async (request: FastifyRequest, _reply: FastifyReply, payload: RequestPayload): Promise<RequestPayload> => {
+    const declaredLength = Number(request.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      const error = new Error('Request body too large') as Error & { statusCode: number };
+      error.statusCode = 413;
+      throw error;
+    }
+    const chunks: Buffer[] = [];
+    let receivedLength = 0;
+    for await (const chunk of payload) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      receivedLength += bytes.length;
+      if (receivedLength > MAX_BODY_BYTES) {
+        const error = new Error('Request body too large') as Error & { statusCode: number };
+        error.statusCode = 413;
+        throw error;
+      }
+      chunks.push(Buffer.from(bytes));
+    }
+    let rawBody = Buffer.concat(chunks);
+    try {
+      if (hasDuplicateTopLevelJsonMemberNames(rawBody.toString('utf8'))) {
+        duplicateRequests.add(request);
+        // Do not pass ambiguous bytes to the ordinary JSON parser. The handler
+        // observes the flag and returns the endpoint's stable invalid_request response.
+        rawBody = Buffer.from('{}');
+      }
+    } catch {
+      // Preserve malformed input for Fastify's default parser to reject.
+    }
+    const replay = Readable.from([rawBody]) as RequestPayload;
+    replay.receivedEncodedLength = receivedLength;
+    return replay;
+  };
+
   for (const operation of ['submit', 'status'] as const) {
     app.post(operation === 'submit' ? BASE : `${BASE}/status`, {
       bodyLimit: MAX_BODY_BYTES,
+      preParsing: inspectRawBody,
       onRequest: markPrivateResponseNoStore,
       preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: `ordinary-trust-set-${operation}` })],
     }, async (request, reply) => {
       const scope = await authorize(request, reply); if (!scope) return;
-      if (!validBody(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (duplicateRequests.has(request) || !validBody(request.body)) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       if (!deps.ordinaryTrustSetService) return reply.code(503).send({ error: 'trust_set_unavailable' });
       try {
         const result = await deps.ordinaryTrustSetService[operation](scope, request.body);
