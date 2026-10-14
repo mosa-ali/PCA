@@ -178,6 +178,22 @@ class PcaAppGraphSafeZoneOutcomeTest {
         }
     }
 
+    @Test fun `committed Trust Set runtime construction failure is blocked without projecting a head`() = runBlocking {
+        var projectedHead: String? = null
+        val runtime = createOrdinaryTrustSetRuntimeOrNull<String> {
+            throw IllegalStateException("committed epoch anchor is corrupt")
+        }
+
+        val outcome = ordinaryTrustSetRuntimeOutcome(
+            runtimeAvailable = runtime != null,
+            reconcile = { projectedHead = "server-head" },
+            hasPendingRequest = { false },
+        )
+
+        assertEquals(RuntimeCustodyOutcome.BLOCKED, outcome)
+        assertEquals("failed runtime construction cannot manufacture or reconcile an accepted head", null, projectedHead)
+    }
+
     @Test fun `Trust Set reconciliation does not catch fatal JVM errors`() = runBlocking {
         val fatal = LinkageError("fatal Trust Set reconciliation failure")
         try {

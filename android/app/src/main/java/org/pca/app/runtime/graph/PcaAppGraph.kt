@@ -268,6 +268,17 @@ internal suspend fun ordinaryTrustSetReconciliationOutcome(
     ordinaryTrustSetFailureOutcome(failure)
 }
 
+/** A committed device root with no constructed Trust Set runtime is a closed authority gate. */
+internal suspend fun ordinaryTrustSetRuntimeOutcome(
+    runtimeAvailable: Boolean,
+    reconcile: suspend () -> Unit,
+    hasPendingRequest: suspend () -> Boolean,
+): org.pca.app.runtime.sync.RuntimeCustodyOutcome = if (runtimeAvailable) {
+    ordinaryTrustSetReconciliationOutcome(reconcile, hasPendingRequest)
+} else {
+    org.pca.app.runtime.sync.RuntimeCustodyOutcome.BLOCKED
+}
+
 class PcaAppGraph private constructor(
     val context: Context,
     scheduleRuntimePortOverride: ScheduleRuntimePort?,
@@ -593,16 +604,15 @@ class PcaAppGraph private constructor(
                 )
             }
         }
-        var ordinaryTrustSetOutcome = org.pca.app.runtime.sync.RuntimeCustodyOutcome.COMPLETE
         val trustSetRuntime = ordinaryTrustSetRuntime
-        if (trustSetRuntime != null) {
-            // Keep relay and opaque Safe Zone custody independent from Trust Set status. The
-            // aggregate below preserves the reconciliation result while those paths still run.
-            ordinaryTrustSetOutcome = ordinaryTrustSetReconciliationOutcome(
-                reconcile = { trustSetRuntime.reconcile() },
-                hasPendingRequest = { trustSetRuntime.hasPendingRequest() },
-            )
-        }
+        // A committed root whose runtime could not be constructed is a blocked Trust Set gate;
+        // never report it as COMPLETE just because there is no runtime to reconcile. Relay and
+        // opaque Safe Zone custody still run independently through the aggregate below.
+        val ordinaryTrustSetOutcome = ordinaryTrustSetRuntimeOutcome(
+            runtimeAvailable = trustSetRuntime != null,
+            reconcile = { trustSetRuntime?.reconcile() },
+            hasPendingRequest = { trustSetRuntime?.hasPendingRequest() ?: false },
+        )
         // Stage the server's opaque, recipient-addressed rows in encrypted local storage. This is
         // deliberately separate from policy application: the current delivery DTO has no signed
         // sender/trust-set/expiry metadata, and production policy crypto remains fail-closed.
