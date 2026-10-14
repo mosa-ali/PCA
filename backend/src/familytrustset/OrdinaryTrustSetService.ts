@@ -127,7 +127,7 @@ export class OrdinaryTrustSetService {
       // row read above. Do not return or authorize a mixed-head projection.
       throw new OrdinaryTrustSetError('CONFLICT');
     }
-    if (resolved.deviceId !== scope.deviceId || resolved.role !== member.role) {
+    if (resolved.familyId !== scope.familyId || resolved.deviceId !== scope.deviceId || resolved.role !== member.role) {
       throw new OrdinaryTrustSetError('NO_TRUST_SET');
     }
     if (resolved.dskKeyId !== scope.dskKeyId) throw new OrdinaryTrustSetError('DEVICE_NOT_ACTIVE');

@@ -436,6 +436,21 @@ test('head, status, and submit bind resolver authority to the exact session DSK'
   assert.equal((await f.acceptance.readAcceptedEpoch(FAMILY, 2)), null);
 });
 
+test('ordinary Trust Set rejects a resolver projection from another family before read or acceptance', async () => {
+  const f = fixture(); await f.bootstrap();
+  const foreignProjection = new OrdinaryTrustSetService(f.acceptance, {
+    resolveActor: async (_familyId, deviceId, dskKeyId) => ({
+      familyId: 'foreign-family', deviceId, dskKeyId, role: 'OWNER', trustSetEpoch: 1, keyEpoch: 1,
+    }),
+  });
+  const before = f.appends;
+
+  await assert.rejects(foreignProjection.head(scope), rejectsCode('NO_TRUST_SET'));
+  await assert.rejects(foreignProjection.status(scope, f.request(2)), rejectsCode('NO_TRUST_SET'));
+  await assert.rejects(foreignProjection.submit(scope, f.request(2)), rejectsCode('NO_TRUST_SET'));
+  assert.equal(f.appends, before, 'a mismatched resolver family cannot authorize an epoch append');
+});
+
 test('resolver infrastructure failure is propagated and never treated as accepted authority', async () => {
   const f = fixture(); await f.bootstrap();
   const unavailable = new OrdinaryTrustSetService(f.acceptance, {
