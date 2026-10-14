@@ -27,6 +27,7 @@ import {
 } from '../../device/DeviceProtectionStatusRepository.js';
 import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
 import type { TrustSetRoleResolver, ResolvedActor, ActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import {
   alertComposeFailureMessage,
   CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
@@ -241,8 +242,8 @@ function createRequireDeviceSession(
       if (typeof actor !== 'object' || actor === null || Array.isArray(actor) ||
           actor.familyId !== identity.familyId || actor.deviceId !== identity.deviceId || !FAMILY_ROLES.has(actor.role) ||
           !isNonEmptyString(actor.dskKeyId, 128) || actor.dskKeyId !== identity.dskKeyId ||
-          !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
-          !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
+          !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
+          !isFamilyEpochNumber(actor.keyEpoch, 1)) {
         await reply.code(503).send({ error: 'authority_unavailable' });
         return;
       }
@@ -346,8 +347,8 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
           if (recipientActor === null || typeof recipientActor !== 'object' || Array.isArray(recipientActor) ||
               recipientActor.familyId !== request.runtimeSyncFamilyId || recipientActor.deviceId !== recipientDeviceId || !FAMILY_ROLES.has(recipientActor.role) ||
               !isNonEmptyString(recipientActor.dskKeyId, 128) ||
-              !Number.isSafeInteger(recipientActor.trustSetEpoch) || recipientActor.trustSetEpoch < 1 ||
-              !Number.isSafeInteger(recipientActor.keyEpoch) || recipientActor.keyEpoch < 1) {
+              !isFamilyEpochNumber(recipientActor.trustSetEpoch, 1) ||
+              !isFamilyEpochNumber(recipientActor.keyEpoch, 1)) {
             throw new RecipientAuthorizationUnavailableError();
           }
           recipientSnapshot = {
@@ -376,8 +377,8 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         if (senderActor === null || typeof senderActor !== 'object' || Array.isArray(senderActor) ||
             senderActor.familyId !== senderFamilyId || senderActor.deviceId !== senderDeviceId || senderActor.dskKeyId !== senderDskKeyId ||
             !FAMILY_ROLES.has(senderActor.role) ||
-            !Number.isSafeInteger(senderActor.trustSetEpoch) || senderActor.trustSetEpoch < 1 ||
-            !Number.isSafeInteger(senderActor.keyEpoch) || senderActor.keyEpoch < 1) {
+            !isFamilyEpochNumber(senderActor.trustSetEpoch, 1) ||
+            !isFamilyEpochNumber(senderActor.keyEpoch, 1)) {
           throw new RecipientAuthorizationUnavailableError();
         }
         if (senderActor.trustSetEpoch !== recipientSnapshot.trustSetEpoch ||
@@ -426,7 +427,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         return reply.code(400).send({ error: 'invalid_cursor' });
       }
       if (typeof familyId !== 'string' || familyId.length === 0 || typeof dskKeyId !== 'string' || dskKeyId.length === 0 ||
-          !Number.isSafeInteger(trustSetEpoch) || trustSetEpoch < 1 || !Number.isSafeInteger(keyEpoch) || keyEpoch < 1) {
+          !isFamilyEpochNumber(trustSetEpoch, 1) || !isFamilyEpochNumber(keyEpoch, 1)) {
         return reply.code(503).send({ error: 'authority_unavailable' });
       }
       deps.statusTracker.markSyncStart(deviceId);
@@ -456,8 +457,8 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         if (currentRecipient === null || typeof currentRecipient !== 'object' || Array.isArray(currentRecipient) ||
             currentRecipient.familyId !== familyId || currentRecipient.deviceId !== deviceId || currentRecipient.dskKeyId !== dskKeyId ||
             !FAMILY_ROLES.has(currentRecipient.role) ||
-            !Number.isSafeInteger(currentRecipient.trustSetEpoch) || currentRecipient.trustSetEpoch < 1 ||
-            !Number.isSafeInteger(currentRecipient.keyEpoch) || currentRecipient.keyEpoch < 1) {
+            !isFamilyEpochNumber(currentRecipient.trustSetEpoch, 1) ||
+            !isFamilyEpochNumber(currentRecipient.keyEpoch, 1)) {
           return reply.code(503).send({ error: 'authority_unavailable' });
         }
         if (currentRecipient.trustSetEpoch !== trustSetEpoch || currentRecipient.keyEpoch !== keyEpoch) {
@@ -514,8 +515,8 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       if (typeof currentActor === 'string') return reply.code(403).send({ error: 'device_not_authorized' });
       if (typeof currentActor !== 'object' || currentActor === null || Array.isArray(currentActor) ||
           currentActor.familyId !== familyId || currentActor.deviceId !== deviceId || currentActor.dskKeyId !== dskKeyId || !FAMILY_ROLES.has(currentActor.role) ||
-          !Number.isSafeInteger(currentActor.trustSetEpoch) || currentActor.trustSetEpoch < 1 ||
-          !Number.isSafeInteger(currentActor.keyEpoch) || currentActor.keyEpoch < 1) {
+          !isFamilyEpochNumber(currentActor.trustSetEpoch, 1) ||
+          !isFamilyEpochNumber(currentActor.keyEpoch, 1)) {
         return reply.code(503).send({ error: 'authority_unavailable' });
       }
       try {
@@ -588,8 +589,8 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         }
         if (typeof currentActor !== 'object' || currentActor === null || Array.isArray(currentActor) ||
             currentActor.familyId !== familyId || currentActor.deviceId !== deviceId || currentActor.dskKeyId !== dskKeyId || !FAMILY_ROLES.has(currentActor.role) ||
-            !Number.isSafeInteger(currentActor.trustSetEpoch) || currentActor.trustSetEpoch < 1 ||
-            !Number.isSafeInteger(currentActor.keyEpoch) || currentActor.keyEpoch < 1) {
+            !isFamilyEpochNumber(currentActor.trustSetEpoch, 1) ||
+            !isFamilyEpochNumber(currentActor.keyEpoch, 1)) {
           return reply.code(503).send({ error: 'authority_unavailable' });
         }
         const nextLevel = body.protectionLevel as ProtectionLevel;

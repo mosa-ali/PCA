@@ -5,6 +5,7 @@ import { RelayService, RelayError } from '../../dist/relay/RelayService.js';
 import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
 import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
 import { MAX_CIPHERTEXT_BYTES, MAX_RELAY_TTL_MS, MAX_OPAQUE_ID_LENGTH } from '../../dist/relay/policy.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
 
 const BASE_TIME = new Date('2026-01-01T00:00:00.000Z').getTime();
@@ -56,6 +57,26 @@ test('queue valid opaque envelope', async () => {
   const record = await service.queueEnvelope(envelope());
   assert.equal(record.state, 'QUEUED');
   assert.equal(record.acknowledgedAt, null);
+});
+
+test('relay service rejects authority epochs outside the shared family epoch bound', async () => {
+  const { service, repository } = buildService();
+  const input = envelope();
+  await assert.rejects(
+    () => service.queueEnvelope({
+      ...input,
+      authority: {
+        familyId: input.familyId,
+        trustSetEpoch: MAX_FAMILY_EPOCH + 1,
+        keyEpoch: 1,
+        sender: { deviceId: input.senderDeviceId, dskKeyId: 'sender-dsk' },
+        recipient: { deviceId: input.recipientDeviceId, dskKeyId: 'recipient-dsk' },
+      },
+    }),
+    { code: 'INVALID_INPUT' },
+  );
+  assert.equal(await repository.findForRecipient(input.recipientDeviceId, input.messageId), null,
+    'an invalid authority snapshot cannot write to the in-memory relay adapter');
 });
 
 test('relay diagnostics expose routing metadata and ciphertext size class, never ciphertext bytes', async () => {

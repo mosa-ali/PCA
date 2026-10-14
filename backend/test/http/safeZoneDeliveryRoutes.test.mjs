@@ -3,6 +3,7 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 import { registerSafeZoneDeliveryRoutes } from '../../dist/http/routes/safeZoneDeliveryRoutes.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 
 const opaqueZone = {
   zoneId: 'zone_1',
@@ -408,6 +409,8 @@ test('device Safe Zone delivery rejects malformed accepted-member projections be
     { familyId: 'session_family', deviceId: 'session_device', dskKeyId: 'session_dsk', role: 'UNRECOGNIZED', trustSetEpoch: 2, keyEpoch: 2 },
     { familyId: 'session_family', deviceId: 'session_device', dskKeyId: 'different_dsk', role: 'CHILD', trustSetEpoch: 2, keyEpoch: 2 },
     { familyId: 'another_family', deviceId: 'session_device', dskKeyId: 'session_dsk', role: 'CHILD', trustSetEpoch: 2, keyEpoch: 2 },
+    { familyId: 'session_family', deviceId: 'session_device', dskKeyId: 'session_dsk', role: 'CHILD', trustSetEpoch: MAX_FAMILY_EPOCH + 1, keyEpoch: 2 },
+    { familyId: 'session_family', deviceId: 'session_device', dskKeyId: 'session_dsk', role: 'CHILD', trustSetEpoch: 2, keyEpoch: MAX_FAMILY_EPOCH + 1 },
   ]) {
     const repositoryCalls = [];
     const { app } = await appFor({
@@ -420,6 +423,42 @@ test('device Safe Zone delivery rejects malformed accepted-member projections be
     assert.deepEqual(response.json(), { error: 'forbidden' });
     assert.deepEqual(repositoryCalls, []);
   }
+});
+
+test('device Safe Zone delivery suppresses ciphertext when post-read authority epochs exceed the family bound', async (t) => {
+  let resolverCalls = 0;
+  const repositoryCalls = [];
+  const { app } = await appFor({
+    trustSetRoleResolver: {
+      async resolveActor(familyId, deviceId, dskKeyId) {
+        resolverCalls += 1;
+        return {
+          familyId,
+          deviceId,
+          dskKeyId,
+          role: 'CHILD',
+          trustSetEpoch: resolverCalls === 3 ? MAX_FAMILY_EPOCH + 1 : 2,
+          keyEpoch: 2,
+        };
+      },
+    },
+    repository: {
+      async listForRecipient(...args) {
+        repositoryCalls.push(args);
+        return { safeZones: [opaqueZone], nextCursor: null };
+      },
+    },
+  });
+  t.after(() => app.close());
+
+  const response = await app.inject({ method: 'GET', url: '/v1/runtime-sync/safe-zones', headers: { authorization: 'Bearer valid-session' } });
+
+  assert.equal(resolverCalls, 3, 'the invalid projection is returned only by the post-read authority recheck');
+  assert.equal(repositoryCalls.length, 1, 'one scoped read may occur before authority is revalidated');
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  assert.equal(response.body.includes('AQID'), false, 'an invalid epoch projection cannot receive ciphertext');
+  assert.equal(response.body.includes('zone_1'), false, 'an invalid epoch projection cannot receive envelope metadata');
 });
 
 test('device Safe Zone delivery suppresses ciphertext when the accepted family projection changes during the repository read', async (t) => {

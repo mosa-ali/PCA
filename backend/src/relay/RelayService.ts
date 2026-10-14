@@ -3,6 +3,7 @@ import type { AcknowledgeResult, CreateEnvelopeResult, RelayEnvelopeAuthoritySna
 import { buildRelayDiagnosticEvent, type RelayDiagnosticEvent, type RelayDiagnosticOutcome } from './diagnostics.js';
 import type { MessageId, OpaqueDeviceId, OpaqueFamilyId, RelayEnvelopeRecord } from './types.js';
 import { MAX_RELAY_SUPPLEMENT_RECORDS, validateRelayQueuePageInput, type RelayQueuePage, type RelayQueuePageInput, type RelayQueuedRecord } from './queuePage.js';
+import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
 
 export type RelayErrorCode = 'INVALID_INPUT' | 'CONFLICT' | 'NOT_FOUND' | 'EXPIRED';
 
@@ -109,8 +110,8 @@ export class RelayService {
       requestedAuthority.recipient.deviceId !== recipientDeviceId ||
       !isPlausibleOpaqueId(requestedAuthority.recipient?.dskKeyId) ||
       (requestedAuthority.parentAccountId !== undefined && !isPlausibleOpaqueId(requestedAuthority.parentAccountId)) ||
-      !Number.isSafeInteger(requestedAuthority.trustSetEpoch) || requestedAuthority.trustSetEpoch < 1 ||
-      !Number.isSafeInteger(requestedAuthority.keyEpoch) || requestedAuthority.keyEpoch < 1
+      !isFamilyEpochNumber(requestedAuthority.trustSetEpoch, 1) ||
+      !isFamilyEpochNumber(requestedAuthority.keyEpoch, 1)
     )) throw new RelayError('INVALID_INPUT');
     if (requestedValidUntil !== undefined &&
         (!(requestedValidUntil instanceof Date) || !Number.isSafeInteger(requestedValidUntil.getTime()))) {

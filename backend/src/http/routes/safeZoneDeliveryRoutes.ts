@@ -4,6 +4,7 @@ import { RuntimeSyncAuthError, type DeviceSessionIdentity, type DeviceSessionSer
 import { safeZoneCursorAfterZoneId, validateSafeZoneDeliveryCursor, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import { isActorResolutionFailure, type ActorResolutionFailure, type ResolvedActor, type TrustSetRoleResolver } from '../../familyrbac/TrustSetRoleResolver.js';
 import { isPlausibleOpaqueId } from '../../familytrustset/policy.js';
+import { isFamilyEpochNumber } from '../../familyepoch/bounds.js';
 import type { DeviceChildBindingRepository } from '../../device/DeviceChildBindingRepository.js';
 import type { ChildProfileRegistryRepository } from '../../childprofiles/ChildProfileRegistryRepository.js';
 import type { createRateLimiter } from '../rateLimit.js';
@@ -102,8 +103,8 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
     if (isActorResolutionFailure(actor) || !actor || typeof actor !== 'object' ||
       actor.familyId !== identity.familyId || actor.deviceId !== identity.deviceId ||
       actor.dskKeyId !== identity.dskKeyId || actor.role !== 'CHILD' ||
-      !Number.isSafeInteger(actor.trustSetEpoch) || actor.trustSetEpoch < 1 ||
-      !Number.isSafeInteger(actor.keyEpoch) || actor.keyEpoch < 1) {
+      !isFamilyEpochNumber(actor.trustSetEpoch, 1) ||
+      !isFamilyEpochNumber(actor.keyEpoch, 1)) {
       return reply.code(403).send({ error: 'forbidden' });
     }
     if (!deps.deviceChildBindingRepository) return reply.code(503).send({ error: 'family_authority_unavailable' });
@@ -158,8 +159,8 @@ export function registerSafeZoneDeliveryRoutes(app: FastifyInstance, deps: SafeZ
       if (isActorResolutionFailure(current) || !current || typeof current !== 'object' ||
           current.familyId !== identity.familyId || current.deviceId !== identity.deviceId ||
           current.dskKeyId !== identity.dskKeyId || current.role !== 'CHILD' ||
-          !Number.isSafeInteger(current.trustSetEpoch) || current.trustSetEpoch < 1 ||
-          !Number.isSafeInteger(current.keyEpoch) || current.keyEpoch < 1) {
+          !isFamilyEpochNumber(current.trustSetEpoch, 1) ||
+          !isFamilyEpochNumber(current.keyEpoch, 1)) {
         await reply.code(403).send({ error: 'forbidden' });
         return false;
       }

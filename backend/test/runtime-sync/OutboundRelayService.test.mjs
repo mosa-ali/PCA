@@ -5,6 +5,7 @@ import { RelayService } from '../../dist/relay/RelayService.js';
 import { RelayAuthorityChangedError } from '../../dist/relay/RelayRepository.js';
 import { OutboundRelayService } from '../../dist/runtime-sync/index.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../dist/runtime-sync/policy.js';
+import { MAX_FAMILY_EPOCH } from '../../dist/familyepoch/bounds.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 
@@ -183,6 +184,14 @@ test('Parent account authority metadata is validated and copied into the relay r
     async () => ({ ...authoritySnapshot(familyId, senderDeviceId, recipientDeviceId), parentAccountId: '' }),
   );
   assert.equal(invalid.results[0].outcome, 'INVALID');
+
+  const invalidEpoch = await outboundService.submitBatch(
+    senderDeviceId,
+    familyId,
+    [item({ recipientDeviceId, messageId: `invalid-epoch-${randomUUID()}` })],
+    async () => ({ ...authoritySnapshot(familyId, senderDeviceId, recipientDeviceId), keyEpoch: MAX_FAMILY_EPOCH + 1 }),
+  );
+  assert.equal(invalidEpoch.results[0].outcome, 'INVALID');
 });
 
 test('same-family outbound enqueue fails closed without an exact sender+recipient authority snapshot', async () => {

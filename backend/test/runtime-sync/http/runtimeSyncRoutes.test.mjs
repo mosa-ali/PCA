@@ -43,6 +43,7 @@ import {
 } from '../../../dist/device/DeviceProtectionStatusRepository.js';
 import { RealProtectiveAuthorityResolver } from '../../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
 import { MAX_RELAY_TTL_MS } from '../../../dist/relay/policy.js';
+import { MAX_FAMILY_EPOCH } from '../../../dist/familyepoch/bounds.js';
 import { RelayAuthorityChangedError } from '../../../dist/relay/RelayRepository.js';
 import { ProtectionAlertProducer } from '../../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAlertLedger.js';
@@ -136,11 +137,12 @@ function makeAlerting({ enabled = true } = {}) {
 async function registerDevice(deviceRepository, familyId, status = 'ACTIVE') {
   const deviceId = `device-${randomUUID()}`;
   const publicKey = `pubkey-${randomUUID()}`;
+  const dskKeyId = `key-${randomUUID()}`;
   await deviceRepository.createDeviceWithKey(
     { deviceId, familyId, platform: 'ANDROID', status, createdAt: new Date(), revokedAt: null, pairedAt: null, pairedByAccountId: null },
-    { deviceId, keyId: `key-${randomUUID()}`, keyPurpose: 'DSK', publicKey, status: 'ACTIVE', createdAt: new Date(), revokedAt: null },
+    { deviceId, keyId: dskKeyId, keyPurpose: 'DSK', publicKey, status: 'ACTIVE', createdAt: new Date(), revokedAt: null },
   );
-  return { deviceId, publicKey };
+  return { deviceId, publicKey, dskKeyId };
 }
 
 async function authenticateDevice(app, deviceId, publicKey) {
@@ -1211,6 +1213,46 @@ test('protection-status rechecks exact session authority at the write boundary a
   }
 });
 
+test('protection-status rejects an out-of-range accepted head at the final write boundary', async () => {
+  let resolveCalls = 0;
+  const deviceProtectionStatusRepository = {
+    writeCalls: 0,
+    async upsert() { this.writeCalls += 1; },
+    async recordAndReadPrevious() { this.writeCalls += 1; return null; },
+  };
+  const trustSetRoleResolver = {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      resolveCalls += 1;
+      return {
+        familyId,
+        deviceId,
+        dskKeyId,
+        role: 'OWNER',
+        trustSetEpoch: resolveCalls === 1 ? 4 : MAX_FAMILY_EPOCH + 1,
+        keyEpoch: 1,
+      };
+    },
+  };
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, trustSetRoleResolver });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'PROTECTED' },
+    });
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+    assert.equal(resolveCalls, 2, 'the accepted head is re-resolved immediately before persistence');
+    assert.equal(deviceProtectionStatusRepository.writeCalls, 0, 'invalid final authority cannot reach durable write');
+  } finally {
+    await app.close();
+  }
+});
+
 test('protection-status passes the resolved head to persistence and suppresses alert side effects when the locked floor changed', async () => {
   let persistedAuthority;
   let alertCalls = 0;
@@ -1280,6 +1322,8 @@ test('protection-status fails closed when accepted Trust Set authority is unavai
     { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 0, keyEpoch: 1 }; } },
     { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: 0 }; } },
     { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: -1 }; } },
+    { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: MAX_FAMILY_EPOCH + 1, keyEpoch: 1 }; } },
+    { async resolveActor(familyId, deviceId) { return { familyId, deviceId, role: 'CHILD', trustSetEpoch: 1, keyEpoch: MAX_FAMILY_EPOCH + 1 }; } },
   ];
   for (const trustSetRoleResolver of failureResolvers) {
     const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting, trustSetRoleResolver });
@@ -1801,6 +1845,97 @@ test('inbound suppresses ciphertext when the accepted Trust Set head changes dur
     assert.equal(JSON.stringify(response.json()).includes('stale-response-sentinel'), false);
     assert.equal((await relayService.listQueuedForRecipient(recipientDeviceId)).length, 1,
       'a response-gate rejection does not implicitly acknowledge the queued envelope');
+  } finally { await app.close(); }
+});
+
+test('inbound suppresses ciphertext when post-read authority exceeds the shared family epoch bound', async () => {
+  let resolveCalls = 0;
+  const trustSetRoleResolver = {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      resolveCalls += 1;
+      return {
+        familyId, deviceId, dskKeyId, role: 'CHILD',
+        trustSetEpoch: resolveCalls === 1 ? 1 : MAX_FAMILY_EPOCH + 1,
+        keyEpoch: 1,
+      };
+    },
+  };
+  const envelopePublicKey = 'inbound-overflow-epoch-recheck-key';
+  const { app, deviceRepository, relayService } = buildApp({ envelopePublicKey, trustSetRoleResolver });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: recipientDeviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: senderDeviceId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, recipientDeviceId, publicKey);
+    const envelope = buildInboundStatusEnvelope(familyId, senderDeviceId, recipientDeviceId, envelopePublicKey);
+    await relayService.queueEnvelope({
+      messageId: envelope.messageId, familyId, senderDeviceId, recipientDeviceId,
+      ciphertext: envelopeToRelayCiphertext(envelope),
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound',
+      headers: { authorization: `Bearer ${token}` } });
+
+    assert.equal(resolveCalls, 2, 'authority is re-resolved after inbound processing');
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'authority_unavailable' });
+    assert.equal(JSON.stringify(response.json()).includes(envelope.messageId), false);
+    assert.equal((await relayService.listQueuedForRecipient(recipientDeviceId)).length, 1,
+      'invalid post-read authority does not implicitly acknowledge the queued envelope');
+  } finally { await app.close(); }
+});
+
+test('ACK rejects an out-of-range final authority projection without acknowledging queued ciphertext', async () => {
+  let rejectFinalProjection = false;
+  let resolveCalls = 0;
+  const dskKeyIds = new Map();
+  const trustSetRoleResolver = {
+    async resolveActor(familyId, deviceId, dskKeyId) {
+      if (rejectFinalProjection) {
+        resolveCalls += 1;
+        return {
+          familyId, deviceId, dskKeyId: dskKeyId ?? dskKeyIds.get(deviceId), role: 'CHILD',
+          trustSetEpoch: resolveCalls === 2 ? MAX_FAMILY_EPOCH + 1 : 1,
+          keyEpoch: 1,
+        };
+      }
+      return { familyId, deviceId, dskKeyId: dskKeyId ?? dskKeyIds.get(deviceId), role: 'CHILD', trustSetEpoch: 1, keyEpoch: 1 };
+    },
+  };
+  const { app, deviceRepository, relayService } = buildApp({ trustSetRoleResolver });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const sender = await registerDevice(deviceRepository, familyId);
+    const recipient = await registerDevice(deviceRepository, familyId);
+    dskKeyIds.set(sender.deviceId, sender.dskKeyId);
+    dskKeyIds.set(recipient.deviceId, recipient.dskKeyId);
+    const senderToken = await authenticateDevice(app, sender.deviceId, sender.publicKey);
+    const recipientToken = await authenticateDevice(app, recipient.deviceId, recipient.publicKey);
+    const messageId = `ack-overflow-${randomUUID()}`;
+    const outbound = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/outbound',
+      headers: { authorization: `Bearer ${senderToken}` },
+      payload: { items: [{
+        messageId, recipientDeviceId: recipient.deviceId,
+        ciphertext: Buffer.from('opaque-ack-regression').toString('base64'), messageType: 'STATUS_SNAPSHOT',
+      }] },
+    });
+    assert.equal(outbound.statusCode, 200);
+    assert.equal(outbound.json().results[0].outcome, 'QUEUED');
+    assert.equal((await relayService.listQueuedForRecipient(recipient.deviceId)).length, 1);
+
+    rejectFinalProjection = true;
+    resolveCalls = 0;
+    const ack = await app.inject({
+      method: 'POST', url: `/v1/runtime-sync/inbound/${messageId}/ack`,
+      headers: { authorization: `Bearer ${recipientToken}` },
+    });
+
+    assert.equal(resolveCalls, 2, 'the out-of-range projection is returned by the ACK handler after session validation');
+    assert.equal(ack.statusCode, 503);
+    assert.deepEqual(ack.json(), { error: 'authority_unavailable' });
+    assert.equal((await relayService.listQueuedForRecipient(recipient.deviceId)).length, 1,
+      'invalid final authority cannot acknowledge or discard the queued envelope');
   } finally { await app.close(); }
 });
 
