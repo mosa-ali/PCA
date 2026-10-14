@@ -280,7 +280,11 @@ export class FamilyAuditEventProducer {
           warnFamilyAuditDelivery({
             event: 'family_audit_event_device_delivery_failed',
             familyId,
-            parentDeviceId: parentDevice.deviceId,
+            // A malformed resolver result can contain an arbitrarily large
+            // identifier. Keep the structured warning bounded just like the
+            // counter key; retain the exact ID only when it meets the normal
+            // opaque-ID bound.
+            parentDeviceId: failureKey,
             occurrences,
             failureStage,
             note: 'this audit event was not queued for this parent device. Logged on the first failure and every Nth thereafter.',

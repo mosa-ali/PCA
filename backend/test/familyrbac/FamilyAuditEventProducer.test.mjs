@@ -286,6 +286,42 @@ test('malformed resolved parent recipient is contained before composition and le
   assert.equal(stored[0].parentDeviceId, 'parent-device-good');
 });
 
+test('invalid recipient diagnostics stay bounded while valid recipient outcomes and accounting are preserved', async () => {
+  const oversizedInvalidId = 'x'.repeat(100_000);
+  const stored = [];
+  const producer = new FamilyAuditEventProducer(
+    { async record(envelope) { stored.push(envelope); return { outcome: 'RECORDED' }; } },
+    async ({ parentDeviceId }) => {
+      if (parentDeviceId === 'parent-device-fails') throw new Error('private composition detail');
+      return { encryptedPayloadB64: 'eA==', nonceB64: 'eQ==' };
+    },
+    async () => [
+      { deviceId: oversizedInvalidId, keyEpoch: 1 },
+      { deviceId: 'parent-device-fails', keyEpoch: 1 },
+      { deviceId: 'parent-device-good', keyEpoch: 1 },
+    ],
+  );
+
+  const { result, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+
+  assert.deepEqual(result.map(({ outcome }) => outcome), ['FAILED', 'FAILED', 'QUEUED']);
+  assert.equal(result[0].parentDeviceId, oversizedInvalidId, 'the producer preserves its existing outcome identifier');
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].parentDeviceId, 'parent-device-good');
+  assert.equal(warnings.length, 2);
+
+  const invalidRecipientWarning = JSON.parse(warnings[0]);
+  assert.equal(invalidRecipientWarning.parentDeviceId, '[invalid-recipient]');
+  assert.equal(invalidRecipientWarning.failureStage, 'RECIPIENT_VALIDATION');
+  assert.ok(warnings[0].length < 512, 'malformed resolver IDs cannot expand diagnostic output');
+  assert.equal(warnings[0].includes(oversizedInvalidId), false);
+
+  const validRecipientWarning = JSON.parse(warnings[1]);
+  assert.equal(validRecipientWarning.parentDeviceId, 'parent-device-fails');
+  assert.equal(validRecipientWarning.failureStage, 'OPAQUE_COMPOSITION');
+  assert.equal(warnings[1].includes('private composition detail'), false);
+});
+
 test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array is discarded by the real caller, so silence would leave the failure existing only in a value nobody reads', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composer = async (input) => {
