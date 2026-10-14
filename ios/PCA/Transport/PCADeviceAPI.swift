@@ -385,7 +385,15 @@ public struct PCADeviceSessionClient {
     private let decoder: JSONDecoder
 
     public init(baseURL: URL, transport: PCAHTTPTransport, proof: PCADeviceProofProvider) throws {
-        guard baseURL.scheme?.lowercased() == "https" else { throw PCAAPIError.invalidConfiguration }
+        // Both the challenge and session exchange carry device proof or create a
+        // bearer session. Refuse injected URL components that could redirect those
+        // requests to a non-origin path or inherit credentials/query state.
+        guard baseURL.scheme?.lowercased() == "https", baseURL.host != nil,
+              baseURL.user == nil, baseURL.password == nil,
+              baseURL.query == nil, baseURL.fragment == nil,
+              baseURL.path.isEmpty || baseURL.path == "/" else {
+            throw PCAAPIError.invalidConfiguration
+        }
         self.baseURL = baseURL; self.transport = transport; self.proof = proof
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

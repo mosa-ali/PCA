@@ -4814,6 +4814,26 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertTrue(transport.requests.isEmpty)
     }
 
+    func testDeviceSessionClientRequiresOriginBaseURLBeforeProofOrTransport() throws {
+        let transport = InMemoryPCAHTTPTransport { _ in
+            XCTFail("Rejected device-session configuration must never send proof or create a bearer session")
+            return PCAHTTPResponse(statusCode: 200, data: Data())
+        }
+        for value in ["http://api.example.test", "https://user:password@api.example.test",
+                      "https://api.example.test/other", "https://api.example.test/?source=other",
+                      "https://api.example.test/#other"] {
+            let url = try XCTUnwrap(URL(string: value))
+            XCTAssertThrowsError(try PCADeviceSessionClient(
+                baseURL: url, transport: transport, proof: TestEnrollmentProofProvider()), value) {
+                    XCTAssertEqual($0 as? PCAAPIError, .invalidConfiguration)
+                }
+        }
+        XCTAssertNoThrow(try PCADeviceSessionClient(
+            baseURL: URL(string: "https://api.example.test/")!, transport: transport,
+            proof: TestEnrollmentProofProvider()))
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
     func testRuntimeSyncRejectsMalformedSessionTokenBeforeSendWithoutChangingInbox() async throws {
         let response = try inboundResponse()
         let inbox = PCAKeychainInboundInboxStore(keychain: InMemoryKeychainStore(), serviceNamespace: "invalid-runtime-session")
