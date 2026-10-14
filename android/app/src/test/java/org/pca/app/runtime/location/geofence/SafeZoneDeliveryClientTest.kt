@@ -19,6 +19,8 @@ import org.pca.app.runtime.sync.DeviceSessionManager
 import org.pca.app.runtime.sync.FakeRelayHttpClient
 import org.pca.app.runtime.sync.transport.RelayHttpClient
 
+private val PLAUSIBLE_FAKE_SESSION_TOKEN = "A".repeat(43)
+
 class SafeZoneDeliveryClientTest {
     private fun sessions(relay: RelayHttpClient = FakeRelayHttpClient()) =
         DeviceSessionManager(relay, "device-1", signer = { "test-signature" }, assertKeyCustody = {})
@@ -31,7 +33,7 @@ class SafeZoneDeliveryClientTest {
         val rows = HttpSafeZoneDeliveryClient(server.url, session, allowInsecureLocal = true).fetch()
         assertTrue(server.finished.await(2, TimeUnit.SECONDS))
         assertTrue(server.request.get().startsWith("GET /v1/runtime-sync/safe-zones HTTP/1.1"))
-        assertTrue(server.request.get().contains("Authorization: Bearer session-for-device-1"))
+        assertTrue(server.request.get().contains("Authorization: Bearer $PLAUSIBLE_FAKE_SESSION_TOKEN"))
         assertEquals(1, rows.size)
         assertEquals(4294967295L, rows.single().revision)
         assertEquals(1, server.requests.size)
@@ -153,7 +155,7 @@ class SafeZoneDeliveryClientTest {
         assertEquals(2, server.requests.size)
         assertTrue(server.requests[0].startsWith("GET /v1/runtime-sync/safe-zones HTTP/1.1"))
         assertTrue(server.requests[1].startsWith("GET /v1/runtime-sync/safe-zones?cursor=zone-15 HTTP/1.1"))
-        assertTrue(server.requests.all { it.contains("Authorization: Bearer session-for-device-1") })
+        assertTrue(server.requests.all { it.contains("Authorization: Bearer $PLAUSIBLE_FAKE_SESSION_TOKEN") })
     }
 
     @Test fun `versioned cursor epoch and last zone bind each returned page`() = runBlocking {
@@ -274,7 +276,7 @@ class SafeZoneDeliveryClientTest {
         assertTrue(resumedServer.finished.await(2, TimeUnit.SECONDS))
         assertEquals(1, resumedServer.requests.size)
         assertTrue(resumedServer.request.get().startsWith("GET /v1/runtime-sync/safe-zones?cursor=zone-15 HTTP/1.1"))
-        assertTrue(resumedServer.request.get().contains("Authorization: Bearer session-for-device-1"))
+        assertTrue(resumedServer.request.get().contains("Authorization: Bearer $PLAUSIBLE_FAKE_SESSION_TOKEN"))
         assertEquals((0..16).map { "zone-%02d".format(it) }, inbox.read().map { it.zoneId })
         assertNull(inbox.nextCursor())
     }
@@ -416,7 +418,7 @@ class SafeZoneDeliveryClientTest {
         assertTrue(failure is SafeZoneDeliveryHttpFailure)
         assertEquals(401, (failure as SafeZoneDeliveryHttpFailure).statusCode)
         assertFalse(session.isAuthenticated())
-        assertEquals("session-for-device-1", session.requireSessionToken())
+        assertEquals(PLAUSIBLE_FAKE_SESSION_TOKEN, session.requireSessionToken())
         assertEquals(2, relay.challenges)
     }
 
