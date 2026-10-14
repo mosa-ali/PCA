@@ -4959,6 +4959,41 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
 
+    func testRuntimeSyncRejectsExpiredOrNonFiniteSessionBeforeTransport() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let invalidExpiryDates = [
+            Date(timeIntervalSince1970: now.timeIntervalSince1970 - 1),
+            Date(timeIntervalSince1970: now.timeIntervalSince1970),
+            Date(timeIntervalSince1970: .infinity),
+        ]
+
+        for expiresAt in invalidExpiryDates {
+            let transport = InMemoryPCAHTTPTransport { _ in
+                XCTFail("Expired or non-finite device-session expiry must be rejected before transport")
+                return PCAHTTPResponse(statusCode: 200, data: Data())
+            }
+            let client = try PCADeviceRuntimeSyncClient(
+                baseURL: URL(string: "https://api.example.test")!, transport: transport, now: { now })
+            let session = PCADeviceSession(
+                deviceId: "device-1", sessionToken: String(repeating: "A", count: 43), expiresAt: expiresAt)
+
+            do {
+                _ = try await client.pull(session: session)
+                XCTFail("pull must reject an expired session")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+            do {
+                try await client.acknowledge(messageId: "message-1", session: session)
+                XCTFail("acknowledge must reject an expired session")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+            do {
+                try await client.reportProtectionStatus(.active, session: session)
+                XCTFail("status reporting must reject an expired session")
+            } catch { XCTAssertEqual(error as? PCAAPIError, .unauthorized) }
+
+            XCTAssertTrue(transport.requests.isEmpty)
+        }
+    }
+
     func testRuntimeModernNavigationRequiresCompleteBoundedMetadata() throws {
         let base: [String: Any] = ["scope": ["familyId": "family-1", "recipientDeviceId": "device-1"],
             "applied": [], "unparseableMessageIds": [], "droppedForListBound": [],
@@ -5172,10 +5207,28 @@ final class ProductionIntegrationTests: XCTestCase {
             from: Data(#"{"applied":[],"unparseableMessageIds":[],"droppedForListBound":false}"#.utf8)))
     }
 
-    func testProductionBaseURLRejectsHTTP() {
-        XCTAssertThrowsError(try PCAEnrollmentBootstrapClient(baseURL: URL(string: "http://localhost:4001")!, transport: InMemoryPCAHTTPTransport { _ in fatalError() })) { error in
-            XCTAssertEqual(error as? PCAAPIError, .invalidConfiguration)
+    func testEnrollmentBootstrapBaseURLMustBeHTTPSOrigin() throws {
+        let transport = InMemoryPCAHTTPTransport { _ in
+            XCTFail("constructing a client must not make a request")
+            return PCAHTTPResponse(statusCode: 500, data: Data())
         }
+        for value in [
+            "http://localhost:4001",
+            "https://api.example.test/enrollment-prefix",
+            "https://api.example.test/?credential=secret",
+            "https://api.example.test/#credential-fragment",
+            "https://user:password@api.example.test"
+        ] {
+            let url = try XCTUnwrap(URL(string: value), "URL fixture: \(value)")
+            XCTAssertThrowsError(try PCAEnrollmentBootstrapClient(baseURL: url, transport: transport), value) { error in
+                XCTAssertEqual(error as? PCAAPIError, .invalidConfiguration)
+            }
+        }
+
+        XCTAssertNoThrow(try PCAEnrollmentBootstrapClient(
+            baseURL: try XCTUnwrap(URL(string: "https://api.example.test")), transport: transport))
+        XCTAssertNoThrow(try PCAEnrollmentBootstrapClient(
+            baseURL: try XCTUnwrap(URL(string: "https://api.example.test/")), transport: transport))
     }
 
     func testSessionAndRecoveryMaterialUseReplacementAndDeletionSemantics() throws {

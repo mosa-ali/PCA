@@ -110,7 +110,13 @@ public struct PCAEnrollmentBootstrapClient {
     private let decoder = JSONDecoder()
 
     public init(baseURL: URL, transport: PCAHTTPTransport) throws {
-        guard baseURL.scheme?.lowercased() == "https", baseURL.user == nil, baseURL.password == nil else {
+        // Bootstrap carries one-time enrollment and recovery material. Accept
+        // only an HTTPS origin so injected configuration cannot prefix a path
+        // or retain query/fragment state on those requests.
+        guard baseURL.scheme?.lowercased() == "https", baseURL.host != nil,
+              baseURL.user == nil, baseURL.password == nil,
+              baseURL.query == nil, baseURL.fragment == nil,
+              baseURL.path.isEmpty || baseURL.path == "/" else {
             throw PCAAPIError.invalidConfiguration
         }
         self.baseURL = baseURL

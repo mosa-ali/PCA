@@ -269,8 +269,9 @@ public final class PCADeviceRuntimeSyncClient {
     private let baseURL: URL
     private let transport: PCAHTTPTransport
     private let decoder = JSONDecoder()
+    private let now: () -> Date
 
-    public init(baseURL: URL, transport: PCAHTTPTransport) throws {
+    public init(baseURL: URL, transport: PCAHTTPTransport, now: @escaping () -> Date = Date.init) throws {
         // The bearer credential is attached to every runtime-sync request. Require an
         // origin URL so URL.appendingPathComponent cannot inherit userinfo, a query,
         // a fragment, or an unrelated base path from injected configuration.
@@ -282,10 +283,11 @@ public final class PCADeviceRuntimeSyncClient {
         }
         self.baseURL = baseURL
         self.transport = transport
+        self.now = now
     }
 
     public func pull(session: PCADeviceSession, cursor: String? = nil) async throws -> PCAInboundRuntimeSyncResponse {
-        try Self.validateSessionToken(session.sessionToken)
+        try validateSession(session)
         var components = URLComponents(url: baseURL.appendingPathComponent("v1/runtime-sync/inbound"), resolvingAgainstBaseURL: false)
         if let cursor {
             try PCAInboundNavigation.validateCursor(cursor)
@@ -299,7 +301,7 @@ public final class PCADeviceRuntimeSyncClient {
     }
 
     public func acknowledge(messageId: String, session: PCADeviceSession) async throws {
-        try Self.validateSessionToken(session.sessionToken)
+        try validateSession(session)
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%."))
         guard let component = messageId.addingPercentEncoding(withAllowedCharacters: allowed),
               let url = URL(string: baseURL.appendingPathComponent("v1/runtime-sync/inbound").absoluteString + "/" + component + "/ack") else {
@@ -317,7 +319,7 @@ public final class PCADeviceRuntimeSyncClient {
     /// pulling inbound envelopes: transport receipt never becomes a claim of
     /// local enforcement.
     public func reportProtectionStatus(_ status: PCAProtectionStatus, session: PCADeviceSession) async throws {
-        try Self.validateSessionToken(session.sessionToken)
+        try validateSession(session)
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/protection-status"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -350,6 +352,16 @@ public final class PCADeviceRuntimeSyncClient {
     /// Device-session tokens use the backend's unpadded 32-byte base64url
     /// representation. Reject malformed persisted/session input before any
     /// authenticated runtime-sync request is sent.
+    private func validateSession(_ session: PCADeviceSession) throws {
+        Self.validateSessionToken(session.sessionToken)
+        let currentTime = now()
+        guard currentTime.timeIntervalSince1970.isFinite,
+              session.expiresAt.timeIntervalSince1970.isFinite,
+              session.expiresAt > currentTime else {
+            throw PCAAPIError.unauthorized
+        }
+    }
+
     private static func validateSessionToken(_ token: String) throws {
         let bytes = Array(token.utf8)
         guard bytes.count == 43,
