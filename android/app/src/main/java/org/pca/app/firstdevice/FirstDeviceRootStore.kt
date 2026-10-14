@@ -330,7 +330,19 @@ class PersistentFirstDeviceRootStore(
             store.getString(key)
         } catch (_: Exception) {
             return StoredRecord.Invalid
-        } ?: return StoredRecord.Missing
+        }
+        if (raw == null) {
+            // A null read is an empty slot only when the key is actually absent.
+            // Encrypted storage can report a present value as unavailable; treating
+            // that as Missing would permit captureSeed/writeIfCurrent to replace the
+            // first-device recovery custody with a new ceremony.
+            val present = try {
+                store.contains(key)
+            } catch (_: Exception) {
+                return StoredRecord.Invalid
+            }
+            return if (present) StoredRecord.Invalid else StoredRecord.Missing
+        }
         val record = decode(raw) ?: return StoredRecord.Invalid
         return StoredRecord.Valid(record)
     }

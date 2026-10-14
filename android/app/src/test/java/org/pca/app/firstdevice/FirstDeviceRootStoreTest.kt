@@ -17,16 +17,18 @@ class FirstDeviceRootStoreTest {
 
     private class RecordingStore : PersistentStateStore {
         val values = mutableMapOf<String, String>()
+        val unreadableKeys = mutableSetOf<String>()
         var flushCount = 0
         var failNextFlush = false
         var failReads = false
         override fun getString(key: String): String? {
             if (failReads) throw IllegalStateException("injected read failure")
+            if (key in unreadableKeys) return null
             return values[key]
         }
         override fun putString(key: String, value: String) { values[key] = value }
         override fun remove(key: String) { values.remove(key) }
-        override fun contains(key: String): Boolean = values.containsKey(key)
+        override fun contains(key: String): Boolean = values.containsKey(key) || key in unreadableKeys
         override fun clear() { values.clear() }
         override fun flush() {
             flushCount++
@@ -424,6 +426,25 @@ class FirstDeviceRootStoreTest {
         assertFalse(store.captureSeed(candidate, setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED)))
         assertTrue(backing.values.isEmpty())
         assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+    }
+
+    @Test
+    fun `present but unreadable root slot is not mistaken for missing or overwritten`() {
+        val backing = RecordingStore()
+        val key = "first_device_root_v1"
+        backing.unreadableKeys += key
+        val store = PersistentFirstDeviceRootStore(backing)
+        val candidate = FirstDeviceRootRecord(seed = seed())
+
+        assertEquals(FirstDeviceRootReadResult.Unreadable, store.readState())
+        assertNull(store.current())
+        assertFalse(store.writeIfCurrent(null, candidate))
+        assertFalse(store.captureSeed(candidate, setOf(FirstDeviceRootState.EXPIRED, FirstDeviceRootState.REJECTED)))
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) { store.save(candidate) }
+        assertThrows(FirstDeviceRootStateUnavailable::class.java) { store.clear() }
+        assertTrue(backing.contains(key))
+        assertTrue(backing.values.isEmpty())
+        assertTrue(key in backing.unreadableKeys)
     }
 
     @Test
