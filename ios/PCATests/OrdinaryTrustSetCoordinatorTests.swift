@@ -589,12 +589,15 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertNil(store.value.pending)
         XCTAssertTrue(transport.sent.isEmpty)
     }
-    func testRollbackWrongPredecessorCrossFamilyAndBadKeyRejectedBeforeSigning() async throws {
-        let (_, signer, _, coordinator) = try fixture()
-        for candidate in [epoch(1), epoch(3), epoch(2, family: "another-family"), epoch(2, key: 0)] {
+    func testInvalidCandidateIsRejectedBeforeNetworkOrSigning() async throws {
+        let (_, signer, transport, coordinator) = try fixture()
+        for candidate in [epoch(1), epoch(3), epoch(2, family: "another-family"), epoch(2, key: 0),
+                          transferredEpoch(2, supersedes: 1, ownerIsNew: true)] {
             do { try await coordinator.prepare(candidate); XCTFail("invalid candidate accepted") } catch {}
         }
         XCTAssertEqual(signer.calls, 0)
+        XCTAssertTrue(transport.events.isEmpty,
+            "locally invalid candidates must be rejected before accepted-head network reconciliation")
     }
     func testCandidateMaySkipEpochWhenItLinksToExactAcceptedHead() async throws {
         let (store, signer, transport, coordinator) = try fixture()

@@ -346,8 +346,6 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         let expected = record
         guard record.pending == nil else { throw OrdinaryTrustSetError.pendingSubmission }
         let accepted = try record.head.epoch()
-        let serverHead = try await transport.acceptedHead(familyId: familyId)
-        guard Self.sameHeadExactly(serverHead, record.head) else { throw OrdinaryTrustSetError.responseMismatch }
         guard accepted.trustSetEpoch < Int(Int32.max), candidate.trustSetEpoch > accepted.trustSetEpoch else {
             throw OrdinaryTrustSetError.staleCandidate
         }
@@ -357,6 +355,11 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
         let draft = OrdinaryTrustSetPending(previousHead: record.head, candidate: unsigned,
             signerDeviceId: deviceId, signerKeyId: dskKeyId)
         try draft.validate()
+        // Reject malformed or unauthorized local candidates before any network
+        // activity. The server head remains authoritative and is rechecked
+        // immediately before signing, so this ordering does not weaken the floor.
+        let serverHead = try await transport.acceptedHead(familyId: familyId)
+        guard Self.sameHeadExactly(serverHead, record.head) else { throw OrdinaryTrustSetError.responseMismatch }
         let signature = try signer.signCanonical(alias: dskAlias, message: bytes)
         guard signature.count == 64 else { throw OrdinaryTrustSetError.malformedState }
         let encoded = signature.base64EncodedString().replacingOccurrences(of: "+", with: "-")
