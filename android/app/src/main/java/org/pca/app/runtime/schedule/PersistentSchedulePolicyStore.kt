@@ -152,7 +152,14 @@ class PersistentSchedulePolicyStore(
 
             if (pointerRaw == null) {
                 if (format == SLOT_FORMAT || hasSlotEvidence()) return SchedulePolicyStoreRead.Corrupt
-                val legacyRaw = store.getString(key) ?: return SchedulePolicyStoreRead.Absent
+                val legacyRaw = store.getString(key)
+                if (legacyRaw == null) {
+                    // A legacy snapshot is absent only when its storage key is absent. If
+                    // encrypted persistence reports a present value as unreadable, treating
+                    // it as no policy would allow a later save to bypass its revision floor.
+                    if (store.contains(key)) return SchedulePolicyStoreRead.Corrupt
+                    return SchedulePolicyStoreRead.Absent
+                }
                 return decode(legacyRaw)
             }
             if (format != SLOT_FORMAT) return SchedulePolicyStoreRead.Corrupt

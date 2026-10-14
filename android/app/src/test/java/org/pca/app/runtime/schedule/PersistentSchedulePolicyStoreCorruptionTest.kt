@@ -9,8 +9,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.foundation.WallClockTimeSource
 import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
 import org.pca.app.runtime.port.ScheduleEnforcementOutcome
@@ -91,6 +93,39 @@ class PersistentSchedulePolicyStoreCorruptionTest {
         store.save(populatedSnapshot)
 
         assertEquals(SchedulePolicyStoreRead.Present(populatedSnapshot), store.read())
+    }
+
+    @Test
+    fun `present but unreadable legacy snapshot is corrupt and cannot be replaced`() {
+        val backing = InMemoryPersistentStateStore()
+        val raw = SchedulePolicyJson.encodeSnapshot(emptySnapshot()).toString()
+        backing.putString(STORE_KEY, raw)
+        val unreadable = object : PersistentStateStore by backing {
+            override fun getString(key: String): String? = if (key == STORE_KEY) null else backing.getString(key)
+        }
+        val store = PersistentSchedulePolicyStore(unreadable)
+
+        assertSame(SchedulePolicyStoreRead.Corrupt, store.read())
+        assertThrows(IllegalStateException::class.java) { store.save(emptySnapshot()) }
+        assertEquals(raw, backing.getString(STORE_KEY))
+        assertFalse(backing.contains("$STORE_KEY.format"))
+        assertFalse(backing.contains("$STORE_KEY.active_generation"))
+    }
+
+    @Test
+    fun `failed legacy presence check is corruption rather than absence`() {
+        val backing = InMemoryPersistentStateStore()
+        val unreadable = object : PersistentStateStore by backing {
+            override fun getString(key: String): String? = null
+            override fun contains(key: String): Boolean = error("presence check unavailable")
+        }
+        val store = PersistentSchedulePolicyStore(unreadable)
+
+        assertSame(SchedulePolicyStoreRead.Corrupt, store.read())
+        assertThrows(IllegalStateException::class.java) { store.save(emptySnapshot()) }
+        assertFalse(backing.contains(STORE_KEY))
+        assertFalse(backing.contains("$STORE_KEY.format"))
+        assertFalse(backing.contains("$STORE_KEY.active_generation"))
     }
 
     @Test
