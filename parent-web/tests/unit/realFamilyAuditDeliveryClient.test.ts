@@ -131,6 +131,49 @@ describe('RealFamilyAuditDeliveryClient', () => {
     expect(init.credentials).toBe('include');
   });
 
+  it('accepts the persisted ciphertext limits and rejects malformed or oversized envelope fields before decryption', async () => {
+    const validAtLimit = {
+      envelopeId: 'env-limit',
+      encryptedPayloadB64: 'x'.repeat(4_194_304),
+      nonceB64: 'n'.repeat(64),
+      keyEpoch: 1,
+      generatedAtUtc: '2026-01-01T00:00:00.000Z',
+    };
+    const fetchFor = (envelope: unknown) => vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/parent/session')) return Promise.resolve(jsonResponse(200, { familyId: 'fam-1' }));
+      if (url.includes('/audit-events')) return Promise.resolve(jsonResponse(200, auditPage([envelope as OpaqueFamilyAuditEnvelope])));
+      return Promise.resolve(jsonResponse(404, {}));
+    });
+    const decryptAtLimit = vi.fn(async () => fakeEntry('env-limit'));
+    vi.stubGlobal('fetch', fetchFor(validAtLimit));
+    const validClient = new RealFamilyAuditDeliveryClient(
+      'https://api.example.test',
+      new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT),
+      new StubDecryptionBoundary(decryptAtLimit),
+    );
+    await expect(validClient.list()).resolves.toEqual({ status: 'READY', entries: [fakeEntry('env-limit')] });
+    expect(decryptAtLimit).toHaveBeenCalledTimes(1);
+
+    const invalidEnvelopes = [
+      { ...validAtLimit, encryptedPayloadB64: 'x'.repeat(4_194_305) },
+      { ...validAtLimit, encryptedPayloadB64: 'opaque-é' },
+      { ...validAtLimit, nonceB64: 'n'.repeat(65) },
+      { ...validAtLimit, nonceB64: 'nonce-é' },
+    ];
+    for (const invalid of invalidEnvelopes) {
+      const decrypt = vi.fn(async () => fakeEntry('env-limit'));
+      vi.stubGlobal('fetch', fetchFor(invalid));
+      const invalidClient = new RealFamilyAuditDeliveryClient(
+        'https://api.example.test',
+        new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT),
+        new StubDecryptionBoundary(decrypt),
+      );
+      await expect(invalidClient.list()).resolves.toEqual({ status: 'PENDING_TRUSTED_DECRYPTION' });
+      expect(decrypt).not.toHaveBeenCalled();
+    }
+  });
+
   it('reports pending for an empty envelope list until feed completeness is established', async () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
