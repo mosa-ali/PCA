@@ -19,6 +19,7 @@ import org.json.JSONObject
 import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.runtime.EpochBounds
 import org.pca.app.runtime.sync.DeviceSessionManager
+import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
 /** Opaque server delivery row. It is transport state only and is never treated as applied policy. */
 data class OpaqueSafeZoneDelivery(
@@ -232,6 +233,9 @@ class HttpSafeZoneDeliveryClient(
 
     private fun decodeResponseStrict(raw: String, requestedCursor: String?): DeliveryPage {
         require(raw.length <= MAX_RESPONSE_BYTES)
+        // JSONObject keeps the last duplicate member, which can make a delivery page or
+        // cursor ambiguous across clients. Reject duplicates before any row is staged.
+        StrictJsonMemberNames.requireUnique(raw)
         val response = JSONObject(raw)
         if (response.keys().asSequence().any { it in AUTHORITY_KEYS }) throw SafeZoneDeliveryAuthorityFailure()
         require(response.keys().asSequence().toSet() == setOf("safeZones", "nextCursor"))
@@ -437,6 +441,7 @@ class PersistentSafeZoneDeliveryInbox(
         val raw = state.getString(storageKey) ?: return@synchronized InboxSnapshot(emptyList(), null)
         try {
             require(raw.length <= MAX_STAGED_CHARS)
+            StrictJsonMemberNames.requireUnique(raw)
             val json = JSONObject(raw)
             val version = json.getInt("version")
             require((version == 1 && json.keys().asSequence().toSet() == setOf("version", "records")) ||

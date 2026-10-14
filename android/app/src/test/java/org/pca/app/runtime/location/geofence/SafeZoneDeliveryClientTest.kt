@@ -75,6 +75,31 @@ class SafeZoneDeliveryClientTest {
         assertTrue(authorityFailure is SafeZoneDeliveryAuthorityFailure)
     }
 
+    @Test fun `duplicate delivery members are rejected before row or cursor staging`() = runBlocking {
+        val validRow = row("zone-1")
+        val ambiguousBodies = listOf(
+            """{"safeZones":[$validRow],"nextCursor":null,"safeZones":[]}""",
+            """{"safeZones":[$validRow],"nextCursor":null,"nextCursor":"zone-1"}""",
+            page(listOf(validRow.replace("\"revision\":1", "\"revision\":1,\"revision\":2")), null),
+            page(listOf(validRow.replace("\"revision\":1", "\"revision\":1,\"\\u0072evision\":2")), null),
+        )
+        for (body in ambiguousBodies) {
+            val scope = GeofenceStorageScope("family-1", "device-1")
+            val inbox = PersistentSafeZoneDeliveryInbox(InMemoryPersistentStateStore()) { scope }
+            val session = sessions().also { it.authenticate() }
+            val server = LocalServer(200, body)
+
+            val failure = runCatching {
+                HttpSafeZoneDeliveryClient(server.url, session, allowInsecureLocal = true).synchronize(inbox)
+            }.exceptionOrNull()
+
+            assertTrue("Duplicate JSON member must be malformed: ${failure?.javaClass?.name}",
+                failure is SafeZoneDeliveryMalformedResponseException)
+            assertTrue(inbox.read().isEmpty())
+            assertNull(inbox.nextCursor())
+        }
+    }
+
     @Test fun `malformed UTF-8 response is rejected before Safe Zone page or cursor staging`() = runBlocking {
         val scope = GeofenceStorageScope("family-1", "device-1")
         val inbox = PersistentSafeZoneDeliveryInbox(InMemoryPersistentStateStore()) { scope }
@@ -491,6 +516,26 @@ class SafeZoneDeliveryClientTest {
 
         val failure = runCatching { PersistentSafeZoneDeliveryInbox(backing) { scope }.read() }.exceptionOrNull()
         assertTrue(failure is SafeZoneDeliveryInboxCorruptException)
+    }
+
+    @Test fun `duplicate persisted inbox members cannot change retained rows or cursor`() {
+        val scope = GeofenceStorageScope("family-1", "device-1")
+        val backing = InMemoryPersistentStateStore()
+        val inbox = PersistentSafeZoneDeliveryInbox(backing) { scope }
+        inbox.mergeFetched(listOf(delivery(ciphertext = "AQID", revision = 1)))
+        val storageKey = "opaque_safe_zone_delivery_v1:${scope.keyPart()}"
+        val valid = requireNotNull(backing.getString(storageKey))
+        val ambiguousSnapshots = listOf(
+            valid.replace("\"nextCursor\":null", "\"nextCursor\":null,\"nextCursor\":null"),
+            valid.replace("\"revision\":1", "\"revision\":1,\"\\u0072evision\":2"),
+        )
+        for (ambiguous in ambiguousSnapshots) {
+            backing.putString(storageKey, ambiguous)
+            val reopened = PersistentSafeZoneDeliveryInbox(backing) { scope }
+            assertTrue(runCatching { reopened.read() }.exceptionOrNull() is SafeZoneDeliveryInboxCorruptException)
+            assertTrue(runCatching { reopened.nextCursor() }.exceptionOrNull() is SafeZoneDeliveryInboxCorruptException)
+            assertEquals(ambiguous, backing.getString(storageKey))
+        }
     }
 
     @Test fun `staging I O failure is surfaced as a retryable persistence failure`() {
