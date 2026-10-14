@@ -22,9 +22,11 @@ const MAX_AUDIT_PAGES = 21;
 const MAX_AUDIT_ENVELOPES = 10_000;
 const MAX_AUDIT_CURSOR_LENGTH = 4096;
 // Match the existing FamilyAudit producer, storage, and schema bounds. The
-// payload column is ASCII mediumtext with a 4 MiB application limit; nonce is
-// ASCII VARCHAR(64). Validate before retaining or handing response data to
-// the decryption boundary.
+// envelope ID is VARCHAR(200), key epochs use the shared signed-int protocol
+// maximum, the payload has a 4 MiB application limit, and nonce is VARCHAR(64).
+// Validate before retaining or handing response data to the decryption boundary.
+const MAX_ENVELOPE_ID_LENGTH = 200;
+const MAX_FAMILY_EPOCH = 2_147_483_647;
 const MAX_ENCRYPTED_PAYLOAD_LENGTH = 4_194_304;
 const MAX_NONCE_LENGTH = 64;
 
@@ -52,12 +54,14 @@ function compareUtf8(left: string, right: string): number {
 function isOpaqueEnvelope(value: unknown): value is OpaqueFamilyAuditEnvelope {
   return (
     isRecord(value) &&
-    typeof value.envelopeId === 'string' && value.envelopeId.length > 0 && value.envelopeId.length <= 256 &&
+    typeof value.envelopeId === 'string' && value.envelopeId.length > 0 &&
+    Array.from(value.envelopeId).length <= MAX_ENVELOPE_ID_LENGTH && !/[\uD800-\uDFFF]/u.test(value.envelopeId) &&
     typeof value.encryptedPayloadB64 === 'string' && value.encryptedPayloadB64.length > 0 &&
     value.encryptedPayloadB64.length <= MAX_ENCRYPTED_PAYLOAD_LENGTH && isAscii(value.encryptedPayloadB64) &&
     typeof value.nonceB64 === 'string' && value.nonceB64.length > 0 &&
     value.nonceB64.length <= MAX_NONCE_LENGTH && isAscii(value.nonceB64) &&
-    typeof value.keyEpoch === 'number' && Number.isSafeInteger(value.keyEpoch) && value.keyEpoch > 0 &&
+    typeof value.keyEpoch === 'number' && Number.isSafeInteger(value.keyEpoch) &&
+    value.keyEpoch > 0 && value.keyEpoch <= MAX_FAMILY_EPOCH &&
     typeof value.generatedAtUtc === 'string' && Number.isFinite(Date.parse(value.generatedAtUtc))
   );
 }

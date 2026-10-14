@@ -131,12 +131,12 @@ describe('RealFamilyAuditDeliveryClient', () => {
     expect(init.credentials).toBe('include');
   });
 
-  it('accepts the persisted ciphertext limits and rejects malformed or oversized envelope fields before decryption', async () => {
+  it('accepts persisted envelope boundaries and rejects malformed or oversized fields before decryption', async () => {
     const validAtLimit = {
-      envelopeId: 'env-limit',
+      envelopeId: 'e'.repeat(200),
       encryptedPayloadB64: 'x'.repeat(4_194_304),
       nonceB64: 'n'.repeat(64),
-      keyEpoch: 1,
+      keyEpoch: 2_147_483_647,
       generatedAtUtc: '2026-01-01T00:00:00.000Z',
     };
     const fetchFor = (envelope: unknown) => vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -145,14 +145,14 @@ describe('RealFamilyAuditDeliveryClient', () => {
       if (url.includes('/audit-events')) return Promise.resolve(jsonResponse(200, auditPage([envelope as OpaqueFamilyAuditEnvelope])));
       return Promise.resolve(jsonResponse(404, {}));
     });
-    const decryptAtLimit = vi.fn(async () => fakeEntry('env-limit'));
+    const decryptAtLimit = vi.fn(async () => fakeEntry(validAtLimit.envelopeId));
     vi.stubGlobal('fetch', fetchFor(validAtLimit));
     const validClient = new RealFamilyAuditDeliveryClient(
       'https://api.example.test',
       new StubTrustedBrowserProvider(TRUSTED_SNAPSHOT),
       new StubDecryptionBoundary(decryptAtLimit),
     );
-    await expect(validClient.list()).resolves.toEqual({ status: 'READY', entries: [fakeEntry('env-limit')] });
+    await expect(validClient.list()).resolves.toEqual({ status: 'READY', entries: [fakeEntry(validAtLimit.envelopeId)] });
     expect(decryptAtLimit).toHaveBeenCalledTimes(1);
 
     const invalidEnvelopes = [
@@ -160,9 +160,11 @@ describe('RealFamilyAuditDeliveryClient', () => {
       { ...validAtLimit, encryptedPayloadB64: 'opaque-é' },
       { ...validAtLimit, nonceB64: 'n'.repeat(65) },
       { ...validAtLimit, nonceB64: 'nonce-é' },
+      { ...validAtLimit, envelopeId: 'e'.repeat(201) },
+      { ...validAtLimit, keyEpoch: 2_147_483_648 },
     ];
     for (const invalid of invalidEnvelopes) {
-      const decrypt = vi.fn(async () => fakeEntry('env-limit'));
+      const decrypt = vi.fn(async () => fakeEntry('invalid'));
       vi.stubGlobal('fetch', fetchFor(invalid));
       const invalidClient = new RealFamilyAuditDeliveryClient(
         'https://api.example.test',
