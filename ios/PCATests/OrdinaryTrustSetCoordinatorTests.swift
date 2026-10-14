@@ -485,6 +485,30 @@ final class OrdinaryTrustSetCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.value.head, pending.candidate)
     }
 
+    func testUnknownStatusWithUnavailableAcceptedHeadPreservesExactPendingRequest() async throws {
+        let (store, signer, transport, coordinator) = try fixture()
+        try await coordinator.prepare(epoch(2))
+        let pending = try XCTUnwrap(store.value.pending)
+        let trustedRoot = try XCTUnwrap(store.value.rootAnchor)
+        transport.statusValue = .unknown
+        transport.head = nil
+
+        do {
+            _ = try await coordinator.resumePending()
+            XCTFail("an unavailable accepted-head read must not trigger a retry")
+        } catch let error as PCAAPIError {
+            XCTAssertEqual(error, .unavailable)
+        }
+
+        XCTAssertEqual(store.value.head, trustedRoot,
+            "an unavailable accepted-head read cannot change the trusted floor")
+        XCTAssertEqual(store.value.pending, pending,
+            "unknown outcome must retain the exact persisted canonical bytes and signature")
+        XCTAssertEqual(transport.statusCalls, 1)
+        XCTAssertTrue(transport.sent.isEmpty, "no exact retry is safe until the accepted head is known")
+        XCTAssertEqual(signer.calls, 1, "recovery must never re-sign the pending candidate")
+    }
+
     func testUnknownPendingRequestAdoptsVerifiedAdvancedHeadBeforeRetry() async throws {
         let (store, signer, transport, coordinator) = try fixture()
         try await coordinator.prepare(epoch(2))
