@@ -26,6 +26,28 @@ const PROTECTION_LEVELS: ReadonlySet<string> = new Set([
 const MYSQL_DATETIME_MIN_MS = Date.UTC(1000, 0, 1, 0, 0, 0, 0);
 const MYSQL_DATETIME_MAX_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
 
+function grantsProtectiveAuthority(level: ProtectionLevel): boolean {
+  return level === 'PROTECTED' || level === 'DEGRADED';
+}
+
+/**
+ * Server receipt timestamps have millisecond precision. If two reports tie,
+ * their true arrival order is unknowable; never let that tie restore
+ * protective authority after a non-protective state was already recorded.
+ * A tied downgrade remains safe, and same-authority-category updates remain
+ * order-independent for RealProtectiveAuthorityResolver.
+ */
+function isStaleProtectionStatus(
+  incoming: DeviceProtectionStatusRecord,
+  current: DeviceProtectionStatusRecord,
+): boolean {
+  const incomingMs = incoming.updatedAt.getTime();
+  const currentMs = current.updatedAt.getTime();
+  return incomingMs < currentMs ||
+    (incomingMs === currentMs && grantsProtectiveAuthority(incoming.protectionLevel) &&
+      !grantsProtectiveAuthority(current.protectionLevel));
+}
+
 /** Validate and detach caller-owned mutable data before any repository await. */
 function snapshotRecord(record: DeviceProtectionStatusRecord): DeviceProtectionStatusRecord {
   if (!record || typeof record !== 'object' ||
@@ -191,7 +213,7 @@ export class MySqlDeviceProtectionStatusRepository implements DeviceProtectionSt
       // A slower transaction must not replace a newer server-received state
       // with an older report timestamp. The caller still receives the
       // previous value so transition notification logic remains stable.
-      if (previous && safeRecord.updatedAt.getTime() < previous.updatedAt.getTime()) {
+      if (previous && isStaleProtectionStatus(safeRecord, previous)) {
         throw new ProtectionStatusStaleReportError();
       }
       await execute(
@@ -241,7 +263,7 @@ export class InMemoryDeviceProtectionStatusRepository implements DeviceProtectio
     snapshotAuthority(_authority);
     const current = this.records.get(safeRecord.deviceId);
     if (current && current.familyId !== safeRecord.familyId) throw new ProtectionStatusDeviceUnavailableError();
-    if (current && current.familyId === safeRecord.familyId && safeRecord.updatedAt.getTime() < current.updatedAt.getTime()) {
+    if (current && current.familyId === safeRecord.familyId && isStaleProtectionStatus(safeRecord, current)) {
       throw new ProtectionStatusStaleReportError();
     }
     this.records.set(safeRecord.deviceId, safeRecord);
@@ -259,7 +281,7 @@ export class InMemoryDeviceProtectionStatusRepository implements DeviceProtectio
     const stored = this.records.get(safeRecord.deviceId);
     if (stored && stored.familyId !== safeRecord.familyId) throw new ProtectionStatusDeviceUnavailableError();
     const previous = stored?.familyId === safeRecord.familyId ? this.snapshot(stored) : null;
-    if (previous && safeRecord.updatedAt.getTime() < previous.updatedAt.getTime()) {
+    if (previous && isStaleProtectionStatus(safeRecord, previous)) {
       throw new ProtectionStatusStaleReportError();
     }
     this.records.set(safeRecord.deviceId, safeRecord);

@@ -6,6 +6,7 @@ import {
   ProtectionStatusDeviceUnavailableError,
   ProtectionStatusStaleReportError,
 } from '../../dist/device/DeviceProtectionStatusRepository.js';
+import { RealProtectiveAuthorityResolver } from '../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
 
 test('in-memory protection status keeps its server receipt time isolated from mutable caller Dates', async () => {
   const repository = new InMemoryDeviceProtectionStatusRepository();
@@ -104,6 +105,26 @@ test('in-memory status does not let an older server receipt roll back the latest
   const current = await repository.findForDevice('family-one', 'device-one');
   assert.equal(current?.protectionLevel, 'DEGRADED');
   assert.equal(current?.updatedAt.toISOString(), '2026-10-09T12:00:01.000Z');
+});
+
+test('equal-millisecond reports cannot restore protective authority, while tied downgrades still apply', async () => {
+  const receipt = new Date('2026-10-09T12:00:00.123Z');
+  const repository = new InMemoryDeviceProtectionStatusRepository();
+  const report = (protectionLevel) => ({ deviceId: 'device-one', familyId: 'family-one', protectionLevel, updatedAt: receipt });
+  const resolver = new RealProtectiveAuthorityResolver(repository, { now: () => new Date(receipt.getTime()) });
+
+  await repository.recordAndReadPrevious(report('STANDARD'));
+  await assert.rejects(repository.recordAndReadPrevious(report('PROTECTED')), ProtectionStatusStaleReportError);
+  assert.equal(await resolver.resolve('family-one', 'device-one'), false,
+    'a tied delayed PROTECTED report must not re-enable authority after STANDARD');
+
+  const downgradeRepository = new InMemoryDeviceProtectionStatusRepository();
+  const downgradeResolver = new RealProtectiveAuthorityResolver(downgradeRepository, { now: () => new Date(receipt.getTime()) });
+  await downgradeRepository.recordAndReadPrevious(report('PROTECTED'));
+  await downgradeRepository.recordAndReadPrevious(report('STANDARD'));
+  assert.equal((await downgradeRepository.findForDevice('family-one', 'device-one'))?.protectionLevel, 'STANDARD');
+  assert.equal(await downgradeResolver.resolve('family-one', 'device-one'), false,
+    'a tied non-protective downgrade must apply and remove authority');
 });
 
 test('authority snapshots require an exact DSK key identifier and valid accepted epochs', async () => {

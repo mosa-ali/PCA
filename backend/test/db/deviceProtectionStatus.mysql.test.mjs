@@ -232,6 +232,33 @@ test('a delayed MySQL status report cannot replace a newer server receipt', asyn
   assert.equal(current?.updatedAt.toISOString(), '2026-10-09T12:00:01.000Z');
 });
 
+test('equal-millisecond MySQL reports never restore protective authority and tied downgrades apply', async () => {
+  const familyId = await seedFamily();
+  const resolverNow = new Date('2026-10-09T12:00:00.123Z');
+  const resolver = new RealProtectiveAuthorityResolver(repository, { now: () => new Date(resolverNow.getTime()) });
+
+  const standardFirstDevice = await seedDevice(familyId);
+  await repository.recordAndReadPrevious({
+    deviceId: standardFirstDevice, familyId, protectionLevel: 'STANDARD', updatedAt: resolverNow,
+  });
+  await assert.rejects(repository.recordAndReadPrevious({
+    deviceId: standardFirstDevice, familyId, protectionLevel: 'PROTECTED', updatedAt: resolverNow,
+  }), ProtectionStatusStaleReportError);
+  assert.equal(await resolver.resolve(familyId, standardFirstDevice), false,
+    'a tied delayed PROTECTED report cannot re-enable authority after STANDARD');
+
+  const protectedFirstDevice = await seedDevice(familyId);
+  await repository.recordAndReadPrevious({
+    deviceId: protectedFirstDevice, familyId, protectionLevel: 'PROTECTED', updatedAt: resolverNow,
+  });
+  await repository.recordAndReadPrevious({
+    deviceId: protectedFirstDevice, familyId, protectionLevel: 'STANDARD', updatedAt: resolverNow,
+  });
+  assert.equal((await repository.findForDevice(familyId, protectedFirstDevice))?.protectionLevel, 'STANDARD');
+  assert.equal(await resolver.resolve(familyId, protectedFirstDevice), false,
+    'a tied non-protective downgrade applies and removes authority');
+});
+
 test('concurrent MySQL status transitions serialize on the device row and expose exactly one DEGRADED transition', async () => {
   const familyId = await seedFamily();
   const deviceId = await seedDevice(familyId);
