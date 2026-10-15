@@ -3674,6 +3674,7 @@ final class ProductionIntegrationTests: XCTestCase {
                 await waitForRecoverableEnrollment(model)
                 XCTAssertNil(identityStore.loadDeviceId())
                 XCTAssertTrue(keyDeletion.keepSets.isEmpty)
+                XCTAssertTrue(keyDeletion.deletedAliases.isEmpty)
             } else {
                 await waitForEnrollmentInProgress(model)
                 XCTAssertEqual(keyDeletion.keepSets, [Set(["new-attempt", "root-owner"])])
