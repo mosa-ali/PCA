@@ -1,3 +1,9 @@
+## Parent Wave 01 source checkpoint - 2026-10-15
+
+Parent published source checkpoint `7338331f0db38cea80bb7c0efd57664e44c1d2b0` passed exact-head Quality Gates run `38660927037`, SUCCESS 27/27. Backend full unit suite passed 3504/3504; Android CI full build/lint/unit/release tasks passed (release artifact unsigned); iOS XCTest passed with 760 tests, 7 environment skips, 0 failures. Full disposable MySQL 8.4.11 certification passed and the CI-owned container was removed.
+
+PLATFORM_SCOPE = No Platform source, identity projection, schema, or release gate changed. Parent-owned projection and legacy-family policy remain the dependency boundary. Platform stays `HOLD_PARENT_DEPENDENCY`; no Platform activation, Azure deployment, production action, or owner acceptance is claimed. The one-time Wave 01 ledger commit receives its own exact-head Quality Gates run; the result above covers only source SHA `7338331f`.
+
 # PCA Platform Web — Codex Master TODO
 
 ## Parent dependency checkpoint — 2026-10-13

@@ -1,3 +1,9 @@
+## PCA Wave 01 source checkpoint - 2026-10-15
+
+The pending Android/iOS/Backend transport and authority source is integrated and published at `7338331f0db38cea80bb7c0efd57664e44c1d2b0`. Exact-head Quality Gates run `38660927037` passed all 27 jobs. Backend build/full unit passed (3504/3504); Android CI lint, unit, debug/release assembly passed (release artifact unsigned); iOS XCTest passed (760 executed, 7 environment skips, 0 failures). Full disposable MySQL 8.4.11 certification passed with CI-owned cleanup. Local/fetched/server `pca-dev` matched at this checkpoint. A one-time ledger refresh follows; its published documentation SHA must receive its own 27/27 exact-head run before Wave 01 exits.
+
+MISSION_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-14 aggregate remains NOT_YET_PROVEN. TODO-19 source publication/CI is PASS at `7338331f`; TODO-20 remains PASS through migration 0065 with no database change. TODO-18 owner localhost acceptance and TODO-21/22/23 release/production/closure tasks remain open. Platform remains `HOLD_PARENT_DEPENDENCY`. No physical-device evidence, owner acceptance, live DB action, Azure deployment, or production acceptance is inferred. Do not begin Wave 02 until the final ledger-head CI passes and the owner authorizes it.
+
 # PCA Parent Authentication + Authority — Continuous Pursuing Goal
 
 ## Engineering checkpoint — 2026-10-13

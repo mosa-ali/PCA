@@ -1,3 +1,11 @@
+## PCA Wave 01 source checkpoint - 2026-10-15
+
+SOURCE_HEAD = `7338331f0db38cea80bb7c0efd57664e44c1d2b0`, published to `pca-dev`; local, fetched origin, and server matched at this source checkpoint. Exact-head Quality Gates run `38660927037` completed SUCCESS, 27/27 jobs. The final one-time ledger update is a docs-only checkpoint and receives its own exact-head gate; the source run above is not evidence for a later SHA.
+
+VALIDATION = Backend build and full unit suite **3504/3504 PASS**; focused Trust Set/device/policy tests **92/92 PASS**. Android CI `lint test assembleDebug assembleRelease` **BUILD SUCCESSFUL** (release artifact unsigned). iOS XCTest **760 executed, 7 skipped, 0 failures**; source parsing and release integration validator passed locally. Disposable MySQL 8.4.11 full certification and dedicated first-owner/auth-migration jobs passed; CI removed its containers. No live DB, schema, grant, or production mutation occurred.
+
+TODO_STATE = TODO-12/14/15 remain IN_PROGRESS; TODO-14 aggregate remains NOT_YET_PROVEN. TODO-19 source publication/exact-head CI is PASS at `7338331f`; the final ledger commit remains subject to the Wave 01 exact-head gate. TODO-20 remains PASS as recorded through migration 0065; no DB change occurred. TODO-18/21/22/23 remain TODO. Platform remains `HOLD_PARENT_DEPENDENCY`; `READY_FOR_AZURE_DEPLOYMENT = NO`.
+
 # PCA Parent Authentication + Authority — Codex Master TODO
 
 ## iOS first-device bootstrap URL validation — 2026-10-14
