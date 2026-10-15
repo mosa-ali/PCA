@@ -3665,10 +3665,21 @@ final class ProductionIntegrationTests: XCTestCase {
             )
 
             model.start()
-            await waitForEnrollmentInProgress(model)
+            if state == .rootCommitted {
+                // A committed durable root is now the authority for device
+                // identity when its convenience mirror is missing. A stale
+                // competing attempt that recovers a different device must
+                // remain recoverable and cannot authorize cleanup of either
+                // attempt's keys.
+                await waitForRecoverableEnrollment(model)
+                XCTAssertNil(identityStore.loadDeviceId())
+                XCTAssertTrue(keyDeletion.keepSets.isEmpty)
+            } else {
+                await waitForEnrollmentInProgress(model)
+                XCTAssertEqual(keyDeletion.keepSets, [Set(["new-attempt", "root-owner"])])
+            }
 
             XCTAssertEqual(rootStore.current(), existing)
-            XCTAssertEqual(keyDeletion.keepSets, [Set(["new-attempt", "root-owner"])])
         }
     }
 
