@@ -353,7 +353,7 @@ public final class PCADeviceRuntimeSyncClient {
     /// representation. Reject malformed persisted/session input before any
     /// authenticated runtime-sync request is sent.
     private func validateSession(_ session: PCADeviceSession) throws {
-        Self.validateSessionToken(session.sessionToken)
+        try Self.validateSessionToken(session.sessionToken)
         let currentTime = now()
         guard currentTime.timeIntervalSince1970.isFinite,
               session.expiresAt.timeIntervalSince1970.isFinite,
