@@ -91,7 +91,7 @@ class FirstDeviceBootstrapApiClientTest {
 
         withTimeout(5_000) { api.challenge("attempt", "recovery", "dsk", "public-key") }
 
-        assertEquals(HttpFirstDeviceBootstrapApiClient.CHALLENGE_PATH, requestedPath.get())
+        assertEquals("/v1/first-device-bootstrap/challenge", requestedPath.get())
     }
 
     @Test
