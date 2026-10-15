@@ -21,7 +21,7 @@ class OrdinaryTrustSetRuntimeReachabilityTest {
         assertTrue(graph.contains("verifier = P256OrdinaryEpochVerifier()"))
         assertTrue(Regex("\\btrustSetRuntime\\?\\.reconcile\\(\\)").containsMatchIn(graph))
         assertTrue(Regex("\\btrustSetRuntime\\?\\.hasPendingRequest\\(\\)").containsMatchIn(graph))
-        assertTrue(graph.contains("ordinaryTrustSetOutcome = ordinaryTrustSetReconciliationOutcome("))
+        assertTrue(graph.contains("ordinaryTrustSetOutcome = ordinaryTrustSetRuntimeOutcome("))
         assertTrue(graph.contains("if (custodyDeviceId != deviceId || custodyRoot != root)"))
         assertTrue(Regex("\\bgraph\\.synchronizeRuntimeCustody\\(\\)").containsMatchIn(worker))
         assertTrue(worker.contains("outcome == RuntimeCustodyOutcome.MORE_PENDING || outcome == RuntimeCustodyOutcome.RETRYABLE_FAILURE"))
