@@ -15,11 +15,20 @@ function makeApp(overrides = {}) {
     issueBootstrapPossessionChallenge: async () => ({ challengeId: challenge, nonce: 'A'.repeat(43), expiresAt: new Date('2026-10-16T00:01:00.000Z') }),
     completeBootstrapPossession: async () => null,
     fetchActivationTarget: async () => null,
+    isCurrentPairedBootstrapSession: async () => true,
     submitSignedProof: async () => ({ outcome: 'REJECTED' }),
     recoverExactProof: async () => null,
     ...overrides,
   };
-  registerDevicePolicyActivationRoutes(app, { proofStore: store, signatureVerifier, rateLimiter: createRateLimiter() });
+  const deviceSessionService = {
+    async issuePairedBootstrapSession() { return { rawToken: 'bootstrap-session-token', expiresAt: new Date('2026-10-16T00:10:00.000Z') }; },
+    async validateSession(_token, purpose) {
+      if (purpose !== 'PAIRED_BOOTSTRAP') throw Object.assign(new Error('unauthorized'), { code: 'UNAUTHORIZED', name: 'RuntimeSyncAuthError' });
+      return { familyId: family, deviceId: device, dskKeyId: 'dsk-1', purpose, activationTargetGeneration: 1,
+        bootstrapChallengeId: challenge };
+    },
+  };
+  registerDevicePolicyActivationRoutes(app, { proofStore: store, signatureVerifier, rateLimiter: createRateLimiter(), deviceSessionService });
   return app.ready().then(() => ({ app, store }));
 }
 
@@ -41,9 +50,31 @@ test('paired PoP failures are non-enumerating and the five-failure bucket cannot
   } finally { await app.close(); }
 });
 
-test('successful PAIRED PoP returns only its bounded target challenge and capability', async () => {
+test('activation-target fetch requires the PAIRED_BOOTSTRAP bearer and never accepts a body capability', async () => {
+  let fetchArgs;
+  const { app } = await makeApp({ fetchActivationTarget: async (...args) => {
+    fetchArgs = args;
+    return { challengeId: challenge, messageId: 'policy-1', envelopeSha256: 'D'.repeat(43),
+      canonicalEnvelopeBytes: Buffer.from('ciphertext'), envelopeSignature: Buffer.alloc(64, 1), trustSetEpoch: 3, keyEpoch: 4 };
+  } });
+  try {
+    const withoutBearer = await app.inject({ method: 'POST', url: '/v1/device-policy-activation/bootstrap/fetch',
+      payload: { familyId: family, deviceId: device } });
+    assert.equal(withoutBearer.statusCode, 404);
+    const withLegacyCapability = await app.inject({ method: 'POST', url: '/v1/device-policy-activation/bootstrap/fetch',
+      headers: { authorization: 'Bearer A'.repeat(1) }, payload: { familyId: family, deviceId: device, activationCapability: 'C'.repeat(43) } });
+    assert.equal(withLegacyCapability.statusCode, 400);
+    const fetched = await app.inject({ method: 'POST', url: '/v1/device-policy-activation/bootstrap/fetch',
+      headers: { authorization: 'Bearer bootstrap-session-token' }, payload: { familyId: family, deviceId: device } });
+    assert.equal(fetched.statusCode, 200);
+    assert.deepEqual(fetchArgs, [family, device, 'dsk-1', 1]);
+  } finally { await app.close(); }
+});
+
+test('successful PAIRED PoP creates a short-lived restricted device session', async () => {
   const { app } = await makeApp({ completeBootstrapPossession: async () => ({
-    challengeId: challenge, nonce: 'B'.repeat(43), capability: 'C'.repeat(43),
+    challengeId: challenge, nonce: 'B'.repeat(43), targetGeneration: 1,
+    identity: { familyId: family, deviceId: device, dskKeyId: 'dsk-1', dskPublicKey: 'public' },
     expiresAt: new Date('2026-10-16T00:01:00.000Z'), messageId: 'policy-1',
     envelopeSha256: 'D'.repeat(43), trustSetEpoch: 3, keyEpoch: 4,
   }) });
@@ -52,10 +83,11 @@ test('successful PAIRED PoP returns only its bounded target challenge and capabi
       payload: { familyId: family, deviceId: device, challengeId: challenge, nonce: 'A'.repeat(43), signature: 'sig' } });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(Object.keys(response.json()).sort(), [
-      'activationCapability', 'challengeId', 'expiresAt', 'keyEpoch', 'nonce',
-      'policyEnvelopeMessageId', 'policyEnvelopeSha256', 'trustSetEpoch',
+      'challengeId', 'expiresAt', 'keyEpoch', 'nonce', 'policyEnvelopeMessageId',
+      'policyEnvelopeSha256', 'sessionExpiresAt', 'sessionToken', 'trustSetEpoch',
     ].sort());
     assert.equal(response.json().policyEnvelopeMessageId, 'policy-1');
+    assert.equal(response.json().sessionToken, 'bootstrap-session-token');
   } finally { await app.close(); }
 });
 

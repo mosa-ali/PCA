@@ -91,6 +91,16 @@ export class DeviceAuthService {
     return familySessionEpoch;
   }
 
+  /** Bootstrap-only lifecycle snapshot; deliberately excludes ACTIVE and revoked devices. */
+  async pairedBootstrapSessionFamilyEpoch(identity: VerifiedDeviceIdentity): Promise<number | null> {
+    const epoch = await this.deviceRepository.getPairedBootstrapSessionEpoch(identity.familyId, identity.deviceId);
+    if (epoch === null) return null;
+    const matchingKeys = (await this.deviceRepository.findKeysByDeviceForFamily(identity.familyId, identity.deviceId))
+      .filter((key) => key.keyId === identity.dskKeyId && key.keyPurpose === 'DSK');
+    if (matchingKeys.length !== 1 || matchingKeys[0].status !== 'ACTIVE' || matchingKeys[0].publicKey !== identity.dskPublicKey) return null;
+    return epoch;
+  }
+
   /**
    * NOT itself an authentication check -- issuance is unauthenticated by
    * design (proof of possession happens at verifyChallenge). The caller of

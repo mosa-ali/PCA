@@ -20,8 +20,6 @@ interface TargetRow {
   trust_set_epoch: number | string | bigint; key_epoch: number | string | bigint; target_state: string;
   challenge_id: string | null; challenge_nonce_hash: Buffer | null; challenge_expires_at: Date | null;
   challenge_consumed_at: Date | null;
-  bootstrap_capability_hash: Buffer | null; bootstrap_capability_expires_at: Date | null;
-  bootstrap_capability_consumed_at: Date | null;
 }
 interface ProofRow { exact_request_sha256: Buffer; activation_outcome: 'ACTIVATED' | 'RECORDED_NOT_ACTIVATED'; application_result: string; retention_expires_at: Date }
 
@@ -44,6 +42,53 @@ const asNumber = (value: number | string | bigint | null): number => Number(valu
 export class MySqlDevicePolicyApplicationProofStore {
   /** Production composition stays false until approved receiver crypto/enforcement is actually wired. */
   constructor(private readonly receiverCryptoReady: () => boolean = () => false) {}
+
+  /** Rechecks live PAIRED/DSK/Trust Set/target authority for every bearer use. */
+  async isCurrentPairedBootstrapSession(familyId: string, deviceId: string, dskKeyId: string,
+                                       targetGeneration: number, challengeId: string): Promise<boolean> {
+    return runInTransaction(async (conn) => {
+      const { rows: floors } = await execute<FloorRow>(conn,
+        `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
+           FROM family_epoch_floors WHERE family_id = ? FOR UPDATE`, [familyId]);
+      const floor = floors[0];
+      if (!floor) return false;
+      const { rows: devices } = await execute<DeviceRow>(conn,
+        `SELECT d.device_id, d.family_id, d.status, d.revoked_at, f.status AS family_status, f.deleted_at AS family_deleted_at
+           FROM devices d JOIN families f ON f.family_id = d.family_id
+          WHERE d.device_id = ? AND d.family_id = ? FOR UPDATE`, [deviceId, familyId]);
+      const device = devices[0];
+      if (!device || device.status !== 'PAIRED' || device.revoked_at !== null ||
+          device.family_status !== 'ACTIVE' || device.family_deleted_at !== null) return false;
+      const { rows: heads } = await execute<HeadRow>(conn,
+        `SELECT trust_set_epoch, key_epoch, signed_epoch_bytes FROM family_trust_set_epochs
+          WHERE family_id = ? ORDER BY trust_set_epoch DESC LIMIT 1 FOR UPDATE`, [familyId]);
+      const head = heads[0];
+      if (!head || asNumber(head.trust_set_epoch) !== asNumber(floor.minimum_accepted_trust_set_epoch) ||
+          asNumber(head.key_epoch) !== asNumber(floor.minimum_accepted_key_epoch)) return false;
+      let epoch;
+      try { epoch = decodeCanonicalTrustSetEpochBytes(head.signed_epoch_bytes); }
+      catch { return false; }
+      const { rows: keys } = await execute<KeyRow>(conn,
+        `SELECT key_id, key_purpose, public_key, status FROM device_public_keys
+          WHERE device_id = ? AND key_id = ? FOR UPDATE`, [deviceId, dskKeyId]);
+      const key = keys[0];
+      if (!key || key.key_purpose !== 'DSK' || key.status !== 'ACTIVE' ||
+          !epoch.entries.some((entry) => entry.deviceId === deviceId && entry.status === 'ACTIVE' &&
+            entry.dskKeyId === key.key_id && entry.dskPublicKey === key.public_key)) return false;
+      const { rows: targets } = await execute<TargetRow>(conn,
+        `SELECT * FROM device_policy_activation_targets WHERE device_id = ? FOR UPDATE`, [deviceId]);
+      const target = targets[0];
+      const { rows: clocks } = await execute<{ now_utc: Date }>(conn, `SELECT UTC_TIMESTAMP(3) AS now_utc`);
+      const now = clocks[0]?.now_utc;
+      return !!target && now instanceof Date && target.family_id === familyId && target.target_state === 'PENDING' &&
+        asNumber(target.target_generation) === targetGeneration && target.challenge_id === challengeId &&
+        target.challenge_consumed_at === null && target.challenge_expires_at !== null && target.challenge_expires_at.getTime() > now.getTime() &&
+        target.policy_envelope_expires_at !== null && target.policy_envelope_expires_at.getTime() > now.getTime() &&
+        asNumber(target.trust_set_epoch) === epoch.trustSetEpoch && asNumber(target.key_epoch) === epoch.keyEpoch &&
+        asNumber(target.trust_set_epoch) === asNumber(floor.minimum_accepted_trust_set_epoch) &&
+        asNumber(target.key_epoch) === asNumber(floor.minimum_accepted_key_epoch);
+    });
+  }
 
   /** Response-loss recovery reveals only the outcome for the exact committed request digest. */
   async recoverExactProof(challengeId: string, exactRequestSha256: string): Promise<{
@@ -142,7 +187,7 @@ export class MySqlDevicePolicyApplicationProofStore {
       const now = clockRows[0]?.now_utc;
       if (!target || !(now instanceof Date) || target.family_id !== transcript.familyId || target.target_state !== 'PENDING' ||
           target.challenge_id !== transcript.challengeId || target.challenge_consumed_at !== null ||
-          target.bootstrap_capability_consumed_at === null || target.challenge_expires_at === null ||
+          target.challenge_expires_at === null ||
           target.challenge_expires_at.getTime() <= now.getTime() || target.policy_envelope_expires_at === null ||
           target.policy_envelope_expires_at.getTime() <= now.getTime() || !target.challenge_nonce_hash ||
           !target.challenge_nonce_hash.equals(createHash('sha256').update(Buffer.from(transcript.challengeNonce, 'base64url')).digest()) ||
@@ -206,8 +251,7 @@ export class MySqlDevicePolicyApplicationProofStore {
           asNumber(target.key_epoch) !== asNumber(floor.minimum_accepted_key_epoch)) return synthetic;
       await execute(conn,
         `UPDATE device_policy_activation_targets
-            SET bootstrap_capability_hash = NULL, bootstrap_capability_expires_at = NULL,
-                bootstrap_capability_consumed_at = NULL, challenge_id = ?, challenge_nonce_hash = ?,
+          SET challenge_id = ?, challenge_nonce_hash = ?,
                 challenge_expires_at = ?, challenge_consumed_at = NULL, updated_at = ?
           WHERE device_id = ? AND target_generation = ? AND target_state = 'PENDING'`,
         [challengeId, createHash('sha256').update(nonce).digest(), expiresAt, now,
@@ -221,8 +265,9 @@ export class MySqlDevicePolicyApplicationProofStore {
     familyId: string; deviceId: string; challengeId: string; nonce: string; signature: string;
     signatureVerifier: DeviceSignatureVerifier;
   }): Promise<{
-    challengeId: string; nonce: string; capability: string; expiresAt: Date; messageId: string;
-    envelopeSha256: string; trustSetEpoch: number; keyEpoch: number;
+    challengeId: string; nonce: string; expiresAt: Date; messageId: string;
+    envelopeSha256: string; trustSetEpoch: number; keyEpoch: number; targetGeneration: number;
+    identity: { deviceId: string; familyId: string; dskKeyId: string; dskPublicKey: string };
   } | null> {
     let nonceBytes: Buffer;
     try { nonceBytes = strictBase64Url(input.nonce); }
@@ -230,7 +275,6 @@ export class MySqlDevicePolicyApplicationProofStore {
     if (nonceBytes.length !== 32 || !isCanonicalP256Signature(input.signature)) return null;
     const nonceHash = createHash('sha256').update(nonceBytes).digest();
     const nextNonce = randomBytes(32);
-    const capabilityBytes = randomBytes(32);
     const nextChallengeId = randomUUID().toLowerCase();
     return runInTransaction(async (conn) => {
       const { rows: floorRows } = await execute<FloorRow>(conn,
@@ -278,32 +322,25 @@ export class MySqlDevicePolicyApplicationProofStore {
           asNumber(target.key_epoch) !== asNumber(floor.minimum_accepted_key_epoch)) return null;
       const expiresAt = new Date(now.getTime() + 60_000);
       await execute(conn,
-        `UPDATE device_policy_activation_targets SET bootstrap_capability_hash = ?,
-            bootstrap_capability_expires_at = ?, bootstrap_capability_consumed_at = NULL,
-            challenge_id = ?, challenge_nonce_hash = ?, challenge_expires_at = ?,
+        `UPDATE device_policy_activation_targets SET challenge_id = ?, challenge_nonce_hash = ?, challenge_expires_at = ?,
             challenge_consumed_at = NULL, updated_at = ?
           WHERE device_id = ? AND target_generation = ? AND target_state = 'PENDING'`,
-        [createHash('sha256').update(capabilityBytes).digest(), expiresAt, nextChallengeId,
-          createHash('sha256').update(nextNonce).digest(), expiresAt, now, input.deviceId, target.target_generation]);
+        [nextChallengeId, createHash('sha256').update(nextNonce).digest(), expiresAt, now,
+          input.deviceId, target.target_generation]);
       return { challengeId: nextChallengeId, nonce: nextNonce.toString('base64url'),
-        capability: capabilityBytes.toString('base64url'), expiresAt, messageId: target.policy_message_id,
+        expiresAt, messageId: target.policy_message_id,
         envelopeSha256: target.policy_envelope_sha256.toString('base64url'), trustSetEpoch: epoch.trustSetEpoch,
-        keyEpoch: epoch.keyEpoch };
+        keyEpoch: epoch.keyEpoch, targetGeneration: asNumber(target.target_generation),
+        identity: { deviceId: input.deviceId, familyId: input.familyId, dskKeyId: dsks[0]!.key_id,
+          dskPublicKey: dsks[0]!.public_key } };
     });
   }
 
-  /** One-time capability fetch; returns only this PAIRED device's exact activation target. */
-  async fetchActivationTarget(familyId: string, deviceId: string, capability: string): Promise<{
+  /** Session-scoped fetch; returns only this PAIRED device's exact current activation target. */
+  async fetchActivationTarget(familyId: string, deviceId: string, dskKeyId: string, targetGeneration: number): Promise<{
     challengeId: string; messageId: string; envelopeSha256: string; canonicalEnvelopeBytes: Buffer;
     envelopeSignature: Buffer; trustSetEpoch: number; keyEpoch: number;
   } | null> {
-    let cap: Buffer;
-    try {
-      if (!/^[A-Za-z0-9_-]{43}$/.test(capability)) return null;
-      cap = Buffer.from(capability, 'base64url');
-      if (cap.length !== 32 || cap.toString('base64url') !== capability) return null;
-    } catch { return null; }
-    const capHash = createHash('sha256').update(cap).digest();
     return runInTransaction(async (conn) => {
       const { rows: floorRows } = await execute<FloorRow>(conn,
         `SELECT minimum_accepted_trust_set_epoch, minimum_accepted_key_epoch
@@ -329,7 +366,7 @@ export class MySqlDevicePolicyApplicationProofStore {
       const { rows: keys } = await execute<KeyRow>(conn,
         `SELECT k.key_id, k.key_purpose, k.public_key, k.status FROM device_public_keys k
           WHERE k.device_id = ? FOR UPDATE`, [deviceId]);
-      const activeKeys = keys.filter((key) => key.key_purpose === 'DSK' && key.status === 'ACTIVE');
+      const activeKeys = keys.filter((key) => key.key_id === dskKeyId && key.key_purpose === 'DSK' && key.status === 'ACTIVE');
       const member = activeKeys.length === 1 && epoch.entries.some((entry) => entry.deviceId === deviceId &&
         entry.status === 'ACTIVE' && entry.dskKeyId === activeKeys[0]!.key_id && entry.dskPublicKey === activeKeys[0]!.public_key);
       if (!member) return null;
@@ -339,20 +376,13 @@ export class MySqlDevicePolicyApplicationProofStore {
       const nowResult = await execute<{ now_utc: Date }>(conn, `SELECT UTC_TIMESTAMP(3) AS now_utc`);
       const now = nowResult.rows[0]?.now_utc;
       if (!target || !(now instanceof Date) || target.family_id !== familyId || target.target_state !== 'PENDING' ||
-          target.challenge_id === null || target.bootstrap_capability_hash === null ||
-          target.bootstrap_capability_expires_at === null || target.bootstrap_capability_consumed_at !== null ||
-          !target.bootstrap_capability_hash.equals(capHash) || target.bootstrap_capability_expires_at.getTime() <= now.getTime() ||
+          target.challenge_id === null || asNumber(target.target_generation) !== targetGeneration ||
           target.challenge_expires_at === null || target.challenge_expires_at.getTime() <= now.getTime() ||
           !target.canonical_envelope_bytes || !target.envelope_signature || target.policy_envelope_expires_at === null ||
           target.policy_envelope_expires_at.getTime() <= now.getTime() ||
           asNumber(target.trust_set_epoch) !== asNumber(floor.minimum_accepted_trust_set_epoch) ||
           asNumber(target.key_epoch) !== asNumber(floor.minimum_accepted_key_epoch) ||
           asNumber(target.trust_set_epoch) !== epoch.trustSetEpoch || asNumber(target.key_epoch) !== epoch.keyEpoch) return null;
-      const consumed = await execute(conn,
-        `UPDATE device_policy_activation_targets SET bootstrap_capability_consumed_at = ?, updated_at = ?
-          WHERE device_id = ? AND target_generation = ? AND bootstrap_capability_consumed_at IS NULL`,
-        [now, now, deviceId, target.target_generation]);
-      if (consumed.rowCount !== 1) return null;
       return {
         challengeId: target.challenge_id,
         messageId: target.policy_message_id!,
@@ -427,7 +457,6 @@ export class MySqlDevicePolicyApplicationProofStore {
       const expiry = new Date(transcript.challengeExpiresAt);
       if (!target || target.target_state !== 'PENDING' || target.family_id !== transcript.familyId ||
           target.challenge_id !== transcript.challengeId || target.challenge_consumed_at !== null ||
-          target.bootstrap_capability_consumed_at === null ||
           !target.challenge_nonce_hash?.equals(nonceHash) || target.challenge_expires_at?.getTime() !== expiry.getTime() ||
           target.challenge_expires_at.getTime() <= now.getTime() || target.policy_message_id !== transcript.policyEnvelopeMessageId ||
           target.policy_envelope_expires_at === null || target.policy_envelope_expires_at.getTime() <= now.getTime() ||
@@ -461,8 +490,7 @@ export class MySqlDevicePolicyApplicationProofStore {
         const targetUpdate = await execute(conn,
           `UPDATE device_policy_activation_targets SET target_state = 'ACTIVATED',
               canonical_envelope_bytes = NULL, envelope_signature = NULL,
-              bootstrap_capability_hash = NULL, bootstrap_capability_expires_at = NULL,
-              bootstrap_capability_consumed_at = NULL, challenge_id = NULL,
+              challenge_id = NULL,
               challenge_nonce_hash = NULL, challenge_expires_at = NULL,
               challenge_consumed_at = NULL, updated_at = ?
             WHERE device_id = ? AND target_generation = ? AND target_state = 'PENDING'`,
@@ -470,9 +498,7 @@ export class MySqlDevicePolicyApplicationProofStore {
         if (targetUpdate.rowCount !== 1) throw new Error('activation_target_state_changed');
       } else {
         const targetUpdate = await execute(conn,
-          `UPDATE device_policy_activation_targets SET bootstrap_capability_hash = NULL,
-              bootstrap_capability_expires_at = NULL, bootstrap_capability_consumed_at = NULL,
-              challenge_id = NULL, challenge_nonce_hash = NULL, challenge_expires_at = NULL,
+        `UPDATE device_policy_activation_targets SET challenge_id = NULL, challenge_nonce_hash = NULL, challenge_expires_at = NULL,
               challenge_consumed_at = NULL, updated_at = ?
             WHERE device_id = ? AND target_generation = ? AND target_state = 'PENDING'`,
           [now, transcript.deviceId, target.target_generation]);

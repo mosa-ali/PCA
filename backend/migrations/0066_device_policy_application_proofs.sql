@@ -15,9 +15,6 @@ CREATE TABLE IF NOT EXISTS device_policy_activation_targets (
   trust_set_epoch INT UNSIGNED NULL,
   key_epoch INT UNSIGNED NULL,
   target_state VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  bootstrap_capability_hash BINARY(32) NULL,
-  bootstrap_capability_expires_at DATETIME(3) NULL,
-  bootstrap_capability_consumed_at DATETIME(3) NULL,
   challenge_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   challenge_nonce_hash BINARY(32) NULL,
   challenge_expires_at DATETIME(3) NULL,
@@ -44,8 +41,7 @@ CREATE TABLE IF NOT EXISTS device_policy_activation_targets (
     OR
     (target_state = 'ACTIVATED' AND policy_message_id IS NOT NULL AND
      policy_envelope_sha256 IS NOT NULL AND canonical_envelope_bytes IS NULL AND
-     envelope_signature IS NULL AND bootstrap_capability_hash IS NULL AND
-     bootstrap_capability_expires_at IS NULL AND bootstrap_capability_consumed_at IS NULL AND
+     envelope_signature IS NULL AND
      challenge_id IS NULL AND challenge_nonce_hash IS NULL AND challenge_expires_at IS NULL AND
      challenge_consumed_at IS NULL)
   ),
@@ -55,8 +51,6 @@ CREATE TABLE IF NOT EXISTS device_policy_activation_targets (
     CHECK (policy_message_id IS NULL OR CHAR_LENGTH(policy_message_id) BETWEEN 1 AND 128),
   CONSTRAINT device_policy_activation_targets_epoch_check
     CHECK ((trust_set_epoch IS NULL OR trust_set_epoch >= 1) AND (key_epoch IS NULL OR key_epoch >= 1)),
-  CONSTRAINT device_policy_activation_targets_capability_pair_check
-    CHECK ((bootstrap_capability_hash IS NULL) = (bootstrap_capability_expires_at IS NULL)),
   CONSTRAINT device_policy_activation_targets_challenge_pair_check CHECK (
     (challenge_id IS NULL AND challenge_nonce_hash IS NULL AND challenge_expires_at IS NULL) OR
     (challenge_id IS NOT NULL AND challenge_nonce_hash IS NOT NULL AND challenge_expires_at IS NOT NULL)

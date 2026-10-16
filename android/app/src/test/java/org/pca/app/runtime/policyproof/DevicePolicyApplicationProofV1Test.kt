@@ -203,16 +203,19 @@ class DevicePolicyApplicationProofV1Test {
         val challenge = DevicePolicyApplicationProofV1.Challenge(
             "77777777-7777-4777-8777-777777777777", "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8", expires)
         val requests = mutableListOf<Pair<String, org.json.JSONObject>>()
-        val cap = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { 7 })
-        val transport = DevicePolicyActivationHttpTransport { path, body ->
-            val request = org.json.JSONObject(String(body, Charsets.UTF_8))
-            requests += path to request
-            when (path) {
+        val sessionToken = "A".repeat(48)
+        val bearerTokens = mutableListOf<String>()
+        val transport = object : DevicePolicyActivationHttpTransport {
+            override fun post(path: String, body: ByteArray): ByteArray {
+                val request = org.json.JSONObject(String(body, Charsets.UTF_8))
+                requests += path to request
+                return when (path) {
                 "/v1/device-policy-activation/bootstrap/challenge" -> org.json.JSONObject()
                     .put("challengeId", challenge.challengeId).put("nonce", challenge.nonceBase64Url).put("expiresAt", expires)
                 "/v1/device-policy-activation/bootstrap/complete" -> org.json.JSONObject()
                     .put("challengeId", challenge.challengeId).put("nonce", challenge.nonceBase64Url).put("expiresAt", expires)
-                    .put("activationCapability", cap).put("policyEnvelopeMessageId", envelope.messageId)
+                    .put("sessionToken", sessionToken).put("sessionExpiresAt", Instant.now().plusSeconds(600).toString())
+                    .put("policyEnvelopeMessageId", envelope.messageId)
                     .put("policyEnvelopeSha256", fields.policyEnvelopeSha256Base64Url).put("trustSetEpoch", 7).put("keyEpoch", 9)
                 "/v1/device-policy-activation/bootstrap/fetch" -> org.json.JSONObject()
                     .put("challengeId", challenge.challengeId).put("policyEnvelopeMessageId", envelope.messageId)
@@ -223,6 +226,12 @@ class DevicePolicyApplicationProofV1Test {
                     org.json.JSONObject().put("outcome", "RECORDED_NOT_ACTIVATED").put("idempotent", false)
                 else -> throw AssertionError("unexpected activation route")
             }.toString().toByteArray(Charsets.UTF_8)
+            }
+
+            override fun postAuthenticated(path: String, body: ByteArray, bearerToken: String): ByteArray {
+                bearerTokens += bearerToken
+                return post(path, body)
+            }
         }
         val api = DevicePolicyActivationApi(transport)
         val received = api.challenge(fields.familyId, fields.deviceId)
@@ -235,15 +244,16 @@ class DevicePolicyApplicationProofV1Test {
                 return ByteArray(64).also { it[31] = 1; it[63] = 1 }
             }
         }
-        val capability = api.complete(fields.familyId, fields.deviceId, received, signer)
+        val session = api.complete(fields.familyId, fields.deviceId, received, signer)
         assertArrayEquals(received.nonceBase64Url.toByteArray(Charsets.UTF_8), popBytes)
-        assertEquals(cap, capability.activationCapability)
-        val target = api.fetch(capability)
+        assertEquals(sessionToken, session.sessionToken)
+        val target = api.fetch(session)
         assertArrayEquals(DevicePolicyApplicationProofV1.canonicalEnvelopeBytes(envelope), target.canonicalEnvelopeBytes)
-        val nonApplied = fields.copy(applicationResult = DevicePolicyApplicationProofV1.ApplicationResult.DEGRADED)
-        assertEquals("RECORDED_NOT_ACTIVATED", api.submit(nonApplied, DevicePolicyApplicationProofV1.encodeBase64Url(ByteArray(64).also { it[31] = 1; it[63] = 1 })).outcome)
-        assertEquals("RECORDED_NOT_ACTIVATED", api.recover(fields.challenge.challengeId, DevicePolicyApplicationProofV1.encodeBase64Url(ByteArray(32))).outcome)
+        val nonApplied = fields.copy(applicationResult = DevicePolicyApplicationProofV1.ApplicationResult.DEGRADED, challenge = session.challenge)
+        assertEquals("RECORDED_NOT_ACTIVATED", api.submit(session, nonApplied, DevicePolicyApplicationProofV1.encodeBase64Url(ByteArray(64).also { it[31] = 1; it[63] = 1 })).outcome)
+        assertEquals("RECORDED_NOT_ACTIVATED", api.recover(session, session.challenge.challengeId, DevicePolicyApplicationProofV1.encodeBase64Url(ByteArray(32))).outcome)
         assertEquals(5, requests.size)
+        assertEquals(listOf(sessionToken, sessionToken, sessionToken), bearerTokens)
         assertTrue(requests.all { !it.second.has("authorization") && !it.second.has("token") })
         assertEquals(setOf("familyId", "deviceId", "challengeId", "nonce", "signature"), requests[1].second.keys().asSequence().toSet())
         assertEquals(setOf("challengeId", "exactRequestSha256"), requests.last().second.keys().asSequence().toSet())

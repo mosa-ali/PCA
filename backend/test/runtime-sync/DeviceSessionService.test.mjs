@@ -33,6 +33,9 @@ function sessionRecord(tokenHash, sessionId, issuedAt, expiresAt) {
     familyId: `family-${sessionId}`,
     dskKeyId: `dsk-${sessionId}`,
     dskPublicKey: `public-${sessionId}`,
+    purpose: 'ACTIVE',
+    activationTargetGeneration: null,
+    bootstrapChallengeId: null,
     familySessionEpoch: 1,
     issuedAt,
     expiresAt,
@@ -179,7 +182,8 @@ test('completeChallenge with a valid signature issues a working device session',
   const session = await sessionService.completeChallenge(deviceId, challenge.challengeId, signature);
 
   const identity = await sessionService.validateSession(session.rawToken);
-  assert.deepEqual(identity, { deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId });
+  assert.deepEqual(identity, { deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+    purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null });
 });
 
 test('completeChallenge rejects a valid signer when its device differs from the route-bound expected device', async () => {
@@ -223,6 +227,9 @@ test('a PAIRED device cannot receive or validate an ordinary device session, eve
     dskKeyId,
     dskPublicKey: publicKey,
     familySessionEpoch: 1,
+    purpose: 'ACTIVE',
+    activationTargetGeneration: null,
+    bootstrapChallengeId: null,
     issuedAt,
     expiresAt: new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS),
     revokedAt: null,
@@ -231,6 +238,24 @@ test('a PAIRED device cannot receive or validate an ordinary device session, eve
     () => sessionService.validateSession(rawToken),
     (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
   );
+});
+
+test('a PAIRED bootstrap session is purpose-scoped, target-bound, and invalid after activation', async () => {
+  const { deviceRepository, sessionService } = buildHarness();
+  const { deviceId, familyId, dskKeyId, publicKey } = await registerDevice(deviceRepository,
+    `family-${randomUUID()}`, 'PAIRED');
+  const identity = { deviceId, familyId, dskKeyId, dskPublicKey: publicKey };
+  const challengeId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const issued = await sessionService.issuePairedBootstrapSession(identity, 7, challengeId);
+  assert.deepEqual(await sessionService.validateSession(issued.rawToken, 'PAIRED_BOOTSTRAP'), {
+    deviceId, familyId, dskKeyId, purpose: 'PAIRED_BOOTSTRAP', activationTargetGeneration: 7,
+    bootstrapChallengeId: challengeId,
+  });
+  await assert.rejects(() => sessionService.validateSession(issued.rawToken),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
+  deviceRepository.setDeviceStatusForTest(familyId, deviceId, 'ACTIVE');
+  await assert.rejects(() => sessionService.validateSession(issued.rawToken, 'PAIRED_BOOTSTRAP'),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED');
 });
 
 test('an issued device session is rejected immediately after device revocation', async () => {
@@ -260,7 +285,8 @@ test('active-device key insertion is rejected without invalidating its issued DS
   const activeKeys = await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId);
   assert.deepEqual(activeKeys.map(key => key.keyId), [dskKeyId]);
   assert.deepEqual(await sessionService.validateSession(oldSession.rawToken),
-    { deviceId, familyId, dskKeyId }, 'the original bearer remains bound to the existing DSK');
+    { deviceId, familyId, dskKeyId, purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null },
+    'the original bearer remains bound to the existing DSK');
 
   const replacementChallenge = await sessionService.issueChallengeSafely(deviceId);
   await assert.rejects(
@@ -451,6 +477,7 @@ test('concurrent completeChallenge replay creates exactly one session', async ()
   }
   assert.deepEqual(await sessionService.validateSession(succeeded[0].value.rawToken), {
     deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+    purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null,
   });
 });
 
@@ -474,6 +501,7 @@ test('a lost session response requires a fresh challenge and can recover without
   );
   assert.deepEqual(await sessionService.validateSession(recovered.rawToken), {
     deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+    purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null,
   });
 });
 
@@ -642,6 +670,7 @@ test('requireActorDeviceInFamily binds the caller to the verified device\'s OWN 
   const identity = await sessionService.requireActorDeviceInFamily(session.rawToken, familyId);
   assert.deepEqual(identity, {
     deviceId, familyId, dskKeyId: (await deviceRepository.findKeysByDeviceForFamily(familyId, deviceId))[0].keyId,
+    purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null,
   });
 
   // A valid device session from THIS family must never satisfy a binding for a DIFFERENT

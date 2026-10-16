@@ -136,11 +136,12 @@ public struct PCADevicePolicyBootstrapChallenge: Decodable, Equatable {
     public let expiresAt: String
 }
 
-public struct PCADevicePolicyActivationCapability: Equatable {
+public struct PCADeviceBootstrapSession: Equatable {
     public let challengeId: String
     public let nonce: String
     public let expiresAt: String
-    public let activationCapability: String
+    public let sessionToken: String
+    public let sessionExpiresAt: String
     public let policyEnvelopeMessageId: String
     public let policyEnvelopeSha256: String
     public let trustSetEpoch: Int
@@ -156,19 +157,21 @@ public struct PCADevicePolicyActivationCapability: Equatable {
     public let familyId: String
     public let deviceId: String
 
-    fileprivate init(response: PCADevicePolicyActivationCapabilityResponse, familyId: String, deviceId: String) {
+    fileprivate init(response: PCADeviceBootstrapSessionResponse, familyId: String, deviceId: String) {
         challengeId = response.challengeId; nonce = response.nonce; expiresAt = response.expiresAt
-        activationCapability = response.activationCapability; policyEnvelopeMessageId = response.policyEnvelopeMessageId
+        sessionToken = response.sessionToken; sessionExpiresAt = response.sessionExpiresAt
+        policyEnvelopeMessageId = response.policyEnvelopeMessageId
         policyEnvelopeSha256 = response.policyEnvelopeSha256; trustSetEpoch = response.trustSetEpoch
         keyEpoch = response.keyEpoch; self.familyId = familyId; self.deviceId = deviceId
     }
 }
 
-private struct PCADevicePolicyActivationCapabilityResponse: Decodable {
+private struct PCADeviceBootstrapSessionResponse: Decodable {
     let challengeId: String
     let nonce: String
     let expiresAt: String
-    let activationCapability: String
+    let sessionToken: String
+    let sessionExpiresAt: String
     let policyEnvelopeMessageId: String
     let policyEnvelopeSha256: String
     let trustSetEpoch: Int
@@ -236,9 +239,8 @@ private struct PCADevicePolicyApplicationProofRequest: Encodable {
     }
 }
 
-/// Device-scoped unauthenticated bootstrap: authorization comes only from the
-/// server's one-use capability and the DSK proof. This adapter never creates
-/// an ACTIVE session or invokes general relay endpoints.
+/// PAIRED bootstrap uses DSK PoP to create a short-lived PAIRED_BOOTSTRAP
+/// bearer session. Only activation-target, proof, and recovery endpoints use it.
 public final class PCADevicePolicyActivationClient {
     private let baseURL: URL
     private let transport: PCAHTTPTransport
@@ -267,59 +269,71 @@ public final class PCADevicePolicyActivationClient {
     /// the canonical base64url nonce, as required by the bootstrap verifier.
     public func complete(familyId: String, deviceId: String,
                          challenge: PCADevicePolicyBootstrapChallenge,
-                         signature: String) async throws -> PCADevicePolicyActivationCapability {
+                         signature: String) async throws -> PCADeviceBootstrapSession {
         try Self.validateIdentity(familyId, deviceId)
         try validateChallenge(challenge.challengeId, nonce: challenge.nonce, expiresAt: challenge.expiresAt)
         guard Self.canonicalSignature(signature) else { throw PCAAPIError.invalidRequest }
         let body = ["familyId": familyId, "deviceId": deviceId, "challengeId": challenge.challengeId,
                     "nonce": challenge.nonce, "signature": signature]
-        let response: PCADevicePolicyActivationCapabilityResponse = try await post(
-            "v1/device-policy-activation/bootstrap/complete", body: body, as: PCADevicePolicyActivationCapabilityResponse.self)
+        let response: PCADeviceBootstrapSessionResponse = try await post(
+            "v1/device-policy-activation/bootstrap/complete", body: body, as: PCADeviceBootstrapSessionResponse.self)
         guard (try? validateChallenge(response.challengeId, nonce: response.nonce, expiresAt: response.expiresAt)) != nil,
-              PCADevicePolicyProofCodec.canonicalBase64URL32(response.activationCapability),
+              !response.sessionToken.isEmpty, response.sessionToken.utf8.count <= 256,
+              response.sessionToken.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }),
+              let sessionExpiry = Self.parseProofTimestamp(response.sessionExpiresAt), sessionExpiry > now(),
               PCADevicePolicyProofCodec.canonicalBase64URL32(response.policyEnvelopeSha256),
               !response.policyEnvelopeMessageId.isEmpty, response.policyEnvelopeMessageId.utf8.count <= 512,
               (1...Int(Int32.max)).contains(response.trustSetEpoch),
               (1...Int(Int32.max)).contains(response.keyEpoch) else { throw PCAAPIError.malformedResponse }
-        return PCADevicePolicyActivationCapability(response: response, familyId: familyId, deviceId: deviceId)
+        return PCADeviceBootstrapSession(response: response, familyId: familyId, deviceId: deviceId)
     }
 
     public func fetch(familyId: String, deviceId: String,
-                      capability: PCADevicePolicyActivationCapability) async throws -> PCADevicePolicyActivationTarget {
+                      session: PCADeviceBootstrapSession) async throws -> PCADevicePolicyActivationTarget {
         try Self.validateIdentity(familyId, deviceId)
-        let body = ["familyId": familyId, "deviceId": deviceId, "activationCapability": capability.activationCapability]
+        guard familyId == session.familyId, deviceId == session.deviceId else { throw PCAAPIError.invalidRequest }
+        let body = ["familyId": familyId, "deviceId": deviceId]
         let target: PCADevicePolicyActivationTarget = try await post(
-            "v1/device-policy-activation/bootstrap/fetch", body: body, as: PCADevicePolicyActivationTarget.self)
-        guard target.challengeId == capability.challengeId,
-              target.policyEnvelopeMessageId == capability.policyEnvelopeMessageId,
-              target.policyEnvelopeSha256 == capability.policyEnvelopeSha256,
-              target.trustSetEpoch == capability.trustSetEpoch, target.keyEpoch == capability.keyEpoch else {
+            "v1/device-policy-activation/bootstrap/fetch", body: body, bearerToken: session.sessionToken, as: PCADevicePolicyActivationTarget.self)
+        guard target.challengeId == session.challengeId,
+              target.policyEnvelopeMessageId == session.policyEnvelopeMessageId,
+              target.policyEnvelopeSha256 == session.policyEnvelopeSha256,
+              target.trustSetEpoch == session.trustSetEpoch, target.keyEpoch == session.keyEpoch else {
             throw PCAAPIError.malformedResponse
         }
         _ = try target.canonicalBytes()
         return target
     }
 
-    public func submit(_ proof: PCADeviceApplicationProof) async throws -> PCADevicePolicyApplicationProofResponse {
+    public func submit(_ proof: PCADeviceApplicationProof, session: PCADeviceBootstrapSession?) async throws -> PCADevicePolicyApplicationProofResponse {
         guard proof.transcript == (try PCADevicePolicyProofCodec.encode(proof.challenge, result: proof.result)),
               proof.signature.count == 64, P256DerSignature.isLowS(proof.signature) else {
             throw PCAAPIError.invalidRequest
         }
-        return try await post("v1/device-policy-activation/proof", body: PCADevicePolicyApplicationProofRequest(proof),
+        if let session {
+            guard proof.challenge.familyId == session.familyId, proof.challenge.deviceId == session.deviceId,
+                  proof.challenge.challengeId == session.challengeId else { throw PCAAPIError.invalidRequest }
+        }
+        return try await post("v1/device-policy-activation/proof", body: PCADevicePolicyApplicationProofRequest(proof), bearerToken: session?.sessionToken,
                               as: PCADevicePolicyApplicationProofResponse.self)
     }
 
-    public func recoverExactProof(_ proof: PCADeviceApplicationProof) async throws -> PCADevicePolicyApplicationProofResponse {
+    public func recoverExactProof(_ proof: PCADeviceApplicationProof, session: PCADeviceBootstrapSession?) async throws -> PCADevicePolicyApplicationProofResponse {
+        if let session {
+            guard proof.challenge.familyId == session.familyId, proof.challenge.deviceId == session.deviceId,
+                  proof.challenge.challengeId == session.challengeId else { throw PCAAPIError.invalidRequest }
+        }
         let body = ["challengeId": proof.challenge.challengeId,
                     "exactRequestSha256": try proof.exactRequestSha256()]
-        return try await post("v1/device-policy-activation/proof/status", body: body,
+        return try await post("v1/device-policy-activation/proof/status", body: body, bearerToken: session?.sessionToken,
                               as: PCADevicePolicyApplicationProofResponse.self)
     }
 
-    private func post<T: Decodable, B: Encodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+    private func post<T: Decodable, B: Encodable>(_ path: String, body: B, bearerToken: String? = nil, as type: T.Type) async throws -> T {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let bearerToken { request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
         let response: PCAHTTPResponse
         do { response = try await transport.send(request) }
@@ -358,6 +372,12 @@ public final class PCADevicePolicyActivationClient {
     private static func canonicalSignature(_ value: String) -> Bool {
         guard let bytes = PCADevicePolicyProofCodec.decodeCanonicalBase64URL(value), bytes.count == 64 else { return false }
         return P256DerSignature.isLowS(bytes)
+    }
+
+    private static func parseProofTimestamp(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value)
     }
 }
 

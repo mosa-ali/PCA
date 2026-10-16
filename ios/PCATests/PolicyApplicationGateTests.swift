@@ -218,7 +218,7 @@ final class PolicyApplicationGateTests: XCTestCase {
         let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!
         let challengeId = "00000000-0000-4000-8000-000000000003"
         let nonce = PCADevicePolicyProofCodec.base64URL(Data(repeating: 0, count: 32))
-        let capability = PCADevicePolicyProofCodec.base64URL(Data(repeating: 2, count: 32))
+        let sessionToken = String(repeating: "A", count: 48)
         let envelope = policyEnvelope(payload: Data([1, 2, 3]))
         let canonical = try PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(envelope)
         let digest = PCADevicePolicyProofCodec.base64URL(try PCADevicePolicyEnvelopeCanonicalizer.sha256(canonical))
@@ -231,7 +231,7 @@ final class PolicyApplicationGateTests: XCTestCase {
                 body = ["challengeId": challengeId, "nonce": nonce, "expiresAt": "2026-10-16T12:01:00.000Z"]
             case "/v1/device-policy-activation/bootstrap/complete":
                 body = ["challengeId": challengeId, "nonce": nonce, "expiresAt": "2026-10-16T12:01:00.000Z",
-                    "activationCapability": capability, "policyEnvelopeMessageId": "policy1",
+                    "sessionToken": sessionToken, "sessionExpiresAt": "2026-10-16T12:10:00.000Z", "policyEnvelopeMessageId": "policy1",
                     "policyEnvelopeSha256": digest, "trustSetEpoch": 7, "keyEpoch": 4]
             case "/v1/device-policy-activation/bootstrap/fetch":
                 body = ["challengeId": challengeId, "policyEnvelopeMessageId": "policy1",
@@ -251,19 +251,22 @@ final class PolicyApplicationGateTests: XCTestCase {
         var signatureBytes = Data(repeating: 0, count: 64); signatureBytes[31] = 1; signatureBytes[63] = 1
         let response = try await client.complete(familyId: envelope.familyId, deviceId: envelope.recipientDeviceId!,
             challenge: first, signature: PCADevicePolicyProofCodec.base64URL(signatureBytes))
-        let target = try await client.fetch(familyId: envelope.familyId, deviceId: envelope.recipientDeviceId!, capability: response)
+        let target = try await client.fetch(familyId: envelope.familyId, deviceId: envelope.recipientDeviceId!, session: response)
         XCTAssertEqual(try target.canonicalBytes(), canonical)
         XCTAssertEqual(response.proofChallenge.familyId, envelope.familyId)
         let proof = try PCADevicePolicyProofCodec.proof(challenge: response.proofChallenge, result: .applied,
             dsk: TestProofSigner(), now: now)
-        let submitResult = try await client.submit(proof)
+        let submitResult = try await client.submit(proof, session: response)
         XCTAssertEqual(submitResult, PCADevicePolicyApplicationProofResponse(outcome: .activated, idempotent: false))
-        let recoveredResult = try await client.recoverExactProof(proof)
+        let recoveredResult = try await client.recoverExactProof(proof, session: response)
         XCTAssertEqual(recoveredResult, PCADevicePolicyApplicationProofResponse(outcome: .activated, idempotent: true))
         XCTAssertEqual(paths, ["/v1/device-policy-activation/bootstrap/challenge",
             "/v1/device-policy-activation/bootstrap/complete", "/v1/device-policy-activation/bootstrap/fetch",
             "/v1/device-policy-activation/proof", "/v1/device-policy-activation/proof/status"])
-        XCTAssertTrue(transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == nil })
+        XCTAssertNil(transport.requests[0].value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(transport.requests[1].value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(transport.requests.dropFirst(2).map { $0.value(forHTTPHeaderField: "Authorization") },
+            Array(repeating: "Bearer \(sessionToken)", count: 3))
         let proofBody = try XCTUnwrap(transport.requests.first(where: { $0.url?.path == "/v1/device-policy-activation/proof" })?.httpBody)
         let proofObject = try XCTUnwrap(JSONSerialization.jsonObject(with: proofBody) as? [String: Any])
         XCTAssertEqual(Set(proofObject.keys), Set(["familyId", "deviceId", "policyEnvelopeMessageId", "policyEnvelopeSha256",

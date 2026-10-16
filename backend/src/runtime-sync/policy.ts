@@ -24,5 +24,7 @@ export const BACKOFF_CAP_MS = 300_000; // 5 minutes
 // re-authenticate (cheap: DSK-signed challenge/response) periodically
 // rather than hold one long-lived bearer token indefinitely.
 export const DEVICE_SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+/** PAIRED activation session: one ceremony, no refresh, scoped to one target. */
+export const PAIRED_BOOTSTRAP_SESSION_TTL_MS = 10 * 60 * 1000;
 
 export const MAX_INBOUND_LIST_SIZE = 100;

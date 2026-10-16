@@ -68,6 +68,11 @@ export function createInMemoryDeviceRepository() {
       if (!device || device.status !== 'ACTIVE' || device.revokedAt || familyStatuses.get(familyId) !== 'ACTIVE') return null;
       return familySessionEpochs.get(familyId) ?? 1;
     },
+    async getPairedBootstrapSessionEpoch(familyId, deviceId) {
+      const device = devicesById.get(deviceId);
+      return device && device.familyId === familyId && device.status === 'PAIRED' && !device.revokedAt
+        ? (familySessionEpochs.get(familyId) ?? 1) : null;
+    },
 
     setFamilyStatusForTest(familyId, status) {
       if (familyStatuses.get(familyId) !== status) {

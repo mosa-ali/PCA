@@ -16,6 +16,11 @@ export interface DeviceSessionRecord {
   dskKeyId: string;
   /** Public key snapshot binds the bearer to immutable verified DSK material. */
   dskPublicKey: string;
+  /** Authorization purpose; bootstrap sessions never authorize ACTIVE routes. */
+  purpose: 'ACTIVE' | 'PAIRED_BOOTSTRAP';
+  /** Bootstrap sessions are pinned to the one activation target generation they may read. */
+  activationTargetGeneration: number | null;
+  bootstrapChallengeId: string | null;
   /** Durable family lifecycle generation observed when this session was issued. */
   familySessionEpoch: number;
   issuedAt: Date;

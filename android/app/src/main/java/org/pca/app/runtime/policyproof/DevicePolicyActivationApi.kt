@@ -7,9 +7,10 @@ import java.util.Base64
 import org.json.JSONObject
 import org.pca.app.runtime.trustset.StrictJsonMemberNames
 
-data class DevicePolicyActivationCapability(
+data class DevicePolicyBootstrapSession(
     val challenge: DevicePolicyApplicationProofV1.Challenge,
-    val activationCapability: String,
+    val sessionToken: String,
+    val sessionExpiresAt: String,
     val familyId: String,
     val deviceId: String,
     val policyEnvelopeMessageId: String,
@@ -32,9 +33,10 @@ data class DevicePolicyProofResponse(val outcome: String, val idempotent: Boolea
 
 fun interface DevicePolicyActivationHttpTransport {
     fun post(path: String, body: ByteArray): ByteArray
+    fun postAuthenticated(path: String, body: ByteArray, bearerToken: String): ByteArray = post(path, body)
 }
 
-/** Device-scoped PAIRED bootstrap adapter. It never carries an ACTIVE bearer session. */
+/** Device-scoped PAIRED bootstrap adapter. Its bearer is purpose-limited and never used on ACTIVE/runtime routes. */
 class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHttpTransport) {
     fun challenge(familyId: String, deviceId: String): DevicePolicyApplicationProofV1.Challenge {
         validateIdentity(familyId, deviceId)
@@ -48,7 +50,7 @@ class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHtt
         deviceId: String,
         challenge: DevicePolicyApplicationProofV1.Challenge,
         signer: CurrentDeviceDskProofSigner,
-    ): DevicePolicyActivationCapability {
+    ): DevicePolicyBootstrapSession {
         validateIdentity(familyId, deviceId)
         validateChallenge(challenge)
         val signature = signer.signBootstrapNonce(familyId, deviceId, challenge.nonceBase64Url)
@@ -57,12 +59,14 @@ class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHtt
             .put("challengeId", challenge.challengeId).put("nonce", challenge.nonceBase64Url)
             .put("signature", DevicePolicyApplicationProofV1.encodeBase64Url(signature)).toString()
         val response = parseObject(post("/v1/device-policy-activation/bootstrap/complete", body.toByteArray(Charsets.UTF_8)))
-        requireKeys(response, setOf("challengeId", "nonce", "expiresAt", "activationCapability", "policyEnvelopeMessageId", "policyEnvelopeSha256", "trustSetEpoch", "keyEpoch"))
+        requireKeys(response, setOf("challengeId", "nonce", "expiresAt", "sessionToken", "sessionExpiresAt", "policyEnvelopeMessageId", "policyEnvelopeSha256", "trustSetEpoch", "keyEpoch"))
         val returnedChallenge = DevicePolicyApplicationProofV1.Challenge(
             response.getString("challengeId"), response.getString("nonce"), response.getString("expiresAt"))
         validateChallenge(returnedChallenge)
-        val capability = response.getString("activationCapability")
-        DevicePolicyApplicationProofV1.decode32ByteBase64Url(capability)
+        val sessionToken = response.getString("sessionToken")
+        require(sessionToken.length in 40..256 && sessionToken.all { it.isLetterOrDigit() || it == '_' || it == '-' })
+        val sessionExpiresAt = response.getString("sessionExpiresAt")
+        require(java.time.Instant.parse(sessionExpiresAt).isAfter(java.time.Instant.now()))
         val messageId = response.getString("policyEnvelopeMessageId")
         require(messageId.isNotEmpty() && messageId.toByteArray(Charsets.UTF_8).size <= 512)
         val digest = response.getString("policyEnvelopeSha256")
@@ -70,13 +74,12 @@ class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHtt
         val trust = strictLong(response, "trustSetEpoch").also { require(it in 1..Int.MAX_VALUE.toLong()) }
         val key = strictLong(response, "keyEpoch").also { require(it in 1..Int.MAX_VALUE.toLong()) }
         require(returnedChallenge == challenge)
-        return DevicePolicyActivationCapability(returnedChallenge, capability, familyId, deviceId, messageId, digest, trust, key)
+        return DevicePolicyBootstrapSession(returnedChallenge, sessionToken, sessionExpiresAt, familyId, deviceId, messageId, digest, trust, key)
     }
 
-    fun fetch(capability: DevicePolicyActivationCapability): DevicePolicyActivationTarget {
-        val body = JSONObject().put("familyId", capability.familyId).put("deviceId", capability.deviceId)
-            .put("activationCapability", capability.activationCapability).toString()
-        val response = parseObject(post("/v1/device-policy-activation/bootstrap/fetch", body.toByteArray(Charsets.UTF_8)))
+    fun fetch(session: DevicePolicyBootstrapSession): DevicePolicyActivationTarget {
+        val body = JSONObject().put("familyId", session.familyId).put("deviceId", session.deviceId).toString()
+        val response = parseObject(transport.postAuthenticated("/v1/device-policy-activation/bootstrap/fetch", body.toByteArray(Charsets.UTF_8), session.sessionToken))
         requireKeys(response, setOf("challengeId", "policyEnvelopeMessageId", "policyEnvelopeSha256", "canonicalEnvelopeBytes", "envelopeSignature", "trustSetEpoch", "keyEpoch"))
         val encoded = response.getString("canonicalEnvelopeBytes")
         val bytes = decodeCanonicalBase64Url(encoded)
@@ -84,31 +87,33 @@ class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHtt
         val result = DevicePolicyActivationTarget(response.getString("challengeId"), response.getString("policyEnvelopeMessageId"),
             response.getString("policyEnvelopeSha256"), bytes, response.getString("envelopeSignature"),
             strictLong(response, "trustSetEpoch"), strictLong(response, "keyEpoch"))
-        require(result.challengeId == capability.challenge.challengeId &&
-            result.policyEnvelopeMessageId == capability.policyEnvelopeMessageId &&
-            result.policyEnvelopeSha256Base64Url == capability.policyEnvelopeSha256Base64Url &&
-            result.trustSetEpoch == capability.trustSetEpoch && result.keyEpoch == capability.keyEpoch)
+        require(result.challengeId == session.challenge.challengeId &&
+            result.policyEnvelopeMessageId == session.policyEnvelopeMessageId &&
+            result.policyEnvelopeSha256Base64Url == session.policyEnvelopeSha256Base64Url &&
+            result.trustSetEpoch == session.trustSetEpoch && result.keyEpoch == session.keyEpoch)
         require(result.envelopeSignature.isNotEmpty() && result.envelopeSignature.toByteArray(Charsets.UTF_8).size <= 512)
         require(DevicePolicyApplicationProofV1.encodeBase64Url(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)) == result.policyEnvelopeSha256Base64Url)
         DevicePolicyApplicationProofV1.requireCanonicalActivationTarget(
-            bytes, capability.familyId, capability.deviceId, result.policyEnvelopeMessageId,
+            bytes, session.familyId, session.deviceId, result.policyEnvelopeMessageId,
             result.trustSetEpoch, result.keyEpoch,
         )
         return result
     }
 
-    fun submit(fields: DevicePolicyApplicationProofV1.ProofFields, signatureBase64Url: String): DevicePolicyProofResponse {
+    fun submit(session: DevicePolicyBootstrapSession, fields: DevicePolicyApplicationProofV1.ProofFields, signatureBase64Url: String): DevicePolicyProofResponse {
         val signature = decodeSignature(signatureBase64Url)
         DevicePolicyApplicationProofV1.canonicalTranscript(fields)
         val json = proofBody(fields, signatureBase64Url)
-        return parseProofResponse(post("/v1/device-policy-activation/proof", json.toByteArray(Charsets.UTF_8)))
+        require(fields.familyId == session.familyId && fields.deviceId == session.deviceId && fields.challenge == session.challenge)
+        return parseProofResponse(transport.postAuthenticated("/v1/device-policy-activation/proof", json.toByteArray(Charsets.UTF_8), session.sessionToken))
     }
 
-    fun recover(challengeId: String, exactRequestSha256: String): DevicePolicyProofResponse {
+    fun recover(session: DevicePolicyBootstrapSession, challengeId: String, exactRequestSha256: String): DevicePolicyProofResponse {
         requireCanonicalUuidForApi(challengeId)
+        require(challengeId == session.challenge.challengeId)
         DevicePolicyApplicationProofV1.decode32ByteBase64Url(exactRequestSha256)
         val body = JSONObject().put("challengeId", challengeId).put("exactRequestSha256", exactRequestSha256).toString()
-        return parseProofResponse(post("/v1/device-policy-activation/proof/status", body.toByteArray(Charsets.UTF_8)))
+        return parseProofResponse(transport.postAuthenticated("/v1/device-policy-activation/proof/status", body.toByteArray(Charsets.UTF_8), session.sessionToken))
     }
 
     private fun proofBody(fields: DevicePolicyApplicationProofV1.ProofFields, signature: String): String = JSONObject()
@@ -193,7 +198,14 @@ class UrlConnectionDevicePolicyActivationTransport(baseUrl: String) : DevicePoli
             it.query == null && it.fragment == null && (it.path.isEmpty() || it.path == "/"))
     }
 
-    override fun post(path: String, body: ByteArray): ByteArray {
+    override fun post(path: String, body: ByteArray): ByteArray = send(path, body, null)
+
+    override fun postAuthenticated(path: String, body: ByteArray, bearerToken: String): ByteArray {
+        require(bearerToken.length in 40..256 && bearerToken.all { it.isLetterOrDigit() || it == '_' || it == '-' })
+        return send(path, body, bearerToken)
+    }
+
+    private fun send(path: String, body: ByteArray, bearerToken: String?): ByteArray {
         require(path.startsWith("/v1/device-policy-activation/") && body.size <= 64 * 1024)
         val connection = URL(base.toString().trimEnd('/') + path).openConnection() as HttpURLConnection
         try {
@@ -201,6 +213,7 @@ class UrlConnectionDevicePolicyActivationTransport(baseUrl: String) : DevicePoli
             connection.requestMethod = "POST"
             connection.connectTimeout = 15_000; connection.readTimeout = 15_000
             connection.setRequestProperty("Content-Type", "application/json")
+            if (bearerToken != null) connection.setRequestProperty("Authorization", "Bearer $bearerToken")
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }

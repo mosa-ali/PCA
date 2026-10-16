@@ -204,7 +204,7 @@ export interface ServerDependencies {
   trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   outboundRelayService: OutboundRelayService;
   /** Optional, fail-closed PAIRED activation proof surface. */
-  devicePolicyActivation?: Omit<DevicePolicyActivationRoutesDeps, 'rateLimiter'>;
+  devicePolicyActivation?: Omit<DevicePolicyActivationRoutesDeps, 'rateLimiter' | 'deviceSessionService'>;
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
   resolveEnvelopeContext: ResolveEnvelopeContext;
@@ -562,6 +562,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   if (deps.devicePolicyActivation) {
     registerDevicePolicyActivationRoutes(app, {
       ...deps.devicePolicyActivation,
+      deviceSessionService: deps.deviceSessionService,
       rateLimiter,
     });
   }

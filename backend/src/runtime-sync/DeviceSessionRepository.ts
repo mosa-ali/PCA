@@ -9,12 +9,10 @@ export interface DeviceSessionRepository {
 }
 
 /**
- * Process-local, non-durable session store -- deliberately not backed by a
- * new DB table (see types.ts's DeviceSessionRecord doc: losing a session on
- * restart only costs a cheap re-authentication, never data). Good enough
- * for a single backend process; a multi-instance deployment would need a
- * shared store, out of scope for this lane (no schema change without an
- * owner decision -- see docs/architecture PCA schema governance protocol).
+ * Process-local, non-durable ACTIVE and PAIRED_BOOTSTRAP session store.
+ * Restart loses the bearer and requires a new DSK ceremony; no activation
+ * or policy data is lost. Bootstrap authority is also checked against the
+ * durable lifecycle, Trust Set, DSK, target and challenge on each request.
  */
 export class InMemoryDeviceSessionRepository implements DeviceSessionRepository {
   private readonly byTokenHash = new Map<string, DeviceSessionRecord>();
@@ -115,6 +113,10 @@ function cloneSession(record: DeviceSessionRecord): DeviceSessionRecord {
 function isValidSessionRecord(record: DeviceSessionRecord): boolean {
   return typeof record.sessionId === 'string' && record.sessionId.length > 0 &&
     typeof record.tokenHash === 'string' && record.tokenHash.length > 0 &&
+    (record.purpose === 'ACTIVE' && record.activationTargetGeneration === null && record.bootstrapChallengeId === null ||
+      record.purpose === 'PAIRED_BOOTSTRAP' && Number.isSafeInteger(record.activationTargetGeneration) &&
+        (record.activationTargetGeneration as number) >= 1 && typeof record.bootstrapChallengeId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(record.bootstrapChallengeId)) &&
     isSupportedChallengeTime(record.issuedAt) &&
     isSupportedChallengeTime(record.expiresAt) &&
     record.expiresAt.getTime() > record.issuedAt.getTime() &&

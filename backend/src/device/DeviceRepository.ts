@@ -96,6 +96,7 @@ export interface DeviceRepository {
   isDeviceSessionActive(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<boolean>;
   /** Returns the active family's durable session epoch, or null when either identity is inactive. */
   getActiveDeviceSessionEpoch(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<number | null>;
+  getPairedBootstrapSessionEpoch(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<number | null>;
   revokeDeviceAndKeysAtomically(
     familyId: OpaqueFamilyId,
     deviceId: DeviceId,

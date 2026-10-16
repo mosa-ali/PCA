@@ -50,12 +50,10 @@ async function seedTarget(result = 'APPLIED') {
   await pool.query(`INSERT INTO device_policy_activation_targets
     (device_id, family_id, target_generation, policy_message_id, policy_envelope_sha256, policy_envelope_expires_at,
      canonical_envelope_bytes, envelope_signature, trust_set_epoch, key_epoch, target_state,
-     bootstrap_capability_hash, bootstrap_capability_expires_at, bootstrap_capability_consumed_at,
      challenge_id, challenge_nonce_hash, challenge_expires_at, challenge_consumed_at, created_at, updated_at)
-    VALUES (?, ?, 1, ?, ?, ?, ?, ?, 1, 1, 'PENDING', ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+    VALUES (?, ?, 1, ?, ?, ?, ?, ?, 1, 1, 'PENDING', ?, ?, ?, NULL, ?, ?)`,
   [deviceId, familyId, `policy-${randomUUID()}`, envelopeDigest, new Date(Date.now() + 120_000), envelopeBytes,
-    Buffer.alloc(64, 1), createHash('sha256').update(randomBytes(32)).digest(), challengeExpiresAt, now,
-    challengeId, createHash('sha256').update(Buffer.from(nonce, 'base64url')).digest(), challengeExpiresAt, now, now]);
+    Buffer.alloc(64, 1), challengeId, createHash('sha256').update(Buffer.from(nonce, 'base64url')).digest(), challengeExpiresAt, now, now]);
   const transcript = {
     familyId, deviceId,
     policyEnvelopeMessageId: (await pool.query('SELECT policy_message_id FROM device_policy_activation_targets WHERE device_id = ?', [deviceId]))[0][0].policy_message_id,
@@ -69,8 +67,17 @@ async function seedTarget(result = 'APPLIED') {
     transcriptSha256: createHash('sha256').update(transcriptBytes).digest(),
     exactRequestSha256: createHash('sha256').update(transcriptBytes).update(Buffer.from(signature, 'base64url')).digest(),
   };
-  return { familyId, deviceId, keyId, keyPair, dskPublicKey, transcript, signature, input };
+  return { familyId, deviceId, keyId, keyPair, dskPublicKey, transcript, signature, input, challengeId };
 }
+
+test('MySQL 0066 PAIRED_BOOTSTRAP authority is bound to current DSK, lifecycle, Trust Set and exact challenge', async () => {
+  const fixture = await seedTarget('DEGRADED');
+  const store = new MySqlDevicePolicyApplicationProofStore(() => false);
+  const args = [fixture.familyId, fixture.deviceId, fixture.keyId, 1, fixture.challengeId];
+  assert.equal(await store.isCurrentPairedBootstrapSession(...args), true);
+  await getPool().query("UPDATE device_public_keys SET status = 'REVOKED' WHERE device_id = ? AND key_id = ?", [fixture.deviceId, fixture.keyId]);
+  assert.equal(await store.isCurrentPairedBootstrapSession(...args), false, 'DSK revocation invalidates the scoped session immediately');
+});
 
 test('MySQL 0066 commit activates only APPLIED; exact retry is idempotent and conflict rejects', async () => {
   const fixture = await seedTarget('APPLIED');

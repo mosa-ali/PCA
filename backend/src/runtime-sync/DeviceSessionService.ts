@@ -4,7 +4,7 @@ import { generateChallengeNonce } from '../deviceauth/nonce.js';
 import { computeExpiryInstant as computeChallengeExpiry, DEVICE_CHALLENGE_TTL_MS,
   isSupportedChallengeTime } from '../deviceauth/policy.js';
 import { generateSessionToken, hashSessionToken, isPlausibleSessionToken } from '../auth/token.js';
-import { DEVICE_SESSION_TTL_MS } from './policy.js';
+import { DEVICE_SESSION_TTL_MS, PAIRED_BOOTSTRAP_SESSION_TTL_MS } from './policy.js';
 import type { DeviceSessionRepository } from './DeviceSessionRepository.js';
 import type { DeviceSessionRecord } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
@@ -30,7 +30,12 @@ export interface DeviceSessionIdentity {
   deviceId: string;
   familyId: string;
   dskKeyId: string;
+  purpose: 'ACTIVE' | 'PAIRED_BOOTSTRAP';
+  activationTargetGeneration: number | null;
+  bootstrapChallengeId: string | null;
 }
+
+export type DeviceSessionPurpose = DeviceSessionIdentity['purpose'];
 
 export interface IssuedDeviceSession {
   rawToken: string;
@@ -119,13 +124,32 @@ export class DeviceSessionService {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
 
+    return this.createSession(identity, familySessionEpoch, 'ACTIVE', null, null, DEVICE_SESSION_TTL_MS);
+  }
+
+  /** Issues an opaque, non-refreshable session after the activation store verifies current PAIRED DSK proof and target authority. */
+  async issuePairedBootstrapSession(identity: VerifiedDeviceIdentity, activationTargetGeneration: number,
+                                    bootstrapChallengeId: string): Promise<IssuedDeviceSession> {
+    if (!Number.isSafeInteger(activationTargetGeneration) || activationTargetGeneration < 1 ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bootstrapChallengeId)) {
+      throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    }
+    const familySessionEpoch = await this.deviceAuthService.pairedBootstrapSessionFamilyEpoch(identity);
+    if (!isValidFamilySessionEpoch(familySessionEpoch)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    return this.createSession(identity, familySessionEpoch, 'PAIRED_BOOTSTRAP', activationTargetGeneration, bootstrapChallengeId,
+      PAIRED_BOOTSTRAP_SESSION_TTL_MS);
+  }
+
+  private async createSession(identity: VerifiedDeviceIdentity, familySessionEpoch: number,
+                              purpose: DeviceSessionPurpose, activationTargetGeneration: number | null,
+                              bootstrapChallengeId: string | null, ttlMs: number): Promise<IssuedDeviceSession> {
     const { rawToken, tokenHash } = generateSessionToken();
     const clockValue: unknown = this.now();
     if (!isSupportedChallengeTime(clockValue)) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
     const issuedAt = new Date(clockValue.getTime());
-    const expiresAt = new Date(issuedAt.getTime() + DEVICE_SESSION_TTL_MS);
+    const expiresAt = new Date(issuedAt.getTime() + ttlMs);
     if (!isSupportedChallengeTime(expiresAt)) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
@@ -137,6 +161,9 @@ export class DeviceSessionService {
       dskKeyId: identity.dskKeyId,
       dskPublicKey: identity.dskPublicKey,
       familySessionEpoch,
+      purpose,
+      activationTargetGeneration,
+      bootstrapChallengeId,
       issuedAt,
       expiresAt,
       revokedAt: null,
@@ -146,7 +173,7 @@ export class DeviceSessionService {
   }
 
   /** Returns the authenticated device, family, and exact DSK key id; every failure remains generic UNAUTHORIZED. */
-  async validateSession(rawToken: string): Promise<DeviceSessionIdentity> {
+  async validateSession(rawToken: string, requiredPurpose: DeviceSessionPurpose = 'ACTIVE'): Promise<DeviceSessionIdentity> {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
     const clockValue: unknown = this.now();
     if (!isSupportedChallengeTime(clockValue)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
@@ -154,7 +181,8 @@ export class DeviceSessionService {
     const tokenHash = hashSessionToken(rawToken);
     const result = await this.sessionRepository.validate(tokenHash, now);
     if (result.outcome !== 'VALID') throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    if (!isValidSessionSnapshot(result.session, tokenHash) || now.getTime() < result.session.issuedAt.getTime() ||
+    if (!isValidSessionSnapshot(result.session, tokenHash) || result.session.purpose !== requiredPurpose ||
+        now.getTime() < result.session.issuedAt.getTime() ||
         now.getTime() >= result.session.expiresAt.getTime()) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
@@ -164,11 +192,15 @@ export class DeviceSessionService {
       dskKeyId: result.session.dskKeyId,
       dskPublicKey: result.session.dskPublicKey,
     };
-    const activeFamilySessionEpoch = await this.deviceAuthService.activeSessionFamilyEpoch(verifiedKey);
+    const activeFamilySessionEpoch = requiredPurpose === 'PAIRED_BOOTSTRAP'
+      ? await this.deviceAuthService.pairedBootstrapSessionFamilyEpoch(verifiedKey)
+      : await this.deviceAuthService.activeSessionFamilyEpoch(verifiedKey);
     if (!isValidFamilySessionEpoch(activeFamilySessionEpoch) || activeFamilySessionEpoch !== result.session.familySessionEpoch) {
       throw new RuntimeSyncAuthError('UNAUTHORIZED');
     }
-    return { deviceId: verifiedKey.deviceId, familyId: verifiedKey.familyId, dskKeyId: verifiedKey.dskKeyId };
+    return { deviceId: verifiedKey.deviceId, familyId: verifiedKey.familyId, dskKeyId: verifiedKey.dskKeyId,
+      purpose: result.session.purpose, activationTargetGeneration: result.session.activationTargetGeneration,
+      bootstrapChallengeId: result.session.bootstrapChallengeId };
   }
 
   /**
@@ -271,6 +303,10 @@ function isValidSessionSnapshot(value: unknown, expectedTokenHash: string): valu
     typeof session.familyId === 'string' && session.familyId.length > 0 &&
     typeof session.dskKeyId === 'string' && session.dskKeyId.length > 0 &&
     typeof session.dskPublicKey === 'string' && session.dskPublicKey.length > 0 &&
+    (session.purpose === 'ACTIVE' && session.activationTargetGeneration === null && session.bootstrapChallengeId === null ||
+      session.purpose === 'PAIRED_BOOTSTRAP' && Number.isSafeInteger(session.activationTargetGeneration) &&
+        (session.activationTargetGeneration as number) >= 1 && typeof session.bootstrapChallengeId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(session.bootstrapChallengeId)) &&
     isValidFamilySessionEpoch(session.familySessionEpoch) &&
     isSupportedChallengeTime(session.issuedAt) && isSupportedChallengeTime(session.expiresAt) &&
     session.expiresAt.getTime() > session.issuedAt.getTime() &&

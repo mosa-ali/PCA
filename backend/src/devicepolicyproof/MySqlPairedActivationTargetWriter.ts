@@ -119,8 +119,7 @@ export class MySqlPairedActivationTargetWriter implements PairedActivationTarget
                   SET family_id = ?, target_generation = target_generation + 1, policy_message_id = ?,
                   policy_envelope_sha256 = ?, policy_envelope_expires_at = ?, canonical_envelope_bytes = ?, envelope_signature = ?,
                   trust_set_epoch = ?, key_epoch = ?, target_state = 'PENDING',
-                  bootstrap_capability_hash = NULL, bootstrap_capability_expires_at = NULL,
-                  bootstrap_capability_consumed_at = NULL, challenge_id = NULL,
+                  challenge_id = NULL,
                   challenge_nonce_hash = NULL, challenge_expires_at = NULL, challenge_consumed_at = NULL,
                   updated_at = ? WHERE device_id = ?`,
           [input.familyId, envelope.messageId, digest, envelope.expiresAt, canonical, signatureBytes, input.trustSetEpoch, input.keyEpoch, now, input.recipientDeviceId]);

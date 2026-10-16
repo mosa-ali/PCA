@@ -2776,30 +2776,6 @@
           "extra": ""
         },
         {
-          "name": "bootstrap_capability_hash",
-          "type": "binary(32)",
-          "nullable": true,
-          "default": null,
-          "key": "",
-          "extra": ""
-        },
-        {
-          "name": "bootstrap_capability_expires_at",
-          "type": "datetime(3)",
-          "nullable": true,
-          "default": null,
-          "key": "",
-          "extra": ""
-        },
-        {
-          "name": "bootstrap_capability_consumed_at",
-          "type": "datetime(3)",
-          "nullable": true,
-          "default": null,
-          "key": "",
-          "extra": ""
-        },
-        {
           "name": "challenge_id",
           "type": "char(36)",
           "nullable": true,

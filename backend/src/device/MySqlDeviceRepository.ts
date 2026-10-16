@@ -148,6 +148,18 @@ export class MySqlDeviceRepository implements DeviceRepository {
     return rows[0]?.device_session_epoch ?? null;
   }
 
+  async getPairedBootstrapSessionEpoch(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<number | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<{ device_session_epoch: number }>(conn,
+        `SELECT f.device_session_epoch
+           FROM devices d JOIN families f ON f.family_id = d.family_id
+          WHERE d.device_id = ? AND d.family_id = ? AND d.status = 'PAIRED'
+            AND d.revoked_at IS NULL AND f.status = 'ACTIVE' AND f.deleted_at IS NULL
+          LIMIT 1`, [deviceId, familyId]),
+    );
+    return rows[0]?.device_session_epoch ?? null;
+  }
+
   /** Device revocation and cascading key revocation as ONE transaction, not an application-level loop. */
   async revokeDeviceAndKeysAtomically(
     familyId: OpaqueFamilyId,

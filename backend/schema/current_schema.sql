@@ -511,9 +511,6 @@ CREATE TABLE `device_policy_activation_targets` (
   `trust_set_epoch` int unsigned DEFAULT NULL,
   `key_epoch` int unsigned DEFAULT NULL,
   `target_state` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `bootstrap_capability_hash` binary(32) DEFAULT NULL,
-  `bootstrap_capability_expires_at` datetime(3) DEFAULT NULL,
-  `bootstrap_capability_consumed_at` datetime(3) DEFAULT NULL,
   `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `challenge_nonce_hash` binary(32) DEFAULT NULL,
   `challenge_expires_at` datetime(3) DEFAULT NULL,
@@ -526,13 +523,12 @@ CREATE TABLE `device_policy_activation_targets` (
   KEY `device_policy_activation_targets_family_state_idx` (`family_id`,`target_state`),
   CONSTRAINT `device_policy_activation_targets_device_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`),
   CONSTRAINT `device_policy_activation_targets_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
-  CONSTRAINT `device_policy_activation_targets_capability_pair_check` CHECK (((`bootstrap_capability_hash` is null) = (`bootstrap_capability_expires_at` is null))),
   CONSTRAINT `device_policy_activation_targets_challenge_pair_check` CHECK ((((`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null)) or ((`challenge_id` is not null) and (`challenge_nonce_hash` is not null) and (`challenge_expires_at` is not null)))),
   CONSTRAINT `device_policy_activation_targets_envelope_size_check` CHECK (((`canonical_envelope_bytes` is null) or (length(`canonical_envelope_bytes`) between 1 and 98304))),
   CONSTRAINT `device_policy_activation_targets_epoch_check` CHECK ((((`trust_set_epoch` is null) or (`trust_set_epoch` >= 1)) and ((`key_epoch` is null) or (`key_epoch` >= 1)))),
   CONSTRAINT `device_policy_activation_targets_generation_check` CHECK ((`target_generation` >= 1)),
   CONSTRAINT `device_policy_activation_targets_message_id_check` CHECK (((`policy_message_id` is null) or (char_length(`policy_message_id`) between 1 and 128))),
-  CONSTRAINT `device_policy_activation_targets_pending_check` CHECK ((((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`bootstrap_capability_hash` is null) and (`bootstrap_capability_expires_at` is null) and (`bootstrap_capability_consumed_at` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))),
+  CONSTRAINT `device_policy_activation_targets_pending_check` CHECK ((((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))),
   CONSTRAINT `device_policy_activation_targets_state_check` CHECK ((`target_state` in (_utf8mb4'PENDING',_utf8mb4'ACTIVATED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

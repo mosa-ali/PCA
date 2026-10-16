@@ -84,10 +84,13 @@ public enum PCAApplicationErrorCategory: Equatable {
 public struct PCADevicePolicyActivationBootstrapResult {
     public let target: PCADevicePolicyActivationTarget
     public let proofChallenge: PCADevicePolicyProofChallenge
+    public let session: PCADeviceBootstrapSession
 
-    fileprivate init(target: PCADevicePolicyActivationTarget, proofChallenge: PCADevicePolicyProofChallenge) {
+    fileprivate init(target: PCADevicePolicyActivationTarget, proofChallenge: PCADevicePolicyProofChallenge,
+                     session: PCADeviceBootstrapSession) {
         self.target = target
         self.proofChallenge = proofChallenge
+        self.session = session
     }
 }
 
@@ -281,6 +284,7 @@ enum PCAFirstDeviceTrustRootComposition {
 }
 
 @MainActor public final class PCAApplicationModel: ObservableObject {
+    private var pairedBootstrapSessions: [String: PCADeviceBootstrapSession] = [:]
     @Published public private(set) var applicationState: PCAApplicationState = .initializing
     @Published public private(set) var authorization: ChildAuthorizationState = .notDetermined
     @Published public private(set) var profileRuntimeState: PCAEnrollmentProfileRuntimeState = .awaitingProfile
@@ -672,19 +676,20 @@ enum PCAFirstDeviceTrustRootComposition {
             throw PCADeviceProofError.secureKeyUnavailable
         }
         try dependencies.assertRuntimeKeyCustody(deviceId)
-        let capability = try await client.complete(familyId: familyId, deviceId: deviceId,
+        let session = try await client.complete(familyId: familyId, deviceId: deviceId,
             challenge: firstChallenge, signature: possessionSignature)
-        let target = try await client.fetch(familyId: familyId, deviceId: deviceId, capability: capability)
-        guard target.challengeId == capability.challengeId,
-              target.policyEnvelopeMessageId == capability.policyEnvelopeMessageId,
-              target.policyEnvelopeSha256 == capability.policyEnvelopeSha256,
-              target.trustSetEpoch == capability.trustSetEpoch,
-              target.keyEpoch == capability.keyEpoch,
+        let target = try await client.fetch(familyId: familyId, deviceId: deviceId, session: session)
+        guard target.challengeId == session.challengeId,
+              target.policyEnvelopeMessageId == session.policyEnvelopeMessageId,
+              target.policyEnvelopeSha256 == session.policyEnvelopeSha256,
+              target.trustSetEpoch == session.trustSetEpoch,
+              target.keyEpoch == session.keyEpoch,
               rootStore.current() == root, rootStore.confirmDurable(root) else {
             throw PCAAPIError.malformedResponse
         }
         try dependencies.assertRuntimeKeyCustody(deviceId)
-        return PCADevicePolicyActivationBootstrapResult(target: target, proofChallenge: capability.proofChallenge)
+        pairedBootstrapSessions[session.challengeId] = session
+        return PCADevicePolicyActivationBootstrapResult(target: target, proofChallenge: session.proofChallenge, session: session)
     }
 
     private func reconcileCallbackHealth() {
@@ -895,7 +900,12 @@ enum PCAFirstDeviceTrustRootComposition {
               let proof = try store.proof(challengeId: challengeId, now: now ?? self.now()) else {
             throw PCAAPIError.unavailable
         }
-        do { return try await client.submit(proof) }
+        let session = pairedBootstrapSessions[challengeId]
+        do {
+            let response = try await client.submit(proof, session: session)
+            pairedBootstrapSessions.removeValue(forKey: challengeId)
+            return response
+        }
         catch let error as PCAAPIError {
             let outcomeMayBeUnknown: Bool
             switch error {
@@ -905,12 +915,18 @@ enum PCAFirstDeviceTrustRootComposition {
             default: outcomeMayBeUnknown = false
             }
             guard outcomeMayBeUnknown else { throw error }
-            do { return try await client.recoverExactProof(proof) }
+            do {
+                let response = try await client.recoverExactProof(proof, session: session)
+                pairedBootstrapSessions.removeValue(forKey: challengeId)
+                return response
+            }
             catch let recoveryError as PCAAPIError where recoveryError == .unavailable {
                 // A status miss means no durable commit was found. Re-submit
                 // the exact stored request; the server handles a race with a
                 // concurrent first commit idempotently.
-                return try await client.submit(proof)
+                let response = try await client.submit(proof, session: session)
+                pairedBootstrapSessions.removeValue(forKey: challengeId)
+                return response
             }
         }
     }

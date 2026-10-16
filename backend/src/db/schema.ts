@@ -1286,54 +1286,6 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
           privacyNote: "Operational lifecycle metadata."
         },
         {
-          name: "bootstrap_capability_hash",
-          columnType: "binary(32)",
-          dataType: "binary",
-          charset: null,
-          collation: null,
-          nullable: true,
-          default: null,
-          autoIncrement: false,
-          unsigned: false,
-          onUpdateCurrentTimestamp: false,
-          generatedExpression: null,
-          generatedStorage: null,
-          privacy: "SECURITY_METADATA",
-          privacyNote: "Security and integrity metadata; contains no policy plaintext."
-        },
-        {
-          name: "bootstrap_capability_expires_at",
-          columnType: "datetime(3)",
-          dataType: "datetime",
-          charset: null,
-          collation: null,
-          nullable: true,
-          default: null,
-          autoIncrement: false,
-          unsigned: false,
-          onUpdateCurrentTimestamp: false,
-          generatedExpression: null,
-          generatedStorage: null,
-          privacy: "OPERATIONAL_METADATA",
-          privacyNote: "Operational lifecycle metadata."
-        },
-        {
-          name: "bootstrap_capability_consumed_at",
-          columnType: "datetime(3)",
-          dataType: "datetime",
-          charset: null,
-          collation: null,
-          nullable: true,
-          default: null,
-          autoIncrement: false,
-          unsigned: false,
-          onUpdateCurrentTimestamp: false,
-          generatedExpression: null,
-          generatedStorage: null,
-          privacy: "OPERATIONAL_METADATA",
-          privacyNote: "Operational lifecycle metadata."
-        },
-        {
           name: "challenge_id",
           columnType: "char(36)",
           dataType: "char",
@@ -1488,10 +1440,6 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       ],
       checkConstraints: [
         {
-          name: "device_policy_activation_targets_capability_pair_check",
-          clause: "((`bootstrap_capability_hash` is null) = (`bootstrap_capability_expires_at` is null))"
-        },
-        {
           name: "device_policy_activation_targets_challenge_pair_check",
           clause: "(((`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null)) or ((`challenge_id` is not null) and (`challenge_nonce_hash` is not null) and (`challenge_expires_at` is not null)))"
         },
@@ -1513,7 +1461,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
         },
         {
           name: "device_policy_activation_targets_pending_check",
-          clause: "(((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`bootstrap_capability_hash` is null) and (`bootstrap_capability_expires_at` is null) and (`bootstrap_capability_consumed_at` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))"
+          clause: "(((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))"
         }
       ],
       applicationEnforcedRelations: []

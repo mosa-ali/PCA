@@ -5,7 +5,7 @@ import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-s
 import type { DeviceSignatureVerifier } from '../../deviceauth/DeviceSignatureVerifier.js';
 import { createRateLimiter } from '../rateLimit.js';
 import { MySqlDevicePolicyApplicationProofStore } from '../../devicepolicyproof/MySqlDevicePolicyApplicationProofStore.js';
-import { canonicalizeDevicePolicyApplicationProof, type DevicePolicyApplicationProofTranscript } from '../../devicepolicyproof/protocol.js';
+import { canonicalizeDevicePolicyApplicationProof, devicePolicyProofDigests, type DevicePolicyApplicationProofTranscript } from '../../devicepolicyproof/protocol.js';
 
 const BODY_LIMIT = 16 * 1024;
 const MAX_FAILED_PER_DEVICE = 5;
@@ -16,8 +16,8 @@ export interface DevicePolicyActivationRoutesDeps {
   proofStore: MySqlDevicePolicyApplicationProofStore;
   signatureVerifier: DeviceSignatureVerifier;
   rateLimiter: ReturnType<typeof createRateLimiter>;
-  /** Optional device bearer verification. When supplied, any bearer must match claimed family/device. */
-  deviceSessionService?: DeviceSessionService;
+  /** Shared verified-session service; bootstrap routes require its restricted PAIRED purpose. */
+  deviceSessionService: DeviceSessionService;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -132,16 +132,6 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
   }, async (request, reply) => {
     const body = request.body;
     if (!exactBodyKeys(request, body, ['familyId', 'deviceId']) || !isUuid(body.familyId) || !isUuid(body.deviceId)) return reply.code(400).send({ error: 'invalid_request' });
-    const token = bearer(request);
-    if (token && deps.deviceSessionService) {
-      try {
-        const identity = await deps.deviceSessionService.validateSession(token);
-        if (identity.familyId !== body.familyId || identity.deviceId !== body.deviceId) return reply.code(404).send(GENERIC_FAILURE);
-      } catch (error) {
-        if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
-        throw error;
-      }
-    }
     const challenge = await deps.proofStore.issueBootstrapPossessionChallenge(body.familyId, body.deviceId);
     return reply.code(200).send(challenge);
   });
@@ -154,22 +144,6 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
         typeof body.nonce !== 'string' || typeof body.signature !== 'string' || body.nonce.length > 64 || body.signature.length > 128) {
       return reply.code(400).send({ error: 'invalid_request' });
     }
-    const token = bearer(request);
-    if (token && deps.deviceSessionService) {
-      try {
-        const identity = await deps.deviceSessionService.validateSession(token);
-        if (identity.familyId !== body.familyId || identity.deviceId !== body.deviceId) {
-          const limited = failedProofLimiter(body.deviceId);
-          return reply.code(limited ? 429 : 404).send(limited ? { error: 'rate_limited' } : GENERIC_FAILURE);
-        }
-      } catch (error) {
-        if (error instanceof RuntimeSyncAuthError) {
-          const limited = failedProofLimiter(body.deviceId);
-          return reply.code(limited ? 429 : 404).send(limited ? { error: 'rate_limited' } : GENERIC_FAILURE);
-        }
-        throw error;
-      }
-    }
     const result = await deps.proofStore.completeBootstrapPossession({
       familyId: body.familyId, deviceId: body.deviceId, challengeId: body.challengeId,
       nonce: body.nonce, signature: body.signature, signatureVerifier: deps.signatureVerifier,
@@ -178,9 +152,16 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
       const limited = failedProofLimiter(body.deviceId);
       return reply.code(limited ? 429 : 404).send(limited ? { error: 'rate_limited' } : GENERIC_FAILURE);
     }
+    let session;
+    try { session = await deps.deviceSessionService.issuePairedBootstrapSession(result.identity, result.targetGeneration, result.challengeId); }
+    catch (error) {
+      if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
+      throw error;
+    }
     return reply.code(200).send({
       challengeId: result.challengeId, nonce: result.nonce, expiresAt: result.expiresAt.toISOString(),
-      activationCapability: result.capability, policyEnvelopeMessageId: result.messageId,
+      sessionToken: session.rawToken, sessionExpiresAt: session.expiresAt.toISOString(),
+      policyEnvelopeMessageId: result.messageId,
       policyEnvelopeSha256: result.envelopeSha256, trustSetEpoch: result.trustSetEpoch, keyEpoch: result.keyEpoch,
     });
   });
@@ -189,19 +170,21 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
     bodyLimit: BODY_LIMIT, preParsing: inspectRawBody, onRequest: privateNoStore, preHandler: [ipLimiter],
   }, async (request, reply) => {
     const body = request.body;
-    if (!exactBodyKeys(request, body, ['familyId', 'deviceId', 'activationCapability']) || !isUuid(body.familyId) || !isUuid(body.deviceId) || typeof body.activationCapability !== 'string' ||
-        body.activationCapability.length > 64) return reply.code(400).send({ error: 'invalid_request' });
+    if (!exactBodyKeys(request, body, ['familyId', 'deviceId']) || !isUuid(body.familyId) || !isUuid(body.deviceId)) return reply.code(400).send({ error: 'invalid_request' });
     const token = bearer(request);
-    if (token && deps.deviceSessionService) {
-      try {
-        const identity = await deps.deviceSessionService.validateSession(token);
-        if (identity.familyId !== body.familyId || identity.deviceId !== body.deviceId) return reply.code(404).send(GENERIC_FAILURE);
-      } catch (error) {
-        if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
-        throw error;
-      }
+    if (!token) return reply.code(404).send(GENERIC_FAILURE);
+    let identity;
+    try { identity = await deps.deviceSessionService.validateSession(token, 'PAIRED_BOOTSTRAP'); }
+    catch (error) {
+      if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
+      throw error;
     }
-    const result = await deps.proofStore.fetchActivationTarget(body.familyId, body.deviceId, body.activationCapability);
+    if (identity.familyId !== body.familyId || identity.deviceId !== body.deviceId || identity.activationTargetGeneration === null || identity.bootstrapChallengeId === null ||
+        !await deps.proofStore.isCurrentPairedBootstrapSession(identity.familyId, identity.deviceId, identity.dskKeyId, identity.activationTargetGeneration, identity.bootstrapChallengeId)) {
+      return reply.code(404).send(GENERIC_FAILURE);
+    }
+    const result = await deps.proofStore.fetchActivationTarget(body.familyId, body.deviceId, identity.dskKeyId, identity.activationTargetGeneration);
+    if (result && result.challengeId !== identity.bootstrapChallengeId) return reply.code(404).send(GENERIC_FAILURE);
     if (!result) return reply.code(404).send(GENERIC_FAILURE);
     return reply.code(200).send({
       challengeId: result.challengeId, policyEnvelopeMessageId: result.messageId,
@@ -222,14 +205,29 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
     catch { return reply.code(400).send({ error: 'invalid_request' }); }
     const transcript = candidate as unknown as DevicePolicyApplicationProofTranscript;
     const token = bearer(request);
-    if (token && deps.deviceSessionService) {
-      try {
-        const identity = await deps.deviceSessionService.validateSession(token);
-        if (identity.familyId !== transcript.familyId || identity.deviceId !== transcript.deviceId) return reply.code(404).send(GENERIC_FAILURE);
-      } catch (error) {
-        if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
-        throw error;
-      }
+    if (!token) {
+      const digests = devicePolicyProofDigests(canonicalizeDevicePolicyApplicationProof(transcript), signature);
+      const prior = await deps.proofStore.recoverExactProof(transcript.challengeId, digests.exactRequestSha256.toString('base64url'));
+      if (prior) return reply.code(200).send({ outcome: prior.outcome, idempotent: true });
+      return reply.code(404).send(GENERIC_FAILURE);
+    }
+    let identity;
+    try {
+      identity = await deps.deviceSessionService.validateSession(token, 'PAIRED_BOOTSTRAP');
+    } catch (error) {
+      if (!(error instanceof RuntimeSyncAuthError)) throw error;
+      const digests = devicePolicyProofDigests(canonicalizeDevicePolicyApplicationProof(transcript), signature);
+      const prior = await deps.proofStore.recoverExactProof(transcript.challengeId, digests.exactRequestSha256.toString('base64url'));
+      if (prior) return reply.code(200).send({ outcome: prior.outcome, idempotent: true });
+      return reply.code(404).send(GENERIC_FAILURE);
+    }
+    if (identity.familyId !== transcript.familyId || identity.deviceId !== transcript.deviceId ||
+        identity.activationTargetGeneration === null || identity.bootstrapChallengeId !== transcript.challengeId ||
+        !await deps.proofStore.isCurrentPairedBootstrapSession(identity.familyId, identity.deviceId, identity.dskKeyId, identity.activationTargetGeneration, transcript.challengeId)) {
+      const digests = devicePolicyProofDigests(canonicalizeDevicePolicyApplicationProof(transcript), signature);
+      const prior = await deps.proofStore.recoverExactProof(transcript.challengeId, digests.exactRequestSha256.toString('base64url'));
+      if (prior) return reply.code(200).send({ outcome: prior.outcome, idempotent: true });
+      return reply.code(404).send(GENERIC_FAILURE);
     }
     const result = await deps.proofStore.submitSignedProof(transcript, signature, deps.signatureVerifier);
     if (result.outcome === 'CONFLICT' || result.outcome === 'REJECTED') {
@@ -246,6 +244,16 @@ export function registerDevicePolicyActivationRoutes(app: FastifyInstance, deps:
     const body = request.body;
     if (!exactBodyKeys(request, body, ['challengeId', 'exactRequestSha256']) || !isUuid(body.challengeId) || typeof body.exactRequestSha256 !== 'string' ||
         !/^[A-Za-z0-9_-]{43}$/.test(body.exactRequestSha256)) return reply.code(400).send({ error: 'invalid_request' });
+    const token = bearer(request);
+    if (!token) return reply.code(404).send(GENERIC_FAILURE);
+    let identity;
+    try { identity = await deps.deviceSessionService.validateSession(token, 'PAIRED_BOOTSTRAP'); }
+    catch (error) {
+      if (error instanceof RuntimeSyncAuthError) return reply.code(404).send(GENERIC_FAILURE);
+      throw error;
+    }
+    if (identity.activationTargetGeneration === null || identity.bootstrapChallengeId !== body.challengeId || !await deps.proofStore.isCurrentPairedBootstrapSession(
+      identity.familyId, identity.deviceId, identity.dskKeyId, identity.activationTargetGeneration, body.challengeId)) return reply.code(404).send(GENERIC_FAILURE);
     const status = await deps.proofStore.recoverExactProof(body.challengeId, body.exactRequestSha256);
     if (!status) return reply.code(404).send(GENERIC_FAILURE);
     return reply.code(200).send({ outcome: status.outcome, idempotent: true });

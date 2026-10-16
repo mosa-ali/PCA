@@ -24,7 +24,7 @@ FROM (
   SELECT 'tables'                   AS check_name, 98 AS expected,
          (SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE') AS actual
-  UNION ALL SELECT 'columns', 873,
+  UNION ALL SELECT 'columns', 870,
          (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE())
   UNION ALL SELECT 'primary keys', 98,
          (SELECT COUNT(*) FROM information_schema.table_constraints
@@ -40,7 +40,7 @@ FROM (
          (SELECT COUNT(*) FROM (SELECT DISTINCT table_name, index_name
             FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND non_unique = 1) n)
-  UNION ALL SELECT 'CHECK constraints', 327,
+  UNION ALL SELECT 'CHECK constraints', 326,
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'CHECK')
   UNION ALL SELECT 'reference data rows', 14,
