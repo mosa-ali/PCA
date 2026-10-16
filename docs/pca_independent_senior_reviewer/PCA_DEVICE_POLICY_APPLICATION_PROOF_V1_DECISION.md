@@ -278,3 +278,9 @@ WAVE_STATUS = Wave 02B remains incomplete because the approved production E2EE e
 ## Owner supersession — Wave 02B authorization, 2026-10-16
 
 The Wave 02B owner authorization supersedes the earlier 02A-R1 acceptance of indefinite proof-tombstone retention. The implementation retention contract is exactly 14 days; exact byte-identical retry is idempotent only during that window, and expired proofs cannot be reused. Other frozen proof-contract terms remain in force. Production E2EE receiver crypto is still explicitly unapproved, so APPLIED and ACTIVE stay fail-closed.
+
+## Wave 02B implementation status — 2026-10-16
+
+Current source wiring now uses the persisted committed Android root and the original AndroidKeyStore DSK for activation proof-signing plumbing. iOS production composition remains fail-closed with `policyEnvelopeProcessor: nil`, and tests prove it cannot persist an application proof without that processor. This does not qualify production E2EE verification/decryption/enforcement, so APPLIED and ACTIVE remain disabled.
+
+Owner clarification is pending on one bootstrap authorization mismatch: routes currently permit sessionless calls and production does not inject `deviceSessionService`; paired devices cannot use the ordinary ACTIVE-only session path. The one-use DSK PoP capability scopes target access, but whether it satisfies the frozen verified-session requirement or a PAIRED-limited session is required remains unresolved. No implementation choice is inferred here.
