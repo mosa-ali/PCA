@@ -151,7 +151,7 @@ class DevicePolicyApplicationProofV1Test {
         val highSSigner = object : CurrentDeviceDskProofSigner {
             override fun signProof(fields: DevicePolicyApplicationProofV1.ProofFields, canonicalTranscript: ByteArray): ByteArray = ByteArray(64).also {
                 it[31] = 1
-                BigInteger("7FFFFFFF800000007FFFFFFFFFFFFFFFDE737D56D38BCF279DE4E5617E3192A9", 16)
+                BigInteger("7FFFFFFF800000007FFFFFFFFFFFFFFFDE737D56D38BCF4279DCE5617E3192A9", 16)
                     .toByteArray()
                     .copyInto(it, destinationOffset = 32)
             }
