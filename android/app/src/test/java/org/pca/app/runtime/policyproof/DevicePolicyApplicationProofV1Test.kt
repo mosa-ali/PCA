@@ -1,5 +1,6 @@
 package org.pca.app.runtime.policyproof
 
+import java.math.BigInteger
 import java.util.Base64
 import java.time.Instant
 import org.pca.app.foundation.InMemoryPersistentStateStore
@@ -109,7 +110,9 @@ class DevicePolicyApplicationProofV1Test {
     @Test
     fun rejectsNonCanonicalUuidEpochAndBase64Url() {
         assertThrows(IllegalArgumentException::class.java) {
-            DevicePolicyApplicationProofV1.canonicalTranscript(fields.copy(familyId = fields.familyId.uppercase()))
+            DevicePolicyApplicationProofV1.canonicalTranscript(
+                fields.copy(familyId = fields.familyId.replaceFirst("2", "A")),
+            )
         }
         assertThrows(IllegalArgumentException::class.java) {
             DevicePolicyApplicationProofV1.canonicalTranscript(fields.copy(keyEpoch = 0))
@@ -148,10 +151,9 @@ class DevicePolicyApplicationProofV1Test {
         val highSSigner = object : CurrentDeviceDskProofSigner {
             override fun signProof(fields: DevicePolicyApplicationProofV1.ProofFields, canonicalTranscript: ByteArray): ByteArray = ByteArray(64).also {
                 it[31] = 1
-                it[32] = 0x7f
-                it[33] = -1
-                it[34] = -1
-                it[35] = -1
+                BigInteger("7FFFFFFF800000007FFFFFFFFFFFFFFFDE737D56D38BCF279DE4E5617E3192A9", 16)
+                    .toByteArray()
+                    .copyInto(it, destinationOffset = 32)
             }
             override fun signBootstrapNonce(familyId: String, deviceId: String, nonceBase64Url: String) = ByteArray(64)
         }

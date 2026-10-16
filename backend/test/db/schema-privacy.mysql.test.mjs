@@ -42,6 +42,22 @@ const ALLOWED_CONTROLLED_CONFIGURATION_TABLES = new Set([
   'family_rbac_policy_config',
 ]);
 
+// PCA Wave 02B's service-visible activation ledger is strictly opaque
+// lifecycle metadata. These exact names identify an encrypted envelope by
+// digest/message ID and do not expose policy payload or a family receipt.
+// The ledger remains separate from the E2EE POLICY_RECEIPT family message.
+const ALLOWED_DEVICE_POLICY_LIFECYCLE_TABLES = new Set([
+  'device_policy_activation_targets',
+  'device_policy_application_proofs',
+]);
+const ALLOWED_DEVICE_POLICY_LIFECYCLE_COLUMNS = new Set([
+  'device_policy_activation_targets.policy_message_id',
+  'device_policy_activation_targets.policy_envelope_sha256',
+  'device_policy_activation_targets.policy_envelope_expires_at',
+  'device_policy_application_proofs.policy_message_id',
+  'device_policy_application_proofs.policy_envelope_sha256',
+]);
+
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
 // signing_key_id/encryption_key_id/signing_public_key/encryption_public_key
@@ -146,7 +162,9 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // pair already approved above under the genesis_/owner_/signer_ role
   // prefixes (schema.ts: OPAQUE_IDENTIFIER and SECURITY_METADATA, "Public
   // signing key material (never private)"). Never private key material.
-  'dsk_key_id', 'dsk_public_key',
+  // device_key_id (device_policy_application_proofs) is the accepted Trust
+  // Set DSK's opaque CHAR(36) identifier, never a private key or key bytes.
+  'dsk_key_id', 'dsk_public_key', 'device_key_id',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
@@ -170,7 +188,7 @@ test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-
   for (const { table_name: table } of tables) {
     const lower = table.toLowerCase();
     for (const term of scannedTerms) {
-      if (ALLOWED_CONTROLLED_CONFIGURATION_TABLES.has(table) && term === 'policy') continue;
+      if ((ALLOWED_CONTROLLED_CONFIGURATION_TABLES.has(table) || ALLOWED_DEVICE_POLICY_LIFECYCLE_TABLES.has(table)) && term === 'policy') continue;
       if (lower.includes(term)) violations.push(`table ${table} matches prohibited term "${term}"`);
     }
     if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`table ${table} matches prohibited term "title" outside the "entitlement" false-positive`);
@@ -178,7 +196,7 @@ test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-
   for (const { table_name: table, column_name: column } of columns) {
     const lower = column.toLowerCase();
     for (const term of scannedTerms) {
-      if (ALLOWED_CONTROLLED_CONFIGURATION_COLUMNS.has(`${table}.${column}`) && term === 'policy') continue;
+      if ((ALLOWED_CONTROLLED_CONFIGURATION_COLUMNS.has(`${table}.${column}`) || ALLOWED_DEVICE_POLICY_LIFECYCLE_COLUMNS.has(`${table}.${column}`)) && term === 'policy') continue;
       if (lower.includes(term)) violations.push(`${table}.${column} matches prohibited term "${term}"`);
     }
     if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`${table}.${column} matches prohibited term "title" outside the "entitlement" false-positive`);
