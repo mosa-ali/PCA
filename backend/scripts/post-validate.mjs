@@ -16,16 +16,12 @@
 // Usage: PCA_DATABASE_URL=... node post-validate.mjs
 // Production-sensitive execution requires PCA_DATABASE_TLS=REQUIRED; local
 // disposable test/development databases may explicitly use DISABLED.
-import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import mysql from 'mysql2/promise';
 import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 import { normalizedFingerprint } from './schema-fingerprint.mjs';
-
-const execFileP = promisify(execFile);
 
 // PCA-DW-W3-D / SESSION 2D (2026-09-15): was
 // '3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3' (79
@@ -148,22 +144,24 @@ try {
   // 3. Schema fingerprint match.
   const scratchDir = await mkdtemp(path.join(tmpdir(), 'pca-postvalidate-'));
   const scratchJson = path.join(scratchDir, 'live.json');
-  await execFileP(
-    'node',
-    [path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]):/, '$1:')), 'introspect-schema.mjs')],
-    {
-      env: {
-        ...process.env,
-        PCA_SCHEMA_INTROSPECTION_URL: connectionString,
-        PCA_SCHEMA_INTROSPECTION_OUT: scratchJson,
-      },
-    },
-  );
-  const { readFile } = await import('node:fs/promises');
-  const liveIntrospection = JSON.parse(await readFile(scratchJson, 'utf8'));
-  const { hash } = normalizedFingerprint(liveIntrospection);
-  assert(hash === EXPECTED_FINGERPRINT, `schema fingerprint matches expected sha256:${EXPECTED_FINGERPRINT} (got sha256:${hash})`);
-  await rm(scratchDir, { recursive: true, force: true });
+  const previousIntrospectionUrl = process.env.PCA_SCHEMA_INTROSPECTION_URL;
+  const previousIntrospectionOut = process.env.PCA_SCHEMA_INTROSPECTION_OUT;
+  try {
+    process.env.PCA_SCHEMA_INTROSPECTION_URL = connectionString;
+    process.env.PCA_SCHEMA_INTROSPECTION_OUT = scratchJson;
+    // Import the read-only introspector in-process. Spawning another Node
+    // process fails in restricted Windows test environments (EPERM).
+    await import('./introspect-schema.mjs');
+    const liveIntrospection = JSON.parse(await readFile(scratchJson, 'utf8'));
+    const { hash } = normalizedFingerprint(liveIntrospection);
+    assert(hash === EXPECTED_FINGERPRINT, `schema fingerprint matches expected sha256:${EXPECTED_FINGERPRINT} (got sha256:${hash})`);
+  } finally {
+    if (previousIntrospectionUrl === undefined) delete process.env.PCA_SCHEMA_INTROSPECTION_URL;
+    else process.env.PCA_SCHEMA_INTROSPECTION_URL = previousIntrospectionUrl;
+    if (previousIntrospectionOut === undefined) delete process.env.PCA_SCHEMA_INTROSPECTION_OUT;
+    else process.env.PCA_SCHEMA_INTROSPECTION_OUT = previousIntrospectionOut;
+    await rm(scratchDir, { recursive: true, force: true });
+  }
 
   console.log(failures === 0 ? '\nPCA-LIVE-DB-0 POST-VALIDATION (dynamic checks): ALL PASSED' : `\nPCA-LIVE-DB-0 POST-VALIDATION: ${failures} CHECK(S) FAILED`);
   process.exitCode = failures === 0 ? 0 : 1;
