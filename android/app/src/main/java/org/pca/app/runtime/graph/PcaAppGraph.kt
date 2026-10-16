@@ -75,6 +75,8 @@ import org.pca.app.firstdevice.FirstDeviceTrustRootCoordinator
 import org.pca.app.firstdevice.HttpFirstDeviceBootstrapApiClient
 import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
 import org.pca.app.firstdevice.FirstDeviceRootState
+import org.pca.app.runtime.policyproof.AndroidCurrentDeviceDskProofSigner
+import org.pca.app.runtime.policyproof.AndroidKeystoreCurrentDeviceDskKeyAccess
 import org.pca.app.runtime.trustset.HttpOrdinaryTrustSetApi
 import org.pca.app.runtime.trustset.OrdinaryTrustSetRuntime
 import org.pca.app.runtime.trustset.PersistentOrdinaryEpochStore
@@ -497,6 +499,12 @@ class PcaAppGraph private constructor(
      * at enrollment success + ceremony/submission progress). Backed by the same encrypted
      * [runtimeStateStore]; see [FirstDeviceRootStore]'s own doc for the two write-before steps. */
     val firstDeviceRootStore: FirstDeviceRootStore = PersistentFirstDeviceRootStore(runtimeStateStore)
+    /** DSK-only signer plumbing for activation bootstrap/proofs; proof APPLIED remains blocked
+     * until a production verified/decrypted/enforced policy receiver is composed. */
+    val devicePolicyApplicationProofSigner = AndroidCurrentDeviceDskProofSigner(
+        rootStore = firstDeviceRootStore,
+        keyAccess = AndroidKeystoreCurrentDeviceDskKeyAccess(androidKeystoreDskProvider),
+    )
     val enrollmentCoordinator = EnrollmentCoordinator(
         linkParser = enrollmentLinkParser,
         apiClient = deviceBootstrapApiClient,

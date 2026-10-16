@@ -10,7 +10,6 @@ import java.util.Base64
 import java.util.UUID
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 import org.pca.app.runtime.sync.envelope.RecipientBinding
-import org.pca.app.security.DskSignatureEngine
 
 /** Pure V1 encoding shared by activation-proof signing and cross-platform vectors. */
 object DevicePolicyApplicationProofV1 {
