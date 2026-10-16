@@ -1948,3 +1948,7 @@ WAVE_STATUS = Wave 02B remains incomplete because the approved production E2EE e
 ### Final evidence refresh — 2026-10-16
 
 Parent checkpoint `45c2b1529a894a2f55f995847faf18b8f5085fef` is confirmed as local/origin/server head (0/0); exact-head run `38856310690` passed 27/27. Local development MySQL `pca_test` applied migrations through 0066 and passed post-validation. No Platform implementation, activation, Azure, live DB, or production action occurred. Parent remains fail-closed on the unapproved E2EE receiver suite; Platform remains `HOLD_PARENT_DEPENDENCY`. Wave 03 has not started.
+
+## Wave 02B retention-certification checkpoint — 2026-10-16
+
+Checkpoint `a40463e7aa040f2320243cc3b04142069fac1f75` is published and exact-head Quality Gates run `38858810612` passed 27/27. Disposable MySQL proof/lifecycle suite passed 8/8, including the production retention adapter: expired tombstones prune through the bounded procedure, unexpired tombstones remain, and the durable activation timestamp survives. Production-path certification passed 11/11; the backend register now records 28 certified stores and 27 tracked gaps. The Wave 02A indefinite-retention discussion was superseded by the later Wave 02B owner decision: proof tombstones expire after 14 days. Production receiver crypto remains unavailable and fail-closed; no APPLIED proof or ACTIVE transition is enabled. Wave 02B remains incomplete and Wave 03 has not started.
