@@ -82,3 +82,10 @@ Android and iOS remain fail-closed at the unavailable approved production receiv
 ### Exact-head CI follow-up — 2026-10-16
 
 Quality Gates run 38850083156 completed FAILURE on 0140b133 (24/27 jobs passed). Failures: Repository quality rejected the newly added `shared/` vector directory; Android had two ineffective negative-test fixtures; full MySQL schema privacy rejected the exact owner-approved opaque lifecycle metadata and DSK key ID names. Focused local corrections now allow `shared/`, narrowly document those exact privacy exceptions, and make the UUID/high-S tests exercise invalid values. Repository checks pass locally. These corrections are not staged or published because D: has 208 KB free and Git cannot write `.git/index.lock`; no rerun is claimed.
+
+## Final Wave 02B source validation — 2026-10-16
+
+SOURCE_HEAD = `9a6111c5c9dc8a1f7ca31eb1c043d64e95c75164`
+EXACT_HEAD_CI = `38851950745`, SUCCESS, 27/27. Android, iOS, backend build/unit, full disposable MySQL certification, real-backend E2E, browser suites, security, repository quality, contracts, and release-control jobs all succeeded. This run supersedes failed predecessor runs `38850083156` and `38850915464`; the latter test-fixture and privacy-allowlist corrections are committed.
+GIT = Fresh direct lookup at this source checkpoint confirmed LOCAL = ORIGIN = SERVER and ahead/behind = 0/0. The following documentation-only synchronization changes the head and requires its own exact-head CI.
+WAVE_STATUS = Wave 02B remains incomplete because the approved production E2EE envelope verification/decryption/enforcement suite is unavailable. `APPLIED` and server `ACTIVE` remain fail-closed. No live, Azure, production, or retained UAT database was touched. No physical-device evidence or local Windows Android test pass is claimed. Wave 03 has not started. Parent TODO-12/14/15 and external owner/deployment acceptance gates remain open; Platform remains `HOLD_PARENT_DEPENDENCY`.
