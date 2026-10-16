@@ -89,3 +89,10 @@ SOURCE_HEAD = `9a6111c5c9dc8a1f7ca31eb1c043d64e95c75164`
 EXACT_HEAD_CI = `38851950745`, SUCCESS, 27/27. Android, iOS, backend build/unit, full disposable MySQL certification, real-backend E2E, browser suites, security, repository quality, contracts, and release-control jobs all succeeded. This run supersedes failed predecessor runs `38850083156` and `38850915464`; the latter test-fixture and privacy-allowlist corrections are committed.
 GIT = Fresh direct lookup at this source checkpoint confirmed LOCAL = ORIGIN = SERVER and ahead/behind = 0/0. The following documentation-only synchronization changes the head and requires its own exact-head CI.
 WAVE_STATUS = Wave 02B remains incomplete because the approved production E2EE envelope verification/decryption/enforcement suite is unavailable. `APPLIED` and server `ACTIVE` remain fail-closed. No live, Azure, production, or retained UAT database was touched. No physical-device evidence or local Windows Android test pass is claimed. Wave 03 has not started. Parent TODO-12/14/15 and external owner/deployment acceptance gates remain open; Platform remains `HOLD_PARENT_DEPENDENCY`.
+
+### Final evidence refresh — 2026-10-16
+
+LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `45c2b1529a894a2f55f995847faf18b8f5085fef`; AHEAD = 0; BEHIND = 0.
+CI_RUN = `38856310690`; RESULT = SUCCESS; JOBS = 27/27.
+LOCAL_DB = Loopback MySQL 8.4.11 `pca_test`, migrated from empty through 0066; post-validation passed with 98 tables, no application/test rows, and fingerprint `sha256:0bc052e9c08d4bc8bc7bf02e1fa18eb9b69604406f8ef7bbbe2eab457fc62cf2`. Retained UAT/live/Azure/production were not touched.
+WAVE_02B_COMPLETE = NO. The approved production E2EE receiver suite remains unavailable by design; Android/iOS stay fail-closed and APPLIED/ACTIVE remain impossible. Windows full backend suite: 305/311 files; six tooling tests hit nested-process `EPERM`. Exact-head CI backend unit and full disposable-MySQL jobs succeeded. Wave 03 = NOT STARTED. Recommended next = owner-authorized bounded crypto-security qualification, then receiver integration.
