@@ -47,6 +47,7 @@ const CERTIFIED_FILES = [
   'test/db/relay.mysql.test.mjs',
   'test/db/release.mysql.test.mjs',
   'test/db/device.mysql.test.mjs',
+  'test/db/devicePolicyApplicationProof.mysql.test.mjs',
   'test/db/enrollment.mysql.test.mjs',
   'test/db/childProfileInvitationBindingHttp.mysql.test.mjs',
   'test/db/eyeProtectionSettingsHttp.mysql.test.mjs',

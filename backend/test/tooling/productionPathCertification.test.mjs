@@ -361,7 +361,14 @@ const REGISTER = new Map([
   ['MySqlOwnerParentDeviceResolver', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RE-CATEGORISED from NOT_EXECUTED_IN_CI, because that category named the wrong obstruction and implied the fix was more test coverage. VERIFIED IN SOURCE: main.ts constructs `new ProtectionAlertProducer(protectionAlertLedger, createRejectingOpaqueProtectionAlertComposer())` and passes this resolver as `protectionAlerting.resolveParentDevices`, so the resolver IS reached in production via RemovalDecisionAuthority.emitAlert -- but ProtectionAlertProducer.produce awaits that composer, which throws unconditionally. RejectingOpaqueProtectionAlertComposer\'s own doc comment states PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW (PCA-DEC-020), that "no alert is ever recorded in production today", and explicitly forbids substituting a composer that returns fabricated ciphertext or any other shortcut. So this is the SAME obstruction as MySqlProtectionAlertLedger\'s row ("rejecting composer shape"), and the fix is a reviewed concrete composer -- NOT more tests. Writing the real-consumer test that closed MySqlPlatformAdminAlertAdapter is therefore not available here: that row\'s real writer produced a durable row, whereas this one\'s real writer is deliberately stopped before any write. NOT untested: three real-MySQL tests drive the resolver directly in protectionAlerts.mysql.test.mjs (genesis Owner resolved as sole recipient; an Owner transfer resolves the NEW owner never the outgoing one; zero recipients for a family with no attestation, never fabricated). Those prove the resolver\'s own logic and run in CI via npm run test:db; what no test can prove is a durable production write that the production wiring prevents by design. Separately recorded honest scope, not part of this re-categorisation: the resolver returns the Owner device ONLY (never ADMINISTRATOR-role devices), because no table in this codebase registers per-device keys for non-Owner parent roles -- documented at length in the resolver\'s own header and tracked as PCA-DEC-031.' }],
   ['MySqlDevicePolicyApplicationProofStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'Production main.ts composes this store with receiverCryptoReady hardwired false. The disposable MySQL suite proves atomic transaction mechanics only with an isolated injected readiness predicate; production APPLIED activation remains intentionally unreachable until the approved envelope receiver and enforcement chain are composed. The real route suite covers proof submission, retries, and status behavior without granting production activation.' }],
   ['MySqlPairedActivationTargetWriter', { status: 'GAP', category: 'CRYPTO_GATED', note: 'The outbound writer is composed with a feature-scoped P-256 verifier, but no production sender-envelope verification certification currently authorizes creating a new activation target from the generic relay ciphertext path. The target path remains fail-closed when that verifier cannot establish current accepted Trust Set authority; this is tracked as a narrow activation crypto gate.' }],
-  ['MySqlDevicePolicyProofRetention', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'Production main.ts schedules the bounded SQL SECURITY DEFINER prune procedure, but no CI test yet drives this retention adapter and verifies expired-only pruning through its EXECUTE-only interface.' }],
+  ['MySqlDevicePolicyProofRetention', {
+    status: 'CERTIFIED',
+    realWriter: 'Production main.ts retention timer -> MySqlDevicePolicyProofRetention.pruneExpiredTombstones -> migration-owned SQL SECURITY DEFINER procedure; the adapter holds only the ordinary runtime connection and never issues DELETE.',
+    realReader: 'The disposable MySQL test reads the proof tombstone and device lifecycle row back after invoking the adapter, proving expired tombstone removal and preservation of activated_at.',
+    hostileCase: 'Expired proof is pruned through the bounded EXECUTE entry point; an invalid zero batch is rejected; after pruning, the exact proof cannot be reused and the durable ACTIVE lifecycle fact remains.',
+    testFile: 'test/db/devicePolicyApplicationProof.mysql.test.mjs',
+    testName: 'MySQL 0066 proof retention prunes only expired tombstones through the bounded procedure and preserves activation fact',
+  }],
   [
     'MySqlParentMfaRepository',
     {
@@ -396,7 +403,7 @@ const REGISTER = new Map([
 // MySqlEpochFloorStore, and MySqlFamilyAuthorityGenesisStore for ordinary
 // Trust Set acceptance. Each remains GAP until the verified device-session
 // production route is demonstrated end-to-end.
-const BASELINE_GAP_COUNT = 28;
+const BASELINE_GAP_COUNT = 27;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',

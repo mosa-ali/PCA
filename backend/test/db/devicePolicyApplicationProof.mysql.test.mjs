@@ -6,6 +6,7 @@ import { canonicalizeP256Signature } from '../../dist/deviceauth/P256DeviceSigna
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
 import { canonicalizeDevicePolicyApplicationProof } from '../../dist/devicepolicyproof/protocol.js';
 import { MySqlDevicePolicyApplicationProofStore } from '../../dist/devicepolicyproof/MySqlDevicePolicyApplicationProofStore.js';
+import { MySqlDevicePolicyProofRetention } from '../../dist/devicepolicyproof/MySqlDevicePolicyProofRetention.js';
 
 if (!process.env.PCA_DATABASE_URL || process.env.PCA_DISPOSABLE_TEST_DATABASE_OWNER !== 'with-disposable-db') {
   throw new Error('PCA_DATABASE_URL and the owned disposable DB wrapper are required.');
@@ -178,6 +179,46 @@ test('MySQL production default rejects APPLIED activation until receiver crypto 
   assert.equal(devices[0].activated_at, null);
   const [proofs] = await getPool().query('SELECT challenge_id FROM device_policy_application_proofs WHERE challenge_id = ?', [fixture.transcript.challengeId]);
   assert.equal(proofs.length, 0);
+});
+
+test('MySQL 0066 proof retention prunes only expired tombstones through the bounded procedure and preserves activation fact', async () => {
+  const fixture = await seedTarget('APPLIED');
+  const currentFixture = await seedTarget('DEGRADED');
+  const trigger = `pca_test_age_policy_proof_${randomUUID().replaceAll('-', '')}`;
+  await getPool().query(`CREATE TRIGGER \`${trigger}\` BEFORE INSERT ON device_policy_application_proofs FOR EACH ROW
+    BEGIN
+      IF NEW.challenge_id = '${fixture.transcript.challengeId}' THEN
+        SET NEW.committed_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 15 DAY),
+            NEW.retention_expires_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 SECOND);
+      END IF;
+    END`);
+  try {
+    const store = new MySqlDevicePolicyApplicationProofStore(() => true);
+    assert.deepEqual(await store.commitVerifiedProof(fixture.input), { outcome: 'ACTIVATED', idempotent: false });
+    assert.deepEqual(await store.commitVerifiedProof(currentFixture.input), { outcome: 'RECORDED_NOT_ACTIVATED', idempotent: false });
+    const retention = new MySqlDevicePolicyProofRetention();
+    const connection = await getPool().getConnection();
+    try {
+      await assert.rejects(() => retention.pruneExpiredTombstones(connection, 0), RangeError);
+      assert.equal(await retention.pruneExpiredTombstones(connection, 1), 1);
+    } finally { connection.release(); }
+    const [proofs] = await getPool().query(
+      'SELECT challenge_id FROM device_policy_application_proofs WHERE challenge_id = ?',
+      [fixture.transcript.challengeId],
+    );
+    assert.equal(proofs.length, 0);
+    const [currentProofs] = await getPool().query(
+      'SELECT challenge_id FROM device_policy_application_proofs WHERE challenge_id = ?',
+      [currentFixture.transcript.challengeId],
+    );
+    assert.equal(currentProofs.length, 1, 'unexpired proof tombstones are retained');
+    const [devices] = await getPool().query('SELECT status, activated_at FROM devices WHERE device_id = ?', [fixture.deviceId]);
+    assert.equal(devices[0].status, 'ACTIVE');
+    assert.ok(devices[0].activated_at, 'the durable lifecycle fact survives tombstone pruning');
+    assert.deepEqual(await store.commitVerifiedProof(fixture.input), { outcome: 'REJECTED' });
+  } finally {
+    await getPool().query(`DROP TRIGGER IF EXISTS \`${trigger}\``);
+  }
 });
 
 test.after(async () => closePool());
