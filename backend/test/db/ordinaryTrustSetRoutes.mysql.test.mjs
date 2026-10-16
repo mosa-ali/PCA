@@ -148,6 +148,9 @@ async function issueVerifiedSession(deviceSessionService, familyId, device) {
     familyId,
     deviceId: device.entry.deviceId,
     dskKeyId: device.entry.dskKeyId,
+    purpose: 'ACTIVE',
+    activationTargetGeneration: null,
+    bootstrapChallengeId: null,
   });
   return issued.rawToken;
 }

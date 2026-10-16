@@ -175,14 +175,23 @@ async function testActorIdentity(session) {
   const familySessionEpoch = await actorDeviceRepository.getActiveDeviceSessionEpoch(session.familyId, deviceId);
   assert.notEqual(familySessionEpoch, null, 'the fixture requires an active persisted device and family');
   const { rawToken, tokenHash } = generateSessionToken();
+  const issuedAt = clock.now();
   await actorSessionRepository.create({
     sessionId: randomUUID(), tokenHash, deviceId, familyId: session.familyId,
     dskKeyId: dsk.keyId, dskPublicKey: dsk.publicKey,
-    familySessionEpoch, issuedAt: clock.now(),
-    expiresAt: new Date(clock.ms() + 60_000), revokedAt: null,
+    purpose: 'ACTIVE', activationTargetGeneration: null, bootstrapChallengeId: null,
+    familySessionEpoch, issuedAt,
+    expiresAt: new Date(issuedAt.getTime() + 60_000), revokedAt: null,
   });
   assert.deepEqual(await actorDeviceSessionService.requireActorDeviceInFamily(rawToken, session.familyId),
-    { deviceId, familyId: session.familyId, dskKeyId: dsk.keyId });
+    {
+      deviceId,
+      familyId: session.familyId,
+      dskKeyId: dsk.keyId,
+      purpose: 'ACTIVE',
+      activationTargetGeneration: null,
+      bootstrapChallengeId: null,
+    });
   return { authorization: `Bearer ${rawToken}`, deviceId };
 }
 
