@@ -106,3 +106,19 @@ Checkpoint `a40463e7aa040f2320243cc3b04142069fac1f75` is published and exact-hea
 Android current-device DSK proof signing is now wired to the persisted committed root and original AndroidKeyStore key with custody, scope, transcript, and low-S checks. Focused Android proof tests passed. iOS now has a production-entry test proving a missing approved envelope processor returns DEGRADED and stores no proof. Source head `a7dc5c5051e9aff6df11c2fad89ecd6ffa897ba8` passed exact-head run `38861987927` 27/27; iOS test head `6ace80e1813dd763c85481827efcddce4fdbeae4` passed exact-head run `38862851198` 27/27. LOCAL = ORIGIN = SERVER = `6ace80e1813dd763c85481827efcddce4fdbeae4`; ahead/behind = 0/0. Production E2EE receiver crypto remains unapproved; APPLIED and ACTIVE remain unreachable.
 
 Owner's latest 2026-10-16 decision supersedes the earlier PoP-equivalence choice: DSK proof-of-possession is only the authentication ceremony. The backend issues a separate, short-lived, non-refreshable `PAIRED_BOOTSTRAP` session through the existing `DeviceSessionService`, bound to family, device, current DSK, target generation and application challenge. Only activation-target fetch, proof submission and proof status accept it; normal relay/runtime routes require an ACTIVE-purpose session. Every scoped request rechecks PAIRED/non-revoked state, accepted Trust Set, current DSK, target and challenge. It is invalid after activation, revocation, authority/target change or expiry.
+
+## Wave 02B handover refresh — 2026-10-16
+
+SOURCE_SHA = `b305a0b9117f45b3a231aa807a6bb3ddc555806d`
+LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `b305a0b9117f45b3a231aa807a6bb3ddc555806d`
+AHEAD = 0
+BEHIND = 0
+CI_RUN = `38883775880`
+CI_RESULT = SUCCESS, 27/27 (all jobs inspected)
+MIGRATION_0066 = 64-migration disposable replay PASS; proof/lifecycle/race/tombstone DB tests 9/9; owned schema removed
+LOCAL_FOCUSED_TESTS = DeviceSessionService 30/30; proof route/protocol/migration/certification 24/24; iOS source parse PASS
+RECEIVER_CRYPTO = NOT APPROVED; `APPLIED`/`ACTIVE` FAIL-CLOSED
+WAVE_02B_COMPLETE = NO
+WAVE_03 = NOT STARTED
+
+No retained UAT/live/Azure/production DB was touched by the current verification. Android local release assembly and physical-device evidence remain unclaimed. The production receiver suite is the remaining product dependency; do not add substitute crypto. This documentation commit requires exact-head CI.

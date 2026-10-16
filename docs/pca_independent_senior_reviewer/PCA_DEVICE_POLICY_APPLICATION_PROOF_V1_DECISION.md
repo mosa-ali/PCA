@@ -3,12 +3,12 @@
 DATE = 2026-10-16
 BASE_SHA = `535bdfe43062fb2bd5408f5f1e7c519faabeb30d`
 BASE_CI = `38662794818` — SUCCESS, 27/27
-STATUS = `CONTRACT CLOSED; 5/5 APPROVED; WAVE 02B MIGRATION AUTHORIZATION PENDING`
-SCOPE = Contract and source qualification only. No production implementation, migration, database mutation, Azure action, Platform activation, or Wave 02B work.
+STATUS = `CONTRACT CLOSED; 5/5 APPROVED; WAVE 02B OWNER-AUTHORIZED; IMPLEMENTATION INCOMPLETE`
+SCOPE = V1 contract, subsequent owner amendments, and Wave 02B implementation/evidence. Live `pca_pro`, Azure, production, and Wave 03 remain outside scope.
 
 ## 1. Decision and boundary
 
-This document records the implementable technical contract and independent specialist reviews. The unqualified byte-identical replay guarantee requires indefinite minimal tombstone retention; the owner accepted that disclosed privacy consequence on 2026-10-16. All five reviewers approved this contract with zero blockers and majors. The contract is ready for Wave 02B, but migration 0066 creation and Wave 02B implementation remain separately owner-gated. This decision document itself authorizes no source implementation or migration.
+This document began as the implementable technical contract and five independent specialist reviews (5/5 approved). Its original indefinite-tombstone proposal and migration authorization language were superseded by later Wave 02B owner decisions: proof tombstones are retained for 14 days, and migration 0066 plus bounded Wave 02B implementation were authorized under the stated database limits. The production E2EE receiver suite remains explicitly unapproved and fail-closed.
 
 Use dual receipts:
 
@@ -294,3 +294,9 @@ The implementation extends the existing `DeviceSessionService` and token reposit
 Migration 0066 stores only the activation target/challenge and proof tombstone; it does not store an activation capability or session token. The former capability columns and checks were removed from the additive migration and regenerated schema artifacts. The proof transaction no longer requires a fetch capability to have been consumed. A post-commit exact retry may recover the outcome only when the exact canonical transcript and signature digest matches the retained tombstone; that response is idempotency handling and grants no session authority. A conflicting retry remains rejected.
 
 Local evidence for this amendment: backend TypeScript build passed; full backend unit suite passed (3,519 assertions, 0 failures); activation route tests passed 5/5; device-session unit tests passed 30/30; disposable MySQL migration/proof suite passed 9/9; the generated disposable-bootstrap schema artifacts were regenerated and their tests passed 8/8; Android focused `DevicePolicyApplicationProofV1Test` passed and full `testDebugUnitTest` passed (2,216 tests, 0 failures); `lintDebug` passed (0 errors, 153 warnings); migration/schema privacy contract checks passed 33/33; iOS changed sources parse successfully on Windows. `assembleRelease` is not certified: two attempts failed or stalled at `mergeReleaseJavaResource` without exposing a diagnostic, including a single-worker/no-daemon retry. Production envelope verification/decryption/enforcement remains deliberately unavailable, so APPLIED and ACTIVE stay fail-closed. No physical-device XCTest/Android claim is made.
+
+## Wave 02B final exact-head evidence — 2026-10-16
+
+Current source `b305a0b9117f45b3a231aa807a6bb3ddc555806d` was freshly confirmed as LOCAL = ORIGIN = SERVER (0/0). Exact-head Quality Gates run `38883775880` completed SUCCESS, 27/27; all jobs were inspected, including Android, iOS, backend build/unit, backend full disposable-MySQL certification, security, contracts, and repository quality. The guarded local disposable replay also passed all 64 migrations and 9/9 proof transaction/race/rollback/retention tests, then removed its owned schema. Current focused checks passed 30/30 device-session tests and 24/24 proof route/protocol/migration/production-path checks; iOS changed-source parsing passed.
+
+The current production activation gate remains deliberately false. Android refuses to sign APPLIED without a verified/persisted/enforced receiver; iOS production keeps `policyEnvelopeProcessor` absent. No APPLIED proof or PAIRED → ACTIVE can occur. Android local release assembly and physical-device evidence are not claimed. No retained UAT/live/Azure/production DB was touched in this refresh. Wave 02B remains incomplete; Wave 03 has not started. This documentation commit requires exact-head CI.
