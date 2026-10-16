@@ -67,3 +67,9 @@ Owner's latest 2026-10-16 decision supersedes the earlier PoP-equivalence choice
 ## Wave 02B final exact-head evidence — 2026-10-16
 
 `b305a0b9117f45b3a231aa807a6bb3ddc555806d` is freshly verified as LOCAL = ORIGIN = SERVER. Quality Gates run `38883775880` passed 27/27 on that exact SHA; Android build/lint/unit, iOS build/unit, backend build/unit, disposable-MySQL, contract, security and repository-quality jobs all succeeded. The latest guarded disposable DB replay passed all 64 migrations and 9/9 proof transaction/race/retention tests; its generated schema was removed. Current focused backend session tests passed 30/30 and proof protocol/route/certification tests passed 24/24. iOS source parsing passed. The production E2EE receiver path remains deliberately unapproved; no APPLIED proof or ACTIVE transition is possible. Android local release assembly and physical-device evidence are not claimed. Wave 02B remains incomplete; Wave 03 is not started. The docs checkpoint needs its own exact-head CI.
+
+## Wave 02B checkpoint — 2026-10-16
+
+Published head `91922f650866e43082891cf99bd289ffd13e6bb4` matches `origin/pca-dev` and the freshly queried server head. Exact-head Quality Gates run `38953392776` passed 27/27. The run includes Android build/lint/unit and unsigned release artifact, iOS simulator build/tests, backend build/unit, full disposable-MySQL certification, real-backend E2E, security, contracts, and repository quality. Migration 0066 and full DB tests passed on CI-owned disposable MySQL. No local retained UAT, live pca_pro, Azure or production DB was modified.
+
+Wave 02B implements server challenge/proof, 14-day idempotency tombstones, scoped PAIRED bootstrap sessions, and transactional activation authority. Android and iOS stop at the deliberately closed production receiver crypto gate, so APPLIED/ACTIVE remain unavailable. The E2EE receiver suite is the remaining product dependency; Wave 02B is incomplete and Wave 03 has not started.
