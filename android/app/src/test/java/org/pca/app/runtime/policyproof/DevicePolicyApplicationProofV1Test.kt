@@ -4,6 +4,7 @@ import java.math.BigInteger
 import java.util.Base64
 import java.time.Instant
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -12,71 +13,105 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.runtime.sync.envelope.FamilyEnvelope
 import org.pca.app.runtime.sync.envelope.RecipientBinding
+import org.pca.app.runtime.schedule.locateSharedVectorFile
+import org.pca.app.runtime.trustset.P256OrdinaryEpochVerifier
 
 class DevicePolicyApplicationProofV1Test {
-    private val envelope = FamilyEnvelope(
-        protocolMajor = 1,
-        protocolMinor = 0,
-        messageId = "11111111-1111-4111-8111-111111111111",
-        familyId = "22222222-2222-4222-8222-222222222222",
-        senderDeviceId = "33333333-3333-4333-8333-333333333333",
-        recipient = RecipientBinding.Device("44444444-4444-4444-8444-444444444444"),
-        senderKeyId = "55555555-5555-4555-8555-555555555555",
-        messageType = "POLICY_UPDATE",
-        trustSetEpoch = 7,
-        keyEpoch = 9,
-        sequenceOrNonce = "1",
-        issuedAtEpochMillis = 1_792_025_700_000,
-        expiresAtEpochMillis = 1_792_029_300_000,
-        semanticVersion = "1.2.3",
-        correlationId = null,
-        payload = byteArrayOf(0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88.toByte(), 0x99.toByte(), 0xaa.toByte(), 0xbb.toByte(), 0xcc.toByte(), 0xdd.toByte(), 0xee.toByte(), 0xff.toByte()),
-        signature = "fixture-signature-not-used-for-canonicalization",
-    )
+    private val sharedVector by lazy {
+        val file = locateSharedVectorFile("shared/test-vectors/device-policy-application-proof-v1.json")
+        assertTrue("could not locate device-policy-application-proof-v1.json", file != null)
+        JSONObject(file!!.readText())
+    }
 
-    private val expectedEnvelopeCanonicalBase64Url =
-        "MToxMTowMzY6MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExMzY6MjIyMjIyMjItMjIyMi00MjIyLTgyMjItMjIyMjIyMjIyMjIyMzY6MzMzMzMzMzMtMzMzMy00MzMzLTgzMzMtMzMzMzMzMzMzMzMzNjpERVZJQ0UzNjo0NDQ0NDQ0NC00NDQ0LTQ0NDQtODQ0NC00NDQ0NDQ0NDQ0NDQzNjo1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUxMzpQT0xJQ1lfVVBEQVRFMToxMjQ6MjAyNi0xMC0xNVQwMDo1NTowMC4wMDBaMjQ6MjAyNi0xMC0xNVQwMTo1NTowMC4wMDBaMTo3MTo5NToxLjIuMzE6MDA6MjQ6QUJFaU0wUlZabmVJbWFxN3pOM3Uvdz09"
+    private val expectedEnvelopeCanonicalBase64Url: String
+        get() = sharedVector.getJSONObject("canonicalEnvelope").getString("bytesBase64Url")
 
-    private val expectedProofTranscriptBase64Url =
-        "Mzg6UENBX0RFVklDRV9QT0xJQ1lfQVBQTElDQVRJT05fUFJPT0ZfVjEzNjoyMjIyMjIyMi0yMjIyLTQyMjItODIyMi0yMjIyMjIyMjIyMjIzNjo0NDQ0NDQ0NC00NDQ0LTQ0NDQtODQ0NC00NDQ0NDQ0NDQ0NDQzNjoxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTE0MzpNcDZkOFJqc2NrWVJ5ZGZPLU1IWmR1bWEydnl5clRqc0FGMFlBbEhjRHVjMTo3MTo5NzpBUFBMSUVEMzY6NjY2NjY2NjYtNjY2Ni00NjY2LTg2NjYtNjY2NjY2NjY2NjY2NDM6b0tHaW82U2xwcWVvcWFxcnJLMnVyN0N4c3JPMHRiYTN1TG02dTd5OXZyODI0OjIwMjYtMTAtMTVUMDA6NTY6MDAuMDAwWg"
-    private val expectedVectorSignatureBase64Url =
-        "qOnaqSm9irglYluuawYON6vfK8kTt75IaYXslvmTXHsIitr620VP4ZsvKSlZBHwRtWKuGP7HW3wDhT2O7ShJiw"
+    private val envelope by lazy {
+        val vector = sharedVector.getJSONObject("canonicalEnvelope").getJSONObject("envelopeFields")
+        FamilyEnvelope(
+            protocolMajor = vector.getLong("protocolMajor"),
+            protocolMinor = vector.getLong("protocolMinor"),
+            messageId = vector.getString("messageId"),
+            familyId = vector.getString("familyId"),
+            senderDeviceId = vector.getString("senderDeviceId"),
+            recipient = when (vector.getString("recipientKind")) {
+                "DEVICE" -> RecipientBinding.Device(vector.getString("recipientDeviceId"))
+                else -> throw AssertionError("unexpected shared vector recipient kind")
+            },
+            senderKeyId = vector.getString("senderKeyId"),
+            messageType = vector.getString("messageType"),
+            trustSetEpoch = vector.getLong("trustSetEpoch"),
+            keyEpoch = vector.getLong("keyEpoch"),
+            sequenceOrNonce = vector.getString("sequenceOrNonce"),
+            issuedAtEpochMillis = Instant.parse(vector.getString("issuedAt")).toEpochMilli(),
+            expiresAtEpochMillis = Instant.parse(vector.getString("expiresAt")).toEpochMilli(),
+            semanticVersion = vector.getString("semanticVersion"),
+            correlationId = if (vector.isNull("correlationId")) null else vector.getString("correlationId"),
+            payload = Base64.getDecoder().decode(vector.getString("encryptedPayloadBase64")),
+            signature = "fixture-signature-not-used-for-canonicalization",
+        )
+    }
 
-    private val fields = DevicePolicyApplicationProofV1.ProofFields(
-        familyId = "22222222-2222-4222-8222-222222222222",
-        deviceId = "44444444-4444-4444-8444-444444444444",
-        policyEnvelopeMessageId = "11111111-1111-4111-8111-111111111111",
-        policyEnvelopeSha256Base64Url = "Mp6d8RjsckYRydfO-MHZduma2vyyrTjsAF0YAlHcDuc",
-        trustSetEpoch = 7,
-        keyEpoch = 9,
-        applicationResult = DevicePolicyApplicationProofV1.ApplicationResult.APPLIED,
-        challenge = DevicePolicyApplicationProofV1.Challenge(
-            challengeId = "66666666-6666-4666-8666-666666666666",
-            nonceBase64Url = "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8",
-            expiresAt = "2026-10-15T00:56:00.000Z",
-        ),
-    )
+    private val fields by lazy {
+        val vector = sharedVector.getJSONObject("validProof").getJSONObject("fields")
+        DevicePolicyApplicationProofV1.ProofFields(
+            familyId = vector.getString("familyId"),
+            deviceId = vector.getString("deviceId"),
+            policyEnvelopeMessageId = vector.getString("policyEnvelopeMessageId"),
+            policyEnvelopeSha256Base64Url = vector.getString("policyEnvelopeSha256"),
+            trustSetEpoch = vector.getLong("trustSetEpoch"),
+            keyEpoch = vector.getLong("keyEpoch"),
+            applicationResult = DevicePolicyApplicationProofV1.ApplicationResult.valueOf(vector.getString("applicationResult")),
+            challenge = DevicePolicyApplicationProofV1.Challenge(
+                challengeId = vector.getString("challengeId"),
+                nonceBase64Url = vector.getString("challengeNonce"),
+                expiresAt = vector.getString("challengeExpiresAt"),
+            ),
+        )
+    }
 
     @Test
     fun canonicalEnvelopeAndDigestMatchFrozenBackendVector() {
         val canonical = DevicePolicyApplicationProofV1.canonicalEnvelopeBytes(envelope)
-        assertEquals(expectedEnvelopeCanonicalBase64Url, Base64.getUrlEncoder().withoutPadding().encodeToString(canonical))
-        assertEquals("Mp6d8RjsckYRydfO-MHZduma2vyyrTjsAF0YAlHcDuc", DevicePolicyApplicationProofV1.envelopeSha256Base64Url(envelope))
+        val vector = sharedVector.getJSONObject("canonicalEnvelope")
+        assertArrayEquals(Base64.getUrlDecoder().decode(vector.getString("bytesBase64Url")), canonical)
+        assertEquals(vector.getString("bytesBase64Url"), Base64.getUrlEncoder().withoutPadding().encodeToString(canonical))
+        assertEquals(vector.getString("sha256Base64Url"), DevicePolicyApplicationProofV1.envelopeSha256Base64Url(envelope))
+        assertEquals(vector.getString("sha256Hex"), DevicePolicyApplicationProofV1.envelopeSha256(envelope).joinToString("") { "%02x".format(it) })
     }
 
     @Test
     fun proofTranscriptMatchesFrozenVector() {
         val canonical = DevicePolicyApplicationProofV1.canonicalTranscript(fields)
-        assertEquals(expectedProofTranscriptBase64Url, DevicePolicyApplicationProofV1.encodeBase64Url(canonical))
+        val vector = sharedVector.getJSONObject("validProof")
+        assertEquals(DevicePolicyApplicationProofV1.DOMAIN, vector.getJSONObject("fields").getString("domain"))
+        assertArrayEquals(Base64.getUrlDecoder().decode(vector.getString("transcriptBase64Url")), canonical)
+        assertEquals(vector.getString("transcriptBase64Url"), DevicePolicyApplicationProofV1.encodeBase64Url(canonical))
     }
 
     @Test
     fun sharedSyntheticVectorSignatureIsCanonicalLowSP1363() {
+        val proofVector = sharedVector.getJSONObject("validProof")
+        val expectedVectorSignatureBase64Url = proofVector.getString("signatureBase64Url")
+        val signature = Base64.getUrlDecoder().decode(expectedVectorSignatureBase64Url)
         DevicePolicyApplicationProofV1.validateCanonicalSignature(
-            Base64.getUrlDecoder().decode(expectedVectorSignatureBase64Url),
+            signature,
         )
-        assertEquals(expectedVectorSignatureBase64Url,
-            Base64.getUrlEncoder().withoutPadding().encodeToString(Base64.getUrlDecoder().decode(expectedVectorSignatureBase64Url)))
+        assertEquals(64, signature.size)
+        assertEquals(expectedVectorSignatureBase64Url, Base64.getUrlEncoder().withoutPadding().encodeToString(signature))
+
+        val transcript = DevicePolicyApplicationProofV1.canonicalTranscript(fields)
+        val publicKey = proofVector.getString("syntheticDskPublicKeySec1Base64Url")
+        val verifier = P256OrdinaryEpochVerifier()
+        val standardBase64Signature = Base64.getEncoder().encodeToString(signature)
+        assertEquals(88, standardBase64Signature.length)
+        assertTrue(verifier.verify(publicKey, transcript, standardBase64Signature))
+
+        val changedTranscript = transcript.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+        assertTrue(verifier.verify(publicKey, changedTranscript, standardBase64Signature).not())
+        val changedSignature = signature.copyOf().also { it[31] = (it[31].toInt() xor 1).toByte() }
+        DevicePolicyApplicationProofV1.validateCanonicalSignature(changedSignature)
+        assertTrue(verifier.verify(publicKey, transcript, Base64.getEncoder().encodeToString(changedSignature)).not())
     }
 
     @Test

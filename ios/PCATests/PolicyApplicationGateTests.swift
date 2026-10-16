@@ -131,19 +131,25 @@ final class PolicyApplicationGateTests: XCTestCase {
     }
 
     func testDevicePolicyProofTranscriptUsesFrozenElevenNetstringFields() throws {
-        let challenge = sharedVectorProofChallenge()
+        let vector = try sharedProofVector()
+        XCTAssertEqual(vector.validProof.fields.domain, PCADevicePolicyProofCodec.domain)
+        XCTAssertEqual(vector.validProof.fields.applicationResult, PCADevicePolicyApplicationResult.applied.rawValue)
+        let challenge = sharedVectorProofChallenge(vector.validProof.fields)
         let transcript = try PCADevicePolicyProofCodec.encode(challenge, result: .applied)
-        XCTAssertEqual(PCADevicePolicyProofCodec.base64URL(transcript),
-            "Mzg6UENBX0RFVklDRV9QT0xJQ1lfQVBQTElDQVRJT05fUFJPT0ZfVjEzNjoyMjIyMjIyMi0yMjIyLTQyMjItODIyMi0yMjIyMjIyMjIyMjIzNjo0NDQ0NDQ0NC00NDQ0LTQ0NDQtODQ0NC00NDQ0NDQ0NDQ0NDQzNjoxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTE0MzpNcDZkOFJqc2NrWVJ5ZGZPLU1IWmR1bWEydnl5clRqc0FGMFlBbEhjRHVjMTo3MTo5NzpBUFBMSUVEMzY6NjY2NjY2NjYtNjY2Ni00NjY2LTg2NjYtNjY2NjY2NjY2NjY2NDM6b0tHaW82U2xwcWVvcWFxcnJLMnVyN0N4c3JPMHRiYTN1TG02dTd5OXZyODI0OjIwMjYtMTAtMTVUMDA6NTY6MDAuMDAwWg")
+        let expectedTranscript = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
+            vector.validProof.transcriptBase64Url))
+        XCTAssertEqual(transcript, expectedTranscript)
         XCTAssertLessThanOrEqual(transcript.count, PCADevicePolicyProofCodec.maximumTranscriptBytes)
     }
 
     func testSharedVectorSignatureVerifiesWithSyntheticDsk() throws {
-        let transcript = try PCADevicePolicyProofCodec.encode(sharedVectorProofChallenge(), result: .applied)
+        let vector = try sharedProofVector()
+        let fields = vector.validProof.fields
+        let transcript = try PCADevicePolicyProofCodec.encode(sharedVectorProofChallenge(fields), result: .applied)
         let publicKeyBytes = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
-            "BEo3oAxgCztM8rd02sbHbuD_vdgAnjsGov_ou4xgVbZhoxiVVghyV_ugsENG3RI_K85pHV-wLnNB2FETA83c_lM"))
+            vector.validProof.syntheticDskPublicKeySec1Base64Url))
         let signatureBytes = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
-            "qOnaqSm9irglYluuawYON6vfK8kTt75IaYXslvmTXHsIitr620VP4ZsvKSlZBHwRtWKuGP7HW3wDhT2O7ShJiw"))
+            vector.validProof.signatureBase64Url))
         XCTAssertTrue(P256DerSignature.isLowS(signatureBytes))
         let key = try P256.Signing.PublicKey(x963Representation: publicKeyBytes)
         let signature = try P256.Signing.ECDSASignature(rawRepresentation: signatureBytes)
@@ -186,19 +192,77 @@ final class PolicyApplicationGateTests: XCTestCase {
     }
 
     func testEnvelopeCanonicalBytesMatchBackendFieldOrderAndChangeWithCiphertext() throws {
-        let envelope = sharedVectorEnvelope()
+        let vector = try sharedProofVector()
+        let fields = vector.canonicalEnvelope.envelopeFields
+        let envelope = sharedVectorEnvelope(fields)
         let bytes = try PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(envelope)
-        XCTAssertEqual(PCADevicePolicyProofCodec.base64URL(bytes),
-            "MToxMTowMzY6MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExMzY6MjIyMjIyMjItMjIyMi00MjIyLTgyMjItMjIyMjIyMjIyMjIyMzY6MzMzMzMzMzMtMzMzMy00MzMzLTgzMzMtMzMzMzMzMzMzMzMzNjpERVZJQ0UzNjo0NDQ0NDQ0NC00NDQ0LTQ0NDQtODQ0NC00NDQ0NDQ0NDQ0NDQzNjo1NTU1NTU1NS01NTU1LTQ1NTUtODU1NS01NTU1NTU1NTU1NTUxMzpQT0xJQ1lfVVBEQVRFMToxMjQ6MjAyNi0xMC0xNVQwMDo1NTowMC4wMDBaMjQ6MjAyNi0xMC0xNVQwMTo1NTowMC4wMDBaMTo3MTo5NToxLjIuMzE6MDA6MjQ6QUJFaU0wUlZabmVJbWFxN3pOM3Uvdz09")
-        XCTAssertEqual(PCADevicePolicyProofCodec.base64URL(try PCADevicePolicyEnvelopeCanonicalizer.sha256(bytes)),
-            "Mp6d8RjsckYRydfO-MHZduma2vyyrTjsAF0YAlHcDuc")
+        let expectedBytes = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
+            vector.canonicalEnvelope.bytesBase64Url))
+        XCTAssertEqual(bytes, expectedBytes)
+        let digest = try PCADevicePolicyEnvelopeCanonicalizer.sha256(bytes)
+        XCTAssertEqual(PCADevicePolicyProofCodec.base64URL(digest), vector.canonicalEnvelope.sha256Base64Url)
+        XCTAssertEqual(digest.map { String(format: "%02x", $0) }.joined(), vector.canonicalEnvelope.sha256Hex)
         XCTAssertNotEqual(bytes, try PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(sharedVectorEnvelope(
+            fields,
             payload: Data([0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
                 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xfe]))))
         XCTAssertLessThanOrEqual(bytes.count, PCADevicePolicyEnvelopeCanonicalizer.maximumCanonicalBytes)
         XCTAssertThrowsError(try PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(
-            sharedVectorEnvelope(issuedAt: "2026-10-15T03:55:00.000+03:00")
+            sharedVectorEnvelope(fields, issuedAt: "2026-10-15T03:55:00.000+03:00")
         ))
+    }
+
+    private struct SharedDevicePolicyProofVector: Decodable {
+        let canonicalEnvelope: CanonicalEnvelope
+        let validProof: ValidProof
+
+        struct CanonicalEnvelope: Decodable {
+            let bytesBase64Url: String
+            let sha256Hex: String
+            let sha256Base64Url: String
+            let envelopeFields: EnvelopeFields
+
+            struct EnvelopeFields: Decodable {
+                let protocolMajor: Int
+                let protocolMinor: Int
+                let messageId: String
+                let familyId: String
+                let senderDeviceId: String
+                let recipientKind: String
+                let recipientDeviceId: String
+                let senderKeyId: String
+                let messageType: String
+                let sequenceOrNonce: String
+                let issuedAt: String
+                let expiresAt: String
+                let trustSetEpoch: Int
+                let keyEpoch: Int
+                let semanticVersion: String
+                let correlationId: String?
+                let encryptedPayloadBase64: String
+            }
+        }
+
+        struct ValidProof: Decodable {
+            let fields: ProofFields
+            let transcriptBase64Url: String
+            let syntheticDskPublicKeySec1Base64Url: String
+            let signatureBase64Url: String
+
+            struct ProofFields: Decodable {
+                let domain: String
+                let familyId: String
+                let deviceId: String
+                let policyEnvelopeMessageId: String
+                let policyEnvelopeSha256: String
+                let trustSetEpoch: Int
+                let keyEpoch: Int
+                let applicationResult: String
+                let challengeId: String
+                let challengeNonce: String
+                let challengeExpiresAt: String
+            }
+        }
     }
 
     func testProofStoreReturnsByteIdenticalRetryAndPrunesAtFourteenDays() throws {
@@ -294,28 +358,42 @@ final class PolicyApplicationGateTests: XCTestCase {
             policyEnvelopeSha256: zero, trustSetEpoch: 7, keyEpoch: 4, expiresAt: "2026-10-16T12:30:00.000Z")
     }
 
-    private func sharedVectorProofChallenge() -> PCADevicePolicyProofChallenge {
-        PCADevicePolicyProofChallenge(challengeId: "66666666-6666-4666-8666-666666666666",
-            nonce: "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8",
-            familyId: "22222222-2222-4222-8222-222222222222",
-            deviceId: "44444444-4444-4444-8444-444444444444",
-            policyEnvelopeMessageId: "11111111-1111-4111-8111-111111111111",
-            policyEnvelopeSha256: "Mp6d8RjsckYRydfO-MHZduma2vyyrTjsAF0YAlHcDuc",
-            trustSetEpoch: 7, keyEpoch: 9, expiresAt: "2026-10-15T00:56:00.000Z")
+    private func sharedProofVector() throws -> SharedDevicePolicyProofVector {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixtureURL = repositoryRoot.appendingPathComponent("shared/test-vectors/device-policy-application-proof-v1.json")
+        return try JSONDecoder().decode(SharedDevicePolicyProofVector.self, from: Data(contentsOf: fixtureURL))
     }
 
-    private func sharedVectorEnvelope(payload: Data = Data([0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]),
-        issuedAt: String = "2026-10-15T00:55:00.000Z") -> PCAInboundEnvelope {
-        PCAInboundEnvelope(protocolMajor: 1, protocolMinor: 0,
-            messageId: "11111111-1111-4111-8111-111111111111",
-            familyId: "22222222-2222-4222-8222-222222222222",
-            senderDeviceId: "33333333-3333-4333-8333-333333333333",
-            recipientDeviceId: "44444444-4444-4444-8444-444444444444",
-            recipientGroup: nil, senderKeyId: "55555555-5555-4555-8555-555555555555",
-            messageType: "POLICY_UPDATE", trustSetEpoch: 7, keyEpoch: 9, sequenceOrNonce: "1",
-            issuedAt: issuedAt, expiresAt: "2026-10-15T01:55:00.000Z", semanticVersion: "1.2.3",
-            correlationId: nil, payload: payload.base64EncodedString(), signature: "ignored")
+    private func sharedVectorProofChallenge(
+        _ fields: SharedDevicePolicyProofVector.ValidProof.ProofFields
+    ) -> PCADevicePolicyProofChallenge {
+        PCADevicePolicyProofChallenge(challengeId: fields.challengeId, nonce: fields.challengeNonce,
+            familyId: fields.familyId, deviceId: fields.deviceId,
+            policyEnvelopeMessageId: fields.policyEnvelopeMessageId,
+            policyEnvelopeSha256: fields.policyEnvelopeSha256,
+            trustSetEpoch: fields.trustSetEpoch, keyEpoch: fields.keyEpoch,
+            expiresAt: fields.challengeExpiresAt)
+    }
+
+    private func sharedVectorEnvelope(
+        _ fields: SharedDevicePolicyProofVector.CanonicalEnvelope.EnvelopeFields,
+        payload: Data? = nil,
+        issuedAt: String? = nil
+    ) -> PCAInboundEnvelope {
+        let encryptedPayload = payload ?? Data(base64Encoded: fields.encryptedPayloadBase64)!
+        precondition(fields.recipientKind == "DEVICE")
+        return PCAInboundEnvelope(protocolMajor: fields.protocolMajor, protocolMinor: fields.protocolMinor,
+            messageId: fields.messageId, familyId: fields.familyId,
+            senderDeviceId: fields.senderDeviceId, recipientDeviceId: fields.recipientDeviceId,
+            recipientGroup: nil, senderKeyId: fields.senderKeyId,
+            messageType: fields.messageType, trustSetEpoch: fields.trustSetEpoch,
+            keyEpoch: fields.keyEpoch, sequenceOrNonce: fields.sequenceOrNonce,
+            issuedAt: issuedAt ?? fields.issuedAt, expiresAt: fields.expiresAt,
+            semanticVersion: fields.semanticVersion, correlationId: fields.correlationId,
+            payload: encryptedPayload.base64EncodedString(), signature: "ignored")
     }
 
     private func policyEnvelope(payload: Data, issuedAt: String = "2026-10-16T12:00:00.000Z") -> PCAInboundEnvelope {
