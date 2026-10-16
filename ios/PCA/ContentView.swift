@@ -114,6 +114,17 @@ import SwiftUI
                         submitApprovedRoot: { Task { await model.submitApprovedFirstDeviceRoot() } },
                         retrySavedSubmission: { Task { await model.retrySavedFirstDeviceRootSubmission() } }
                     )
+                    if record.state == .rootCommitted, model.dependencies.activationClient != nil {
+                        Button(PCALocalizedStrings.text("Check device activation")) {
+                            Task { await model.checkPairedActivation() }
+                        }
+                        .disabled(model.pairedActivationInProgress)
+                        .accessibilityHint(PCALocalizedStrings.text("Checks this device's activation target and applies it only after secure policy verification."))
+                        if model.pairedActivationCryptoUnavailable {
+                            Text(PCALocalizedStrings.text("The encrypted policy was not applied because approved device verification and decryption are unavailable. Activation remains incomplete."))
+                                .accessibilityLabel(PCALocalizedStrings.text("The encrypted policy was not applied because approved device verification and decryption are unavailable. Activation remains incomplete."))
+                        }
+                    }
                 }
 
                 NavigationLink {

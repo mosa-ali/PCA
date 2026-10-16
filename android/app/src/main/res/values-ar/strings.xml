@@ -268,6 +268,10 @@
     <string name="enrollment_root_review_refresh_button">التحقق من حالة المراجعة</string>
     <string name="enrollment_root_review_submit_button">إرسال إثبات الأمان</string>
     <string name="enrollment_root_review_replay_button">إعادة إرسال الإثبات المحفوظ</string>
+    <string name="enrollment_activation_policy_button">التحقق من وجود سياسة تفعيل</string>
+    <string name="enrollment_activation_policy_crypto_not_ready">لم تُطبّق السياسة المشفّرة. لم يتوفر بعد التحقق وفك التشفير المعتمدان لهذا الجهاز؛ ولم يكتمل التفعيل.</string>
+    <string name="enrollment_activation_policy_check_completed">اكتمل التحقق من سياسة التفعيل. وما زال تفعيل الخادم قيد الانتظار.</string>
+    <string name="enrollment_activation_policy_unavailable">تعذّر تأكيد حالة سياسة التفعيل.</string>
     <string name="enrollment_profile_confirmation_title">تأكيد ملف الحماية</string>
     <string name="enrollment_profile_confirmation_body">اختار أحد الوالدين الملف التالي لهذا الجهاز. راجعه وأكّد لإكمال الإعداد المحلي. لا يمكنك اختيار ملف أضعف هنا.</string>
     <string name="enrollment_profile_confirmation_age">العمر والوضع: %1$s</string>

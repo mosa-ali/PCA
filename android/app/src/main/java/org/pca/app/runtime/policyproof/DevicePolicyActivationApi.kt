@@ -191,6 +191,55 @@ class DevicePolicyActivationApi(private val transport: DevicePolicyActivationHtt
     }
 }
 
+/** The receiver seam runs only after the server-scoped bootstrap session fetched its exact target. */
+fun interface DevicePolicyActivationReceiverGate {
+    fun verifyDecryptPersistAndEnforce(
+        familyId: String,
+        deviceId: String,
+        target: DevicePolicyActivationTarget,
+    )
+}
+
+/** Explicit production stop while the reviewed FamilyEnvelope crypto suite is unavailable. */
+class NotReadyDevicePolicyActivationReceiverGate : DevicePolicyActivationReceiverGate {
+    override fun verifyDecryptPersistAndEnforce(
+        familyId: String,
+        deviceId: String,
+        target: DevicePolicyActivationTarget,
+    ): Nothing {
+        require(target.canonicalEnvelopeBytes.isNotEmpty())
+        throw DevicePolicyActivationReceiverNotReadyException()
+    }
+}
+
+class DevicePolicyActivationReceiverNotReadyException : IllegalStateException("NOT_READY_CRYPTO_REVIEW")
+
+/**
+ * Bounded production bootstrap entrypoint. The session token is kept only in this stack frame;
+ * no APPLIED proof is constructed here. The receiver gate must complete the approved local
+ * verification/decryption/persistence/enforcement chain before a later implementation can report
+ * APPLIED.
+ */
+class DevicePolicyActivationBootstrap(
+    private val api: DevicePolicyActivationApi,
+    private val signer: CurrentDeviceDskProofSigner,
+    private val receiverGate: DevicePolicyActivationReceiverGate,
+) {
+    private val inFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun fetchAndApply(familyId: String, deviceId: String) {
+        check(inFlight.compareAndSet(false, true)) { "device_policy_activation_already_in_progress" }
+        try {
+            val challenge = api.challenge(familyId, deviceId)
+            val session = api.complete(familyId, deviceId, challenge, signer)
+            val target = api.fetch(session)
+            receiverGate.verifyDecryptPersistAndEnforce(familyId, deviceId, target)
+        } finally {
+            inFlight.set(false)
+        }
+    }
+}
+
 /** HTTPS-only production transport. Redirects and authenticated-session headers are deliberately absent. */
 class UrlConnectionDevicePolicyActivationTransport(baseUrl: String) : DevicePolicyActivationHttpTransport {
     private val base: URI = URI.create(baseUrl).also {

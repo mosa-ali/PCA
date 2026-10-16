@@ -77,6 +77,10 @@ import org.pca.app.firstdevice.PersistentFirstDeviceRootStore
 import org.pca.app.firstdevice.FirstDeviceRootState
 import org.pca.app.runtime.policyproof.AndroidCurrentDeviceDskProofSigner
 import org.pca.app.runtime.policyproof.AndroidKeystoreCurrentDeviceDskKeyAccess
+import org.pca.app.runtime.policyproof.DevicePolicyActivationApi
+import org.pca.app.runtime.policyproof.DevicePolicyActivationBootstrap
+import org.pca.app.runtime.policyproof.NotReadyDevicePolicyActivationReceiverGate
+import org.pca.app.runtime.policyproof.UrlConnectionDevicePolicyActivationTransport
 import org.pca.app.runtime.trustset.HttpOrdinaryTrustSetApi
 import org.pca.app.runtime.trustset.OrdinaryTrustSetRuntime
 import org.pca.app.runtime.trustset.PersistentOrdinaryEpochStore
@@ -476,10 +480,11 @@ class PcaAppGraph private constructor(
      * placeholder was a domain the project does not own, so a future key-generator swap would have
      * POSTed invitation tokens and device public keys to an unowned host). Nothing is deployed
      * there yet -- see that review's status section; HTTPS is enforced unconditionally regardless. */
+    private val productionApiBaseUrl = "https://api.pcasafe.com"
     val androidKeystoreDskProvider = AndroidKeystoreDskProvider()
     val deviceKeyPairGenerator: DeviceKeyPairGenerator = androidKeystoreDskProvider
     val deviceBootstrapApiClient: DeviceBootstrapApiClient =
-        HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pcasafe.com"))
+        HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = productionApiBaseUrl))
     /** PCA-ADD-ENR-008: accepts both the custom `pca://enroll` scheme and the `https://` Android
      * App Link continuation form -- see [EnrollmentDeepLinkConfig.APP_LINK_HOST]'s own doc. */
     val enrollmentLinkParser: EnrollmentLinkParser =
@@ -504,6 +509,14 @@ class PcaAppGraph private constructor(
     val devicePolicyApplicationProofSigner = AndroidCurrentDeviceDskProofSigner(
         rootStore = firstDeviceRootStore,
         keyAccess = AndroidKeystoreCurrentDeviceDskKeyAccess(androidKeystoreDskProvider),
+    )
+    /** PAIRED activation bootstrap uses the production API hostname and committed-root DSK.
+     * Its receiver gate is deliberately fail-closed until the reviewed FamilyEnvelope crypto suite
+     * is available; it can fetch only the activation target and cannot emit APPLIED. */
+    val devicePolicyActivationBootstrap = DevicePolicyActivationBootstrap(
+        api = DevicePolicyActivationApi(UrlConnectionDevicePolicyActivationTransport(productionApiBaseUrl)),
+        signer = devicePolicyApplicationProofSigner,
+        receiverGate = NotReadyDevicePolicyActivationReceiverGate(),
     )
     val enrollmentCoordinator = EnrollmentCoordinator(
         linkParser = enrollmentLinkParser,
@@ -530,7 +543,7 @@ class PcaAppGraph private constructor(
      * lifecycle state: server-authoritative acceptance is recorded in [firstDeviceRootStore]
      * only. */
     val firstDeviceBootstrapApiClient: FirstDeviceBootstrapApiClient =
-        HttpFirstDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pcasafe.com"))
+        HttpFirstDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = productionApiBaseUrl))
     val firstDeviceTrustRootCoordinator = FirstDeviceTrustRootCoordinator(
         rootStore = firstDeviceRootStore,
         apiClient = firstDeviceBootstrapApiClient,
@@ -648,6 +661,19 @@ class PcaAppGraph private constructor(
      * this graph was constructed is picked up without an app restart. */
     private fun enrolledDeviceIdOrNull(): String? =
         (deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId
+
+    /** Production PAIRED bootstrap entrypoint. Identity is derived from the committed enrollment
+     * root and rechecked durably before any request; the configured receiver then stops at the
+     * intentional NOT_READY_CRYPTO_REVIEW gate. */
+    fun fetchAndApplyCurrentDevicePolicyActivation() {
+        val root = firstDeviceRootStore.current() ?: error("current_device_root_unavailable")
+        val familyId = root.familyId ?: error("current_device_family_unavailable")
+        check(root.state == FirstDeviceRootState.ROOT_COMMITTED &&
+            root.seed.deviceId == enrolledDeviceIdOrNull() && firstDeviceRootStore.confirmDurable(root)) {
+            "current_device_activation_identity_unavailable"
+        }
+        devicePolicyActivationBootstrap.fetchAndApply(familyId, root.seed.deviceId)
+    }
 
     /** Shared, live (never cached) CAMERA runtime-permission check -- both [cameraProximitySource]
      * (gates every estimation call) and [cameraPermissionStateTracker] (PCA-FR-080 loss detection)

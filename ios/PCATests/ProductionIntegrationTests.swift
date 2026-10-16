@@ -4781,6 +4781,7 @@ final class ProductionIntegrationTests: XCTestCase {
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         applicationProofStore: PCADeviceApplicationProofStore? = nil,
+        activationClient: PCADevicePolicyActivationClient? = nil,
         authorizationStatus: RawAuthorizationStatus = .approved,
         authorizationSource: AuthorizationStatusSource? = nil,
         enrollmentTransport: PCAHTTPTransport? = nil
@@ -4827,6 +4828,7 @@ final class ProductionIntegrationTests: XCTestCase {
             ordinaryTrustSetCoordinatorFactory: ordinaryTrustSetCoordinatorFactory,
             policyRuntime: policyRuntime,
             applicationProofStore: applicationProofStore,
+            activationClient: activationClient,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: identityStore
         )
@@ -5628,6 +5630,79 @@ final class ProductionIntegrationTests: XCTestCase {
         XCTAssertNil(try proofStore.proof(challengeId: challenge.challengeId, now: Date()))
     }
 
+    @MainActor func testProductionPairedActivationReachesCryptoGateAndFailsClosedWithoutProof() async throws {
+        let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!
+        let challengeId = "66666666-6666-4666-8666-666666666666"
+        let nonce = PCADevicePolicyProofCodec.base64URL(Data(repeating: 0x5a, count: 32))
+        let envelopeBytes = Data([0x01, 0x02, 0x03, 0x04])
+        let envelopeDigest = PCADevicePolicyProofCodec.base64URL(
+            try PCADevicePolicyEnvelopeCanonicalizer.sha256(envelopeBytes))
+        let sessionToken = String(repeating: "A", count: 48)
+        var paths: [String] = []
+        let transport = InMemoryPCAHTTPTransport { request in
+            let path = request.url!.path
+            paths.append(path)
+            let response: [String: Any]
+            switch path {
+            case "/v1/device-policy-activation/bootstrap/challenge":
+                response = ["challengeId": challengeId, "nonce": nonce, "expiresAt": "2026-10-16T12:01:00.000Z"]
+            case "/v1/device-policy-activation/bootstrap/complete":
+                response = ["challengeId": challengeId, "nonce": nonce, "expiresAt": "2026-10-16T12:01:00.000Z",
+                    "sessionToken": sessionToken, "sessionExpiresAt": "2026-10-16T12:10:00.000Z",
+                    "policyEnvelopeMessageId": "policy-activation-1", "policyEnvelopeSha256": envelopeDigest,
+                    "trustSetEpoch": 7, "keyEpoch": 4]
+            case "/v1/device-policy-activation/bootstrap/fetch":
+                response = ["challengeId": challengeId, "policyEnvelopeMessageId": "policy-activation-1",
+                    "policyEnvelopeSha256": envelopeDigest,
+                    "canonicalEnvelopeBytes": PCADevicePolicyProofCodec.base64URL(envelopeBytes),
+                    "envelopeSignature": "untrusted-test-fixture", "trustSetEpoch": 7, "keyEpoch": 4]
+            default:
+                XCTFail("The fail-closed receiver path must not submit or recover an application proof")
+                throw PCAHTTPTransportError.invalidResponse
+            }
+            return PCAHTTPResponse(statusCode: 200, data: try JSONSerialization.data(withJSONObject: response))
+        }
+        let activationClient = try PCADevicePolicyActivationClient(
+            baseURL: URL(string: "https://api.example.test")!, transport: transport, now: { now })
+        let familyId = "22222222-2222-4222-8222-222222222222"
+        let deviceId = "44444444-4444-4444-8444-444444444444"
+        let seed = FirstDeviceCeremonySeed(
+            attemptId: "activation-attempt-01", attemptRecoveryToken: "activation-recovery-token",
+            serverBaseUrl: "https://api.example.test", deviceId: deviceId,
+            signingKeyId: "55555555-5555-4555-8555-555555555555",
+            encryptionKeyId: "77777777-7777-4777-8777-777777777777",
+            dskPublicKeyBase64: trustRootSeed().dskPublicKeyBase64,
+            dekPublicKeyBase64: trustRootSeed().dekPublicKeyBase64,
+            dskAlias: "pca.dsk.activation-attempt-01", dekAlias: "pca.dek.activation-attempt-01")
+        let roots = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+            seed: seed, state: .rootCommitted, familyId: familyId))
+        let keychain = InMemoryKeychainStore()
+        let proofStore = PCADeviceApplicationProofStore(keychain: keychain, serviceNamespace: "activation-crypto-gate")
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            firstDeviceRootStore: roots,
+            proofProvider: ActivationBootstrapProofProvider(),
+            applicationProofStore: proofStore,
+            activationClient: activationClient
+        )
+
+        await model.checkPairedActivation()
+
+        XCTAssertEqual(paths, [
+            "/v1/device-policy-activation/bootstrap/challenge",
+            "/v1/device-policy-activation/bootstrap/complete",
+            "/v1/device-policy-activation/bootstrap/fetch",
+        ])
+        XCTAssertEqual(transport.requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer \(sessionToken)")
+        XCTAssertEqual(model.lastError, .securityGate)
+        XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded)
+        XCTAssertFalse(model.pairedActivationInProgress)
+        XCTAssertTrue(model.pairedActivationCryptoUnavailable)
+        XCTAssertNil(try proofStore.proof(challengeId: challengeId, now: now),
+            "without the approved production verify/decrypt processor, the fetched ciphertext cannot create an APPLIED proof")
+    }
+
     func testAuthorizationApprovalAloneNeverClaimsProtectionActive() {
         let runtime = PCAHostProtectionRuntime()
         runtime.authorizationChanged(.approved)
@@ -5782,6 +5857,17 @@ private struct TestEnrollmentProofProvider: PCADeviceProofProvider {
     let signingPublicKey = "test-signing-public-key"
     let encryptionPublicKey = "test-encryption-public-key"
     func sign(challenge: String) throws -> String { "test-signature" }
+}
+
+private struct ActivationBootstrapProofProvider: PCADeviceProofProvider {
+    let signingPublicKey = "test-only-bootstrap-key"
+    let encryptionPublicKey = "test-only-encryption-key"
+    func sign(challenge: String) throws -> String {
+        var signature = Data(repeating: 0, count: 64)
+        signature[31] = 1
+        signature[63] = 1
+        return PCADevicePolicyProofCodec.base64URL(signature)
+    }
 }
 
 private struct EmptyEnrollmentProofProvider: PCADeviceProofProvider {

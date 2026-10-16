@@ -103,7 +103,7 @@ class FirstDeviceRootReviewActionsTest {
             firstDeviceRootReviewActions(record(FirstDeviceRootState.EXPIRED), "device-1"),
         )
         assertEquals(
-            emptySet<FirstDeviceRootReviewAction>(),
+            setOf(FirstDeviceRootReviewAction.FETCH_ACTIVATION_POLICY),
             firstDeviceRootReviewActions(record(FirstDeviceRootState.ROOT_COMMITTED), "device-1"),
         )
         assertEquals(
@@ -128,6 +128,8 @@ class FirstDeviceRootReviewActionsTest {
             ?: error("EnrollmentActivity.kt was not found")
 
         assertTrue(source.contains("graph.firstDeviceTrustRootCoordinator"))
+        assertTrue(source.contains("graph.fetchAndApplyCurrentDevicePolicyActivation()"))
+        assertTrue(source.contains("Dispatchers.IO"))
         assertTrue(source.contains("onStartFirstDeviceRootReview = {"))
         assertTrue(source.contains("firstDeviceRootCoordinator.beginCeremony()"))
         assertTrue(source.contains("firstDeviceRootCoordinator.refreshStatus()"))

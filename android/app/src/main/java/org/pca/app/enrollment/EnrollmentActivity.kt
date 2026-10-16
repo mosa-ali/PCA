@@ -15,12 +15,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.pca.app.PcaApplication
 import org.pca.app.R
 import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.enrollment.ui.EnrollmentScreen
 import org.pca.app.runtime.graph.PcaAppGraph
+import org.pca.app.runtime.policyproof.DevicePolicyActivationReceiverNotReadyException
 
 /**
  * The child-device setup entry point (mission Section 9/10). Reachable two ways: directly (the
@@ -56,6 +60,8 @@ class EnrollmentActivity : ComponentActivity() {
                 var firstDeviceRootRecord by remember {
                     mutableStateOf(graph.firstDeviceRootStore.current())
                 }
+                var activationPolicyStatusMessage by remember { mutableStateOf<Int?>(null) }
+                var activationPolicyInProgress by remember { mutableStateOf(false) }
                 MaterialTheme {
                     EnrollmentScreen(
                         state = state,
@@ -117,6 +123,32 @@ class EnrollmentActivity : ComponentActivity() {
                                 firstDeviceRootRecord = graph.firstDeviceRootStore.current()
                             }
                         },
+                        onFetchActivationPolicy = {
+                            if (activationPolicyInProgress) return@EnrollmentScreen
+                            activationPolicyInProgress = true
+                            activationPolicyStatusMessage = null
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    val statusMessage = try {
+                                        graph.fetchAndApplyCurrentDevicePolicyActivation()
+                                        R.string.enrollment_activation_policy_check_completed
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        if (failure is DevicePolicyActivationReceiverNotReadyException) {
+                                            R.string.enrollment_activation_policy_crypto_not_ready
+                                        } else {
+                                            R.string.enrollment_activation_policy_unavailable
+                                        }
+                                    }
+                                    withContext(Dispatchers.Main) { activationPolicyStatusMessage = statusMessage }
+                                } finally {
+                                    withContext(Dispatchers.Main) { activationPolicyInProgress = false }
+                                }
+                            }
+                        },
+                        activationPolicyStatusMessage = activationPolicyStatusMessage,
+                        activationPolicyInProgress = activationPolicyInProgress,
                     )
                 }
             }

@@ -295,6 +295,8 @@ enum PCAFirstDeviceTrustRootComposition {
     @Published public private(set) var firstDeviceRootReadUnavailable = false
     @Published public private(set) var isFirstDeviceRootActionInProgress = false
     @Published public private(set) var enrollmentOperationInProgress = false
+    @Published public private(set) var pairedActivationInProgress = false
+    @Published public private(set) var pairedActivationCryptoUnavailable = false
     /// Durable request awaiting a server response. Retained for exact retries
     /// only during the owner-approved 14-day window.
     public private(set) var lastDeviceApplicationProof: PCADeviceApplicationProof?
@@ -692,6 +694,38 @@ enum PCAFirstDeviceTrustRootComposition {
         return PCADevicePolicyActivationBootstrapResult(target: target, proofChallenge: session.proofChallenge, session: session)
     }
 
+    /// Production entry point for the narrow paired activation flow. The
+    /// server challenge/DSK ceremony creates a PAIRED_BOOTSTRAP session; the
+    /// returned ciphertext is then handed directly to the existing receiver
+    /// boundary. No proof is submitted unless that boundary verifies and
+    /// decrypts the envelope and the local runtime reports successful
+    /// enforcement.
+    @MainActor public func checkPairedActivation() async {
+        guard !pairedActivationInProgress else { return }
+        pairedActivationInProgress = true
+        pairedActivationCryptoUnavailable = false
+        defer { pairedActivationInProgress = false }
+        do {
+            let bootstrap = try await fetchPairedActivationTarget()
+            guard let result = applyVerifiedPolicy(
+                activationTarget: bootstrap.target,
+                proofChallenge: bootstrap.proofChallenge
+            ), result == .applied else {
+                // The bootstrap token is deliberately discarded when the
+                // receiver gate cannot produce an APPLIED proof. A future
+                // approved receiver must obtain a fresh challenge/session.
+                pairedBootstrapSessions.removeValue(forKey: bootstrap.session.challengeId)
+                pairedActivationCryptoUnavailable = dependencies.policyEnvelopeProcessor == nil
+                return
+            }
+            _ = try await submitDeviceApplicationProof(challengeId: bootstrap.session.challengeId)
+        } catch let error as PCAAPIError {
+            lastError = Self.category(for: error)
+        } catch {
+            lastError = .recoverable
+        }
+    }
+
     private func reconcileCallbackHealth() {
         let currentTime = now()
         switch dependencies.policyRuntime.usageMonitorStatus(now: currentTime) {
@@ -748,6 +782,7 @@ enum PCAFirstDeviceTrustRootComposition {
         guard let deviceId = pendingDeviceId,
               let familyId = firstDeviceRootRecord?.familyId,
               let processor = dependencies.policyEnvelopeProcessor else {
+            pairedBootstrapSessions.removeValue(forKey: activationTarget.challengeId)
             lastError = .securityGate
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = .protectionDegraded

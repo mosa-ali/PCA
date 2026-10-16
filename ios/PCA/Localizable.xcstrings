@@ -769,6 +769,24 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Parent invitation" } }
       }
     },
+    "Check device activation" : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "التحقق من تفعيل الجهاز" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check device activation" } }
+      }
+    },
+    "The encrypted policy was not applied because approved device verification and decryption are unavailable. Activation remains incomplete." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "لم تُطبّق السياسة المشفّرة لعدم توفر التحقق وفك التشفير المعتمدين لهذا الجهاز. وما زال التفعيل غير مكتمل." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The encrypted policy was not applied because approved device verification and decryption are unavailable. Activation remains incomplete." } }
+      }
+    },
+    "Checks this device's activation target and applies it only after secure policy verification." : {
+      "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "يتحقق من هدف تفعيل هذا الجهاز ولا يطبّقه إلا بعد التحقق الآمن من السياسة." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Checks this device's activation target and applies it only after secure policy verification." } }
+      }
+    },
     "Paste the parent invitation link" : {
       "localizations" : {
         "ar" : { "stringUnit" : { "state" : "translated", "value" : "ألصق رابط دعوة وليّ الأمر" } },

@@ -258,4 +258,66 @@ class DevicePolicyApplicationProofV1Test {
         assertEquals(setOf("familyId", "deviceId", "challengeId", "nonce", "signature"), requests[1].second.keys().asSequence().toSet())
         assertEquals(setOf("challengeId", "exactRequestSha256"), requests.last().second.keys().asSequence().toSet())
     }
+
+    @Test
+    fun productionBootstrapSequenceReachesCryptoGateAndRemainsBlocked() {
+        val now = Instant.now()
+        val expires = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+            .withZone(java.time.ZoneOffset.UTC).format(now.plusSeconds(300))
+        val challenge = DevicePolicyApplicationProofV1.Challenge(
+            "77777777-7777-4777-8777-777777777777", "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8", expires)
+        val sessionToken = "A".repeat(48)
+        val paths = mutableListOf<String>()
+        val transport = object : DevicePolicyActivationHttpTransport {
+            override fun post(path: String, body: ByteArray): ByteArray {
+                paths += path
+                val response = when (path) {
+                    "/v1/device-policy-activation/bootstrap/challenge" -> org.json.JSONObject()
+                        .put("challengeId", challenge.challengeId).put("nonce", challenge.nonceBase64Url).put("expiresAt", expires)
+                    "/v1/device-policy-activation/bootstrap/complete" -> org.json.JSONObject()
+                        .put("challengeId", challenge.challengeId).put("nonce", challenge.nonceBase64Url).put("expiresAt", expires)
+                        .put("sessionToken", sessionToken).put("sessionExpiresAt", now.plusSeconds(600).toString())
+                        .put("policyEnvelopeMessageId", envelope.messageId)
+                        .put("policyEnvelopeSha256", fields.policyEnvelopeSha256Base64Url).put("trustSetEpoch", 7).put("keyEpoch", 9)
+                    "/v1/device-policy-activation/bootstrap/fetch" -> org.json.JSONObject()
+                        .put("challengeId", challenge.challengeId).put("policyEnvelopeMessageId", envelope.messageId)
+                        .put("policyEnvelopeSha256", fields.policyEnvelopeSha256Base64Url)
+                        .put("canonicalEnvelopeBytes", expectedEnvelopeCanonicalBase64Url)
+                        .put("envelopeSignature", "opaque-signature").put("trustSetEpoch", 7).put("keyEpoch", 9)
+                    else -> throw AssertionError("unexpected activation route: $path")
+                }
+                return response.toString().toByteArray(Charsets.UTF_8)
+            }
+
+            override fun postAuthenticated(path: String, body: ByteArray, bearerToken: String): ByteArray {
+                assertEquals(sessionToken, bearerToken)
+                return post(path, body)
+            }
+        }
+        val signer = object : CurrentDeviceDskProofSigner {
+            override fun signProof(fields: DevicePolicyApplicationProofV1.ProofFields, canonicalTranscript: ByteArray) =
+                ByteArray(64).also { it[31] = 1; it[63] = 1 }
+            override fun signBootstrapNonce(familyId: String, deviceId: String, nonceBase64Url: String) =
+                ByteArray(64).also { it[31] = 1; it[63] = 1 }
+        }
+        var reachedGate = false
+        val gate = DevicePolicyActivationReceiverGate { familyId, deviceId, target ->
+            reachedGate = true
+            assertEquals(fields.familyId, familyId)
+            assertEquals(fields.deviceId, deviceId)
+            assertArrayEquals(Base64.getUrlDecoder().decode(expectedEnvelopeCanonicalBase64Url), target.canonicalEnvelopeBytes)
+            throw DevicePolicyActivationReceiverNotReadyException()
+        }
+        val bootstrap = DevicePolicyActivationBootstrap(DevicePolicyActivationApi(transport), signer, gate)
+
+        assertThrows(DevicePolicyActivationReceiverNotReadyException::class.java) {
+            bootstrap.fetchAndApply(fields.familyId, fields.deviceId)
+        }
+        assertTrue(reachedGate)
+        assertEquals(listOf(
+            "/v1/device-policy-activation/bootstrap/challenge",
+            "/v1/device-policy-activation/bootstrap/complete",
+            "/v1/device-policy-activation/bootstrap/fetch",
+        ), paths)
+    }
 }

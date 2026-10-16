@@ -41,6 +41,7 @@ internal enum class FirstDeviceRootReviewAction {
     REFRESH_STATUS,
     SUBMIT_PROOF,
     REPLAY_EXACT_SUBMISSION,
+    FETCH_ACTIVATION_POLICY,
 }
 
 /** Pure UI policy, also pinned by tests: submit is exposed only for APPROVED. */
@@ -80,7 +81,7 @@ internal fun firstDeviceRootReviewActions(
             setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
         }
         FirstDeviceRootState.REJECTED -> setOf(FirstDeviceRootReviewAction.REFRESH_STATUS)
-        FirstDeviceRootState.ROOT_COMMITTED -> emptySet()
+        FirstDeviceRootState.ROOT_COMMITTED -> setOf(FirstDeviceRootReviewAction.FETCH_ACTIVATION_POLICY)
     }
 }
 
@@ -103,6 +104,9 @@ fun EnrollmentScreen(
     onRefreshFirstDeviceRootStatus: () -> Unit = {},
     onSubmitFirstDeviceRootProof: () -> Unit = {},
     onReplayFirstDeviceRootProof: () -> Unit = {},
+    onFetchActivationPolicy: () -> Unit = {},
+    activationPolicyStatusMessage: Int? = null,
+    activationPolicyInProgress: Boolean = false,
     /** PCA-FR-140/141: this device's own DSK/DEK fingerprints (org.pca.app.enrollment.EnrollmentCoordinator.keyFingerprints), shown once available so the parent can visually compare them against the parent app's own display of the same device's fingerprints. */
     keyFingerprints: DeviceKeyFingerprints? = null,
 ) {
@@ -179,6 +183,9 @@ fun EnrollmentScreen(
                     onRefreshStatus = onRefreshFirstDeviceRootStatus,
                     onSubmitProof = onSubmitFirstDeviceRootProof,
                     onReplayExactSubmission = onReplayFirstDeviceRootProof,
+                    onFetchActivationPolicy = onFetchActivationPolicy,
+                    activationPolicyStatusMessage = activationPolicyStatusMessage,
+                    activationPolicyInProgress = activationPolicyInProgress,
                 )
                 if (keyFingerprints != null) {
                     KeyFingerprintConfirmation(keyFingerprints)
@@ -250,6 +257,9 @@ private fun FirstDeviceRootReviewPanel(
     onRefreshStatus: () -> Unit,
     onSubmitProof: () -> Unit,
     onReplayExactSubmission: () -> Unit,
+    onFetchActivationPolicy: () -> Unit,
+    activationPolicyStatusMessage: Int?,
+    activationPolicyInProgress: Boolean,
 ) {
     val actions = firstDeviceRootReviewActions(record, deviceId)
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -294,6 +304,12 @@ private fun FirstDeviceRootReviewPanel(
                         Text(stringResource(R.string.enrollment_root_review_replay_button))
                     }
                 }
+                if (FirstDeviceRootReviewAction.FETCH_ACTIVATION_POLICY in actions) {
+                    Button(onClick = onFetchActivationPolicy, enabled = !activationPolicyInProgress) {
+                        Text(stringResource(R.string.enrollment_activation_policy_button))
+                    }
+                }
+                activationPolicyStatusMessage?.let { message -> Text(stringResource(message)) }
             }
         }
     }
