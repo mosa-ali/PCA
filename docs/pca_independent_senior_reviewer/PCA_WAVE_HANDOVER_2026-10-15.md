@@ -126,17 +126,18 @@ No retained UAT/live/Azure/production DB was touched by the current verification
 ## Wave 02B handover — 2026-10-16
 
 START_SHA = `535bdfe43062fb2bd5408f5f1e7c519faabeb30d`
-FINAL_SHA = `91922f650866e43082891cf99bd289ffd13e6bb4`
-LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `91922f650866e43082891cf99bd289ffd13e6bb4`
+FINAL_SHA = `933bdc518abc7ff8e73228ff2f64447981cc9f3e`
+LOCAL_HEAD = ORIGIN_HEAD = SERVER_HEAD = `933bdc518abc7ff8e73228ff2f64447981cc9f3e`
 AHEAD = 0
 BEHIND = 0
-CI_RUN = `38953392776`
+CI_RUN = `38958365481`
 CI_RESULT = SUCCESS, 27/27; every job inspected
 MIGRATION_0066 = disposable MySQL full certification PASS; no retained/live database mutation
 PAIRED_BOOTSTRAP = separate short-lived purpose-scoped device session after current DSK PoP
 ANDROID = CI build/lint/unit and unsigned release artifact PASS; production crypto gate remains closed
 IOS = CI simulator build/tests PASS; production crypto gate remains closed
 BACKEND = CI build/unit/full disposable-MySQL certification PASS
+CROSS_PLATFORM_VECTORS = PASS; Backend/Android/iOS consume all five signed mutations, verify changed transcripts, and reject against valid transcript
 LIVE_DB = NOT TOUCHED
 PRODUCTION_RECEIVER_CRYPTO = NOT_APPROVED; APPLIED/ACTIVE FAIL-CLOSED
 WAVE_02B_COMPLETE = NO

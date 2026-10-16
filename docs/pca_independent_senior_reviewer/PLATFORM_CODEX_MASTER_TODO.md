@@ -1965,6 +1965,6 @@ Parent source head `b305a0b9117f45b3a231aa807a6bb3ddc555806d` matches the freshl
 
 ## Parent Wave 02B exact-head status — 2026-10-16
 
-Parent source `91922f650866e43082891cf99bd289ffd13e6bb4` is LOCAL = ORIGIN = SERVER (0/0). Exact-head Quality Gates run `38953392776` passed 27/27; every job was inspected, including Android build/lint/unit and release artifact, iOS simulator build/tests, backend build/unit, and full disposable-MySQL certification. Migration 0066 and proof/lifecycle tests passed in the CI-owned disposable database. No Platform implementation, Platform activation, retained UAT/live DB, Azure or production action occurred.
+Parent source `933bdc518abc7ff8e73228ff2f64447981cc9f3e` is LOCAL = ORIGIN = SERVER (0/0). Exact-head Quality Gates run `38958365481` passed 27/27; every job was inspected, including Android build/lint/unit and release artifact, iOS simulator build/tests, backend build/unit, and full disposable-MySQL certification. Backend, Android, and iOS consume all five shared signed mutation vectors and verify their exact altered transcripts. Migration 0066 and proof/lifecycle tests passed in the CI-owned disposable database. No Platform implementation, Platform activation, retained UAT/live DB, Azure or production action occurred.
 
 Parent activation remains fail-closed pending an approved production E2EE envelope verification/decryption/enforcement path. No APPLIED proof or ACTIVE transition is possible. Platform remains `HOLD_PARENT_DEPENDENCY`; Wave 02B is incomplete and Wave 03 has not started.
