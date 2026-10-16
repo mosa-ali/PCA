@@ -5,7 +5,7 @@ import {
   createGracefulShutdownHandler,
   registerGracefulShutdown,
 } from './runtime/gracefulShutdown.js';
-import { closePool, assertDatabaseTlsConfiguration } from './db/pool.js';
+import { closePool, assertDatabaseTlsConfiguration, getPool } from './db/pool.js';
 import { AuthService } from './auth/AuthService.js';
 import { MySqlAuthRepository } from './auth/MySqlAuthRepository.js';
 import { AuthzService } from './authz/AuthzService.js';
@@ -20,6 +20,10 @@ import { MySqlEnrollmentCoordinatorRepository } from './enrollment/MySqlEnrollme
 import { PairingService } from './pairing/PairingService.js';
 import { MySqlDeviceRepository } from './device/MySqlDeviceRepository.js';
 import { DeviceAuthService } from './deviceauth/DeviceAuthService.js';
+import { P256DeviceSignatureVerifier } from './deviceauth/P256DeviceSignatureVerifier.js';
+import { MySqlPairedActivationTargetWriter } from './devicepolicyproof/MySqlPairedActivationTargetWriter.js';
+import { MySqlDevicePolicyApplicationProofStore } from './devicepolicyproof/MySqlDevicePolicyApplicationProofStore.js';
+import { MySqlDevicePolicyProofRetention } from './devicepolicyproof/MySqlDevicePolicyProofRetention.js';
 import { MySqlDeviceChallengeRepository } from './deviceauth/MySqlDeviceChallengeRepository.js';
 import { MySqlRelayRepository } from './relay/MySqlRelayRepository.js';
 import { RelayService } from './relay/RelayService.js';
@@ -959,7 +963,21 @@ async function start(): Promise<void> {
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
     ordinaryTrustSetService,
-    outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
+    outboundRelayService: new OutboundRelayService(
+      relayService,
+      deviceRepository,
+      // Feature-scoped to the narrow PAIRED activation target writer. This
+      // does not replace the existing fail-closed global envelope verifier.
+      new MySqlPairedActivationTargetWriter(new P256DeviceSignatureVerifier()),
+    ),
+    // The proof verifier is feature-scoped to this PAIRED activation API;
+    // global runtime envelope/device verification remains fail-closed.
+    devicePolicyActivation: {
+      // Receiver envelope crypto/decryption is not yet approved/composed in
+      // production, so no signed APPLIED report can activate a PAIRED device.
+      proofStore: new MySqlDevicePolicyApplicationProofStore(() => false),
+      signatureVerifier: new P256DeviceSignatureVerifier(),
+    },
     // PCA runtime-sync parent-facing read gap: reuses the SAME
     // deviceRepository/relayService instances constructed above -- never a
     // second, independently-constructed copy -- see
@@ -1126,6 +1144,33 @@ async function start(): Promise<void> {
   }, commercialMaintenanceConfig.intervalMs);
   commercialMaintenanceTimer.unref();
 
+  // Expire minimal application-proof replay tombstones after the owner-
+  // approved 14-day window. The runtime principal has EXECUTE only on the
+  // bounded SQL SECURITY DEFINER routine, never direct DELETE privilege.
+  const devicePolicyProofRetention = new MySqlDevicePolicyProofRetention();
+  let devicePolicyProofPruneRunning = false;
+  const pruneDevicePolicyProofsOnce = async (): Promise<void> => {
+    if (devicePolicyProofPruneRunning) return;
+    devicePolicyProofPruneRunning = true;
+    let connection: import('mysql2/promise').PoolConnection | undefined;
+    try {
+      connection = await getPool().getConnection();
+      await devicePolicyProofRetention.pruneExpiredTombstones(connection, 500);
+    } catch {
+      CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER.warn('device_policy_proof_retention.prune_failed', {
+        failure: 'prune_failed',
+      });
+    } finally {
+      connection?.release();
+      devicePolicyProofPruneRunning = false;
+    }
+  };
+  void pruneDevicePolicyProofsOnce();
+  const devicePolicyProofRetentionTimer = setInterval(() => {
+    void pruneDevicePolicyProofsOnce();
+  }, 24 * 60 * 60 * 1000);
+  devicePolicyProofRetentionTimer.unref();
+
   // PCA-RUNTIME-SHUTDOWN-1: real termination on SIGTERM/SIGINT.
   //
   // These handlers previously only did `clearInterval(...)`. Attaching ANY
@@ -1140,6 +1185,7 @@ async function start(): Promise<void> {
     createGracefulShutdownHandler({
       stopBackgroundWork: () => {
         clearInterval(commercialMaintenanceTimer);
+        clearInterval(devicePolicyProofRetentionTimer);
         emailOutboxWorker?.stop();
       },
       closeServer: () => app.close(),

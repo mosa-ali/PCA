@@ -139,6 +139,16 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   // attempt is authoritatively abandoned. It never updates or deletes them. ---
   enrollment_bootstrap_attempt_tombstones: Object.freeze(['SELECT', 'INSERT']),
 
+  // --- migration 0066 (Device Policy Application Proof V1). The current
+  // activation target is replaced/consumed in place and purged/reissued as
+  // device bootstrap progresses. Proof records are short-lived (14-day)
+  // conflict/replay tombstones and are deleted only by bounded expiry prune.
+  device_policy_activation_targets: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
+  // The production runtime's fixed retention timer may invoke the bounded
+  // expiry procedure below. The runtime never receives direct DELETE on this
+  // ledger; SQL SECURITY DEFINER limits each call to at most 500 expired rows.
+  device_policy_application_proofs: Object.freeze(['SELECT', 'INSERT']),
+
   // --- ordinary runtime DML tables (explicit declaration each) ---
   account_entitlements: DML,
   billing_commercial_markets: DML,
@@ -218,6 +228,13 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   settlement_batches: DML,
   settlement_fx_snapshots: DML,
   sync_sequence_progress_ledger: DML,
+});
+
+/** Explicit executable routines; table DML is never inferred from a procedure grant. */
+export const RUNTIME_ROUTINE_PRIVILEGES = Object.freeze({
+  // Called only by the fixed server retention timer; it cannot delete an
+  // unexpired row and the procedure rejects batches above 500.
+  pca_prune_expired_device_policy_proofs: Object.freeze(['EXECUTE']),
 });
 
 /**
@@ -305,4 +322,13 @@ export function buildRuntimeGrantStatement(databaseName, tableName, userAtHostLi
  */
 export function buildRuntimeGrantPlan(databaseName, tableNames, userAtHostLiteral) {
   return tableNames.map((tableName) => buildRuntimeGrantStatement(databaseName, tableName, userAtHostLiteral));
+}
+
+export function buildRuntimeRoutineGrantPlan(databaseName, routineNames, userAtHostLiteral) {
+  return routineNames.map((routineName) => {
+    const privileges = RUNTIME_ROUTINE_PRIVILEGES[routineName];
+    if (!privileges) throw new Error(`No explicit runtime routine grant for ${JSON.stringify(routineName)}.`);
+    const qualifiedRoutine = `${quoteIdentifier(databaseName)}.${quoteIdentifier(routineName)}`;
+    return `GRANT ${privileges.join(', ')} ON PROCEDURE ${qualifiedRoutine} TO ${userAtHostLiteral}`;
+  });
 }

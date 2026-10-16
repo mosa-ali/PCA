@@ -255,6 +255,14 @@ public protocol OrdinaryTrustSetRuntimeManaging {
     func prepareAndSubmit(_ candidate: UntrustedTrustSetEpoch) async throws -> OrdinaryTrustSetSubmissionResult
     /// Reconciles the accepted server head from the locally trusted predecessor.
     func catchUp(maximumRecords: Int) async throws -> Bool
+    /// Current local epoch floor from the durably accepted, signature-checked
+    /// Trust Set head. Nil means authority is unavailable; callers must fail
+    /// closed rather than supply an epoch from transport or UI state.
+    func acceptedEpochFloor(familyId: String) throws -> PolicyEpochStamp?
+}
+
+public extension OrdinaryTrustSetRuntimeManaging {
+    func acceptedEpochFloor(familyId: String) throws -> PolicyEpochStamp? { nil }
 }
 
 /// Authenticated device-session transport only. Implementations must not follow cross-origin
@@ -370,6 +378,17 @@ public final class OrdinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging 
             try await self.prepareUnlocked(candidate)
             return try await self.submitPendingUnlocked()
         }
+    }
+
+    public func acceptedEpochFloor(familyId requestedFamilyId: String) throws -> PolicyEpochStamp? {
+        guard Data(requestedFamilyId.utf8) == Data(familyId.utf8) else { throw OrdinaryTrustSetError.scopeMismatch }
+        let record = try checkedRecord()
+        let epoch = try record.head.epoch()
+        guard Data(epoch.familyId.utf8) == Data(familyId.utf8),
+              epoch.trustSetEpoch >= 1, epoch.keyEpoch >= 1 else {
+            throw OrdinaryTrustSetError.staleCandidate
+        }
+        return PolicyEpochStamp(trustSetEpoch: epoch.trustSetEpoch, keyEpoch: epoch.keyEpoch)
     }
     private func prepareUnlocked(_ candidate: UntrustedTrustSetEpoch) async throws {
         var record = try checkedRecord()

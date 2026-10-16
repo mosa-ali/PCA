@@ -45,6 +45,8 @@ const targetScript = requestedTarget === 'all'
       ? 'test:db:trust-set-device-lifecycle:inner'
     : requestedTarget === 'device-auth'
       ? 'test:db:device-auth:inner'
+    : requestedTarget === 'device-policy-proof'
+      ? 'test:db:device-policy-proof:inner'
     : requestedTarget === 'safe-zone'
       ? 'test:db:safe-zone:inner'
     : requestedTarget === 'protection-alerts'
@@ -78,7 +80,7 @@ const targetScript = requestedTarget === 'all'
     : isParentMfaTarget
       ? null
       : null;
-if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'trust-set-device-lifecycle', 'device-auth', 'safe-zone', 'protection-alerts', 'family-audit', 'database-tls', 'family-identity', 'parent-auth', 'parent-preferences', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-route-focused', 'relay-status', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, trust-set-device-lifecycle, device-auth, safe-zone, protection-alerts, family-audit, database-tls, family-identity, parent-auth, parent-preferences, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-route-focused, relay-status, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
+if (!['all', 'all-certified', 'authority-diagnostics', 'enrollment-binding', 'ordinary-trust-set', 'trust-set-device-lifecycle', 'device-auth', 'device-policy-proof', 'safe-zone', 'protection-alerts', 'family-audit', 'database-tls', 'family-identity', 'parent-auth', 'parent-preferences', 'platform-admin-auth', 'platform-admin-privileges', 'refund-recovery', 'parent-route-audit', 'parent-route-focused', 'relay-status', 'parent-real-e2e', 'parent-mfa-real-e2e', 'parent-owner-acceptance-real-e2e'].includes(requestedTarget)) throw new Error('Supported disposable DB targets: all, all-certified, authority-diagnostics, enrollment-binding, ordinary-trust-set, trust-set-device-lifecycle, device-auth, device-policy-proof, safe-zone, protection-alerts, family-audit, database-tls, family-identity, parent-auth, parent-preferences, platform-admin-auth, platform-admin-privileges, refund-recovery, parent-route-audit, parent-route-focused, relay-status, parent-real-e2e, parent-mfa-real-e2e, parent-owner-acceptance-real-e2e.');
 if (['parent-route-audit', 'parent-route-focused'].includes(requestedTarget) && !process.env.PCA_PARENT_ROUTE_SCENARIO_OUT) {
   throw new Error('parent-route-audit requires PCA_PARENT_ROUTE_SCENARIO_OUT so the campaign always produces its evidence report.');
 }
@@ -625,6 +627,9 @@ try {
     PCA_DISPOSABLE_TEST_DATABASE_OWNER: 'with-disposable-db',
   };
   await run(process.execPath, ['--env-file=test.env', '--env-file=test.db.env', 'scripts/verify-mysql.mjs'], migrationEnv);
+  if (process.env.PCA_UPDATE_DISPOSABLE_SCHEMA_SNAPSHOT === '1') {
+    await run(process.execPath, ['scripts/schema-snapshot.mjs'], migrationEnv);
+  }
   if (process.env.PCA_PRINT_DISPOSABLE_SCHEMA_FINGERPRINT === '1') {
     const fingerprintDirectory = await mkdtemp(join(tmpdir(), 'pca-disposable-schema-fingerprint-'));
     const introspectionPath = join(fingerprintDirectory, 'schema.json');

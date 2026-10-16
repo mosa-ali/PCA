@@ -10,6 +10,7 @@ import type { DeviceSessionService } from '../runtime-sync/DeviceSessionService.
 import type { OutboundRelayService } from '../runtime-sync/OutboundRelayService.js';
 import type { InboundReconnectService } from '../runtime-sync/InboundReconnectService.js';
 import type { DeviceSyncStatusTracker } from '../runtime-sync/StatusService.js';
+import { registerDevicePolicyActivationRoutes, type DevicePolicyActivationRoutesDeps } from './routes/devicePolicyActivationRoutes.js';
 import { createRateLimiter } from './rateLimit.js';
 import { resolveTrustProxyOption, type TrustProxyOption } from './trustProxyConfig.js';
 import type { EmailProviderAdapter } from '../email/EmailProviderAdapter.js';
@@ -202,6 +203,8 @@ export interface ServerDependencies {
   /** Current accepted Trust Set membership for device-delivery authorization; omitted compositions fail closed. */
   trustSetRoleResolver?: Pick<TrustSetRoleResolver, 'resolveActor'>;
   outboundRelayService: OutboundRelayService;
+  /** Optional, fail-closed PAIRED activation proof surface. */
+  devicePolicyActivation?: Omit<DevicePolicyActivationRoutesDeps, 'rateLimiter'>;
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
   resolveEnvelopeContext: ResolveEnvelopeContext;
@@ -556,6 +559,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     alertComposeFailureLogger: deps.alertComposeFailureLogger,
     trustSetRoleResolver: deps.trustSetRoleResolver,
   });
+  if (deps.devicePolicyActivation) {
+    registerDevicePolicyActivationRoutes(app, {
+      ...deps.devicePolicyActivation,
+      rateLimiter,
+    });
+  }
   registerSafeZoneDeliveryRoutes(app, {
     deviceSessionService: deps.deviceSessionService,
     trustSetRoleResolver: deps.trustSetRoleResolver,

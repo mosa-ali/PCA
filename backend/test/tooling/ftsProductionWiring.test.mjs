@@ -192,13 +192,17 @@ export function findFtsWiringViolations(mainText, sourceFiles) {
     }
 
     if (!inFamilytrustsetModule && !isMain) {
+      const activationProofTrustSetReader = [
+        'src/devicepolicyproof/MySqlDevicePolicyApplicationProofStore.ts',
+        'src/devicepolicyproof/MySqlPairedActivationTargetWriter.ts',
+      ].includes(normalized);
       for (const needle of [
         'TrustSetEpochAcceptance',
         'appendAcceptedEpoch',
         'appendAcceptedEpochOnConnection',
         'appendGenesisEpochOnConnection',
         'P256TrustSetSignatureVerifier',
-        'decodeCanonicalTrustSetEpoch',
+        ...(activationProofTrustSetReader ? [] : ['decodeCanonicalTrustSetEpoch']),
         'StoreBackedTrustSetRoleResolver',
       ]) {
         if (text.includes(needle)) {
@@ -342,6 +346,16 @@ test('GATE SELF-TEST: the checker detects partial ordinary acceptance and bootst
   );
   assert.notDeepEqual(findFtsWiringViolations(`${goodMain}\nawait store.appendAcceptedEpoch(record);`, {}), []);
   assert.notDeepEqual(findFtsWiringViolations(`${goodMain}\nawait store.appendAcceptedEpochOnConnection(conn, record, now);`, {}), []);
+  assert.deepEqual(findFtsWiringViolations(goodMain, {
+    'src/devicepolicyproof/MySqlDevicePolicyApplicationProofStore.ts': 'decodeCanonicalTrustSetEpochBytes(bytes)',
+    'src/devicepolicyproof/MySqlPairedActivationTargetWriter.ts': 'decodeCanonicalTrustSetEpochBytes(bytes)',
+  }), [], 'only the two feature-scoped activation readers may parse accepted epoch bytes');
+  assert.notDeepEqual(findFtsWiringViolations(goodMain, {
+    'src/runtime-sync/other.ts': 'decodeCanonicalTrustSetEpochBytes(bytes)',
+  }), [], 'the parser allowance must not expand to unrelated production modules');
+  assert.notDeepEqual(findFtsWiringViolations(goodMain, {
+    'src/http/routes/devicePolicyActivationRoutes.ts': 'decodeCanonicalTrustSetEpochBytes(bytes)',
+  }), [], 'routes must never decode/accept Trust Set bytes');
 });
 
 test('GENESIS APPEND WIRING GUARD: connection-scoped genesis writes stay out of routes', () => {

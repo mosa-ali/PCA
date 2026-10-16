@@ -5,6 +5,8 @@ import { sortByPriority } from './priority.js';
 import { RelayAuthorityChangedError, type RelayEnvelopeAuthoritySnapshot, type RelayRecipientAuthoritySnapshot } from '../relay/RelayRepository.js';
 import { isPlausibleOpaqueId } from '../relay/policy.js';
 import { isFamilyEpochNumber } from '../familyepoch/bounds.js';
+import { envelopeFromRelayCiphertext } from './envelopeWireCodec.js';
+import type { PairedActivationTargetWriter } from '../devicepolicyproof/PairedActivationTargetWriter.js';
 
 export interface OutboundEnvelopeItem {
   messageId: string;
@@ -74,6 +76,7 @@ export class OutboundRelayService {
   constructor(
     private readonly relayService: RelayService,
     private readonly deviceRepository: DeviceRepository,
+    private readonly pairedActivationTargetWriter?: PairedActivationTargetWriter,
   ) {}
 
   async submitBatch(
@@ -165,6 +168,35 @@ export class OutboundRelayService {
       recipient: { deviceId: snapshot.recipient.deviceId, dskKeyId: snapshot.recipient.dskKeyId },
       ...(snapshot.parentAccountId === undefined ? {} : { parentAccountId: snapshot.parentAccountId }),
     };
+
+    // PAIRED devices receive one narrowly-scoped activation target through a
+    // separate table. Never pass them through the general relay path, which
+    // remains ACTIVE-only. Parse the already-defined FamilyEnvelope relay
+    // encoding and cross-check every caller-supplied routing hint before the
+    // feature-scoped writer verifies the current accepted sender DSK.
+    if (recipient.status === 'PAIRED') {
+      if (item.messageType !== 'POLICY_UPDATE' || !this.pairedActivationTargetWriter) {
+        return { messageId: item.messageId, outcome: 'INVALID' };
+      }
+      const envelope = envelopeFromRelayCiphertext(item.ciphertext);
+      if (!envelope || envelope.messageId !== item.messageId || envelope.messageType !== item.messageType ||
+          envelope.familyId !== familyId || envelope.senderDeviceId !== senderDeviceId ||
+          envelope.recipient.kind !== 'DEVICE' || envelope.recipient.recipientDeviceId !== recipient.deviceId) {
+        return { messageId: item.messageId, outcome: 'INVALID' };
+      }
+      const targetOutcome = await this.pairedActivationTargetWriter.storePairedPolicyTarget({
+        familyId,
+        senderDeviceId,
+        senderDskKeyId: authority.sender.dskKeyId,
+        recipientDeviceId: recipient.deviceId,
+        trustSetEpoch: authority.trustSetEpoch,
+        keyEpoch: authority.keyEpoch,
+        envelope,
+      });
+      return targetOutcome === 'STORED' || targetOutcome === 'IDEMPOTENT'
+        ? { messageId: item.messageId, outcome: 'QUEUED' }
+        : { messageId: item.messageId, outcome: 'INVALID' };
+    }
 
     try {
       await this.relayService.queueEnvelope({

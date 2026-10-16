@@ -17,9 +17,11 @@ import {
   AUDIT_TABLE_NAME,
   MIGRATIONS_TABLE_NAME,
   RUNTIME_TABLE_PRIVILEGES,
+  RUNTIME_ROUTINE_PRIVILEGES,
   assertReadColumnRule,
   buildRuntimeGrantPlan,
   buildRuntimeGrantStatement,
+  buildRuntimeRoutineGrantPlan,
   privilegesForTable,
   quoteUserAtHost,
 } from '../../scripts/db/runtimeGrantPlan.mjs';
@@ -120,6 +122,15 @@ test('migration 0065 abandoned enrollment tombstones are readable and append-onl
     ['INSERT', 'SELECT'],
     'the runtime reads and appends immutable recovery tombstones, but must not UPDATE or DELETE them',
   );
+});
+
+test('Wave 02B runtime can only read/append proof tombstones and can execute only the bounded retention procedure', () => {
+  assert.deepEqual(sorted(privilegesForTable('device_policy_application_proofs')), ['INSERT', 'SELECT']);
+  assert.deepEqual([...RUNTIME_ROUTINE_PRIVILEGES.pca_prune_expired_device_policy_proofs], ['EXECUTE']);
+  assert.deepEqual(buildRuntimeRoutineGrantPlan('pca_test', ['pca_prune_expired_device_policy_proofs'], "'app'@'localhost'"), [
+    'GRANT EXECUTE ON PROCEDURE `pca_test`.`pca_prune_expired_device_policy_proofs` TO \'app\'@\'localhost\'',
+  ]);
+  assert.throws(() => buildRuntimeRoutineGrantPlan('pca_test', ['unknown'], "'app'@'localhost'"), /No explicit runtime routine grant/);
 });
 
 test('no declaration contains a forbidden verb, and none is a table-level ALL', () => {

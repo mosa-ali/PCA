@@ -50,3 +50,23 @@ TODO-23 = TODO; mission closure
 REPOSITORY_WORK_REMAINING = Pass Quality Gates on the published one-time ledger update, confirm the final SHA and 0/0 alignment, then close Wave 01. Do not begin Wave 02 automatically.
 EXTERNAL_GATES_REMAINING = Approved production crypto/root and receiver-policy contracts, physical Android/iOS evidence, owner localhost acceptance, Parent-to-Platform dependency acceptance, live DB work if authorized, Azure deployment, and production acceptance.
 RECOMMENDED_WAVE_02_TARGET = Continue remaining source-implementable TODO-12/14/15 authority and receiving-policy work only after the relevant contracts are approved; keep server-authoritative ACTIVE fail-closed until accepted receipt/verifier evidence exists.
+
+## PCA Wave 02B checkpoint — 2026-10-16
+
+START_SHA = 535bdfe43062fb2bd5408f5f1e7c519faabeb30d
+MIGRATION_0066 = Implemented; 64-migration replay and 7/7 proof tests passed on owned disposable MySQL 8.4.11; temporary schema removed. No retained/local UAT/live/Azure/production DB touched.
+BACKEND = Build PASS; full backend suite 3517/3517 PASS; focused proof/schema/grant 68/68 PASS; runtime-grant policy 20/20 PASS; bootstrap artifact check PASS for 98 tables. Final independent review: BLOCKERS=1 (unapproved receiver crypto composition), MAJORS=0, MINORS=0.
+ANDROID = Canonical proof/API/outbox source added, but production graph remains fail-closed: no accepted paired-device DSK custody or envelope sender-signature verifier; APPLIED signing unavailable. Current-source Gradle build not run due 1.7 MB free disk.
+IOS = Production policyEnvelopeProcessor is nil; applyVerifiedPolicy degrades before persistence/enforcement/proof. Swift source parse passed previously; XCTest unavailable on Windows. No physical-device evidence.
+ACTIVE = Backend receiverCryptoReady=false in production; PAIRED to ACTIVE impossible. Proof tombstone retention is 14 days; exact retry within window, conflicts reject, stale proofs are not reusable.
+SCHEDULE_POLICY = NOT PROVEN IN PRODUCTION
+SAFE_ZONE = NOT PROVEN IN PRODUCTION
+FAMILY_AUDIT = NOT IMPLEMENTED IN THIS WAVE
+WEB_RULES = NOT IMPLEMENTED IN THIS WAVE
+LOCAL_HEAD = 535bdfe43062fb2bd5408f5f1e7c519faabeb30d (work remains uncommitted)
+ORIGIN_HEAD = NOT REFRESHED
+SERVER_HEAD = NOT REFRESHED
+CI_RUN = NOT RUN; exact-head 27/27 pending publication
+WAVE_02B_COMPLETE = NO
+WAVE_03 = NOT STARTED
+RECOMMENDED_NEXT = Bounded Wave 02C to qualify/implement the production E2EE envelope verification/decryption suite, then resume receiver integration under the approved contract.

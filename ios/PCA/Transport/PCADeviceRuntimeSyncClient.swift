@@ -128,6 +128,239 @@ public struct PCAInboundReceipt: Codable, Equatable {
 
 }
 
+// MARK: - PAIRED activation bootstrap and application-proof transport
+
+public struct PCADevicePolicyBootstrapChallenge: Decodable, Equatable {
+    public let challengeId: String
+    public let nonce: String
+    public let expiresAt: String
+}
+
+public struct PCADevicePolicyActivationCapability: Equatable {
+    public let challengeId: String
+    public let nonce: String
+    public let expiresAt: String
+    public let activationCapability: String
+    public let policyEnvelopeMessageId: String
+    public let policyEnvelopeSha256: String
+    public let trustSetEpoch: Int
+    public let keyEpoch: Int
+
+    public var proofChallenge: PCADevicePolicyProofChallenge {
+        PCADevicePolicyProofChallenge(challengeId: challengeId, nonce: nonce,
+            familyId: familyId, deviceId: deviceId, policyEnvelopeMessageId: policyEnvelopeMessageId,
+            policyEnvelopeSha256: policyEnvelopeSha256, trustSetEpoch: trustSetEpoch,
+            keyEpoch: keyEpoch, expiresAt: expiresAt)
+    }
+
+    public let familyId: String
+    public let deviceId: String
+
+    fileprivate init(response: PCADevicePolicyActivationCapabilityResponse, familyId: String, deviceId: String) {
+        challengeId = response.challengeId; nonce = response.nonce; expiresAt = response.expiresAt
+        activationCapability = response.activationCapability; policyEnvelopeMessageId = response.policyEnvelopeMessageId
+        policyEnvelopeSha256 = response.policyEnvelopeSha256; trustSetEpoch = response.trustSetEpoch
+        keyEpoch = response.keyEpoch; self.familyId = familyId; self.deviceId = deviceId
+    }
+}
+
+private struct PCADevicePolicyActivationCapabilityResponse: Decodable {
+    let challengeId: String
+    let nonce: String
+    let expiresAt: String
+    let activationCapability: String
+    let policyEnvelopeMessageId: String
+    let policyEnvelopeSha256: String
+    let trustSetEpoch: Int
+    let keyEpoch: Int
+}
+
+public struct PCADevicePolicyActivationTarget: Decodable, Equatable {
+    public let challengeId: String
+    public let policyEnvelopeMessageId: String
+    public let policyEnvelopeSha256: String
+    public let canonicalEnvelopeBytes: String
+    public let envelopeSignature: String
+    public let trustSetEpoch: Int
+    public let keyEpoch: Int
+
+    /// Exact canonical bytes signed by the sender and hashed by the proof.
+    public func canonicalBytes() throws -> Data {
+        guard let bytes = PCADevicePolicyProofCodec.decodeCanonicalBase64URL(canonicalEnvelopeBytes),
+              !bytes.isEmpty, bytes.count <= PCADevicePolicyEnvelopeCanonicalizer.maximumCanonicalBytes,
+              PCADevicePolicyProofCodec.canonicalBase64URL32(policyEnvelopeSha256),
+              !envelopeSignature.isEmpty, envelopeSignature.utf8.count <= 512,
+              (1...Int(Int32.max)).contains(trustSetEpoch),
+              (1...Int(Int32.max)).contains(keyEpoch),
+              !policyEnvelopeMessageId.isEmpty, policyEnvelopeMessageId.utf8.count <= 512 else {
+            throw PCAAPIError.malformedResponse
+        }
+        guard try PCADevicePolicyProofCodec.base64URL(PCADevicePolicyEnvelopeCanonicalizer.sha256(bytes)) == policyEnvelopeSha256 else {
+            throw PCAAPIError.malformedResponse
+        }
+        return bytes
+    }
+}
+
+public struct PCADevicePolicyApplicationProofResponse: Decodable, Equatable {
+    public enum Outcome: String, Decodable { case activated = "ACTIVATED", recordedNotActivated = "RECORDED_NOT_ACTIVATED" }
+    public let outcome: Outcome
+    public let idempotent: Bool
+}
+
+private struct PCADevicePolicyApplicationProofRequest: Encodable {
+    let familyId: String
+    let deviceId: String
+    let policyEnvelopeMessageId: String
+    let policyEnvelopeSha256: String
+    let trustSetEpoch: Int
+    let keyEpoch: Int
+    let applicationResult: String
+    let challengeId: String
+    let challengeNonce: String
+    let challengeExpiresAt: String
+    let signature: String
+
+    init(_ proof: PCADeviceApplicationProof) {
+        familyId = proof.challenge.familyId
+        deviceId = proof.challenge.deviceId
+        policyEnvelopeMessageId = proof.challenge.policyEnvelopeMessageId
+        policyEnvelopeSha256 = proof.challenge.policyEnvelopeSha256
+        trustSetEpoch = proof.challenge.trustSetEpoch
+        keyEpoch = proof.challenge.keyEpoch
+        applicationResult = proof.result.rawValue
+        challengeId = proof.challenge.challengeId
+        challengeNonce = proof.challenge.nonce
+        challengeExpiresAt = proof.challenge.expiresAt
+        signature = PCADevicePolicyProofCodec.base64URL(proof.signature)
+    }
+}
+
+/// Device-scoped unauthenticated bootstrap: authorization comes only from the
+/// server's one-use capability and the DSK proof. This adapter never creates
+/// an ACTIVE session or invokes general relay endpoints.
+public final class PCADevicePolicyActivationClient {
+    private let baseURL: URL
+    private let transport: PCAHTTPTransport
+    private let now: () -> Date
+    private let decoder = JSONDecoder()
+    private let maximumResponseBytes = 136 * 1024
+
+    public init(baseURL: URL, transport: PCAHTTPTransport, now: @escaping () -> Date = Date.init) throws {
+        guard baseURL.scheme?.lowercased() == "https", baseURL.host != nil,
+              baseURL.user == nil, baseURL.password == nil, baseURL.query == nil,
+              baseURL.fragment == nil, baseURL.path.isEmpty || baseURL.path == "/" else {
+            throw PCAAPIError.invalidConfiguration
+        }
+        self.baseURL = baseURL; self.transport = transport; self.now = now
+    }
+
+    public func challenge(familyId: String, deviceId: String) async throws -> PCADevicePolicyBootstrapChallenge {
+        try Self.validateIdentity(familyId, deviceId)
+        let response: PCADevicePolicyBootstrapChallenge = try await post("v1/device-policy-activation/bootstrap/challenge",
+            body: ["familyId": familyId, "deviceId": deviceId], as: PCADevicePolicyBootstrapChallenge.self)
+        try validateChallenge(response.challengeId, nonce: response.nonce, expiresAt: response.expiresAt)
+        return response
+    }
+
+    /// `signature` is the current-device DSK signature over the UTF-8 bytes of
+    /// the canonical base64url nonce, as required by the bootstrap verifier.
+    public func complete(familyId: String, deviceId: String,
+                         challenge: PCADevicePolicyBootstrapChallenge,
+                         signature: String) async throws -> PCADevicePolicyActivationCapability {
+        try Self.validateIdentity(familyId, deviceId)
+        try validateChallenge(challenge.challengeId, nonce: challenge.nonce, expiresAt: challenge.expiresAt)
+        guard Self.canonicalSignature(signature) else { throw PCAAPIError.invalidRequest }
+        let body = ["familyId": familyId, "deviceId": deviceId, "challengeId": challenge.challengeId,
+                    "nonce": challenge.nonce, "signature": signature]
+        let response: PCADevicePolicyActivationCapabilityResponse = try await post(
+            "v1/device-policy-activation/bootstrap/complete", body: body, as: PCADevicePolicyActivationCapabilityResponse.self)
+        guard (try? validateChallenge(response.challengeId, nonce: response.nonce, expiresAt: response.expiresAt)) != nil,
+              PCADevicePolicyProofCodec.canonicalBase64URL32(response.activationCapability),
+              PCADevicePolicyProofCodec.canonicalBase64URL32(response.policyEnvelopeSha256),
+              !response.policyEnvelopeMessageId.isEmpty, response.policyEnvelopeMessageId.utf8.count <= 512,
+              (1...Int(Int32.max)).contains(response.trustSetEpoch),
+              (1...Int(Int32.max)).contains(response.keyEpoch) else { throw PCAAPIError.malformedResponse }
+        return PCADevicePolicyActivationCapability(response: response, familyId: familyId, deviceId: deviceId)
+    }
+
+    public func fetch(familyId: String, deviceId: String,
+                      capability: PCADevicePolicyActivationCapability) async throws -> PCADevicePolicyActivationTarget {
+        try Self.validateIdentity(familyId, deviceId)
+        let body = ["familyId": familyId, "deviceId": deviceId, "activationCapability": capability.activationCapability]
+        let target: PCADevicePolicyActivationTarget = try await post(
+            "v1/device-policy-activation/bootstrap/fetch", body: body, as: PCADevicePolicyActivationTarget.self)
+        guard target.challengeId == capability.challengeId,
+              target.policyEnvelopeMessageId == capability.policyEnvelopeMessageId,
+              target.policyEnvelopeSha256 == capability.policyEnvelopeSha256,
+              target.trustSetEpoch == capability.trustSetEpoch, target.keyEpoch == capability.keyEpoch else {
+            throw PCAAPIError.malformedResponse
+        }
+        _ = try target.canonicalBytes()
+        return target
+    }
+
+    public func submit(_ proof: PCADeviceApplicationProof) async throws -> PCADevicePolicyApplicationProofResponse {
+        guard proof.transcript == (try PCADevicePolicyProofCodec.encode(proof.challenge, result: proof.result)),
+              proof.signature.count == 64, P256DerSignature.isLowS(proof.signature) else {
+            throw PCAAPIError.invalidRequest
+        }
+        return try await post("v1/device-policy-activation/proof", body: PCADevicePolicyApplicationProofRequest(proof),
+                              as: PCADevicePolicyApplicationProofResponse.self)
+    }
+
+    public func recoverExactProof(_ proof: PCADeviceApplicationProof) async throws -> PCADevicePolicyApplicationProofResponse {
+        let body = ["challengeId": proof.challenge.challengeId,
+                    "exactRequestSha256": try proof.exactRequestSha256()]
+        return try await post("v1/device-policy-activation/proof/status", body: body,
+                              as: PCADevicePolicyApplicationProofResponse.self)
+    }
+
+    private func post<T: Decodable, B: Encodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let response: PCAHTTPResponse
+        do { response = try await transport.send(request) }
+        catch is CancellationError { throw CancellationError() }
+        catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
+        catch { throw PCAAPIError.transport(.network) }
+        try Task.checkCancellation()
+        guard response.data.count <= maximumResponseBytes else { throw PCAAPIError.malformedResponse }
+        switch response.statusCode {
+        case 200...299:
+            do { return try decoder.decode(type, from: response.data) }
+            catch { throw PCAAPIError.malformedResponse }
+        case 400: throw PCAAPIError.invalidRequest
+        case 401: throw PCAAPIError.unauthorized
+        case 403: throw PCAAPIError.forbidden
+        case 404: throw PCAAPIError.unavailable
+        case 408, 429, 500...599: throw PCAAPIError.rejected
+        default: throw PCAAPIError.rejected
+        }
+    }
+
+    private func validateChallenge(_ id: String, nonce: String, expiresAt: String) throws {
+        guard PCADevicePolicyProofCodec.canonicalUUID(id),
+              PCADevicePolicyProofCodec.canonicalBase64URL32(nonce),
+              let expiry = PCADevicePolicyProofCodec.canonicalDate(expiresAt), expiry > now() else {
+            throw PCAAPIError.malformedResponse
+        }
+    }
+
+    private static func validateIdentity(_ familyId: String, _ deviceId: String) throws {
+        guard PCADevicePolicyProofCodec.canonicalUUID(familyId), PCADevicePolicyProofCodec.canonicalUUID(deviceId) else {
+            throw PCAAPIError.invalidRequest
+        }
+    }
+
+    private static func canonicalSignature(_ value: String) -> Bool {
+        guard let bytes = PCADevicePolicyProofCodec.decodeCanonicalBase64URL(value), bytes.count == 64 else { return false }
+        return P256DerSignature.isLowS(bytes)
+    }
+}
+
 /// Navigation and admission metadata never authorize decryption, policy application or ACK.
 public struct PCAInboundNavigation: Codable, Equatable {
     public let nextCursor: String?

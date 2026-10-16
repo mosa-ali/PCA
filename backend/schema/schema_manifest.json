@@ -2685,6 +2685,416 @@
         }
       ]
     },
+    "device_policy_activation_targets": {
+      "columns": [
+        {
+          "name": "device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "target_generation",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "policy_message_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "policy_envelope_sha256",
+          "type": "binary(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "policy_envelope_expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "canonical_envelope_bytes",
+          "type": "mediumblob",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "envelope_signature",
+          "type": "binary(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "trust_set_epoch",
+          "type": "int unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "target_state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "bootstrap_capability_hash",
+          "type": "binary(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "bootstrap_capability_expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "bootstrap_capability_consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "challenge_nonce_hash",
+          "type": "binary(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "device_policy_activation_targets_challenge_key",
+          "unique": true,
+          "column": "challenge_id",
+          "seq": 1
+        },
+        {
+          "name": "device_policy_activation_targets_family_device_key",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "device_policy_activation_targets_family_device_key",
+          "unique": true,
+          "column": "device_id",
+          "seq": 2
+        },
+        {
+          "name": "device_policy_activation_targets_family_state_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "device_policy_activation_targets_family_state_idx",
+          "unique": false,
+          "column": "target_state",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "device_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "device_policy_activation_targets_device_fk",
+          "column": "device_id",
+          "referencedTable": "devices",
+          "referencedColumn": "device_id"
+        },
+        {
+          "constraint": "device_policy_activation_targets_family_fk",
+          "column": "family_id",
+          "referencedTable": "families",
+          "referencedColumn": "family_id"
+        }
+      ]
+    },
+    "device_policy_application_proofs": {
+      "columns": [
+        {
+          "name": "challenge_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "target_generation",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "policy_message_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "policy_envelope_sha256",
+          "type": "binary(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "trust_set_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "application_result",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "device_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "challenge_consumed_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "canonical_transcript_sha256",
+          "type": "binary(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "exact_request_sha256",
+          "type": "binary(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "activation_outcome",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "received_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "committed_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "retention_expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "device_policy_application_proofs_device_received_idx",
+          "unique": false,
+          "column": "device_id",
+          "seq": 1
+        },
+        {
+          "name": "device_policy_application_proofs_device_received_idx",
+          "unique": false,
+          "column": "received_at",
+          "seq": 2
+        },
+        {
+          "name": "device_policy_application_proofs_family_fk",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "device_policy_application_proofs_retention_idx",
+          "unique": false,
+          "column": "retention_expires_at",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "challenge_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "device_policy_application_proofs_device_fk",
+          "column": "device_id",
+          "referencedTable": "devices",
+          "referencedColumn": "device_id"
+        },
+        {
+          "constraint": "device_policy_application_proofs_family_fk",
+          "column": "family_id",
+          "referencedTable": "families",
+          "referencedColumn": "family_id"
+        }
+      ]
+    },
     "device_protection_status": {
       "columns": [
         {
@@ -2889,6 +3299,14 @@
         },
         {
           "name": "paired_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "activated_at",
           "type": "datetime(3)",
           "nullable": true,
           "default": null,
@@ -3149,6 +3567,64 @@
       ],
       "foreignKeys": []
     },
+    "enrollment_bootstrap_attempt_tombstones": {
+      "columns": [
+        {
+          "name": "attempt_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "invitation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "recovery_token_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "abandoned_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "enrollment_bootstrap_attempt_tombstones_invitation_idx",
+          "unique": false,
+          "column": "invitation_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "attempt_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "enrollment_bootstrap_attempt_tombstones_invitation_fk",
+          "column": "invitation_id",
+          "referencedTable": "enrollment_invitations",
+          "referencedColumn": "invitation_id"
+        }
+      ]
+    },
     "enrollment_bootstrap_attempts": {
       "columns": [
         {
@@ -3164,7 +3640,7 @@
           "type": "char(64)",
           "nullable": false,
           "default": null,
-          "key": "MUL",
+          "key": "UNI",
           "extra": ""
         },
         {
@@ -3202,7 +3678,7 @@
         {
           "name": "device_id",
           "type": "char(36)",
-          "nullable": false,
+          "nullable": true,
           "default": null,
           "key": "MUL",
           "extra": ""
@@ -3210,7 +3686,7 @@
         {
           "name": "signing_key_id",
           "type": "char(36)",
-          "nullable": false,
+          "nullable": true,
           "default": null,
           "key": "",
           "extra": ""
@@ -3218,7 +3694,7 @@
         {
           "name": "encryption_key_id",
           "type": "char(36)",
-          "nullable": false,
+          "nullable": true,
           "default": null,
           "key": "",
           "extra": ""
@@ -3276,8 +3752,8 @@
           "seq": 1
         },
         {
-          "name": "enrollment_bootstrap_attempts_token_hash_idx",
-          "unique": false,
+          "name": "enrollment_bootstrap_attempts_token_hash_key",
+          "unique": true,
           "column": "token_hash",
           "seq": 1
         },

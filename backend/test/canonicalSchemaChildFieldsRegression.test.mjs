@@ -65,6 +65,14 @@ const ALLOWED_FALSE_POSITIVES = {
   'enrollment_invitations.age_ux_tier': 'age',
   // "display_name": a Platform Admin STAFF member's own chosen name, not a parent or child.
   'platform_admin_accounts.display_name': 'display_name',
+  // Migration 0066 stores opaque routing identifiers, encrypted envelope
+  // bytes, and their digest. These are service-visible lifecycle metadata or
+  // ciphertext, never readable policy/family message content.
+  'device_policy_activation_targets.policy_message_id': ['age', 'message', 'policy'],
+  'device_policy_activation_targets.policy_envelope_sha256': 'policy',
+  'device_policy_activation_targets.policy_envelope_expires_at': 'policy',
+  'device_policy_application_proofs.policy_message_id': ['age', 'message', 'policy'],
+  'device_policy_application_proofs.policy_envelope_sha256': 'policy',
 };
 
 function isAllowedFalsePositive(key, term) {

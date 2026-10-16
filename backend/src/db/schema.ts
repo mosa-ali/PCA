@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 96 tables, including schema_migrations itself),
+// central MySQL schema (all 98 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0065; 63 files, 0009/0010 never existed) from an empty database
+// through 0066; 64 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -1098,6 +1098,803 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
     ],
   },
+  // Migration 0066: activation targets and minimal 14-day proof tombstones.
+  ...([
+    {
+    name: "device_policy_activation_targets",
+      engine: "InnoDB",
+      charset: "utf8mb4",
+      collation: "utf8mb4_bin",
+      createdByMigration: "0066_device_policy_application_proofs.sql",
+      alteredByMigrations: [],
+      ownerModule: "backend/src/devicepolicyproof",
+      columns: [
+        {
+          name: "device_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "family_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "target_generation",
+          columnType: "bigint unsigned",
+          dataType: "bigint",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "policy_message_id",
+          columnType: "varchar(128)",
+          dataType: "varchar",
+          charset: "utf8mb4",
+          collation: "utf8mb4_bin",
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "policy_envelope_sha256",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "policy_envelope_expires_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "canonical_envelope_bytes",
+          columnType: "mediumblob",
+          dataType: "mediumblob",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "ENCRYPTED_PAYLOAD",
+          privacyNote: "Opaque encrypted envelope bytes; the service cannot decrypt policy content."
+        },
+        {
+          name: "envelope_signature",
+          columnType: "binary(64)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "trust_set_epoch",
+          columnType: "int unsigned",
+          dataType: "int",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "key_epoch",
+          columnType: "int unsigned",
+          dataType: "int",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "target_state",
+          columnType: "varchar(16)",
+          dataType: "varchar",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "bootstrap_capability_hash",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "bootstrap_capability_expires_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "bootstrap_capability_consumed_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "challenge_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "challenge_nonce_hash",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "challenge_expires_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "challenge_consumed_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: true,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "created_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "updated_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        }
+      ],
+      primaryKey: [
+        "device_id"
+      ],
+      uniqueIndexes: [
+        {
+          name: "device_policy_activation_targets_challenge_key",
+          columns: [
+            "challenge_id"
+          ],
+          unique: true
+        },
+        {
+          name: "device_policy_activation_targets_family_device_key",
+          columns: [
+            "family_id",
+            "device_id"
+          ],
+          unique: true
+        }
+      ],
+      indexes: [
+        {
+          name: "device_policy_activation_targets_family_state_idx",
+          columns: [
+            "family_id",
+            "target_state"
+          ],
+          unique: false
+        }
+      ],
+      foreignKeys: [
+        {
+          name: "device_policy_activation_targets_device_fk",
+          columns: [
+            "device_id"
+          ],
+          referencedTable: "devices",
+          referencedColumns: [
+            "device_id"
+          ],
+          onDelete: "NO ACTION",
+          onUpdate: "NO ACTION"
+        },
+        {
+          name: "device_policy_activation_targets_family_fk",
+          columns: [
+            "family_id"
+          ],
+          referencedTable: "families",
+          referencedColumns: [
+            "family_id"
+          ],
+          onDelete: "NO ACTION",
+          onUpdate: "NO ACTION"
+        }
+      ],
+      checkConstraints: [
+        {
+          name: "device_policy_activation_targets_capability_pair_check",
+          clause: "((`bootstrap_capability_hash` is null) = (`bootstrap_capability_expires_at` is null))"
+        },
+        {
+          name: "device_policy_activation_targets_challenge_pair_check",
+          clause: "(((`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null)) or ((`challenge_id` is not null) and (`challenge_nonce_hash` is not null) and (`challenge_expires_at` is not null)))"
+        },
+        {
+          name: "device_policy_activation_targets_envelope_size_check",
+          clause: "((`canonical_envelope_bytes` is null) or (length(`canonical_envelope_bytes`) between 1 and 98304))"
+        },
+        {
+          name: "device_policy_activation_targets_epoch_check",
+          clause: "(((`trust_set_epoch` is null) or (`trust_set_epoch` >= 1)) and ((`key_epoch` is null) or (`key_epoch` >= 1)))"
+        },
+        {
+          name: "device_policy_activation_targets_generation_check",
+          clause: "(`target_generation` >= 1)"
+        },
+        {
+          name: "device_policy_activation_targets_message_id_check",
+          clause: "((`policy_message_id` is null) or (char_length(`policy_message_id`) between 1 and 128))"
+        },
+        {
+          name: "device_policy_activation_targets_pending_check",
+          clause: "(((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`bootstrap_capability_hash` is null) and (`bootstrap_capability_expires_at` is null) and (`bootstrap_capability_consumed_at` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))"
+        }
+      ],
+      applicationEnforcedRelations: []
+    },
+    {
+    name: "device_policy_application_proofs",
+      engine: "InnoDB",
+      charset: "utf8mb4",
+      collation: "utf8mb4_bin",
+      createdByMigration: "0066_device_policy_application_proofs.sql",
+      alteredByMigrations: [],
+      ownerModule: "backend/src/devicepolicyproof",
+      columns: [
+        {
+          name: "challenge_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "family_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "device_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "target_generation",
+          columnType: "bigint unsigned",
+          dataType: "bigint",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "policy_message_id",
+          columnType: "varchar(128)",
+          dataType: "varchar",
+          charset: "utf8mb4",
+          collation: "utf8mb4_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "policy_envelope_sha256",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "trust_set_epoch",
+          columnType: "int unsigned",
+          dataType: "int",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "key_epoch",
+          columnType: "int unsigned",
+          dataType: "int",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: true,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "application_result",
+          columnType: "varchar(16)",
+          dataType: "varchar",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "device_key_id",
+          columnType: "char(36)",
+          dataType: "char",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPAQUE_IDENTIFIER",
+          privacyNote: "Opaque application identifier."
+        },
+        {
+          name: "challenge_expires_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "challenge_consumed_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "canonical_transcript_sha256",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "exact_request_sha256",
+          columnType: "binary(32)",
+          dataType: "binary",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "SECURITY_METADATA",
+          privacyNote: "Security and integrity metadata; contains no policy plaintext."
+        },
+        {
+          name: "activation_outcome",
+          columnType: "varchar(32)",
+          dataType: "varchar",
+          charset: "ascii",
+          collation: "ascii_bin",
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "received_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "committed_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        },
+        {
+          name: "retention_expires_at",
+          columnType: "datetime(3)",
+          dataType: "datetime",
+          charset: null,
+          collation: null,
+          nullable: false,
+          default: null,
+          autoIncrement: false,
+          unsigned: false,
+          onUpdateCurrentTimestamp: false,
+          generatedExpression: null,
+          generatedStorage: null,
+          privacy: "OPERATIONAL_METADATA",
+          privacyNote: "Operational lifecycle metadata."
+        }
+      ],
+      primaryKey: [
+        "challenge_id"
+      ],
+      uniqueIndexes: [],
+      indexes: [
+        {
+          name: "device_policy_application_proofs_device_received_idx",
+          columns: [
+            "device_id",
+            "received_at"
+          ],
+          unique: false
+        },
+        {
+          name: "device_policy_application_proofs_family_fk",
+          columns: [
+            "family_id"
+          ],
+          unique: false
+        },
+        {
+          name: "device_policy_application_proofs_retention_idx",
+          columns: [
+            "retention_expires_at"
+          ],
+          unique: false
+        }
+      ],
+      foreignKeys: [
+        {
+          name: "device_policy_application_proofs_device_fk",
+          columns: [
+            "device_id"
+          ],
+          referencedTable: "devices",
+          referencedColumns: [
+            "device_id"
+          ],
+          onDelete: "NO ACTION",
+          onUpdate: "NO ACTION"
+        },
+        {
+          name: "device_policy_application_proofs_family_fk",
+          columns: [
+            "family_id"
+          ],
+          referencedTable: "families",
+          referencedColumns: [
+            "family_id"
+          ],
+          onDelete: "NO ACTION",
+          onUpdate: "NO ACTION"
+        }
+      ],
+      checkConstraints: [
+        {
+          name: "device_policy_application_proofs_epochs_check",
+          clause: "((`trust_set_epoch` >= 1) and (`key_epoch` >= 1))"
+        },
+        {
+          name: "device_policy_application_proofs_generation_check",
+          clause: "(`target_generation` >= 1)"
+        },
+        {
+          name: "device_policy_application_proofs_message_id_check",
+          clause: "(char_length(`policy_message_id`) between 1 and 128)"
+        },
+        {
+          name: "device_policy_application_proofs_outcome_check",
+          clause: "(`activation_outcome` in (_utf8mb4'ACTIVATED',_utf8mb4'RECORDED_NOT_ACTIVATED'))"
+        },
+        {
+          name: "device_policy_application_proofs_result_check",
+          clause: "(`application_result` in (_utf8mb4'APPLIED',_utf8mb4'DEGRADED',_utf8mb4'REJECTED'))"
+        }
+      ],
+      applicationEnforcedRelations: []
+    }
+  ] as TableDefinition[]),
   {
     name: "device_protection_status",
     engine: 'InnoDB',
@@ -1171,7 +1968,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0001_mysql_baseline.sql",
-    alteredByMigrations: ["0026_browser_endpoint_registration.sql"],
+    alteredByMigrations: ["0026_browser_endpoint_registration.sql", "0066_device_policy_application_proofs.sql"],
     ownerModule: "backend/src/http",
     columns: [
       { name: "device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -1181,6 +1978,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "revoked_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "paired_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "activated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "paired_by_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
       { name: "registered_by_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
     ],

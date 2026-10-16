@@ -30,6 +30,8 @@ import path from 'node:path';
 const backendRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const files = [
+  "test/devicepolicyproof/protocol.test.mjs",
+  "test/devicepolicyproof/routes.test.mjs",
   "test/alerts/MySqlOwnerParentDeviceResolver.test.mjs",
   "test/familyrbac/RemovalTargetResolver.test.mjs",
   "test/tooling/parentActorMigrationRecovery.test.mjs",
@@ -330,6 +332,7 @@ const files = [
   "test/telemetry/consent.test.mjs",
   "test/youtube/SafeContentCapability.test.mjs",
   "test/canonicalSchemaChildFieldsRegression.test.mjs",
+  "test/devicepolicyproof/migrationContract.test.mjs",
   // Guards this very list: fails if any non-DB *.test.mjs exists on disk but is
   // absent from it (see test/meta/testSuiteRegistration.test.mjs for why the
   // list stayed hand-maintained instead of becoming a glob).

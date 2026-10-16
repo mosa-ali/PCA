@@ -81,6 +81,16 @@ public enum PCAApplicationErrorCategory: Equatable {
     case permanent
 }
 
+public struct PCADevicePolicyActivationBootstrapResult {
+    public let target: PCADevicePolicyActivationTarget
+    public let proofChallenge: PCADevicePolicyProofChallenge
+
+    fileprivate init(target: PCADevicePolicyActivationTarget, proofChallenge: PCADevicePolicyProofChallenge) {
+        self.target = target
+        self.proofChallenge = proofChallenge
+    }
+}
+
 public protocol PCAProtectionRuntime {
     var status: PCAProtectionStatus { get }
     func authorizationChanged(_ state: ChildAuthorizationState)
@@ -169,6 +179,9 @@ public struct PCAProductionDependencies {
     /// resolved lazily once the same durable root reaches that state.
     public let ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)?
     public let policyRuntime: PCAProtectionPolicyRuntime
+    public let applicationProofStore: PCADeviceApplicationProofStore?
+    public let policyEnvelopeProcessor: PCADevicePolicyEnvelopeProcessing?
+    public let activationClient: PCADevicePolicyActivationClient?
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
     public let deviceId: String?
@@ -195,6 +208,9 @@ public struct PCAProductionDependencies {
         ordinaryTrustSetCoordinator: OrdinaryTrustSetRuntimeManaging? = nil,
         ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)? = nil,
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
+        applicationProofStore: PCADeviceApplicationProofStore? = nil,
+        policyEnvelopeProcessor: PCADevicePolicyEnvelopeProcessing? = nil,
+        activationClient: PCADevicePolicyActivationClient? = nil,
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
         deviceId: String? = nil
@@ -220,6 +236,9 @@ public struct PCAProductionDependencies {
         self.ordinaryTrustSetCoordinator = ordinaryTrustSetCoordinator
         self.ordinaryTrustSetCoordinatorFactory = ordinaryTrustSetCoordinatorFactory
         self.policyRuntime = policyRuntime
+        self.applicationProofStore = applicationProofStore
+        self.policyEnvelopeProcessor = policyEnvelopeProcessor
+        self.activationClient = activationClient
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
         self.deviceId = deviceId
@@ -272,6 +291,9 @@ enum PCAFirstDeviceTrustRootComposition {
     @Published public private(set) var firstDeviceRootReadUnavailable = false
     @Published public private(set) var isFirstDeviceRootActionInProgress = false
     @Published public private(set) var enrollmentOperationInProgress = false
+    /// Durable request awaiting a server response. Retained for exact retries
+    /// only during the owner-approved 14-day window.
+    public private(set) var lastDeviceApplicationProof: PCADeviceApplicationProof?
 
     public let dependencies: PCAProductionDependencies
     public let linkRouter: PCAEnrollmentLinkRouter
@@ -621,6 +643,50 @@ enum PCAFirstDeviceTrustRootComposition {
         applicationState = stateForCurrentData()
     }
 
+    /// Performs only the narrow PAIRED bootstrap: request this device's
+    /// challenge, prove possession with its current DSK, then fetch the single
+    /// activation target. The returned target remains untrusted ciphertext;
+    /// no policy can be applied until the configured production processor
+    /// verifies and decrypts it.
+    public func fetchPairedActivationTarget() async throws -> PCADevicePolicyActivationBootstrapResult {
+        guard let client = dependencies.activationClient,
+              let rootStore = dependencies.firstDeviceRootStore,
+              let root = rootStore.current(), root.state == .rootCommitted,
+              rootStore.confirmDurable(root),
+              let familyId = root.familyId,
+              let deviceId = pendingDeviceId,
+              pcaOpaqueEqual(root.seed.deviceId, deviceId),
+              !dependencies.proofProvider.signingPublicKey.isEmpty else {
+            throw PCAAPIError.unavailable
+        }
+        try dependencies.assertRuntimeKeyCustody(deviceId)
+        let firstChallenge = try await client.challenge(familyId: familyId, deviceId: deviceId)
+        guard rootStore.current() == root, rootStore.confirmDurable(root) else {
+            throw PCADeviceProofError.secureKeyUnavailable
+        }
+        try dependencies.assertRuntimeKeyCustody(deviceId)
+        // Backend bootstrap PoP is explicitly the UTF-8 bytes of this nonce
+        // string. The DSK provider returns canonical low-S P1363 base64url.
+        let possessionSignature = try dependencies.proofProvider.sign(challenge: firstChallenge.nonce)
+        guard rootStore.current() == root, rootStore.confirmDurable(root) else {
+            throw PCADeviceProofError.secureKeyUnavailable
+        }
+        try dependencies.assertRuntimeKeyCustody(deviceId)
+        let capability = try await client.complete(familyId: familyId, deviceId: deviceId,
+            challenge: firstChallenge, signature: possessionSignature)
+        let target = try await client.fetch(familyId: familyId, deviceId: deviceId, capability: capability)
+        guard target.challengeId == capability.challengeId,
+              target.policyEnvelopeMessageId == capability.policyEnvelopeMessageId,
+              target.policyEnvelopeSha256 == capability.policyEnvelopeSha256,
+              target.trustSetEpoch == capability.trustSetEpoch,
+              target.keyEpoch == capability.keyEpoch,
+              rootStore.current() == root, rootStore.confirmDurable(root) else {
+            throw PCAAPIError.malformedResponse
+        }
+        try dependencies.assertRuntimeKeyCustody(deviceId)
+        return PCADevicePolicyActivationBootstrapResult(target: target, proofChallenge: capability.proofChallenge)
+    }
+
     private func reconcileCallbackHealth() {
         let currentTime = now()
         switch dependencies.policyRuntime.usageMonitorStatus(now: currentTime) {
@@ -664,17 +730,111 @@ enum PCAFirstDeviceTrustRootComposition {
         }
     }
 
-    /// Entry point for the approved envelope/crypto pipeline once it has
-    /// produced a fully verified policy and opaque FamilyControls token
-    /// bytes. Receipt alone never calls this method; the runtime-sync
-    /// transport intentionally stops before decryption/application.
+    /// PAIRED activation application boundary. The injected envelope processor
+    /// must verify the exact canonical target, decrypt it, and decode policy
+    /// before the durable Trust Set gate and production runtime are reached.
+    /// No general relay item or local receipt is accepted here.
     @discardableResult
     public func applyVerifiedPolicy(
-        scheduleData: Data,
-        applicationTokenData: Data,
-        protectedApplicationTokenData: Data? = nil,
+        activationTarget: PCADevicePolicyActivationTarget,
+        proofChallenge: PCADevicePolicyProofChallenge,
         now: Date? = nil
     ) -> PCAProtectionPolicyApplicationResult? {
+        guard let deviceId = pendingDeviceId,
+              let familyId = firstDeviceRootRecord?.familyId,
+              let processor = dependencies.policyEnvelopeProcessor else {
+            lastError = .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return .degraded
+        }
+        let payload: PCADecryptedPolicyApplicationPayload
+        let targetCanonicalBytes: Data
+        do {
+            targetCanonicalBytes = try activationTarget.canonicalBytes()
+            payload = try processor.verifyDecryptAndDecode(target: activationTarget,
+                expectedFamilyId: familyId, expectedDeviceId: deviceId)
+        } catch {
+            lastError = .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return .degraded
+        }
+        guard payload.envelope.messageId == activationTarget.policyEnvelopeMessageId,
+              payload.envelope.signature == activationTarget.envelopeSignature,
+              (try? PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(payload.envelope)) == targetCanonicalBytes,
+              payload.envelope.trustSetEpoch == activationTarget.trustSetEpoch,
+              payload.envelope.keyEpoch == activationTarget.keyEpoch else {
+            lastError = .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return .degraded
+        }
+        let verifiedEnvelope = payload.envelope
+
+        let currentFloor: PolicyEpochStamp
+        do {
+            guard let trustSet = try ordinaryTrustSetRuntimeManagerIfAvailable(),
+                  let floor = try trustSet.acceptedEpochFloor(familyId: verifiedEnvelope.familyId) else {
+                throw OrdinaryTrustSetError.malformedState
+            }
+            currentFloor = floor
+        } catch {
+            lastError = .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return .degraded
+        }
+
+        // This is the production last-use gate: no policy reaches durable
+        // persistence or ManagedSettings unless the injected receiver has
+        // verified/decrypted/decoded this exact envelope and its immutable
+        // scope/epochs match the durable Trust Set floor.
+        guard verifiedEnvelope.messageType == "POLICY_UPDATE",
+              let recipient = verifiedEnvelope.recipientDeviceId,
+              pcaOpaqueEqual(recipient, pendingDeviceId),
+              let acceptedFamilyId = firstDeviceRootRecord?.familyId,
+              pcaOpaqueEqual(verifiedEnvelope.familyId, acceptedFamilyId),
+              PolicyApplicationGate.evaluate(
+                candidate: PolicyEpochStamp(trustSetEpoch: verifiedEnvelope.trustSetEpoch, keyEpoch: verifiedEnvelope.keyEpoch),
+                currentFloor: currentFloor
+              ) == .apply,
+              let canonicalEnvelope = try? PCADevicePolicyEnvelopeCanonicalizer.canonicalBytes(verifiedEnvelope),
+              let envelopeDigest = try? PCADevicePolicyEnvelopeCanonicalizer.sha256(canonicalEnvelope) else {
+            lastError = .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return .degraded
+        }
+
+        do {
+            let digest = PCADevicePolicyProofCodec.base64URL(envelopeDigest)
+            guard proofChallenge.challengeId == activationTarget.challengeId,
+                  pcaOpaqueEqual(proofChallenge.familyId, verifiedEnvelope.familyId),
+                  pcaOpaqueEqual(proofChallenge.deviceId, recipient),
+                  pcaOpaqueEqual(proofChallenge.policyEnvelopeMessageId, verifiedEnvelope.messageId),
+                  pcaOpaqueEqual(proofChallenge.policyEnvelopeSha256, digest),
+                  proofChallenge.trustSetEpoch == verifiedEnvelope.trustSetEpoch,
+                  proofChallenge.keyEpoch == verifiedEnvelope.keyEpoch else {
+                lastError = .securityGate
+                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                applicationState = .protectionDegraded
+                return .degraded
+            }
+        }
+
+        let applicationTime = now ?? self.now()
+        do {
+            guard let challengeExpiry = PCADevicePolicyProofCodec.canonicalDate(proofChallenge.expiresAt),
+                  challengeExpiry > applicationTime,
+                  (try? PCADevicePolicyProofCodec.encode(proofChallenge, result: .applied)) != nil else {
+                lastError = .securityGate
+                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+                applicationState = .protectionDegraded
+                return .degraded
+            }
+        }
+
         guard authorization.permitsEnforcement else {
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = stateForCurrentData()
@@ -683,10 +843,10 @@ enum PCAFirstDeviceTrustRootComposition {
 
         do {
             let result = try dependencies.policyRuntime.applyVerifiedPolicy(
-                scheduleData: scheduleData,
-                applicationTokenData: applicationTokenData,
-                protectedApplicationTokenData: protectedApplicationTokenData,
-                now: now ?? self.now()
+                scheduleData: payload.scheduleData,
+                applicationTokenData: payload.applicationTokenData,
+                protectedApplicationTokenData: payload.protectedApplicationTokenData,
+                now: applicationTime
             )
             switch result {
             case .applied:
@@ -698,6 +858,18 @@ enum PCAFirstDeviceTrustRootComposition {
             }
             applicationState = stateForCurrentData()
             lastError = nil
+            guard let store = dependencies.applicationProofStore else {
+                throw PCAInboundInboxError.unavailable
+            }
+            let proofResult: PCADevicePolicyApplicationResult
+            switch result {
+            case .applied: proofResult = .applied
+            case .scheduledOnly, .degraded: proofResult = .degraded
+            }
+            lastDeviceApplicationProof = try store.proofOrCreate(
+                challenge: proofChallenge, result: proofResult,
+                dsk: dependencies.proofProvider, now: applicationTime
+            )
             Task { await self.reportProtectionStatusIfPossible() }
             return result
         } catch let error as PCAProtectionPolicyApplicationError {
@@ -710,6 +882,36 @@ enum PCAFirstDeviceTrustRootComposition {
             dependencies.protectionRuntime.recordPolicyApplication(.degraded)
             applicationState = .protectionDegraded
             return nil
+        }
+    }
+
+    /// Replays the exact durable signed request after response loss. This does
+    /// not regenerate the ECDSA signature and the backend enforces its
+    /// 14-day idempotency/conflict window.
+    public func submitDeviceApplicationProof(challengeId: String, now: Date? = nil) async throws
+        -> PCADevicePolicyApplicationProofResponse {
+        guard let store = dependencies.applicationProofStore,
+              let client = dependencies.activationClient,
+              let proof = try store.proof(challengeId: challengeId, now: now ?? self.now()) else {
+            throw PCAAPIError.unavailable
+        }
+        do { return try await client.submit(proof) }
+        catch let error as PCAAPIError {
+            let outcomeMayBeUnknown: Bool
+            switch error {
+            case .malformedResponse, .rejected,
+                 .transport(.network), .transport(.timeout), .transport(.invalidResponse),
+                 .transport(.responseTooLarge): outcomeMayBeUnknown = true
+            default: outcomeMayBeUnknown = false
+            }
+            guard outcomeMayBeUnknown else { throw error }
+            do { return try await client.recoverExactProof(proof) }
+            catch let recoveryError as PCAAPIError where recoveryError == .unavailable {
+                // A status miss means no durable commit was found. Re-submit
+                // the exact stored request; the server handles a race with a
+                // concurrent first commit idempotently.
+                return try await client.submit(proof)
+            }
         }
     }
 
@@ -1681,6 +1883,7 @@ public enum PCAProductionCompositionRoot {
         #endif
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: deviceProofProvider)
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
+        let activationClient = try? PCADevicePolicyActivationClient(baseURL: productionAPIBaseURL, transport: transport)
         #if canImport(Security) && canImport(CryptoKit)
         let safeZoneDeliveryInbox: PCAKeychainSafeZoneDeliveryInbox? = PCAKeychainSafeZoneDeliveryInbox(
             keychain: keychain,
@@ -1736,6 +1939,12 @@ public enum PCAProductionCompositionRoot {
             ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             ordinaryTrustSetCoordinatorFactory: ordinaryTrustSetCoordinatorFactory,
             policyRuntime: policyRuntime,
+            applicationProofStore: PCADeviceApplicationProofStore(keychain: keychain, serviceNamespace: "org.pca.app"),
+            // No approved iOS envelope verifier/decryptor exists in this
+            // checkout. Keep this nil so no PAIRED policy can become APPLIED
+            // until the real receiver crypto implementation is integrated.
+            policyEnvelopeProcessor: nil,
+            activationClient: activationClient,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()
         )

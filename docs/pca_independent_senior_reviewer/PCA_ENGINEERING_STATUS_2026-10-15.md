@@ -24,3 +24,9 @@ The 23 commits formerly ahead of fetched origin at the handover SHA are all in p
 TODO-12/14/15 remain **IN_PROGRESS**; TODO-14 aggregate remains `NOT_YET_PROVEN`. TODO-19 source publication and exact-head CI passed at `7338331f`; the ledger-only final commit has its own Wave 01 exact-head CI gate. TODO-20 remains **PASS** as recorded through migration 0065; this wave made no database change. TODO-18 owner localhost acceptance and TODO-21/22/23 Azure, production acceptance, and mission closure remain TODO. Platform stays `HOLD_PARENT_DEPENDENCY`.
 
 Physical Android/iOS evidence, owner acceptance, approved production crypto and policy-receipt contracts, live DB checks, Azure deployment, and production acceptance remain open external gates. Wave 02 has not started and requires owner authorization after the final documentation-head CI is green.
+
+## Wave 02B checkpoint — 2026-10-16
+
+Repository migration 0066 and backend target/challenge/proof lifecycle are implemented. Disposable MySQL 8.4.11 applied 64 migrations and passed 7/7 proof transaction tests; backend build and full suite passed 3517/3517. Focused proof/schema/grant checks passed 68/68, runtime-grant policy 20/20, and bootstrap artifact check matches 98 tables. No retained, live, Azure, or production database was touched.
+
+Production activation stays disabled by a literal false receiver-readiness gate. Android has no accepted paired-device DSK custody plus envelope signature verifier; iOS production has no approved inbound envelope processor. Neither platform can emit APPLIED, and the server cannot activate. Android current-source Gradle validation, iOS XCTest, physical-device UAT, exact-head CI, and publication remain pending. Wave 02B is incomplete; recommend a separate bounded Wave 02C for production envelope crypto qualification. Wave 03 is not started.

@@ -30,7 +30,7 @@
 //   PCA_RUNTIME_DB_HOST -- the runtime principal's host pattern, e.g.
 //     127.0.0.1 or % (never hardcoded).
 import mysql from 'mysql2/promise';
-import { buildRuntimeGrantPlan, quoteUserAtHost } from './db/runtimeGrantPlan.mjs';
+import { buildRuntimeGrantPlan, buildRuntimeRoutineGrantPlan, quoteUserAtHost, RUNTIME_ROUTINE_PRIVILEGES } from './db/runtimeGrantPlan.mjs';
 import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 
 const AUDIT_TABLE_NAME = 'platform_admin_audit_events';
@@ -90,11 +90,22 @@ async function main() {
     for (const statement of grantStatements) {
       await connection.query(statement);
     }
+    const approvedRoutineNames = Object.keys(RUNTIME_ROUTINE_PRIVILEGES);
+    const [routineRows] = await connection.query(
+      `SELECT routine_name AS routine_name FROM information_schema.routines WHERE routine_schema = DATABASE() AND routine_type = 'PROCEDURE' AND routine_name IN (${approvedRoutineNames.map(() => '?').join(', ')})`,
+      approvedRoutineNames,
+    );
+    const presentRoutineNames = routineRows.map((row) => row.routine_name ?? row.ROUTINE_NAME);
+    if (presentRoutineNames.length !== approvedRoutineNames.length || approvedRoutineNames.some((name) => !presentRoutineNames.includes(name))) {
+      throw new Error(`Expected approved runtime procedures are missing: ${approvedRoutineNames.filter((name) => !presentRoutineNames.includes(name)).join(', ')}`);
+    }
+    const routineGrantStatements = buildRuntimeRoutineGrantPlan(databaseName, approvedRoutineNames, userAtHostLiteral);
+    for (const statement of routineGrantStatements) await connection.query(statement);
 
     await connection.query('FLUSH PRIVILEGES');
 
     const ordinaryTableCount = tableNames.filter((name) => name !== AUDIT_TABLE_NAME && name !== MIGRATIONS_TABLE_NAME).length;
-    console.log(`Provisioned ${grantStatements.length} table-level grant(s) for ${userAtHostLiteral} on database "${databaseName}".`);
+    console.log(`Provisioned ${grantStatements.length} table-level and ${routineGrantStatements.length} procedure grant(s) for ${userAtHostLiteral} on database "${databaseName}".`);
     console.log(`  - ${AUDIT_TABLE_NAME}: SELECT, INSERT only (append-only enforcement).`);
     console.log(`  - ${MIGRATIONS_TABLE_NAME}: SELECT only.`);
     console.log(`  - every other table (${ordinaryTableCount}): SELECT, INSERT, UPDATE, DELETE.`);

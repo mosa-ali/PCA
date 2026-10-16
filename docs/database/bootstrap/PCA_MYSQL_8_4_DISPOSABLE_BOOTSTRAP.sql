@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    96 tables
---   834 columns
---    96 primary keys
---   105 foreign keys
---    39 unique non-primary-key indexes
---   144 non-unique indexes
---   315 CHECK constraints
+--    98 tables
+--   873 columns
+--    98 primary keys
+--   109 foreign keys
+--    41 unique non-primary-key indexes
+--   148 non-unique indexes
+--   327 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    63 schema_migrations journal rows
+--    64 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -541,6 +541,76 @@ CREATE TABLE `device_challenges` (
   CONSTRAINT `device_challenges_nonce_check` CHECK ((char_length(`nonce`) between 1 and 256))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- device_policy_activation_targets (defined by backend/migrations/0066_device_policy_application_proofs.sql)
+CREATE TABLE `device_policy_activation_targets` (
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_generation` bigint unsigned NOT NULL,
+  `policy_message_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `policy_envelope_sha256` binary(32) NULL,
+  `policy_envelope_expires_at` datetime(3) NULL,
+  `canonical_envelope_bytes` mediumblob NULL,
+  `envelope_signature` binary(64) NULL,
+  `trust_set_epoch` int unsigned NULL,
+  `key_epoch` int unsigned NULL,
+  `target_state` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `bootstrap_capability_hash` binary(32) NULL,
+  `bootstrap_capability_expires_at` datetime(3) NULL,
+  `bootstrap_capability_consumed_at` datetime(3) NULL,
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `challenge_nonce_hash` binary(32) NULL,
+  `challenge_expires_at` datetime(3) NULL,
+  `challenge_consumed_at` datetime(3) NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`device_id`),
+  UNIQUE KEY `device_policy_activation_targets_challenge_key` (`challenge_id`),
+  UNIQUE KEY `device_policy_activation_targets_family_device_key` (`family_id`, `device_id`),
+  KEY `device_policy_activation_targets_family_state_idx` (`family_id`, `target_state`),
+  CONSTRAINT `device_policy_activation_targets_device_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `device_policy_activation_targets_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `device_policy_activation_targets_capability_pair_check` CHECK (((`bootstrap_capability_hash` is null) = (`bootstrap_capability_expires_at` is null))),
+  CONSTRAINT `device_policy_activation_targets_challenge_pair_check` CHECK ((((`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null)) or ((`challenge_id` is not null) and (`challenge_nonce_hash` is not null) and (`challenge_expires_at` is not null)))),
+  CONSTRAINT `device_policy_activation_targets_envelope_size_check` CHECK (((`canonical_envelope_bytes` is null) or (length(`canonical_envelope_bytes`) between 1 and 98304))),
+  CONSTRAINT `device_policy_activation_targets_epoch_check` CHECK ((((`trust_set_epoch` is null) or (`trust_set_epoch` >= 1)) and ((`key_epoch` is null) or (`key_epoch` >= 1)))),
+  CONSTRAINT `device_policy_activation_targets_generation_check` CHECK ((`target_generation` >= 1)),
+  CONSTRAINT `device_policy_activation_targets_message_id_check` CHECK (((`policy_message_id` is null) or (char_length(`policy_message_id`) between 1 and 128))),
+  CONSTRAINT `device_policy_activation_targets_pending_check` CHECK ((((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`bootstrap_capability_hash` is null) and (`bootstrap_capability_expires_at` is null) and (`bootstrap_capability_consumed_at` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null))))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- device_policy_application_proofs (defined by backend/migrations/0066_device_policy_application_proofs.sql)
+CREATE TABLE `device_policy_application_proofs` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_generation` bigint unsigned NOT NULL,
+  `policy_message_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `policy_envelope_sha256` binary(32) NOT NULL,
+  `trust_set_epoch` int unsigned NOT NULL,
+  `key_epoch` int unsigned NOT NULL,
+  `application_result` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `challenge_expires_at` datetime(3) NOT NULL,
+  `challenge_consumed_at` datetime(3) NOT NULL,
+  `canonical_transcript_sha256` binary(32) NOT NULL,
+  `exact_request_sha256` binary(32) NOT NULL,
+  `activation_outcome` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `received_at` datetime(3) NOT NULL,
+  `committed_at` datetime(3) NOT NULL,
+  `retention_expires_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `device_policy_application_proofs_device_received_idx` (`device_id`, `received_at`),
+  KEY `device_policy_application_proofs_family_fk` (`family_id`),
+  KEY `device_policy_application_proofs_retention_idx` (`retention_expires_at`),
+  CONSTRAINT `device_policy_application_proofs_device_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `device_policy_application_proofs_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `device_policy_application_proofs_epochs_check` CHECK (((`trust_set_epoch` >= 1) and (`key_epoch` >= 1))),
+  CONSTRAINT `device_policy_application_proofs_generation_check` CHECK ((`target_generation` >= 1)),
+  CONSTRAINT `device_policy_application_proofs_message_id_check` CHECK ((char_length(`policy_message_id`) between 1 and 128)),
+  CONSTRAINT `device_policy_application_proofs_outcome_check` CHECK ((`activation_outcome` in (_utf8mb4'ACTIVATED',_utf8mb4'RECORDED_NOT_ACTIVATED'))),
+  CONSTRAINT `device_policy_application_proofs_result_check` CHECK ((`application_result` in (_utf8mb4'APPLIED',_utf8mb4'DEGRADED',_utf8mb4'REJECTED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- device_protection_status (defined by backend/migrations/0024_device_protection_status.sql)
 CREATE TABLE `device_protection_status` (
   `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -571,7 +641,7 @@ CREATE TABLE `device_public_keys` (
   CONSTRAINT `device_public_keys_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- devices (defined by backend/migrations/0001_mysql_baseline.sql, altered by 0026_browser_endpoint_registration.sql)
+-- devices (defined by backend/migrations/0001_mysql_baseline.sql, altered by 0026_browser_endpoint_registration.sql, 0066_device_policy_application_proofs.sql)
 CREATE TABLE `devices` (
   `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
@@ -580,6 +650,7 @@ CREATE TABLE `devices` (
   `created_at` datetime(3) NOT NULL,
   `revoked_at` datetime(3) NULL,
   `paired_at` datetime(3) NULL,
+  `activated_at` datetime(3) NULL,
   `paired_by_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   `registered_by_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   PRIMARY KEY (`device_id`),
@@ -2061,4 +2132,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0062_first_device_trust_root_bootstrap.sql'),
   ('0063_first_device_bootstrap_audit_digests.sql'),
   ('0064_enrollment_bootstrap_attempt_resolution.sql'),
-  ('0065_enrollment_abandoned_attempt_tombstones.sql');
+  ('0065_enrollment_abandoned_attempt_tombstones.sql'),
+  ('0066_device_policy_application_proofs.sql');

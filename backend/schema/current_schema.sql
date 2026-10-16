@@ -498,6 +498,78 @@ CREATE TABLE `device_challenges` (
   CONSTRAINT `device_challenges_nonce_check` CHECK ((char_length(`nonce`) between 1 and 256))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- device_policy_activation_targets
+CREATE TABLE `device_policy_activation_targets` (
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_generation` bigint unsigned NOT NULL,
+  `policy_message_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `policy_envelope_sha256` binary(32) DEFAULT NULL,
+  `policy_envelope_expires_at` datetime(3) DEFAULT NULL,
+  `canonical_envelope_bytes` mediumblob,
+  `envelope_signature` binary(64) DEFAULT NULL,
+  `trust_set_epoch` int unsigned DEFAULT NULL,
+  `key_epoch` int unsigned DEFAULT NULL,
+  `target_state` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `bootstrap_capability_hash` binary(32) DEFAULT NULL,
+  `bootstrap_capability_expires_at` datetime(3) DEFAULT NULL,
+  `bootstrap_capability_consumed_at` datetime(3) DEFAULT NULL,
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `challenge_nonce_hash` binary(32) DEFAULT NULL,
+  `challenge_expires_at` datetime(3) DEFAULT NULL,
+  `challenge_consumed_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`device_id`),
+  UNIQUE KEY `device_policy_activation_targets_family_device_key` (`family_id`,`device_id`),
+  UNIQUE KEY `device_policy_activation_targets_challenge_key` (`challenge_id`),
+  KEY `device_policy_activation_targets_family_state_idx` (`family_id`,`target_state`),
+  CONSTRAINT `device_policy_activation_targets_device_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`),
+  CONSTRAINT `device_policy_activation_targets_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
+  CONSTRAINT `device_policy_activation_targets_capability_pair_check` CHECK (((`bootstrap_capability_hash` is null) = (`bootstrap_capability_expires_at` is null))),
+  CONSTRAINT `device_policy_activation_targets_challenge_pair_check` CHECK ((((`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null)) or ((`challenge_id` is not null) and (`challenge_nonce_hash` is not null) and (`challenge_expires_at` is not null)))),
+  CONSTRAINT `device_policy_activation_targets_envelope_size_check` CHECK (((`canonical_envelope_bytes` is null) or (length(`canonical_envelope_bytes`) between 1 and 98304))),
+  CONSTRAINT `device_policy_activation_targets_epoch_check` CHECK ((((`trust_set_epoch` is null) or (`trust_set_epoch` >= 1)) and ((`key_epoch` is null) or (`key_epoch` >= 1)))),
+  CONSTRAINT `device_policy_activation_targets_generation_check` CHECK ((`target_generation` >= 1)),
+  CONSTRAINT `device_policy_activation_targets_message_id_check` CHECK (((`policy_message_id` is null) or (char_length(`policy_message_id`) between 1 and 128))),
+  CONSTRAINT `device_policy_activation_targets_pending_check` CHECK ((((`target_state` = _utf8mb4'PENDING') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is not null) and (`policy_envelope_expires_at` is not null) and (`envelope_signature` is not null) and (`trust_set_epoch` is not null) and (`key_epoch` is not null)) or ((`target_state` = _utf8mb4'ACTIVATED') and (`policy_message_id` is not null) and (`policy_envelope_sha256` is not null) and (`canonical_envelope_bytes` is null) and (`envelope_signature` is null) and (`bootstrap_capability_hash` is null) and (`bootstrap_capability_expires_at` is null) and (`bootstrap_capability_consumed_at` is null) and (`challenge_id` is null) and (`challenge_nonce_hash` is null) and (`challenge_expires_at` is null) and (`challenge_consumed_at` is null)))),
+  CONSTRAINT `device_policy_activation_targets_state_check` CHECK ((`target_state` in (_utf8mb4'PENDING',_utf8mb4'ACTIVATED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- device_policy_application_proofs
+CREATE TABLE `device_policy_application_proofs` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `target_generation` bigint unsigned NOT NULL,
+  `policy_message_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `policy_envelope_sha256` binary(32) NOT NULL,
+  `trust_set_epoch` int unsigned NOT NULL,
+  `key_epoch` int unsigned NOT NULL,
+  `application_result` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `challenge_expires_at` datetime(3) NOT NULL,
+  `challenge_consumed_at` datetime(3) NOT NULL,
+  `canonical_transcript_sha256` binary(32) NOT NULL,
+  `exact_request_sha256` binary(32) NOT NULL,
+  `activation_outcome` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `received_at` datetime(3) NOT NULL,
+  `committed_at` datetime(3) NOT NULL,
+  `retention_expires_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `device_policy_application_proofs_device_received_idx` (`device_id`,`received_at`),
+  KEY `device_policy_application_proofs_retention_idx` (`retention_expires_at`),
+  KEY `device_policy_application_proofs_family_fk` (`family_id`),
+  CONSTRAINT `device_policy_application_proofs_device_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`),
+  CONSTRAINT `device_policy_application_proofs_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
+  CONSTRAINT `device_policy_application_proofs_epochs_check` CHECK (((`trust_set_epoch` >= 1) and (`key_epoch` >= 1))),
+  CONSTRAINT `device_policy_application_proofs_generation_check` CHECK ((`target_generation` >= 1)),
+  CONSTRAINT `device_policy_application_proofs_message_id_check` CHECK ((char_length(`policy_message_id`) between 1 and 128)),
+  CONSTRAINT `device_policy_application_proofs_outcome_check` CHECK ((`activation_outcome` in (_utf8mb4'ACTIVATED',_utf8mb4'RECORDED_NOT_ACTIVATED'))),
+  CONSTRAINT `device_policy_application_proofs_result_check` CHECK ((`application_result` in (_utf8mb4'APPLIED',_utf8mb4'DEGRADED',_utf8mb4'REJECTED'))),
+  CONSTRAINT `device_policy_application_proofs_retention_check` CHECK ((`retention_expires_at` > `committed_at`))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- device_protection_status
 CREATE TABLE `device_protection_status` (
   `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -537,6 +609,7 @@ CREATE TABLE `devices` (
   `created_at` datetime(3) NOT NULL,
   `revoked_at` datetime(3) DEFAULT NULL,
   `paired_at` datetime(3) DEFAULT NULL,
+  `activated_at` datetime(3) DEFAULT NULL,
   `paired_by_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `registered_by_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   PRIMARY KEY (`device_id`),
@@ -585,6 +658,19 @@ CREATE TABLE `enrollment_administration_verifiers` (
   CONSTRAINT `enrollment_administration_verifiers_verifier_check` CHECK ((char_length(`verifier_b64`) between 1 and 64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- enrollment_bootstrap_attempt_tombstones
+CREATE TABLE `enrollment_bootstrap_attempt_tombstones` (
+  `attempt_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `invitation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `recovery_token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `abandoned_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`attempt_id`),
+  KEY `enrollment_bootstrap_attempt_tombstones_invitation_idx` (`invitation_id`),
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_invitation_fk` FOREIGN KEY (`invitation_id`) REFERENCES `enrollment_invitations` (`invitation_id`),
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_attempt_id_check` CHECK ((char_length(`attempt_id`) between 16 and 64)),
+  CONSTRAINT `enrollment_bootstrap_attempt_tombstones_recovery_hash_check` CHECK (regexp_like(`recovery_token_hash`,_utf8mb4'^[0-9a-f]{64}$'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- enrollment_bootstrap_attempts
 CREATE TABLE `enrollment_bootstrap_attempts` (
   `attempt_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -593,25 +679,26 @@ CREATE TABLE `enrollment_bootstrap_attempts` (
   `platform` varchar(16) COLLATE utf8mb4_bin NOT NULL,
   `signing_public_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `encryption_public_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `signing_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `encryption_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `signing_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `encryption_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `invitation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `status` varchar(16) COLLATE utf8mb4_bin NOT NULL,
   `created_at` datetime(3) NOT NULL,
   PRIMARY KEY (`attempt_id`),
   UNIQUE KEY `enrollment_bootstrap_attempts_recovery_token_hash_key` (`recovery_token_hash`),
-  KEY `enrollment_bootstrap_attempts_token_hash_idx` (`token_hash`),
+  UNIQUE KEY `enrollment_bootstrap_attempts_token_hash_key` (`token_hash`),
   KEY `enrollment_bootstrap_attempts_device_id_idx` (`device_id`),
   KEY `enrollment_bootstrap_attempts_invitation_id_idx` (`invitation_id`),
   CONSTRAINT `enrollment_bootstrap_attempts_device_id_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`),
   CONSTRAINT `enrollment_bootstrap_attempts_invitation_id_fk` FOREIGN KEY (`invitation_id`) REFERENCES `enrollment_invitations` (`invitation_id`),
   CONSTRAINT `enrollment_bootstrap_attempts_attempt_id_check` CHECK ((char_length(`attempt_id`) between 16 and 64)),
+  CONSTRAINT `enrollment_bootstrap_attempts_device_result_check` CHECK ((((`status` = _utf8mb4'COMPLETED') and (`device_id` is not null) and (`signing_key_id` is not null) and (`encryption_key_id` is not null)) or ((`status` in (_utf8mb4'PREPARED',_utf8mb4'ABANDONED')) and (`device_id` is null) and (`signing_key_id` is null) and (`encryption_key_id` is null)))),
   CONSTRAINT `enrollment_bootstrap_attempts_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `enrollment_bootstrap_attempts_platform_check` CHECK ((`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS'))),
   CONSTRAINT `enrollment_bootstrap_attempts_recovery_token_hash_check` CHECK (regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')),
-  CONSTRAINT `enrollment_bootstrap_attempts_status_check` CHECK ((`status` = _utf8mb4'COMPLETED')),
+  CONSTRAINT `enrollment_bootstrap_attempts_status_check` CHECK ((`status` in (_utf8mb4'PREPARED',_utf8mb4'COMPLETED',_utf8mb4'ABANDONED'))),
   CONSTRAINT `enrollment_bootstrap_attempts_token_hash_check` CHECK (regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
