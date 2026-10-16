@@ -4780,6 +4780,7 @@ final class ProductionIntegrationTests: XCTestCase {
         ordinaryTrustSetCoordinatorFactory: (() throws -> OrdinaryTrustSetRuntimeManaging)? = nil,
         assertRuntimeKeyCustody: @escaping (String) throws -> Void = { _ in },
         policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
+        applicationProofStore: PCADeviceApplicationProofStore? = nil,
         authorizationStatus: RawAuthorizationStatus = .approved,
         authorizationSource: AuthorizationStatusSource? = nil,
         enrollmentTransport: PCAHTTPTransport? = nil
@@ -4825,6 +4826,7 @@ final class ProductionIntegrationTests: XCTestCase {
             ordinaryTrustSetCoordinator: ordinaryTrustSetCoordinator,
             ordinaryTrustSetCoordinatorFactory: ordinaryTrustSetCoordinatorFactory,
             policyRuntime: policyRuntime,
+            applicationProofStore: applicationProofStore,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: identityStore
         )
@@ -5592,6 +5594,38 @@ final class ProductionIntegrationTests: XCTestCase {
         )) { error in
             XCTAssertEqual(error as? PCAProtectionPolicyApplicationError, .frameworkUnavailable)
         }
+    }
+
+    @MainActor func testPairedPolicyApplicationWithoutApprovedEnvelopeProcessorNeverPersistsApplicationProof() throws {
+        let root = InMemoryFirstDeviceRootStore(record: FirstDeviceRootRecord(
+            seed: trustRootSeed(), state: .rootCommitted, familyId: "family-1"))
+        let keychain = InMemoryKeychainStore()
+        let proofStore = PCADeviceApplicationProofStore(keychain: keychain, serviceNamespace: "missing-receiver-crypto")
+        let model = try makeEnrollmentModel(
+            identityStore: RecordingDeviceIdentityStore(),
+            attemptStore: InMemoryPCADeviceStateStore(),
+            firstDeviceRootStore: root,
+            applicationProofStore: proofStore
+        )
+        let challenge = PCADevicePolicyProofChallenge(
+            challengeId: "66666666-6666-4666-8666-666666666666",
+            nonce: String(repeating: "A", count: 43),
+            familyId: "family-1", deviceId: "device-1",
+            policyEnvelopeMessageId: "policy-1", policyEnvelopeSha256: String(repeating: "B", count: 43),
+            trustSetEpoch: 1, keyEpoch: 1, expiresAt: "2030-01-01T00:00:00.000Z"
+        )
+        let target = PCADevicePolicyActivationTarget(
+            challengeId: challenge.challengeId, policyEnvelopeMessageId: challenge.policyEnvelopeMessageId,
+            policyEnvelopeSha256: challenge.policyEnvelopeSha256, canonicalEnvelopeBytes: "AA",
+            envelopeSignature: "signature", trustSetEpoch: 1, keyEpoch: 1
+        )
+
+        let result = model.applyVerifiedPolicy(activationTarget: target, proofChallenge: challenge)
+
+        XCTAssertEqual(result, .degraded)
+        XCTAssertEqual(model.lastError, .securityGate)
+        XCTAssertEqual(model.dependencies.protectionRuntime.status, .degraded)
+        XCTAssertNil(try proofStore.proof(challengeId: challenge.challengeId, now: Date()))
     }
 
     func testAuthorizationApprovalAloneNeverClaimsProtectionActive() {
