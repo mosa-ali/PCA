@@ -156,6 +156,73 @@ final class PolicyApplicationGateTests: XCTestCase {
         XCTAssertTrue(key.isValidSignature(signature, for: transcript))
     }
 
+    func testEverySharedMutationSignatureVerifiesForItsMutatedTranscript() throws {
+        let vector = try sharedProofVector()
+        let validFields = vector.validProof.fields
+        let validTranscript = try PCADevicePolicyProofCodec.encode(
+            sharedVectorProofChallenge(validFields), result: .applied)
+        let publicKeyBytes = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
+            vector.validProof.syntheticDskPublicKeySec1Base64Url))
+        let key = try P256.Signing.PublicKey(x963Representation: publicKeyBytes)
+        XCTAssertEqual(Set(vector.mutations.map(\.id)), Set([
+            "changed-envelope-digest", "wrong-family", "wrong-device",
+            "stale-trust-set-epoch", "conflicting-replay",
+        ]))
+
+        for mutation in vector.mutations {
+            var familyId = validFields.familyId
+            var deviceId = validFields.deviceId
+            var envelopeDigest = validFields.policyEnvelopeSha256
+            var trustSetEpoch = validFields.trustSetEpoch
+            var result: PCADevicePolicyApplicationResult = .applied
+
+            switch mutation.id {
+            case "changed-envelope-digest":
+                XCTAssertEqual(mutation.field, "policyEnvelopeSha256")
+                XCTAssertEqual(mutation.mutation,
+                    "decode 32-byte digest, XOR byte 0 with 0x01, canonical-base64url encode")
+                var digest = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(envelopeDigest))
+                digest[0] ^= 0x01
+                envelopeDigest = PCADevicePolicyProofCodec.base64URL(digest)
+            case "wrong-family":
+                XCTAssertEqual(mutation.field, "familyId")
+                familyId = try XCTUnwrap(mutation.value?.stringValue)
+            case "wrong-device":
+                XCTAssertEqual(mutation.field, "deviceId")
+                deviceId = try XCTUnwrap(mutation.value?.stringValue)
+            case "stale-trust-set-epoch":
+                XCTAssertEqual(mutation.field, "trustSetEpoch")
+                trustSetEpoch = try XCTUnwrap(mutation.value?.integerValue)
+            case "conflicting-replay":
+                XCTAssertEqual(mutation.field, "applicationResult")
+                XCTAssertEqual(mutation.value?.stringValue, "DEGRADED")
+                result = .degraded
+            default:
+                XCTFail("Unrecognized shared mutation: \(mutation.id)")
+                continue
+            }
+
+            let challenge = PCADevicePolicyProofChallenge(
+                challengeId: validFields.challengeId, nonce: validFields.challengeNonce,
+                familyId: familyId, deviceId: deviceId,
+                policyEnvelopeMessageId: validFields.policyEnvelopeMessageId,
+                policyEnvelopeSha256: envelopeDigest,
+                trustSetEpoch: trustSetEpoch, keyEpoch: validFields.keyEpoch,
+                expiresAt: validFields.challengeExpiresAt)
+            let transcript = try PCADevicePolicyProofCodec.encode(challenge, result: result)
+            XCTAssertNotEqual(transcript, validTranscript, "\(mutation.id) must change the signed transcript")
+
+            let signatureBytes = try XCTUnwrap(PCADevicePolicyProofCodec.decodeCanonicalBase64URL(
+                mutation.signatureBase64Url))
+            XCTAssertTrue(P256DerSignature.isLowS(signatureBytes), "\(mutation.id) signature must be low-S P1363")
+            let signature = try P256.Signing.ECDSASignature(rawRepresentation: signatureBytes)
+            XCTAssertTrue(key.isValidSignature(signature, for: transcript),
+                "fixture signature for \(mutation.id) must verify over its exact mutated transcript")
+            XCTAssertFalse(key.isValidSignature(signature, for: validTranscript),
+                "fixture signature for \(mutation.id) must not verify over the valid transcript")
+        }
+    }
+
     func testProofTranscriptBindsDigestFamilyDeviceEpochAndResult() throws {
         let value = proofChallenge()
         let baseline = try PCADevicePolicyProofCodec.encode(value, result: .applied)
@@ -215,6 +282,7 @@ final class PolicyApplicationGateTests: XCTestCase {
     private struct SharedDevicePolicyProofVector: Decodable {
         let canonicalEnvelope: CanonicalEnvelope
         let validProof: ValidProof
+        let mutations: [Mutation]
 
         struct CanonicalEnvelope: Decodable {
             let bytesBase64Url: String
@@ -261,6 +329,38 @@ final class PolicyApplicationGateTests: XCTestCase {
                 let challengeId: String
                 let challengeNonce: String
                 let challengeExpiresAt: String
+            }
+        }
+
+        struct Mutation: Decodable {
+            let id: String
+            let field: String
+            let mutation: String?
+            let value: MutationValue?
+            let signatureBase64Url: String
+        }
+
+        enum MutationValue: Decodable {
+            case string(String)
+            case integer(Int)
+
+            init(from decoder: Decoder) throws {
+                let value = try decoder.singleValueContainer()
+                if let string = try? value.decode(String.self) {
+                    self = .string(string)
+                } else {
+                    self = .integer(try value.decode(Int.self))
+                }
+            }
+
+            var stringValue: String? {
+                guard case let .string(value) = self else { return nil }
+                return value
+            }
+
+            var integerValue: Int? {
+                guard case let .integer(value) = self else { return nil }
+                return value
             }
         }
     }

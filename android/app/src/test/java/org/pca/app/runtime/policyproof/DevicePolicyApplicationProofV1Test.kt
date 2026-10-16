@@ -115,6 +115,63 @@ class DevicePolicyApplicationProofV1Test {
     }
 
     @Test
+    fun sharedSignedMutationVectorsVerifyOnlyTheirExactMutatedTranscripts() {
+        val proofVector = sharedVector.getJSONObject("validProof")
+        val publicKey = proofVector.getString("syntheticDskPublicKeySec1Base64Url")
+        val validTranscript = DevicePolicyApplicationProofV1.canonicalTranscript(fields)
+        val verifier = P256OrdinaryEpochVerifier()
+        val mutations = sharedVector.getJSONArray("mutations")
+        val seenIds = mutableSetOf<String>()
+
+        for (index in 0 until mutations.length()) {
+            val mutation = mutations.getJSONObject(index)
+            val id = mutation.getString("id")
+            val changedFields = when (id) {
+                "changed-envelope-digest" -> {
+                    assertEquals("policyEnvelopeSha256", mutation.getString("field"))
+                    assertEquals(
+                        "decode 32-byte digest, XOR byte 0 with 0x01, canonical-base64url encode",
+                        mutation.getString("mutation"),
+                    )
+                    val digest = DevicePolicyApplicationProofV1.decode32ByteBase64Url(fields.policyEnvelopeSha256Base64Url)
+                    digest[0] = (digest[0].toInt() xor 1).toByte()
+                    fields.copy(policyEnvelopeSha256Base64Url = DevicePolicyApplicationProofV1.encodeBase64Url(digest))
+                }
+                "wrong-family" -> fields.copy(familyId = mutation.getString("value"))
+                "wrong-device" -> fields.copy(deviceId = mutation.getString("value"))
+                "stale-trust-set-epoch" -> fields.copy(trustSetEpoch = mutation.getLong("value"))
+                "conflicting-replay" -> fields.copy(
+                    applicationResult = DevicePolicyApplicationProofV1.ApplicationResult.valueOf(mutation.getString("value")),
+                )
+                else -> throw AssertionError("unexpected shared mutation vector: $id")
+            }
+            val transcript = DevicePolicyApplicationProofV1.canonicalTranscript(changedFields)
+            assertNotEquals("$id must change the valid proof transcript", validTranscript.toList(), transcript.toList())
+            val signature = Base64.getUrlDecoder().decode(mutation.getString("signatureBase64Url"))
+            DevicePolicyApplicationProofV1.validateCanonicalSignature(signature)
+            assertTrue("$id fixture signature must verify over its mutated transcript", verifier.verify(
+                publicKey,
+                transcript,
+                Base64.getEncoder().encodeToString(signature),
+            ))
+            assertTrue("$id fixture signature must not verify over the valid transcript", verifier.verify(
+                publicKey,
+                validTranscript,
+                Base64.getEncoder().encodeToString(signature),
+            ).not())
+            seenIds += id
+        }
+
+        assertEquals(setOf(
+            "changed-envelope-digest",
+            "wrong-family",
+            "wrong-device",
+            "stale-trust-set-epoch",
+            "conflicting-replay",
+        ), seenIds)
+    }
+
+    @Test
     fun envelopeDigestMutationChangesProofTranscript() {
         val original = DevicePolicyApplicationProofV1.canonicalTranscript(fields)
         val digest = DevicePolicyApplicationProofV1.decode32ByteBase64Url(fields.policyEnvelopeSha256Base64Url)

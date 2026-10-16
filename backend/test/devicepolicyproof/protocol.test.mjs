@@ -84,3 +84,45 @@ test('shared cross-platform vector matches exact envelope digest, transcript byt
   assert.equal(await verifier.verify(FIXTURE.validProof.syntheticDskPublicKeySec1Base64Url,
     transcript.toString('utf8'), FIXTURE.validProof.signatureBase64Url), true);
 });
+
+test('shared mutation vectors each sign their exact changed transcript and differ from the valid transcript', async () => {
+  const validFields = { ...FIXTURE.validProof.fields };
+  delete validFields.domain;
+  const validTranscript = canonicalizeDevicePolicyApplicationProof(validFields);
+  const verifier = new P256DeviceSignatureVerifier();
+  const seenMutationIds = new Set();
+
+  for (const mutation of FIXTURE.mutations) {
+    seenMutationIds.add(mutation.id);
+    const mutatedFields = { ...validFields };
+    if (mutation.id === 'changed-envelope-digest') {
+      const digest = Buffer.from(mutatedFields[mutation.field], 'base64url');
+      assert.equal(digest.length, 32, `${mutation.id}: digest must be 32 bytes`);
+      digest[0] ^= 0x01;
+      mutatedFields[mutation.field] = digest.toString('base64url');
+    } else {
+      mutatedFields[mutation.field] = mutation.value;
+    }
+
+    const transcript = canonicalizeDevicePolicyApplicationProof(mutatedFields);
+    assert.notDeepEqual(transcript, validTranscript, `${mutation.id}: transcript must change`);
+    assert.equal(await verifier.verify(
+      FIXTURE.validProof.syntheticDskPublicKeySec1Base64Url,
+      transcript.toString('utf8'),
+      mutation.signatureBase64Url,
+    ), true, `${mutation.id}: synthetic signature must verify over the exact mutated transcript`);
+    assert.equal(await verifier.verify(
+      FIXTURE.validProof.syntheticDskPublicKeySec1Base64Url,
+      validTranscript.toString('utf8'),
+      mutation.signatureBase64Url,
+    ), false, `${mutation.id}: mutation signature must not verify over the valid transcript`);
+  }
+
+  assert.deepEqual([...seenMutationIds].sort(), [
+    'changed-envelope-digest',
+    'conflicting-replay',
+    'stale-trust-set-epoch',
+    'wrong-device',
+    'wrong-family',
+  ]);
+});
