@@ -1,0 +1,96 @@
+{
+  "profile": "PCA FamilyEnvelope Crypto Profile V1 candidate",
+  "testDataOnly": true,
+  "testOnly": {
+    "fdekHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "recipientPrivateJwk": {
+      "key_ops": [
+        "deriveBits"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "kBbcUDv_SROdkAmAyOqEDE4stJuOGRhnL0jHfMDUDnA",
+      "y": "I3Ql_e4IQmA8L_BddLxv-EvWI_PniAOsyclXNBQZfwk",
+      "crv": "P-256",
+      "d": "5Dek5pzCNyZG-IDOI2kS4IGD3qRk_WHvWdPkaQFE1Hk"
+    }
+  },
+  "fdekWrap": {
+    "metadata": {
+      "protocolMajor": 1,
+      "protocolMinor": 0,
+      "messageId": "msg-vector-0001",
+      "familyId": "family-vector-0001",
+      "senderDeviceId": "sender-device-vector",
+      "recipient": {
+        "kind": "DEVICE",
+        "recipientDeviceId": "recipient-device-vector"
+      },
+      "senderKeyId": "dsk-vector-0001",
+      "messageType": "KEY_ROTATION",
+      "sequenceOrNonce": "1",
+      "issuedAt": "2026-01-02T03:04:05.000Z",
+      "expiresAt": "2026-01-02T04:04:05.000Z",
+      "trustSetEpoch": 7,
+      "keyEpoch": 9,
+      "semanticVersion": "1.0.0",
+      "correlationId": null
+    },
+    "infoHex": "5043415f4644454b5f48504b455f494e464f5f5631",
+    "aadHex": "32363a5043415f46414d494c595f454e56454c4f50455f4141445f5631313a31313a3031353a6d73672d766563746f722d3030303131383a66616d696c792d766563746f722d3030303132303a73656e6465722d6465766963652d766563746f72363a44455649434532333a726563697069656e742d6465766963652d766563746f7231353a64736b2d766563746f722d3030303131323a4b45595f524f544154494f4e313a3132343a323032362d30312d30325430333a30343a30352e3030305a32343a323032362d30312d30325430343a30343a30352e3030305a313a37313a39353a312e302e30313a30303a393a4644454b5f5752415032353a48504b452d3078303031302d3078303030312d307830303031",
+    "payloadHex": "5043414645320001010010000100010427f359a083e95ca71cfd8c1192131dcaf36b4af5eb6bbf3db378e1162b43aa0ffb4433c9d0e96538447c50ccca1b23f555ed6b598f550a3959e7c47d621f82bc84792531b90ddc5129395a9c62899844790ca1562af4b1b8b91e65200b606709eecf0288101ad81919efc8543582e08c",
+    "encHex": "0427f359a083e95ca71cfd8c1192131dcaf36b4af5eb6bbf3db378e1162b43aa0ffb4433c9d0e96538447c50ccca1b23f555ed6b598f550a3959e7c47d621f82bc",
+    "ciphertextHex": "84792531b90ddc5129395a9c62899844790ca1562af4b1b8b91e65200b606709eecf0288101ad81919efc8543582e08c"
+  },
+  "content": {
+    "metadata": {
+      "protocolMajor": 1,
+      "protocolMinor": 0,
+      "messageId": "msg-content-vector-0001",
+      "familyId": "family-vector-0001",
+      "senderDeviceId": "sender-device-vector",
+      "recipient": {
+        "kind": "DEVICE",
+        "recipientDeviceId": "recipient-device-vector"
+      },
+      "senderKeyId": "dsk-vector-0001",
+      "messageType": "POLICY_UPDATE",
+      "sequenceOrNonce": "1",
+      "issuedAt": "2026-01-02T03:04:05.000Z",
+      "expiresAt": "2026-01-02T04:04:05.000Z",
+      "trustSetEpoch": 7,
+      "keyEpoch": 9,
+      "semanticVersion": "1.0.0",
+      "correlationId": null
+    },
+    "plaintext": "VECTOR_ONLY_POLICY_FIXTURE",
+    "infoHex": "33303a5043415f46414d494c595f4d4553534147455f4b45595f494e464f5f563132333a484b44462d5348413235362f4145532d3132382d47434d313a31313a3032333a6d73672d636f6e74656e742d766563746f722d3030303131383a66616d696c792d766563746f722d3030303132303a73656e6465722d6465766963652d766563746f72363a44455649434532333a726563697069656e742d6465766963652d766563746f7231353a64736b2d766563746f722d3030303131333a504f4c4943595f555044415445313a3132343a323032362d30312d30325430333a30343a30352e3030305a32343a323032362d30312d30325430343a30343a30352e3030305a313a37313a39353a312e302e30313a30303a",
+    "aadHex": "32363a5043415f46414d494c595f454e56454c4f50455f4141445f5631313a31313a3032333a6d73672d636f6e74656e742d766563746f722d3030303131383a66616d696c792d766563746f722d3030303132303a73656e6465722d6465766963652d766563746f72363a44455649434532333a726563697069656e742d6465766963652d766563746f7231353a64736b2d766563746f722d3030303131333a504f4c4943595f555044415445313a3132343a323032362d30312d30325430333a30343a30352e3030305a32343a323032362d30312d30325430343a30343a30352e3030305a313a37313a39353a312e302e30313a30303a373a434f4e54454e5431343a434f4e54454e542d30783030303134333a6b3576456a694b353179427253596454314b387653616954725a77516d796f454941456256666c6959326731363a6a573577335a75335a394b3838326474",
+    "payloadHex": "5043414645320001020001939bc48e22b9d7206b498753d4af2f49a893ad9c109b2a0420011b55f96263688d6e70dd9bb767d2bcf3676d5b7e750abb6d7ba480bdf0edcd3725a3fc4ee5ea84e20aa20dee852aeb90e2b5febd8544586fad4feac5",
+    "saltHex": "939bc48e22b9d7206b498753d4af2f49a893ad9c109b2a0420011b55f9626368",
+    "nonceHex": "8d6e70dd9bb767d2bcf3676d",
+    "ciphertextAndTagHex": "5b7e750abb6d7ba480bdf0edcd3725a3fc4ee5ea84e20aa20dee852aeb90e2b5febd8544586fad4feac5"
+  },
+  "securityBoundary": {
+    "revokedDeviceDenialTestedHere": false
+  },
+  "negativeCases": [
+    "wrongFamily",
+    "wrongDevice",
+    "wrongRecipient",
+    "wrongSenderKey",
+    "wrongKeyEpoch",
+    "wrongTrustSetEpoch",
+    "wrongInfo",
+    "wrongAad",
+    "ciphertextMutation",
+    "tagMutation",
+    "encMutation",
+    "nonceMutation",
+    "truncation",
+    "oversize",
+    "versionDowngrade",
+    "wrongFdek",
+    "revokedDeviceDeniedByOuterTrustSetGate"
+  ]
+}
