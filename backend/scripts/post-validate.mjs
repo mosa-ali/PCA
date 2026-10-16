@@ -54,7 +54,10 @@ const execFileP = promisify(execFile);
 // WAVE 7 (2026-10-08): migrations 0064/0065 add durable enrollment-attempt
 // resolution and immutable abandoned-attempt recovery tombstones. Recomputed
 // from a fresh 63-migration disposable MySQL 8.4.11 database (96 tables).
-const EXPECTED_FINGERPRINT = '2143678ea123e129b1a7eb958a9271651be0834282fcf375fcc10911c4cc6050';
+// WAVE 02B (2026-10-16): migration 0066 adds the activation-target and
+// short-lived application-proof ledgers plus devices.activated_at. Recomputed
+// from a local from-zero MySQL 8.4.11 migration run (98 tables).
+const EXPECTED_FINGERPRINT = '0bc052e9c08d4bc8bc7bf02e1fa18eb9b69604406f8ef7bbbe2eab457fc62cf2';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;
@@ -117,6 +120,14 @@ try {
     // describes actual message/private-communication content here, exactly
     // like commercial_notifications.message_key/*.message_id above.
     'email_outbox.provider_message_id',
+    // Migration 0066 exposes only opaque activation-target routing fields and
+    // ciphertext digest/expiry metadata for the lifecycle proof flow. These
+    // names do not contain policy plaintext, family receipts, or child data.
+    'device_policy_activation_targets.policy_message_id',
+    'device_policy_activation_targets.policy_envelope_sha256',
+    'device_policy_activation_targets.policy_envelope_expires_at',
+    'device_policy_application_proofs.policy_message_id',
+    'device_policy_application_proofs.policy_envelope_sha256',
   ]);
   const [colRows] = await connection.query(`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = ?`, [dbName]);
   let offenders = 0;
